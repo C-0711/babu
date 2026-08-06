@@ -6,5 +6,6 @@ Capture → Instant Reading → Kontierung (SKR03/04) → Confidence-Routing →
 ## Struktur
 - `app/belegapp.html` — lauffähiger Prototyp (self-contained, einfach im Browser öffnen)
 - `prompts/design-prompt-kontierung-app.md` — vollständiger Design-Prompt (Screens, States, Token-System)
+- `docs/build-plan.md` — Bauplan für die vollständige Anwendung (Architektur, Teilsysteme, Phasen, Risiken)
 
 Teil der 0711 Intelligence Platform.
