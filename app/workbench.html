@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beleg Workbench — 0711 Intelligence</title>
+<style>
+/* Shell & Tokens aus design/unlimited-ocr/Unlimited-OCR App.html —
+   Fonts als System-Stacks (kein CDN, DSGVO). */
+:root {
+  --gc-bg:#fff; --gc-canvas:#faf9f5; --gc-desk:#efece6; --gc-chrome:#f4f1ec;
+  --gc-fg:#111; --gc-body:#333; --gc-desc:#555; --gc-muted:#999;
+  --gc-accent:#857b61; --gc-accent-hover:#736950; --gc-accent-subtle:#f0ebe3;
+  --gc-border:#e5e7eb; --gc-border-light:#efefef;
+  --gc-success:#6f8a6e; --gc-warning:#b0821f; --gc-danger:#a8433a;
+  --gc-serif:'Playfair Display',Georgia,serif;
+  --gc-sans:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --gc-mono:'SF Mono',ui-monospace,Menlo,monospace;
+}
+* { box-sizing:border-box; }
+body { margin:0; font:13.5px/1.5 var(--gc-sans); background:var(--gc-canvas); color:var(--gc-body);
+       -webkit-font-smoothing:antialiased; display:flex; flex-direction:column; height:100vh; overflow:hidden; }
+.num { font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; }
+:focus-visible { outline:2px solid var(--gc-accent); outline-offset:1px; }
+
+/* ===== Header ===== */
+header { display:flex; gap:10px; align-items:center; padding:9px 16px; background:var(--gc-chrome);
+         border-bottom:1px solid var(--gc-border-light); flex:0 0 auto; flex-wrap:wrap; }
+header h1 { font-family:var(--gc-serif); font-size:16px; margin:0 4px 0 0; font-weight:600; color:var(--gc-fg); letter-spacing:-.01em; }
+.lbl { font:600 9.5px var(--gc-sans); letter-spacing:.11em; text-transform:uppercase; color:var(--gc-muted); }
+.vsep { width:1px; height:18px; background:var(--gc-border); margin:0 5px; flex:none; }
+.grp { display:flex; align-items:center; gap:7px; }
+.dot { width:6px; height:6px; border-radius:50%; background:var(--gc-success); flex:none; }
+.monoval { font-family:var(--gc-mono); font-size:11.5px; color:var(--gc-desc); }
+#durchsatz { margin-left:auto; font-family:var(--gc-mono); font-size:11.5px; color:var(--gc-muted); }
+#durchsatz b { color:var(--gc-fg); font-weight:600; }
+
+/* ===== Layout ===== */
+main { display:grid; grid-template-columns:300px minmax(0,1fr) 380px; flex:1 1 auto; min-height:0; }
+
+/* ===== Queue (links) ===== */
+#queue { overflow-y:auto; background:var(--gc-canvas); border-right:1px solid var(--gc-border-light); padding:12px 0 20px; }
+.qhead { font:600 9.5px var(--gc-sans); letter-spacing:.11em; text-transform:uppercase; color:var(--gc-muted); padding:10px 16px 6px; }
+.qitem { display:block; width:100%; text-align:left; background:none; border:0; border-left:3px solid transparent;
+         padding:10px 16px 10px 13px; cursor:pointer; border-bottom:1px solid var(--gc-border-light); }
+.qitem:hover { background:var(--gc-chrome); }
+.qitem.cur { background:var(--gc-bg); border-left-color:var(--gc-accent); box-shadow:0 1px 6px -3px rgba(31,30,26,.25); }
+.qitem .r1 { display:flex; align-items:baseline; gap:8px; }
+.qitem .firma { flex:1; min-width:0; font-weight:600; font-size:13px; color:var(--gc-fg);
+                white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.qitem .betrag { font-family:var(--gc-mono); font-size:12.5px; color:var(--gc-fg); }
+.qitem .r2 { display:flex; align-items:center; gap:7px; margin-top:3px; font-family:var(--gc-mono); font-size:10.5px; color:var(--gc-muted); }
+.qitem .bar { flex:1; height:3px; border-radius:2px; background:#e9e5dc; overflow:hidden; }
+.qitem .fill { height:100%; }
+.qitem .conf { min-width:32px; text-align:right; }
+.qitem.done { opacity:.75; }
+.qitem.done .firma { font-weight:500; color:var(--gc-desc); }
+.badge { display:inline-block; font-family:var(--gc-mono); font-size:9px; letter-spacing:.06em; text-transform:uppercase;
+         padding:1px 6px; border-radius:999px; border:1px solid var(--gc-border); color:var(--gc-muted); }
+.badge.hist { border-color:rgba(133,123,97,.45); color:var(--gc-accent); }
+.badge.regel { border-color:rgba(111,138,110,.45); color:var(--gc-success); }
+.badge.ki { border-color:rgba(176,130,31,.45); color:var(--gc-warning); }
+.seal { display:inline-flex; width:15px; height:15px; border:1.5px solid var(--gc-accent); border-radius:50%;
+        color:var(--gc-accent); font-size:8px; align-items:center; justify-content:center; flex:none; background:var(--gc-bg); }
+.seal.stamp { animation:stamp .5s cubic-bezier(.2,1.4,.4,1); }
+@keyframes stamp { 0%{transform:scale(1.7) rotate(-14deg);opacity:0} 55%{transform:scale(.9) rotate(2deg);opacity:1} 100%{transform:scale(1) rotate(0)} }
+
+/* ===== Beleg (Mitte) ===== */
+#stage { overflow:auto; background:var(--gc-desk); padding:26px 24px; display:flex; flex-direction:column; align-items:center; }
+#stage .ptag { align-self:flex-start; background:rgba(250,249,245,.92); color:var(--gc-desc);
+               font:600 10px var(--gc-mono); padding:2px 8px; border-radius:999px; border:1px solid var(--gc-border-light); margin-bottom:12px; }
+.paper { background:#fff; color:#1b1e23; width:100%; max-width:420px; border-radius:3px; padding:26px 24px 28px;
+         font-size:13px; line-height:1.55; box-shadow:0 14px 34px -16px rgba(31,30,26,.4), 0 1px 3px rgba(31,30,26,.06); }
+.paper .kopf { font-family:var(--gc-serif); font-weight:700; font-size:18px; margin-bottom:2px; }
+.paper .adr { color:#6a7076; font-size:11px; margin-bottom:12px; }
+.paper .meta { font-size:11.5px; color:#6a7076; }
+.paper .meta b { color:#1b1e23; }
+.paper table { width:100%; border-collapse:collapse; font-size:12.5px; }
+.paper td { padding:3px 0; }
+.paper td:last-child { text-align:right; font-variant-numeric:tabular-nums; font-family:var(--gc-mono); font-size:12px; }
+.paper .rule { border-top:1px solid #ddd9d0; margin:10px 0; }
+.paper .sum td { font-weight:600; }
+.paper .fuss { margin-top:12px; font-size:10px; color:#8a9096; }
+.paper.bon { font-family:var(--gc-mono); }
+.paper.bon .kopf { font-family:var(--gc-mono); font-weight:600; font-size:15px; letter-spacing:.02em; }
+.paper [data-src] { cursor:pointer; border-radius:2px; }
+.paper [data-src]:hover { background:rgba(133,123,97,.1); }
+.paper .hl { background:rgba(133,123,97,.18); outline:1.5px solid rgba(133,123,97,.55); }
+
+/* ===== Formular (rechts) ===== */
+#form { overflow-y:auto; border-left:1px solid var(--gc-border-light); background:var(--gc-canvas);
+        padding:16px 18px 22px; display:flex; flex-direction:column; gap:12px; }
+#form h2 { font-family:var(--gc-serif); font-size:17px; font-weight:600; color:var(--gc-fg); margin:0;
+           display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+#form h2 .amt { font-family:var(--gc-mono); font-size:14px; font-weight:500; }
+#form .sub { font-family:var(--gc-mono); font-size:10.5px; color:var(--gc-muted); text-transform:uppercase; letter-spacing:.07em; margin-top:-8px; }
+.confrow { display:flex; align-items:center; gap:9px; }
+.confrow .bar { flex:1; height:3px; border-radius:2px; background:#e9e5dc; overflow:hidden; }
+.confrow .fill { height:100%; transition:width .5s ease; }
+.confrow .val { font-family:var(--gc-mono); font-size:12px; color:var(--gc-desc); min-width:36px; text-align:right; }
+.why { font-size:12px; color:var(--gc-desc); line-height:1.55; background:var(--gc-bg); border:1px solid var(--gc-border-light);
+       border-radius:10px; padding:10px 12px; }
+.diff { border:1px solid rgba(176,130,31,.5); background:rgba(176,130,31,.05); border-radius:10px; padding:10px 12px; font-size:12px; line-height:1.5; }
+.diff .t { font-family:var(--gc-mono); font-size:9.5px; letter-spacing:.08em; color:var(--gc-warning); text-transform:uppercase; margin-bottom:6px; }
+.diff .pick { display:flex; gap:7px; margin-top:8px; }
+.diff .pick button { flex:1; background:var(--gc-bg); border:1px solid var(--gc-border); border-radius:8px; color:var(--gc-body);
+                     font-family:var(--gc-mono); font-size:11.5px; padding:7px 5px; cursor:pointer; }
+.diff .pick button.sel { border-color:var(--gc-accent); color:var(--gc-accent-hover); background:var(--gc-accent-subtle); }
+.field label { display:block; font-family:var(--gc-mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase;
+               color:var(--gc-muted); margin-bottom:5px; }
+.field { position:relative; }
+.field input, .field select { width:100%; background:var(--gc-bg); border:1px solid var(--gc-border); border-radius:8px;
+                              color:var(--gc-fg); padding:9px 11px; font:13.5px var(--gc-sans); }
+.field input:focus, .field select:focus { outline:2px solid var(--gc-accent); outline-offset:1px; border-color:transparent; }
+.field .num-in { font-family:var(--gc-mono); text-align:right; }
+#konto-list { position:absolute; left:0; right:0; top:100%; z-index:20; border:1px solid var(--gc-border-light); border-radius:10px;
+              margin-top:4px; overflow:hidden; display:none; background:var(--gc-bg); box-shadow:0 10px 28px -14px rgba(31,30,26,.4); }
+#konto-list.show { display:block; }
+#konto-list button { display:flex; width:100%; gap:9px; align-items:baseline; background:none; border:0;
+                     border-bottom:1px solid var(--gc-border-light); padding:8px 11px; cursor:pointer; text-align:left; }
+#konto-list button:last-child { border-bottom:0; }
+#konto-list button:hover, #konto-list button.hot { background:var(--gc-canvas); }
+#konto-list .nr { font-family:var(--gc-mono); font-size:12px; color:var(--gc-accent); min-width:40px; }
+#konto-list .bez { flex:1; font-size:12.5px; color:var(--gc-body); }
+#konto-list .src { font-family:var(--gc-mono); font-size:8.5px; letter-spacing:.06em; text-transform:uppercase;
+                   color:var(--gc-muted); border:1px solid var(--gc-border); border-radius:999px; padding:1px 5px; }
+#konto-list .src.ind { color:var(--gc-success); border-color:rgba(111,138,110,.45); }
+#konto-list .zul { font-family:var(--gc-mono); font-size:8.5px; color:var(--gc-muted); }
+.buchsatz { font-family:var(--gc-mono); font-size:11.5px; line-height:1.7; background:var(--gc-bg);
+            border:1px solid var(--gc-border-light); border-radius:10px; padding:11px 12px; color:var(--gc-desc); }
+.buchsatz b { color:var(--gc-accent-hover); font-weight:600; }
+button.primary { background:var(--gc-accent); border:1px solid var(--gc-accent); color:#fff; font:600 14px var(--gc-sans);
+                 border-radius:10px; padding:12px; cursor:pointer; width:100%; }
+button.primary:hover { background:var(--gc-accent-hover); border-color:var(--gc-accent-hover); }
+button.primary:disabled { background:#e5e1d8; border-color:#e5e1d8; color:var(--gc-muted); cursor:default; }
+.sealed-note { display:flex; align-items:center; gap:8px; font-family:var(--gc-mono); font-size:10.5px; color:var(--gc-accent); }
+#leer { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; color:var(--gc-desc);
+        text-align:center; font-size:13.5px; line-height:1.6; padding:30px; }
+#leer .seal { width:44px; height:44px; font-size:18px; }
+
+/* ===== Fußleiste ===== */
+footer { display:flex; align-items:center; gap:14px; padding:7px 16px; background:var(--gc-chrome);
+         border-top:1px solid var(--gc-border-light); flex:0 0 auto; flex-wrap:wrap; }
+kbd { font-family:var(--gc-mono); font-size:10.5px; background:var(--gc-bg); border:1px solid var(--gc-border);
+      border-bottom-width:2px; border-radius:5px; padding:1px 6px; color:var(--gc-desc); }
+footer .k { font-size:11.5px; color:var(--gc-muted); display:flex; align-items:center; gap:5px; }
+footer .stapel { margin-left:auto; font-family:var(--gc-mono); font-size:11.5px; color:var(--gc-muted); }
+footer .stapel b { color:var(--gc-fg); font-weight:600; }
+
+@media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
+@media (max-width:980px){ main{grid-template-columns:260px minmax(0,1fr)} #form{display:none} }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Beleg</h1>
+  <span class="lbl">Workbench · Review-Queue</span>
+  <span class="vsep"></span>
+  <div class="grp"><span class="lbl">Mandant</span><span class="monoval">Demo-Mandant · SKR04</span></div>
+  <span class="vsep"></span>
+  <div class="grp"><span class="dot"></span><span class="monoval" style="color:var(--gc-success)">ocr.0711.io · verbunden</span></div>
+  <span id="durchsatz" class="num">—</span>
+</header>
+
+<main>
+  <aside id="queue" aria-label="Review-Queue"></aside>
+  <section id="stage" aria-label="Belegbild"></section>
+  <section id="form" aria-label="Buchungssatz"></section>
+</main>
+
+<footer>
+  <span class="k"><kbd>j</kbd><kbd>k</kbd> Beleg wechseln</span>
+  <span class="k"><kbd>Enter</kbd> bestätigen</span>
+  <span class="k"><kbd>9</kbd><kbd>8</kbd><kbd>0</kbd> Steuerschlüssel</span>
+  <span class="k"><kbd>/</kbd> Konto suchen</span>
+  <span class="stapel num" id="stapel">—</span>
+</footer>
+
+<script>
+/* =================================================================
+   Beleg Workbench — Review-Queue für Buchhalter/Steuerberater.
+   Demo: Zustand nur im Speicher. Queue nach Confidence aufsteigend.
+   ================================================================= */
+
+var KONTEN=[
+  {nr:'6530',bez:'Kfz-Betriebskosten',src:'SKR'},
+  {nr:'6531',bez:'Fahrzeugpflege',src:'IND'},
+  {nr:'6600',bez:'Werbekosten',src:'SKR'},
+  {nr:'6610',bez:'Geschenke bis 50 €',src:'SKR'},
+  {nr:'6640',bez:'Bewirtungskosten 70 %',src:'SKR'},
+  {nr:'6673',bez:'Reisekosten Fahrtkosten',src:'SKR'},
+  {nr:'6805',bez:'Telefon / Kommunikation',src:'SKR'},
+  {nr:'6815',bez:'Bürobedarf',src:'SKR'},
+  {nr:'6820',bez:'Fachliteratur',src:'SKR'},
+  {nr:'6837',bez:'Hosting / IT-Dienste',src:'IND'},
+  {nr:'6850',bez:'Sonstiger Betriebsbedarf',src:'SKR'}
+];
+var KS_TXT={'9':'VSt 19 %','8':'VSt 7 %','0':'keine'};
+
+/* Queue-Belege. pos: [Bezeichnung, Betrag]. diff: Gerät/Server-Abweichung. */
+var QUEUE=[
+  {id:'q1',firma:'Blumen Krauss',art:'bon',ref:'Quittung 0117',datum:'06.08.2026',dd:'0608',
+   adr:'Marktstraße 8 · 70372 Stuttgart',kred:'70041',
+   pos:[['Strauß „Sommerwiese“','32,71']],netto:'32,71',ust:'2,29',ustSatz:'7',brutto:'35,00',bruttoNum:35.00,
+   conf:55,herkunft:'ki',konto:'',ks:'8',
+   why:'Erstlieferant ohne Historie. „Blumen“ kann Geschenk (6610), Dekoration (6850) oder Werbung (6600) sein — Anlass fehlt auf dem Beleg.',
+   zuletzt:[]},
+  {id:'q2',firma:'Autohaus Weber',art:'bon',ref:'Bon 0834',datum:'04.08.2026',dd:'0408',
+   adr:'Heilbronner Str. 90 · 70191 Stuttgart',kred:'70021',
+   pos:[['FAHRZEUGWAESCHE PREMIUM','29,90'],['INNENREINIGUNG','16,00']],netto:'45,90',ust:'8,72',ustSatz:'19',brutto:'54,62',bruttoNum:54.62,
+   conf:61,herkunft:'ki',konto:'6530',ks:'9',
+   why:'Leistungsart unklar — Fahrzeugwäsche kann Kfz-Betrieb oder Repräsentation sein. Firmenwagen S-CW 4711 ist im Mandanten hinterlegt.',
+   diff:{feld:'Bruttobetrag',dev:'54,82',srv:'54,62'},zuletzt:['6530']},
+  {id:'q3',firma:'Shell Tankstelle',art:'bon',ref:'Bon 5512',datum:'05.08.2026',dd:'0508',
+   adr:'B27 · 70567 Stuttgart',kred:'70019',
+   pos:[['Diesel 52,4 l','75,13'],['Scheibenreiniger','14,27']],netto:'75,13',ust:'14,27',ustSatz:'19',brutto:'89,40',bruttoNum:89.40,
+   conf:79,herkunft:'hist',konto:'6530',ks:'9',
+   why:'Kreditor 11× zuvor auf 6530 gebucht — Position „Scheibenreiniger“ drückt die Confidence knapp unter die Bestätigen-Schwelle.',
+   zuletzt:['6530']},
+  {id:'q4',firma:'Bauhaus Stuttgart',art:'re',ref:'RE 88123',datum:'05.08.2026',dd:'0508',
+   adr:'Ulmer Straße 41 · 70188 Stuttgart · USt-IdNr. DE 118 335 402',kred:'70027',
+   pos:[['Regalsystem verzinkt','88,15'],['Kleinmaterial','16,80']],netto:'104,95',ust:'19,94',ustSatz:'19',brutto:'124,89',bruttoNum:124.89,
+   conf:82,herkunft:'ki',konto:'6850',ks:'9',
+   why:'Warenkorb gemischt — Vorschlag Sonstiger Betriebsbedarf. Bei Lagerausstattung > 250 € netto wäre Anlagevermögen zu prüfen.',
+   zuletzt:[]},
+  {id:'q5',firma:'Gasthaus Ochsen',art:'re',ref:'Bon 2219',datum:'06.08.2026',dd:'0608',
+   adr:'Marktplatz 3 · 70372 Stuttgart',kred:'70034',
+   pos:[['2 × Tagesessen','38,80'],['Getränke','27,30'],['Trinkgeld (eingetragen)','6,25']],netto:'72,35',ust:'13,75',ustSatz:'19',brutto:'86,10',bruttoNum:86.10,
+   conf:88,herkunft:'regel',konto:'6640',ks:'9',
+   why:'Regel „Bewirtungsbeleg + Gasthaus*“ griff. Bewirtete Personen & Anlass laut Scan auf der Rückseite vermerkt.',
+   zuletzt:['6640']},
+  {id:'q6',firma:'Telekom Deutschland',art:'re',ref:'RE-2026-081',datum:'03.08.2026',dd:'0308',
+   adr:'Landgrabenweg 151 · 53227 Bonn · USt-IdNr. DE 122 265 872',kred:'70005',
+   pos:[['Business-Anschluss 08/26','50,38']],netto:'50,38',ust:'9,57',ustSatz:'19',brutto:'59,95',bruttoNum:59.95,
+   conf:93,herkunft:'hist',konto:'6805',ks:'9',
+   why:'Kreditor 23× zuvor auf 6805 gebucht — Abschlag identisch zum Vormonat.',
+   zuletzt:['6805']}
+];
+/* Bereits dunkelverarbeitet — zeigt den Erledigt-Bereich */
+var DONE=[
+  {id:'d1',firma:'Hetzner Online GmbH',ref:'R2026-0psd83',datum:'01.08.2026',brutto:'238,00',bruttoNum:238.00,
+   conf:98,herkunft:'hist',konto:'6837',ks:'9',status:'auto',hash:'0d31f6a8'}
+];
+
+var cur=null;            // aktuelle Queue-Position (id)
+var editorKonto=null, diffWahl='srv', listIdx=-1;
+var confirmed=0, secs=[], tSel=performance.now();
+
+function $(id){return document.getElementById(id)}
+function fmtEur(n){return n.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'}
+function offen(){return QUEUE.filter(function(q){return !q.status})}
+function sorted(){return offen().slice().sort(function(a,b){return a.conf-b.conf})}
+function confColor(c){return c>=95?'var(--gc-accent)':(c>=80?'var(--gc-success)':'var(--gc-warning)')}
+function byId(id){return QUEUE.find(function(q){return q.id===id})}
+function pseudoHash(s){var h=5381;for(var i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))>>>0;return h.toString(16).slice(0,8)}
+
+/* ---------- Queue ---------- */
+function renderQueue(){
+  var host=$('queue'), html='';
+  var open=sorted();
+  html+='<div class="qhead">Zu prüfen · '+open.length+' · Confidence aufsteigend</div>';
+  open.forEach(function(q){
+    html+='<button class="qitem'+(q.id===cur?' cur':'')+'" data-id="'+q.id+'" onclick="select(\''+q.id+'\')">'+
+      '<span class="r1"><span class="firma">'+q.firma+'</span><span class="betrag num">'+q.brutto+' €</span></span>'+
+      '<span class="r2"><span class="badge '+q.herkunft+'">'+(q.herkunft==='hist'?'Historie':q.herkunft==='regel'?'Regel':'KI')+'</span>'+
+      '<span class="bar"><span class="fill" style="width:'+q.conf+'%;background:'+confColor(q.conf)+'"></span></span>'+
+      '<span class="conf num">'+q.conf+' %</span></span></button>';
+  });
+  var done=QUEUE.filter(function(q){return q.status}).concat(DONE);
+  if(done.length){
+    html+='<div class="qhead">Erledigt · '+done.length+'</div>';
+    done.forEach(function(q){
+      html+='<button class="qitem done" data-id="'+q.id+'" tabindex="-1">'+
+        '<span class="r1"><span class="seal">✓</span><span class="firma">'+q.firma+'</span><span class="betrag num">'+q.brutto+' €</span></span>'+
+        '<span class="r2"><span>'+q.konto+' · '+KS_TXT[q.ks]+(q.status==='korrigiert'?' · korrigiert → lernt':q.status==='auto'?' · automatisch':' · bestätigt')+'</span></span></button>';
+    });
+  }
+  host.innerHTML=html;
+}
+
+/* ---------- Beleg (Mitte) ---------- */
+function paperHTML(q){
+  var rows=q.pos.map(function(p,i){
+    return '<tr><td'+(i===0?' data-src="leistung"':'')+'>'+p[0]+'</td><td>'+p[1]+'</td></tr>';
+  }).join('');
+  return '<div class="ptag">'+q.ref+' · 1 / 1</div>'+
+    '<div class="paper'+(q.art==='bon'?' bon':'')+'" id="paper">'+
+    '<div class="kopf" data-src="lieferant">'+q.firma+'</div>'+
+    '<div class="adr">'+q.adr+'</div>'+
+    '<div class="meta">'+(q.art==='bon'?'':'Rechnung ')+'<b data-src="ref">'+q.ref+'</b> · <span data-src="datum">'+q.datum+'</span></div>'+
+    '<div class="rule"></div><table>'+rows+'</table><div class="rule"></div>'+
+    '<table><tr><td>Netto</td><td data-src="netto">'+q.netto+'</td></tr>'+
+    '<tr><td>USt '+q.ustSatz+' %</td><td data-src="ust">'+q.ust+'</td></tr>'+
+    '<tr class="sum"><td>Gesamt EUR</td><td data-src="brutto">'+q.brutto+'</td></tr></table>'+
+    '<div class="fuss">'+(q.art==='bon'?'Vielen Dank für Ihren Einkauf':'Zahlbar innerhalb 14 Tagen')+'</div></div>';
+}
+
+/* ---------- Formular (rechts) ---------- */
+function formHTML(q){
+  var diffHtml='';
+  if(q.diff){
+    diffHtml='<div class="diff"><div class="t">Abweichung · Gerät ↔ Server</div>'+
+      q.diff.feld+': Gerät las einen anderen Wert als die Server-Verifikation.'+
+      '<div class="pick">'+
+      '<button id="pick-dev" class="'+(diffWahl==='dev'?'sel':'')+'" onclick="pickDiff(\'dev\')">Gerät · '+q.diff.dev+'</button>'+
+      '<button id="pick-srv" class="'+(diffWahl==='srv'?'sel':'')+'" onclick="pickDiff(\'srv\')">Server · '+q.diff.srv+' ✓</button>'+
+      '</div></div>';
+  }
+  var kontoVal=q.konto?(q.konto+' · '+(KONTEN.find(function(k){return k.nr===q.konto})||{bez:''}).bez):'';
+  return '<h2><span>'+q.firma+'</span><span class="amt num">'+q.brutto+' €</span></h2>'+
+    '<div class="sub">'+q.ref+' · '+q.datum+' · Kreditor '+q.kred+'</div>'+
+    '<div class="confrow"><span class="badge '+q.herkunft+'">'+(q.herkunft==='hist'?'Historie':q.herkunft==='regel'?'Regel':'KI')+'</span>'+
+    '<span class="bar"><span class="fill" style="width:'+q.conf+'%;background:'+confColor(q.conf)+'"></span></span>'+
+    '<span class="val num">'+q.conf+' %</span></div>'+
+    '<div class="why">'+q.why+'</div>'+diffHtml+
+    '<div class="field"><label for="konto-in">Sachkonto — Nummer oder Bezeichnung <kbd>/</kbd></label>'+
+    '<input id="konto-in" data-hl="leistung" autocomplete="off" placeholder="Suchen … z. B. 6530 oder „Kfz“" value="'+kontoVal+'"'+
+    ' oninput="fuzzy(this.value)" onfocus="fuzzy(\'\')" onkeydown="kontoKeys(event)">'+
+    '<div id="konto-list" role="listbox" aria-label="Kontenvorschläge"></div></div>'+
+    '<div class="field"><label for="ks-in">Steuerschlüssel <kbd>9</kbd><kbd>8</kbd><kbd>0</kbd></label>'+
+    '<select id="ks-in" data-hl="ust" onchange="renderSatz()">'+
+    ['9','8','0'].map(function(k){return '<option value="'+k+'"'+(q.ks===k?' selected':'')+'>'+k+' · '+KS_TXT[k]+'</option>'}).join('')+
+    '</select></div>'+
+    '<div class="field"><label for="brutto-in">Bruttobetrag</label>'+
+    '<input id="brutto-in" data-hl="brutto" class="num-in num" value="'+q.brutto+' €" onchange="renderSatz()"></div>'+
+    '<div class="buchsatz" id="satz"></div>'+
+    '<button class="primary" id="confirm" onclick="confirmCur()">Buchung bestätigen <span style="opacity:.7;font-weight:400">⏎</span></button>';
+}
+function leerHTML(){
+  return '<div id="leer"><span class="seal stamp">✓</span>'+
+    '<div><b style="color:var(--gc-fg)">Queue leer — alles gesiegelt.</b><br>'+confirmed+' Belege geprüft'+
+    (secs.length?' · ø '+avgSecs()+' s/Beleg':'')+'.<br>Der Stapel liegt bereit für den EXTF-Export.</div></div>';
+}
+
+function select(id){
+  cur=id; editorKonto=null; listIdx=-1;
+  var q=byId(id);
+  diffWahl='srv';
+  if(q.konto) editorKonto=KONTEN.find(function(k){return k.nr===q.konto})||null;
+  tSel=performance.now();
+  renderQueue();
+  $('stage').innerHTML=paperHTML(q);
+  $('form').innerHTML=formHTML(q);
+  renderSatz();
+  bindPaper();
+}
+function bindPaper(){
+  document.querySelectorAll('#paper [data-src]').forEach(function(el){
+    el.addEventListener('click',function(){
+      var map={leistung:'konto-in',ust:'ks-in',brutto:'brutto-in',netto:'brutto-in'};
+      var t=map[el.dataset.src]; if(t&&$(t)) $(t).focus();
+    });
+  });
+}
+/* Bidirektionale Hervorhebung: Formularfokus → Quelle im Beleg */
+document.addEventListener('focusin',function(ev){
+  var hl=ev.target&&ev.target.dataset?ev.target.dataset.hl:null;
+  document.querySelectorAll('#paper .hl').forEach(function(el){el.classList.remove('hl')});
+  if(hl){
+    var src=document.querySelector('#paper [data-src="'+hl+'"]');
+    if(src) src.classList.add('hl');
+  }
+});
+
+/* ---------- Konto-Suche ---------- */
+function fuzzy(qs){
+  qs=(qs||'').toLowerCase().trim();
+  var q=byId(cur), list=$('konto-list');
+  var hits=KONTEN.filter(function(k){
+    return !qs || k.nr.indexOf(qs)===0 || k.bez.toLowerCase().indexOf(qs)>=0 || (k.nr+' · '+k.bez).toLowerCase().indexOf(qs)>=0;
+  });
+  hits.sort(function(a,b){
+    var az=q.zuletzt.indexOf(a.nr)>=0?0:1, bz=q.zuletzt.indexOf(b.nr)>=0?0:1;
+    return az-bz||a.nr.localeCompare(b.nr);
+  });
+  listIdx=-1;
+  list.innerHTML=hits.slice(0,6).map(function(k,i){
+    var zul=q.zuletzt.indexOf(k.nr)>=0?'<span class="zul">zuletzt bei diesem Kreditor</span>':'';
+    return '<button role="option" data-i="'+i+'" data-nr="'+k.nr+'" onclick="pickKonto(\''+k.nr+'\')">'+
+      '<span class="nr">'+k.nr+'</span><span class="bez">'+k.bez+' '+zul+'</span>'+
+      '<span class="src'+(k.src==='IND'?' ind':'')+'">'+(k.src==='IND'?'Individuell':'SKR04')+'</span></button>';
+  }).join('');
+  list.classList.toggle('show',hits.length>0);
+}
+function kontoKeys(ev){
+  var list=$('konto-list'), opts=list.querySelectorAll('button');
+  if(ev.key==='ArrowDown'||ev.key==='ArrowUp'){
+    ev.preventDefault();
+    if(!list.classList.contains('show')) fuzzy($('konto-in').value);
+    listIdx=Math.max(0,Math.min(opts.length-1,listIdx+(ev.key==='ArrowDown'?1:-1)));
+    opts.forEach(function(o,i){o.classList.toggle('hot',i===listIdx)});
+  } else if(ev.key==='Enter'){
+    ev.preventDefault(); ev.stopPropagation();
+    var pick=opts[listIdx>=0?listIdx:0];
+    if(list.classList.contains('show')&&pick) pickKonto(pick.dataset.nr);
+    else confirmCur();
+  } else if(ev.key==='Escape'){ list.classList.remove('show'); $('konto-in').blur(); }
+}
+function pickKonto(nr){
+  editorKonto=KONTEN.find(function(k){return k.nr===nr});
+  $('konto-in').value=editorKonto.nr+' · '+editorKonto.bez;
+  $('konto-list').classList.remove('show');
+  renderSatz();
+}
+function pickDiff(which){
+  diffWahl=which;
+  var q=byId(cur);
+  $('pick-dev').classList.toggle('sel',which==='dev');
+  $('pick-srv').classList.toggle('sel',which==='srv');
+  $('brutto-in').value=(which==='dev'?q.diff.dev:q.diff.srv)+' €';
+  renderSatz();
+}
+function renderSatz(){
+  var q=byId(cur); if(!q||!$('satz')) return;
+  var ks=$('ks-in')?$('ks-in').value:q.ks;
+  var brutto=($('brutto-in')?$('brutto-in').value:q.brutto+' €').replace(/\s*€$/,'');
+  var el=$('confirm');
+  if(editorKonto){
+    $('satz').innerHTML='<b>'+editorKonto.nr+'</b> '+editorKonto.bez+' '+q.netto+' S'+
+      (ks!=='0'?' · <b>1406</b> '+KS_TXT[ks]+' '+q.ust+' S':'')+
+      '<br>&nbsp;&nbsp;an <b>'+q.kred+'</b> Kred. '+q.firma+' '+brutto+' H';
+    el.disabled=false;
+  } else {
+    $('satz').innerHTML='Sachkonto wählen — dann steht der Buchungssatz.';
+    el.disabled=true;
+  }
+}
+
+/* ---------- Bestätigen & Durchsatz ---------- */
+function avgSecs(){ return (secs.reduce(function(a,b){return a+b},0)/secs.length).toFixed(0); }
+function confirmCur(){
+  var q=byId(cur); if(!q||!editorKonto||q.status) return;
+  var korrigiert=(editorKonto.nr!==q.konto)||(q.diff&&diffWahl==='dev');
+  q.konto=editorKonto.nr; q.ks=$('ks-in').value;
+  if(q.diff&&diffWahl==='dev'){ q.brutto=q.diff.dev; q.bruttoNum=parseFloat(q.diff.dev.replace(',','.')); }
+  q.status=korrigiert?'korrigiert':'bestaetigt';
+  q.hash=pseudoHash(q.id+q.konto+q.brutto);
+  confirmed++; secs.push((performance.now()-tSel)/1000);
+  renderStatus();
+  /* Siegel-Moment im Formular, dann automatisch zum nächsten */
+  $('form').innerHTML='<h2><span>'+q.firma+'</span><span class="amt num">'+q.brutto+' €</span></h2>'+
+    '<div class="sub">'+q.ref+' · '+q.datum+'</div>'+
+    '<div class="buchsatz"><b>'+q.konto+'</b> '+editorKonto.bez+' · '+KS_TXT[q.ks]+'<br>&nbsp;&nbsp;an <b>'+q.kred+'</b> Kred. '+q.firma+' '+q.brutto+' H</div>'+
+    '<div class="sealed-note"><span class="seal stamp">✓</span>'+q.hash+' · gesiegelt · '+(korrigiert?'Korrektur fließt in künftige Vorschläge ein':'bestätigt')+'</div>';
+  renderQueue();
+  setTimeout(function(){
+    var next=sorted()[0];
+    if(next) select(next.id);
+    else { cur=null; renderQueue(); $('stage').innerHTML=''; $('form').innerHTML=leerHTML(); }
+  },650);
+}
+function renderStatus(){
+  var d=$('durchsatz');
+  d.innerHTML=confirmed?'<b>'+confirmed+'</b> geprüft heute · ø <b>'+avgSecs()+' s</b>/Beleg':offen().length+' Belege warten';
+  var alle=QUEUE.filter(function(q){return q.status}).concat(DONE);
+  var sum=alle.reduce(function(a,b){return a+b.bruttoNum},0);
+  $('stapel').innerHTML='Stapel 08/26: <b>'+alle.length+'</b> Buchungen · <b>'+fmtEur(sum)+'</b>';
+}
+
+/* ---------- Globale Tastatur ---------- */
+document.addEventListener('keydown',function(ev){
+  var typing=/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+  if(ev.key==='/'&&!typing){ ev.preventDefault(); if($('konto-in')){$('konto-in').focus();$('konto-in').select();} return; }
+  if(typing) return;
+  if(ev.key==='j'||ev.key==='k'){
+    var open=sorted(); if(!open.length) return;
+    var i=open.findIndex(function(q){return q.id===cur});
+    i=ev.key==='j'?Math.min(open.length-1,i+1):Math.max(0,i-1);
+    select(open[i].id);
+  }
+  if(ev.key==='Enter') confirmCur();
+  if(ev.key==='9'||ev.key==='8'||ev.key==='0'){
+    if($('ks-in')){ $('ks-in').value=ev.key; renderSatz(); }
+  }
+});
+document.addEventListener('click',function(ev){
+  var list=$('konto-list');
+  if(list&&!ev.target.closest('.field')) list.classList.remove('show');
+});
+
+/* ---------- Start ---------- */
+renderStatus();
+var first=sorted()[0];
+if(first) select(first.id);
+</script>
+</body>
+</html>
