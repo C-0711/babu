@@ -140,8 +140,12 @@ struct CaptureTab: View {
         schritte = 0
         startZeit = Date()
 
+        // Aufbereitung: Original bleibt fürs Archiv, OCR & Anzeige laufen
+        // auf der bereinigten Fassung (bessere Lesequote, bessere Optik).
+        let aufbereitet = BildAufbereitung.aufbereiten(bild)
+
         schritte = 1
-        let ocr = await OCRService.erkenne(bild)
+        let ocr = await OCRService.erkenne(aufbereitet)
 
         try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 2
@@ -149,8 +153,10 @@ struct CaptureTab: View {
 
         try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 3
-        let jpeg = bild.jpegData(compressionQuality: 0.6)
-        let neu = store.routen(felder: felder, bildJpeg: jpeg, ocrText: ocr.text)
+        let jpegOriginal = bild.jpegData(compressionQuality: 0.65)
+        let jpegAufbereitet = aufbereitet.jpegData(compressionQuality: 0.7)
+        let neu = store.routen(felder: felder, bildJpeg: jpegOriginal,
+                               bildAufbereitet: jpegAufbereitet, ocrText: ocr.text)
 
         try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 4

@@ -11,7 +11,7 @@ final class AppStore: ObservableObject {
     @Published var pruefSekunden: [Double] = []
 
     /// OCR-Felder → geroutete Buchung (auto / bestätigen / prüfen).
-    func routen(felder: Felder, bildJpeg: Data?, ocrText: String) -> Beleg {
+    func routen(felder: Felder, bildJpeg: Data?, bildAufbereitet: Data?, ocrText: String) -> Beleg {
         let v = Kontierung.vorschlag(felder: felder)
         var beleg = Beleg(
             lieferant: felder.lieferant ?? "Unbekannter Lieferant",
@@ -31,6 +31,8 @@ final class AppStore: ObservableObject {
             summenprobeOK: felder.summenprobeOK
         )
         beleg.bildJpeg = bildJpeg
+        beleg.bildAufbereitetJpeg = bildAufbereitet
+        beleg.boxen = felder.boxen
         beleg.ocrText = ocrText
 
         if beleg.confidence >= 95 {
