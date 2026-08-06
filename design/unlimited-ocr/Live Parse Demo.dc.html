@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body { margin: 0; background: #faf9f5; -webkit-font-smoothing: antialiased; }
+  a { color: #857b61; text-decoration: none; }
+  a:hover { color: #736950; }
+  @keyframes blink { 50% { opacity: 0; } }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+</style>
+</helmet>
+<div style="display:flex;flex-direction:column;height:100vh;overflow:hidden;font:13.5px/1.5 Inter,-apple-system,'Segoe UI',sans-serif;color:#333;background:#faf9f5">
+
+  <div style="display:flex;align-items:center;gap:10px;padding:9px 16px;background:#f4f1ec;border-bottom:1px solid #efefef;flex:0 0 auto">
+    <div style="font:600 16px 'Playfair Display',Georgia,serif;color:#111;letter-spacing:-.01em">Unlimited-OCR</div>
+    <div style="width:1px;height:18px;background:#e5e7eb"></div>
+    <div style="font:600 9.5px Inter,sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#999">Ablauf-Demo</div>
+    <div style="display:flex;align-items:center;gap:7px;margin-left:auto">
+      <div style="width:6px;height:6px;border-radius:50%;background:#6f8a6e"></div>
+      <span style="font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#6f8a6e">verbunden &middot; ocr.0711.io</span>
+    </div>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:8px;padding:8px 16px;background:#faf9f5;border-bottom:1px solid #efefef;flex:0 0 auto;flex-wrap:wrap">
+    <span style="font:600 9.5px Inter,sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#999">Dokument</span>
+    <span style="font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#333">unlimited-ocr-report.pdf</span>
+    <div style="width:1px;height:18px;background:#e5e7eb;margin:0 5px"></div>
+    <span style="font:600 9.5px Inter,sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#999">Modell</span>
+    <span style="font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#333">gundam</span>
+    <div style="width:1px;height:18px;background:#e5e7eb;margin:0 5px"></div>
+    <button onClick="{{ start }}" style="background:#857b61;border:1px solid #857b61;color:#fff;font:600 12.5px Inter,sans-serif;padding:6px 14px;border-radius:8px;cursor:pointer" style-hover="background:#736950;border-color:#736950">{{ goLabel }}</button>
+    <span style="margin-left:auto;font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#999">{{ statusText }}</span>
+  </div>
+
+  <div style="height:2px;background:#efece6;flex:0 0 auto">
+    <div style="{{ progressStyle }}"></div>
+  </div>
+
+  <div style="{{ gridStyle }}">
+
+    <div id="srccol" style="overflow:auto;padding:16px;border-right:1px solid #efefef;background:#efece6">
+      <div style="font:600 9.5px Inter,sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#999;margin-bottom:12px">Quelle &middot; Layout-Erkennung</div>
+      <sc-for list="{{ srcPages }}" as="pg" hint-placeholder-count="2">
+        <div style="position:relative;width:100%;aspect-ratio:1/1.4142;background:#fff;margin-bottom:16px;box-shadow:0 2px 10px -4px rgba(31,30,26,.35)">
+          <div style="position:absolute;top:7px;left:7px;z-index:2;background:rgba(250,249,245,.92);color:#555;font:600 10px 'SF Mono',ui-monospace,monospace;padding:2px 7px;border-radius:999px;border:1px solid #efefef">{{ pg.page }}</div>
+          <sc-for list="{{ pg.boxes }}" as="b" hint-placeholder-count="6">
+            <div style="{{ b.style }}"></div>
+          </sc-for>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:12px;padding:16px;min-height:0;overflow:hidden">
+      <div style="display:flex;gap:2px;padding:2px;background:rgba(133,123,97,.08);border-radius:9px;align-self:flex-start;flex:0 0 auto">
+        <button onClick="{{ showLive }}" style="{{ liveTabStyle }}">Live</button>
+        <button onClick="{{ showReader }}" style="{{ readerTabStyle }}">Reader</button>
+      </div>
+
+      <sc-if value="{{ isLive }}" hint-placeholder-val="{{ true }}">
+        <pre ref="{{ liveRef }}" style="{{ liveStyle }}">{{ liveText }}<span style="{{ cursorStyle }}"></span></pre>
+      </sc-if>
+
+      <sc-if value="{{ isReader }}">
+        <div style="flex:1 1 auto;min-height:0;display:flex;flex-direction:column;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;background:#efece6">
+          <div style="display:flex;align-items:center;gap:4px;padding:6px 10px;background:#f4f1ec;border-bottom:1px solid #efefef;flex:0 0 auto">
+            <button onClick="{{ showTwin }}" style="{{ twinBtnStyle }}">Zwilling</button>
+            <button onClick="{{ showMd }}" style="{{ mdBtnStyle }}">Markdown</button>
+            <div style="width:1px;height:16px;background:#e5e7eb;margin:0 7px"></div>
+            <button onClick="{{ prev }}" style="background:transparent;border:1px solid transparent;color:#555;font:500 13px Inter,sans-serif;padding:4px 10px;border-radius:7px;cursor:pointer" style-hover="background:rgba(133,123,97,.1);color:#111">&lsaquo;</button>
+            <span style="font:11.5px 'SF Mono',ui-monospace,monospace;color:#555;min-width:56px;text-align:center">{{ pageLabel }}</span>
+            <button onClick="{{ next }}" style="background:transparent;border:1px solid transparent;color:#555;font:500 13px Inter,sans-serif;padding:4px 10px;border-radius:7px;cursor:pointer" style-hover="background:rgba(133,123,97,.1);color:#111">&rsaquo;</button>
+            <span style="margin-left:auto;font:600 9.5px Inter,sans-serif;letter-spacing:.11em;text-transform:uppercase;color:#999">Dokument-Reader</span>
+          </div>
+          <div ref="{{ readerRef }}" style="flex:1 1 auto;min-height:0;overflow:auto;padding:20px">
+            <sc-if value="{{ isTwin }}" hint-placeholder-val="{{ true }}">
+              <sc-for list="{{ twinPages }}" as="pg" hint-placeholder-count="2">
+                <div data-p="{{ pg.page }}" style="position:relative;width:640px;height:905px;margin:0 auto 22px;background:#fff;border:1px solid rgba(0,0,0,.07);box-shadow:0 14px 34px -16px rgba(31,30,26,.4);overflow:hidden">
+                  <sc-for list="{{ pg.blocks }}" as="b" hint-placeholder-count="6">
+                    <div style="{{ b.style }}">{{ b.text }}</div>
+                  </sc-for>
+                </div>
+              </sc-for>
+            </sc-if>
+            <sc-if value="{{ isMd }}">
+              <sc-for list="{{ mdPages }}" as="pg" hint-placeholder-count="2">
+                <div data-p="{{ pg.page }}" style="width:640px;margin:0 auto 22px;background:#fff;border:1px solid rgba(0,0,0,.07);box-shadow:0 14px 34px -16px rgba(31,30,26,.4);padding:36px 44px;font-size:13.5px;line-height:1.62">
+                  <div style="color:#999;font:600 9.5px Inter,sans-serif;text-transform:uppercase;letter-spacing:.12em;border-bottom:1px solid #efefef;padding-bottom:8px;margin-bottom:18px">Seite {{ pg.page }}</div>
+                  <sc-for list="{{ pg.items }}" as="it" hint-placeholder-count="5">
+                    <div style="{{ it.style }}">{{ it.text }}</div>
+                  </sc-for>
+                </div>
+              </sc-for>
+            </sc-if>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;parseSpeed&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:2600,&quot;min&quot;:400,&quot;max&quot;:9000,&quot;step&quot;:200,&quot;unit&quot;:&quot;ch/s&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Demo&quot;},&quot;autoStart&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Demo&quot;}}">
+const PW = 640, PH = 905;
+
+class Component extends DCLogic {
+  state = { phase: "idle", tab: "live", idx: 0, mode: "twin", cur: 1, secs: 0 };
+
+  componentDidMount() {
+    this.liveRef = React.createRef();
+    this.readerRef = React.createRef();
+    fetch("./reader-data.js").then(r => r.text()).then(t => {
+      const raw = t.slice(t.indexOf("["), t.lastIndexOf("]") + 1);
+      this.pages = JSON.parse(raw);
+      this.buildStream();
+      this.forceUpdate();
+      if (this.props.autoStart !== false) this.timer0 = setTimeout(() => this.start(), 700);
+    }).catch(e => { this.err = e.message; this.forceUpdate(); });
+  }
+
+  componentWillUnmount() { clearInterval(this.iv); clearTimeout(this.timer0); }
+
+  componentDidUpdate() {
+    if (this.state.phase === "streaming" && this.liveRef.current) {
+      const el = this.liveRef.current;
+      el.scrollTop = el.scrollHeight;
+    }
+  }
+
+  buildStream() {
+    let s = "", map = [];
+    this.pages.forEach(pg => {
+      s += "\n\u2550\u2550\u2550 Seite " + pg.page + " \u2550\u2550\u2550\n\n";
+      map.push({ end: s.length, page: pg.page, bi: -1 });
+      pg.blocks.forEach((b, bi) => {
+        s += "<|det|>" + b.category + (b.bbox ? " [" + b.bbox.join(", ") + "]" : "") + "<|/det|>" + (b.content || "") + "\n";
+        map.push({ end: s.length, page: pg.page, bi: bi });
+      });
+    });
+    this.full = s.replace(/^\n/, "");
+    this.map = map;
+  }
+
+  start() {
+    if (!this.full) return;
+    clearInterval(this.iv);
+    const cps = this.props.parseSpeed || 2600;
+    const step = Math.max(6, Math.round(cps / 25));
+    this.t0 = performance.now();
+    this.setState({ phase: "streaming", tab: "live", idx: 0, cur: 1, secs: 0 });
+    this.iv = setInterval(() => {
+      const next = this.state.idx + step;
+      if (next >= this.full.length) {
+        clearInterval(this.iv);
+        this.setState({ idx: this.full.length, phase: "done", secs: (performance.now() - this.t0) / 1000 });
+        setTimeout(() => this.setState({ tab: "reader" }), 550);
+      } else {
+        this.setState({ idx: next, secs: (performance.now() - this.t0) / 1000 });
+      }
+    }, 40);
+  }
+
+  activeMark() {
+    const idx = this.state.idx;
+    for (const m of this.map || []) if (m.end > idx) return m;
+    return null;
+  }
+
+  boxStatus(page, bi) {
+    if (this.state.phase === "idle") return "pending";
+    if (this.state.phase === "done") return "parsed";
+    const a = this.activeMark();
+    if (!a) return "parsed";
+    if (page < a.page) return "parsed";
+    if (page > a.page) return "pending";
+    if (bi < a.bi) return "parsed";
+    if (bi === a.bi) return "active";
+    return "pending";
+  }
+
+  srcPages() {
+    return (this.pages || []).map(pg => ({
+      page: pg.page,
+      boxes: pg.blocks.filter(b => b.bbox).map(b => {
+        const [x1, y1, x2, y2] = b.bbox;
+        const st = this.boxStatus(pg.page, pg.blocks.indexOf(b));
+        const fill = st === "parsed" ? "rgba(133,123,97,.14)" : st === "active" ? "rgba(111,138,110,.28)" : "rgba(0,0,0,.02)";
+        const stroke = st === "parsed" ? "#857b61" : st === "active" ? "#6f8a6e" : "#e5e7eb";
+        return {
+          style: "position:absolute;left:" + (x1 / 9.99) + "%;top:" + (y1 / 9.99) + "%;width:" + ((x2 - x1) / 9.99) +
+            "%;height:" + ((y2 - y1) / 9.99) + "%;background:" + fill + ";border:1px solid " + stroke + ";border-radius:2px;" +
+            (st === "active" ? "animation:pulse 1s infinite;box-shadow:0 0 0 3px rgba(111,138,110,.18);" : "") +
+            "transition:background .2s,border-color .2s"
+        };
+      })
+    }));
+  }
+
+  plain(s) { return (s || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(); }
+
+  twinPages() {
+    return (this.pages || []).map(pg => ({
+      page: pg.page,
+      blocks: pg.blocks.filter(b => b.bbox).map(b => {
+        const [x1, y1, x2, y2] = b.bbox;
+        const w = x2 - x1, h = y2 - y1;
+        const boxW = w / 999 * PW, boxH = h / 999 * PH;
+        const isImg = b.category === "image";
+        const isTtl = b.category === "title" || b.category === "header";
+        const txt = isImg ? "" : this.plain(b.content);
+        const chars = Math.max(1, txt.length);
+        let fs = Math.sqrt((boxW * boxH) / (chars * 0.66));
+        fs = Math.max(4.5, Math.min(isTtl ? 20 : 14, Math.min(fs, boxH * 0.8)));
+        let extra = "";
+        if (isImg) extra = "background:repeating-linear-gradient(135deg,#fff,#fff 7px,#f6f4ef 7px,#f6f4ef 14px);border:1px solid #e5e7eb;";
+        if (isTtl) extra += "font-weight:700;color:#111;";
+        if (b.category === "equation") extra += "font-family:Georgia,serif;font-style:italic;text-align:center;";
+        return {
+          text: txt,
+          style: "position:absolute;left:" + (x1 / 9.99) + "%;top:" + (y1 / 9.99) + "%;width:" + (w / 9.99) +
+            "%;height:" + (h / 9.99) + "%;overflow:hidden;line-height:1.22;font-size:" + fs.toFixed(1) + "px;" + extra
+        };
+      })
+    }));
+  }
+
+  mdPages() {
+    return (this.pages || []).map(pg => ({
+      page: pg.page,
+      items: pg.blocks.filter(b => b.category !== "image" && b.category !== "page_number" && this.plain(b.content))
+        .map(b => {
+          const isTtl = b.category === "title" || b.category === "header";
+          const isEq = b.category === "equation";
+          const isTbl = b.category === "table" || (b.content || "").includes("<table>");
+          let style = "margin:0 0 11px";
+          if (isTtl) style = "font:600 19px 'Playfair Display',Georgia,serif;color:#111;letter-spacing:-.01em;margin:20px 0 9px";
+          else if (isEq) style = "font-family:Georgia,serif;font-style:italic;text-align:center;margin:14px 0";
+          else if (isTbl) style = "font:11.5px/1.6 'SF Mono',ui-monospace,monospace;background:#faf9f5;border:1px solid #efefef;border-radius:8px;padding:10px 12px;margin:0 0 12px;color:#555";
+          return { text: this.plain(b.content), style };
+        })
+    }));
+  }
+
+  tabStyle(on) {
+    return "border:1px solid " + (on ? "#efefef" : "transparent") + ";background:" + (on ? "#fff" : "transparent") +
+      ";color:" + (on ? "#111" : "#555") + ";border-radius:7px;padding:5px 14px;cursor:pointer;font:" +
+      (on ? "600" : "500") + " 12.5px Inter,sans-serif" + (on ? ";box-shadow:0 1px 2px rgba(31,30,26,.05)" : "");
+  }
+
+  modeBtn(on) {
+    return "background:" + (on ? "#857b61" : "transparent") + ";border:1px solid " + (on ? "#857b61" : "transparent") +
+      ";color:" + (on ? "#fff" : "#555") + ";font:" + (on ? "600" : "500") + " 12.5px Inter,sans-serif;padding:4px 10px;border-radius:7px;cursor:pointer";
+  }
+
+  goTo(n) {
+    const total = (this.pages || []).length;
+    n = Math.max(1, Math.min(total, n));
+    this.setState({ cur: n });
+    const root = this.readerRef.current;
+    if (root) {
+      const el = root.querySelector('[data-p="' + n + '"]');
+      if (el) root.scrollTop += el.getBoundingClientRect().top - root.getBoundingClientRect().top - 12;
+    }
+  }
+
+  renderVals() {
+    const s = this.state, total = (this.pages || []).length;
+    const streaming = s.phase === "streaming";
+    const text = this.full ? this.full.slice(0, s.idx) : (this.err ? "Daten konnten nicht geladen werden: " + this.err : "Bereit. \u201eParse\u201c startet den Stream.");
+    const blocks = (this.pages || []).reduce((a, p) => a + p.blocks.length, 0);
+    const pct = this.full ? (s.idx / this.full.length * 100) : 0;
+    const status = streaming
+      ? "streaming \u00b7 " + s.idx + " chars \u00b7 " + (s.idx / Math.max(s.secs, .01)).toFixed(0) + " ch/s"
+      : s.phase === "done" ? s.secs.toFixed(1) + " s \u00b7 " + total + " Seiten \u00b7 " + blocks + " Blocks" : "idle";
+    const isReader = s.tab === "reader" && s.phase === "done";
+    return {
+      start: () => this.start(),
+      goLabel: s.phase === "done" ? "Neu parsen" : streaming ? "l\u00e4uft \u2026" : "Parse",
+      statusText: status,
+      progressStyle: "height:100%;width:" + pct + "%;background:" + (s.phase === "done" ? "#6f8a6e" : "#857b61") + ";transition:width .12s linear",
+      gridStyle: "display:grid;grid-template-columns:" + (isReader ? "300px 1fr" : "1fr 1fr") + ";flex:1 1 auto;min-height:0;transition:grid-template-columns .3s ease",
+      srcPages: this.srcPages(),
+      isLive: !isReader,
+      isReader: isReader,
+      liveRef: this.liveRef,
+      liveText: text,
+      liveStyle: "flex:1 1 auto;min-height:0;margin:0;overflow:auto;white-space:pre-wrap;word-break:break-word;background:#fff;border:1px solid #e5e7eb;border-left:3px solid " +
+        (streaming ? "#6f8a6e" : "#857b61") + ";padding:14px 16px;border-radius:10px;font:11.5px/1.65 'SF Mono',ui-monospace,Menlo,monospace;color:#333",
+      cursorStyle: streaming ? "display:inline-block;width:7px;height:13px;background:#6f8a6e;animation:blink .8s infinite;vertical-align:text-bottom" : "display:none",
+      showLive: () => this.setState({ tab: "live" }),
+      showReader: () => { if (s.phase === "done") this.setState({ tab: "reader" }); },
+      liveTabStyle: this.tabStyle(!isReader),
+      readerTabStyle: this.tabStyle(isReader),
+      isTwin: s.mode === "twin",
+      isMd: s.mode === "md",
+      twinBtnStyle: this.modeBtn(s.mode === "twin"),
+      mdBtnStyle: this.modeBtn(s.mode === "md"),
+      showTwin: () => this.setState({ mode: "twin" }),
+      showMd: () => this.setState({ mode: "md" }),
+      twinPages: this.twinPages(),
+      mdPages: this.mdPages(),
+      readerRef: this.readerRef,
+      pageLabel: s.cur + " / " + total,
+      prev: () => this.goTo(s.cur - 1),
+      next: () => this.goTo(s.cur + 1)
+    };
+  }
+}
+
+</script>
+</body>
+</html>
