@@ -1,0 +1,528 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Unlimited-OCR — Volle App</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --gc-bg:#fff; --gc-canvas:#faf9f5; --gc-desk:#efece6; --gc-chrome:#f4f1ec;
+    --gc-fg:#111; --gc-body:#333; --gc-desc:#555; --gc-muted:#999;
+    --gc-accent:#857b61; --gc-accent-hover:#736950; --gc-accent-subtle:#f0ebe3;
+    --gc-border:#e5e7eb; --gc-border-light:#efefef;
+    --gc-success:#6f8a6e; --gc-warning:#b0821f;
+    --gc-serif:"Playfair Display",Georgia,serif;
+    --gc-sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --gc-mono:"SF Mono",ui-monospace,Menlo,monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13.5px/1.5 var(--gc-sans); background: var(--gc-canvas); color: var(--gc-body); -webkit-font-smoothing: antialiased; }
+  a { color: var(--gc-accent); text-decoration: none; } a:hover { color: var(--gc-accent-hover); }
+  body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  header { display: flex; gap: 10px; align-items: center; padding: 9px 16px; background: var(--gc-chrome); border-bottom: 1px solid var(--gc-border-light); flex-wrap: wrap; flex: 0 0 auto; }
+  header h1 { font-family: var(--gc-serif); font-size: 16px; margin: 0 4px 0 0; font-weight: 600; color: var(--gc-fg); letter-spacing: -.01em; }
+  header .status { margin-left: auto; font-family: var(--gc-mono); font-size: 11.5px; color: var(--gc-muted); }
+  .grp { display: flex; align-items: center; gap: 7px; }
+  .lbl { font: 600 9.5px var(--gc-sans); letter-spacing: .11em; text-transform: uppercase; color: var(--gc-muted); }
+  .vsep { width: 1px; height: 18px; background: var(--gc-border); margin: 0 5px; flex: none; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--gc-muted); flex: none; }
+  .filebtn { position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 7px; }
+  .filebtn input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+  #fname { font-family: var(--gc-mono); font-size: 11.5px; color: var(--gc-muted); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  select, button, input[type=file], input[type=text], input[type=password] {
+    background: var(--gc-bg); color: var(--gc-body); border: 1px solid var(--gc-border);
+    border-radius: 8px; padding: 6px 11px; font: 500 12.5px var(--gc-sans); }
+  select:hover, button:hover { border-color: var(--gc-accent); color: var(--gc-fg); }
+  input[type=file] { color: var(--gc-desc); font-weight: 400; }
+  button { cursor: pointer; }
+  button.primary { background: var(--gc-accent); border-color: var(--gc-accent); color: #fff; font-weight: 600; }
+  button.primary:hover { background: var(--gc-accent-hover); border-color: var(--gc-accent-hover); color: #fff; }
+  button.primary:disabled { opacity: .5; cursor: wait; }
+  #cfgbar { display: flex; gap: 8px; align-items: center; padding: 8px 16px; background: var(--gc-canvas); border-bottom: 1px solid var(--gc-border-light); flex-wrap: wrap; flex: 0 0 auto; }
+  #cfgbar input { font-family: var(--gc-mono); font-size: 11.5px; padding: 5px 9px; }
+  main { display: grid; grid-template-columns: 1fr 1fr; flex: 1 1 auto; min-height: 0; }
+  main.readerwide { grid-template-columns: 340px 1fr; }
+  #left, #right { overflow: auto; padding: 16px; }
+  #left { border-right: 1px solid var(--gc-border-light); background: var(--gc-desk); }
+  .hint { color: var(--gc-desc); font-size: 12.5px; line-height: 1.65; max-width: 46ch; }
+  .err { color: var(--gc-warning); font-size: 12.5px; }
+  .pagewrap { position: relative; margin-bottom: 18px; box-shadow: 0 2px 10px -4px rgba(31,30,26,.35); }
+  .pagewrap img { max-width: 100%; display: block; }
+  .pagewrap svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .ptag { position: absolute; top: 7px; left: 7px; background: rgba(250,249,245,.92); color: var(--gc-desc);
+          font: 600 10px var(--gc-mono); padding: 2px 7px; border-radius: 999px; border: 1px solid var(--gc-border-light); }
+  .box { fill: rgba(133,123,97,.09); stroke: var(--gc-accent); stroke-width: 1.5; }
+  #right { display: flex; flex-direction: column; gap: 12px; }
+  #view { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  #view pre { flex: 1 1 auto; min-height: 0; margin: 0; overflow: auto; }
+  .tabs { display: flex; gap: 2px; padding: 2px; background: rgba(133,123,97,.08); border-radius: 9px; align-self: flex-start; flex: 0 0 auto; }
+  .tabs button { border: 1px solid transparent; background: transparent; color: var(--gc-desc); border-radius: 7px; padding: 5px 14px; }
+  .tabs button:hover { color: var(--gc-fg); border-color: transparent; }
+  .tabs button.active { background: var(--gc-bg); border-color: var(--gc-border-light); color: var(--gc-fg); font-weight: 600; box-shadow: 0 1px 2px rgba(31,30,26,.05); }
+  pre { white-space: pre-wrap; word-break: break-word; background: var(--gc-bg); border: 1px solid var(--gc-border);
+        padding: 14px 16px; border-radius: 10px; font: 11.5px/1.65 var(--gc-mono); color: var(--gc-body); }
+  #live { border-left: 3px solid var(--gc-accent); }
+  #live.streaming { border-left-color: var(--gc-success); }
+  .cursor { display: inline-block; width: 7px; height: 13px; background: var(--gc-success); animation: blink .8s infinite; vertical-align: text-bottom; }
+  @keyframes blink { 50% { opacity: 0; } }
+</style>
+<header>
+  <h1>Unlimited-OCR</h1>
+  <span class="vsep"></span>
+  <div class="grp">
+    <span class="lbl">Server</span>
+    <input id="srv" type="text" value="https://ocr.0711.io" style="width:196px">
+    <input id="usr" type="text" placeholder="user" style="width:84px">
+    <input id="pwd" type="password" placeholder="passwort" style="width:100px">
+    <button id="conn">Verbinden</button>
+    <span class="dot" id="conndot"></span>
+    <span id="connst" style="font-family:var(--gc-mono);font-size:11.5px;color:var(--gc-muted)">not connected</span>
+  </div>
+</header>
+<div id="cfgbar">
+  <div class="grp">
+    <span class="lbl">Dokument</span>
+    <span class="filebtn">
+      <button type="button" tabindex="-1">Datei w&auml;hlen</button>
+      <input type="file" id="file" accept=".png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.pdf">
+    </span>
+    <span id="fname">keine Datei</span>
+  </div>
+  <span class="vsep"></span>
+  <div class="grp">
+    <span class="lbl">Modell</span>
+    <select id="mode"><option value="gundam">gundam (best)</option><option value="base">base (fast)</option></select>
+  </div>
+  <span class="vsep"></span>
+  <button class="primary" id="go">Parse</button>
+  <span class="status" id="status">idle</span>
+</div>
+<main id="main">
+  <div id="left"><p class="hint"><b style="color:var(--gc-fg);font-weight:600">1</b> Server verbinden &middot; <b style="color:var(--gc-fg);font-weight:600">2</b> Datei w&auml;hlen (Bild oder PDF) &middot; <b style="color:var(--gc-fg);font-weight:600">3</b> Parse — die Ausgabe streamt live, das fertige Dokument &ouml;ffnet im Reader.</p></div>
+  <div id="right">
+    <div class="tabs">
+      <button data-t="live" class="active">Live</button>
+      <button data-t="reader">Reader</button>
+    </div>
+    <div id="view"><pre id="live"></pre></div>
+  </div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+let state = { pages: [], imgURL: null, isPdf: false };
+const cfg = { srv: "", auth: "" };
+function api(path) { return cfg.srv + path; }
+function authHeaders() { return cfg.auth ? { "Authorization": "Basic " + cfg.auth } : {}; }
+["srv", "usr", "pwd"].forEach(id => {
+  const v = sessionStorage.getItem("ocr_" + id);
+  if (v) document.getElementById(id).value = v;
+});
+document.getElementById("conn").onclick = async () => {
+  cfg.srv = $("#srv").value.trim().replace(/\/+$/, "");
+  cfg.auth = btoa($("#usr").value.trim() + ":" + $("#pwd").value);
+  ["srv", "usr", "pwd"].forEach(id => sessionStorage.setItem("ocr_" + id, document.getElementById(id).value));
+  const st = $("#connst"), dt = $("#conndot");
+  st.textContent = "checking…"; st.style.color = "var(--gc-muted)"; dt.style.background = "var(--gc-warning)";
+  try {
+    const h = await fetch(api("/health"), { headers: authHeaders() });
+    const a = await fetch(api("/render-pdf"), { method: "POST", headers: authHeaders() });
+    if (h.ok && a.status !== 401) { st.textContent = "verbunden"; st.style.color = "var(--gc-success)"; dt.style.background = "var(--gc-success)"; }
+    else if (a.status === 401) { st.textContent = "wrong credentials"; st.style.color = "var(--gc-warning)"; dt.style.background = "var(--gc-warning)"; }
+    else { st.textContent = "server unreachable"; st.style.color = "var(--gc-warning)"; dt.style.background = "var(--gc-warning)"; }
+  } catch (e) { st.textContent = "unreachable: " + e.message.slice(0, 60); st.style.color = "var(--gc-warning)"; dt.style.background = "var(--gc-warning)"; }
+};
+let tab = "live";
+
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".tabs button").forEach(x => x.classList.remove("active"));
+  b.classList.add("active"); tab = b.dataset.t; renderRight();
+});
+
+$("#file").onchange = async () => {
+  const f = $("#file").files[0];
+  $("#fname").textContent = f ? f.name : "keine Datei";
+  $("#fname").style.color = f ? "var(--gc-body)" : "var(--gc-muted)";
+  if (!f) return;
+  state.isPdf = f.name.toLowerCase().endsWith(".pdf");
+  if (state.imgURL) URL.revokeObjectURL(state.imgURL);
+  state.imgURL = URL.createObjectURL(f);
+  const L = $("#left"); L.innerHTML = "";
+  if (state.isPdf) {
+    L.innerHTML = "<p class='hint'>rendering preview…</p>";
+    try {
+      const fd = new FormData(); fd.append("file", f);
+      const r = await fetch(api("/render-pdf"), { method: "POST", body: fd, headers: authHeaders() });
+      if (!r.ok) throw new Error(await r.text());
+      const d = await r.json();
+      L.innerHTML = "";
+      d.pages.forEach((src, i) => {
+        const w = document.createElement("div"); w.className = "pagewrap"; w.dataset.p = i + 1;
+        const img = document.createElement("img"); img.src = src;
+        const tag = document.createElement("div"); tag.className = "ptag"; tag.textContent = i + 1;
+        w.appendChild(img); w.appendChild(tag); L.appendChild(w);
+      });
+      watchSource();
+    } catch (e) { L.innerHTML = "<p class='err'>preview failed: " + e.message.slice(0, 120) + "</p>"; }
+  } else {
+    const w = document.createElement("div"); w.className = "pagewrap"; w.dataset.p = 1;
+    const img = document.createElement("img"); img.src = state.imgURL;
+    w.appendChild(img); L.appendChild(w);
+  }
+};
+
+let syncGuard = 0;
+window.addEventListener("message", ev => {
+  if (!ev.data || !ev.data.ocrPage) return;
+  if (Date.now() < syncGuard) return;
+  const w = document.querySelector('.pagewrap[data-p="' + ev.data.ocrPage + '"]');
+  if (w) {
+    syncGuard = Date.now() + 600;
+    const L = $("#left");
+    L.scrollTop += w.getBoundingClientRect().top - L.getBoundingClientRect().top - 12;
+  }
+});
+function watchSource() {
+  const fr = () => document.querySelector("#view iframe");
+  document.querySelectorAll("#left .pagewrap").forEach(w => {
+    new IntersectionObserver(es => es.forEach(e => {
+      if (!e.isIntersecting || Date.now() < syncGuard) return;
+      const iframe = fr();
+      if (iframe && iframe.contentWindow) {
+        syncGuard = Date.now() + 600;
+        iframe.contentWindow.postMessage({ ocrGoto: +w.dataset.p }, "*");
+      }
+    }), { root: $("#left"), threshold: 0.4 }).observe(w);
+  });
+}
+
+$("#go").onclick = async () => {
+  const f = $("#file").files[0];
+  if (!f) { $("#status").textContent = "pick a file first"; return; }
+  if (!cfg.srv) { $("#status").textContent = "connect to the server first"; return; }
+  $("#go").disabled = true;
+  state.pages = [];
+  document.querySelector('[data-t="live"]').click();
+  const live = $("#live");
+  live.textContent = ""; live.classList.add("streaming");
+  const cur = document.createElement("span"); cur.className = "cursor"; live.appendChild(cur);
+  const t0 = performance.now();
+  let chars = 0, chunkInfo = "";
+  const fd = new FormData(); fd.append("file", f);
+  const url = state.isPdf ? "/parse-pdf-stream" : ("/parse-stream?mode=" + $("#mode").value);
+  try {
+    const r = await fetch(api(url), { method: "POST", body: fd, headers: authHeaders() });
+    if (!r.ok) throw new Error((await r.text()).slice(0, 200));
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const frames = buf.split("\n\n");
+      buf = frames.pop();
+      for (const fr of frames) {
+        let ev = null, data = null;
+        for (const ln of fr.split("\n")) {
+          if (ln.startsWith("event:")) ev = ln.slice(6).trim();
+          if (ln.startsWith("data:")) data = ln.slice(5).trim();
+        }
+        if (!data) continue;
+        const o = JSON.parse(data);
+        if (ev === "chunk") {
+          chunkInfo = ` · pages ${o.from}–${o.to}/${o.of}`;
+          cur.before(`\n\n═══ pages ${o.from}–${o.to} of ${o.of} ═══\n\n`);
+        } else if (ev === "done") {
+          state.pages = o.pages;
+        } else if (o.d) {
+          chars += o.d.length;
+          cur.before(o.d);
+          const secs = (performance.now() - t0) / 1000;
+          $("#status").textContent = `streaming · ${chars} chars · ${(chars / secs).toFixed(0)} ch/s${chunkInfo}`;
+          if (tab === "live") $("#right").scrollTop = $("#right").scrollHeight;
+        }
+      }
+    }
+    const secs = ((performance.now() - t0) / 1000).toFixed(1);
+    $("#status").textContent = `${secs} s · ${state.pages.length} page(s) · ` +
+      state.pages.reduce((a, p) => a + p.blocks.length, 0) + " blocks";
+    live.classList.remove("streaming"); cur.remove();
+    drawBoxes();
+    document.querySelector('[data-t="reader"]').click();
+  } catch (e) { $("#status").textContent = "error: " + e.message; live.classList.remove("streaming"); }
+  $("#go").disabled = false;
+};
+
+function drawBoxes() {
+  if (!state.pages.length) return;
+  state.pages.forEach(pg => {
+    const w = document.querySelector('.pagewrap[data-p="' + pg.page + '"]');
+    if (!w) return;
+    w.querySelector("svg")?.remove();
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 999 999");
+    svg.setAttribute("preserveAspectRatio", "none");
+    pg.blocks.forEach(b => {
+      if (!b.bbox) return;
+      const [x1, y1, x2, y2] = b.bbox;
+      const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      r.setAttribute("x", x1); r.setAttribute("y", y1);
+      r.setAttribute("width", x2 - x1); r.setAttribute("height", y2 - y1);
+      r.setAttribute("class", "box");
+      svg.appendChild(r);
+    });
+    w.appendChild(svg);
+  });
+}
+
+function esc(t) {
+  return (t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function rawOf(pg) {
+  return pg.blocks.map(b =>
+    `<|det|>${b.category} ${b.bbox ? "[" + b.bbox.join(", ") + "]" : ""}<|/det|>${b.content}`).join("\n");
+}
+
+function readerHTML() {
+  let twin = "", md = "", blk = "", raw = "";
+  state.pages.forEach(pg => {
+    let blocks = "";
+    pg.blocks.forEach(b => {
+      if (!b.bbox) return;
+      const [x1, y1, x2, y2] = b.bbox;
+      const w = x2 - x1, h = y2 - y1;
+      const style = `left:${x1/9.99}%;top:${y1/9.99}%;width:${w/9.99}%;height:${h/9.99}%;`;
+      let cls = "blk", inner;
+      if (b.category === "table" || (b.content || "").includes("<table>")) { cls += " tbl"; inner = b.content; }
+      else if (b.category === "image") { cls += " img"; inner = ""; }
+      else if (b.category === "title" || b.category === "header") { cls += " ttl"; inner = esc(b.content); }
+      else if (b.category === "equation") { cls += " eq"; inner = esc(b.content); }
+      else { inner = esc(b.content).replace(/\n/g, "<br>"); }
+      const boxW = w / 999 * 900, boxH = h / 999 * 1273;
+      const chars = Math.max(1, (b.content || "").replace(/<[^>]+>/g, "").length);
+      let fs = Math.sqrt((boxW * boxH) / (chars * 0.62));
+      fs = Math.max(7, Math.min(cls.includes("ttl") ? 30 : 24, Math.min(fs, boxH * 0.85)));
+      blocks += `<div class="${cls}" style="${style}font-size:${fs.toFixed(1)}px;">${inner}</div>`;
+    });
+    twin += `<div class="page pageunit">${blocks}</div>`;
+
+    let mdc = "";
+    pg.blocks.forEach(b => {
+      if (b.category === "image" || b.category === "page_number") return;
+      if (b.category === "table" || (b.content || "").includes("<table>")) mdc += `<div class="mtbl">${b.content}</div>`;
+      else if (b.category === "title" || b.category === "header") mdc += `<h2>${esc(b.content)}</h2>`;
+      else if (b.category === "equation") mdc += `<p class="meq">${esc(b.content)}</p>`;
+      else mdc += `<p>${esc(b.content).replace(/\n/g, "<br>")}</p>`;
+    });
+    if (!pg.blocks.length) mdc = '<p style="color:var(--gc-muted);text-align:center;margin-top:40px">(leere Seite)</p>';
+    md += `<div class="sheet pageunit"><div class="ph">Seite ${pg.page}</div>${mdc}</div>`;
+
+    let rows = "";
+    pg.blocks.forEach(b => {
+      rows += `<div class="brow"><div class="bcat">${esc(b.category)}${b.bbox ? "  [" + b.bbox.join(", ") + "]" : ""}</div><div>${esc(b.content) || "<i>(no text)</i>"}</div></div>`;
+    });
+    if (!rows) rows = '<p style="color:var(--gc-muted);text-align:center;margin-top:40px">(leere Seite)</p>';
+    blk += `<div class="sheet pageunit"><div class="ph">Seite ${pg.page} · ${pg.blocks.length} blocks</div>${rows}</div>`;
+
+    raw += `<div class="sheet pageunit"><div class="ph">Seite ${pg.page}</div><pre>${esc(rawOf(pg))}</pre></div>`;
+  });
+
+  return `<!doctype html><meta charset="utf-8"><title>Dokument-Reader — Unlimited-OCR</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --gc-bg:#fff; --gc-canvas:#faf9f5; --gc-desk:#efece6; --gc-chrome:#f4f1ec;
+    --gc-fg:#111; --gc-body:#333; --gc-desc:#555; --gc-muted:#999;
+    --gc-accent:#857b61; --gc-accent-hover:#736950; --gc-accent-subtle:#f0ebe3;
+    --gc-border:#e5e7eb; --gc-border-light:#efefef;
+    --gc-serif:"Playfair Display",Georgia,serif;
+    --gc-sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --gc-mono:"SF Mono",ui-monospace,Menlo,monospace; }
+  * { box-sizing:border-box; }
+  body { margin:0; height:100vh; display:flex; flex-direction:column; overflow:hidden;
+         font:13px/1.45 var(--gc-sans); background:var(--gc-desk); color:var(--gc-body);
+         -webkit-font-smoothing:antialiased; }
+  #tb { display:flex; align-items:center; gap:4px; padding:6px 12px; background:var(--gc-chrome);
+        color:var(--gc-body); border-bottom:1px solid var(--gc-border-light); flex:0 0 auto; user-select:none; flex-wrap:wrap; }
+  #tb .sep { width:1px; height:16px; background:var(--gc-border); margin:0 7px; }
+  #tb button { background:transparent; border:1px solid transparent; color:var(--gc-desc);
+               font:500 12.5px var(--gc-sans); padding:4px 10px; border-radius:7px; cursor:pointer; }
+  #tb button:hover { background:rgba(133,123,97,.1); color:var(--gc-fg); }
+  #tb button.on { background:var(--gc-accent); border-color:var(--gc-accent); color:#fff; font-weight:600; }
+  #tb .pg { font-family:var(--gc-mono); font-size:11.5px; min-width:60px; text-align:center; color:var(--gc-desc); }
+  #tb input { width:34px; background:var(--gc-bg); color:var(--gc-fg); border:1px solid var(--gc-border);
+              border-radius:5px; text-align:center; font:11.5px var(--gc-mono); padding:3px 2px; }
+  #tb .zl { font-family:var(--gc-mono); font-size:11.5px; min-width:44px; text-align:center; color:var(--gc-desc); }
+  #tb .title { margin-left:auto; font:600 9.5px var(--gc-sans); letter-spacing:.11em; text-transform:uppercase; color:var(--gc-muted); }
+  #body { flex:1; display:flex; min-height:0; }
+  #thumbs { flex:0 0 148px; overflow-y:auto; background:var(--gc-canvas); border-right:1px solid var(--gc-border-light);
+            padding:14px 0; display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .thumb { flex-shrink:0; width:106px; height:150px; overflow:hidden; background:#fff; cursor:pointer;
+           outline:2px solid transparent; outline-offset:1px; border:1px solid var(--gc-border); border-radius:3px; }
+  .thumb.cur { outline-color:var(--gc-accent); }
+  .thumb .page { transform:scale(0.1178); transform-origin:0 0; box-shadow:none; margin:0; border:0; }
+  .tnum { flex-shrink:0; color:var(--gc-muted); font:11px var(--gc-mono); margin-bottom:9px; }
+  #scroll { flex:1; overflow:auto; }
+  #zoomwrap { width:max-content; margin:0 auto; padding:24px; }
+  .mode { display:none; } .mode.act { display:block; }
+  .page { position:relative; width:900px; aspect-ratio:1/1.4142; margin:0 auto 22px;
+          background:#fff; color:#111; border:1px solid rgba(0,0,0,.07);
+          box-shadow:0 14px 34px -16px rgba(31,30,26,.4), 0 1px 3px rgba(31,30,26,.06); overflow:hidden; }
+  .sheet { width:900px; min-height:160px; margin:0 auto 22px; background:#fff; color:var(--gc-body);
+           border:1px solid rgba(0,0,0,.07);
+           box-shadow:0 14px 34px -16px rgba(31,30,26,.4), 0 1px 3px rgba(31,30,26,.06);
+           padding:40px 52px; font-size:14px; line-height:1.62; }
+  .sheet .ph { color:var(--gc-muted); font:600 9.5px var(--gc-sans); text-transform:uppercase; letter-spacing:.12em;
+               border-bottom:1px solid var(--gc-border-light); padding-bottom:8px; margin-bottom:20px; }
+  .sheet h2 { font-family:var(--gc-serif); font-size:20px; font-weight:600; color:var(--gc-fg);
+              letter-spacing:-.01em; margin:22px 0 9px; }
+  .sheet p { margin:0 0 11px; }
+  .sheet .meq { font-family:Georgia,serif; font-style:italic; text-align:center; }
+  .sheet .mtbl table, .sheet table { border-collapse:collapse; width:100%; font-size:12px; margin:12px 0; }
+  .sheet td, .sheet th { border:1px solid var(--gc-border); padding:4px 8px; }
+  .sheet th { background:var(--gc-accent-subtle); font-weight:600; color:var(--gc-fg); }
+  .sheet pre { white-space:pre-wrap; word-break:break-word; font:11.5px/1.65 var(--gc-mono);
+               background:var(--gc-canvas); border:1px solid var(--gc-border-light);
+               padding:12px 14px; border-radius:8px; }
+  .brow { border-left:3px solid var(--gc-accent); background:var(--gc-canvas); padding:8px 12px;
+          margin-bottom:8px; border-radius:0 8px 8px 0; }
+  .bcat { font:600 10px var(--gc-mono); color:var(--gc-muted); text-transform:uppercase; letter-spacing:.06em; }
+  .blk { position:absolute; overflow:hidden; line-height:1.24; }
+  .ttl { font-weight:700; }
+  .eq  { font-family:Georgia,serif; font-style:italic; }
+  .img { background:repeating-linear-gradient(135deg,#fff,#fff 7px,#f6f4ef 7px,#f6f4ef 14px);
+         border:1px solid var(--gc-border); }
+  .tbl table { border-collapse:collapse; width:100%; font-size:11px; }
+  .tbl td, .tbl th { border:1px solid var(--gc-border); padding:1px 4px; }
+</style>
+<header id="tb">
+  <button class="mbtn on" data-m="twin">Zwilling</button>
+  <button class="mbtn" data-m="md">Markdown</button>
+  <button class="mbtn" data-m="blocks">Blocks</button>
+  <button class="mbtn" data-m="raw">Raw</button>
+  <span class="sep"></span>
+  <button id="prev">‹</button>
+  <span class="pg"><input id="pgin" value="1"> / <span id="pgn">?</span></span>
+  <button id="next">›</button>
+  <span class="sep"></span>
+  <button id="zout">−</button>
+  <span class="zl" id="zl">100%</span>
+  <button id="zin">+</button>
+  <button id="fitw" style="font-size:12px">Fit</button>
+  <span class="title">Dokument-Reader · Unlimited-OCR</span>
+</header>
+<div id="body">
+  <aside id="thumbs"></aside>
+  <main id="scroll"><div id="zoomwrap">
+    <div class="mode act" data-m="twin">${twin}</div>
+    <div class="mode" data-m="md">${md}</div>
+    <div class="mode" data-m="blocks">${blk}</div>
+    <div class="mode" data-m="raw">${raw}</div>
+  </div></main>
+</div>
+<script>
+document.querySelectorAll('.mode[data-m="twin"] .blk').forEach(el => {
+  const t = el.querySelector("table");
+  const target = t || el;
+  let f = parseFloat(getComputedStyle(target).fontSize) || 12;
+  const fits = () => el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth <= el.clientWidth + 1;
+  while (!fits() && f > 6) { f -= 0.5; target.style.fontSize = f + "px"; }
+  while (fits() && f < 30) {
+    f += 0.5; target.style.fontSize = f + "px";
+    if (!fits()) { f -= 0.5; target.style.fontSize = f + "px"; break; }
+  }
+});
+const scroll = document.getElementById("scroll");
+const wrap = document.getElementById("zoomwrap");
+const thumbs = document.getElementById("thumbs");
+let curMode = "twin", cur = 1, zoom = 1, observers = [];
+function activePages() {
+  return [...document.querySelectorAll('.mode[data-m="' + curMode + '"] .pageunit')];
+}
+document.getElementById("pgn").textContent = activePages().length;
+document.querySelectorAll('.mode[data-m="twin"] .page').forEach((pg, i) => {
+  const th = document.createElement("div"); th.className = "thumb"; th.dataset.p = i + 1;
+  th.appendChild(pg.cloneNode(true));
+  th.onclick = () => goTo(i + 1);
+  const num = document.createElement("div"); num.className = "tnum"; num.textContent = i + 1;
+  thumbs.appendChild(th); thumbs.appendChild(num);
+});
+function setCur(n) {
+  cur = n;
+  document.getElementById("pgin").value = n;
+  thumbs.querySelectorAll(".thumb").forEach(t => t.classList.toggle("cur", +t.dataset.p === n));
+  parent.postMessage({ ocrPage: n }, "*");
+}
+function scrollToPage(el) {
+  scroll.scrollTop += el.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 12;
+}
+window.addEventListener("message", ev => {
+  if (ev.data && ev.data.ocrGoto) {
+    const pages = activePages();
+    const n = Math.max(1, Math.min(pages.length, ev.data.ocrGoto));
+    scrollToPage(pages[n - 1]);
+    cur = n;
+    document.getElementById("pgin").value = n;
+    thumbs.querySelectorAll(".thumb").forEach(t => t.classList.toggle("cur", +t.dataset.p === n));
+  }
+});
+function goTo(n) {
+  const pages = activePages();
+  n = Math.max(1, Math.min(pages.length, n));
+  scrollToPage(pages[n - 1]);
+  setCur(n);
+}
+function watchPages() {
+  observers.forEach(o => o.disconnect()); observers = [];
+  activePages().forEach(pg => {
+    const o = new IntersectionObserver(es => es.forEach(e => {
+      if (e.isIntersecting) setCur(activePages().indexOf(e.target) + 1);
+    }), { root: scroll, threshold: 0.3 });
+    o.observe(pg); observers.push(o);
+  });
+}
+document.querySelectorAll(".mbtn").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".mbtn").forEach(x => x.classList.remove("on"));
+  b.classList.add("on");
+  curMode = b.dataset.m;
+  document.querySelectorAll(".mode").forEach(m => m.classList.toggle("act", m.dataset.m === curMode));
+  watchPages(); goTo(cur);
+});
+function setZoom(z) {
+  zoom = Math.max(0.3, Math.min(3, z));
+  wrap.style.zoom = zoom;
+  document.getElementById("zl").textContent = Math.round(zoom * 100) + "%";
+}
+document.getElementById("prev").onclick = () => goTo(cur - 1);
+document.getElementById("next").onclick = () => goTo(cur + 1);
+document.getElementById("pgin").onchange = e => goTo(parseInt(e.target.value) || 1);
+document.getElementById("zin").onclick = () => setZoom(zoom + 0.1);
+document.getElementById("zout").onclick = () => setZoom(zoom - 0.1);
+document.getElementById("fitw").onclick = () => setZoom((scroll.clientWidth - 48) / 900);
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowLeft" || e.key === "PageUp") goTo(cur - 1);
+  if (e.key === "ArrowRight" || e.key === "PageDown") goTo(cur + 1);
+});
+setZoom((scroll.clientWidth - 48) / 900 < 1 ? (scroll.clientWidth - 48) / 900 : 1);
+watchPages(); setCur(1);
+</scr` + `ipt>`;
+}
+
+function renderRight() {
+  const V = $("#view");
+  $("#main").classList.toggle("readerwide", tab === "reader" && state.pages.length > 0);
+  if (tab === "live") {
+    V.innerHTML = "";
+    V.appendChild($("#live") || Object.assign(document.createElement("pre"), { id: "live" }));
+    return;
+  }
+  V.innerHTML = "";
+  if (!state.pages.length) { V.innerHTML = "<p class='hint'>Parse a document first.</p>"; return; }
+  const fr = document.createElement("iframe");
+  fr.style.cssText = "width:100%;height:100%;flex:1 1 auto;min-height:0;border:1px solid var(--gc-border);border-radius:10px;background:var(--gc-desk)";
+  fr.srcdoc = readerHTML();
+  V.appendChild(fr);
+}
+
+const _livePre = $("#live");
+</script>

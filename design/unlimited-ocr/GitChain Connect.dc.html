@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="crossorigin" />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet" />
+<style>
+body{margin:0;background:#efece6;font-family:Inter,-apple-system,sans-serif;color:#333;-webkit-font-smoothing:antialiased}
+a{color:#857b61;text-decoration:none}a:hover{color:#736950}
+</style>
+</helmet>
+
+<section style="padding:40px 44px 30px;display:flex;flex-direction:column;gap:26px">
+  <div style="display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap">
+    <div>
+      <div style="font:600 9.5px Inter;letter-spacing:.12em;text-transform:uppercase;color:#999">Unlimited-OCR &middot; Turn 3</div>
+      <div style="font-family:'Playfair Display',Georgia,serif;font-size:27px;font-weight:600;color:#111;letter-spacing:-.01em;margin-top:3px">Lokal nachziehen: Pull aus der Sovereign Cloud</div>
+      <div style="font-size:13px;line-height:1.6;color:#555;max-width:78ch;margin-top:6px">Ein Container ist ein Git-Repo &mdash; lokal werden zu hei&szlig;t <b style="font-weight:600">klonen</b>, nicht neu lesen. <a href="#3a">3a</a> zeigt den Pull als expliziten Dialog mit Gr&ouml;&szlig;enbudget, <a href="#3b">3b</a> als Schalter pro Container im Ziel-Men&uuml; aus <a href="#2b">2b</a>.</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start">
+
+    <div id="3a" style="width:640px;display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;align-items:center;gap:9px">
+        <span style="font:600 11px Inter;color:#fff;background:#857b61;border-radius:999px;padding:3px 10px">3a</span>
+        <span style="font-weight:600;font-size:14px;color:#111">Pull-Dialog mit Gr&ouml;&szlig;enbudget</span>
+      </div>
+      <div style="font-size:12.5px;line-height:1.6;color:#555">Der Pull sagt vorher, was auf die SSD kommt: Historie immer, Index und Modell nur wenn Offline-Lesung gewollt ist. Wer nur lesen will, l&auml;dt 240 MB statt 20 GB.</div>
+
+      <div style="background:#faf9f5;border:1px solid rgba(0,0,0,.09);border-radius:11px;overflow:hidden;box-shadow:0 18px 44px -20px rgba(31,30,26,.34)">
+        <div style="display:flex;align-items:center;gap:9px;height:36px;padding:0 13px;background:#f4f1ec;border-bottom:1px solid #efefef">
+          <span style="width:10px;height:10px;border-radius:50%;background:#ec6a5e"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#f4bf4f"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#61c554"></span>
+          <span style="flex:1;text-align:center;font:11px 'SF Mono',ui-monospace,Menlo,monospace;color:#555">GitChain &mdash; lokal nachziehen</span>
+        </div>
+        <div style="padding:24px 26px 26px;display:flex;flex-direction:column;gap:16px">
+          <div>
+            <div style="font-family:'Playfair Display',Georgia,serif;font-size:22px;font-weight:600;color:#111;letter-spacing:-.01em">Sovereign Cloud &rarr; dieser Mac</div>
+            <div style="font-size:13px;line-height:1.6;color:#555;margin-top:4px">Der Tresor wird lokal angelegt, die Sovereign Cloud bleibt als Remote eingetragen. Nichts wird auf der Box gel&ouml;scht.</div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:flex-start;gap:11px;background:#fff;border:1px solid #857b61;border-radius:10px;padding:12px 14px">
+              <span style="width:15px;height:15px;border-radius:4px;background:#857b61;color:#fff;font:700 10px Inter;display:flex;align-items:center;justify-content:center;flex:none;margin-top:1px">&#10003;</span>
+              <div style="flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font:600 13px Inter;color:#111">Container-Historie &middot; steuer-2024</div>
+                <div style="font-size:11.5px;line-height:1.5;color:#777">42 Commits, alle Seiten und Korrekturen &mdash; signiert gepr&uuml;ft</div>
+              </div>
+              <span style="font:600 11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#333;flex:none">240 MB</span>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:11px;background:#fff;border:1px solid #857b61;border-radius:10px;padding:12px 14px">
+              <span style="width:15px;height:15px;border-radius:4px;background:#857b61;color:#fff;font:700 10px Inter;display:flex;align-items:center;justify-content:center;flex:none;margin-top:1px">&#10003;</span>
+              <div style="flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font:600 13px Inter;color:#111">Suchindex &amp; Embeddings</div>
+                <div style="font-size:11.5px;line-height:1.5;color:#777">Sonst wird er lokal neu gebaut &mdash; ca. 25 Min auf dem M4 Max</div>
+              </div>
+              <span style="font:600 11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#333;flex:none">1,2 GB</span>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:11px;background:#fff;border:1px dashed #d8d2c6;border-radius:10px;padding:12px 14px">
+              <span style="width:15px;height:15px;border-radius:4px;background:#fff;border:1px solid #d8d2c6;flex:none;margin-top:1px"></span>
+              <div style="flex:1;display:flex;flex-direction:column;gap:2px">
+                <div style="font:600 13px Inter;color:#111">Modell Gemma 4 31B</div>
+                <div style="font-size:11.5px;line-height:1.5;color:#777">Nur f&uuml;r Lesen ohne Netz. Ohne Modell liest weiterhin die Sovereign Cloud.</div>
+              </div>
+              <span style="font:600 11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#777;flex:none">19 GB</span>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:10px;background:#f0ebe3;border:1px solid #e2dbcd;border-radius:9px;padding:11px 13px;flex-wrap:wrap">
+            <span style="font:600 9.5px Inter;letter-spacing:.11em;text-transform:uppercase;color:#857b61">Summe</span>
+            <span style="font:600 13px 'SF Mono',ui-monospace,Menlo,monospace;color:#111">1,44 GB</span>
+            <span style="font-size:11.5px;color:#777">&middot; 412 GB frei auf Macintosh HD</span>
+            <span style="font-size:11.5px;color:#777;margin-left:auto">Danach ist steuer-2024 offline lesbar, aber nicht offline <i>parsebar</i>.</span>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:9px">
+            <button style="background:#857b61;border:1px solid #857b61;color:#fff;font:600 12.5px Inter;padding:9px 16px;border-radius:8px;cursor:pointer" style-hover="background:#736950;border-color:#736950">Jetzt nachziehen</button>
+            <button style="background:#fff;border:1px solid #e5e7eb;color:#333;font:500 12.5px Inter;padding:9px 16px;border-radius:8px;cursor:pointer" style-hover="border-color:#857b61;color:#111">In der Cloud lassen</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="background:#faf9f5;border:1px solid rgba(0,0,0,.09);border-radius:11px;overflow:hidden;box-shadow:0 18px 44px -20px rgba(31,30,26,.34)">
+        <div style="display:flex;align-items:center;gap:9px;height:36px;padding:0 13px;background:#f4f1ec;border-bottom:1px solid #efefef">
+          <span style="width:10px;height:10px;border-radius:50%;background:#ec6a5e"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#f4bf4f"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#61c554"></span>
+          <span style="flex:1;text-align:center;font:11px 'SF Mono',ui-monospace,Menlo,monospace;color:#555">l&auml;uft</span>
+          <span style="font:600 9px Inter;letter-spacing:.07em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:#f0ebe3;color:#857b61;border:1px solid #e2dbcd">pull 68 %</span>
+        </div>
+        <div style="padding:16px 18px 18px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="height:5px;border-radius:999px;background:#e8e3d8;overflow:hidden"><span style="display:block;width:68%;height:100%;background:#857b61;border-radius:999px"></span></div>
+            <div style="display:flex;justify-content:space-between;font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#777">
+              <span>1,0 / 1,44 GB &middot; 88 MB/s</span>
+              <span>noch ~5 s</span>
+            </div>
+          </div>
+          <div style="font:11.5px/1.75 'SF Mono',ui-monospace,Menlo,monospace;color:#333;background:#fff;border:1px solid #efefef;border-radius:8px;padding:11px 13px;white-space:pre">git clone gct://h200v.0711.io/steuer-2024
+  remote: 42 commits, 1.284 objects        <span style="color:#6f8a6e">ok</span>
+  Signaturen gepr&uuml;ft (key 0711-h200v)   <span style="color:#6f8a6e">ok</span>
+  Tresor angelegt ~/GitChain.sparsebundle  <span style="color:#6f8a6e">ok</span>
+  Index entpackt 1.2 GB                    <span style="color:#857b61">68 %</span>
+  remote &bdquo;h200v&ldquo; eingetragen             wartet</div>
+          <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+            <span style="font-size:12px;color:#555">Abbrechen l&auml;sst nichts Halbes zur&uuml;ck &mdash; der Klon wird erst am Ende sichtbar.</span>
+            <button style="background:#fff;border:1px solid #e5e7eb;color:#555;font:500 12px Inter;padding:6px 13px;border-radius:8px;cursor:pointer;margin-left:auto">Abbrechen</button>
+          </div>
+        </div>
+      </div>
+      <div style="font-size:12px;line-height:1.55;color:#777">St&auml;rke: der Preis in GB steht vor dem Klick, Modell bleibt optional. Preis: ein Dialog mit drei Entscheidungen.</div>
+    </div>
+
+    <div id="3b" style="width:520px;display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;align-items:center;gap:9px">
+        <span style="font:600 11px Inter;color:#fff;background:#857b61;border-radius:999px;padding:3px 10px">3b</span>
+        <span style="font-weight:600;font-size:14px;color:#111">Pull als Schalter pro Container</span>
+      </div>
+      <div style="font-size:12.5px;line-height:1.6;color:#555">Kein eigener Dialog: im Ziel-Men&uuml; hat jeder Cloud-Container ein &bdquo;lokal spiegeln&ldquo;. Der Zustand ist danach dauerhaft sichtbar &mdash; inklusive Abstand zu h200v.</div>
+
+      <div style="background:#faf9f5;border:1px solid rgba(0,0,0,.09);border-radius:11px;overflow:hidden;box-shadow:0 18px 44px -20px rgba(31,30,26,.34)">
+        <div style="display:flex;align-items:center;gap:9px;height:36px;padding:0 13px;background:#f4f1ec;border-bottom:1px solid #efefef">
+          <span style="width:10px;height:10px;border-radius:50%;background:#ec6a5e"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#f4bf4f"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#61c554"></span>
+          <span style="flex:1;text-align:center;font:11px 'SF Mono',ui-monospace,Menlo,monospace;color:#555">Ziel-Men&uuml; &middot; Spiegel</span>
+        </div>
+        <div style="padding:12px;display:flex;flex-direction:column;gap:3px;background:#fff">
+          <div style="font:600 9.5px Inter;letter-spacing:.11em;text-transform:uppercase;color:#999;padding:4px 10px 6px">GitChain (Sovereign Cloud)</div>
+
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;background:#f0ebe3;border:1px solid #e2dbcd">
+            <span style="width:6px;height:6px;border-radius:50%;background:#8250df"></span>
+            <span style="flex:1;font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#333">steuer-2024</span>
+            <span style="font-size:11px;color:#6f8a6e">lokal gespiegelt</span>
+            <span style="width:30px;height:17px;border-radius:999px;background:#857b61;display:flex;align-items:center;justify-content:flex-end;padding:0 2px;flex:none"><span style="width:13px;height:13px;border-radius:50%;background:#fff"></span></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:9px;padding:4px 10px 8px 25px">
+            <span style="font:11px 'SF Mono',ui-monospace,Menlo,monospace;color:#999">3 Commits hinter der Cloud</span>
+            <a href="#3b" style="font:600 11px Inter;color:#857b61">nachziehen</a>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px">
+            <span style="width:6px;height:6px;border-radius:50%;background:#8250df;opacity:.45"></span>
+            <span style="flex:1;font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#333">bankbelege</span>
+            <span style="font-size:11px;color:#999">nur Cloud &middot; 610 MB</span>
+            <span style="width:30px;height:17px;border-radius:999px;background:#e8e3d8;display:flex;align-items:center;padding:0 2px;flex:none"><span style="width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.15)"></span></span>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;background:#faf9f5">
+            <span style="width:6px;height:6px;border-radius:50%;background:#857b61"></span>
+            <span style="flex:1;font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#333">vertraege</span>
+            <span style="font-size:11px;color:#857b61">wird geholt &middot; 42 %</span>
+            <span style="width:30px;height:17px;border-radius:999px;background:#857b61;display:flex;align-items:center;justify-content:flex-end;padding:0 2px;flex:none;opacity:.6"><span style="width:13px;height:13px;border-radius:50%;background:#fff"></span></span>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:9px;padding:9px 10px;margin-top:6px;border-top:1px solid #efefef">
+            <span style="flex:1;font:11.5px Inter;color:#555">Modell f&uuml;r Offline-Lesung laden</span>
+            <span style="font:11px 'SF Mono',ui-monospace,Menlo,monospace;color:#999">19 GB</span>
+            <span style="width:30px;height:17px;border-radius:999px;background:#e8e3d8;display:flex;align-items:center;padding:0 2px;flex:none"><span style="width:13px;height:13px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.15)"></span></span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:7px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px">
+        <div style="font:600 9.5px Inter;letter-spacing:.11em;text-transform:uppercase;color:#999">Was der Spiegel bedeutet</div>
+        <div style="display:flex;gap:9px;font-size:12.5px;line-height:1.55;color:#555"><span style="font:600 10px 'SF Mono',ui-monospace,Menlo,monospace;color:#999;width:62px;flex:none;padding-top:2px">LESEN</span><span>offline, aus dem lokalen Tresor</span></div>
+        <div style="display:flex;gap:9px;font-size:12.5px;line-height:1.55;color:#555"><span style="font:600 10px 'SF Mono',ui-monospace,Menlo,monospace;color:#999;width:62px;flex:none;padding-top:2px">PARSEN</span><span>weiter auf h200v, solange kein Modell lokal liegt</span></div>
+        <div style="display:flex;gap:9px;font-size:12.5px;line-height:1.55;color:#555"><span style="font:600 10px 'SF Mono',ui-monospace,Menlo,monospace;color:#999;width:62px;flex:none;padding-top:2px">SCHREIBEN</span><span>lokaler Commit, beim n&auml;chsten Netz Push auf h200v</span></div>
+        <div style="display:flex;gap:9px;font-size:12.5px;line-height:1.55;color:#555"><span style="font:600 10px 'SF Mono',ui-monospace,Menlo,monospace;color:#999;width:62px;flex:none;padding-top:2px">KONFLIKT</span><span>zwei Lesungen derselben Seite werden Zweige, keine &Uuml;berschreibung</span></div>
+      </div>
+      <div style="font-size:12px;line-height:1.55;color:#777">St&auml;rke: Spiegeln ist reversibel und pro Container sichtbar. Preis: der Abstand zur Cloud ist ein Begriff, den man erkl&auml;ren muss.</div>
+    </div>
+
+  </div>
+</section>
+
+<section style="padding:14px 44px 30px;display:flex;flex-direction:column;gap:26px;border-top:1px solid #dcd7cd">
+  <div style="display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap">
+    <div>
+      <div style="font:600 9.5px Inter;letter-spacing:.12em;text-transform:uppercase;color:#999">Unlimited-OCR &middot; Turn 2</div>
+      <div style="font-family:'Playfair Display',Georgia,serif;font-size:27px;font-weight:600;color:#111;letter-spacing:-.01em;margin-top:3px">Zwei Wege zu GitChain</div>
+      <div style="font-size:13px;line-height:1.6;color:#555;max-width:78ch;margin-top:6px">Route A: GitChain lokal auf diesem Mac installieren. Route B: <b style="font-weight:600">GitChain (Sovereign Cloud)</b> auf der eigenen Box nutzen. <a href="#2a">2a</a> stellt die Weiche als eigenen Schritt, <a href="#2b">2b</a> legt sie in die Leiste.</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start">
+
+    <div id="2a" style="width:640px;display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;align-items:center;gap:9px">
+        <span style="font:600 11px Inter;color:#fff;background:#857b61;border-radius:999px;padding:3px 10px">2a</span>
+        <span style="font-weight:600;font-size:14px;color:#111">Die Weiche als eigener Schritt</span>
+      </div>
+      <div style="font-size:12.5px;line-height:1.6;color:#555">Einmal beim ersten Start: wo soll der Tresor liegen? Beide Karten nennen dieselben vier Dinge &mdash; Ort, Rechenkraft, Erreichbarkeit, Preis &mdash; damit die Wahl vergleichbar ist statt beworben.</div>
+
+      <div style="background:#faf9f5;border:1px solid rgba(0,0,0,.09);border-radius:11px;overflow:hidden;box-shadow:0 18px 44px -20px rgba(31,30,26,.34)">
+        <div style="display:flex;align-items:center;gap:9px;height:36px;padding:0 13px;background:#f4f1ec;border-bottom:1px solid #efefef">
+          <span style="width:10px;height:10px;border-radius:50%;background:#ec6a5e"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#f4bf4f"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#61c554"></span>
+          <span style="flex:1;text-align:center;font:11px 'SF Mono',ui-monospace,Menlo,monospace;color:#555">GitChain &mdash; Ort w&auml;hlen</span>
+        </div>
+        <div style="padding:24px 26px 26px;display:flex;flex-direction:column;gap:16px">
+          <div>
+            <div style="font-family:'Playfair Display',Georgia,serif;font-size:22px;font-weight:600;color:#111;letter-spacing:-.01em">Wo soll GitChain laufen?</div>
+            <div style="font-size:13px;line-height:1.6;color:#555;margin-top:4px">Beides bleibt deins. Der Unterschied ist, welches Ger&auml;t rechnet &mdash; und von wo du drankommst.</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            <div style="background:#fff;border:1px solid #857b61;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:10px;box-shadow:0 1px 2px rgba(0,0,0,.04)">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                <span style="font-weight:600;font-size:14px;color:#111">Lokal auf diesem Mac</span>
+                <span style="font:600 9px Inter;letter-spacing:.07em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:#eef3ee;color:#6f8a6e;border:1px solid #b8ccb8">empfohlen</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:7px">
+                <div style="display:flex;gap:9px;font-size:12.5px;line-height:1.5;color:#555"><span style="font:600 10px 'SF Mono',ui-monospace,Menlo,monospace;color:#999;width:74px;flex:none;padding-top:1px">ORT</span><span>Verschl&uuml;sselter Tresor auf der internen SSD</span></div>
+                <div style="display:flex;gap:9px;font-size:12.5px;line-height:1.5;color:#555"><span style="font:600 10px 'SF Mono',ui-monospace,Menlo,monospace;color:#999;width:74px;flex:none;padding-top:1px">RECHNET</span><span>M4 Max, 48 GB &mdash; Gemma 4 31B lokal</span></div>
+                <div style="display:flex;gap:9px;font-size:12.5px;line-height:1.5;color:#555"><span style="font:600 10px 'SF Mono',ui-monospace,Menlo,monospace;color:#999;width:74px;flex:none;padding-top:1px">ERREICHBAR</span><span>Nur dieser Mac, auch offline</span></div>
+                <div style="display:flex;gap:9px;font-size:12.5px;line-height:1.5;color:#555"><span style="font:600 10px 'SF Mono',ui-monospace,Menlo,monospace;color:#999;width:74px;flex:none;padding-top:1px">PREIS</span><span>Nur Strom &middot; 19 GB Download</span></div>
+              </div>
+              <div style="font:11.5px/1.6 'SF Mono',ui-monospace,Menlo,monospace;color:#333;background:#faf9f5;border:1px solid #efefef;border-radius:8px;padding:9px 11px">~/GitChain.sparsebundle</div>
+              <button style="background:#857b61;border:1px solid #857b61;color:#fff;font:600 12.5px Inter;padding:9px 15px;border-radius:8px;cursor:pointer;margin-top:2px">Lokal installieren</button>
+            </div>
+            <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px;display:flex;flex-direction:column;gap:10px;box-shadow:0 1px 2px rgba(0,0,0,.04)">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                <span style="font-weight:600;font-size:14px;color:#111">GitChain (Sovereign Cloud)</span>
+                <span style="font:600 9px Inter;letter-spacing:.07em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:#fbefff;color:#8250df;border:1px solid #e4cbf5">eigene box</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:7px">
+                <div style="display:flex;gap:9px;font-size:12.5px;line-height:1.5;color:#555"><span style="font:600 10px 'SF Mono',ui-monospace,Menlo,monospace;color:#999;width:74px;flex:none;padding-top:1px">ORT</span><span>Tresor auf deiner Box, DE-Rechenzentrum</span></div>
+                <div style="display:flex;gap:9px;font-size:12.5px;line-height:1.5;color:#555"><span style="font:600 10px 'SF Mono',ui-monospace,Menlo,monospace;color:#999;width:74px;flex:none;padding-top:1px">RECHNET</span><span>H200, 141 GB VRAM &mdash; gro&szlig;e Modelle, viel schneller</span></div>
+                <div style="display:flex;gap:9px;font-size:12.5px;line-height:1.5;color:#555"><span style="font:600 10px 'SF Mono',ui-monospace,Menlo,monospace;color:#999;width:74px;flex:none;padding-top:1px">ERREICHBAR</span><span>Jedes deiner Ger&auml;te, &uuml;ber deine Domain</span></div>
+                <div style="display:flex;gap:9px;font-size:12.5px;line-height:1.5;color:#555"><span style="font:600 10px 'SF Mono',ui-monospace,Menlo,monospace;color:#999;width:74px;flex:none;padding-top:1px">LOKAL</span><span><b style="color:#111;font-weight:600">Kein Modell-Download</b> &mdash; 0 GB auf dem Mac</span></div>
+                <div style="display:flex;gap:9px;font-size:12.5px;line-height:1.5;color:#555"><span style="font:600 10px 'SF Mono',ui-monospace,Menlo,monospace;color:#999;width:74px;flex:none;padding-top:1px">PREIS</span><span>Laufende Kosten der Box &middot; kein Setup</span></div>
+              </div>
+              <div style="font:11.5px/1.6 'SF Mono',ui-monospace,Menlo,monospace;color:#333;background:#faf9f5;border:1px solid #efefef;border-radius:8px;padding:9px 11px">https://h200v.0711.io</div>
+              <button style="background:#fff;border:1px solid #e5e7eb;color:#333;font:500 12.5px Inter;padding:9px 15px;border-radius:8px;cursor:pointer;margin-top:2px" style-hover="border-color:#857b61;color:#111">Mit Sovereign Cloud verbinden</button>
+            </div>
+          </div>
+          <div style="display:flex;gap:9px;align-items:flex-start;background:#f0ebe3;border:1px solid #e2dbcd;border-radius:9px;padding:11px 13px">
+            <span style="width:6px;height:6px;border-radius:50%;background:#8250df;flex:none;margin-top:5px"></span>
+            <div style="font-size:12px;line-height:1.55;color:#333">Wer die Sovereign Cloud w&auml;hlt, l&auml;dt <b style="font-weight:600">kein Gemma auf den Mac</b>. Modell, Embeddings und Lesung laufen in der Sovereign Cloud; hier bleibt nur die App. Sp&auml;ter lokal nachziehen geht jederzeit &mdash; ein Container ist ein Git-Repo und wird geklont, nicht neu gelesen.</div>
+          </div>
+          <div style="font-size:11.5px;line-height:1.55;color:#777">Beide Wege sprechen dasselbe Protokoll.</div>
+        </div>
+      </div>
+      <div style="font-size:12px;line-height:1.55;color:#777">St&auml;rke: die Entscheidung ist einmal klar und vergleichbar. Preis: ein Bildschirm, bevor irgendetwas passiert.</div>
+    </div>
+
+    <div id="2b" style="width:520px;display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;align-items:center;gap:9px">
+        <span style="font:600 11px Inter;color:#fff;background:#857b61;border-radius:999px;padding:3px 10px">2b</span>
+        <span style="font-weight:600;font-size:14px;color:#111">Route in der Leiste, umschaltbar</span>
+      </div>
+      <div style="font-size:12.5px;line-height:1.6;color:#555">Kein Weichen-Bildschirm. Das Ziel-Men&uuml;g aus <a href="#1c">1c</a> listet beide Routen &mdash; lokal, Sovereign Cloud, oder gar nicht. Wer nichts w&auml;hlt, bleibt lokal.</div>
+
+      <div style="background:#faf9f5;border:1px solid rgba(0,0,0,.09);border-radius:11px;overflow:hidden;box-shadow:0 18px 44px -20px rgba(31,30,26,.34)">
+        <div style="display:flex;align-items:center;gap:9px;height:36px;padding:0 13px;background:#f4f1ec;border-bottom:1px solid #efefef">
+          <span style="width:10px;height:10px;border-radius:50%;background:#ec6a5e"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#f4bf4f"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#61c554"></span>
+          <span style="flex:1;text-align:center;font:11px 'SF Mono',ui-monospace,Menlo,monospace;color:#555">Ziel-Men&uuml;</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:9px;padding:10px 14px;flex-wrap:wrap;border-bottom:1px solid #efefef">
+          <span style="font:600 9.5px Inter;letter-spacing:.11em;text-transform:uppercase;color:#999">Ziel</span>
+          <span style="display:flex;align-items:center;gap:7px;background:#f0ebe3;border:1px solid #857b61;border-radius:8px;padding:5px 11px">
+            <span style="width:6px;height:6px;border-radius:50%;background:#8250df"></span>
+            <span style="font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#333">cloud / steuer-2024</span>
+            <span style="font-size:10px;color:#857b61">&#9662;</span>
+          </span>
+          <button style="background:#857b61;border:1px solid #857b61;color:#fff;font:600 12.5px Inter;padding:7px 16px;border-radius:8px;cursor:pointer;margin-left:auto">Parse</button>
+        </div>
+        <div style="padding:12px;display:flex;flex-direction:column;gap:3px;background:#fff">
+          <div style="font:600 9.5px Inter;letter-spacing:.11em;text-transform:uppercase;color:#999;padding:4px 10px 6px">Dieser Mac</div>
+          <div style="display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:7px;background:#faf9f5">
+            <span style="width:6px;height:6px;border-radius:50%;background:#6f8a6e"></span>
+            <span style="flex:1;font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#333">steuer-2024</span>
+            <span style="font-size:11px;color:#999">lokal &middot; offline</span>
+          </div>
+          <div style="font:600 9.5px Inter;letter-spacing:.11em;text-transform:uppercase;color:#999;padding:12px 10px 6px">GitChain (Sovereign Cloud)</div>
+          <div style="display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:7px;background:#f0ebe3;border:1px solid #e2dbcd">
+            <span style="width:6px;height:6px;border-radius:50%;background:#8250df"></span>
+            <span style="flex:1;font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#333">steuer-2024</span>
+            <span style="font-size:11px;color:#999">H200 &middot; 141 GB</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:7px">
+            <span style="width:6px;height:6px;border-radius:50%;background:#8250df;opacity:.45"></span>
+            <span style="flex:1;font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#333">bankbelege</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:9px;padding:7px 10px;margin-top:6px;border-top:1px solid #efefef">
+            <span style="flex:1;font:11.5px Inter;color:#555">Nur lokal behalten, nicht committen</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:1px solid #e5e7eb;border-radius:999px;padding:10px 16px">
+        <span style="display:flex;align-items:center;gap:7px;font-size:12px;color:#333"><span style="width:5px;height:5px;border-radius:50%;background:#8250df"></span>Sovereign Cloud &middot; deine Box, DE</span>
+        <span style="width:1px;height:14px;background:#e5e7eb"></span>
+        <span style="font-size:12px;color:#333">TLS zu h200v.0711.io</span>
+        <span style="width:1px;height:14px;background:#e5e7eb"></span>
+        <span style="font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#555">kein Fremdzugriff, keine Telemetrie</span>
+      </div>
+      <div style="font-size:12px;line-height:1.55;color:#777">St&auml;rke: die Route ist jederzeit wechselbar, pro Dokument. Preis: der Unterschied zwischen den Routen wird nirgends erkl&auml;rt &mdash; braucht 2a als Beipackzettel beim ersten Mal.</div>
+    </div>
+
+  </div>
+</section>
+
+<section style="padding:14px 44px 60px;display:flex;flex-direction:column;gap:26px;border-top:1px solid #dcd7cd">
+  <div style="display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap">
+    <div>
+      <div style="font:600 9.5px Inter;letter-spacing:.12em;text-transform:uppercase;color:#999">Unlimited-OCR &middot; Turn 1</div>
+      <div style="font-family:'Playfair Display',Georgia,serif;font-size:27px;font-weight:600;color:#111;letter-spacing:-.01em;margin-top:3px">Mit GitChain verbinden</div>
+      <div style="font-size:13px;line-height:1.6;color:#555;max-width:78ch;margin-top:6px">Drei Varianten f&uuml;r die Verbindung zwischen Unlimited-OCR und GitChain. Jede zeigt die Leiste vor und nach dem Klick. Referenzen in der Chat-Antwort: <a href="#1a">1a</a>, <a href="#1b">1b</a>, <a href="#1c">1c</a>.</div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start">
+
+    <div id="1a" style="width:520px;display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;align-items:center;gap:9px">
+        <span style="font:600 11px Inter;color:#fff;background:#857b61;border-radius:999px;padding:3px 10px">1a</span>
+        <span style="font:600 14px Inter;color:#111">Ein Klick &mdash; lokaler Handshake</span>
+      </div>
+      <div style="font-size:12.5px;line-height:1.6;color:#555">Kein Server, kein Passwort. Unlimited-OCR sucht GitChain auf <span style="font-family:'SF Mono',ui-monospace,Menlo,monospace;font-size:11.5px">127.0.0.1</span>, GitChain fragt einmal im eigenen Fenster nach Freigabe. Der Tresor bleibt der Anker.</div>
+
+      <div style="background:#faf9f5;border:1px solid rgba(0,0,0,.09);border-radius:11px;overflow:hidden;box-shadow:0 18px 44px -20px rgba(31,30,26,.34)">
+        <div style="display:flex;align-items:center;gap:9px;height:36px;padding:0 13px;background:#f4f1ec;border-bottom:1px solid #efefef">
+          <span style="width:10px;height:10px;border-radius:50%;background:#ec6a5e"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#f4bf4f"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#61c554"></span>
+          <span style="flex:1;text-align:center;font:11px 'SF Mono',ui-monospace,Menlo,monospace;color:#555">vorher</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;flex-wrap:wrap">
+          <span style="font-family:'Playfair Display',Georgia,serif;font-size:15px;font-weight:600;color:#111">Unlimited-OCR</span>
+          <span style="width:1px;height:18px;background:#e5e7eb"></span>
+          <button style="background:#857b61;border:1px solid #857b61;color:#fff;font:600 12.5px Inter;padding:7px 14px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:7px" style-hover="background:#736950;border-color:#736950">
+            <span style="width:7px;height:7px;transform:rotate(45deg);background:#fff;display:inline-block"></span>
+            Mit GitChain verbinden
+          </button>
+          <span style="font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#999">GitChain l&auml;uft &middot; nicht verbunden</span>
+        </div>
+      </div>
+
+      <div style="background:#faf9f5;border:1px solid rgba(0,0,0,.09);border-radius:11px;overflow:hidden;box-shadow:0 18px 44px -20px rgba(31,30,26,.34)">
+        <div style="display:flex;align-items:center;gap:9px;height:36px;padding:0 13px;background:#f4f1ec;border-bottom:1px solid #efefef">
+          <span style="width:10px;height:10px;border-radius:50%;background:#ec6a5e"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#f4bf4f"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#61c554"></span>
+          <span style="flex:1;text-align:center;font:11px 'SF Mono',ui-monospace,Menlo,monospace;color:#555">nachher</span>
+          <span style="font:600 9px Inter;letter-spacing:.07em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:#eef3ee;color:#6f8a6e;border:1px solid #b8ccb8">verbunden</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;flex-wrap:wrap">
+          <span style="font-family:'Playfair Display',Georgia,serif;font-size:15px;font-weight:600;color:#111">Unlimited-OCR</span>
+          <span style="width:1px;height:18px;background:#e5e7eb"></span>
+          <span style="display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e5e7eb;border-radius:999px;padding:5px 12px 5px 10px">
+            <span style="width:6px;height:6px;border-radius:50%;background:#6f8a6e"></span>
+            <span style="font:600 12px Inter;color:#111">GitChain</span>
+            <span style="width:1px;height:12px;background:#e5e7eb"></span>
+            <span style="font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#555">steuer-2024</span>
+            <span style="font:11.5px Inter;color:#999">wechseln</span>
+          </span>
+          <span style="font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#999">Tresor entsperrt</span>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:7px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px 16px">
+        <div style="font:600 9.5px Inter;letter-spacing:.11em;text-transform:uppercase;color:#999">Freigabe-Dialog in GitChain</div>
+        <div style="font-size:12.5px;line-height:1.55;color:#333">&bdquo;Unlimited-OCR m&ouml;chte in <b>steuer-2024</b> schreiben.&ldquo;</div>
+        <div style="font:11.5px/1.6 'SF Mono',ui-monospace,Menlo,monospace;color:#333;background:#faf9f5;border:1px solid #efefef;border-radius:8px;padding:10px 12px;white-space:pre">Rechte  push, read
+Bindung 127.0.0.1:7420
+Token   gct_4f6a… (nur dieser Container)</div>
+        <div style="display:flex;gap:8px;margin-top:2px">
+          <button style="background:#857b61;border:1px solid #857b61;color:#fff;font:600 12.5px Inter;padding:7px 14px;border-radius:8px;cursor:pointer">Erlauben</button>
+          <button style="background:#fff;border:1px solid #e5e7eb;color:#333;font:500 12.5px Inter;padding:7px 14px;border-radius:8px;cursor:pointer">Ablehnen</button>
+        </div>
+      </div>
+      <div style="font-size:12px;line-height:1.55;color:#777">St&auml;rke: keine Zugangsdaten in der OCR-App. Preis: GitChain muss auf demselben Mac laufen.</div>
+    </div>
+
+    <div id="1b" style="width:520px;display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;align-items:center;gap:9px">
+        <span style="font:600 11px Inter;color:#fff;background:#857b61;border-radius:999px;padding:3px 10px">1b</span>
+        <span style="font-weight:600;font-size:14px;color:#111">Verbinden = Ziel w&auml;hlen</span>
+      </div>
+      <div style="font-size:12.5px;line-height:1.6;color:#555">Ein Klick &ouml;ffnet direkt die Container-Liste. Die Verbindung ist kein eigener Schritt, sondern die Wahl des Ortes, an den die Lesung committet wird.</div>
+
+      <div style="background:#faf9f5;border:1px solid rgba(0,0,0,.09);border-radius:11px;overflow:hidden;box-shadow:0 18px 44px -20px rgba(31,30,26,.34)">
+        <div style="display:flex;align-items:center;gap:9px;height:36px;padding:0 13px;background:#f4f1ec;border-bottom:1px solid #efefef">
+          <span style="width:10px;height:10px;border-radius:50%;background:#ec6a5e"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#f4bf4f"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#61c554"></span>
+          <span style="flex:1;text-align:center;font:11px 'SF Mono',ui-monospace,Menlo,monospace;color:#555">Ziel w&auml;hlen</span>
+        </div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:10px">
+          <div style="font-family:'Playfair Display',Georgia,serif;font-size:18px;font-weight:600;color:#111">Wohin soll die Lesung?</div>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <div style="display:flex;align-items:center;gap:11px;background:#fff;border:1px solid #857b61;border-radius:10px;padding:11px 14px">
+              <span style="width:14px;height:14px;border-radius:4px;background:#857b61;flex:none"></span>
+              <span style="flex:1;font:500 13px Inter;color:#111">steuer-2024</span>
+              <span style="font-size:11.5px;color:#999">15 Dokumente &middot; heute</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:11px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:11px 14px">
+              <span style="width:14px;height:14px;border-radius:4px;background:#6f8a6e;flex:none"></span>
+              <span style="flex:1;font:500 13px Inter;color:#111">bankbelege</span>
+              <span style="font-size:11.5px;color:#999">18 Dokumente</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:11px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:11px 14px">
+              <span style="width:14px;height:14px;border-radius:4px;background:#b0821f;flex:none"></span>
+              <span style="flex:1;font:500 13px Inter;color:#111">vertraege</span>
+              <span style="font-size:11.5px;color:#999">9 Dokumente</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:11px;background:#fff;border:1px dashed #d8d2c6;border-radius:10px;padding:11px 14px">
+              <span style="font:500 13px Inter;color:#555">+ Neuer Container &bdquo;ocr-eingang&ldquo;</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:9px;margin-top:2px">
+            <button style="background:#857b61;border:1px solid #857b61;color:#fff;font:600 12.5px Inter;padding:8px 15px;border-radius:8px;cursor:pointer">Verbinden &amp; committen</button>
+            <span style="font-size:11.5px;color:#999">Token wird an genau diesen Container gebunden</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:1px solid #e5e7eb;border-radius:999px;padding:10px 16px">
+        <span style="display:flex;align-items:center;gap:7px;font-size:12px;color:#333"><span style="width:5px;height:5px;border-radius:50%;background:#6f8a6e"></span>steuer-2024</span>
+        <span style="width:1px;height:14px;background:#e5e7eb"></span>
+        <span style="font-size:12px;color:#333">3 Seiten gelesen</span>
+        <span style="width:1px;height:14px;background:#e5e7eb"></span>
+        <span style="font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#555">commit a91f2c &middot; docTR</span>
+      </div>
+      <div style="font-size:12px;line-height:1.55;color:#777">St&auml;rke: das Ergebnis hat sofort einen Ort. Preis: ein Auswahlschritt vor dem ersten Parse.</div>
+    </div>
+
+    <div id="1c" style="width:520px;display:flex;flex-direction:column;gap:11px">
+      <div style="display:flex;align-items:center;gap:9px">
+        <span style="font:600 11px Inter;color:#fff;background:#857b61;border-radius:999px;padding:3px 10px">1c</span>
+        <span style="font-weight:600;font-size:14px;color:#111">Kein Verbinden &mdash; nur ein Ziel in der Leiste</span>
+      </div>
+      <div style="font-size:12.5px;line-height:1.6;color:#555">Die Verbindung verschwindet als Begriff. In der Leiste steht neben <b>Parse</b> nur, wohin das Ergebnis geht. Ist GitChain nicht da, steht dort &bdquo;lokal behalten&ldquo;.</div>
+
+      <div style="background:#faf9f5;border:1px solid rgba(0,0,0,.09);border-radius:11px;overflow:hidden;box-shadow:0 18px 44px -20px rgba(31,30,26,.34)">
+        <div style="display:flex;align-items:center;gap:9px;height:36px;padding:0 13px;background:#f4f1ec;border-bottom:1px solid #efefef">
+          <span style="width:10px;height:10px;border-radius:50%;background:#ec6a5e"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#f4bf4f"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#61c554"></span>
+          <span style="flex:1;text-align:center;font:11px 'SF Mono',ui-monospace,Menlo,monospace;color:#555">GitChain erkannt</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:9px;padding:10px 14px;flex-wrap:wrap;border-bottom:1px solid #efefef">
+          <span style="font:600 9.5px Inter;letter-spacing:.11em;text-transform:uppercase;color:#999">Dokument</span>
+          <button style="background:#fff;border:1px solid #e5e7eb;color:#333;font:500 12.5px Inter;padding:6px 11px;border-radius:8px;cursor:pointer">Datei w&auml;hlen</button>
+          <span style="font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#555">Lohnsteuer_2024.pdf</span>
+          <span style="width:1px;height:18px;background:#e5e7eb"></span>
+          <span style="font:600 9.5px Inter;letter-spacing:.11em;text-transform:uppercase;color:#999">Ziel</span>
+          <span style="display:flex;align-items:center;gap:7px;background:#f0ebe3;border:1px solid #e2dbcd;border-radius:8px;padding:5px 11px">
+            <span style="width:6px;height:6px;border-radius:50%;background:#6f8a6e"></span>
+            <span style="font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#333">steuer-2024</span>
+            <span style="font-size:10px;color:#857b61">&#9662;</span>
+          </span>
+          <button style="background:#857b61;border:1px solid #857b61;color:#fff;font:600 12.5px Inter;padding:7px 16px;border-radius:8px;cursor:pointer;margin-left:auto">Parse</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:9px;padding:9px 14px;background:#fff">
+          <span style="width:6px;height:6px;border-radius:50%;background:#6f8a6e"></span>
+          <span style="font-size:12px;color:#333">15 Seiten gelesen &rarr; committet in steuer-2024</span>
+          <span style="font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#999;margin-left:auto">im Reader &ouml;ffnen</span>
+        </div>
+      </div>
+
+      <div style="background:#faf9f5;border:1px solid rgba(0,0,0,.09);border-radius:11px;overflow:hidden;box-shadow:0 18px 44px -20px rgba(31,30,26,.34)">
+        <div style="display:flex;align-items:center;gap:9px;height:36px;padding:0 13px;background:#f4f1ec;border-bottom:1px solid #efefef">
+          <span style="width:10px;height:10px;border-radius:50%;background:#ec6a5e"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#f4bf4f"></span>
+          <span style="width:10px;height:10px;border-radius:50%;background:#61c554"></span>
+          <span style="flex:1;text-align:center;font:11px 'SF Mono',ui-monospace,Menlo,monospace;color:#555">GitChain nicht da</span>
+          <span style="font:600 9px Inter;letter-spacing:.07em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:#fff;color:#999;border:1px solid #e5e7eb">lokal</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:9px;padding:10px 14px;flex-wrap:wrap">
+          <span style="font:600 9.5px Inter;letter-spacing:.11em;text-transform:uppercase;color:#999">Ziel</span>
+          <span style="display:flex;align-items:center;gap:7px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:5px 11px">
+            <span style="width:6px;height:6px;border-radius:50%;background:#999"></span>
+            <span style="font:11.5px 'SF Mono',ui-monospace,Menlo,monospace;color:#555">nur lokal behalten</span>
+            <span style="font-size:10px;color:#999">&#9662;</span>
+          </span>
+          <span style="font-size:11.5px;color:#999">GitChain starten, um zu committen</span>
+          <button style="background:#857b61;border:1px solid #857b61;color:#fff;font:600 12.5px Inter;padding:7px 16px;border-radius:8px;cursor:pointer;margin-left:auto">Parse</button>
+        </div>
+      </div>
+      <div style="font-size:12px;line-height:1.55;color:#777">St&auml;rke: null Verbindungs-Vokabular, funktioniert auch ohne GitChain. Preis: die Rechtefrage muss beim ersten Commit trotzdem einmal auftauchen.</div>
+    </div>
+
+  </div>
+</section>
+</x-dc>
+</body>
+</html>

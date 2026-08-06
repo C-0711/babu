@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dokument-Reader — Unlimited-OCR</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root { --gc-bg:#fff; --gc-canvas:#faf9f5; --gc-desk:#efece6; --gc-chrome:#f4f1ec;
+    --gc-fg:#111; --gc-body:#333; --gc-desc:#555; --gc-muted:#999;
+    --gc-accent:#857b61; --gc-accent-hover:#736950; --gc-accent-subtle:#f0ebe3;
+    --gc-border:#e5e7eb; --gc-border-light:#efefef;
+    --gc-serif:"Playfair Display",Georgia,serif;
+    --gc-sans:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --gc-mono:"SF Mono",ui-monospace,Menlo,monospace; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; }
+  body { display:flex; flex-direction:column; overflow:hidden;
+         font:13px/1.45 var(--gc-sans); background:var(--gc-desk); color:var(--gc-body);
+         -webkit-font-smoothing:antialiased; }
+  a { color:var(--gc-accent); text-decoration:none; } a:hover { color:var(--gc-accent-hover); }
+  #tb { display:flex; align-items:center; gap:4px; padding:7px 13px; background:var(--gc-chrome);
+        color:var(--gc-body); border-bottom:1px solid var(--gc-border-light); flex:0 0 auto;
+        user-select:none; flex-wrap:wrap; }
+  #tb .sep { width:1px; height:16px; background:var(--gc-border); margin:0 8px; }
+  #tb button { background:transparent; border:1px solid transparent; color:var(--gc-desc);
+               font:500 12.5px var(--gc-sans); padding:5px 11px; border-radius:7px; cursor:pointer; }
+  #tb button:hover { background:rgba(133,123,97,.1); color:var(--gc-fg); }
+  #tb button.on { background:var(--gc-bg); border-color:var(--gc-border-light); color:var(--gc-fg);
+                  font-weight:600; box-shadow:0 1px 2px rgba(31,30,26,.05); }
+  #tb .modes { display:flex; gap:2px; padding:2px; background:rgba(133,123,97,.08); border-radius:9px; }
+  #tb #prev, #tb #next, #tb #zin, #tb #zout { font-size:15px; line-height:1; padding:5px 10px; color:var(--gc-desc); }
+  #tb .pg { font-family:var(--gc-mono); font-size:11.5px; min-width:62px; text-align:center; color:var(--gc-desc); }
+  #tb input { width:34px; background:var(--gc-bg); color:var(--gc-fg); border:1px solid var(--gc-border);
+              border-radius:5px; text-align:center; font:11.5px var(--gc-mono); padding:3px 2px; }
+  #tb .zl { font-family:var(--gc-mono); font-size:11.5px; min-width:44px; text-align:center; color:var(--gc-desc); }
+  #tb #fitw { border-color:var(--gc-border); background:var(--gc-bg); }
+  #tb .title { margin-left:auto; font:600 9.5px var(--gc-sans); letter-spacing:.11em;
+               text-transform:uppercase; color:var(--gc-muted); }
+  #body { flex:1; display:flex; min-height:0; }
+  #thumbs { flex:0 0 148px; overflow-y:auto; background:var(--gc-canvas);
+            border-right:1px solid var(--gc-border-light); padding:14px 0; display:flex;
+            flex-direction:column; align-items:center; gap:4px; }
+  .thumb { flex-shrink:0; width:106px; height:150px; overflow:hidden; background:#fff; cursor:pointer;
+           outline:2px solid transparent; outline-offset:1px; border:1px solid var(--gc-border); border-radius:3px; }
+  .thumb.cur { outline-color:var(--gc-accent); }
+  .thumb .page { transform:scale(0.1178); transform-origin:0 0; box-shadow:none; margin:0; border:0; }
+  .tnum { flex-shrink:0; color:var(--gc-muted); font:11px var(--gc-mono); margin-bottom:9px; }
+  #scroll { flex:1; overflow:auto; }
+  #zoomwrap { width:max-content; margin:0 auto; padding:24px; }
+  .mode { display:none; } .mode.act { display:block; }
+  .page { position:relative; width:900px; aspect-ratio:1/1.4142; margin:0 auto 22px;
+          background:#fff; color:#111; border:1px solid rgba(0,0,0,.07);
+          box-shadow:0 14px 34px -16px rgba(31,30,26,.4), 0 1px 3px rgba(31,30,26,.06); overflow:hidden; }
+  .sheet { width:900px; min-height:160px; margin:0 auto 22px; background:#fff; color:var(--gc-body);
+           border:1px solid rgba(0,0,0,.07);
+           box-shadow:0 14px 34px -16px rgba(31,30,26,.4), 0 1px 3px rgba(31,30,26,.06);
+           padding:40px 52px; font-size:14px; line-height:1.62; }
+  .sheet .ph { color:var(--gc-muted); font:600 9.5px var(--gc-sans); text-transform:uppercase;
+               letter-spacing:.12em; border-bottom:1px solid var(--gc-border-light);
+               padding-bottom:8px; margin-bottom:20px; }
+  .sheet h2 { font-family:var(--gc-serif); font-size:20px; font-weight:600; color:var(--gc-fg);
+              letter-spacing:-.01em; margin:22px 0 9px; }
+  .sheet p { margin:0 0 11px; }
+  .sheet .meq { font-family:Georgia,serif; font-style:italic; text-align:center; }
+  .sheet .mtbl table, .sheet table { border-collapse:collapse; width:100%; font-size:12px; margin:12px 0; }
+  .sheet td, .sheet th { border:1px solid var(--gc-border); padding:4px 8px; }
+  .sheet th { background:var(--gc-accent-subtle); font-weight:600; color:var(--gc-fg); }
+  .sheet pre { white-space:pre-wrap; word-break:break-word; font:11.5px/1.65 var(--gc-mono);
+               background:var(--gc-canvas); border:1px solid var(--gc-border-light);
+               padding:12px 14px; border-radius:8px; }
+  .brow { border-left:3px solid var(--gc-accent); background:var(--gc-canvas); padding:8px 12px;
+          margin-bottom:8px; border-radius:0 8px 8px 0; }
+  .bcat { font:600 10px var(--gc-mono); color:var(--gc-muted); text-transform:uppercase; letter-spacing:.06em; }
+  .blk { position:absolute; overflow:hidden; line-height:1.24; }
+  .ttl { font-weight:700; }
+  .eq  { font-family:Georgia,serif; font-style:italic; }
+  .img { background:repeating-linear-gradient(135deg,#fff,#fff 7px,#f6f4ef 7px,#f6f4ef 14px);
+         border:1px solid var(--gc-border); }
+  .tbl table { border-collapse:collapse; width:100%; font-size:11px; }
+  .tbl td, .tbl th { border:1px solid var(--gc-border); padding:1px 4px; }
+</style>
+</head>
+<body>
+<header id="tb">
+  <span class="modes">
+    <button class="mbtn on" data-m="twin">Zwilling</button>
+    <button class="mbtn" data-m="md">Markdown</button>
+    <button class="mbtn" data-m="blocks">Blocks</button>
+    <button class="mbtn" data-m="raw">Raw</button>
+  </span>
+  <span class="sep"></span>
+  <button id="prev" title="Vorherige Seite">‹</button>
+  <span class="pg"><input id="pgin" value="1"> / <span id="pgn">?</span></span>
+  <button id="next" title="Nächste Seite">›</button>
+  <span class="sep"></span>
+  <button id="zout" title="Verkleinern">−</button>
+  <span class="zl" id="zl">100%</span>
+  <button id="zin" title="Vergrößern">+</button>
+  <button id="fitw" title="Seitenbreite">Fit</button>
+  <span class="title">Dokument-Reader · Unlimited-OCR · ocr.0711.io · Demo (2 Seiten)</span>
+</header>
+<div id="body">
+  <aside id="thumbs"></aside>
+  <main id="scroll"><div id="zoomwrap">
+    <div class="mode act" data-m="twin"></div>
+    <div class="mode" data-m="md"></div>
+    <div class="mode" data-m="blocks"></div>
+    <div class="mode" data-m="raw"></div>
+  </div></main>
+</div>
+<script src="./reader-data.js"></script>
+<script>
+const esc = t => (t || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const rawOf = pg => pg.blocks.map(b => `<|det|>${b.category} ${b.bbox ? "[" + b.bbox.join(", ") + "]" : ""}<|/det|>${b.content}`).join("\n");
+const modeEl = m => document.querySelector('.mode[data-m="' + m + '"]');
+
+let twin = "", md = "", blk = "", raw = "";
+READER_PAGES.forEach(pg => {
+  let blocks = "";
+  pg.blocks.forEach(b => {
+    if (!b.bbox) return;
+    const [x1, y1, x2, y2] = b.bbox;
+    const w = x2 - x1, h = y2 - y1;
+    const style = `left:${x1/9.99}%;top:${y1/9.99}%;width:${w/9.99}%;height:${h/9.99}%;`;
+    let cls = "blk", inner;
+    if (b.category === "table" || (b.content || "").includes("<table>")) { cls += " tbl"; inner = b.content; }
+    else if (b.category === "image") { cls += " img"; inner = ""; }
+    else if (b.category === "title" || b.category === "header") { cls += " ttl"; inner = esc(b.content); }
+    else if (b.category === "equation") { cls += " eq"; inner = esc(b.content); }
+    else { inner = esc(b.content).replace(/\n/g, "<br>"); }
+    const boxW = w / 999 * 900, boxH = h / 999 * 1273;
+    const chars = Math.max(1, (b.content || "").replace(/<[^>]+>/g, "").length);
+    let fs = Math.sqrt((boxW * boxH) / (chars * 0.62));
+    fs = Math.max(7, Math.min(cls.includes("ttl") ? 30 : 24, Math.min(fs, boxH * 0.85)));
+    blocks += `<div class="${cls}" style="${style}font-size:${fs.toFixed(1)}px;">${inner}</div>`;
+  });
+  twin += `<div class="page pageunit">${blocks}</div>`;
+
+  let mdc = "";
+  pg.blocks.forEach(b => {
+    if (b.category === "image" || b.category === "page_number") return;
+    if (b.category === "table" || (b.content || "").includes("<table>")) mdc += `<div class="mtbl">${b.content}</div>`;
+    else if (b.category === "title" || b.category === "header") mdc += `<h2>${esc(b.content)}</h2>`;
+    else if (b.category === "equation") mdc += `<p class="meq">${esc(b.content)}</p>`;
+    else mdc += `<p>${esc(b.content).replace(/\n/g, "<br>")}</p>`;
+  });
+  if (!pg.blocks.length) mdc = '<p style="color:var(--gc-muted);text-align:center;margin-top:40px">(leere Seite)</p>';
+  md += `<div class="sheet pageunit"><div class="ph">Seite ${pg.page}</div>${mdc}</div>`;
+
+  let rows = "";
+  pg.blocks.forEach(b => {
+    rows += `<div class="brow"><div class="bcat">${esc(b.category)}${b.bbox ? "  [" + b.bbox.join(", ") + "]" : ""}</div><div>${esc(b.content) || "<i>(no text)</i>"}</div></div>`;
+  });
+  if (!rows) rows = '<p style="color:var(--gc-muted);text-align:center;margin-top:40px">(leere Seite)</p>';
+  blk += `<div class="sheet pageunit"><div class="ph">Seite ${pg.page} · ${pg.blocks.length} blocks</div>${rows}</div>`;
+
+  raw += `<div class="sheet pageunit"><div class="ph">Seite ${pg.page}</div><pre>${esc(rawOf(pg))}</pre></div>`;
+});
+modeEl("twin").innerHTML = twin;
+modeEl("md").innerHTML = md;
+modeEl("blocks").innerHTML = blk;
+modeEl("raw").innerHTML = raw;
+
+document.querySelectorAll('.mode[data-m="twin"] .blk').forEach(el => {
+  const t = el.querySelector("table");
+  const target = t || el;
+  let f = parseFloat(getComputedStyle(target).fontSize) || 12;
+  const fits = () => el.scrollHeight <= el.clientHeight + 1 && el.scrollWidth <= el.clientWidth + 1;
+  while (!fits() && f > 6) { f -= 0.5; target.style.fontSize = f + "px"; }
+  while (fits() && f < 30) {
+    f += 0.5; target.style.fontSize = f + "px";
+    if (!fits()) { f -= 0.5; target.style.fontSize = f + "px"; break; }
+  }
+});
+
+const scroll = document.getElementById("scroll");
+const wrap = document.getElementById("zoomwrap");
+const thumbs = document.getElementById("thumbs");
+let curMode = "twin", cur = 1, zoom = 1, observers = [];
+
+function activePages() {
+  return [...document.querySelectorAll('.mode[data-m="' + curMode + '"] .pageunit')];
+}
+document.getElementById("pgn").textContent = activePages().length;
+
+document.querySelectorAll('.mode[data-m="twin"] .page').forEach((pg, i) => {
+  const th = document.createElement("div"); th.className = "thumb"; th.dataset.p = i + 1;
+  th.appendChild(pg.cloneNode(true));
+  th.onclick = () => goTo(i + 1);
+  const num = document.createElement("div"); num.className = "tnum"; num.textContent = i + 1;
+  thumbs.appendChild(th); thumbs.appendChild(num);
+});
+
+function setCur(n) {
+  cur = n;
+  document.getElementById("pgin").value = n;
+  thumbs.querySelectorAll(".thumb").forEach(t => t.classList.toggle("cur", +t.dataset.p === n));
+}
+function scrollToPage(el) {
+  scroll.scrollTop += el.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 12;
+}
+function goTo(n) {
+  const pages = activePages();
+  n = Math.max(1, Math.min(pages.length, n));
+  scrollToPage(pages[n - 1]);
+  setCur(n);
+}
+function watchPages() {
+  observers.forEach(o => o.disconnect()); observers = [];
+  activePages().forEach(pg => {
+    const o = new IntersectionObserver(es => es.forEach(e => {
+      if (e.isIntersecting) setCur(activePages().indexOf(e.target) + 1);
+    }), { root: scroll, threshold: 0.3 });
+    o.observe(pg); observers.push(o);
+  });
+}
+document.querySelectorAll(".mbtn").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".mbtn").forEach(x => x.classList.remove("on"));
+  b.classList.add("on");
+  curMode = b.dataset.m;
+  document.querySelectorAll(".mode").forEach(m => m.classList.toggle("act", m.dataset.m === curMode));
+  watchPages(); goTo(cur);
+});
+function setZoom(z) {
+  zoom = Math.max(0.3, Math.min(3, z));
+  wrap.style.zoom = zoom;
+  document.getElementById("zl").textContent = Math.round(zoom * 100) + "%";
+}
+document.getElementById("prev").onclick = () => goTo(cur - 1);
+document.getElementById("next").onclick = () => goTo(cur + 1);
+document.getElementById("pgin").onchange = e => goTo(parseInt(e.target.value) || 1);
+document.getElementById("zin").onclick = () => setZoom(zoom + 0.1);
+document.getElementById("zout").onclick = () => setZoom(zoom - 0.1);
+document.getElementById("fitw").onclick = () => setZoom((scroll.clientWidth - 48) / 900);
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowLeft" || e.key === "PageUp") goTo(cur - 1);
+  if (e.key === "ArrowRight" || e.key === "PageDown") goTo(cur + 1);
+});
+setZoom((scroll.clientWidth - 48) / 900 < 1 ? (scroll.clientWidth - 48) / 900 : 1);
+watchPages(); setCur(1);
+</script>
+</body>
+</html>

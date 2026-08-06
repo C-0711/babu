@@ -201,7 +201,8 @@ Mandanten-Historie, kein Fine-Tuning nötig für den Start).
   vollständige Tastatur-Navigation (j/k, Enter, Ziffern = Steuerschlüssel),
   Durchsatz-Anzeige. Zielgruppe Buchhalter/Kanzlei — Dichte schlägt Deko.
 - Web-Stack: React + TypeScript (Next.js oder Vite), Design-Tokens 1:1 aus
-  dem Prototyp (`--tinte`, `--stempel`, `--warn` …) als CSS-Custom-Properties;
+  den Unlimited-OCR-Templates (`design/unlimited-ocr/`, `--gc-*`-Variablen)
+  als CSS-Custom-Properties — die maßgebliche Designsprache;
   Fonts **self-hosted** (DSGVO — kein Google-Fonts-CDN).
 
 ### 4.8 Onboarding & Stammdaten
