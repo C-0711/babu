@@ -7,7 +7,16 @@ struct ScannerView: UIViewControllerRepresentable {
     var onScan: (UIImage) -> Void
     var onCancel: () -> Void
 
-    static var verfuegbar: Bool { VNDocumentCameraViewController.isSupported }
+    /// Im Simulator meldet sich VisionKit als verfügbar, die Aufnahme scheitert
+    /// dann aber mangels Kamera (FigCaptureSessionSimulator -12782) — deshalb
+    /// dort hart abschalten und den Demo-Beleg-Pfad anbieten.
+    static var verfuegbar: Bool {
+        #if targetEnvironment(simulator)
+        return false
+        #else
+        return VNDocumentCameraViewController.isSupported
+        #endif
+    }
 
     func makeUIViewController(context: Context) -> VNDocumentCameraViewController {
         let vc = VNDocumentCameraViewController()
