@@ -51,6 +51,14 @@ enum Kontenplan {
     }
 }
 
+/// Ein vom Instant Reading verortetes Feld (normierte Vision-Koordinaten).
+struct FeldBox: Identifiable {
+    let label: String
+    let wert: String
+    let rect: CGRect
+    var id: String { label }
+}
+
 struct Beleg: Identifiable {
     let id = UUID()
     var lieferant: String
@@ -70,7 +78,10 @@ struct Beleg: Identifiable {
     var summenprobeOK: Bool
     var siegel: String?
     var siegelZeit: Date?
-    var bildJpeg: Data?
+    var bildJpeg: Data?            // Original — unangetastet (GoBD)
+    var bildAufbereitetJpeg: Data? // Anzeige-/OCR-Fassung
+    var boxen: [FeldBox] = []
+    var erfasstAm: Date = Date()
     var ocrText: String = ""
 
     var ksLabel: String {
@@ -121,6 +132,7 @@ enum Demo {
                       begruendung: "Regel „Stadtwerke → Energie“ griff.", summenprobeOK: true)
         a.siegel = "77b2e0c4 9a11 f38d"
         a.siegelZeit = Date(timeIntervalSinceNow: -3 * 86400)
+        a.erfasstAm = Date(timeIntervalSinceNow: -3 * 86400)
 
         var b = Beleg(lieferant: "Hetzner Online GmbH", belegNr: "R2026-0psd83", datumText: "01.08.2026",
                       netto: 200.00, ust: 38.00, brutto: 238.00, ustSatz: 19,
@@ -129,6 +141,7 @@ enum Demo {
                       begruendung: "Kreditor 9× zuvor auf 6837 gebucht.", summenprobeOK: true)
         b.siegel = "0d31f6a8 5be2 c974"
         b.siegelZeit = Date(timeIntervalSinceNow: -5 * 86400)
+        b.erfasstAm = Date(timeIntervalSinceNow: -5 * 86400)
 
         return [a, b]
     }

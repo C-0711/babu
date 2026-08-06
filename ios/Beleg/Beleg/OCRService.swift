@@ -2,24 +2,32 @@ import Foundation
 import Vision
 import UIKit
 
+/// Eine erkannte Textzeile mit normierter Position (Vision: Ursprung unten links).
+struct OCRZeile {
+    let text: String
+    let conf: Double
+    let box: CGRect
+}
+
 /// On-Device-OCR über das Vision-Framework — das "Instant Reading" der App.
 enum OCRService {
 
     struct Ergebnis {
-        let zeilen: [(text: String, conf: Double)]
+        let zeilen: [OCRZeile]
         var text: String { zeilen.map { $0.text }.joined(separator: "\n") }
     }
 
     static func erkenne(_ image: UIImage) async -> Ergebnis {
         guard let cg = image.cgImage else { return Ergebnis(zeilen: []) }
+        let orientierung = CGImagePropertyOrientation(image.imageOrientation)
         return await withCheckedContinuation { continuation in
             let request = VNRecognizeTextRequest { request, _ in
                 let obs = (request.results as? [VNRecognizedTextObservation]) ?? []
                 // Von oben nach unten sortieren (Vision liefert normierte Koordinaten, y=0 unten).
                 let sortiert = obs.sorted { $0.boundingBox.midY > $1.boundingBox.midY }
-                let zeilen: [(String, Double)] = sortiert.compactMap { o in
+                let zeilen: [OCRZeile] = sortiert.compactMap { o in
                     guard let best = o.topCandidates(1).first else { return nil }
-                    return (best.string, Double(best.confidence))
+                    return OCRZeile(text: best.string, conf: Double(best.confidence), box: o.boundingBox)
                 }
                 continuation.resume(returning: Ergebnis(zeilen: zeilen))
             }
@@ -28,13 +36,29 @@ enum OCRService {
             request.usesLanguageCorrection = true
 
             DispatchQueue.global(qos: .userInitiated).async {
-                let handler = VNImageRequestHandler(cgImage: cg, options: [:])
+                let handler = VNImageRequestHandler(cgImage: cg, orientation: orientierung, options: [:])
                 do {
                     try handler.perform([request])
                 } catch {
                     continuation.resume(returning: Ergebnis(zeilen: []))
                 }
             }
+        }
+    }
+}
+
+extension CGImagePropertyOrientation {
+    init(_ o: UIImage.Orientation) {
+        switch o {
+        case .up: self = .up
+        case .down: self = .down
+        case .left: self = .left
+        case .right: self = .right
+        case .upMirrored: self = .upMirrored
+        case .downMirrored: self = .downMirrored
+        case .leftMirrored: self = .leftMirrored
+        case .rightMirrored: self = .rightMirrored
+        @unknown default: self = .up
         }
     }
 }

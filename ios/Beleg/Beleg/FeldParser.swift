@@ -12,54 +12,72 @@ struct Felder {
     var summenprobeOK = false
     var felderZahl = 0
     var ocrKonfidenz: Double = 0
+    var boxen: [FeldBox] = []
 }
 
 /// Heuristischer Parser über den erkannten Textzeilen — die On-Device-Lane
-/// des Dual-Lane-Konzepts. Deutsch formatierte Beträge (1.234,56).
+/// des Dual-Lane-Konzepts. Arbeitet zeilenbasiert mit Positionen, damit
+/// jedes Feld eine Bounding-Box fürs Instant-Reading-Overlay bekommt.
 enum FeldParser {
 
-    static func parse(zeilen: [(text: String, conf: Double)]) -> Felder {
+    static func parse(zeilen: [OCRZeile]) -> Felder {
         var f = Felder()
-        let alleZeilen = zeilen.map { $0.text }
-        let gesamt = alleZeilen.joined(separator: "\n")
+        let gesamt = zeilen.map { $0.text }.joined(separator: "\n")
         f.ocrKonfidenz = zeilen.isEmpty ? 0 : zeilen.map { $0.conf }.reduce(0, +) / Double(zeilen.count)
 
+        var lieferantIdx: Int?, datumIdx: Int?, nrIdx: Int?
+        var bruttoIdx: Int?, nettoIdx: Int?, ustIdx: Int?
+
         // Lieferant: erste "wortartige" Zeile ohne Datum/Betrag.
-        for z in alleZeilen.prefix(5) {
-            let t = z.trimmingCharacters(in: .whitespaces)
+        for (i, z) in zeilen.prefix(6).enumerated() {
+            let t = z.text.trimmingCharacters(in: .whitespaces)
             guard t.count > 3 else { continue }
             guard t.rangeOfCharacter(from: .letters) != nil else { continue }
             if matcht(t, #"\d{1,2}\.\d{1,2}\.\d{2,4}"#) { continue }
             if matcht(t, #"^\s*(rechnung|quittung|bon|beleg|kassenbon)\b"#, caseInsensitive: true) { continue }
             f.lieferant = t
+            lieferantIdx = i
             break
         }
 
-        // Datum: dd.MM.yyyy bzw. dd.MM.yy
-        if let m = ersterTreffer(gesamt, #"\b(\d{1,2}\.\d{1,2}\.\d{2,4})\b"#) {
-            f.datumText = m
+        // Datum: dd.MM.yyyy bzw. dd.MM.yy — erste Zeile mit Treffer.
+        for (i, z) in zeilen.enumerated() {
+            if let m = ersterTreffer(z.text, #"\b(\d{1,2}\.\d{1,2}\.\d{2,4})\b"#) {
+                f.datumText = m
+                datumIdx = i
+                break
+            }
         }
 
         // Belegnummer: RE-…, Bon 1234, Rechnung Nr. …
-        if let m = ersterTreffer(gesamt, #"(?:RE[-\s]?[\w/]{3,}|Rechnungs?-?\s?(?:Nr\.?|nummer)[:\s]*([\w/-]+)|Bon\s*(\d{3,})|Beleg\s*(\d{3,}))"#, caseInsensitive: true) {
-            f.belegNr = m.trimmingCharacters(in: .whitespaces)
+        for (i, z) in zeilen.enumerated() {
+            if let m = ersterTreffer(z.text, #"(?:RE[-\s]?[\w/]{3,}|Rechnungs?-?\s?(?:Nr\.?|nummer)[:\s]*([\w/-]+)|Bon\s*(\d{3,})|Beleg\s*(\d{3,}))"#, caseInsensitive: true) {
+                f.belegNr = m.trimmingCharacters(in: .whitespaces)
+                nrIdx = i
+                break
+            }
         }
 
         // Steuersatz
         if matcht(gesamt, #"7\s*%"#), !matcht(gesamt, #"19\s*%"#) { f.ustSatz = 7 }
 
-        // Beträge (deutsches Format)
-        let betraege = alleTreffer(gesamt, #"\b\d{1,3}(?:\.\d{3})*,\d{2}\b"#)
-            .compactMap { parseBetrag($0) }
-        if let max = betraege.max() {
-            f.brutto = max
+        // Beträge (deutsches Format) je Zeile — Werte mit Fundzeile.
+        var funde: [(wert: Double, idx: Int)] = []
+        for (i, z) in zeilen.enumerated() {
+            for s in alleTreffer(z.text, #"\b\d{1,3}(?:\.\d{3})*,\d{2}\b"#) {
+                if let v = parseBetrag(s) { funde.append((v, i)) }
+            }
+        }
+        if let maxFund = funde.max(by: { $0.wert < $1.wert }) {
+            f.brutto = maxFund.wert
+            bruttoIdx = maxFund.idx
             // Summenprobe: Paar suchen mit netto + ust == brutto
-            let rest = betraege.filter { $0 < max }
+            let rest = funde.filter { $0.wert < maxFund.wert }
             außen: for n in rest {
-                for u in rest where u != n {
-                    if abs(n + u - max) < 0.011, n > u {
-                        f.netto = n
-                        f.ust = u
+                for u in rest where u.wert != n.wert {
+                    if abs(n.wert + u.wert - maxFund.wert) < 0.011, n.wert > u.wert {
+                        f.netto = n.wert; nettoIdx = n.idx
+                        f.ust = u.wert; ustIdx = u.idx
                         f.summenprobeOK = true
                         break außen
                     }
@@ -68,11 +86,23 @@ enum FeldParser {
             if f.netto == nil, f.ustSatz > 0 {
                 // Rückrechnung aus Brutto, falls Netto/USt nicht einzeln lesbar
                 let satz = Double(f.ustSatz) / 100.0
-                let netto = (max / (1 + satz) * 100).rounded() / 100
+                let netto = (maxFund.wert / (1 + satz) * 100).rounded() / 100
                 f.netto = netto
-                f.ust = ((max - netto) * 100).rounded() / 100
+                f.ust = ((maxFund.wert - netto) * 100).rounded() / 100
             }
         }
+
+        // Bounding-Boxen fürs Overlay
+        func box(_ label: String, _ wert: String?, _ idx: Int?) {
+            guard let i = idx, i < zeilen.count, let w = wert else { return }
+            f.boxen.append(FeldBox(label: label, wert: w, rect: zeilen[i].box))
+        }
+        box("Lieferant", f.lieferant, lieferantIdx)
+        box("Beleg-Nr.", f.belegNr, nrIdx)
+        box("Datum", f.datumText, datumIdx)
+        box("Netto", f.netto.map { fmtBetrag($0) }, nettoIdx)
+        box("USt", f.ust.map { fmtBetrag($0) }, ustIdx)
+        box("Brutto", f.brutto.map { fmtBetrag($0) }, bruttoIdx)
 
         f.felderZahl = [f.lieferant != nil, f.belegNr != nil, f.datumText != nil,
                         f.netto != nil, f.ust != nil, f.brutto != nil].filter { $0 }.count
