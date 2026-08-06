@@ -7,22 +7,20 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-/* ============ TOKENS ============ */
+/* ================= TOKENS ================= */
 :root{
   --tinte:#10141A;          /* Tiefe Tinte — Basis dunkel */
   --tinte-2:#1A2028;        /* Fläche auf dunkel */
   --tinte-3:#242C37;        /* Erhöhte Fläche */
   --papier:#F2F4F3;         /* Kühles Papierweiß */
-  --papier-2:#E7EAE8;
   --stempel:#3346C8;        /* Stempelblau — verifiziert/gesiegelt */
   --stempel-hell:#8B97EA;
   --warn:#B7791F;           /* Mittlere Confidence / Differenz */
-  --fehler:#B3261E;         /* Niedrige Confidence / Fehler */
+  --fehler:#C2483E;         /* Niedrige Confidence / Fehler */
   --ok:#1E7A5A;             /* Summenprobe bestanden */
   --text-hell:#EDEFF2;
   --text-dim:#8A93A0;
   --linie:#2A313C;
-  --linie-hell:#D5DAD7;
   --r:6px;
   --font-d:'Space Grotesk',sans-serif;
   --font-b:'Inter',sans-serif;
@@ -34,71 +32,109 @@ body{background:#07090C;font-family:var(--font-b);color:var(--text-hell);
   display:flex;justify-content:center;font-size:15px;-webkit-font-smoothing:antialiased}
 .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
 .mono{font-family:var(--font-m)}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--stempel-hell);outline-offset:2px;border-radius:2px}
 
-/* ============ APP-RAHMEN ============ */
+/* ================= APP-RAHMEN ================= */
 #app{width:100%;max-width:430px;height:100dvh;background:var(--tinte);
   position:relative;overflow:hidden;display:flex;flex-direction:column}
-@media(min-width:500px){#app{height:min(880px,96dvh);margin:auto 0;border:1px solid var(--linie);border-radius:14px}}
+@media(min-width:500px){#app{height:min(920px,96dvh);margin:auto 0;border:1px solid var(--linie);border-radius:14px}}
 
-.screen{flex:1;overflow-y:auto;display:none;flex-direction:column}
+.screen{flex:1;overflow-y:auto;display:none;flex-direction:column;min-height:0}
 .screen.active{display:flex}
 
-/* ============ TOPBAR ============ */
-.topbar{padding:18px 20px 14px;display:flex;align-items:baseline;justify-content:space-between;border-bottom:1px solid var(--linie);flex-shrink:0}
-.topbar h1{font-family:var(--font-d);font-size:20px;font-weight:600;letter-spacing:-.01em}
-.topbar .mandant{font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em}
-
-/* ============ NAV ============ */
+/* ================= TOPBAR / NAV ================= */
+.topbar{padding:18px 20px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--linie);flex-shrink:0}
+.topbar h1{font-family:var(--font-d);font-size:20px;font-weight:600;letter-spacing:-.01em;flex:1}
+.topbar .mandant{font-family:var(--font-m);font-size:10.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;text-align:right}
+.back{background:none;border:0;color:var(--text-dim);font-size:20px;line-height:1;cursor:pointer;padding:8px 10px;margin:-8px 0 -8px -10px;min-width:44px;min-height:44px}
+.back:hover{color:var(--text-hell)}
 nav{display:flex;border-top:1px solid var(--linie);background:var(--tinte);flex-shrink:0;padding-bottom:env(safe-area-inset-bottom)}
-nav button{flex:1;background:none;border:0;color:var(--text-dim);padding:12px 0 10px;font-family:var(--font-d);font-size:12px;letter-spacing:.04em;cursor:pointer;display:flex;flex-direction:column;gap:4px;align-items:center}
+nav button{flex:1;background:none;border:0;color:var(--text-dim);padding:12px 0 10px;font-family:var(--font-d);font-size:12px;letter-spacing:.04em;cursor:pointer;display:flex;flex-direction:column;gap:4px;align-items:center;min-height:48px}
 nav button.on{color:var(--text-hell)}
 nav button.on .dot{background:var(--stempel)}
 nav .dot{width:4px;height:4px;border-radius:50%;background:transparent}
 
-/* ============ ONBOARDING ============ */
-#onboard{position:absolute;inset:0;background:var(--tinte);z-index:60;display:flex;flex-direction:column;padding:28px 24px;overflow-y:auto}
+/* ================= ONBOARDING ================= */
+#onboard{position:absolute;inset:0;background:var(--tinte);z-index:60;display:flex;flex-direction:column;padding:28px 24px 24px;overflow-y:auto}
 #onboard .eyebrow{font-family:var(--font-m);font-size:11px;color:var(--stempel-hell);letter-spacing:.12em;text-transform:uppercase;margin-bottom:10px}
 #onboard h2{font-family:var(--font-d);font-size:26px;font-weight:600;line-height:1.15;margin-bottom:8px}
-#onboard p.sub{color:var(--text-dim);font-size:14px;line-height:1.5;margin-bottom:26px}
+#onboard p.sub{color:var(--text-dim);font-size:14px;line-height:1.5;margin-bottom:22px}
 .checkline{display:flex;gap:10px;align-items:center;font-size:13px;color:var(--text-dim);margin-bottom:8px}
 .checkline .box{width:16px;height:16px;border:1px solid var(--linie);border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--stempel-hell);flex-shrink:0}
+.checkline.now{color:var(--text-hell)}
 .checkline.done{color:var(--text-hell)}
 .checkline.done .box{border-color:var(--stempel);background:rgba(51,70,200,.15)}
-.skr-opt{border:1px solid var(--linie);border-radius:var(--r);padding:16px;margin-bottom:12px;cursor:pointer;transition:border-color .15s}
+.ob-step{display:none;margin-top:20px;flex:1;flex-direction:column}
+.ob-step.active{display:flex}
+.skr-opt{border:1px solid var(--linie);border-radius:var(--r);padding:16px;margin-bottom:12px;cursor:pointer;transition:border-color .15s;background:none;text-align:left;width:100%}
 .skr-opt:hover{border-color:var(--text-dim)}
 .skr-opt.sel{border-color:var(--stempel);background:rgba(51,70,200,.08)}
 .skr-opt .t{font-family:var(--font-d);font-weight:600;font-size:16px;margin-bottom:4px}
 .skr-opt .d{font-size:13px;color:var(--text-dim);line-height:1.45}
-.hint{font-size:12px;color:var(--text-dim);border-left:2px solid var(--linie);padding-left:10px;margin:16px 0 24px;line-height:1.5}
+.hint{font-size:12px;color:var(--text-dim);border-left:2px solid var(--linie);padding-left:10px;margin:14px 0 20px;line-height:1.5}
+.drop{border:1.5px dashed var(--linie);border-radius:var(--r);padding:26px 16px;text-align:center;color:var(--text-dim);font-size:13px;line-height:1.5;cursor:pointer;transition:border-color .15s;background:none;width:100%}
+.drop:hover{border-color:var(--stempel-hell);color:var(--text-hell)}
+.parse{border:1px solid var(--linie);border-radius:var(--r);margin-top:14px;overflow:hidden;display:none}
+.parse.show{display:block}
+.parse .head{font-family:var(--font-m);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);padding:9px 12px;border-bottom:1px solid var(--linie)}
+.parse .row{display:flex;gap:10px;padding:8px 12px;font-family:var(--font-m);font-size:11.5px;border-bottom:1px solid var(--linie);align-items:baseline}
+.parse .row:last-child{border-bottom:0}
+.parse .row .nr{color:var(--stempel-hell);min-width:46px}
+.parse .row .bez{flex:1;color:var(--text-hell);font-family:var(--font-b);font-size:12.5px}
+.parse .row .st{font-size:10px;color:var(--ok)}
+.parse .row.err{background:rgba(194,72,62,.07)}
+.parse .row.err .st{color:var(--fehler)}
+.parse .row.err .bez{color:var(--text-dim)}
+.field{margin:0 0 14px}
+.field label{display:block;font-family:var(--font-m);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px}
+.field input,.field select{width:100%;background:var(--tinte-2);border:1px solid var(--linie);border-radius:4px;color:var(--text-hell);padding:11px 12px;font-size:14px;font-family:var(--font-b);min-height:44px}
+.field input:focus,.field select:focus{outline:2px solid var(--stempel);outline-offset:1px;border-color:transparent}
+.field .num-in{font-family:var(--font-m);text-align:right}
 
-/* ============ BUTTONS ============ */
-.btn{display:block;width:100%;padding:14px;border-radius:var(--r);border:0;font-family:var(--font-d);font-size:15px;font-weight:600;cursor:pointer;text-align:center}
+/* ================= BUTTONS ================= */
+.btn{display:block;width:100%;padding:14px;border-radius:var(--r);border:0;font-family:var(--font-d);font-size:15px;font-weight:600;cursor:pointer;text-align:center;min-height:48px}
 .btn-p{background:var(--stempel);color:#fff}
 .btn-p:active{transform:translateY(1px)}
+.btn-p[disabled]{background:var(--tinte-3);color:var(--text-dim);cursor:default}
 .btn-g{background:none;border:1px solid var(--linie);color:var(--text-hell);margin-top:10px}
-.btn-row{margin-top:auto;padding-top:20px}
+.btn-row{margin-top:auto;padding-top:18px}
 
-/* ============ CAPTURE ============ */
-#cap-stage{flex:1;position:relative;background:
-  radial-gradient(120% 90% at 50% 15%,#1C232D 0%,#0B0E13 70%);overflow:hidden;display:flex;align-items:center;justify-content:center}
-.corner{position:absolute;width:26px;height:26px;border:2px solid rgba(237,239,242,.5)}
-.corner.tl{top:26px;left:26px;border-right:0;border-bottom:0}
-.corner.tr{top:26px;right:26px;border-left:0;border-bottom:0}
-.corner.bl{bottom:96px;left:26px;border-right:0;border-top:0}
-.corner.br{bottom:96px;right:26px;border-left:0;border-top:0}
-#cap-status{position:absolute;bottom:36px;left:0;right:0;text-align:center;font-family:var(--font-d);font-size:14px;color:var(--text-dim);letter-spacing:.02em;transition:color .3s}
-#cap-status.lock{color:var(--stempel-hell)}
-#beleg{width:66%;max-width:250px;opacity:0;transform:rotate(-7deg) translateY(24px) scale(.94);transition:transform .8s cubic-bezier(.2,.8,.2,1),opacity .6s;filter:drop-shadow(0 18px 30px rgba(0,0,0,.55));position:relative}
-#beleg.in{opacity:1;transform:rotate(-4deg) translateY(0) scale(.97)}
-#beleg.flat{transform:rotate(0) translateY(-14px) scale(1);}
-#kontur{position:absolute;inset:-5px;border:1.5px solid var(--stempel-hell);border-radius:4px;opacity:0;transition:opacity .3s}
-#beleg.in #kontur{opacity:.9}
-#beleg.flat #kontur{opacity:0}
-#flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
+/* ================= CAPTURE ================= */
+#s-capture{overflow:hidden}
+#cap-stage{flex:1;position:relative;background:radial-gradient(120% 90% at 50% 15%,#1C232D 0%,#0B0E13 70%);overflow:hidden;display:flex;align-items:center;justify-content:center;transition:filter .4s}
+#cap-stage.dunkel{filter:brightness(.45)}
+.corner{position:absolute;width:26px;height:26px;border:2px solid rgba(237,239,242,.5);pointer-events:none}
+.corner.tl{top:56px;left:26px;border-right:0;border-bottom:0}
+.corner.tr{top:56px;right:26px;border-left:0;border-bottom:0}
+.corner.bl{bottom:150px;left:26px;border-right:0;border-top:0}
+.corner.br{bottom:150px;right:26px;border-left:0;border-top:0}
+#cap-top{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:8px;padding:14px 16px;z-index:5}
+#cap-top .wm{font-family:var(--font-d);font-size:14px;font-weight:600;letter-spacing:.01em}
+#cap-top .wm span{color:var(--text-dim);font-weight:400}
+#cap-top .sp{flex:1}
+.pill{background:rgba(16,20,26,.72);backdrop-filter:blur(4px);border:1px solid var(--linie);border-radius:20px;color:var(--text-dim);font-family:var(--font-m);font-size:10.5px;letter-spacing:.05em;padding:7px 11px;cursor:pointer;min-height:32px}
+.pill:hover{color:var(--text-hell)}
+#batch-pill{display:none}
+#batch-pill.show{display:inline-block;color:var(--stempel-hell);border-color:var(--stempel)}
+#offline-banner{position:absolute;top:52px;left:16px;right:16px;z-index:6;background:rgba(183,121,31,.12);border:1px solid var(--warn);border-radius:var(--r);color:var(--text-hell);font-size:12px;line-height:1.45;padding:10px 12px;display:none}
+#offline-banner.show{display:block}
+#offline-banner b{color:var(--warn);font-family:var(--font-m);font-size:10px;letter-spacing:.08em;text-transform:uppercase;display:block;margin-bottom:2px}
+#offline-banner button{background:none;border:0;color:var(--stempel-hell);font-size:12px;cursor:pointer;padding:4px 0 0;text-decoration:underline;text-underline-offset:2px}
+
+#beleg-wrap{width:66%;max-width:250px;opacity:0;transform:rotate(-7deg) translateY(24px) scale(.94);transition:transform .8s cubic-bezier(.2,.8,.2,1),opacity .6s;filter:drop-shadow(0 18px 30px rgba(0,0,0,.55));position:relative}
+#beleg-wrap.in{opacity:1;transform:rotate(-4deg) translateY(0) scale(.97)}
+#beleg-wrap.flat{transform:rotate(0) translateY(-22px) scale(1)}
+#kontur{position:absolute;inset:-5px;border:1.5px solid var(--stempel-hell);border-radius:4px;opacity:0;transition:opacity .3s;pointer-events:none}
+#beleg-wrap.in #kontur{opacity:.9}
+#beleg-wrap.flat #kontur{opacity:0}
+#glare{position:absolute;top:8%;left:14%;width:55%;height:26%;background:radial-gradient(closest-side,rgba(255,255,255,.92),rgba(255,255,255,0));opacity:0;pointer-events:none;transition:opacity .3s;z-index:3}
+#glare.show{opacity:1}
+#flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:8}
 #flash.go{animation:flash .35s ease-out}
 @keyframes flash{0%{opacity:0}18%{opacity:.85}100%{opacity:0}}
 
-/* Der Beleg selbst (SVG-artig in HTML) */
+/* Beleg-Papiere */
 .paper{background:#FDFDFB;color:#1B1E23;border-radius:2px;padding:14px 13px 16px;font-size:8.5px;line-height:1.5;position:relative}
 .paper .kopf{font-family:var(--font-d);font-weight:700;font-size:11px;margin-bottom:1px}
 .paper .adr{color:#6A7076;font-size:7.5px;margin-bottom:8px}
@@ -108,439 +144,1020 @@ nav .dot{width:4px;height:4px;border-radius:50%;background:transparent}
 .paper .rule{border-top:1px solid #D7DAD6;margin:6px 0}
 .paper .sum td{font-weight:600}
 .paper .fuss{margin-top:8px;font-size:6.8px;color:#8A9096}
-/* Bounding-Boxes des Instant Reading */
-.bb{position:absolute;border:1.3px solid var(--stempel);border-radius:2px;opacity:0;transform:scale(1.08);transition:opacity .25s,transform .25s;pointer-events:auto;cursor:pointer}
+.paper.bon{font-family:var(--font-m);font-size:7.5px;padding:12px 11px 14px}
+.paper.bon .kopf{font-family:var(--font-m);font-weight:500;font-size:9.5px;letter-spacing:.02em}
+.paper.bon table{font-size:7.5px}
+.hl-src{background:rgba(51,70,200,.16);outline:1px solid rgba(51,70,200,.4)}
+
+/* Instant-Reading Bounding-Boxes */
+.bb{position:absolute;border:1.3px solid var(--stempel);border-radius:2px;opacity:0;transform:scale(1.08);transition:opacity .25s,transform .25s;cursor:pointer;background:none;padding:0}
 .bb.show{opacity:1;transform:scale(1)}
 .bb .tag{position:absolute;top:-15px;left:-1px;background:var(--stempel);color:#fff;font-family:var(--font-m);font-size:6.5px;padding:1px 4px;border-radius:2px;white-space:nowrap;letter-spacing:.03em}
-#summenprobe{position:absolute;bottom:-26px;left:0;right:0;text-align:center;font-family:var(--font-m);font-size:8px;color:var(--ok);opacity:0;transition:opacity .3s}
-#summenprobe.show{opacity:1}
-#cap-cta{position:absolute;bottom:88px;left:24px;right:24px;opacity:0;pointer-events:none;transition:opacity .3s}
-#cap-cta.show{opacity:1;pointer-events:auto}
+.summenprobe{position:absolute;bottom:-26px;left:0;right:0;text-align:center;font-family:var(--font-m);font-size:8px;color:var(--ok);opacity:0;transition:opacity .3s;pointer-events:none}
+.summenprobe.show{opacity:1}
 
-/* ============ VERARBEITUNG ============ */
-.card{background:var(--tinte-2);border:1px solid var(--linie);border-radius:var(--r);padding:18px;margin:14px 16px}
-.card h3{font-family:var(--font-d);font-size:15px;font-weight:600;margin-bottom:14px}
-.pstep{display:flex;gap:10px;align-items:center;padding:7px 0;font-size:13.5px;color:var(--text-dim)}
+#cap-status{position:absolute;bottom:104px;left:20px;right:20px;text-align:center;font-family:var(--font-d);font-size:14px;color:var(--text-dim);letter-spacing:.02em;transition:color .3s;z-index:5}
+#cap-status.lock{color:var(--stempel-hell)}
+#cap-status.warn{color:var(--warn)}
+#cap-status.err{color:var(--fehler)}
+#cap-actions{position:absolute;bottom:64px;left:0;right:0;display:flex;justify-content:center;gap:8px;z-index:6;flex-wrap:wrap;padding:0 20px}
+#cap-actions .pill{background:var(--tinte-2)}
+#cap-actions .pill.primary{background:var(--stempel);color:#fff;border-color:var(--stempel);font-family:var(--font-d);font-size:12.5px;letter-spacing:.02em}
+#shutter{position:absolute;right:18px;bottom:70px;width:44px;height:44px;border-radius:50%;border:1.5px solid rgba(237,239,242,.35);background:rgba(16,20,26,.5);color:var(--text-dim);font-size:15px;cursor:pointer;z-index:6}
+#shutter:hover{color:var(--text-hell);border-color:var(--text-hell)}
+
+/* Filmstreifen (Batch) */
+#filmstrip{position:absolute;left:0;right:0;bottom:0;display:flex;gap:8px;align-items:flex-end;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:linear-gradient(transparent,rgba(7,9,12,.85) 40%);z-index:6;min-height:26px}
+.thumb{width:32px;height:44px;background:#FDFDFB;border-radius:2px;position:relative;box-shadow:0 4px 10px rgba(0,0,0,.5);animation:thumbin .35s cubic-bezier(.2,.8,.2,1)}
+.thumb::after{content:"";position:absolute;inset:5px 4px auto 4px;height:2px;background:#C9CDC9;box-shadow:0 5px 0 #DDE0DD,0 10px 0 #DDE0DD,0 15px 0 #DDE0DD}
+.thumb .st{position:absolute;right:-4px;bottom:-4px;width:13px;height:13px;border-radius:50%;background:var(--tinte);border:1.5px dashed var(--text-dim);font-size:7px;color:var(--stempel-hell);display:flex;align-items:center;justify-content:center}
+.thumb.sealed .st{border:1.5px solid var(--stempel)}
+.thumb .pg{position:absolute;left:-4px;top:-4px;background:var(--stempel);color:#fff;font-family:var(--font-m);font-size:6.5px;border-radius:2px;padding:0 3px}
+@keyframes thumbin{0%{transform:translateY(16px) scale(.7);opacity:0}100%{transform:none;opacity:1}}
+
+/* ================= SHEETS ================= */
+.sheet-bg{position:absolute;inset:0;background:rgba(7,9,12,.6);z-index:70;display:none}
+.sheet-bg.show{display:block}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--tinte-2);border-top:1px solid var(--linie);border-radius:14px 14px 0 0;z-index:71;padding:18px 20px calc(22px + env(safe-area-inset-bottom));transform:translateY(105%);transition:transform .3s cubic-bezier(.2,.8,.2,1)}
+.sheet.show{transform:none}
+.sheet h4{font-family:var(--font-d);font-size:15px;font-weight:600;margin-bottom:4px}
+.sheet .sub{font-size:12.5px;color:var(--text-dim);margin-bottom:14px;line-height:1.5}
+.sheet .grabber{width:34px;height:4px;border-radius:2px;background:var(--linie);margin:0 auto 14px}
+.state-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.state-grid button{background:var(--tinte);border:1px solid var(--linie);border-radius:var(--r);color:var(--text-hell);font-size:13px;padding:12px 10px;cursor:pointer;text-align:left;line-height:1.4;min-height:44px}
+.state-grid button:hover{border-color:var(--text-dim)}
+.state-grid button small{display:block;color:var(--text-dim);font-size:11px}
+
+/* ================= VERARBEITUNG ================= */
+.routen-legende{display:flex;gap:6px;padding:12px 16px 2px;flex-wrap:wrap}
+.routen-legende span{font-family:var(--font-m);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-dim);border:1px solid var(--linie);border-radius:3px;padding:3px 7px}
+.routen-legende b{font-weight:500;color:var(--text-hell)}
+.card{background:var(--tinte-2);border:1px solid var(--linie);border-radius:var(--r);padding:18px;margin:14px 16px 0}
+.card:last-of-type{margin-bottom:14px}
+.card h3{font-family:var(--font-d);font-size:15px;font-weight:600;margin-bottom:4px;display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.card h3 .amt{font-family:var(--font-m);font-size:13.5px;font-weight:500}
+.card .route{font-family:var(--font-m);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--text-dim);margin-bottom:12px}
+.pstep{display:flex;gap:10px;align-items:center;padding:6px 0;font-size:13px;color:var(--text-dim)}
 .pstep .pbox{width:17px;height:17px;border:1px solid var(--linie);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;transition:all .25s}
 .pstep.done{color:var(--text-hell)}
 .pstep.done .pbox{border-color:var(--ok);color:var(--ok)}
-.buchsatz{font-family:var(--font-m);font-size:12.5px;line-height:1.7;background:var(--tinte);border:1px solid var(--linie);border-radius:4px;padding:12px;margin:12px 0}
+.pstep.warnstep{color:var(--warn)}
+.pstep.warnstep .pbox{border-color:var(--warn);color:var(--warn)}
+.buchsatz{font-family:var(--font-m);font-size:12px;line-height:1.7;background:var(--tinte);border:1px solid var(--linie);border-radius:4px;padding:12px;margin:12px 0}
 .buchsatz b{color:var(--stempel-hell);font-weight:500}
 .conf{display:flex;align-items:center;gap:10px;margin:10px 0 4px}
 .conf .bar{flex:1;height:4px;background:var(--tinte-3);border-radius:2px;overflow:hidden}
 .conf .fill{height:100%;border-radius:2px;transition:width .8s ease}
-.conf .val{font-family:var(--font-m);font-size:13px;min-width:56px;text-align:right}
+.conf .val{font-family:var(--font-m);font-size:13px;min-width:52px;text-align:right}
 .badge{display:inline-block;font-family:var(--font-m);font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:3px;border:1px solid var(--linie);color:var(--text-dim)}
 .badge.hist{border-color:var(--stempel);color:var(--stempel-hell)}
+.badge.regel{border-color:var(--ok);color:var(--ok)}
 .badge.ki{border-color:var(--warn);color:var(--warn)}
+.small{font-size:12px;color:var(--text-dim);line-height:1.5}
 
-/* ============ SIEGEL (Signature) ============ */
+/* ================= SIEGEL (Signature) ================= */
 .siegel{display:inline-flex;align-items:center;gap:7px;font-family:var(--font-m);font-size:10.5px;color:var(--stempel-hell)}
-.siegel .ring{width:20px;height:20px;border:1.5px solid var(--stempel);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;position:relative;flex-shrink:0}
+.siegel .ring{width:20px;height:20px;border:1.5px solid var(--stempel);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0}
+.siegel.wart .ring{border-style:dashed;border-color:var(--text-dim);color:var(--text-dim)}
+.siegel.wart{color:var(--text-dim)}
+.siegel.fix .ring{background:var(--stempel);color:#fff}
 .siegel.stamp .ring{animation:stamp .5s cubic-bezier(.2,1.4,.4,1)}
 @keyframes stamp{0%{transform:scale(1.6) rotate(-14deg);opacity:0}55%{transform:scale(.94) rotate(2deg);opacity:1}100%{transform:scale(1) rotate(0)}}
 .siegel .hash{letter-spacing:.02em}
 
-/* ============ LISTE ============ */
-.beleg-row{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--linie);cursor:pointer}
+/* ================= LISTE ================= */
+.filterbar{display:flex;gap:8px;padding:12px 16px 4px;overflow-x:auto;flex-shrink:0;scrollbar-width:none}
+.filterbar::-webkit-scrollbar{display:none}
+.chip{font-family:var(--font-d);font-size:12px;padding:8px 13px;border:1px solid var(--linie);border-radius:20px;color:var(--text-dim);white-space:nowrap;cursor:pointer;background:none;min-height:36px}
+.chip.on{border-color:var(--stempel);color:var(--stempel-hell)}
+.beleg-row{display:flex;align-items:center;gap:12px;padding:13px 18px;border:0;border-bottom:1px solid var(--linie);border-radius:0;cursor:pointer;background:none;width:100%;text-align:left}
 .beleg-row:active{background:var(--tinte-2)}
 .beleg-row .l{flex:1;min-width:0}
-.beleg-row .firma{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.beleg-row .meta{font-size:11.5px;color:var(--text-dim);margin-top:2px;font-family:var(--font-m)}
+.beleg-row .firma{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--font-b)}
+.beleg-row .meta{font-size:11px;color:var(--text-dim);margin-top:2px;font-family:var(--font-m)}
+.beleg-row .meta .hist{color:var(--stempel-hell)}
+.beleg-row .meta .regel{color:var(--ok)}
+.beleg-row .meta .ki{color:var(--warn)}
 .beleg-row .betrag{font-family:var(--font-m);font-size:14px;text-align:right}
 .beleg-row .konto{font-size:10.5px;color:var(--text-dim);text-align:right;font-family:var(--font-m);margin-top:2px}
-.filterbar{display:flex;gap:8px;padding:12px 16px;overflow-x:auto;flex-shrink:0}
-.chip{font-family:var(--font-d);font-size:12px;padding:6px 12px;border:1px solid var(--linie);border-radius:20px;color:var(--text-dim);white-space:nowrap;cursor:pointer;background:none}
-.chip.on{border-color:var(--stempel);color:var(--stempel-hell)}
-
-/* ============ EDITOR ============ */
-.split-img{background:#0B0E13;padding:16px;display:flex;justify-content:center}
-.split-img .paper{width:64%;max-width:230px;transform:none;filter:drop-shadow(0 8px 18px rgba(0,0,0,.5))}
-.field{margin:0 18px 12px}
-.field label{display:block;font-family:var(--font-m);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin-bottom:5px}
-.field input,.field select{width:100%;background:var(--tinte-2);border:1px solid var(--linie);border-radius:4px;color:var(--text-hell);padding:10px 12px;font-size:14px;font-family:var(--font-b)}
-.field input:focus,.field select:focus{outline:2px solid var(--stempel);outline-offset:1px;border-color:transparent}
-.field .num-in{font-family:var(--font-m);text-align:right}
-.diff{border:1px solid var(--warn);border-radius:4px;padding:10px 12px;margin:0 18px 14px;font-size:12.5px;line-height:1.5}
-.diff .t{font-family:var(--font-m);font-size:10px;letter-spacing:.08em;color:var(--warn);text-transform:uppercase;margin-bottom:5px}
-.konto-sug{display:flex;gap:8px;margin:0 18px 14px;flex-wrap:wrap}
-.konto-sug button{background:var(--tinte-2);border:1px solid var(--linie);border-radius:4px;color:var(--text-hell);font-family:var(--font-m);font-size:11.5px;padding:6px 9px;cursor:pointer}
-.konto-sug button.sel{border-color:var(--stempel);color:var(--stempel-hell)}
-
-/* ============ EXPORT / DETAIL ============ */
-pre.extf{font-family:var(--font-m);font-size:10px;line-height:1.7;background:var(--tinte);border:1px solid var(--linie);border-radius:4px;padding:12px;margin:12px 0;overflow-x:auto;color:var(--text-dim)}
-.prov{font-family:var(--font-m);font-size:11px;line-height:1.9;color:var(--text-dim)}
-.prov b{color:var(--text-hell);font-weight:500}
-.leer{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:var(--text-dim);padding:40px;text-align:center;font-size:14px;line-height:1.5}
-
 .section-label{font-family:var(--font-m);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);padding:16px 18px 4px}
-.small{font-size:12px;color:var(--text-dim);line-height:1.5}
+.leer{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:var(--text-dim);padding:40px 32px;text-align:center;font-size:14px;line-height:1.6}
+.leer .cam{width:52px;height:52px;border:1.5px solid var(--linie);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--stempel-hell)}
+.leer .btn{max-width:240px}
+
+/* ================= EDITOR ================= */
+.split-img{background:#0B0E13;padding:16px;display:flex;justify-content:center;flex-shrink:0}
+.split-img .paper{width:64%;max-width:230px;filter:drop-shadow(0 8px 18px rgba(0,0,0,.5))}
+.diff{border:1px solid var(--warn);border-radius:4px;padding:11px 12px;margin:14px 18px;font-size:12.5px;line-height:1.55}
+.diff .t{font-family:var(--font-m);font-size:10px;letter-spacing:.08em;color:var(--warn);text-transform:uppercase;margin-bottom:6px}
+.diff .pick{display:flex;gap:8px;margin-top:9px}
+.diff .pick button{flex:1;background:var(--tinte-2);border:1px solid var(--linie);border-radius:4px;color:var(--text-hell);font-family:var(--font-m);font-size:12px;padding:9px 6px;cursor:pointer;min-height:40px}
+.diff .pick button.sel{border-color:var(--stempel);color:var(--stempel-hell)}
+.diff .lernt{font-size:11px;color:var(--text-dim);margin-top:8px}
+.efield{margin:0 18px 12px;position:relative}
+.efield label{display:block;font-family:var(--font-m);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-dim);margin-bottom:5px}
+.efield input,.efield select{width:100%;background:var(--tinte-2);border:1px solid var(--linie);border-radius:4px;color:var(--text-hell);padding:11px 12px;font-size:14px;font-family:var(--font-b);min-height:44px}
+.efield input:focus,.efield select:focus{outline:2px solid var(--stempel);outline-offset:1px;border-color:transparent}
+.efield .num-in{font-family:var(--font-m);text-align:right}
+#konto-list{border:1px solid var(--linie);border-radius:4px;margin-top:6px;overflow:hidden;display:none;background:var(--tinte-2)}
+#konto-list.show{display:block}
+#konto-list button{display:flex;width:100%;gap:10px;align-items:baseline;background:none;border:0;border-bottom:1px solid var(--linie);padding:10px 12px;cursor:pointer;text-align:left;min-height:42px}
+#konto-list button:last-child{border-bottom:0}
+#konto-list button:hover,#konto-list button.hot{background:var(--tinte-3)}
+#konto-list .nr{font-family:var(--font-m);font-size:12.5px;color:var(--stempel-hell);min-width:44px}
+#konto-list .bez{flex:1;font-size:13px}
+#konto-list .src{font-family:var(--font-m);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-dim);border:1px solid var(--linie);border-radius:3px;padding:2px 5px}
+#konto-list .src.ind{color:var(--ok);border-color:var(--ok)}
+#konto-list .zuletzt{font-family:var(--font-m);font-size:9px;color:var(--text-dim);letter-spacing:.05em}
+
+/* ================= EXPORT / DETAIL ================= */
+pre.extf{font-family:var(--font-m);font-size:9.5px;line-height:1.7;background:var(--tinte);border:1px solid var(--linie);border-radius:4px;padding:12px;margin:12px 0;overflow-x:auto;color:var(--text-dim)}
+.prov{font-family:var(--font-m);font-size:11px;line-height:1.95;color:var(--text-dim)}
+.prov b{color:var(--text-hell);font-weight:500}
+.copyhash{background:var(--tinte);border:1px solid var(--linie);border-radius:4px;padding:10px 12px;margin-top:10px;display:flex;align-items:center;gap:10px;width:100%;cursor:pointer;text-align:left}
+.copyhash .h{flex:1;font-family:var(--font-m);font-size:10.5px;color:var(--stempel-hell);letter-spacing:.03em;word-break:break-all}
+.copyhash .c{font-family:var(--font-m);font-size:9.5px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.07em;flex-shrink:0}
+.copyhash:hover .c{color:var(--text-hell)}
+
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
 <div id="app">
 
-  <!-- ================= ONBOARDING ================= -->
+  <!-- ================= ONBOARDING (3 Schritte, Prüfliste) ================= -->
   <div id="onboard">
     <div class="eyebrow">0711 Intelligence · Mandanten-Einrichtung</div>
     <h2>Beleg</h2>
     <p class="sub">Belege erfassen, automatisch kontieren, GoBD-konform siegeln, an DATEV übergeben. Drei Angaben genügen zum Start.</p>
 
     <div id="ob-checks">
-      <div class="checkline" id="chk1"><span class="box"></span>Kontenrahmen wählen</div>
+      <div class="checkline now" id="chk1"><span class="box"></span>Kontenrahmen wählen</div>
       <div class="checkline" id="chk2"><span class="box"></span>Kontenplan (optional)</div>
       <div class="checkline" id="chk3"><span class="box"></span>Stammdaten</div>
     </div>
 
-    <div id="ob-step1" style="margin-top:22px">
-      <div class="skr-opt" onclick="pickSKR(this,'SKR03')">
-        <div class="t">SKR03</div>
-        <div class="d">Prozessgegliedert — folgt dem Ablauf des Geschäftsprozesses. Verbreitet bei Handel &amp; Handwerk.</div>
+    <!-- Schritt 1: SKR -->
+    <div class="ob-step active" id="ob1">
+      <button class="skr-opt" onclick="pickSKR(this,'SKR03')">
+        <span class="t">SKR03</span>
+        <span class="d">Prozessgegliedert — folgt dem Ablauf des Geschäftsprozesses. Verbreitet bei Handel &amp; Handwerk.</span>
+      </button>
+      <button class="skr-opt sel" onclick="pickSKR(this,'SKR04')">
+        <span class="t">SKR04</span>
+        <span class="d">Abschlussgegliedert — folgt Bilanz- und GuV-Struktur. Standard bei Kapitalgesellschaften.</span>
+      </button>
+      <div class="hint">Unsicher? Ihr Steuerberater weiß es sofort — die Angabe steht im DATEV-Mandantenstammblatt.</div>
+      <div class="btn-row">
+        <button class="btn btn-p" onclick="obGoto(2)">Weiter</button>
+        <button class="btn btn-g" onclick="finishOnboard()">Einrichtung überspringen</button>
       </div>
-      <div class="skr-opt sel" onclick="pickSKR(this,'SKR04')">
-        <div class="t">SKR04</div>
-        <div class="d">Abschlussgegliedert — folgt Bilanz- und GuV-Struktur. Standard bei Kapitalgesellschaften.</div>
-      </div>
-      <div class="hint">Unsicher? Ihr Steuerberater weiß es sofort — die Angabe steht im DATEV-Mandantenstammblatt. Ein individueller Kontenplan kann später als CSV ergänzt werden und überschreibt die Standardkonten.</div>
     </div>
 
-    <div class="btn-row">
-      <button class="btn btn-p" onclick="finishOnboard()">Demo-Mandant laden &amp; starten</button>
-      <button class="btn btn-g" onclick="finishOnboard()">Später einrichten</button>
+    <!-- Schritt 2: Kontenplan-CSV -->
+    <div class="ob-step" id="ob2">
+      <button class="drop" onclick="parseCSV()">Kontenplan-CSV hierher ziehen<br>oder tippen zum Auswählen — <span style="color:var(--stempel-hell)">Demo-CSV prüfen</span></button>
+      <div class="parse" id="csv-parse">
+        <div class="head">kontenplan_mandant.csv · 6 Zeilen gelesen</div>
+        <div class="row"><span class="nr">6530</span><span class="bez">Kfz-Betriebskosten</span><span class="st">✓ übernommen</span></div>
+        <div class="row"><span class="nr">6531</span><span class="bez">Fahrzeugpflege</span><span class="st">✓ individuell</span></div>
+        <div class="row"><span class="nr">6815</span><span class="bez">Bürobedarf</span><span class="st">✓ übernommen</span></div>
+        <div class="row"><span class="nr">6640</span><span class="bez">Bewirtungskosten 70 %</span><span class="st">✓ übernommen</span></div>
+        <div class="row"><span class="nr">6837</span><span class="bez">Hosting / IT-Dienste</span><span class="st">✓ individuell</span></div>
+        <div class="row err"><span class="nr">—</span><span class="bez">Zeile 7 · „Bewirtung“ — Kontonummer fehlt</span><span class="st">übersprungen</span></div>
+      </div>
+      <div class="hint">Individuelle Konten überschreiben die SKR-Standardkonten. Fehlerzeilen werden benannt und übersprungen — nichts wird stillschweigend verworfen.</div>
+      <div class="btn-row">
+        <button class="btn btn-p" onclick="obGoto(3)">Weiter</button>
+        <button class="btn btn-g" onclick="obGoto(3)">Ohne Kontenplan fortfahren</button>
+      </div>
+    </div>
+
+    <!-- Schritt 3: Stammdaten -->
+    <div class="ob-step" id="ob3">
+      <div class="field"><label for="st-ust">Umsatzsteuer-Status</label>
+        <select id="st-ust"><option>Regelbesteuerung</option><option>Kleinunternehmer § 19 UStG</option></select></div>
+      <div class="field"><label for="st-vers">Versteuerung</label>
+        <select id="st-vers"><option>Soll-Versteuerung (nach Rechnungsstellung)</option><option>Ist-Versteuerung (nach Zahlungseingang)</option></select></div>
+      <div class="field"><label for="st-wj">Wirtschaftsjahr</label>
+        <select id="st-wj"><option>Kalenderjahr 2026</option><option>Abweichend (01.07.–30.06.)</option></select></div>
+      <div class="hint">Diese Angaben steuern Steuerschlüssel und Festschreibung im EXTF-Export — sie lassen sich später nur mit Steuerberater-Freigabe ändern.</div>
+      <div class="btn-row">
+        <button class="btn btn-p" onclick="finishOnboard()">Einrichtung abschließen &amp; erfassen</button>
+      </div>
     </div>
   </div>
 
   <!-- ================= CAPTURE ================= -->
   <div class="screen active" id="s-capture">
     <div id="cap-stage">
+      <div id="cap-top">
+        <span class="wm">Beleg <span id="wm-skr">· SKR04</span></span>
+        <span class="sp"></span>
+        <span class="pill num" id="batch-pill" aria-live="polite">Stapel · 0</span>
+        <button class="pill" onclick="openSheet('demo')" aria-label="Demo-Zustände öffnen">◈ Zustände</button>
+      </div>
+      <div id="offline-banner" role="status"><b>Offline</b><span id="offline-text">Belege werden lokal gepuffert und automatisch übertragen, sobald Verbindung besteht.</span><br>
+        <button onclick="goOnline()">Wieder online (Demo)</button></div>
       <div class="corner tl"></div><div class="corner tr"></div>
       <div class="corner bl"></div><div class="corner br"></div>
       <div id="flash"></div>
 
-      <div id="beleg">
+      <div id="beleg-wrap">
         <div id="kontur"></div>
-        <div class="paper" id="paper1">
-          <div class="kopf">Bürobedarf Müller GmbH</div>
-          <div class="adr">Königstraße 41 · 70173 Stuttgart · USt-IdNr. DE 214 883 901</div>
-          <div style="font-size:7.5px;color:#6A7076">Rechnung <b style="color:#1B1E23">RE-2026-4711</b> · 05.08.2026</div>
-          <div class="rule"></div>
-          <table>
-            <tr><td>Kopierpapier A4, 5 × 500 Bl.</td><td>34,50</td></tr>
-            <tr><td>Toner HP 207X schwarz</td><td>51,90</td></tr>
-            <tr><td>Ordner A4, 10 St.</td><td>13,60</td></tr>
-          </table>
-          <div class="rule"></div>
-          <table>
-            <tr><td>Summe netto</td><td>100,00</td></tr>
-            <tr><td>USt 19 %</td><td>19,00</td></tr>
-            <tr class="sum"><td>Gesamtbetrag EUR</td><td>119,00</td></tr>
-          </table>
-          <div class="fuss">Zahlbar innerhalb 14 Tagen · IBAN DE89 6005 0101 0002 4471 09</div>
-
-          <!-- Instant-Reading Bounding-Boxes -->
-          <div class="bb" style="top:11px;left:11px;width:118px;height:13px"><span class="tag">LIEFERANT</span></div>
-          <div class="bb" style="top:39px;left:52px;width:64px;height:11px"><span class="tag">RE-NR</span></div>
-          <div class="bb" style="top:39px;left:122px;width:44px;height:11px"><span class="tag">DATUM</span></div>
-          <div class="bb" style="bottom:56px;right:9px;width:38px;height:11px"><span class="tag">NETTO</span></div>
-          <div class="bb" style="bottom:44px;right:9px;width:33px;height:11px"><span class="tag">UST 19%</span></div>
-          <div class="bb" style="bottom:31px;right:9px;width:38px;height:12px"><span class="tag">BRUTTO</span></div>
-          <div id="summenprobe">100,00 + 19,00 = 119,00 ✓ Summenprobe</div>
-        </div>
+        <div id="glare"></div>
+        <div id="paper-slot"></div>
       </div>
 
-      <div id="cap-status">Beleg in den Rahmen halten …</div>
-      <div id="cap-cta"><button class="btn btn-p" onclick="acceptCapture()">Übernehmen — 6 Felder erkannt</button></div>
+      <div id="cap-status" role="status" aria-live="polite">Beleg in den Rahmen halten …</div>
+      <div id="cap-actions"></div>
+      <button id="shutter" title="Manuell auslösen" aria-label="Manuell auslösen" onclick="manualShutter()">●</button>
+      <div id="filmstrip" aria-label="Stapel-Vorschau"></div>
     </div>
   </div>
 
   <!-- ================= VERARBEITUNG ================= -->
   <div class="screen" id="s-process">
-    <div class="topbar"><h1>Verarbeitung</h1><span class="mandant">Demo-Mandant · SKR04</span></div>
-    <div class="card">
-      <h3>RE-2026-4711 · Bürobedarf Müller GmbH</h3>
-      <div class="pstep" id="p1"><span class="pbox"></span>Extraktion (Dual-Lane, Server-Verifikation)</div>
-      <div class="pstep" id="p2"><span class="pbox"></span>Pflichtangaben § 14 UStG vollständig</div>
-      <div class="pstep" id="p3"><span class="pbox"></span>Kontierung gegen Mandanten-Kontenplan</div>
-      <div class="pstep" id="p4"><span class="pbox"></span>Merkle-Siegel &amp; GoBD-Archiv</div>
-
-      <div id="ergebnis" style="display:none">
-        <div class="buchsatz">
-          <b>6815</b> Bürobedarf&nbsp;&nbsp;100,00 S<br>
-          <b>1406</b> Vorsteuer 19 %&nbsp;&nbsp;19,00 S<br>
-          &nbsp;&nbsp;an <b>70001</b> Kred. Müller GmbH&nbsp;&nbsp;119,00 H
-        </div>
-        <div class="conf">
-          <span class="badge hist">Historie</span>
-          <div class="bar"><div class="fill" id="conf-fill" style="width:0;background:var(--stempel)"></div></div>
-          <span class="val num" id="conf-val">0 %</span>
-        </div>
-        <p class="small" style="margin:6px 0 14px">Lieferant 14× zuvor auf 6815 gebucht — automatische Buchung.</p>
-        <div class="siegel" id="siegel1"><span class="ring">✓</span><span class="hash">a3f9c1e7 · 06.08.2026 14:32:07 · gesiegelt</span></div>
-        <div style="margin-top:18px"><button class="btn btn-g" onclick="go('s-liste')" style="margin:0">Zur Belegliste</button></div>
-      </div>
+    <div class="topbar"><h1>Verarbeitung</h1><span class="mandant" id="proc-mandant">Demo-Mandant · SKR04</span></div>
+    <div class="routen-legende" aria-label="Confidence-Routing">
+      <span><b>≥ 95</b> automatisch</span><span><b>80–94</b> bestätigen</span><span><b>&lt; 80</b> prüfen</span>
     </div>
-
-    <div class="card" id="review-card" style="display:none">
-      <h3>Bon 0834 · Autohaus Weber</h3>
-      <div class="buchsatz"><b>6600</b>? Werbekosten&nbsp;&nbsp;54,62 S&nbsp;&nbsp;· Vorschlag unsicher</div>
-      <div class="conf">
-        <span class="badge ki">KI</span>
-        <div class="bar"><div class="fill" style="width:64%;background:var(--warn)"></div></div>
-        <span class="val num" style="color:var(--warn)">64 %</span>
-      </div>
-      <p class="small" style="margin:6px 0 14px">Leistungsart unklar — Beleg zur Prüfung geroutet.</p>
-      <button class="btn btn-p" onclick="go('s-editor')" style="margin:0">Kontierung prüfen</button>
-    </div>
+    <div id="proc-cards"></div>
+    <div style="padding:4px 16px 20px"><button class="btn btn-g" onclick="go('s-liste')" style="margin:0">Zur Belegliste</button></div>
   </div>
 
   <!-- ================= EDITOR ================= -->
   <div class="screen" id="s-editor">
-    <div class="topbar"><h1>Kontierung prüfen</h1><span class="mandant num">1 / 1</span></div>
+    <div class="topbar">
+      <button class="back" onclick="go('s-process')" aria-label="Zurück zur Verarbeitung">‹</button>
+      <h1>Kontierung prüfen</h1><span class="mandant num">1 / 1</span>
+    </div>
     <div class="split-img">
-      <div class="paper">
-        <div class="kopf">Autohaus Weber</div>
+      <div class="paper bon" id="editor-paper">
+        <div class="kopf" data-src="lieferant">AUTOHAUS WEBER</div>
         <div class="adr">Heilbronner Str. 90 · 70191 Stuttgart</div>
-        <div style="font-size:7.5px;color:#6A7076">Kassenbon 0834 · 04.08.2026</div>
+        <div style="font-size:7px;color:#6A7076">Bon 0834 · <span data-src="datum">04.08.2026</span> · 16:42</div>
         <div class="rule"></div>
         <table>
-          <tr><td style="background:rgba(51,70,200,.14)">Fahrzeugwäsche Premium</td><td>29,90</td></tr>
-          <tr><td>Innenreinigung</td><td>16,00</td></tr>
+          <tr><td data-src="leistung">FAHRZEUGWAESCHE PREMIUM</td><td>29,90</td></tr>
+          <tr><td>INNENREINIGUNG</td><td>16,00</td></tr>
         </table>
         <div class="rule"></div>
         <table>
-          <tr><td>Netto</td><td>45,90</td></tr>
-          <tr><td>USt 19 %</td><td>8,72</td></tr>
-          <tr class="sum"><td>Gesamt EUR</td><td>54,62</td></tr>
+          <tr><td>NETTO</td><td data-src="netto">45,90</td></tr>
+          <tr><td>UST 19%</td><td data-src="ust">8,72</td></tr>
+          <tr class="sum"><td>GESAMT EUR</td><td data-src="brutto">54,62</td></tr>
         </table>
+        <div class="fuss">ES BEDIENTE SIE: M. KRAUSS</div>
       </div>
     </div>
 
     <div class="diff">
       <div class="t">Abweichung · Gerät ↔ Server</div>
-      Gerät las <span class="mono">54,82</span> · Server verifizierte <span class="mono" style="color:var(--text-hell)">54,62</span> — Serverwert übernommen. Ihre Bestätigung verbessert künftige Vorschläge für diesen Lieferanten.
+      Beim Bruttobetrag las das Gerät einen anderen Wert als die Server-Verifikation. Wählen, welcher gilt:
+      <div class="pick">
+        <button id="pick-dev" onclick="pickDiff('dev')">Gerät · 54,82</button>
+        <button id="pick-srv" class="sel" onclick="pickDiff('srv')">Server · 54,62 ✓</button>
+      </div>
+      <div class="lernt">Ihre Wahl verbessert künftige Vorschläge für diesen Lieferanten.</div>
     </div>
 
-    <div class="field"><label>Sachkonto (SKR04)</label>
-      <input id="konto-in" value="" placeholder="Nummer oder Bezeichnung suchen …" oninput="fuzzy(this.value)">
+    <div class="efield"><label for="konto-in">Sachkonto — Nummer oder Bezeichnung</label>
+      <input id="konto-in" data-hl="leistung" placeholder="Suchen … z. B. 6530 oder „Kfz“" autocomplete="off"
+        oninput="fuzzy(this.value)" onfocus="fuzzy(this.value)">
+      <div id="konto-list" role="listbox" aria-label="Kontenvorschläge"></div>
     </div>
-    <div class="konto-sug" id="konto-sug">
-      <button onclick="pickKonto(this,'6530')">6530 · Kfz-Betriebskosten</button>
-      <button onclick="pickKonto(this,'6600')">6600 · Werbekosten</button>
-      <button onclick="pickKonto(this,'6850')">6850 · Sonst. Betriebsbedarf</button>
+    <div class="efield"><label for="ks-in">Steuerschlüssel</label>
+      <select id="ks-in" data-hl="ust"><option>9 · Vorsteuer 19 %</option><option>8 · Vorsteuer 7 %</option><option>0 · keine</option></select>
     </div>
-    <div class="field"><label>Steuerschlüssel</label>
-      <select><option>9 · Vorsteuer 19 %</option><option>8 · Vorsteuer 7 %</option><option>0 · keine</option></select>
-    </div>
-    <div class="field"><label>Bruttobetrag</label>
-      <input class="num-in num" value="54,62 €">
+    <div class="efield"><label for="brutto-in">Bruttobetrag</label>
+      <input id="brutto-in" data-hl="brutto" class="num-in num" value="54,62 €">
     </div>
     <div style="padding:6px 18px 24px">
-      <button class="btn btn-p" onclick="confirmEdit()">Buchung bestätigen</button>
+      <button class="btn btn-p" id="editor-confirm" onclick="confirmEdit()" disabled>Sachkonto wählen, dann bestätigen</button>
     </div>
   </div>
 
   <!-- ================= LISTE ================= -->
   <div class="screen" id="s-liste">
     <div class="topbar"><h1>Belege</h1><span class="mandant">August 2026</span></div>
-    <div class="filterbar">
-      <button class="chip on">Alle</button><button class="chip">Automatisch</button>
-      <button class="chip">Bestätigt</button><button class="chip">Korrigiert</button><button class="chip">Offen</button>
+    <div class="filterbar" role="tablist" aria-label="Belegfilter">
+      <button class="chip on" data-f="alle" onclick="setFilter(this)" aria-pressed="true">Alle</button>
+      <button class="chip" data-f="auto" onclick="setFilter(this)" aria-pressed="false">Automatisch</button>
+      <button class="chip" data-f="bestaetigt" onclick="setFilter(this)" aria-pressed="false">Bestätigt</button>
+      <button class="chip" data-f="korrigiert" onclick="setFilter(this)" aria-pressed="false">Nur Korrekturen</button>
+      <button class="chip" data-f="offen" onclick="setFilter(this)" aria-pressed="false">Offen</button>
     </div>
-    <div id="liste-body">
-      <div class="section-label">Heute</div>
-      <div id="row-slot"></div>
-      <div class="beleg-row" onclick="go('s-detail')">
-        <div class="siegel"><span class="ring">✓</span></div>
-        <div class="l"><div class="firma">Bürobedarf Müller GmbH</div><div class="meta">05.08. · RE-2026-4711 · <span style="color:var(--stempel-hell)">Historie</span></div></div>
-        <div><div class="betrag num">119,00 €</div><div class="konto">6815 · VSt 19 %</div></div>
-      </div>
-      <div class="section-label">Diese Woche</div>
-      <div class="beleg-row">
-        <div class="siegel"><span class="ring">✓</span></div>
-        <div class="l"><div class="firma">Stadtwerke Stuttgart</div><div class="meta">03.08. · Abschlag 08/26 · Regel</div></div>
-        <div><div class="betrag num">412,00 €</div><div class="konto">6325 · VSt 19 %</div></div>
-      </div>
-      <div class="beleg-row">
-        <div class="siegel"><span class="ring">✓</span></div>
-        <div class="l"><div class="firma">DB Fernverkehr</div><div class="meta">02.08. · Online-Ticket · Regel</div></div>
-        <div><div class="betrag num">87,90 €</div><div class="konto">6673 · VSt 7 %</div></div>
-      </div>
-      <div class="beleg-row">
-        <div class="siegel"><span class="ring">✓</span></div>
-        <div class="l"><div class="firma">Hetzner Online GmbH</div><div class="meta">01.08. · R2026-0psd83 · Historie</div></div>
-        <div><div class="betrag num">238,00 €</div><div class="konto">6837 · VSt 19 %</div></div>
-      </div>
+    <div id="liste-body"></div>
+    <div class="leer" id="liste-leer">
+      <div class="cam">◉</div>
+      <div>Noch keine Belege in diesem Mandanten.<br>Der erste Scan dauert keine fünf Sekunden.</div>
+      <button class="btn btn-p" onclick="go('s-capture');startBatch()">Ersten Beleg erfassen</button>
     </div>
   </div>
 
   <!-- ================= DETAIL / PROVENANCE ================= -->
   <div class="screen" id="s-detail">
-    <div class="topbar"><h1>RE-2026-4711</h1><span class="mandant">gesiegelt</span></div>
-    <div class="card">
-      <h3>Bürobedarf Müller GmbH · <span class="num">119,00 €</span></h3>
-      <div class="buchsatz"><b>6815</b> Bürobedarf 100,00 S · <b>1406</b> VSt 19,00 S<br>an <b>70001</b> Kreditor Müller 119,00 H</div>
-      <div class="section-label" style="padding:8px 0 6px">Provenance</div>
-      <div class="prov">
-        Quelle&nbsp;&nbsp;<b>Kamera-Capture, entzerrt + Original</b><br>
-        Extraktion&nbsp;&nbsp;<b>Dual-Lane v3 · Übereinstimmung Gerät/Server</b><br>
-        Kontierung&nbsp;&nbsp;<b>Kreditor-Historie (14 Vorbuchungen)</b> · Conf <b>97 %</b><br>
-        § 14 UStG&nbsp;&nbsp;<b>vollständig</b> · Summenprobe <b>✓</b><br>
-        Siegel&nbsp;&nbsp;<b>a3f9c1e7 3b02 91dd</b> · 06.08.2026 14:32:07<br>
-        Status&nbsp;&nbsp;<b>archiviert · unveränderbar</b>
-      </div>
+    <div class="topbar">
+      <button class="back" onclick="go('s-liste')" aria-label="Zurück zur Liste">‹</button>
+      <h1 id="det-titel">Beleg</h1><span class="mandant" id="det-status">gesiegelt</span>
     </div>
-    <div style="padding:0 16px"><button class="btn btn-g" onclick="go('s-liste')">Zurück zur Liste</button></div>
+    <div class="card">
+      <h3 id="det-firma">—</h3>
+      <div class="buchsatz" id="det-satz"></div>
+      <div class="section-label" style="padding:8px 0 6px">Provenance</div>
+      <div class="prov" id="det-prov"></div>
+      <button class="copyhash" onclick="copyHash(this)" title="Merkle-Siegel kopieren">
+        <span class="h" id="det-hash">—</span><span class="c">Kopieren</span>
+      </button>
+    </div>
+    <div style="padding:0 16px 20px"><button class="btn btn-g" onclick="go('s-liste')">Zurück zur Liste</button></div>
   </div>
 
   <!-- ================= EXPORT ================= -->
   <div class="screen" id="s-export">
     <div class="topbar"><h1>Export</h1><span class="mandant">DATEV · EXTF</span></div>
-    <div class="card">
+    <div class="card" id="export-card">
       <h3>Buchungsstapel August 2026</h3>
-      <p class="small" style="margin-bottom:10px"><span class="num" id="stapel-n">4</span> Buchungen · <span class="num" id="stapel-sum">856,90 €</span> · bereit für den Import beim Steuerberater.</p>
-      <pre class="extf" id="extf-pre">"EXTF";700;21;"Buchungsstapel";13;;;
-;"RE";"DE";;"20260801";"20260831";
-119,00;"S";"EUR";;;;"70001";"6815";9;"0508";"RE-2026-4711";"Bürobedarf"
-412,00;"S";"EUR";;;;"70012";"6325";9;"0308";"08-26";"Abschlag Energie"
-87,90;"S";"EUR";;;;"70008";"6673";8;"0208";"TCK-2210";"Bahnfahrt"
-238,00;"S";"EUR";;;;"70003";"6837";9;"0108";"R2026-0psd83";"Hosting"</pre>
-      <button class="btn btn-p" onclick="exportStapel()">EXTF-Stapel erzeugen</button>
+      <p class="small" style="margin-bottom:10px"><span class="num" id="stapel-n">0</span> Buchungen · <span class="num" id="stapel-sum">0,00 €</span> · bereit für den Import beim Steuerberater.</p>
+      <pre class="extf" id="extf-pre"></pre>
+      <button class="btn btn-p" id="export-btn" onclick="exportStapel()" disabled>EXTF-Stapel erzeugen</button>
       <div class="siegel" id="siegel-exp" style="display:none;margin-top:14px"><span class="ring">✓</span><span class="hash">Stapel 08/26 gesiegelt · exportierte Buchungen sind fixiert</span></div>
     </div>
-    <p class="small" style="padding:0 20px">Später: Direct-Push über den DATEV-Buchungsdatenservice — der Stapel-Export funktioniert ohne API-Vertrag.</p>
+    <p class="small" style="padding:0 20px 8px" id="export-leer">Noch keine gebuchten Belege — der Stapel füllt sich nach der ersten Verarbeitung.</p>
+    <p class="small" style="padding:0 20px 20px">Später: Direct-Push über den DATEV-Buchungsdatenservice — der Stapel-Export funktioniert ohne API-Vertrag.</p>
   </div>
 
   <!-- ================= NAV ================= -->
-  <nav>
+  <nav aria-label="Hauptnavigation">
     <button class="on" data-t="s-capture" onclick="tab(this)"><span class="dot"></span>Erfassen</button>
     <button data-t="s-liste" onclick="tab(this)"><span class="dot"></span>Belege</button>
     <button data-t="s-export" onclick="tab(this)"><span class="dot"></span>Export</button>
   </nav>
+
+  <!-- ================= SHEETS ================= -->
+  <div class="sheet-bg" id="sheet-bg" onclick="closeSheets()"></div>
+
+  <div class="sheet" id="sheet-demo" role="dialog" aria-modal="true" aria-label="Demo-Zustände">
+    <div class="grabber"></div>
+    <h4>Capture-Zustände (Demo)</h4>
+    <p class="sub">Die Zustände, die das Design abdeckt — hier manuell auslösbar, im Produkt von der Live-Erkennung gesteuert.</p>
+    <div class="state-grid">
+      <button onclick="demoState('auto')">Ablauf neu starten<small>Happy Path · 3 Belege</small></button>
+      <button onclick="demoState('dunkel')">Zu dunkel<small>Blitz-Vorschlag</small></button>
+      <button onclick="demoState('blendung')">Blendung erkannt<small>Kipp-Hinweis</small></button>
+      <button onclick="demoState('unlesbar')">OCR unlesbar<small>Neu erfassen / manuell</small></button>
+      <button onclick="demoState('offline')">Offline<small>Lokale Warteschlange</small></button>
+      <button onclick="closeSheets()">Schließen<small>Zurück zur Kamera</small></button>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheet-feld" role="dialog" aria-modal="true" aria-label="Feld korrigieren">
+    <div class="grabber"></div>
+    <h4 id="feld-titel">Feld korrigieren</h4>
+    <p class="sub">Direkt am Beleg korrigieren — die Korrektur fließt in die Server-Verifikation ein.</p>
+    <div class="field"><label id="feld-label" for="feld-in">Wert</label>
+      <input id="feld-in" autocomplete="off"></div>
+    <button class="btn btn-p" onclick="saveFeld()">Übernehmen</button>
+  </div>
 </div>
 
 <script>
-/* ---------- State (nur im Speicher, kein Storage) ---------- */
-let skr='SKR04', captured=false, editDone=false;
+/* =================================================================
+   Beleg — „Unlimited-OCR Mobile“
+   Demo-Prototyp: gesamter Zustand nur im Speicher, kein Storage.
+   ================================================================= */
+
+/* ---------- Stammdaten ---------- */
+var KONTEN=[
+  {nr:'6530',bez:'Kfz-Betriebskosten',src:'SKR'},
+  {nr:'6531',bez:'Fahrzeugpflege',src:'IND'},
+  {nr:'6600',bez:'Werbekosten',src:'SKR'},
+  {nr:'6640',bez:'Bewirtungskosten 70 %',src:'SKR'},
+  {nr:'6805',bez:'Telefon / Kommunikation',src:'SKR'},
+  {nr:'6815',bez:'Bürobedarf',src:'SKR'},
+  {nr:'6837',bez:'Hosting / IT-Dienste',src:'IND'},
+  {nr:'6850',bez:'Sonstiger Betriebsbedarf',src:'SKR'}
+];
+var ZULETZT_WEBER=['6530'];
+
+/* Die drei Demo-Belege des Stapels — je einer pro Confidence-Route */
+var BATCH=[
+  {id:'b1',art:'re',firma:'Bürobedarf Müller GmbH',ref:'RE-2026-4711',datum:'05.08.2026',dd:'0508',
+   netto:'100,00',ust:'19,00',brutto:'119,00',bruttoNum:119.00,konto:'6815',kbez:'Bürobedarf',ks:'9',ksTxt:'VSt 19 %',
+   kred:'70001',herkunft:'hist',conf:97,route:'auto',
+   hash:'a3f9c1e7 3b02 91dd',ts:'06.08.2026 14:32:07',felder:6},
+  {id:'b2',art:'bon',firma:'Autohaus Weber',ref:'Bon 0834',datum:'04.08.2026',dd:'0408',
+   netto:'45,90',ust:'8,72',brutto:'54,62',bruttoNum:54.62,konto:'',kbez:'',ks:'9',ksTxt:'VSt 19 %',
+   kred:'70021',herkunft:'ki',conf:61,route:'pruefen',
+   hash:'f07d22b9 8c41 d05a',ts:'06.08.2026 14:33:41',felder:5},
+  {id:'b3',art:'bewirtung',firma:'Gasthaus Ochsen',ref:'Bon 2219',datum:'06.08.2026',dd:'0608',
+   netto:'72,35',ust:'13,75',brutto:'86,10',bruttoNum:86.10,konto:'6640',kbez:'Bewirtung 70 %',ks:'9',ksTxt:'VSt 19 %',
+   kred:'70034',herkunft:'regel',conf:88,route:'bestaetigen',
+   hash:'1c88ae04 27f3 66b2',ts:'06.08.2026 14:34:15',felder:6}
+];
+
+/* Bereits archivierte Belege (erscheinen nach der ersten Übernahme) */
+var ARCHIV=[
+  {id:'a1',firma:'Stadtwerke Stuttgart',ref:'Abschlag 08/26',datum:'03.08.2026',dd:'0308',brutto:'412,00',bruttoNum:412.00,
+   konto:'6325',ks:'9',ksTxt:'VSt 19 %',kred:'70012',herkunft:'regel',conf:96,status:'auto',hash:'77b2e0c4 9a11 f38d',ts:'03.08.2026 09:12:44',buchtext:'Abschlag Energie'},
+  {id:'a2',firma:'DB Fernverkehr',ref:'TCK-2210',datum:'02.08.2026',dd:'0208',brutto:'87,90',bruttoNum:87.90,
+   konto:'6673',ks:'8',ksTxt:'VSt 7 %',kred:'70008',herkunft:'regel',conf:95,status:'auto',hash:'be55c917 04dd a2c8',ts:'02.08.2026 18:03:10',buchtext:'Bahnfahrt'},
+  {id:'a3',firma:'Hetzner Online GmbH',ref:'R2026-0psd83',datum:'01.08.2026',dd:'0108',brutto:'238,00',bruttoNum:238.00,
+   konto:'6837',ks:'9',ksTxt:'VSt 19 %',kred:'70003',herkunft:'hist',conf:98,status:'auto',hash:'0d31f6a8 5be2 c974',ts:'01.08.2026 07:55:02',buchtext:'Hosting'}
+];
+
+/* ---------- Zustand ---------- */
+var skr='SKR04';
+var capMode='auto';        // auto | dunkel | blendung | unlesbar
+var offline=false;
+var capIdx=0;              // welcher Beleg des Stapels läuft gerade
+var scanned=[];            // im Stapel erfasste Belege
+var belege=[];             // verarbeitete Belege (Liste/Export)
+var archivSichtbar=false;
+var batchStarted=false, processed=false, exportiert=false, editDone=false;
+var filter='alle';
+var timers=[];
+var HERKUNFT_TXT={hist:'Historie',regel:'Regel',ki:'KI'};
+
+function wait(fn,ms){timers.push(setTimeout(fn,ms))}
+function clearTimers(){timers.forEach(clearTimeout);timers=[]}
+function $(id){return document.getElementById(id)}
+function fmtEur(n){return n.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'}
 
 /* ---------- Navigation ---------- */
 function go(id){
-  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
-  const map={'s-capture':'s-capture','s-liste':'s-liste','s-export':'s-export'};
-  document.querySelectorAll('nav button').forEach(b=>{
-    b.classList.toggle('on', map[id]===b.dataset.t);
+  document.querySelectorAll('.screen').forEach(function(s){s.classList.remove('active')});
+  $(id).classList.add('active');
+  var tabMap={'s-capture':'s-capture','s-liste':'s-liste','s-export':'s-export'};
+  document.querySelectorAll('nav button').forEach(function(b){
+    b.classList.toggle('on', tabMap[id]===b.dataset.t);
   });
+  if(id==='s-liste') renderListe();
+  if(id==='s-export') renderExport();
 }
-function tab(btn){ go(btn.dataset.t); if(btn.dataset.t==='s-capture'&&!captured) startCapture(); }
+function tab(btn){
+  go(btn.dataset.t);
+  if(btn.dataset.t==='s-capture' && !batchStarted) startBatch();
+}
 
 /* ---------- Onboarding ---------- */
 function pickSKR(el,val){
   skr=val;
-  document.querySelectorAll('.skr-opt').forEach(o=>o.classList.remove('sel'));
+  document.querySelectorAll('.skr-opt').forEach(function(o){o.classList.remove('sel')});
   el.classList.add('sel');
-  document.getElementById('chk1').classList.add('done');
-  document.querySelector('#chk1 .box').textContent='✓';
 }
+function obDone(n){
+  var c=$('chk'+n); c.classList.add('done'); c.classList.remove('now');
+  c.querySelector('.box').textContent='✓';
+}
+function obGoto(step){
+  obDone(step-1);
+  var c=$('chk'+step); if(c) c.classList.add('now');
+  document.querySelectorAll('.ob-step').forEach(function(s){s.classList.remove('active')});
+  $('ob'+step).classList.add('active');
+}
+function parseCSV(){ $('csv-parse').classList.add('show'); }
 function finishOnboard(){
-  ['chk1','chk2','chk3'].forEach(id=>{
-    document.getElementById(id).classList.add('done');
-    document.querySelector('#'+id+' .box').textContent='✓';
-  });
-  setTimeout(()=>{
-    document.getElementById('onboard').style.display='none';
-    startCapture();
-  }, 350);
+  [1,2,3].forEach(obDone);
+  $('wm-skr').textContent='· '+skr;
+  $('proc-mandant').textContent='Demo-Mandant · '+skr;
+  wait(function(){ $('onboard').style.display='none'; startBatch(); },350);
 }
 
-/* ---------- Capture-Sequenz ---------- */
-function startCapture(){
-  const beleg=document.getElementById('beleg');
-  const status=document.getElementById('cap-status');
-  beleg.classList.remove('in','flat');
-  document.querySelectorAll('.bb').forEach(b=>b.classList.remove('show'));
-  document.getElementById('summenprobe').classList.remove('show');
-  document.getElementById('cap-cta').classList.remove('show');
-  status.textContent='Beleg in den Rahmen halten …'; status.classList.remove('lock');
-
-  setTimeout(()=>{ beleg.classList.add('in');
-    status.textContent='Beleg erkannt — ruhig halten'; status.classList.add('lock'); },900);
-  setTimeout(()=>{ document.getElementById('flash').classList.add('go');
-    beleg.classList.add('flat');
-    status.textContent='Erfasst · entzerrt · geglättet'; },2300);
-  setTimeout(()=>{ document.getElementById('flash').classList.remove('go');
-    /* Instant Reading: Felder gestaffelt */
-    document.querySelectorAll('.bb').forEach((b,i)=>setTimeout(()=>b.classList.add('show'), i*90));
-  },2800);
-  setTimeout(()=>{ document.getElementById('summenprobe').classList.add('show');
-    document.getElementById('cap-cta').classList.add('show');
-    status.textContent='6 Felder gelesen · Summenprobe bestanden'; },3500);
+/* ---------- Capture: Papiere ---------- */
+function paperHTML(b){
+  if(b.art==='re') return ''+
+    '<div class="paper" id="paper-live">'+
+      '<div class="kopf">Bürobedarf Müller GmbH</div>'+
+      '<div class="adr">Königstraße 41 · 70173 Stuttgart · USt-IdNr. DE 214 883 901</div>'+
+      '<div style="font-size:7.5px;color:#6A7076">Rechnung <b style="color:#1B1E23">RE-2026-4711</b> · 05.08.2026</div>'+
+      '<div class="rule"></div>'+
+      '<table><tr><td>Kopierpapier A4, 5 × 500 Bl.</td><td>34,50</td></tr>'+
+      '<tr><td>Toner HP 207X schwarz</td><td>51,90</td></tr>'+
+      '<tr><td>Ordner A4, 10 St.</td><td>13,60</td></tr></table>'+
+      '<div class="rule"></div>'+
+      '<table><tr><td>Summe netto</td><td>100,00</td></tr>'+
+      '<tr><td>USt 19 %</td><td>19,00</td></tr>'+
+      '<tr class="sum"><td>Gesamtbetrag EUR</td><td>119,00</td></tr></table>'+
+      '<div class="fuss">Zahlbar innerhalb 14 Tagen · IBAN DE89 6005 0101 0002 4471 09</div>'+
+      bbHTML([['LIEFERANT','top:11px;left:11px;width:118px;height:13px','Lieferant','Bürobedarf Müller GmbH'],
+              ['RE-NR','top:39px;left:52px;width:64px;height:11px','Rechnungsnummer','RE-2026-4711'],
+              ['DATUM','top:39px;left:122px;width:44px;height:11px','Datum','05.08.2026'],
+              ['NETTO','bottom:56px;right:9px;width:38px;height:11px','Netto','100,00'],
+              ['UST 19%','bottom:44px;right:9px;width:33px;height:11px','USt 19 %','19,00'],
+              ['BRUTTO','bottom:31px;right:9px;width:38px;height:12px','Brutto','119,00']])+
+      '<div class="summenprobe">100,00 + 19,00 = 119,00 ✓ Summenprobe</div>'+
+    '</div>';
+  if(b.art==='bon') return ''+
+    '<div class="paper bon" id="paper-live">'+
+      '<div class="kopf">AUTOHAUS WEBER</div>'+
+      '<div class="adr">HEILBRONNER STR. 90 · 70191 STUTTGART</div>'+
+      '<div style="font-size:7px;color:#6A7076">BON 0834 · 04.08.2026 · 16:42</div>'+
+      '<div class="rule"></div>'+
+      '<table><tr><td>FAHRZEUGWAESCHE PREMIUM</td><td>29,90</td></tr>'+
+      '<tr><td>INNENREINIGUNG</td><td>16,00</td></tr></table>'+
+      '<div class="rule"></div>'+
+      '<table><tr><td>NETTO</td><td>45,90</td></tr>'+
+      '<tr><td>UST 19%</td><td>8,72</td></tr>'+
+      '<tr class="sum"><td>GESAMT EUR</td><td>54,62</td></tr></table>'+
+      '<div class="fuss">ES BEDIENTE SIE: M. KRAUSS</div>'+
+      bbHTML([['LIEFERANT','top:9px;left:9px;width:96px;height:12px','Lieferant','Autohaus Weber'],
+              ['BON','top:34px;left:9px;width:56px;height:10px','Belegnummer','0834'],
+              ['DATUM','top:34px;left:70px;width:48px;height:10px','Datum','04.08.2026'],
+              ['NETTO','bottom:52px;right:8px;width:34px;height:10px','Netto','45,90'],
+              ['BRUTTO','bottom:28px;right:8px;width:36px;height:11px','Brutto','54,82']])+
+      '<div class="summenprobe" style="color:var(--warn)">45,90 + 8,72 ≠ 54,82 · Server prüft</div>'+
+    '</div>';
+  return ''+
+    '<div class="paper" id="paper-live">'+
+      '<div class="kopf">Gasthaus Ochsen</div>'+
+      '<div class="adr">Marktplatz 3 · 70372 Stuttgart</div>'+
+      '<div style="font-size:7.5px;color:#6A7076">Bewirtungsbeleg 2219 · 06.08.2026</div>'+
+      '<div class="rule"></div>'+
+      '<table><tr><td>2 × Tagesessen</td><td>38,80</td></tr>'+
+      '<tr><td>Getränke</td><td>27,30</td></tr>'+
+      '<tr><td>Trinkgeld (eingetragen)</td><td>6,25</td></tr></table>'+
+      '<div class="rule"></div>'+
+      '<table><tr><td>Netto</td><td>72,35</td></tr>'+
+      '<tr><td>USt 19 %</td><td>13,75</td></tr>'+
+      '<tr class="sum"><td>Gesamt EUR</td><td>86,10</td></tr></table>'+
+      '<div class="fuss">Bewirtete Personen &amp; Anlass auf Rückseite vermerkt</div>'+
+      bbHTML([['LIEFERANT','top:11px;left:11px;width:84px;height:13px','Lieferant','Gasthaus Ochsen'],
+              ['BELEG','top:39px;left:74px;width:30px;height:11px','Belegnummer','2219'],
+              ['DATUM','top:39px;left:108px;width:44px;height:11px','Datum','06.08.2026'],
+              ['NETTO','bottom:56px;right:9px;width:34px;height:11px','Netto','72,35'],
+              ['UST 19%','bottom:44px;right:9px;width:34px;height:11px','USt 19 %','13,75'],
+              ['BRUTTO','bottom:31px;right:9px;width:36px;height:12px','Brutto','86,10']])+
+      '<div class="summenprobe">72,35 + 13,75 = 86,10 ✓ Summenprobe</div>'+
+    '</div>';
+}
+function bbHTML(list){
+  return list.map(function(x){
+    return '<button class="bb" style="'+x[1]+'" aria-label="'+x[2]+' korrigieren" '+
+      'onclick="openFeld(\''+x[2].replace(/'/g,"\\'")+'\',\''+x[3].replace(/'/g,"\\'")+'\')">'+
+      '<span class="tag">'+x[0]+'</span></button>';
+  }).join('');
 }
 
-/* ---------- Übernahme → Verarbeitung ---------- */
-function acceptCapture(){
-  captured=true;
+/* ---------- Capture: Ablauf ---------- */
+function setStatus(txt,cls){
+  var s=$('cap-status'); s.textContent=txt;
+  s.className=''; s.id='cap-status'; if(cls) s.classList.add(cls);
+}
+function setActions(html){ $('cap-actions').innerHTML=html||''; }
+
+function startBatch(){
+  batchStarted=true; capIdx=0; scanned=[]; clearTimers();
+  $('filmstrip').innerHTML=''; $('batch-pill').classList.remove('show');
+  runCapture();
+}
+function runCapture(){
+  clearTimers();
+  var stage=$('cap-stage'), wrap=$('beleg-wrap');
+  stage.classList.remove('dunkel'); $('glare').classList.remove('show');
+  wrap.classList.remove('in','flat');
+  setActions('');
+  if(capIdx>=BATCH.length){ readyToAccept(); return; }
+  var b=BATCH[capIdx];
+  $('paper-slot').innerHTML=paperHTML(b);
+
+  /* Fehlzustände zuerst — sie unterbrechen den Happy Path */
+  if(capMode==='dunkel'){
+    stage.classList.add('dunkel');
+    setStatus('Zu dunkel — Belegkontur nicht erkennbar','warn');
+    setActions('<button class="pill primary" onclick="fixLicht()">Blitz einschalten</button>'+
+               '<button class="pill" onclick="demoState(\'auto\')">Abbrechen</button>');
+    return;
+  }
+  if(capMode==='blendung'){
+    wrap.classList.add('in'); $('glare').classList.add('show');
+    setStatus('Blendung erkannt — Beleg leicht kippen','warn');
+    setActions('<button class="pill primary" onclick="fixBlendung()">Beleg gekippt (Demo)</button>');
+    return;
+  }
+
+  setStatus('Beleg in den Rahmen halten …');
+  wait(function(){ wrap.classList.add('in'); setStatus('Beleg erkannt — ruhig halten','lock'); },900);
+  wait(function(){ capturePaper(b); },2100);
+}
+function capturePaper(b){
+  var wrap=$('beleg-wrap');
+  $('flash').classList.add('go');
+  wrap.classList.add('flat');
+  setStatus('Erfasst · entzerrt · geglättet','lock');
+  wait(function(){ $('flash').classList.remove('go'); },400);
+
+  if(capMode==='unlesbar'){
+    wait(function(){
+      setStatus('Nicht lesbar — Beleg zu stark geknickt oder verwischt','err');
+      setActions('<button class="pill primary" onclick="demoState(\'auto\')">Erneut erfassen</button>'+
+                 '<button class="pill" onclick="demoState(\'auto\')">Manuell eingeben</button>');
+    },900);
+    return;
+  }
+
+  /* Instant Reading: Felder gestaffelt in ~400 ms */
+  wait(function(){
+    document.querySelectorAll('#paper-live .bb').forEach(function(el,i){
+      wait(function(){el.classList.add('show')}, i*90);
+    });
+  },600);
+  wait(function(){
+    var sp=document.querySelector('#paper-live .summenprobe');
+    if(sp) sp.classList.add('show');
+    if(b.art==='bon') setStatus(b.felder+' Felder gelesen · Summenprobe weicht ab — Server verifiziert','warn');
+    else setStatus(b.felder+' Felder gelesen · Summenprobe bestanden','lock');
+    addThumb(b);
+    if(b.art==='re'){ askMehrseitig(); } else { nextAfterPause(); }
+  },1450);
+}
+function addThumb(b){
+  scanned.push(b);
+  var t=document.createElement('div'); t.className='thumb'; t.dataset.id=b.id;
+  t.innerHTML='<span class="st">·</span>';
+  $('filmstrip').appendChild(t);
+  var pill=$('batch-pill'); pill.textContent='Stapel · '+scanned.length; pill.classList.add('show');
+}
+function askMehrseitig(){
+  setActions('<button class="pill primary" onclick="seite2()">Seite 2 erfassen</button>'+
+             '<button class="pill" onclick="nextCapture()">Rechnung ist einseitig</button>');
+  setStatus('Mehrseitige Rechnung? Seite 2 kann direkt angehängt werden','lock');
+}
+function seite2(){
+  setActions('');
+  var wrap=$('beleg-wrap');
+  wrap.classList.remove('flat'); void wrap.offsetWidth;
+  setStatus('Seite 2 — Beleg erkannt, ruhig halten','lock');
+  wait(function(){
+    $('flash').classList.add('go'); wrap.classList.add('flat');
+    setStatus('Seite 2 angehängt — ein Beleg, zwei Seiten','lock');
+    var t=$('filmstrip').lastElementChild;
+    if(t && !t.querySelector('.pg')){ var pg=document.createElement('span'); pg.className='pg'; pg.textContent='2 S.'; t.appendChild(pg); }
+  },1100);
+  wait(function(){ $('flash').classList.remove('go'); nextCapture(); },1900);
+}
+function nextAfterPause(){ wait(nextCapture,1700); }
+function nextCapture(){
+  capIdx++;
+  if(capIdx<BATCH.length){
+    setStatus('Nächster Beleg …');
+    wait(runCapture,700);
+  } else { readyToAccept(); }
+}
+function readyToAccept(){
+  var felder=scanned.reduce(function(a,b){return a+b.felder},0);
+  setStatus(scanned.length+' Belege im Stapel · '+felder+' Felder gelesen','lock');
+  setActions('<button class="pill primary" onclick="acceptBatch()">Übernehmen — '+scanned.length+' Belege</button>'+
+             '<button class="pill" onclick="startBatch()">Neu beginnen</button>');
+}
+function manualShutter(){
+  /* Fallback-Auslöser: erzwingt Capture im aktuellen Zustand */
+  if(capIdx>=BATCH.length) return;
+  clearTimers();
+  var stage=$('cap-stage'); stage.classList.remove('dunkel'); $('glare').classList.remove('show');
+  $('beleg-wrap').classList.add('in');
+  capMode='auto';
+  wait(function(){ capturePaper(BATCH[capIdx]); },250);
+}
+
+/* Fehlzustands-Auflösungen */
+function fixLicht(){ capMode='auto'; setStatus('Blitz aktiv — erneut ausrichten','lock'); wait(runCapture,600); }
+function fixBlendung(){ capMode='auto'; $('glare').classList.remove('show'); setStatus('Blendung behoben','lock'); wait(runCapture,500); }
+
+/* Demo-Zustandswahl */
+function demoState(mode){
+  closeSheets();
+  if(mode==='offline'){ setOffline(true); demoRestart('auto'); return; }
+  demoRestart(mode);
+}
+function demoRestart(mode){
+  capMode=mode; batchStarted=true; capIdx=0; scanned=[];
+  /* Demo-Reset: die drei Stapel-Belege werden neu erfasst, Archiv bleibt */
+  belege=belege.filter(function(b){return !BATCH.some(function(x){return x.id===b.id})});
+  BATCH[1].konto=''; BATCH[1].kbez=''; BATCH[1].brutto='54,62'; BATCH[1].bruttoNum=54.62;
+  editDone=false; exportiert=false; editorKonto=null; diffWahl='srv';
+  $('siegel-exp').style.display='none';
+  $('konto-in').value='';
+  var ec=$('editor-confirm'); ec.disabled=true; ec.textContent='Sachkonto wählen, dann bestätigen';
+  clearTimers(); $('filmstrip').innerHTML=''; $('batch-pill').classList.remove('show');
+  go('s-capture'); runCapture();
+}
+function setOffline(on){
+  offline=on;
+  $('offline-banner').classList.toggle('show',on);
+}
+function goOnline(){
+  setOffline(false);
+  var queued=belege.filter(function(b){return b.status==='offen' && b.queued});
+  if(queued.length){
+    queued.forEach(function(b){ delete b.queued; });
+    belege=belege.filter(function(b){return !BATCH.some(function(x){return x.id===b.id})});
+    processBatch();
+  }
+}
+
+/* ---------- Feld-Korrektur (Bounding-Box angetippt) ---------- */
+var feldAktiv=null;
+function openFeld(label,wert){
+  feldAktiv=label;
+  $('feld-titel').textContent=label+' korrigieren';
+  $('feld-label').textContent=label+' — erkannter Wert';
+  $('feld-in').value=wert;
+  openSheet('feld');
+  wait(function(){ $('feld-in').focus(); },320);
+}
+function saveFeld(){ closeSheets(); setStatus(feldAktiv+' korrigiert — fließt in die Verifikation ein','lock'); }
+
+/* ---------- Sheets ---------- */
+function openSheet(which){
+  $('sheet-bg').classList.add('show');
+  $('sheet-'+which).classList.add('show');
+}
+function closeSheets(){
+  $('sheet-bg').classList.remove('show');
+  document.querySelectorAll('.sheet').forEach(function(s){s.classList.remove('show')});
+}
+
+/* ---------- Übernahme → Verarbeitung / Offline-Queue ---------- */
+function acceptBatch(){
+  if(offline){
+    scanned.forEach(function(b){
+      if(!belege.some(function(x){return x.id===b.id})){
+        belege.push({id:b.id,firma:b.firma,ref:b.ref,datum:b.datum,dd:b.dd,brutto:b.brutto,bruttoNum:b.bruttoNum,
+          konto:b.konto||'—',ks:b.ks,ksTxt:b.ksTxt,kred:b.kred,herkunft:b.herkunft,conf:b.conf,
+          status:'offen',queued:true,hash:'',ts:'',buchtext:b.kbez||b.firma});
+      }
+    });
+    $('offline-text').textContent=scanned.length+' Belege lokal gepuffert — Upload folgt automatisch, sobald Verbindung besteht.';
+    go('s-liste');
+    return;
+  }
+  processBatch();
+}
+function processBatch(){
+  processed=true;
   go('s-process');
-  const steps=['p1','p2','p3','p4'];
-  steps.forEach((id,i)=>setTimeout(()=>{
-    const el=document.getElementById(id);
-    el.classList.add('done'); el.querySelector('.pbox').textContent='✓';
-    if(i===steps.length-1) showErgebnis();
-  }, 550*(i+1)));
+  renderProcess();
 }
-function showErgebnis(){
-  const e=document.getElementById('ergebnis'); e.style.display='block';
-  setTimeout(()=>{
-    document.getElementById('conf-fill').style.width='97%';
-    let v=0; const t=setInterval(()=>{ v+=3; if(v>=97){v=97;clearInterval(t);}
-      document.getElementById('conf-val').textContent=v+' %'; },22);
-  },100);
-  setTimeout(()=>{ document.getElementById('siegel1').classList.add('stamp'); },900);
-  setTimeout(()=>{ document.getElementById('review-card').style.display='block'; },1400);
+
+/* ---------- Verarbeitung ---------- */
+function stepHTML(b){
+  var warn14=(b.id==='b2');
+  return '<div class="pstep" data-s="1"><span class="pbox"></span>Extraktion — Dual-Lane, Server-Verifikation</div>'+
+    '<div class="pstep" data-s="2"><span class="pbox"></span>'+(warn14?'Pflichtangaben § 14 UStG — Leistungsbeschreibung unklar':'Pflichtangaben § 14 UStG vollständig')+'</div>'+
+    '<div class="pstep" data-s="3"><span class="pbox"></span>Kontierung gegen Mandanten-Kontenplan</div>'+
+    '<div class="pstep" data-s="4"><span class="pbox"></span>Merkle-Siegel &amp; GoBD-Archiv</div>';
+}
+function renderProcess(){
+  var host=$('proc-cards'); host.innerHTML='';
+  BATCH.forEach(function(b){
+    var card=document.createElement('div'); card.className='card'; card.id='pc-'+b.id;
+    card.innerHTML='<h3><span>'+b.firma+'</span><span class="amt num">'+b.brutto+' €</span></h3>'+
+      '<div class="route">'+b.ref+' · '+b.datum+'</div>'+stepHTML(b)+'<div class="ergebnis" style="display:none"></div>';
+    host.appendChild(card);
+  });
+  BATCH.forEach(function(b,bi){
+    [1,2,3,4].forEach(function(s,si){
+      wait(function(){
+        var card=$('pc-'+b.id);
+        var step=card.querySelector('[data-s="'+s+'"]');
+        if(b.id==='b2' && s===2){ step.classList.add('warnstep'); step.querySelector('.pbox').textContent='!'; }
+        else if(b.id==='b2' && s===4){ step.querySelector('.pbox').textContent='·'; step.innerHTML=step.innerHTML.replace('Merkle-Siegel','Siegel wartet auf Prüfung — Merkle'); }
+        else { step.classList.add('done'); step.querySelector('.pbox').textContent='✓'; }
+        if(s===4) showErgebnis(b);
+      }, 420*(si+1)+bi*650);
+    });
+  });
+}
+function showErgebnis(b){
+  var card=$('pc-'+b.id), e=card.querySelector('.ergebnis');
+  var badge='<span class="badge '+b.herkunft+'">'+HERKUNFT_TXT[b.herkunft]+'</span>';
+  var confColor=b.conf>=95?'var(--stempel)':(b.conf>=80?'var(--ok)':'var(--warn)');
+  var satz, note, action='';
+  if(b.id==='b1'){
+    satz='<b>6815</b> Bürobedarf 100,00 S · <b>1406</b> VSt 19 % 19,00 S<br>&nbsp;&nbsp;an <b>70001</b> Kred. Müller GmbH 119,00 H';
+    note='Lieferant 14× zuvor auf 6815 gebucht — kein Zutun nötig.';
+  } else if(b.id==='b3'){
+    satz='<b>6640</b> Bewirtung 70 % 72,35 S · <b>1406</b> VSt 19 % 13,75 S<br>&nbsp;&nbsp;an <b>70034</b> Kred. Gasthaus Ochsen 86,10 H';
+    note='Regel „Bewirtungsbeleg + Gasthaus*“ griff — ein Tap genügt.';
+    action='<button class="btn btn-p" style="margin-top:12px" onclick="confirmB3(this)">Buchung bestätigen</button>';
+  } else {
+    satz='<b>6600</b> ? Werbekosten 45,90 S — Vorschlag unsicher<br>&nbsp;&nbsp;an <b>70021</b> Kred. Autohaus Weber 54,62 H';
+    note='Leistungsart unklar · Gerät/Server-Differenz beim Brutto — zur Prüfung geroutet.';
+    action='<button class="btn btn-p" style="margin-top:12px" onclick="go(\'s-editor\')">Kontierung prüfen</button>';
+  }
+  var routeTxt=b.route==='auto'?'Automatisch gebucht':(b.route==='bestaetigen'?'Bestätigen — ein Tap':'Prüfen — Kontierungs-Editor');
+  e.innerHTML='<div class="buchsatz">'+satz+'</div>'+
+    '<div class="conf">'+badge+'<div class="bar"><div class="fill" style="width:0;background:'+confColor+'"></div></div>'+
+    '<span class="val num" style="color:'+(b.conf<80?'var(--warn)':'inherit')+'">'+b.conf+' %</span></div>'+
+    '<p class="small" style="margin:6px 0 2px">'+routeTxt+' · '+note+'</p>'+
+    (b.route==='auto'?'<div class="siegel" style="margin-top:12px"><span class="ring">✓</span><span class="hash">'+b.hash.slice(0,8)+' · '+b.ts+' · gesiegelt</span></div>':'')+
+    action;
+  e.style.display='block';
+  wait(function(){ e.querySelector('.fill').style.width=b.conf+'%'; },80);
+  if(b.route==='auto'){
+    wait(function(){
+      var s=e.querySelector('.siegel'); s.classList.add('stamp');
+      commitBeleg(b,'auto');
+    },700);
+  }
+}
+function confirmB3(btn){
+  var b=BATCH[2];
+  var wrap=btn.parentNode;
+  btn.outerHTML='<div class="siegel stamp" style="margin-top:12px"><span class="ring">✓</span><span class="hash">'+b.hash.slice(0,8)+' · '+b.ts+' · gesiegelt</span></div>';
+  var card=$('pc-'+b.id), step=card.querySelector('[data-s="4"]');
+  step.classList.add('done'); step.querySelector('.pbox').textContent='✓';
+  commitBeleg(b,'bestaetigt');
+}
+function commitBeleg(b,status){
+  if(belege.some(function(x){return x.id===b.id})) return;
+  belege.push({id:b.id,firma:b.firma,ref:b.ref,datum:b.datum,dd:b.dd,brutto:b.brutto,bruttoNum:b.bruttoNum,
+    konto:b.konto,ks:b.ks,ksTxt:b.ksTxt,kred:b.kred,herkunft:b.herkunft,conf:b.conf,
+    status:status,hash:b.hash,ts:b.ts,buchtext:b.kbez||b.firma});
+  archivSichtbar=true;
+  var t=document.querySelector('.thumb[data-id="'+b.id+'"]');
+  if(t){ t.classList.add('sealed'); t.querySelector('.st').textContent='✓'; }
 }
 
 /* ---------- Editor ---------- */
-function fuzzy(q){
-  q=q.toLowerCase();
-  document.querySelectorAll('#konto-sug button').forEach(b=>{
-    b.style.display = b.textContent.toLowerCase().includes(q)?'':'none';
-  });
+var editorKonto=null, diffWahl='srv';
+function pickDiff(which){
+  diffWahl=which;
+  $('pick-dev').classList.toggle('sel',which==='dev');
+  $('pick-srv').classList.toggle('sel',which==='srv');
+  $('brutto-in').value=(which==='dev'?'54,82 €':'54,62 €');
 }
-function pickKonto(el,nr){
-  document.querySelectorAll('#konto-sug button').forEach(b=>b.classList.remove('sel'));
-  el.classList.add('sel');
-  document.getElementById('konto-in').value = el.textContent;
+function fuzzy(q){
+  q=(q||'').toLowerCase().trim();
+  var list=$('konto-list');
+  var hits=KONTEN.filter(function(k){
+    return !q || k.nr.indexOf(q)===0 || k.bez.toLowerCase().indexOf(q)>=0;
+  });
+  hits.sort(function(a,b){
+    var az=ZULETZT_WEBER.indexOf(a.nr)>=0?0:1, bz=ZULETZT_WEBER.indexOf(b.nr)>=0?0:1;
+    return az-bz || a.nr.localeCompare(b.nr);
+  });
+  list.innerHTML=hits.slice(0,5).map(function(k){
+    var zuletzt=ZULETZT_WEBER.indexOf(k.nr)>=0?'<span class="zuletzt">zuletzt bei diesem Kreditor</span>':'';
+    return '<button role="option" onclick="pickKonto(\''+k.nr+'\')"><span class="nr">'+k.nr+'</span>'+
+      '<span class="bez">'+k.bez+' '+zuletzt+'</span>'+
+      '<span class="src'+(k.src==='IND'?' ind':'')+'">'+(k.src==='IND'?'Individuell':skr)+'</span></button>';
+  }).join('');
+  list.classList.toggle('show',hits.length>0);
+}
+function pickKonto(nr){
+  var k=KONTEN.find(function(x){return x.nr===nr});
+  editorKonto=k;
+  $('konto-in').value=k.nr+' · '+k.bez;
+  $('konto-list').classList.remove('show');
+  var btn=$('editor-confirm');
+  btn.disabled=false; btn.textContent='Buchung bestätigen — '+k.nr+' '+k.bez;
 }
 function confirmEdit(){
+  if(!editorKonto) return;
   if(!editDone){
     editDone=true;
-    const slot=document.getElementById('row-slot');
-    slot.innerHTML=`<div class="beleg-row">
-      <div class="siegel stamp"><span class="ring">✓</span></div>
-      <div class="l"><div class="firma">Autohaus Weber</div>
-      <div class="meta">04.08. · Bon 0834 · <span style="color:var(--warn)">korrigiert → lernt</span></div></div>
-      <div><div class="betrag num">54,62 €</div><div class="konto">6530 · VSt 19 %</div></div></div>`;
-    document.getElementById('stapel-n').textContent='5';
-    document.getElementById('stapel-sum').textContent='911,52 €';
-    document.getElementById('extf-pre').textContent+='\n54,62;"S";"EUR";;;;"70021";"6530";9;"0408";"0834";"Kfz-Betriebskosten"';
-    document.getElementById('review-card').style.display='none';
+    var b=BATCH[1];
+    b.konto=editorKonto.nr; b.kbez=editorKonto.bez;
+    if(diffWahl==='dev'){ b.brutto='54,82'; b.bruttoNum=54.82; }
+    commitBeleg(b,'korrigiert');
+    var card=$('pc-b2');
+    if(card){
+      var step=card.querySelector('[data-s="4"]');
+      step.classList.add('done'); step.querySelector('.pbox').textContent='✓';
+      step.innerHTML=step.innerHTML.replace('Siegel wartet auf Prüfung — Merkle','Merkle-Siegel');
+      var e=card.querySelector('.ergebnis');
+      e.innerHTML='<div class="buchsatz"><b>'+b.konto+'</b> '+b.kbez+' '+b.netto+' S · <b>1406</b> VSt 19 % '+b.ust+' S<br>&nbsp;&nbsp;an <b>70021</b> Kred. Autohaus Weber '+b.brutto+' H</div>'+
+        '<div class="conf"><span class="badge ki">KI + Mensch</span><div class="bar"><div class="fill" style="width:100%;background:var(--ok)"></div></div><span class="val num">korrigiert</span></div>'+
+        '<p class="small" style="margin:6px 0 2px">Korrektur gespeichert — künftige Belege dieses Kreditors starten bei '+b.konto+'.</p>'+
+        '<div class="siegel stamp" style="margin-top:12px"><span class="ring">✓</span><span class="hash">'+b.hash.slice(0,8)+' · '+b.ts+' · gesiegelt</span></div>';
+    }
   }
   go('s-liste');
 }
+/* Bidirektionale Quell-Hervorhebung im Editor */
+document.addEventListener('focusin',function(ev){
+  var hl=ev.target && ev.target.dataset ? ev.target.dataset.hl : null;
+  document.querySelectorAll('#editor-paper .hl-src').forEach(function(el){el.classList.remove('hl-src')});
+  if(hl){
+    var src=document.querySelector('#editor-paper [data-src="'+hl+'"]');
+    if(src) src.classList.add('hl-src');
+  }
+});
+
+/* ---------- Liste ---------- */
+function setFilter(chip){
+  filter=chip.dataset.f;
+  document.querySelectorAll('.filterbar .chip').forEach(function(c){
+    var on=c===chip; c.classList.toggle('on',on); c.setAttribute('aria-pressed',on?'true':'false');
+  });
+  renderListe();
+}
+function statusMeta(b){
+  if(b.status==='offen') return '<span class="ki">Warteschlange</span>';
+  if(b.status==='korrigiert') return '<span class="ki">korrigiert → lernt</span>';
+  if(b.status==='bestaetigt') return '<span class="regel">bestätigt</span>';
+  if(b.status==='fixiert') return 'fixiert';
+  return '<span class="'+b.herkunft+'">'+HERKUNFT_TXT[b.herkunft]+'</span>';
+}
+function rowHTML(b){
+  var siegelCls=b.status==='offen'?'siegel wart':(b.status==='fixiert'?'siegel fix':'siegel');
+  var ring=b.status==='offen'?'·':'✓';
+  return '<button class="beleg-row" onclick="openDetail(\''+b.id+'\')">'+
+    '<span class="'+siegelCls+'"><span class="ring">'+ring+'</span></span>'+
+    '<span class="l"><span class="firma">'+b.firma+'</span><span class="meta" style="display:block">'+b.datum.slice(0,6)+' · '+b.ref+' · '+statusMeta(b)+'</span></span>'+
+    '<span><span class="betrag num" style="display:block">'+b.brutto+' €</span><span class="konto" style="display:block">'+(b.konto&&b.konto!=='—'?b.konto+' · '+b.ksTxt:'ohne Konto')+'</span></span>'+
+  '</button>';
+}
+function matchFilter(b){
+  if(filter==='alle') return true;
+  var st=b.status==='fixiert'?(b.vorFix||'auto'):b.status;
+  return st===filter;
+}
+function renderListe(){
+  var host=$('liste-body'), leer=$('liste-leer');
+  var heute=belege.filter(matchFilter);
+  var archiv=archivSichtbar?ARCHIV.filter(matchFilter):[];
+  if(belege.length===0 && archiv.length===0){
+    host.innerHTML=''; leer.style.display='flex'; return;
+  }
+  leer.style.display='none';
+  var html='';
+  if(heute.length){ html+='<div class="section-label">Heute erfasst</div>'+heute.map(rowHTML).join(''); }
+  if(archiv.length){ html+='<div class="section-label">Bereits archiviert</div>'+archiv.map(rowHTML).join(''); }
+  if(!html) html='<p class="small" style="padding:24px 20px">Kein Beleg entspricht diesem Filter.</p>';
+  host.innerHTML=html;
+}
+
+/* ---------- Detail / Provenance ---------- */
+function findBeleg(id){
+  return belege.find(function(b){return b.id===id}) || ARCHIV.find(function(b){return b.id===id});
+}
+function openDetail(id){
+  var b=findBeleg(id); if(!b) return;
+  $('det-titel').textContent=b.ref;
+  $('det-status').textContent=b.status==='offen'?'in Warteschlange':(b.status==='fixiert'?'exportiert · fixiert':'gesiegelt');
+  $('det-firma').innerHTML='<span>'+b.firma+'</span><span class="amt num">'+b.brutto+' €</span>';
+  var vst=b.ks==='8'?'VSt 7 %':'VSt 19 %';
+  $('det-satz').innerHTML=(b.konto&&b.konto!=='—')?
+    '<b>'+b.konto+'</b> '+(b.buchtext||'')+' · '+vst+'<br>an <b>'+b.kred+'</b> Kreditor '+b.firma+' <span class="num">'+b.brutto+' H</span>':
+    'Noch nicht kontiert — Beleg wartet auf Verarbeitung.';
+  var quelle={hist:'Kreditor-Historie ('+(b.id==='b1'?'14':'9')+' Vorbuchungen)',regel:'Regelwerk des Mandanten',ki:'Modell Dual-Lane v3'+(b.status==='korrigiert'?' + menschliche Korrektur':'')}[b.herkunft];
+  $('det-prov').innerHTML=
+    'Quelle&nbsp;&nbsp;<b>Kamera-Capture, entzerrt + Original</b><br>'+
+    'Extraktion&nbsp;&nbsp;<b>Dual-Lane v3 · '+(b.id==='b2'?'Differenz aufgelöst ('+(diffWahl==='srv'?'Server':'Gerät')+')':'Übereinstimmung Gerät/Server')+'</b><br>'+
+    'Kontierung&nbsp;&nbsp;<b>'+quelle+'</b> · Conf <b class="num">'+b.conf+' %</b><br>'+
+    '§ 14 UStG&nbsp;&nbsp;<b>'+(b.id==='b2'?'Kleinbetragsrechnung § 33 UStDV':'vollständig')+'</b> · Summenprobe <b>✓</b><br>'+
+    'Status&nbsp;&nbsp;<b>'+(b.status==='offen'?'lokal gepuffert · Upload ausstehend':(b.status==='fixiert'?'exportiert · festgeschrieben':'archiviert · unveränderbar'))+'</b>';
+  $('det-hash').textContent=b.hash?b.hash+' · '+b.ts:'Siegel folgt nach Upload';
+  go('s-detail');
+}
+function copyHash(btn){
+  var txt=$('det-hash').textContent;
+  function done(){ btn.querySelector('.c').textContent='Kopiert ✓'; setTimeout(function(){btn.querySelector('.c').textContent='Kopieren'},1600); }
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(done,done); }
+  else done();
+}
 
 /* ---------- Export ---------- */
+function exportierbar(){
+  return belege.concat(archivSichtbar?ARCHIV:[]).filter(function(b){
+    return b.status==='auto'||b.status==='bestaetigt'||b.status==='korrigiert';
+  });
+}
+function extfText(list){
+  var head='"EXTF";700;21;"Buchungsstapel";13;;;\n;"RE";"DE";;"20260801";"20260831";';
+  return head+'\n'+list.map(function(b){
+    return b.brutto.replace('.','')+';"S";"EUR";;;;"'+b.kred+'";"'+b.konto+'";'+b.ks+';"'+b.dd+'";"'+b.ref.replace(/^(RE |Bon |Abschlag )/,'')+'";"'+(b.buchtext||b.firma)+'"';
+  }).join('\n');
+}
+function renderExport(){
+  var list=exportierbar();
+  var n=list.length, sum=list.reduce(function(a,b){return a+b.bruttoNum},0);
+  $('stapel-n').textContent=n;
+  $('stapel-sum').textContent=fmtEur(sum);
+  $('extf-pre').textContent=n?extfText(list):'— Stapel ist leer —';
+  $('export-btn').disabled=(n===0)||exportiert;
+  $('export-btn').textContent=exportiert?'Stapel exportiert · fixiert':'EXTF-Stapel erzeugen';
+  $('export-leer').style.display=n?'none':'block';
+}
 function exportStapel(){
-  const s=document.getElementById('siegel-exp');
+  var list=exportierbar(); if(!list.length) return;
+  var s=$('siegel-exp');
   s.style.display='inline-flex'; s.classList.remove('stamp');
   void s.offsetWidth; s.classList.add('stamp');
   try{
-    const blob=new Blob([document.getElementById('extf-pre').textContent],{type:'text/csv'});
-    const a=document.createElement('a');
+    var blob=new Blob([extfText(list)],{type:'text/csv'});
+    var a=document.createElement('a');
     a.href=URL.createObjectURL(blob); a.download='EXTF_Buchungsstapel_2026-08.csv'; a.click();
   }catch(e){ /* Download im Sandbox-Frame ggf. blockiert — Vorschau bleibt sichtbar */ }
+  exportiert=true;
+  list.forEach(function(b){ b.vorFix=b.status; b.status='fixiert'; });
+  $('export-btn').disabled=true;
+  $('export-btn').textContent='Stapel exportiert · fixiert';
 }
-
-/* Auto-Start nach Onboarding-Skip via Nav bleibt konsistent */
 </script>
 </body>
 </html>
