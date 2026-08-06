@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Beleg — 0711 Intelligence</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Beleg">
+<meta name="theme-color" content="#f4f1ec">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
 <style>
 /* ================= TOKENS — Unlimited-OCR Designsprache =================
    Fonts als System-Stacks (kein CDN — DSGVO): Playfair fällt auf Georgia
@@ -51,7 +59,7 @@ button{font:inherit;color:inherit}
 .screen.active{display:flex}
 
 /* ================= TOPBAR / NAV ================= */
-.topbar{padding:16px 20px 12px;display:flex;align-items:center;gap:12px;background:var(--chrome);border-bottom:1px solid var(--border-l);flex-shrink:0}
+.topbar{padding:calc(16px + env(safe-area-inset-top)) 20px 12px;display:flex;align-items:center;gap:12px;background:var(--chrome);border-bottom:1px solid var(--border-l);flex-shrink:0}
 .topbar h1{font-family:var(--font-d);font-size:20px;font-weight:600;letter-spacing:-.015em;color:var(--fg);flex:1}
 .topbar .mandant{font-family:var(--font-m);font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;text-align:right}
 .back{background:none;border:0;color:var(--desc);font-size:20px;line-height:1;cursor:pointer;padding:8px 10px;margin:-8px 0 -8px -10px;min-width:44px;min-height:44px}
@@ -63,7 +71,7 @@ nav button.on .dot{background:var(--accent)}
 nav .dot{width:4px;height:4px;border-radius:50%;background:transparent}
 
 /* ================= ONBOARDING ================= */
-#onboard{position:absolute;inset:0;background:var(--canvas);z-index:60;display:flex;flex-direction:column;padding:28px 24px 24px;overflow-y:auto}
+#onboard{position:absolute;inset:0;background:var(--canvas);z-index:60;display:flex;flex-direction:column;padding:calc(28px + env(safe-area-inset-top)) 24px 24px;overflow-y:auto}
 #onboard .eyebrow{font-family:var(--font-m);font-size:10.5px;color:var(--accent);letter-spacing:.13em;text-transform:uppercase;margin-bottom:10px}
 #onboard h2{font-family:var(--font-d);font-size:28px;font-weight:600;line-height:1.12;letter-spacing:-.015em;color:var(--fg);margin-bottom:8px}
 #onboard p.sub{color:var(--desc);font-size:14px;line-height:1.55;margin-bottom:22px}
@@ -114,11 +122,11 @@ nav .dot{width:4px;height:4px;border-radius:50%;background:transparent}
 #cap-stage{flex:1;position:relative;background:radial-gradient(120% 90% at 50% 40%,#35322b 0%,#1f1e1a 100%);overflow:hidden;display:flex;align-items:center;justify-content:center;transition:filter .4s}
 #cap-stage.dunkel{filter:brightness(.45)}
 .corner{position:absolute;width:26px;height:26px;border:2px solid rgba(255,255,255,.4);pointer-events:none}
-.corner.tl{top:56px;left:26px;border-right:0;border-bottom:0;border-radius:4px 0 0 0}
-.corner.tr{top:56px;right:26px;border-left:0;border-bottom:0;border-radius:0 4px 0 0}
+.corner.tl{top:calc(56px + env(safe-area-inset-top));left:26px;border-right:0;border-bottom:0;border-radius:4px 0 0 0}
+.corner.tr{top:calc(56px + env(safe-area-inset-top));right:26px;border-left:0;border-bottom:0;border-radius:0 4px 0 0}
 .corner.bl{bottom:150px;left:26px;border-right:0;border-top:0;border-radius:0 0 0 4px}
 .corner.br{bottom:150px;right:26px;border-left:0;border-top:0;border-radius:0 0 4px 0}
-#cap-top{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:8px;padding:14px 16px;z-index:5}
+#cap-top{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:8px;padding:calc(14px + env(safe-area-inset-top)) 16px 14px;z-index:5}
 #cap-top .wm{font-family:var(--font-d);font-size:15px;font-weight:600;letter-spacing:0;color:#fff}
 #cap-top .wm span{color:rgba(255,255,255,.5);font-family:var(--font-m);font-size:10.5px;font-weight:400;letter-spacing:.06em}
 #cap-top .sp{flex:1}
@@ -126,7 +134,7 @@ nav .dot{width:4px;height:4px;border-radius:50%;background:transparent}
 .pill:hover{color:#fff}
 #batch-pill{display:none}
 #batch-pill.show{display:inline-block;color:var(--gold);border-color:rgba(201,185,141,.55)}
-#offline-banner{position:absolute;top:52px;left:16px;right:16px;z-index:6;background:rgba(31,30,26,.85);backdrop-filter:blur(6px);border:1px solid var(--warn);border-radius:12px;color:rgba(255,255,255,.9);font-size:12px;line-height:1.45;padding:10px 12px;display:none}
+#offline-banner{position:absolute;top:calc(52px + env(safe-area-inset-top));left:16px;right:16px;z-index:6;background:rgba(31,30,26,.85);backdrop-filter:blur(6px);border:1px solid var(--warn);border-radius:12px;color:rgba(255,255,255,.9);font-size:12px;line-height:1.45;padding:10px 12px;display:none}
 #offline-banner.show{display:block}
 #offline-banner b{color:#d9b24a;font-family:var(--font-m);font-size:10px;letter-spacing:.08em;text-transform:uppercase;display:block;margin-bottom:2px}
 #offline-banner button{background:none;border:0;color:var(--gold);font-size:12px;cursor:pointer;padding:4px 0 0;text-decoration:underline;text-underline-offset:2px}
@@ -1167,6 +1175,11 @@ function exportStapel(){
   list.forEach(function(b){ b.vorFix=b.status; b.status='fixiert'; });
   $('export-btn').disabled=true;
   $('export-btn').textContent='Stapel exportiert · fixiert';
+}
+
+/* ---------- PWA: offline-fähig, wenn über HTTPS installiert ---------- */
+if('serviceWorker' in navigator && location.protocol==='https:'){
+  navigator.serviceWorker.register('sw.js').catch(function(){});
 }
 </script>
 </body>
