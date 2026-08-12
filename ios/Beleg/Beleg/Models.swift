@@ -51,8 +51,8 @@ enum Kontenplan {
     }
 }
 
-struct Beleg: Identifiable {
-    let id = UUID()
+struct Beleg: Identifiable, Codable {
+    var id = UUID()
     var lieferant: String
     var belegNr: String
     var datumText: String

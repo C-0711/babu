@@ -1,14 +1,85 @@
 import Foundation
 import SwiftUI
 
+/// Ablageort des persistierten App-Zustands (Application Support/Beleg).
+private let zustandsDatei: URL = {
+    let fm = FileManager.default
+    let dir = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Beleg", isDirectory: true)
+    try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+    return dir.appendingPathComponent("zustand.json")
+}()
+
 @MainActor
 final class AppStore: ObservableObject {
-    @Published var onboarded = false
-    @Published var skr = "SKR04"
-    @Published var belege: [Beleg] = Demo.archiv()
-    @Published var exportiert = false
-    @Published var geprueft = 0
-    @Published var pruefSekunden: [Double] = []
+    enum Tab: Hashable { case erfassen, belege, export }
+
+    @Published var onboarded = false { didSet { speichern() } }
+    @Published var skr = "SKR04" { didSet { speichern() } }
+    @Published var belege: [Beleg] = [] { didSet { speichern() } }
+    @Published var exportiert = false { didSet { speichern() } }
+    @Published var geprueft = 0 { didSet { speichern() } }
+    @Published var pruefSekunden: [Double] = [] { didSet { speichern() } }
+    @Published var tab: Tab = .erfassen   // nicht persistiert
+
+    private var geladen = false
+    private var speicherTask: Task<Void, Never>?
+
+    init() {
+        if let daten = try? Data(contentsOf: zustandsDatei),
+           let z = try? JSONDecoder().decode(Zustand.self, from: daten) {
+            onboarded = z.onboarded
+            skr = z.skr
+            belege = z.belege
+            exportiert = z.exportiert
+            geprueft = z.geprueft
+            pruefSekunden = z.pruefSekunden
+        } else {
+            belege = Demo.archiv()   // Erststart: Demo-Archiv als Ausgangslage
+        }
+        geladen = true
+    }
+
+    // MARK: - Persistenz
+
+    /// Alles, was einen App-Neustart überleben muss — Belege inkl. Bild-JPEGs.
+    private struct Zustand: Codable {
+        var onboarded: Bool
+        var skr: String
+        var belege: [Beleg]
+        var exportiert: Bool
+        var geprueft: Int
+        var pruefSekunden: [Double]
+    }
+
+    private var zustand: Zustand {
+        Zustand(onboarded: onboarded, skr: skr, belege: belege,
+                exportiert: exportiert, geprueft: geprueft, pruefSekunden: pruefSekunden)
+    }
+
+    /// Entprellt auf ~0,25 s, damit Serien-Änderungen nicht pro Mutation schreiben.
+    private func speichern() {
+        guard geladen else { return }
+        let z = zustand
+        speicherTask?.cancel()
+        speicherTask = Task.detached(priority: .utility) {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            Self.schreibe(z)
+        }
+    }
+
+    /// Sofort schreiben — beim Wechsel in den Hintergrund aufgerufen.
+    func sichern() {
+        guard geladen else { return }
+        speicherTask?.cancel()
+        Self.schreibe(zustand)
+    }
+
+    private nonisolated static func schreibe(_ z: Zustand) {
+        guard let daten = try? JSONEncoder().encode(z) else { return }
+        try? daten.write(to: zustandsDatei, options: .atomic)
+    }
 
     /// OCR-Felder → geroutete Buchung (auto / bestätigen / prüfen).
     func routen(felder: Felder, bildJpeg: Data?, ocrText: String) -> Beleg {

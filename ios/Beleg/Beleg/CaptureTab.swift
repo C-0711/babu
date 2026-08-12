@@ -211,9 +211,7 @@ struct ErgebnisKarte: View {
             switch aktuell.status {
             case .automatisch:
                 SiegelZeile(beleg: aktuell)
-                Button("Weiter erfassen") { fertig() }
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity)
+                abschlussButtons
             case .offen:
                 if aktuell.confidence >= 80 {
                     Button {
@@ -231,19 +229,40 @@ struct ErgebnisKarte: View {
                     }
                     .buttonStyle(.borderedProminent)
                 }
-                Button("Später — bleibt in der Liste offen") { fertig() }
-                    .font(.footnote)
-                    .frame(maxWidth: .infinity)
+                Button("Später — zur Belegliste") {
+                    fertig()
+                    store.tab = .belege
+                }
+                .font(.footnote)
+                .frame(maxWidth: .infinity)
             default:
                 SiegelZeile(beleg: aktuell)
-                Button("Weiter erfassen") { fertig() }
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity)
+                abschlussButtons
             }
         }
         .gcCard()
         .sheet(isPresented: $zeigeReview) {
             ReviewSheet(belegID: beleg.id, startZeit: startZeit)
+        }
+    }
+
+    /// Nach dem Abschluss immer beide Wege anbieten: weiter erfassen
+    /// oder zurück zur Übersicht.
+    private var abschlussButtons: some View {
+        HStack(spacing: 10) {
+            Button {
+                fertig()
+            } label: {
+                Text("Weiter erfassen").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            Button {
+                fertig()
+                store.tab = .belege
+            } label: {
+                Text("Zur Belegliste").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
         }
     }
 }
