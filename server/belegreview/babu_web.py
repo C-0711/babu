@@ -143,6 +143,17 @@ def datev_buchungssatz(d: dict) -> dict | None:
     if len(teile) == 3:
         belegdatum = f"{int(teile[0]):02d}{int(teile[1]):02d}"   # TTMM
     belegfeld1 = re.sub(r"[^A-Za-z0-9$%&*+-/]", "", f.get("beleg_nr") or "")[:36] or None
+
+    # Sprechender Buchungstext: Gemma-Vorschlag, sonst aus Einordnung + Datum +
+    # vollem Lieferantennamen zusammengesetzt — „Rotenberger“ allein sagt in
+    # drei Monaten niemandem mehr etwas.
+    vlm = d.get("vlm") or {}
+    text = (vlm.get("buchungstext") or "").strip()
+    if not text:
+        einordnung = ((d.get("semantik") or {}).get("belegart") or "").strip()
+        lieferant = (vlm.get("lieferant") or f.get("lieferant") or "").strip()
+        datum_kurz = f"{int(teile[0]):02d}.{int(teile[1]):02d}." if len(teile) == 3 else ""
+        text = " ".join(x for x in (einordnung, datum_kurz, lieferant) if x)
     return {
         "umsatz": f"{brutto:.2f}".replace(".", ","),
         "soll_haben": "S",
@@ -151,7 +162,7 @@ def datev_buchungssatz(d: dict) -> dict | None:
         "bu_schluessel": e.get("steuerschluessel"),
         "belegdatum": belegdatum,
         "belegfeld1": belegfeld1,
-        "buchungstext": (f.get("lieferant") or "")[:60] or None,
+        "buchungstext": text[:60] or None,
     }
 
 

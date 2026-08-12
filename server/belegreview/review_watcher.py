@@ -263,9 +263,11 @@ def vlm_lesen(bildpfad: Path) -> dict | None:
         '{"lieferant": string|null, "beleg_nr": string|null, "datum": "TT.MM.JJJJ"|null, '
         '"brutto": number|null, "netto": number|null, "ust": number|null, '
         '"trinkgeld": number|null, "zahlungsart": string|null, "bewirtung": boolean, '
-        '"positionen_anzahl": number|null}. '
+        '"positionen_anzahl": number|null, "buchungstext": string|null}. '
         "Beträge als Dezimalzahl mit Punkt. brutto ist der Rechnungsbetrag OHNE Trinkgeld. "
-        "Rate nichts."
+        "buchungstext: eine sprechende Kurzbeschreibung für die Buchhaltung, max. 60 Zeichen, "
+        "aus der ein Mensch später sofort erkennt, was das war — Art, Ort/Lieferant, "
+        'z. B. "Bewirtung Restaurant Weingärtle Stuttgart". Rate nichts.'
     )
     payload = {
         "model": VLM_MODELL,

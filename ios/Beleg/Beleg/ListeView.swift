@@ -111,9 +111,12 @@ struct BelegZeile: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            // Grüner Haken = alles gut (gebucht + abgelegt + zweitgeprüft).
             Image(systemName: beleg.status == .offen ? "circle.dotted" :
-                    beleg.status == .fixiert ? "checkmark.seal.fill" : "checkmark.seal")
-                .foregroundStyle(beleg.status == .offen ? GC.muted : GC.accent)
+                    (beleg.auditReview != nil || beleg.status == .fixiert)
+                    ? "checkmark.seal.fill" : "checkmark.seal")
+                .foregroundStyle(beleg.status == .offen ? GC.muted :
+                    beleg.auditReview != nil ? GC.ok : GC.accent)
             VStack(alignment: .leading, spacing: 2) {
                 Text(beleg.lieferant)
                     .font(.subheadline.weight(.semibold))
@@ -121,15 +124,6 @@ struct BelegZeile: View {
                 Text("\(beleg.belegNr) · \(beleg.status.label)")
                     .font(.caption2.monospaced())
                     .foregroundStyle(GC.muted)
-                if beleg.auditAufnahme != nil, beleg.auditReview != nil {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 9))
-                        Text("sicher fürs Finanzamt")
-                            .font(.caption2)
-                    }
-                    .foregroundStyle(GC.accent)
-                }
                 if beleg.brauchtBewirtungsangaben {
                     HStack(spacing: 4) {
                         Image(systemName: "person.2")
@@ -180,43 +174,29 @@ struct DetailView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 12) {
-                        HStack {
+                        HStack(spacing: 8) {
                             Text(b.lieferant).font(.headline).fontDesign(.serif)
+                            if b.auditReview != nil {
+                                Image(systemName: "checkmark.seal.fill")
+                                    .foregroundStyle(GC.ok)
+                                    .accessibilityLabel("Alles in Ordnung")
+                            }
                             Spacer()
                             Text(fmtEur(b.brutto)).font(.subheadline.monospaced())
                         }
                         BuchsatzView(beleg: b)
 
-                        Text("NACHWEIS")
-                            .font(.caption2.monospaced())
-                            .kerning(1)
-                            .foregroundStyle(GC.muted)
-
-                        provZeile("Aufnahme", b.bildJpeg == nil ? "Beispiel-Beleg" : "mit der Kamera · automatisch begradigt")
-                        provZeile("Zuordnung", "\(b.herkunft.anzeige) · \(b.confidence) % sicher")
-                        provZeile("Summen", b.summenprobeOK ? "geprüft ✓ — Netto + Steuer = Betrag" : "gehen nicht auf — bitte prüfen")
-                        provZeile("Status", b.status.label)
-                        if let ablage = b.ablageStatus {
-                            switch ablage {
-                            case .uebertragen:
-                                provZeile("Belegbox", "sicher abgelegt ✓" + (b.ablageZeit.map {
-                                    " · " + DateFormatter.siegel.string(from: $0)
-                                } ?? ""))
-                            case .ausstehend:
-                                provZeile("Belegbox", "Ablage ausstehend")
-                            case .fehlgeschlagen:
-                                provZeile("Belegbox", "Ablage fehlgeschlagen")
+                        // Kein Nachweis-Block mehr — Vertrauen ist der grüne Haken
+                        // oben; nur eine ausstehende Ablage bekommt einen Knopf.
+                        if let ablage = b.ablageStatus, ablage != .uebertragen {
+                            Button {
+                                Task { await store.uebertrage(b.id) }
+                            } label: {
+                                Label("Jetzt ablegen", systemImage: "arrow.up.doc")
+                                    .font(.caption)
                             }
-                            if ablage != .uebertragen {
-                                Button {
-                                    Task { await store.uebertrage(b.id) }
-                                } label: {
-                                    Label("Jetzt ablegen", systemImage: "arrow.up.doc")
-                                        .font(.caption)
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         }
 
                         // Bewirtungsangaben (§4 Abs. 5): erfasst zeigen, fehlende nachfragen.
@@ -316,7 +296,6 @@ struct DetailView: View {
 
         if let r = review {
             let f = r.felder
-            provZeile("Lesung", "unabhängig ein zweites Mal gelesen · \(r.zeilen ?? 0) Zeilen · ø \(Int((r.ocrKonfidenz ?? 0) * 100)) % sicher")
             if let art = r.einschaetzung.belegart {
                 // Ohne Methoden-Zusatz („semantisch, 30 %") — nur die Einordnung.
                 provZeile("Eingeordnet", String(art.split(separator: "(").first ?? "").trimmingCharacters(in: .whitespaces))
@@ -357,46 +336,26 @@ struct DetailView: View {
                 }
             }
 
-            // DATEV-taugliche Buchungszeile (Vorstufe zum EXTF-v13-Writer).
+            // Das geht an DATEV — jedes Feld als eigene Box, so wie es
+            // beim Steuerberater ankommt.
             if let satz = r.buchungssatz, let umsatz = satz.umsatz, let konto = satz.konto {
-                Text("FÜR DEN STEUERBERATER · DATEV")
+                Text("DAS GEHT AN DATEV")
                     .font(.caption2.monospaced())
                     .kerning(1)
                     .foregroundStyle(GC.muted)
                     .padding(.top, 4)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Umsatz \(umsatz) \(satz.sollHaben ?? "S") · Konto \(konto) · Gegenkonto \(satz.gegenkonto ?? "—")")
-                    Text("BU \(satz.buSchluessel ?? "—") · Belegdatum \(satz.belegdatum ?? "—") · Belegfeld 1 \(satz.belegfeld1 ?? "—")")
-                    if let text = satz.buchungstext {
-                        Text("Buchungstext \(text)")
-                    }
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()),
+                                    GridItem(.flexible())], spacing: 8) {
+                    datevBox("Umsatz", "\(umsatz) \(satz.sollHaben ?? "S")")
+                    datevBox("Konto", konto)
+                    datevBox("Gegenkonto", satz.gegenkonto ?? "—")
+                    datevBox("Steuer (BU)", satz.buSchluessel ?? "—")
+                    datevBox("Belegdatum", satz.belegdatum ?? "—")
+                    datevBox("Belegfeld 1", satz.belegfeld1 ?? "—")
                 }
-                .font(.caption.monospaced())
-                .foregroundStyle(GC.desc)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-                .background(GC.canvas, in: RoundedRectangle(cornerRadius: 8))
-            }
-
-            // Audit-Stempel: gesiegelt + abgelegt + zweitgeprüft — belegt durch
-            // Prüfnummern, mit denen sich alles jederzeit nachweisen lässt.
-            if let audit = r.audit, let aufnahme = audit.aufnahme?.commit {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.seal.fill")
-                        .foregroundStyle(GC.accent)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Sicher fürs Finanzamt")
-                            .font(.footnote.weight(.semibold))
-                        Text("kann nicht mehr verändert werden · Nachweis \(aufnahme)"
-                             + (audit.review?.commit.map { " · \($0)" } ?? ""))
-                            .font(.caption2.monospaced())
-                            .foregroundStyle(GC.accent.opacity(0.8))
-                    }
-                    .foregroundStyle(GC.accent)
+                if let text = satz.buchungstext {
+                    datevBox("Buchungstext", text)
                 }
-                .padding(.vertical, 6)
-                .padding(.horizontal, 10)
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(GC.accent.opacity(0.4), lineWidth: 1))
             }
             ForEach(r.einschaetzung.hinweise ?? [], id: \.self) { hinweis in
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -423,6 +382,25 @@ struct DetailView: View {
                 .font(.caption)
                 .foregroundStyle(GC.muted)
         }
+    }
+
+    /// Ein DATEV-Feld als Box: kleines Label, Mono-Wert.
+    private func datevBox(_ label: String, _ wert: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label.uppercased())
+                .font(.system(size: 8, design: .monospaced))
+                .kerning(0.5)
+                .foregroundStyle(GC.muted)
+            Text(wert)
+                .font(.caption.monospaced())
+                .foregroundStyle(GC.fg)
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(GC.canvas, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(hex: 0xE8E4DC), lineWidth: 1))
     }
 
     /// Abgleich Gerät ↔ Server: ✓ bei Übereinstimmung, sonst beide Werte.
