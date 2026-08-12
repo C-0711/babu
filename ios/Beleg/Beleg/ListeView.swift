@@ -259,6 +259,68 @@ struct DetailView: View {
                 let gleich = konto == b.konto
                 provZeile("Konto", "\(konto) \(Kontenplan.bezeichnung(konto))" + (gleich ? " ✓" : " · Gerät: \(b.konto ?? "—")"))
             }
+
+            // Bild-Lane: was Gemma 4 direkt aus dem Foto gelesen hat.
+            if let vlm = r.vlm {
+                Text("GEMMA 4 · BILD-LANE")
+                    .font(.caption2.monospaced())
+                    .kerning(1)
+                    .foregroundStyle(GC.muted)
+                    .padding(.top, 4)
+                if let lieferant = vlm.lieferant {
+                    provZeile("Lieferant", lieferant)
+                }
+                if let trinkgeld = vlm.trinkgeld, trinkgeld > 0 {
+                    provZeile("Trinkgeld", fmtEur(trinkgeld))
+                }
+                if let zahlungsart = vlm.zahlungsart {
+                    provZeile("Zahlung", zahlungsart)
+                }
+                if let positionen = vlm.positionenAnzahl {
+                    provZeile("Positionen", "\(positionen)")
+                }
+            }
+
+            // DATEV-taugliche Buchungszeile (Vorstufe zum EXTF-v13-Writer).
+            if let satz = r.buchungssatz, let umsatz = satz.umsatz, let konto = satz.konto {
+                Text("BUCHUNGSSATZ · DATEV")
+                    .font(.caption2.monospaced())
+                    .kerning(1)
+                    .foregroundStyle(GC.muted)
+                    .padding(.top, 4)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Umsatz \(umsatz) \(satz.sollHaben ?? "S") · Konto \(konto) · Gegenkonto \(satz.gegenkonto ?? "—")")
+                    Text("BU \(satz.buSchluessel ?? "—") · Belegdatum \(satz.belegdatum ?? "—") · Belegfeld 1 \(satz.belegfeld1 ?? "—")")
+                    if let text = satz.buchungstext {
+                        Text("Buchungstext \(text)")
+                    }
+                }
+                .font(.caption.monospaced())
+                .foregroundStyle(GC.desc)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(GC.canvas, in: RoundedRectangle(cornerRadius: 8))
+            }
+
+            // Audit-Stempel: gesiegelt + übertragen + serverseitig reviewt,
+            // belegt durch die echten GitChain-Commits.
+            if let audit = r.audit, let aufnahme = audit.aufnahme?.commit {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(GC.accent)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("AUDIT · Kette vollständig")
+                            .font(.system(size: 9, design: .monospaced))
+                            .kerning(0.5)
+                        Text("aufnahme \(aufnahme)" + (audit.review?.commit.map { " · review \($0)" } ?? ""))
+                            .font(.caption2.monospaced())
+                    }
+                    .foregroundStyle(GC.accent)
+                }
+                .padding(.vertical, 6)
+                .padding(.horizontal, 10)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(GC.accent.opacity(0.4), lineWidth: 1))
+            }
             ForEach(r.einschaetzung.hinweise ?? [], id: \.self) { hinweis in
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Image(systemName: "info.circle")

@@ -12,7 +12,7 @@ private let zustandsDatei: URL = {
 
 @MainActor
 final class AppStore: ObservableObject {
-    enum Tab: Hashable { case erfassen, belege, export }
+    enum Tab: Hashable { case erfassen, belege, fragen, export }
 
     @Published var onboarded = false { didSet { speichern() } }
     @Published var skr = "SKR04" { didSet { speichern() } }

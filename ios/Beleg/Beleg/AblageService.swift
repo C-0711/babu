@@ -36,6 +36,58 @@ enum AblageService {
         return (ergebnis, serverDatei)
     }
 
+    /// Frage an den Belegbox-Assistenten — gestreamt (SSE): liefert Text-Stücke,
+    /// sobald Gemma sie erzeugt.
+    static func fragenStream(_ frage: String, basis: URL,
+                             pat: String) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                var request = URLRequest(url: basis.appendingPathComponent("chat"))
+                request.httpMethod = "POST"
+                request.timeoutInterval = 180
+                request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpBody = try? JSONSerialization.data(
+                    withJSONObject: ["frage": frage, "stream": true])
+                do {
+                    let (bytes, antwort) = try await URLSession.shared.bytes(for: request)
+                    guard (antwort as? HTTPURLResponse)?.statusCode == 200 else {
+                        continuation.finish(throwing: URLError(.badServerResponse))
+                        return
+                    }
+                    for try await zeile in bytes.lines {
+                        guard zeile.hasPrefix("data: ") else { continue }
+                        let roh = String(zeile.dropFirst(6))
+                        if roh == "[DONE]" { break }
+                        if let json = try? JSONSerialization.jsonObject(with: Data(roh.utf8)) as? [String: Any],
+                           let stueck = json["d"] as? String {
+                            continuation.yield(stueck)
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// Frage an den Belegbox-Assistenten (Gemma 4 über `POST /chat`).
+    static func fragen(_ frage: String, basis: URL, pat: String) async -> String? {
+        var request = URLRequest(url: basis.appendingPathComponent("chat"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 120
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["frage": frage])
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              (antwort as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any] else {
+            return nil
+        }
+        return json["antwort"] as? String
+    }
+
     /// BelegReview-Ergebnis abrufen (`GET /review/<stamm>`, Bearer-PAT).
     static func reviewAbrufen(stamm: String, basis: URL, pat: String) async -> BelegReviewDaten? {
         var request = URLRequest(url: basis.appendingPathComponent("review")
@@ -121,11 +173,48 @@ struct BelegReviewDaten: Codable {
         var steuerschluessel: String?
         var hinweise: [String]?
     }
+    /// Bild-Lane: Gemma 4 liest das Beleg-Foto (Lane B).
+    struct Vlm: Codable {
+        var lieferant: String?
+        var belegNr: String?
+        var datum: String?
+        var brutto: Double?
+        var netto: Double?
+        var ust: Double?
+        var trinkgeld: Double?
+        var zahlungsart: String?
+        var bewirtung: Bool?
+        var positionenAnzahl: Int?
+    }
+    /// Audit-Stempel: echte GitChain-Commits von Aufnahme und Review.
+    struct Audit: Codable {
+        struct Eintrag: Codable {
+            var commit: String?
+            var zeit: String?
+            var autor: String?
+        }
+        var aufnahme: Eintrag?
+        var review: Eintrag?
+    }
+    /// Buchungszeile in DATEV-Feldlogik (Vorstufe zum EXTF-v13-Writer).
+    struct Buchungssatz: Codable {
+        var umsatz: String?
+        var sollHaben: String?
+        var konto: String?
+        var gegenkonto: String?
+        var buSchluessel: String?
+        var belegdatum: String?
+        var belegfeld1: String?
+        var buchungstext: String?
+    }
     var engine: String?
     var zeilen: Int?
     var ocrKonfidenz: Double?
     var felder: Felder
     var einschaetzung: Einschaetzung
+    var vlm: Vlm?
+    var audit: Audit?
+    var buchungssatz: Buchungssatz?
 }
 
 /// PAT-Ablage ausschließlich in der iOS-Keychain — nie im JSON-Store, nie im Log.
