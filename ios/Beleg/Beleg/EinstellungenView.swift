@@ -23,7 +23,7 @@ struct EinstellungenView: View {
                 }
 
                 Section("Server") {
-                    TextField("http://192.168.145.10:7843", text: $store.ablageURL)
+                    TextField(AppStore.ablageStandardURL, text: $store.ablageURL)
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)

@@ -22,8 +22,10 @@ final class AppStore: ObservableObject {
     @Published var pruefSekunden: [Double] = [] { didSet { speichern() } }
     @Published var tab: Tab = .erfassen   // nicht persistiert
 
-    // Belegbox-Übertragung (GitChain-Ablage auf der H200V) — Opt-in.
-    @Published var ablageURL = "http://192.168.145.10:7843" { didSet { speichern() } }
+    // Belegbox-Übertragung (GitChain-Ablage) — Opt-in.
+    // Öffentliche Route mit TLS via Cloudflare; funktioniert von überall.
+    static let ablageStandardURL = "https://babu.0711.io"
+    @Published var ablageURL = AppStore.ablageStandardURL { didSet { speichern() } }
     @Published var ablageAktiv = false { didSet { speichern() } }
 
     private var geladen = false
@@ -38,7 +40,13 @@ final class AppStore: ObservableObject {
             exportiert = z.exportiert
             geprueft = z.geprueft
             pruefSekunden = z.pruefSekunden
-            ablageURL = z.ablageURL ?? ablageURL
+            // Migration: alte LAN-/Brücken-URLs auf die öffentliche Route heben.
+            let alteURLs = ["http://192.168.145.10:7843", "http://192.168.5.93:7843"]
+            if let gespeichert = z.ablageURL, !alteURLs.contains(gespeichert) {
+                ablageURL = gespeichert
+            } else {
+                ablageURL = AppStore.ablageStandardURL
+            }
             ablageAktiv = z.ablageAktiv ?? false
         } else {
             belege = Demo.archiv()   // Erststart: Demo-Archiv als Ausgangslage
