@@ -56,7 +56,7 @@ struct CaptureTab: View {
                         .foregroundStyle(.white.opacity(0.55))
                 }
             }
-            Text("Live-Kantenerkennung, automatischer Zuschnitt und Entzerrung — danach liest die On-Device-OCR die Felder in unter einer Sekunde.")
+            Text("Der Beleg wird automatisch erkannt, begradigt und gelesen — direkt auf dem iPhone, in unter einer Sekunde.")
                 .font(.footnote)
                 .foregroundStyle(GC.desc)
                 .multilineTextAlignment(.center)
@@ -96,10 +96,10 @@ struct CaptureTab: View {
                 Text("Verarbeitung")
                     .font(.title3.weight(.semibold))
                     .fontDesign(.serif)
-                schrittZeile(1, "Extraktion — On-Device-OCR (Vision)")
-                schrittZeile(2, "Felder geparst · Summenprobe")
-                schrittZeile(3, "Kontierung — Historie → Regeln")
-                schrittZeile(4, "Merkle-Siegel & Archiv")
+                schrittZeile(1, "Beleg lesen — direkt auf dem iPhone")
+                schrittZeile(2, "Beträge und Summen prüfen")
+                schrittZeile(3, "Kategorie zuordnen")
+                schrittZeile(4, "Versiegeln und ablegen")
             }
             .gcCard()
             .padding(20)
@@ -190,7 +190,7 @@ struct ErgebnisKarte: View {
             BuchsatzView(beleg: aktuell)
 
             HStack(spacing: 10) {
-                BadgeView(text: aktuell.herkunft.rawValue,
+                BadgeView(text: aktuell.herkunft.kurz,
                           color: aktuell.herkunft == .historie ? GC.accent : aktuell.herkunft == .regel ? GC.ok : GC.warn)
                 ProgressView(value: Double(aktuell.confidence), total: 100)
                     .tint(confColor(aktuell.confidence))

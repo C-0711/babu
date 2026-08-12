@@ -6,6 +6,26 @@ enum Herkunft: String, Codable {
     case regel = "Regel"
     case ki = "KI"
     case mensch = "Manuell"
+
+    /// Anzeige ohne Technik-Vokabular (Rohwerte bleiben stabil — persistiert).
+    var anzeige: String {
+        switch self {
+        case .historie: return "aus deiner Historie"
+        case .regel: return "nach fester Regel"
+        case .ki: return "Vorschlag"
+        case .mensch: return "von dir festgelegt"
+        }
+    }
+
+    /// Kurzform für Badges.
+    var kurz: String {
+        switch self {
+        case .historie: return "Historie"
+        case .regel: return "Regel"
+        case .ki: return "Vorschlag"
+        case .mensch: return "Manuell"
+        }
+    }
 }
 
 enum BelegStatus: String, Codable {

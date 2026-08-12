@@ -121,13 +121,12 @@ struct BelegZeile: View {
                 Text("\(beleg.belegNr) · \(beleg.status.label)")
                     .font(.caption2.monospaced())
                     .foregroundStyle(GC.muted)
-                if let aufnahme = beleg.auditAufnahme, let review = beleg.auditReview {
+                if beleg.auditAufnahme != nil, beleg.auditReview != nil {
                     HStack(spacing: 4) {
                         Image(systemName: "checkmark.seal.fill")
                             .font(.system(size: 9))
-                        Text("AUDIT \(aufnahme) · \(review)")
-                            .font(.system(size: 9, design: .monospaced))
-                            .kerning(0.5)
+                        Text("sicher fürs Finanzamt")
+                            .font(.caption2)
                     }
                     .foregroundStyle(GC.accent)
                 }
@@ -188,32 +187,32 @@ struct DetailView: View {
                         }
                         BuchsatzView(beleg: b)
 
-                        Text("PROVENANCE")
+                        Text("NACHWEIS")
                             .font(.caption2.monospaced())
                             .kerning(1)
                             .foregroundStyle(GC.muted)
 
-                        provZeile("Quelle", b.bildJpeg == nil ? "Demo-Rendering" : "Kamera-Capture, entzerrt")
-                        provZeile("Extraktion", "On-Device-OCR (Vision) · de-DE")
-                        provZeile("Kontierung", "\(b.herkunft.rawValue) · Conf \(b.confidence) %")
-                        provZeile("Summenprobe", b.summenprobeOK ? "bestanden ✓" : "nicht bestanden")
+                        provZeile("Aufnahme", b.bildJpeg == nil ? "Beispiel-Beleg" : "mit der Kamera · automatisch begradigt")
+                        provZeile("Gelesen", "direkt auf dem iPhone — der Beleg blieb auf dem Gerät")
+                        provZeile("Zuordnung", "\(b.herkunft.anzeige) · \(b.confidence) % sicher")
+                        provZeile("Summen", b.summenprobeOK ? "geprüft ✓ — Netto + Steuer = Betrag" : "gehen nicht auf — bitte prüfen")
                         provZeile("Status", b.status.label)
                         if let ablage = b.ablageStatus {
                             switch ablage {
                             case .uebertragen:
-                                provZeile("Belegbox", "übertragen ✓" + (b.ablageZeit.map {
+                                provZeile("Belegbox", "sicher abgelegt ✓" + (b.ablageZeit.map {
                                     " · " + DateFormatter.siegel.string(from: $0)
                                 } ?? ""))
                             case .ausstehend:
-                                provZeile("Belegbox", "Übertragung ausstehend")
+                                provZeile("Belegbox", "Ablage ausstehend")
                             case .fehlgeschlagen:
-                                provZeile("Belegbox", "Übertragung fehlgeschlagen")
+                                provZeile("Belegbox", "Ablage fehlgeschlagen")
                             }
                             if ablage != .uebertragen {
                                 Button {
                                     Task { await store.uebertrage(b.id) }
                                 } label: {
-                                    Label("Jetzt übertragen", systemImage: "arrow.up.doc")
+                                    Label("Jetzt ablegen", systemImage: "arrow.up.doc")
                                         .font(.caption)
                                 }
                                 .buttonStyle(.bordered)
@@ -298,7 +297,7 @@ struct DetailView: View {
     private func reviewBereich(fuer b: Beleg) -> some View {
         Divider().padding(.vertical, 2)
         HStack {
-            Text("BELEGREVIEW · SERVER")
+            Text("ZWEITPRÜFUNG")
                 .font(.caption2.monospaced())
                 .kerning(1)
                 .foregroundStyle(GC.muted)
@@ -313,14 +312,15 @@ struct DetailView: View {
                         .font(.caption2)
                 }
             }
-            .accessibilityLabel("Review aktualisieren")
+            .accessibilityLabel("Zweitprüfung aktualisieren")
         }
 
         if let r = review {
             let f = r.felder
-            provZeile("Engine", "\(r.engine ?? "Server-OCR") · \(r.zeilen ?? 0) Zeilen · ø \(Int((r.ocrKonfidenz ?? 0) * 100)) %")
+            provZeile("Lesung", "unabhängig ein zweites Mal gelesen · \(r.zeilen ?? 0) Zeilen · ø \(Int((r.ocrKonfidenz ?? 0) * 100)) % sicher")
             if let art = r.einschaetzung.belegart {
-                provZeile("Belegart", art)
+                // Ohne Methoden-Zusatz („semantisch, 30 %") — nur die Einordnung.
+                provZeile("Eingeordnet", String(art.split(separator: "(").first ?? "").trimmingCharacters(in: .whitespaces))
             }
             vergleich("Brutto", lokal: fmtEur(b.brutto), server: f.brutto.map(fmtEur),
                       gleich: f.brutto.map { abs($0 - b.brutto) < 0.011 })
@@ -337,9 +337,9 @@ struct DetailView: View {
                 provZeile("Konto", "\(konto) \(Kontenplan.bezeichnung(konto))" + (gleich ? " ✓" : " · Gerät: \(b.konto ?? "—")"))
             }
 
-            // Bild-Lane: was Gemma 4 direkt aus dem Foto gelesen hat.
+            // Bild-Lane: direkt aus dem Foto gelesen (ohne Systemnamen).
             if let vlm = r.vlm {
-                Text("GEMMA 4 · BILD-LANE")
+                Text("AUS DEM FOTO")
                     .font(.caption2.monospaced())
                     .kerning(1)
                     .foregroundStyle(GC.muted)
@@ -360,7 +360,7 @@ struct DetailView: View {
 
             // DATEV-taugliche Buchungszeile (Vorstufe zum EXTF-v13-Writer).
             if let satz = r.buchungssatz, let umsatz = satz.umsatz, let konto = satz.konto {
-                Text("BUCHUNGSSATZ · DATEV")
+                Text("FÜR DEN STEUERBERATER · DATEV")
                     .font(.caption2.monospaced())
                     .kerning(1)
                     .foregroundStyle(GC.muted)
@@ -379,18 +379,19 @@ struct DetailView: View {
                 .background(GC.canvas, in: RoundedRectangle(cornerRadius: 8))
             }
 
-            // Audit-Stempel: gesiegelt + übertragen + serverseitig reviewt,
-            // belegt durch die echten GitChain-Commits.
+            // Audit-Stempel: gesiegelt + abgelegt + zweitgeprüft — belegt durch
+            // Prüfnummern, mit denen sich alles jederzeit nachweisen lässt.
             if let audit = r.audit, let aufnahme = audit.aufnahme?.commit {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.seal.fill")
                         .foregroundStyle(GC.accent)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("AUDIT · Kette vollständig")
-                            .font(.system(size: 9, design: .monospaced))
-                            .kerning(0.5)
-                        Text("aufnahme \(aufnahme)" + (audit.review?.commit.map { " · review \($0)" } ?? ""))
+                        Text("Sicher fürs Finanzamt")
+                            .font(.footnote.weight(.semibold))
+                        Text("kann nicht mehr verändert werden · Nachweis \(aufnahme)"
+                             + (audit.review?.commit.map { " · \($0)" } ?? ""))
                             .font(.caption2.monospaced())
+                            .foregroundStyle(GC.accent.opacity(0.8))
                     }
                     .foregroundStyle(GC.accent)
                 }
@@ -438,12 +439,12 @@ struct DetailView: View {
                         .font(.caption.monospaced())
                         .foregroundStyle(GC.ok)
                 } else {
-                    Text("Server: \(server) · Gerät: \(lokal)")
+                    Text("Prüfung: \(server) · Aufnahme: \(lokal)")
                         .font(.caption.monospaced())
                         .foregroundStyle(GC.warn)
                 }
             } else {
-                Text("Server: — · Gerät: \(lokal)")
+                Text("Prüfung: — · Aufnahme: \(lokal)")
                     .font(.caption.monospaced())
                     .foregroundStyle(GC.muted)
             }
@@ -454,7 +455,7 @@ struct DetailView: View {
         guard let dateiname = b.ablageDateiname,
               let url = URL(string: store.ablageURL),
               let pat = KeychainHelfer.ladePAT() else {
-            reviewHinweis = "Review braucht Server-URL und PAT (Einstellungen)."
+            reviewHinweis = "Für die Zweitprüfung bitte die Belegbox verbinden (Export → Zahnrad)."
             return
         }
         reviewLaedt = true
@@ -469,7 +470,7 @@ struct DetailView: View {
                                   review: audit.review?.commit)
             }
         } else if review == nil {
-            reviewHinweis = "Noch kein Review — der Server liest gerade (↻ zum Aktualisieren)."
+            reviewHinweis = "Zweitprüfung läuft — gleich verfügbar (↻ zum Aktualisieren)."
         }
     }
 }

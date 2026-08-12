@@ -144,7 +144,7 @@ struct AufraeumenView: View {
                     if let konto = beleg.konto {
                         BadgeView(text: Kontenplan.bezeichnung(konto), color: GC.accent)
                     }
-                    BadgeView(text: beleg.herkunft.rawValue,
+                    BadgeView(text: beleg.herkunft.kurz,
                               color: beleg.herkunft == .historie ? GC.accent :
                                      beleg.herkunft == .regel ? GC.ok : GC.warn)
                     Text("\(beleg.confidence) %")
