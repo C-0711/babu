@@ -39,6 +39,15 @@ struct ListeView: View {
                     NavigationLink(value: b.id) {
                         BelegZeile(beleg: b)
                     }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        if b.status != .fixiert {
+                            Button(role: .destructive) {
+                                store.loeschen(id: b.id)
+                            } label: {
+                                Label("Löschen", systemImage: "trash")
+                            }
+                        }
+                    }
                 }
                 if gefiltert.isEmpty {
                     Text("Kein Beleg entspricht diesem Filter.")
@@ -94,6 +103,10 @@ struct BelegZeile: View {
 struct DetailView: View {
     @EnvironmentObject var store: AppStore
     let belegID: UUID
+
+    @State private var review: BelegReviewDaten?
+    @State private var reviewLaedt = false
+    @State private var reviewHinweis: String?
 
     private var beleg: Beleg? { store.belege.first { $0.id == belegID } }
 
@@ -153,6 +166,10 @@ struct DetailView: View {
                             }
                         }
 
+                        if b.ablageStatus == .uebertragen {
+                            reviewBereich(fuer: b)
+                        }
+
                         if let s = b.siegel, let z = b.siegelZeit {
                             Button {
                                 UIPasteboard.general.string = "\(s) · \(DateFormatter.siegel.string(from: z))"
@@ -179,6 +196,11 @@ struct DetailView: View {
         .background(GC.canvas)
         .navigationTitle(beleg?.belegNr ?? "Beleg")
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            if let b = beleg, b.ablageStatus == .uebertragen {
+                await reviewLaden(fuer: b)
+            }
+        }
     }
 
     private func provZeile(_ key: String, _ value: String) -> some View {
@@ -190,6 +212,120 @@ struct DetailView: View {
             Text(value)
                 .font(.caption.monospaced())
                 .foregroundStyle(GC.body)
+        }
+    }
+
+    // MARK: - BelegReview (Server-Lane)
+
+    @ViewBuilder
+    private func reviewBereich(fuer b: Beleg) -> some View {
+        Divider().padding(.vertical, 2)
+        HStack {
+            Text("BELEGREVIEW · SERVER")
+                .font(.caption2.monospaced())
+                .kerning(1)
+                .foregroundStyle(GC.muted)
+            Spacer()
+            Button {
+                Task { await reviewLaden(fuer: b) }
+            } label: {
+                if reviewLaedt {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption2)
+                }
+            }
+            .accessibilityLabel("Review aktualisieren")
+        }
+
+        if let r = review {
+            let f = r.felder
+            provZeile("Engine", "\(r.engine ?? "Server-OCR") · \(r.zeilen ?? 0) Zeilen · ø \(Int((r.ocrKonfidenz ?? 0) * 100)) %")
+            if let art = r.einschaetzung.belegart {
+                provZeile("Belegart", art)
+            }
+            vergleich("Brutto", lokal: fmtEur(b.brutto), server: f.brutto.map(fmtEur),
+                      gleich: f.brutto.map { abs($0 - b.brutto) < 0.011 })
+            vergleich("Netto", lokal: fmtEur(b.netto), server: f.netto.map(fmtEur),
+                      gleich: f.netto.map { abs($0 - b.netto) < 0.011 })
+            vergleich("USt", lokal: fmtEur(b.ust), server: f.ust.map(fmtEur),
+                      gleich: f.ust.map { abs($0 - b.ust) < 0.011 })
+            vergleich("Datum", lokal: b.datumText, server: f.datum,
+                      gleich: f.datum.map { $0 == b.datumText })
+            vergleich("Beleg-Nr.", lokal: b.belegNr, server: f.belegNr,
+                      gleich: f.belegNr.map { $0 == b.belegNr })
+            if let konto = r.einschaetzung.kontoSkr04 {
+                let gleich = konto == b.konto
+                provZeile("Konto", "\(konto) \(Kontenplan.bezeichnung(konto))" + (gleich ? " ✓" : " · Gerät: \(b.konto ?? "—")"))
+            }
+            ForEach(r.einschaetzung.hinweise ?? [], id: \.self) { hinweis in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .font(.caption2)
+                        .foregroundStyle(GC.accent)
+                    Text(hinweis)
+                        .font(.caption)
+                        .foregroundStyle(GC.desc)
+                }
+            }
+            ForEach(f.offen ?? [], id: \.self) { punkt in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "questionmark.circle")
+                        .font(.caption2)
+                        .foregroundStyle(GC.warn)
+                    Text(punkt)
+                        .font(.caption)
+                        .foregroundStyle(GC.desc)
+                }
+            }
+        } else if let hinweis = reviewHinweis {
+            Text(hinweis)
+                .font(.caption)
+                .foregroundStyle(GC.muted)
+        }
+    }
+
+    /// Abgleich Gerät ↔ Server: ✓ bei Übereinstimmung, sonst beide Werte.
+    private func vergleich(_ key: String, lokal: String, server: String?, gleich: Bool?) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(key)
+                .font(.caption2.monospaced())
+                .foregroundStyle(GC.muted)
+                .frame(width: 88, alignment: .leading)
+            if let server {
+                if gleich == true {
+                    Text("\(server) ✓")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(GC.ok)
+                } else {
+                    Text("Server: \(server) · Gerät: \(lokal)")
+                        .font(.caption.monospaced())
+                        .foregroundStyle(GC.warn)
+                }
+            } else {
+                Text("Server: — · Gerät: \(lokal)")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(GC.muted)
+            }
+        }
+    }
+
+    private func reviewLaden(fuer b: Beleg) async {
+        guard let dateiname = b.ablageDateiname,
+              let url = URL(string: store.ablageURL),
+              let pat = KeychainHelfer.ladePAT() else {
+            reviewHinweis = "Review braucht Server-URL und PAT (Einstellungen)."
+            return
+        }
+        reviewLaedt = true
+        defer { reviewLaedt = false }
+        let stamm = (dateiname as NSString).deletingPathExtension
+        if let r = await AblageService.reviewAbrufen(stamm: stamm, basis: url, pat: pat) {
+            review = r
+            reviewHinweis = nil
+        } else if review == nil {
+            reviewHinweis = "Noch kein Review — der Server liest gerade (↻ zum Aktualisieren)."
         }
     }
 }

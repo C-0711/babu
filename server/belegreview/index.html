@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>babu — Beleg-Eingang</title>
+<style>
+  :root {
+    --desk:#efece6; --bg:#ffffff; --fg:#111111; --body:#333333; --desc:#555555;
+    --muted:#999999; --accent:#857b61; --accent-hover:#736950; --accent-subtle:#f0ebe3;
+    --ok:#6f8a6e; --warn:#b0821f; --danger:#a8433a; --scan:#1f1e1a;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:var(--desk); color:var(--body); min-height:100vh;
+    font-family:-apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    display:flex; justify-content:center; padding:32px 16px;
+  }
+  main { width:100%; max-width:560px; }
+  .kicker {
+    font-family:ui-monospace, "SF Mono", Menlo, monospace; font-size:10px;
+    letter-spacing:.14em; color:var(--accent); text-transform:uppercase; margin-bottom:10px;
+  }
+  h1 { font-family:Georgia, "Times New Roman", serif; font-weight:600; font-size:34px; color:var(--fg); margin-bottom:6px; }
+  .sub { font-size:14px; color:var(--desc); margin-bottom:24px; }
+  .karte { background:var(--bg); border-radius:14px; padding:18px; box-shadow:0 3px 8px rgba(31,30,26,.08); margin-bottom:14px; }
+  label { display:block; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:6px; font-family:ui-monospace, "SF Mono", Menlo, monospace; }
+  input[type=password], input[type=text] {
+    width:100%; padding:10px 12px; border:1px solid #e4e0d8; border-radius:9px;
+    font-family:ui-monospace, "SF Mono", Menlo, monospace; font-size:13px; background:#faf9f5; color:var(--fg);
+  }
+  input:focus { outline:2px solid var(--accent); outline-offset:1px; }
+  .hinweis { font-size:12px; color:var(--muted); margin-top:8px; }
+  .drop {
+    border:1.5px dashed var(--accent); border-radius:14px; background:var(--accent-subtle);
+    padding:40px 20px; text-align:center; cursor:pointer; transition:background .15s;
+  }
+  .drop.aktiv { background:#e6dfd2; }
+  .drop .gross { font-family:Georgia, serif; font-size:19px; color:var(--fg); margin-bottom:6px; }
+  .drop .klein { font-size:12.5px; color:var(--desc); }
+  .drop input { display:none; }
+  ul#liste { list-style:none; margin-top:4px; }
+  #liste li {
+    display:flex; align-items:baseline; gap:10px; padding:9px 4px;
+    border-bottom:1px solid #f0ede7; font-size:13px;
+  }
+  #liste .name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--fg); }
+  #liste .status { font-family:ui-monospace, "SF Mono", Menlo, monospace; font-size:11.5px; white-space:nowrap; }
+  .s-laeuft { color:var(--warn); } .s-ok { color:var(--ok); } .s-fehler { color:var(--danger); }
+  .fuss { font-size:11.5px; color:var(--muted); margin-top:18px; line-height:1.5; }
+  .commit { font-family:ui-monospace, "SF Mono", Menlo, monospace; }
+</style>
+</head>
+<body>
+<main>
+  <div class="kicker">0711 Intelligence · GitChain-Belegbox</div>
+  <h1>babu</h1>
+  <p class="sub">Der Beleg-Eingang. Jede Aufnahme wird ein Commit <span class="commit">aufnahme:&nbsp;…</span> im Container <span class="commit">babu</span> — Grundlage für BelegReview.</p>
+
+  <div class="karte">
+    <label for="pat">Upload-PAT</label>
+    <input type="password" id="pat" placeholder="gcpat-…" autocomplete="off">
+    <div class="hinweis" id="patHinweis">Wird nur in diesem Browser gespeichert (localStorage). Widerrufbar unter gitchain.de/auth/device.</div>
+  </div>
+
+  <div class="karte">
+    <label for="notiz">Notiz (optional, wandert in den Commit)</label>
+    <input type="text" id="notiz" placeholder="z. B. Bewirtung Team-Abend">
+  </div>
+
+  <div class="drop" id="drop">
+    <div class="gross">Belege hier ablegen</div>
+    <div class="klein">oder tippen zum Auswählen — PDF, JPG, PNG, HEIC · max. 40 MB</div>
+    <input type="file" id="datei" multiple accept=".pdf,.jpg,.jpeg,.png,.heic,image/*,application/pdf">
+  </div>
+
+  <ul id="liste"></ul>
+
+  <p class="fuss">Übertragung per TLS (Cloudflare) an die H200V. Ohne gültigen PAT nimmt der Eingang nichts an (401). Abgelehnte Dateitypen: 400 · zu groß: 413.</p>
+</main>
+
+<script>
+  const patFeld = document.getElementById('pat');
+  const drop = document.getElementById('drop');
+  const dateiInput = document.getElementById('datei');
+  const liste = document.getElementById('liste');
+
+  patFeld.value = localStorage.getItem('babu_pat') || '';
+  patFeld.addEventListener('change', () => localStorage.setItem('babu_pat', patFeld.value.trim()));
+
+  drop.addEventListener('click', () => dateiInput.click());
+  dateiInput.addEventListener('change', () => { lade([...dateiInput.files]); dateiInput.value = ''; });
+  ['dragenter','dragover'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('aktiv'); }));
+  ['dragleave','drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove('aktiv'); }));
+  drop.addEventListener('drop', ev => lade([...ev.dataTransfer.files]));
+
+  async function lade(dateien) {
+    const pat = patFeld.value.trim();
+    if (!pat) { patFeld.focus(); patFeld.style.outline = '2px solid var(--danger)'; return; }
+    patFeld.style.outline = '';
+    for (const datei of dateien) {
+      const zeile = document.createElement('li');
+      zeile.innerHTML = `<span class="name">${datei.name}</span><span class="status s-laeuft">überträgt …</span>`;
+      liste.prepend(zeile);
+      const status = zeile.querySelector('.status');
+      try {
+        const form = new FormData();
+        form.append('file', datei, datei.name);
+        const notiz = document.getElementById('notiz').value.trim();
+        if (notiz) form.append('notiz', notiz);
+        const antwort = await fetch('/ablage', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + pat },
+          body: form
+        });
+        if (antwort.ok) {
+          const d = await antwort.json();
+          status.textContent = 'Commit ' + (d.commit || '').slice(0, 7) + ' ✓';
+          status.className = 'status s-ok';
+        } else {
+          const texte = { 401: 'Token ungültig (401)', 403: 'nicht erlaubt (403)',
+                          400: 'kein Beleg-Format (400)', 413: 'zu groß (413)',
+                          503: 'Eingang nicht bereit (503)', 502: 'Push fehlgeschlagen (502)' };
+          status.textContent = texte[antwort.status] || ('Fehler ' + antwort.status);
+          status.className = 'status s-fehler';
+        }
+      } catch {
+        status.textContent = 'nicht erreichbar';
+        status.className = 'status s-fehler';
+      }
+    }
+  }
+</script>
+</body>
+</html>

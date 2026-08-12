@@ -161,13 +161,16 @@ final class AppStore: ObservableObject {
         belege[i].ablageDateiname = dateiname
         belege[i].ablageStatus = .ausstehend
 
-        let ergebnis = await AblageService.lade(bildJpeg: jpeg, dateiname: dateiname,
-                                                basis: url, pat: pat)
+        let (ergebnis, serverDatei) = await AblageService.lade(bildJpeg: jpeg, dateiname: dateiname,
+                                                               basis: url, pat: pat)
         guard let j = belege.firstIndex(where: { $0.id == id }) else { return }
         switch ergebnis {
         case .uebertragen:
             belege[j].ablageStatus = .uebertragen
             belege[j].ablageZeit = Date()
+            // Serverseitiger Name (mit Zeitstempel-Präfix) ist der Schlüssel
+            // zum BelegReview-Ergebnis.
+            if let serverDatei { belege[j].ablageDateiname = serverDatei }
         default:
             belege[j].ablageStatus = .fehlgeschlagen
         }
@@ -192,6 +195,11 @@ final class AppStore: ObservableObject {
         belege[i] = b
         geprueft += 1
         if let d = dauer { pruefSekunden.append(d) }
+    }
+
+    /// Beleg entfernen — fixierte (exportierte) Belege sind unantastbar.
+    func loeschen(id: UUID) {
+        belege.removeAll { $0.id == id && $0.status != .fixiert }
     }
 
     var exportierbar: [Beleg] {

@@ -14,16 +14,39 @@ enum AblageErgebnis: Equatable {
 /// Jeder erfolgreiche Upload wird serverseitig ein Commit `aufnahme: …` in babu.git.
 enum AblageService {
 
-    static func lade(bildJpeg: Data, dateiname: String, basis: URL, pat: String) async -> AblageErgebnis {
+    /// Upload; liefert bei Erfolg auch den serverseitigen Dateinamen aus der
+    /// Antwort (`{ok, ref, commit, datei}`) — der ist der Schlüssel zum Review.
+    static func lade(bildJpeg: Data, dateiname: String, basis: URL,
+                     pat: String) async -> (ergebnis: AblageErgebnis, serverDatei: String?) {
         let (body, contentType) = multipartBody(feld: "file", dateiname: dateiname,
                                                 mime: "image/jpeg", daten: bildJpeg)
         var request = URLRequest(url: basis.appendingPathComponent("ablage"))
         request.httpMethod = "POST"
-        request.timeoutInterval = 15
+        request.timeoutInterval = 30
         request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
         request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         request.httpBody = body
-        return await ausfuehren(request, erfolg2xx: true)
+        let (ergebnis, daten) = await ausfuehrenMitDaten(request)
+        var serverDatei: String?
+        if ergebnis == .uebertragen, let daten,
+           let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+           let pfad = json["datei"] as? String {
+            serverDatei = (pfad as NSString).lastPathComponent
+        }
+        return (ergebnis, serverDatei)
+    }
+
+    /// BelegReview-Ergebnis abrufen (`GET /review/<stamm>`, Bearer-PAT).
+    static func reviewAbrufen(stamm: String, basis: URL, pat: String) async -> BelegReviewDaten? {
+        var request = URLRequest(url: basis.appendingPathComponent("review")
+            .appendingPathComponent(stamm))
+        request.timeoutInterval = 12
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              (antwort as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try? decoder.decode(BelegReviewDaten.self, from: daten)
     }
 
     /// Verbindungs- und Token-Test OHNE Müll-Commit: eine Mini-txt-Datei senden.
@@ -46,16 +69,20 @@ enum AblageService {
     }
 
     private static func ausfuehren(_ request: URLRequest, erfolg2xx: Bool) async -> AblageErgebnis {
+        await ausfuehrenMitDaten(request).0
+    }
+
+    private static func ausfuehrenMitDaten(_ request: URLRequest) async -> (AblageErgebnis, Data?) {
         do {
-            let (_, antwort) = try await URLSession.shared.data(for: request)
-            guard let http = antwort as? HTTPURLResponse else { return .nichtErreichbar }
+            let (daten, antwort) = try await URLSession.shared.data(for: request)
+            guard let http = antwort as? HTTPURLResponse else { return (.nichtErreichbar, nil) }
             switch http.statusCode {
-            case 200..<300: return .uebertragen
-            case 401: return .tokenFehler
-            default: return .abgelehnt(http.statusCode)
+            case 200..<300: return (.uebertragen, daten)
+            case 401: return (.tokenFehler, nil)
+            default: return (.abgelehnt(http.statusCode), nil)
             }
         } catch {
-            return .nichtErreichbar
+            return (.nichtErreichbar, nil)
         }
     }
 
@@ -71,6 +98,34 @@ enum AblageService {
         body.append(Data("\r\n--\(boundary)--\r\n".utf8))
         return (body, "multipart/form-data; boundary=\(boundary)")
     }
+}
+
+/// Ergebnis der Server-Verifikation (BelegReview auf der H200V):
+/// PaddleOCR-Lane + steuerliche Ersteinschätzung, aus `review/<name>.json`.
+struct BelegReviewDaten: Codable {
+    struct Felder: Codable {
+        var lieferant: String?
+        var belegNr: String?
+        var datum: String?
+        var netto: Double?
+        var ust: Double?
+        var brutto: Double?
+        var ustSatz: Int?
+        var summenprobeOk: Bool?
+        var bewirtungssignal: Bool?
+        var offen: [String]?
+    }
+    struct Einschaetzung: Codable {
+        var belegart: String?
+        var kontoSkr04: String?
+        var steuerschluessel: String?
+        var hinweise: [String]?
+    }
+    var engine: String?
+    var zeilen: Int?
+    var ocrKonfidenz: Double?
+    var felder: Felder
+    var einschaetzung: Einschaetzung
 }
 
 /// PAT-Ablage ausschließlich in der iOS-Keychain — nie im JSON-Store, nie im Log.
