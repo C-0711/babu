@@ -9,7 +9,7 @@ SF Mono für Werte).
 | Baustein | Umsetzung |
 |---|---|
 | Capture | Eigener AVFoundation-Sucher im Unlimited-OCR-Design: Vision-Dokument-Segmentierung (`VNDetectDocumentSegmentationRequest`), Eck-Marker + Konturlinie, Auto-Auslösung mit Plausibilitäts-Gates (kein Auto-Fire auf Bildschirme), Live-Felder im Sucher, Perspektiv-Entzerrung |
-| Instant Reading | On-Device-OCR mit dem Vision-Framework (`VNRecognizeTextRequest`, de-DE) — keine Cloud, Bilder verlassen das Gerät nicht |
+| Instant Reading | On-Device-OCR mit dem Vision-Framework (`VNRecognizeTextRequest`, de-DE); mit aktivierter Belegbox werden Belege zusätzlich auf den eigenen Server (H200V) übertragen |
 | Feld-Extraktion | Heuristischer Parser (`FeldParser.swift`): Lieferant, Belegnummer, Datum, Netto/USt/Brutto inkl. Summenprobe auf deutschen Beträgen |
 | Kontierung | Engine deterministisch vor generativ: Kreditor-Historie → Regeln → Fallback, mit Confidence-Routing (≥ 95 automatisch, 80–94 bestätigen, < 80 prüfen) |
 | Siegel | Echte SHA-256-Hashes über CryptoKit, Zeitstempel, kopierbar im Provenance-Panel |

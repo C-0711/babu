@@ -193,7 +193,6 @@ struct DetailView: View {
                             .foregroundStyle(GC.muted)
 
                         provZeile("Aufnahme", b.bildJpeg == nil ? "Beispiel-Beleg" : "mit der Kamera · automatisch begradigt")
-                        provZeile("Gelesen", "direkt auf dem iPhone — der Beleg blieb auf dem Gerät")
                         provZeile("Zuordnung", "\(b.herkunft.anzeige) · \(b.confidence) % sicher")
                         provZeile("Summen", b.summenprobeOK ? "geprüft ✓ — Netto + Steuer = Betrag" : "gehen nicht auf — bitte prüfen")
                         provZeile("Status", b.status.label)

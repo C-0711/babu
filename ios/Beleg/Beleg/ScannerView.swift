@@ -45,7 +45,7 @@ private struct BerechtigungHinweis: View {
                 .font(.title3.weight(.semibold))
                 .fontDesign(.serif)
                 .foregroundStyle(.white)
-            Text("Zum Erfassen von Belegen braucht die App die Kamera. Der Zugriff lässt sich in den Einstellungen erlauben — Bilder bleiben auf dem Gerät.")
+            Text("Zum Erfassen von Belegen braucht die App die Kamera. Der Zugriff lässt sich in den Einstellungen erlauben.")
                 .font(.footnote)
                 .foregroundStyle(.white.opacity(0.65))
                 .multilineTextAlignment(.center)
