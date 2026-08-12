@@ -38,9 +38,10 @@ on-device (bisheriges Verhalten, unverändert).
   Zeitstempel + Hex).
 - `URLSession` mit kurzem Timeout (LAN); Ergebnis: `.uebertragen` (2xx),
   `.tokenFehler` (401), `.abgelehnt` (4xx), `.nichtErreichbar` (Netzfehler).
-- **Verbindungstest ohne Commit:** `POST /ablage` ohne Datei — gültiger Token
-  ⇒ 400 („file fehlt"), falscher Token ⇒ 401, kein Netz ⇒ Fehler. Damit prüft
-  der Einstellungen-Screen Erreichbarkeit UND Token, ohne Müll-Commits.
+- **Verbindungstest ohne Commit:** Mini-`verbindungstest.txt` senden — txt
+  wird vom Server IMMER abgelehnt: gültiger Token ⇒ 400 (Dateityp), falscher
+  Token ⇒ 401, kein Netz ⇒ Fehler. (Empirisch geklärt: ein leerer POST liefert
+  422 VOR der Token-Prüfung und taugt daher nicht als Token-Test.)
 
 ### 2. Keychain-Ablage (`KeychainHelfer` in AblageService.swift)
 - PAT ausschließlich in der iOS-Keychain (`kSecClassGenericPassword`,

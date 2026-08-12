@@ -26,14 +26,19 @@ enum AblageService {
         return await ausfuehren(request, erfolg2xx: true)
     }
 
-    /// Verbindungs- und Token-Test OHNE Müll-Commit: POST ohne Datei.
-    /// Gültiger Token ⇒ Server meldet 400 („file fehlt") ⇒ verbunden.
-    /// Falscher/fehlender Token ⇒ 401.
+    /// Verbindungs- und Token-Test OHNE Müll-Commit: eine Mini-txt-Datei senden.
+    /// Der Server nimmt nur Bilder/PDF an — txt wird IMMER abgelehnt:
+    /// gültiger Token ⇒ 400 (Dateityp) ⇒ verbunden · falscher Token ⇒ 401.
+    /// (Ein leerer POST taugt nicht: FastAPI meldet 422 vor der Token-Prüfung.)
     static func verbindungstest(basis: URL, pat: String) async -> AblageErgebnis {
+        let (body, contentType) = multipartBody(feld: "file", dateiname: "verbindungstest.txt",
+                                                mime: "text/plain", daten: Data("x".utf8))
         var request = URLRequest(url: basis.appendingPathComponent("ablage"))
         request.httpMethod = "POST"
         request.timeoutInterval = 8
         request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
         let ergebnis = await ausfuehren(request, erfolg2xx: false)
         if case .abgelehnt(400) = ergebnis { return .uebertragen }
         if case .uebertragen = ergebnis { return .uebertragen }   // falls Server 2xx liefert
