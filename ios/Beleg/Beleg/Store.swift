@@ -171,9 +171,50 @@ final class AppStore: ObservableObject {
             // Serverseitiger Name (mit Zeitstempel-Präfix) ist der Schlüssel
             // zum BelegReview-Ergebnis.
             if let serverDatei { belege[j].ablageDateiname = serverDatei }
+            // Audit-Stempel nachladen, sobald der Watcher reviewt hat (~30 s).
+            Task {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                await self.auditLaden(id)
+            }
         default:
             belege[j].ablageStatus = .fehlgeschlagen
         }
+    }
+
+    // MARK: - Audit-Stempel (GitChain-Commits am Beleg persistieren)
+
+    /// Für alle übertragenen Belege ohne Stempel das Review abfragen.
+    func auditNachladen() {
+        guard ablageAktiv, KeychainHelfer.ladePAT() != nil else { return }
+        for b in belege where b.ablageStatus == .uebertragen && b.auditReview == nil {
+            let id = b.id
+            Task { await self.auditLaden(id) }
+        }
+    }
+
+    func auditLaden(_ id: UUID) async {
+        guard let url = URL(string: ablageURL),
+              let pat = KeychainHelfer.ladePAT(),
+              let i = belege.firstIndex(where: { $0.id == id }),
+              belege[i].auditReview == nil,
+              let dateiname = belege[i].ablageDateiname else { return }
+        let stamm = (dateiname as NSString).deletingPathExtension
+        guard let review = await AblageService.reviewAbrufen(stamm: stamm, basis: url, pat: pat),
+              let audit = review.audit else { return }
+        auditSetzen(id: id, aufnahme: audit.aufnahme?.commit, review: audit.review?.commit)
+    }
+
+    func auditSetzen(id: UUID, aufnahme: String?, review: String?) {
+        guard let i = belege.firstIndex(where: { $0.id == id }) else { return }
+        if let aufnahme { belege[i].auditAufnahme = aufnahme }
+        if let review { belege[i].auditReview = review }
+    }
+
+    /// Bewirtungsangaben (§4 Abs. 5 EStG) am Beleg erfassen.
+    func bewirtungSetzen(id: UUID, anlass: String, personen: String) {
+        guard let i = belege.firstIndex(where: { $0.id == id }) else { return }
+        belege[i].bewirtungAnlass = anlass.trimmingCharacters(in: .whitespacesAndNewlines)
+        belege[i].bewirtungPersonen = personen.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func siegeln(_ beleg: inout Beleg, status: BelegStatus) {

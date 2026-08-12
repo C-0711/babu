@@ -87,6 +87,26 @@ struct BelegZeile: View {
                 Text("\(beleg.belegNr) · \(beleg.status.label)")
                     .font(.caption2.monospaced())
                     .foregroundStyle(GC.muted)
+                if let aufnahme = beleg.auditAufnahme, let review = beleg.auditReview {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 9))
+                        Text("AUDIT \(aufnahme) · \(review)")
+                            .font(.system(size: 9, design: .monospaced))
+                            .kerning(0.5)
+                    }
+                    .foregroundStyle(GC.accent)
+                }
+                if beleg.brauchtBewirtungsangaben {
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.2")
+                            .font(.system(size: 9))
+                        Text("BEWIRTUNGSANGABEN FEHLEN")
+                            .font(.system(size: 9, design: .monospaced))
+                            .kerning(0.5)
+                    }
+                    .foregroundStyle(GC.warn)
+                }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
@@ -107,6 +127,7 @@ struct DetailView: View {
     @State private var review: BelegReviewDaten?
     @State private var reviewLaedt = false
     @State private var reviewHinweis: String?
+    @State private var zeigeBewirtung = false
 
     private var beleg: Beleg? { store.belege.first { $0.id == belegID } }
 
@@ -166,6 +187,25 @@ struct DetailView: View {
                             }
                         }
 
+                        // Bewirtungsangaben (§4 Abs. 5): erfasst zeigen, fehlende nachfragen.
+                        if b.konto == "6640" {
+                            if b.brauchtBewirtungsangaben {
+                                Button {
+                                    zeigeBewirtung = true
+                                } label: {
+                                    Label("Bewirtungsangaben ergänzen (§4 Abs. 5 EStG)",
+                                          systemImage: "person.2")
+                                        .font(.footnote)
+                                        .frame(maxWidth: .infinity)
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(GC.warn)
+                            } else {
+                                provZeile("Anlass", b.bewirtungAnlass ?? "—")
+                                provZeile("Personen", (b.bewirtungPersonen ?? "—") + " ✓")
+                            }
+                        }
+
                         if b.ablageStatus == .uebertragen {
                             reviewBereich(fuer: b)
                         }
@@ -200,6 +240,9 @@ struct DetailView: View {
             if let b = beleg, b.ablageStatus == .uebertragen {
                 await reviewLaden(fuer: b)
             }
+        }
+        .sheet(isPresented: $zeigeBewirtung) {
+            BewirtungsangabenSheet(belegID: belegID)
         }
     }
 
@@ -386,6 +429,11 @@ struct DetailView: View {
         if let r = await AblageService.reviewAbrufen(stamm: stamm, basis: url, pat: pat) {
             review = r
             reviewHinweis = nil
+            // Audit-Stempel am Beleg persistieren — sichtbar in der Belegliste.
+            if let audit = r.audit {
+                store.auditSetzen(id: b.id, aufnahme: audit.aufnahme?.commit,
+                                  review: audit.review?.commit)
+            }
         } else if review == nil {
             reviewHinweis = "Noch kein Review — der Server liest gerade (↻ zum Aktualisieren)."
         }

@@ -169,6 +169,7 @@ struct ErgebnisKarte: View {
     var fertig: () -> Void
 
     @State private var zeigeReview = false
+    @State private var zeigeBewirtung = false
 
     private var aktuell: Beleg { store.belege.first { $0.id == beleg.id } ?? beleg }
 
@@ -213,10 +214,20 @@ struct ErgebnisKarte: View {
                 SiegelZeile(beleg: aktuell)
                 abschlussButtons
             case .offen:
+                if aktuell.brauchtBewirtungsangaben {
+                    Label("Bewirtungsangaben fehlen — beim Bestätigen wird nachgefragt.",
+                          systemImage: "person.2")
+                        .font(.footnote)
+                        .foregroundStyle(GC.warn)
+                }
                 if aktuell.confidence >= 80 {
                     Button {
-                        store.buchen(id: aktuell.id, konto: nil, steuerschluessel: nil,
-                                     dauer: Date().timeIntervalSince(startZeit))
+                        if aktuell.brauchtBewirtungsangaben {
+                            zeigeBewirtung = true
+                        } else {
+                            store.buchen(id: aktuell.id, konto: nil, steuerschluessel: nil,
+                                         dauer: Date().timeIntervalSince(startZeit))
+                        }
                     } label: {
                         Text("Buchung bestätigen").frame(maxWidth: .infinity)
                     }
@@ -243,6 +254,12 @@ struct ErgebnisKarte: View {
         .gcCard()
         .sheet(isPresented: $zeigeReview) {
             ReviewSheet(belegID: beleg.id, startZeit: startZeit)
+        }
+        .sheet(isPresented: $zeigeBewirtung) {
+            BewirtungsangabenSheet(belegID: beleg.id) {
+                store.buchen(id: beleg.id, konto: nil, steuerschluessel: nil,
+                             dauer: Date().timeIntervalSince(startZeit))
+            }
         }
     }
 

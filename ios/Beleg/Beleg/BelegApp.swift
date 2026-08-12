@@ -14,7 +14,9 @@ struct BelegApp: App {
         .onChange(of: scenePhase) { _, neu in
             switch neu {
             case .background: store.sichern()
-            case .active: store.ablageRetry()   // offene Belegbox-Uploads nachholen
+            case .active:
+                store.ablageRetry()      // offene Belegbox-Uploads nachholen
+                store.auditNachladen()   // Audit-Stempel für Übertragene holen
             default: break
             }
         }

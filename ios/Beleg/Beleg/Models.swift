@@ -107,6 +107,17 @@ struct Beleg: Identifiable, Codable {
     var ablageStatus: AblageStatus?
     var ablageDateiname: String?
     var ablageZeit: Date?
+    // Audit-Stempel: GitChain-Commits der vollständigen Kette
+    var auditAufnahme: String?
+    var auditReview: String?
+    // Bewirtungsangaben (§4 Abs. 5 Nr. 2 EStG): Pflicht bei Konto 6640
+    var bewirtungAnlass: String?
+    var bewirtungPersonen: String?
+
+    /// Bewirtungsbeleg ohne erfasste Angaben? Dann fragt die App nach.
+    var brauchtBewirtungsangaben: Bool {
+        konto == "6640" && (bewirtungPersonen ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+    }
 
     var ksLabel: String {
         switch steuerschluessel {
