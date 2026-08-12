@@ -69,7 +69,10 @@ enum FeldParser {
         let tabelle = steuerTabelle(gesamt)
         let tabellenBrutto = tabelle.reduce(0) { $0 + $1.brutto }
 
-        if !tabelle.isEmpty, tabellenBrutto >= (betraege.max() ?? 0) * 0.5 {
+        // Guard 0.75: eine unvollständig aufgelöste Tabelle (fehlende Satz-Zeile)
+        // liegt typisch weit unter dem Zahlbetrag — dann lieber Fallback als
+        // ein zu kleiner Brutto. Trinkgeld-Differenzen (< 25 %) passieren.
+        if !tabelle.isEmpty, tabellenBrutto >= (betraege.max() ?? 0) * 0.75 {
             // Steuertabelle gefunden (Netto/USt/Brutto je Satz): präziser als
             // Paar-Raten — und Trinkgeld bleibt automatisch außen vor.
             f.netto = runde2(tabelle.reduce(0) { $0 + $1.netto })
@@ -149,9 +152,12 @@ enum FeldParser {
         for (i, token) in tokens.enumerated() {
             guard case .satz(let satz) = token else { continue }
 
-            // Bis zu drei Beträge vor bzw. nach der Rate — begrenzt durch die
-            // nächste Rate, damit sich Zeilen nicht vermischen.
-            func fenster(_ richtung: Int) -> [Double] {
+            // Kandidaten: bis zu drei Beträge VOR und NACH der Rate, jeweils
+            // begrenzt durch die Nachbar-Rate. OCR verteilt Tabellenzeilen
+            // teils ÜBER den Satz-Token (Brutto/Netto davor, USt danach) —
+            // deshalb alle 3er-Kombinationen aus beiden Seiten prüfen und nur
+            // ein EINDEUTIG gültiges Tripel übernehmen (nichts raten).
+            func seite(_ richtung: Int) -> [Double] {
                 var werte: [Double] = []
                 var j = i + richtung
                 while j >= 0, j < tokens.count, werte.count < 3 {
@@ -163,24 +169,38 @@ enum FeldParser {
                 }
                 return werte
             }
-            func aufloesen(_ werte: [Double]) -> SteuerZeile? {
-                guard werte.count == 3 else { return nil }
-                let s = werte.sorted(by: >)
-                let (brutto, netto, ust) = (s[0], s[1], s[2])
-                guard abs(netto + ust - brutto) < 0.011 else { return nil }
-                let erwartet = netto * Double(satz) / 100
-                guard abs(ust - erwartet) <= Swift.max(0.03, erwartet * 0.02) else { return nil }
-                return SteuerZeile(satz: satz, netto: netto, ust: ust, brutto: brutto)
-            }
+            let pool = seite(-1) + seite(1)
+            guard pool.count >= 3 else { continue }
 
-            if let z = aufloesen(fenster(1)) ?? aufloesen(fenster(-1)),
-               !zeilen.contains(where: {
-                   $0.satz == z.satz && abs($0.brutto - z.brutto) < 0.011 && abs($0.ust - z.ust) < 0.011
-               }) {
+            var treffer: [SteuerZeile] = []
+            for a in 0..<pool.count {
+                for b in (a + 1)..<pool.count {
+                    for c in (b + 1)..<pool.count {
+                        guard let z = pruefeTripel([pool[a], pool[b], pool[c]], satz: satz) else { continue }
+                        if !treffer.contains(where: { gleich($0, z) }) { treffer.append(z) }
+                    }
+                }
+            }
+            guard treffer.count == 1, let z = treffer.first else { continue }  // mehrdeutig → auslassen
+            if !zeilen.contains(where: { $0.satz == z.satz && gleich($0, z) }) {
                 zeilen.append(z)
             }
         }
         return zeilen
+    }
+
+    /// Tripel gültig, wenn Summenprobe hält UND die USt zum Satz passt.
+    private static func pruefeTripel(_ werte: [Double], satz: Int) -> SteuerZeile? {
+        let s = werte.sorted(by: >)
+        let (brutto, netto, ust) = (s[0], s[1], s[2])
+        guard abs(netto + ust - brutto) < 0.011 else { return nil }
+        let erwartet = netto * Double(satz) / 100
+        guard abs(ust - erwartet) <= Swift.max(0.03, erwartet * 0.02) else { return nil }
+        return SteuerZeile(satz: satz, netto: netto, ust: ust, brutto: brutto)
+    }
+
+    private static func gleich(_ a: SteuerZeile, _ b: SteuerZeile) -> Bool {
+        abs(a.brutto - b.brutto) < 0.011 && abs(a.netto - b.netto) < 0.011 && abs(a.ust - b.ust) < 0.011
     }
 
     private static func runde2(_ x: Double) -> Double { (x * 100).rounded() / 100 }
