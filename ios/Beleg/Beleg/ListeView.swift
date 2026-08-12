@@ -4,6 +4,11 @@ import UIKit
 struct ListeView: View {
     @EnvironmentObject var store: AppStore
     @State private var filter: Filter = .alle
+    @State private var zeigeAufraeumen = false
+
+    private var offeneAnzahl: Int {
+        store.belege.filter { $0.status == .offen }.count
+    }
 
     enum Filter: String, CaseIterable, Identifiable {
         case alle = "Alle"
@@ -29,6 +34,32 @@ struct ListeView: View {
     var body: some View {
         NavigationStack {
             List {
+                if offeneAnzahl > 0 {
+                    Button {
+                        zeigeAufraeumen = true
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "rectangle.stack")
+                                .font(.title3)
+                                .foregroundStyle(GC.accent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Aufräumen")
+                                    .font(.headline)
+                                    .fontDesign(.serif)
+                                    .foregroundStyle(GC.fg)
+                                Text("\(offeneAnzahl) \(offeneAnzahl == 1 ? "offener Beleg wartet" : "offene Belege warten") — wisch dich durch")
+                                    .font(.footnote)
+                                    .foregroundStyle(GC.desc)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(GC.muted)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .listRowBackground(GC.accentSubtle)
+                }
                 if let d = store.durchsatzText {
                     Text(d)
                         .font(.caption.monospaced())
@@ -67,6 +98,9 @@ struct ListeView: View {
                     }
                     .pickerStyle(.menu)
                 }
+            }
+            .fullScreenCover(isPresented: $zeigeAufraeumen) {
+                AufraeumenView()
             }
         }
     }
