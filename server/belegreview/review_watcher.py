@@ -133,12 +133,18 @@ def ocr_zeilen(bildpfad: Path) -> list[tuple[str, float]]:
     return [(t, c) for _, t, c in zeilen]
 
 
-# ── Semantik: bge-m3-Embeddings (lokaler Dienst :18003) ─────────────────────
+# ── Semantik: embeddinggemma-300m via vLLM (:11436, OpenAI-kompatibel) ──────
 # Klassifikation läuft SEMANTISCH gegen den babu-Katalog (Belegbox-Grundregel);
 # der Keyword-Klassifikator ist nur noch Dokumentklassen-Zusatzinfo.
+# EmbeddingGemma erwartet Task-Präfixe: Katalog als Dokument, Beleg als Query.
 
-EMBED_URL = os.environ.get("EMBED_URL", "http://127.0.0.1:18003/embed")
-KATALOG_CACHE = WURZEL / "katalog_bge.json"
+EMBED_API = os.environ.get("EMBED_API", "http://127.0.0.1:11436/v1/embeddings")
+EMBED_MODELL = os.environ.get("EMBED_MODELL", "embeddinggemma")
+KATALOG_CACHE = WURZEL / "katalog_embeddinggemma.json"
+
+# ── VLM-Lane: Gemma 4 (gemma4-mm via vLLM :11435) liest das BILD ─────────────
+VLM_API = os.environ.get("VLM_API", "http://127.0.0.1:11435/v1/chat/completions")
+VLM_MODELL = os.environ.get("VLM_MODELL", "gemma4-mm")
 
 # code, SKR04-Konto, Label, Beschreibungstext fürs Embedding
 BABU_KATALOG = [
@@ -165,10 +171,12 @@ BABU_KATALOG = [
 ]
 
 
-def embed_text(text: str) -> list[float]:
-    r = requests.post(EMBED_URL, json={"text": text[:6000]}, timeout=90)
+def embed_text(text: str, als_dokument: bool = False) -> list[float]:
+    prompt = (f"title: none | text: {text[:6000]}" if als_dokument
+              else f"task: search result | query: {text[:6000]}")
+    r = requests.post(EMBED_API, json={"model": EMBED_MODELL, "input": prompt}, timeout=90)
     r.raise_for_status()
-    return r.json()["embedding"]
+    return r.json()["data"][0]["embedding"]
 
 
 def _cos(a: list[float], b: list[float]) -> float:
@@ -187,7 +195,7 @@ def katalog_vektoren() -> list[list[float]]:
     if _KATALOG_VEK is not None:
         return _KATALOG_VEK
     schluessel = hashlib.sha256(
-        json.dumps(BABU_KATALOG, ensure_ascii=False).encode()).hexdigest()[:16]
+        (EMBED_MODELL + json.dumps(BABU_KATALOG, ensure_ascii=False)).encode()).hexdigest()[:16]
     if KATALOG_CACHE.exists():
         try:
             cache = json.loads(KATALOG_CACHE.read_text())
@@ -196,8 +204,9 @@ def katalog_vektoren() -> list[list[float]]:
                 return _KATALOG_VEK
         except Exception:  # noqa: BLE001
             pass
-    log("embedde babu-Katalog (bge-m3) …")
-    _KATALOG_VEK = [embed_text(f"{label}: {text}") for _, _, label, text in BABU_KATALOG]
+    log(f"embedde babu-Katalog ({EMBED_MODELL}) …")
+    _KATALOG_VEK = [embed_text(f"{label}: {text}", als_dokument=True)
+                    for _, _, label, text in BABU_KATALOG]
     KATALOG_CACHE.write_text(json.dumps(
         {"schluessel": schluessel, "vektoren": _KATALOG_VEK}))
     return _KATALOG_VEK
@@ -213,7 +222,7 @@ def semantik_klassifizieren(text: str) -> tuple[dict, list[float]]:
                    "label": BABU_KATALOG[i][2], "score": s} for s, i in scores[:3]]
     best = kandidaten[0]
     return {
-        "modell": "bge-m3",
+        "modell": EMBED_MODELL,
         "belegart_code": best["code"],
         "belegart": best["label"],
         "konto_skr04": best["konto"],
@@ -230,13 +239,49 @@ def aehnlichster_beleg(vektor: list[float], eigener_stamm: str) -> dict | None:
         if stamm == eigener_stamm:
             continue
         try:
-            andere = json.loads(pfad.read_text())["vektor"]
+            daten = json.loads(pfad.read_text())
+            andere = daten["vektor"]
+            # Nur Vektoren desselben Modells vergleichen (Dim/Raum müssen passen).
+            if daten.get("modell") != EMBED_MODELL or len(andere) != len(vektor):
+                continue
         except Exception:  # noqa: BLE001
             continue
         s = round(_cos(vektor, andere), 4)
         if bester is None or s > bester["score"]:
             bester = {"datei": stamm, "score": s}
     return bester if bester and bester["score"] >= 0.6 else None
+
+
+def vlm_lesen(bildpfad: Path) -> dict | None:
+    """Gemma 4 liest das Beleg-BILD (Lane B): strukturiertes JSON, nichts raten."""
+    import base64
+    b64 = base64.b64encode(bildpfad.read_bytes()).decode()
+    anweisung = (
+        "Du liest einen deutschen Geschäftsbeleg (Foto). Antworte NUR mit einem "
+        "JSON-Objekt ohne Markdown und ohne Erklärung, exakt diese Schlüssel "
+        "(unlesbar/unbekannt = null): "
+        '{"lieferant": string|null, "beleg_nr": string|null, "datum": "TT.MM.JJJJ"|null, '
+        '"brutto": number|null, "netto": number|null, "ust": number|null, '
+        '"trinkgeld": number|null, "zahlungsart": string|null, "bewirtung": boolean, '
+        '"positionen_anzahl": number|null}. '
+        "Beträge als Dezimalzahl mit Punkt. brutto ist der Rechnungsbetrag OHNE Trinkgeld. "
+        "Rate nichts."
+    )
+    payload = {
+        "model": VLM_MODELL,
+        "temperature": 0,
+        "max_tokens": 500,
+        "messages": [{"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+            {"type": "text", "text": anweisung},
+        ]}],
+    }
+    r = requests.post(VLM_API, json=payload, timeout=180)
+    r.raise_for_status()
+    inhalt = r.json()["choices"][0]["message"]["content"].strip()
+    inhalt = re.sub(r"^```(?:json)?\s*|\s*```$", "", inhalt)
+    m = re.search(r"\{.*\}", inhalt, re.S)
+    return json.loads(m.group(0)) if m else None
 
 
 # ── Feld-Extraktion (Port der iOS-FeldParser-Heuristik, getestet am Gerät) ───
@@ -438,7 +483,7 @@ def verarbeite(pfad: str) -> None:
     dokumentklasse = classify_doc(text, name=Path(pfad).name, pages=1)
     f = felder_extrahieren(zeilen)
 
-    # Semantik-Lane: bge-m3-Embedding → Belegart/Konto + Ähnlichkeits-Historie.
+    # Semantik-Lane: embeddinggemma → Belegart/Konto + Ähnlichkeits-Historie.
     sem, vektor, aehnlich = None, None, None
     try:
         sem, vektor = semantik_klassifizieren(text)
@@ -446,10 +491,29 @@ def verarbeite(pfad: str) -> None:
     except Exception as ex:  # noqa: BLE001 — Embed-Dienst weg → deterministisch weiter
         log(f"Semantik nicht verfügbar: {ex!r}")
 
+    # VLM-Lane (Gemma 4 liest das Bild): füllt Lücken der deterministischen
+    # Lane (Herkunft wird festgehalten) und liefert eine zweite Betrags-Lesung.
+    vlm = None
+    try:
+        vlm = vlm_lesen(lokal)
+    except Exception as ex:  # noqa: BLE001
+        log(f"VLM nicht verfügbar: {ex!r}")
+    if vlm:
+        for feld in ("lieferant", "beleg_nr", "datum"):
+            if not f.get(feld) and vlm.get(feld):
+                f[feld] = str(vlm[feld])
+                f.setdefault("herkunft_vlm", []).append(feld)
+        if vlm.get("bewirtung") is True:
+            f["bewirtungssignal"] = True
+
     e = einschaetzung(f, sem, dokumentklasse)
     if aehnlich:
         e["hinweise"].append(
             f"Ähnlichster früherer Beleg: {aehnlich['datei']} ({aehnlich['score']:.0%}).")
+    if vlm and vlm.get("brutto") is not None and f["brutto"] is not None \
+            and abs(float(vlm["brutto"]) - f["brutto"]) > 0.011:
+        e["hinweise"].append(
+            f"Abweichung: VLM liest Brutto {vlm['brutto']}, deterministische Lane {f['brutto']} — prüfen.")
 
     review = {
         "datei": pfad,
@@ -460,6 +524,7 @@ def verarbeite(pfad: str) -> None:
         "ocr_konfidenz": round(sum(c for _, c in zeilen) / len(zeilen), 3) if zeilen else 0,
         "dokumentklasse": dokumentklasse,
         "semantik": sem,
+        "vlm": vlm,
         "aehnlich": aehnlich,
         "felder": f,
         "einschaetzung": e,
@@ -473,12 +538,13 @@ def verarbeite(pfad: str) -> None:
     zu_committen = [f"review/{name}.json", f"review/{name}.md"]
     if vektor is not None:
         (ordner / f"{name}.embedding.json").write_text(json.dumps(
-            {"modell": "bge-m3", "dim": len(vektor), "vektor": vektor}))
+            {"modell": EMBED_MODELL, "dim": len(vektor), "vektor": vektor}))
         zu_committen.append(f"review/{name}.embedding.json")
 
     md = [f"# BelegReview · {Path(pfad).name}", "",
           f"> {review['engine']} · {review['zeilen']} Zeilen · "
-          f"ø Konfidenz {review['ocr_konfidenz']:.0%} · {dauer:.1f} s", "",
+          f"ø Konfidenz {review['ocr_konfidenz']:.0%} · {dauer:.1f} s · "
+          f"Semantik {EMBED_MODELL}{' · VLM ' + VLM_MODELL if vlm else ''}", "",
           f"- **Belegart:** {e['belegart']} · Dokumentklasse: {dokumentklasse}",
           f"- **Lieferant:** {f['lieferant'] or '—'}",
           f"- **Beleg-Nr.:** {f['beleg_nr'] or '—'}",
