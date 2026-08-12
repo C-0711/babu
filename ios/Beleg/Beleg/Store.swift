@@ -22,6 +22,10 @@ final class AppStore: ObservableObject {
     @Published var pruefSekunden: [Double] = [] { didSet { speichern() } }
     @Published var tab: Tab = .erfassen   // nicht persistiert
 
+    // Belegbox-Übertragung (GitChain-Ablage auf der H200V) — Opt-in.
+    @Published var ablageURL = "http://192.168.145.10:7843" { didSet { speichern() } }
+    @Published var ablageAktiv = false { didSet { speichern() } }
+
     private var geladen = false
     private var speicherTask: Task<Void, Never>?
 
@@ -34,6 +38,8 @@ final class AppStore: ObservableObject {
             exportiert = z.exportiert
             geprueft = z.geprueft
             pruefSekunden = z.pruefSekunden
+            ablageURL = z.ablageURL ?? ablageURL
+            ablageAktiv = z.ablageAktiv ?? false
         } else {
             belege = Demo.archiv()   // Erststart: Demo-Archiv als Ausgangslage
         }
@@ -43,6 +49,7 @@ final class AppStore: ObservableObject {
     // MARK: - Persistenz
 
     /// Alles, was einen App-Neustart überleben muss — Belege inkl. Bild-JPEGs.
+    /// Neue Felder optional, damit ältere zustand.json weiter dekodiert.
     private struct Zustand: Codable {
         var onboarded: Bool
         var skr: String
@@ -50,11 +57,14 @@ final class AppStore: ObservableObject {
         var exportiert: Bool
         var geprueft: Int
         var pruefSekunden: [Double]
+        var ablageURL: String?
+        var ablageAktiv: Bool?
     }
 
     private var zustand: Zustand {
         Zustand(onboarded: onboarded, skr: skr, belege: belege,
-                exportiert: exportiert, geprueft: geprueft, pruefSekunden: pruefSekunden)
+                exportiert: exportiert, geprueft: geprueft, pruefSekunden: pruefSekunden,
+                ablageURL: ablageURL, ablageAktiv: ablageAktiv)
     }
 
     /// Entprellt auf ~0,25 s, damit Serien-Änderungen nicht pro Mutation schreiben.
@@ -107,8 +117,52 @@ final class AppStore: ObservableObject {
         if beleg.confidence >= 95 {
             siegeln(&beleg, status: .automatisch)
         }
+        if ablageAktiv, bildJpeg != nil {
+            beleg.ablageStatus = .ausstehend
+            beleg.ablageDateiname = ablageDateiname(fuer: beleg)
+        }
         belege.insert(beleg, at: 0)
+        if beleg.ablageStatus == .ausstehend {
+            let id = beleg.id
+            Task { await self.uebertrage(id) }
+        }
         return beleg
+    }
+
+    // MARK: - Belegbox-Übertragung
+
+    /// Alle offenen Übertragungen erneut anstoßen (App-Start, Foreground, manuell).
+    func ablageRetry() {
+        guard ablageAktiv else { return }
+        for b in belege where b.ablageStatus == .ausstehend || b.ablageStatus == .fehlgeschlagen {
+            let id = b.id
+            Task { await self.uebertrage(id) }
+        }
+    }
+
+    /// Einzelnen Beleg in die GitChain-Ablage hochladen; Status am Beleg nachführen.
+    func uebertrage(_ id: UUID) async {
+        guard ablageAktiv,
+              let url = URL(string: ablageURL),
+              let pat = KeychainHelfer.ladePAT(),
+              let i = belege.firstIndex(where: { $0.id == id }),
+              belege[i].ablageStatus != .uebertragen,
+              let jpeg = belege[i].bildJpeg else { return }
+
+        let dateiname = belege[i].ablageDateiname ?? ablageDateiname(fuer: belege[i])
+        belege[i].ablageDateiname = dateiname
+        belege[i].ablageStatus = .ausstehend
+
+        let ergebnis = await AblageService.lade(bildJpeg: jpeg, dateiname: dateiname,
+                                                basis: url, pat: pat)
+        guard let j = belege.firstIndex(where: { $0.id == id }) else { return }
+        switch ergebnis {
+        case .uebertragen:
+            belege[j].ablageStatus = .uebertragen
+            belege[j].ablageZeit = Date()
+        default:
+            belege[j].ablageStatus = .fehlgeschlagen
+        }
     }
 
     func siegeln(_ beleg: inout Beleg, status: BelegStatus) {

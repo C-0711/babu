@@ -12,7 +12,11 @@ struct BelegApp: App {
                 .tint(GC.accent)
         }
         .onChange(of: scenePhase) { _, neu in
-            if neu == .background { store.sichern() }
+            switch neu {
+            case .background: store.sichern()
+            case .active: store.ablageRetry()   // offene Belegbox-Uploads nachholen
+            default: break
+            }
         }
     }
 }

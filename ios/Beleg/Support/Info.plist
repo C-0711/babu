@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Belegbox-Upload (Stufe 1): HTTP im lokalen Netz zur H200V — kein TLS,
+	     bewusst LAN-only. Öffentliche Route kommt in v2 über das Gateway. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Die App überträgt gesiegelte Belege im lokalen Netz an die GitChain-Belegbox (H200V). Ohne Konfiguration bleibt alles auf dem Gerät.</string>
+</dict>
+</plist>

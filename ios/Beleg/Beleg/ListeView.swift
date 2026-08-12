@@ -130,6 +130,28 @@ struct DetailView: View {
                         provZeile("Kontierung", "\(b.herkunft.rawValue) · Conf \(b.confidence) %")
                         provZeile("Summenprobe", b.summenprobeOK ? "bestanden ✓" : "nicht bestanden")
                         provZeile("Status", b.status.label)
+                        if let ablage = b.ablageStatus {
+                            switch ablage {
+                            case .uebertragen:
+                                provZeile("Belegbox", "übertragen ✓" + (b.ablageZeit.map {
+                                    " · " + DateFormatter.siegel.string(from: $0)
+                                } ?? ""))
+                            case .ausstehend:
+                                provZeile("Belegbox", "Übertragung ausstehend")
+                            case .fehlgeschlagen:
+                                provZeile("Belegbox", "Übertragung fehlgeschlagen")
+                            }
+                            if ablage != .uebertragen {
+                                Button {
+                                    Task { await store.uebertrage(b.id) }
+                                } label: {
+                                    Label("Jetzt übertragen", systemImage: "arrow.up.doc")
+                                        .font(.caption)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                        }
 
                         if let s = b.siegel, let z = b.siegelZeit {
                             Button {

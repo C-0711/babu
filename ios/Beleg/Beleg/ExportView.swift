@@ -3,6 +3,7 @@ import SwiftUI
 struct ExportView: View {
     @EnvironmentObject var store: AppStore
     @State private var datei: URL?
+    @State private var zeigeEinstellungen = false
 
     var body: some View {
         NavigationStack {
@@ -63,6 +64,19 @@ struct ExportView: View {
             .background(GC.canvas)
             .navigationTitle("Export")
             .toolbarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        zeigeEinstellungen = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .accessibilityLabel("Belegbox-Einstellungen")
+                }
+            }
+            .sheet(isPresented: $zeigeEinstellungen) {
+                EinstellungenView()
+            }
             .onAppear {
                 if !store.exportierbar.isEmpty { datei = store.extfDatei() }
             }
