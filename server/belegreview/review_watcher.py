@@ -14,7 +14,9 @@ Neustart).
 Ground-Regel wie überall: nichts raten — was nicht sauber lesbar ist,
 bleibt leer bzw. landet in `offen`.
 """
+import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -23,6 +25,8 @@ import time
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
+
+import requests
 
 WURZEL = Path(__file__).resolve().parent
 ARBEIT = WURZEL / "babu"
@@ -127,6 +131,112 @@ def ocr_zeilen(bildpfad: Path) -> list[tuple[str, float]]:
                 zeilen.append((y, str(text), float(conf)))
     zeilen.sort(key=lambda z: z[0])
     return [(t, c) for _, t, c in zeilen]
+
+
+# ── Semantik: bge-m3-Embeddings (lokaler Dienst :18003) ─────────────────────
+# Klassifikation läuft SEMANTISCH gegen den babu-Katalog (Belegbox-Grundregel);
+# der Keyword-Klassifikator ist nur noch Dokumentklassen-Zusatzinfo.
+
+EMBED_URL = os.environ.get("EMBED_URL", "http://127.0.0.1:18003/embed")
+KATALOG_CACHE = WURZEL / "katalog_bge.json"
+
+# code, SKR04-Konto, Label, Beschreibungstext fürs Embedding
+BABU_KATALOG = [
+    ("bewirtung", "6640", "Bewirtung",
+     "Restaurant Gaststätte Gasthaus Café Bewirtung Speisen Getränke Menü Schnitzel Salat Wein Bier Trinkgeld Tisch Kellner Geschäftsessen"),
+    ("kfz", "6530", "Kfz/Tanken",
+     "Tankstelle Kraftstoff Diesel Benzin Super E10 Aral Shell Esso Jet Liter Zapfsäule Waschanlage Parkschein Parkhaus"),
+    ("buerobedarf", "6815", "Bürobedarf",
+     "Bürobedarf Kopierpapier Papier Toner Druckerpatrone Stifte Ordner Büromaterial Schreibwaren"),
+    ("telekom", "6805", "Telefon/Internet",
+     "Telefon Mobilfunk Internet DSL Glasfaser Telekom Vodafone O2 Tarif Kommunikation Rufnummer"),
+    ("energie", "6325", "Energie",
+     "Strom Gas Wasser Stadtwerke Energieversorger Abschlag Zählerstand Grundversorgung Netzentgelt"),
+    ("fahrt", "6673", "Fahrtkosten",
+     "Deutsche Bahn Fernverkehr ICE Ticket Fahrkarte Bahnfahrt ÖPNV Taxi Flug Bordkarte Reise"),
+    ("literatur", "6820", "Fachliteratur",
+     "Buchhandlung Verlag Fachbuch Fachzeitschrift Literatur Abonnement ISBN"),
+    ("geschenk", "6610", "Geschenke",
+     "Blumen Blumenstrauß Geschenk Präsent Aufmerksamkeit Gutschein Anlass"),
+    ("it", "6837", "IT/Hosting",
+     "Hosting Server Cloud Domain Software Lizenz SaaS IT-Dienstleistung Rechenzentrum Hetzner AWS"),
+    ("sonstiges", "6850", "Sonstiger Betriebsbedarf",
+     "Quittung Kassenbon Einkauf Baumarkt Drogerie allgemeiner Betriebsbedarf"),
+]
+
+
+def embed_text(text: str) -> list[float]:
+    r = requests.post(EMBED_URL, json={"text": text[:6000]}, timeout=90)
+    r.raise_for_status()
+    return r.json()["embedding"]
+
+
+def _cos(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(x * x for x in b))
+    return dot / (na * nb) if na and nb else 0.0
+
+
+_KATALOG_VEK: list[list[float]] | None = None
+
+
+def katalog_vektoren() -> list[list[float]]:
+    """Katalog-Embeddings, auf Platte gecacht (Schlüssel: Hash der Texte)."""
+    global _KATALOG_VEK
+    if _KATALOG_VEK is not None:
+        return _KATALOG_VEK
+    schluessel = hashlib.sha256(
+        json.dumps(BABU_KATALOG, ensure_ascii=False).encode()).hexdigest()[:16]
+    if KATALOG_CACHE.exists():
+        try:
+            cache = json.loads(KATALOG_CACHE.read_text())
+            if cache.get("schluessel") == schluessel:
+                _KATALOG_VEK = cache["vektoren"]
+                return _KATALOG_VEK
+        except Exception:  # noqa: BLE001
+            pass
+    log("embedde babu-Katalog (bge-m3) …")
+    _KATALOG_VEK = [embed_text(f"{label}: {text}") for _, _, label, text in BABU_KATALOG]
+    KATALOG_CACHE.write_text(json.dumps(
+        {"schluessel": schluessel, "vektoren": _KATALOG_VEK}))
+    return _KATALOG_VEK
+
+
+def semantik_klassifizieren(text: str) -> tuple[dict, list[float]]:
+    """OCR-Text → (Semantik-Befund, Beleg-Vektor)."""
+    vektor = embed_text(text)
+    scores = sorted(
+        ((round(_cos(vektor, kv), 4), i) for i, kv in enumerate(katalog_vektoren())),
+        reverse=True)
+    kandidaten = [{"code": BABU_KATALOG[i][0], "konto": BABU_KATALOG[i][1],
+                   "label": BABU_KATALOG[i][2], "score": s} for s, i in scores[:3]]
+    best = kandidaten[0]
+    return {
+        "modell": "bge-m3",
+        "belegart_code": best["code"],
+        "belegart": best["label"],
+        "konto_skr04": best["konto"],
+        "konfidenz": best["score"],
+        "kandidaten": kandidaten,
+    }, vektor
+
+
+def aehnlichster_beleg(vektor: list[float], eigener_stamm: str) -> dict | None:
+    """Cosine gegen alle bisherigen Beleg-Embeddings in der Belegbox."""
+    bester: dict | None = None
+    for pfad in (ARBEIT / "review").glob("*.embedding.json"):
+        stamm = pfad.name.removesuffix(".embedding.json")
+        if stamm == eigener_stamm:
+            continue
+        try:
+            andere = json.loads(pfad.read_text())["vektor"]
+        except Exception:  # noqa: BLE001
+            continue
+        s = round(_cos(vektor, andere), 4)
+        if bester is None or s > bester["score"]:
+            bester = {"datei": stamm, "score": s}
+    return bester if bester and bester["score"] >= 0.6 else None
 
 
 # ── Feld-Extraktion (Port der iOS-FeldParser-Heuristik, getestet am Gerät) ───
@@ -269,11 +379,19 @@ def felder_extrahieren(zeilen: list[tuple[str, float]]) -> dict:
     return f
 
 
-def einschaetzung(f: dict, belegart: str) -> dict:
-    """Regelbasierte steuerliche Ersteinschätzung — Hinweise, keine Beratung."""
+def einschaetzung(f: dict, sem: dict | None, dokumentklasse: str) -> dict:
+    """Steuerliche Ersteinschätzung: semantische Belegart (bge-m3) bestimmt das
+    Konto; deterministische Signale (Bewirtung) übersteuern; der Keyword-
+    Klassifikator liefert nur noch die Dokumentklasse als Zusatzinfo."""
     ks = "8" if f["ust_satz"] == 7 else ("0" if f["ust_satz"] == 0 else "9")
-    e = {"belegart": belegart, "konto_skr04": None, "steuerschluessel": ks, "hinweise": []}
-    if f["bewirtungssignal"]:
+    e = {"belegart": dokumentklasse, "konto_skr04": None, "steuerschluessel": ks, "hinweise": []}
+
+    if sem:
+        e["belegart"] = f"{sem['belegart']} (semantisch, {sem['konfidenz']:.0%})"
+        e["konto_skr04"] = sem["konto_skr04"]
+
+    bewirtung = f["bewirtungssignal"] or (sem and sem["belegart_code"] == "bewirtung")
+    if bewirtung:
         e["konto_skr04"] = "6640"
         e["hinweise"] += [
             "Bewirtungsbeleg: 70 % abziehbar (§4 Abs. 5 Nr. 2 EStG), Vorsteuer zu 100 %.",
@@ -281,14 +399,14 @@ def einschaetzung(f: dict, belegart: str) -> dict:
         ]
         if any("Trinkgeld" in o for o in f["offen"]):
             e["hinweise"].append("Trinkgeld ist ohne Vorsteuer abziehbar — separat erfassen.")
-    elif belegart == "Spendenbescheinigung":
+    elif dokumentklasse == "Spendenbescheinigung":
         e["konto_skr04"] = None
         e["hinweise"].append("Zuwendungsbestätigung → Sonderausgaben (Anlage SA), kein Betriebsausgabenkonto.")
-    elif belegart == "Lohnsteuerbescheinigung":
+    elif dokumentklasse == "Lohnsteuerbescheinigung":
         e["hinweise"].append("LStB → Anlage N (eCodes via VaSt), kein Buchungsbeleg.")
-    else:
+    elif sem is None:
         e["konto_skr04"] = "6850"
-        e["hinweise"].append("Kein spezifisches Signal — Leistungsart prüfen (Vorschlag: sonstiger Betriebsbedarf).")
+        e["hinweise"].append("Semantik nicht verfügbar — Leistungsart prüfen (Vorschlag: sonstiger Betriebsbedarf).")
     if not f["summenprobe_ok"]:
         e["hinweise"].append("Summenprobe nicht bestanden — Beträge prüfen.")
     return e
@@ -317,9 +435,21 @@ def verarbeite(pfad: str) -> None:
     zeilen = ocr_zeilen(lokal)
     dauer = time.time() - t0
     text = "\n".join(t for t, _ in zeilen)
-    belegart = classify_doc(text, name=Path(pfad).name, pages=1)
+    dokumentklasse = classify_doc(text, name=Path(pfad).name, pages=1)
     f = felder_extrahieren(zeilen)
-    e = einschaetzung(f, belegart)
+
+    # Semantik-Lane: bge-m3-Embedding → Belegart/Konto + Ähnlichkeits-Historie.
+    sem, vektor, aehnlich = None, None, None
+    try:
+        sem, vektor = semantik_klassifizieren(text)
+        aehnlich = aehnlichster_beleg(vektor, name)
+    except Exception as ex:  # noqa: BLE001 — Embed-Dienst weg → deterministisch weiter
+        log(f"Semantik nicht verfügbar: {ex!r}")
+
+    e = einschaetzung(f, sem, dokumentklasse)
+    if aehnlich:
+        e["hinweise"].append(
+            f"Ähnlichster früherer Beleg: {aehnlich['datei']} ({aehnlich['score']:.0%}).")
 
     review = {
         "datei": pfad,
@@ -328,6 +458,9 @@ def verarbeite(pfad: str) -> None:
         "dauer_s": round(dauer, 2),
         "zeilen": len(zeilen),
         "ocr_konfidenz": round(sum(c for _, c in zeilen) / len(zeilen), 3) if zeilen else 0,
+        "dokumentklasse": dokumentklasse,
+        "semantik": sem,
+        "aehnlich": aehnlich,
         "felder": f,
         "einschaetzung": e,
         "ocr_text": text[:8000],
@@ -337,11 +470,16 @@ def verarbeite(pfad: str) -> None:
     ordner.mkdir(exist_ok=True)
     (ordner / f"{name}.json").write_text(
         json.dumps(review, ensure_ascii=False, indent=1), encoding="utf-8")
+    zu_committen = [f"review/{name}.json", f"review/{name}.md"]
+    if vektor is not None:
+        (ordner / f"{name}.embedding.json").write_text(json.dumps(
+            {"modell": "bge-m3", "dim": len(vektor), "vektor": vektor}))
+        zu_committen.append(f"review/{name}.embedding.json")
 
     md = [f"# BelegReview · {Path(pfad).name}", "",
           f"> {review['engine']} · {review['zeilen']} Zeilen · "
           f"ø Konfidenz {review['ocr_konfidenz']:.0%} · {dauer:.1f} s", "",
-          f"- **Belegart:** {belegart}",
+          f"- **Belegart:** {e['belegart']} · Dokumentklasse: {dokumentklasse}",
           f"- **Lieferant:** {f['lieferant'] or '—'}",
           f"- **Beleg-Nr.:** {f['beleg_nr'] or '—'}",
           f"- **Datum:** {f['datum'] or '—'}",
@@ -353,7 +491,7 @@ def verarbeite(pfad: str) -> None:
         md += ["", "Offen:"] + [f"- {o}" for o in f["offen"]]
     (ordner / f"{name}.md").write_text("\n".join(md) + "\n", encoding="utf-8")
 
-    git("add", f"review/{name}.json", f"review/{name}.md")
+    git("add", *zu_committen)
     c = git("commit", "--author", AUTOR, "-m", f"review: {Path(pfad).name}")
     if c.returncode != 0:
         log(f"commit fehlgeschlagen für {name}: {c.stderr.strip()[-150:]}")
@@ -365,7 +503,7 @@ def verarbeite(pfad: str) -> None:
         git("fetch", "origin")
         git("reset", "--hard", "origin/main")
         return
-    log(f"review: {Path(pfad).name} — {belegart}, brutto {f['brutto']}, {dauer:.1f}s OCR")
+    log(f"review: {Path(pfad).name} — {e['belegart']}, brutto {f['brutto']}, {dauer:.1f}s OCR")
 
 
 def hauptschleife() -> None:
