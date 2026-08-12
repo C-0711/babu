@@ -90,3 +90,24 @@ on-device (bisheriges Verhalten, unverändert).
 ## Explizit NICHT in Stufe 1a
 Watcher/Review-Verarbeitung (1b), Rückkanal in die App (2), TLS/öffentliche
 Route (Gateway v2), pm2-Persistenz auf der H200V, Mehrseitigkeit/PDF-Upload.
+
+## Nachtrag 2026-08-12 abends: öffentliche Route babu.0711.io (v2 vorgezogen)
+
+Da iPhone und H200V nicht im selben Netz sind (der Mac erreicht die H200V nur
+per OpenVPN), wurde die öffentliche Route direkt gebaut — rein additiv nach
+der Hauskonvention „eine Lane, ein Tunnel", nichts Bestehendes angefasst:
+
+- **Eigener Cloudflare-Tunnel `babu-0711`** (846d1a30…), CNAME `babu.0711.io`
+  (sticht den `*.0711.io`-Wildcard). Ingress: `/ablage` + `/health` →
+  bestehender Eingang `:7843`; alles andere → Upload-Seite `:7844`.
+- **Upload-Seite** `~/babu-web/index.html` (self-contained, Unlimited-OCR-Look):
+  PAT-Feld (localStorage), Drag & Drop, optionale Notiz, Status je Datei mit
+  Commit-Kurzhash. Serviert via `python3 -m http.server` (pm2 `babu-web`).
+- **TLS via Cloudflare** — die iOS-App kann als Server-URL jetzt
+  `https://babu.0711.io` nutzen: funktioniert von überall, keine ATS-Ausnahme
+  nötig. Die LAN-URL bleibt als Fallback gültig.
+- Verifiziert: `GET /health` → ok · `GET /` → Upload-Seite · `POST /ablage`
+  ohne Token → 401.
+- **Grenzen:** pm2 bewusst ohne `save` (wie babu-eingang) — nach einem
+  H200V-Reboot müssen `babu-eingang`, `babu-web`, `babu-tunnel` neu gestartet
+  werden (nachholen, sobald die Parallel-Session ruht: dump-Backup + pm2 save).
