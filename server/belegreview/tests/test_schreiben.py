@@ -98,6 +98,32 @@ def test_hochladen(welt):
     assert any(z["datei"] == datei and z["status"] == "erfasst" for z in d["belege"])
 
 
+def test_export_nach_bewirtung(welt):
+    """EXTF-Export: erst nach dem grünen Haken landet der Beleg im Stapel;
+    festschreiben=1 markiert ihn als exportiert (Beleg-Weg „Bei der Kanzlei")."""
+    client, bare = welt
+    leer = client.get("/api/export/2026-08.csv")
+    assert leer.status_code == 200
+    assert len(leer.content.split(b"\r\n")) == 3          # Kopf + Spalten + Abschluss
+
+    client.post(f"/api/bewirtung/{STAMM}",
+                json={"anlass": "Team-Essen", "teilnehmer": ["Nicole"]})
+    voll = client.get("/api/export/2026-08.csv")
+    zeilen = voll.content.decode("cp1252").split("\r\n")
+    assert len(zeilen) == 5                                # + 2 Buchungen (Mehrsatz!)
+    assert zeilen[2].startswith("85,40;S;EUR")             # 7 % Speisen
+    assert zeilen[3].startswith("57,20;S;EUR")             # 19 % Getränke
+    assert "EXTF" in zeilen[0]
+
+    fest = client.get("/api/export/2026-08.csv", params={"festschreiben": 1})
+    assert fest.status_code == 200
+    log = subprocess.run(["git", "-C", str(bare), "log", "-1", "--format=%s"],
+                         capture_output=True, text=True).stdout.strip()
+    assert log == "export: 2026-08"
+    d = client.get(f"/api/beleg/{STAMM}").json()
+    assert d["status"] == "exportiert"
+
+
 def test_hochladen_grenzen(welt):
     client, _ = welt
     assert client.post("/api/hochladen", params={"name": "boese.exe"},

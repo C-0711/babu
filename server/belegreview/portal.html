@@ -381,6 +381,7 @@ async function api(pfad, opts){
 
 /* ————— Status-Sätze (Sprachregel: menschlich, kein Technik-Vokabular) ————— */
 function statusSatz(z){
+  if (z.status === "exportiert") return ["bei der Kanzlei ✓","ok"];
   if (z.status === "geprüft") return ["geprüft ✓","ok"];
   if (z.status === "erfasst") return ["wird noch gelesen …","laeuft"];
   if (z.bewirtung && !z.bewirtung_beantwortet) return ["Mit wem warst du essen?","frage"];
@@ -559,7 +560,9 @@ async function ladeDetail(stamm){
     frage ? {t:"Zweitprüfung", s:"eine Frage ist offen — siehe unten", klasse:"frage"}
           : {t:"Zweitprüfung " + (geprueft||b ? "✓" : ""), s: rev ? "alles stimmig" : "kommt gleich", klasse: rev ? "" : "offen"},
     {t:"Liegt für DATEV bereit", s: b ? "im " + monatName(d.monat||jetztMonat()).split(" ")[0] + "-Stapel deiner Kanzlei" : "sobald alles klar ist", klasse: b ? "" : "offen"},
-    {t:"Bei der Kanzlei", s:"sobald sie den Stapel abholt", klasse:"offen"},
+    d.status === "exportiert"
+      ? {t:"Bei der Kanzlei ✓", s:"der Stapel wurde abgeholt", klasse:""}
+      : {t:"Bei der Kanzlei", s:"sobald sie den Stapel abholt", klasse:"offen"},
   ];
 
   let html = `<div id="detail-grid"><div><div id="buehne">${bildTag}</div></div><div>`;
@@ -699,7 +702,23 @@ async function ladePost(){
       Dokumente deiner Kanzlei erscheinen hier — Auswertungen, Bescheide, Lohnunterlagen.</div>`;
     return;
   }
-  ziel.innerHTML = d.dokumente.map(doc => `
+  const freigaben = d.dokumente.filter(doc => doc.art === "freigabe_anfrage");
+  let kopfHtml = "";
+  for (const doc of freigaben){
+    kopfHtml += doc.freigabe
+      ? `<div class="karte einflug" style="border-left:3px solid var(--gc-ok)">
+          <b>${doc.titel}</b>
+          <p style="color:var(--gc-desc);font-size:12.5px;margin-top:2px">
+          Freigegeben am ${zeitKurz(doc.freigabe.am)} — für die Kanzlei sichtbar ✓</p></div>`
+      : `<div class="karte nachfrage einflug"><h3>Deine Kanzlei bittet um Freigabe</h3>
+          <p>${doc.titel}</p>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button class="hin" onclick="window.open('/api/dokument/${doc.pfad}','_blank')">Ansehen</button>
+            <button class="hin" style="background:var(--gc-fg);color:#fff"
+              onclick="freigeben('${doc.pfad}', this)">Freigeben ✓</button>
+          </div></div>`;
+  }
+  ziel.innerHTML = kopfHtml + d.dokumente.filter(doc => doc.art !== "freigabe_anfrage").map(doc => `
     <button class="zeile einflug" onclick="postOeffnen('${doc.pfad}', this)">
       ${doc.gelesen ? "" : `<span style="width:8px;height:8px;border-radius:50%;background:var(--gc-accent);flex:none"></span>`}
       <div class="thumb doc">▤</div>
@@ -707,6 +726,16 @@ async function ladePost(){
       <div class="zstatus laeuft">${zeitKurz(doc.zeit)}</div></div>
       <div class="zrechts"><span class="chip">Ansehen</span></div>
     </button>`).join("");
+}
+async function freigeben(pfad, knopf){
+  knopf.disabled = true; knopf.textContent = "Wird freigegeben …";
+  try{
+    const r = await api("/api/freigabe", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({pfad})});
+    if (r.ok){ knopf.textContent = "Freigegeben ✓"; knopf.classList.add("stempel");
+      setTimeout(ladePost, 700); return; }
+  }catch{}
+  knopf.disabled = false; knopf.textContent = "Gerade nicht möglich — nochmal";
 }
 async function postOeffnen(pfad, knopf){
   window.open("/api/dokument/" + pfad, "_blank");

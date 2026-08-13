@@ -81,6 +81,35 @@ def test_dokument_pfad_grenzen(welt):
                        content=b"x").status_code == 400
 
 
+def test_freigabe_rundreise(welt):
+    client, bare = welt
+    r = client.post("/api/dokumente",
+                    params={"name": "UStVA Juli.pdf",
+                            "titel": "USt-Voranmeldung Juli · 1.214,00 €",
+                            "art": "freigabe_anfrage"},
+                    content=b"%PDF-1.4 ustva")
+    pfad = r.json()["pfad"]
+
+    dok = client.get("/api/dokumente").json()["dokumente"][0]
+    assert dok["art"] == "freigabe_anfrage" and dok["freigabe"] is None
+
+    r = client.post("/api/freigabe", json={"pfad": pfad})
+    assert r.status_code == 200 and r.json()["ok"] is True
+    log = subprocess.run(["git", "-C", str(bare), "log", "-1", "--format=%s|%an"],
+                         capture_output=True, text=True).stdout.strip()
+    assert log.startswith("freigabe: ") and log.endswith("|christoph0711.io")
+
+    dok2 = client.get("/api/dokumente").json()["dokumente"][0]
+    assert dok2["freigabe"]["von"] == "christoph0711.io"
+    # Doppelte Freigabe ist idempotent
+    assert client.post("/api/freigabe", json={"pfad": pfad}).json().get("schon") is True
+    # Normales Dokument kann nicht freigegeben werden
+    r = client.post("/api/dokumente", params={"name": "info.pdf", "titel": "Info"},
+                    content=b"%PDF x")
+    assert client.post("/api/freigabe",
+                       json={"pfad": r.json()["pfad"]}).status_code == 400
+
+
 def test_einstellungen_rundreise(welt):
     client, _ = welt
     r = client.post("/api/einstellungen",

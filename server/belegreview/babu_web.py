@@ -223,7 +223,7 @@ INDEX_TTL = float(os.environ.get("BABU_INDEX_TTL", "5"))
 
 _INDEX_LOCK = threading.Lock()
 _INDEX: dict = {"head": None, "geprueft": 0.0, "belege": {}, "reviews": {},
-                "dokumente": [], "zeiten": {}, "oid_cache": {}}
+                "dokumente": [], "freigaben": {}, "zeiten": {}, "oid_cache": {}}
 
 
 def _git(args: list[str], timeout: int = 30) -> str | None:
@@ -387,6 +387,42 @@ def _index_bauen(head: str) -> None:
         })
     dokumente.sort(key=lambda d_: d_["zeit"] or "", reverse=True)
     _INDEX["dokumente"] = dokumente
+
+    # Exportierte Belege: export/<monat>/stapel.json sammeln
+    export_pfade = {p_: oid for p_, oid in pfade.items()
+                    if p_.startswith("export/") and p_.endswith("stapel.json")}
+    fehlend_exp = [oid for oid in export_pfade.values() if oid not in oid_cache]
+    for oid, roh in _blobs_lesen(fehlend_exp).items():
+        try:
+            oid_cache[oid] = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            oid_cache[oid] = None
+    freigabe_pfade = {p_: oid for p_, oid in pfade.items()
+                      if p_.startswith("freigaben/") and p_.endswith(".json")}
+    fehlend_fg = [oid for oid in freigabe_pfade.values() if oid not in oid_cache]
+    for oid, roh in _blobs_lesen(fehlend_fg).items():
+        try:
+            oid_cache[oid] = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            oid_cache[oid] = None
+    freigaben: dict[str, dict] = {}
+    for p_, oid in freigabe_pfade.items():
+        d_ = oid_cache.get(oid)
+        if isinstance(d_, dict) and d_.get("dokument"):
+            freigaben[d_["dokument"]] = {"von": d_.get("von"), "am": d_.get("am")}
+    for eintrag_ in dokumente:
+        if eintrag_["art"] == "freigabe_anfrage":
+            eintrag_["freigabe"] = freigaben.get(eintrag_["pfad"])
+    _INDEX["freigaben"] = freigaben
+
+    exportiert: set[str] = set()
+    for oid in export_pfade.values():
+        d_ = oid_cache.get(oid)
+        if isinstance(d_, dict):
+            exportiert.update(d_.get("staemme") or [])
+    for stamm_, z_ in belege.items():
+        if stamm_ in exportiert and z_["status"] == "geprüft":
+            z_["status"] = "exportiert"
 
     _INDEX["belege"] = belege
     _INDEX["reviews"] = reviews
@@ -779,6 +815,40 @@ async def api_dokument_gelesen(request: Request) -> Response:
     return JSONResponse({"ok": True})
 
 
+@app.post("/api/freigabe")
+async def api_freigabe(request: Request) -> Response:
+    """Freigabe einer Kanzlei-Anfrage — protokollierte Portal-Handlung
+    (auditpflichtig, daher Commit in der Box, nicht SQLite)."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    pfad = str(body.get("pfad", ""))
+    idx = index_aktuell()
+    dok = next((d_ for d_ in idx["dokumente"] if d_["pfad"] == pfad), None)
+    if dok is None or dok["art"] != "freigabe_anfrage":
+        return JSONResponse({"fehler": "keine Freigabe-Anfrage"}, status_code=400)
+    if idx["freigaben"].get(pfad):
+        return JSONResponse({"ok": True, "schon": True})
+    name = Path(pfad).name
+    inhalt = json.dumps({"dokument": pfad, "antwort": "freigegeben", "von": un,
+                         "am": time.strftime("%Y-%m-%dT%H:%M:%S%z")},
+                        ensure_ascii=False, indent=1).encode()
+    import boxschreiber  # noqa: PLC0415
+    try:
+        commit = boxschreiber.schreiben(f"freigaben/{name}.json", inhalt,
+                                        f"freigabe: {name}", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit})
+
+
 EINSTELLUNG_SCHLUESSEL = {"benachrichtigung_frage", "benachrichtigung_post",
                           "benachrichtigung_abend", "kanzlei_name", "betrieb_name"}
 
@@ -804,6 +874,55 @@ async def api_einstellungen_setzen(request: Request) -> Response:
         if schluessel in EINSTELLUNG_SCHLUESSEL:
             db_einstellung_setzen(un, schluessel, str(wert)[:200])
     return JSONResponse(db_einstellungen(un))
+
+
+ROLLEN = {t.split(":")[0].strip().lower(): t.split(":")[1].strip().lower()
+          for t in os.environ.get("BABU_ROLLEN", "").split(",") if ":" in t}
+
+
+def rolle(un: str) -> str:
+    return ROLLEN.get(un, "kanzlei" if not ROLLEN else "salon")
+
+
+@app.get("/api/export/{monat}.csv")
+def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response:
+    """DATEV-Buchungsstapel (EXTF v13, CP1252/CRLF). festschreiben=1 legt den
+    Stapel zusätzlich in der Belegbox ab — die Belege gelten dann als
+    exportiert (Beleg-Weg: „Bei der Kanzlei")."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) != "kanzlei":
+        return JSONResponse({"fehler": "nur für die Kanzlei"}, status_code=403)
+    if not re.match(r"^\d{4}-\d{2}$", monat):
+        return JSONResponse({"fehler": "ungültiger Monat"}, status_code=400)
+    import extf  # noqa: PLC0415
+    idx = index_aktuell()
+    staemme = [s_ for s_, z in idx["belege"].items()
+               if z["monat"] == monat and z["status"] in ("geprüft", "exportiert")]
+    reviews = [idx["reviews"][s_] for s_ in sorted(staemme) if s_ in idx["reviews"]]
+    text = extf.stapel(reviews, monat,
+                       berater=os.environ.get("BABU_BERATER", extf.BERATER),
+                       mandant=os.environ.get("BABU_MANDANT", extf.MANDANT))
+    daten = extf.als_bytes(text)
+    if festschreiben:
+        import boxschreiber  # noqa: PLC0415
+        stempel = time.strftime("%Y%m%d-%H%M%S")
+        try:
+            boxschreiber.schreiben(
+                {f"export/{monat}/EXTF_{stempel}.csv": daten,
+                 f"export/{monat}/stapel.json": json.dumps(
+                     {"monat": monat, "staemme": sorted(staemme), "zeit": stempel,
+                      "von": un}, ensure_ascii=False, indent=1).encode()},
+                None, f"export: {monat}", un)
+        except boxschreiber.SchreibFehler:
+            return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                                status_code=503)
+        with _INDEX_LOCK:
+            _INDEX["geprueft"] = 0.0
+    return Response(content=daten, media_type="text/csv; charset=windows-1252",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="EXTF_Buchungsstapel_{monat}.csv"'})
 
 
 @app.get("/api/monat/{monat}")
