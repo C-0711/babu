@@ -294,7 +294,9 @@ main{padding:26px 22px 60px;min-height:70dvh}
   <!-- POST -->
   <section class="ansicht" id="a-post">
     <div class="gruss" style="font-size:22px;margin-bottom:4px">Post</div>
-    <p style="color:var(--gc-desc);margin-bottom:16px">Was deine Kanzlei für dich bereitlegt.</p>
+    <p style="color:var(--gc-desc);margin-bottom:10px">Was deine Kanzlei für dich bereitlegt.</p>
+    <button class="chip" id="auszug-knopf" style="margin-bottom:14px">Kontoauszug ablegen</button>
+    <input type="file" id="auszug-datei" accept=".pdf,application/pdf" hidden>
     <div id="post-liste"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
 
@@ -479,6 +481,20 @@ async function ladeHeute(){
 
   html += `<div class="karte" style="background:var(--gc-accent-subtle);border:none">
     Deine Kanzlei braucht die ${monatName(monat).split(" ")[0]}-Belege bis <b>5. ${fristMonat}</b>.</div>`;
+
+  try{
+    const ab = await (await api("/api/abgleich/" + monat)).json();
+    if (ab.auszug_da && ab.fehlend.length){
+      html += `<div class="sektion lbl">Vom Konto, ohne Beleg</div>
+        <div class="karte nachfrage"><h3>${ab.fehlend.length} Zahlung${ab.fehlend.length===1?"":"en"} ohne Beleg — zusammen ${euro(ab.fehlend_summe)}</h3>` +
+        ab.fehlend.slice(0,4).map(u => `<p style="margin-top:6px">${u.gegenpartei.split(" ").slice(0,4).join(" ")} · ${euro(-u.betrag)} vom ${u.datum.slice(0,5)}</p>`).join("") +
+        (ab.fehlend.length > 4 ? `<p style="margin-top:6px;color:var(--gc-muted)">… und ${ab.fehlend.length-4} weitere</p>` : "") +
+        `<p style="margin-top:8px;color:var(--gc-desc);font-size:12px">Foto oder Datei genügt — einfach hochladen, den Rest übernehme ich.</p></div>`;
+    } else if (ab.auszug_da){
+      html += `<div class="karte" style="border-left:3px solid var(--gc-ok)">
+        Alle Zahlungen vom Konto haben ihren Beleg ✓</div>`;
+    }
+  }catch{}
 
   const ungelesen = await postPunktAktualisieren();
   if (ungelesen){
@@ -727,6 +743,24 @@ async function ladePost(){
       <div class="zrechts"><span class="chip">Ansehen</span></div>
     </button>`).join("");
 }
+$("#auszug-knopf").addEventListener("click", () => $("#auszug-datei").click());
+$("#auszug-datei").addEventListener("change", async ev => {
+  const datei = ev.target.files[0];
+  ev.target.value = "";
+  if (!datei) return;
+  const knopf = $("#auszug-knopf");
+  knopf.textContent = "Wird gelesen …";
+  try{
+    const r = await api("/api/kontoauszug?name=" + encodeURIComponent(datei.name),
+      {method:"POST", body: datei});
+    const d = await r.json();
+    knopf.textContent = r.ok
+      ? `Gelesen ✓ — ${d.umsaetze} Zahlungen aus ${monatName(d.monat)}`
+      : (d.fehler || "Das hat nicht geklappt — nochmal?");
+  }catch{ knopf.textContent = "Gerade keine Verbindung — nochmal?"; }
+  setTimeout(() => { knopf.textContent = "Kontoauszug ablegen"; }, 4000);
+});
+
 async function freigeben(pfad, knopf){
   knopf.disabled = true; knopf.textContent = "Wird freigegeben …";
   try{

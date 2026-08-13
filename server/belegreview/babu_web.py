@@ -240,7 +240,8 @@ INDEX_TTL = float(os.environ.get("BABU_INDEX_TTL", "5"))
 
 _INDEX_LOCK = threading.Lock()
 _INDEX: dict = {"head": None, "geprueft": 0.0, "belege": {}, "reviews": {},
-                "dokumente": [], "freigaben": {}, "zeiten": {}, "oid_cache": {}}
+                "dokumente": [], "freigaben": {}, "umsaetze": {},
+                "zeiten": {}, "oid_cache": {}}
 
 
 def _git(args: list[str], timeout: int = 30) -> str | None:
@@ -423,6 +424,22 @@ def _index_bauen(head: str) -> None:
         })
     dokumente.sort(key=lambda d_: d_["zeit"] or "", reverse=True)
     _INDEX["dokumente"] = dokumente
+
+    # Kontoauszüge: auszuege/<monat>/<name>.umsaetze.json sammeln
+    umsatz_pfade = {p_: oid for p_, oid in pfade.items()
+                    if p_.startswith("auszuege/") and p_.endswith(".umsaetze.json")}
+    fehlend_um = [oid for oid in umsatz_pfade.values() if oid not in oid_cache]
+    for oid, roh in _blobs_lesen(fehlend_um).items():
+        try:
+            oid_cache[oid] = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            oid_cache[oid] = None
+    umsaetze: dict[str, list] = {}
+    for p_, oid in umsatz_pfade.items():
+        d_ = oid_cache.get(oid)
+        if isinstance(d_, dict) and d_.get("monat"):
+            umsaetze.setdefault(d_["monat"], []).extend(d_.get("umsaetze") or [])
+    _INDEX["umsaetze"] = umsaetze
 
     # Exportierte Belege: export/<monat>/stapel.json sammeln
     export_pfade = {p_: oid for p_, oid in pfade.items()
@@ -892,6 +909,68 @@ async def api_korrektur(stamm: str, request: Request) -> Response:
     with _INDEX_LOCK:
         _INDEX["geprueft"] = 0.0
     return JSONResponse({"ok": True, "commit": commit})
+
+
+@app.post("/api/kontoauszug")
+async def api_kontoauszug(request: Request, name: str = "auszug.pdf") -> Response:
+    """Kontoauszug (Text-PDF) ablegen: Umsätze werden sofort gelesen und für
+    den Zahlungsabgleich gespeichert."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if Path(name).suffix.lower() != ".pdf":
+        return JSONResponse({"fehler": "bitte als PDF"}, status_code=400)
+    daten = await request.body()
+    if not daten:
+        return JSONResponse({"fehler": "leer"}, status_code=400)
+    if len(daten) > HOCHLADEN_MAX:
+        return JSONResponse({"fehler": "zu groß"}, status_code=413)
+    import tempfile
+    import kontoauszug as ka  # noqa: PLC0415
+    with tempfile.NamedTemporaryFile(suffix=".pdf") as tf:
+        tf.write(daten)
+        tf.flush()
+        try:
+            geparst = ka.parse_pdf(tf.name)
+        except Exception:  # noqa: BLE001
+            geparst = {"umsaetze": [], "monat": None, "konto": None}
+    if not geparst["umsaetze"] or not geparst["monat"]:
+        return JSONResponse({"fehler": "Diesen Auszug konnte ich nicht lesen — "
+                             "ist es das Original-PDF der Bank?"}, status_code=422)
+    import boxschreiber  # noqa: PLC0415
+    dateiname = boxschreiber.beleg_dateiname(name)
+    monat = geparst["monat"]
+    try:
+        commit = boxschreiber.schreiben(
+            {f"auszuege/{monat}/{dateiname}": daten,
+             f"auszuege/{monat}/{dateiname}.umsaetze.json": json.dumps(
+                 geparst, ensure_ascii=False, indent=1).encode()},
+            None, f"auszug: {dateiname}", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit, "monat": monat,
+                         "umsaetze": len(geparst["umsaetze"])})
+
+
+@app.get("/api/abgleich/{monat}")
+def api_abgleich(monat: str, request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if not re.match(r"^\d{4}-\d{2}$", monat):
+        return JSONResponse({"fehler": "ungültiger Monat"}, status_code=400)
+    import kontoauszug as ka  # noqa: PLC0415
+    idx = index_aktuell()
+    umsaetze = idx["umsaetze"].get(monat, [])
+    if not umsaetze:
+        return JSONResponse({"monat": monat, "auszug_da": False})
+    ergebnis = ka.abgleich(umsaetze, list(idx["belege"].values()))
+    ergebnis["monat"] = monat
+    ergebnis["auszug_da"] = True
+    return JSONResponse(ergebnis)
 
 
 @app.post("/api/freigabe")
