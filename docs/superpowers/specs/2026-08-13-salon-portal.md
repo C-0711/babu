@@ -258,6 +258,26 @@ Messbar aus vorhandenen Daten: `audit.aufnahme.zeit` / `audit.review.zeit` (in j
 2. Zeigt der Beleg-Weg „Bei der Kanzlei" schon vor dem EXTF-Writer (dann endet er bei „liegt bereit")? → Ja, so bauen.
 3. Web-Push für die PWA oder Mail genügt (Stufe 3)? → Mail zuerst.
 
+## Anhang: Testkorpus „Steuer App" (entdeckt 13.08.2026)
+
+`/Users/christophbertsch/Downloads/Steuer App/` — echte Salon-Daten (SupremeBeauty,
+Lindenstraße 2, 71634 Ludwigsburg; Kontoauszüge auf Nicole Baic, KSK Ludwigsburg).
+**Bleibt lokal — Bank- und Personendaten kommen NICHT ins Repo und nicht ungefragt
+in die Belegbox.** Referenz nur über diesen Pfad.
+
+| Ordner | Inhalt | Bedeutung für den Plan |
+|---|---|---|
+| `Testcase Belege 2025` | 83 einzelne Beleg-PDFs (`Beleg_JJJJMMTT_HHMMSS.pdf`, 1-seitig, aus der OneClick-App) | Realistische PDF-Fixtures für Stufe 4; born-digital (z. B. Planity-Abo 70,21 €) UND gescannte Bons |
+| `Testcase Belege 2024` | 12 Monats-Bündel (z. B. „Belege April 24.pdf", 65 Seiten, ein Thermobon pro Seite, teils **kopfüber**, gemischte Sätze 19 %+7 % auf einem Bon) | Stufe 4 braucht: Mehrseiten-Split (1 Seite = 1 Beleg), Rotationskorrektur, Mehrsatz-Fall ist real |
+| `Testcase Kontoauszüge 2024/2025` | je 12 KSK-GiroBusiness-Auszüge (Konto 30217038, ~9 Seiten, **Text-PDF, kein OCR nötig**): Lastschriften Henkel/Vodafone/PayPal-delilà/Planity, Überweisungen Slavic Hair, SumUp-Gutschriften, SpkCard-Entgelte | **Neue Fähigkeit (Stufe 6): Kontoauszug-Lane + Zahlungsabgleich** — „Für die delilà-Lastschrift 626,45 € vom 09.01. fehlt der Beleg" = Vollständigkeitskontrolle, die WK nicht hat |
+| `Transaktionsgebühren 2024/2025` | leer (Platzhalter) | SumUp-/Terminalgebühren folgen — im Abgleich mitdenken |
+| `Screenshots …WoltersKluwer` | 5 App-Screenshots (bereits ausgewertet) | Funktionsreferenz |
+
+**Konsequenzen:**
+1. Der im Bauplan als „kritischstes Einzelstück" markierte **Benchmark-Korpus existiert jetzt** — Stufe-4-Fixtures kommen hierher statt aus Kunstdaten (Auswahl kopieren, nichts committen).
+2. **Stufe 4 erweitert**: Rotationserkennung (PaddleOCR `use_textline_orientation`), Mehrseiten-PDF-Split für Monats-Bündel, Mehrsatz-Steuertabelle gegen den dm-Bon testen.
+3. **Neue Stufe 6 — Kontoauszug & Abgleich**: KSK-Text-PDFs parsen (Umsatzliste je Monat), Abgleich Belege ↔ Abbuchungen (Betrag+Datum+Lieferanten-Fuzzy), Portal-Ansicht „Fehlende Belege" + Cockpit-Zeile „N Abbuchungen ohne Beleg"; SumUp-Gutschriften als Einnahmen-Sicht. Datenschutz-Entscheid nötig: Auszüge in die Belegbox (Commit `auszug:`) oder nur lokal verarbeiten.
+
 ## Anhang: Bestandsaufnahme Belegbox (Task 0.3, Stand 13.08.2026)
 
 | Zustand | Anzahl | Beispiel-Stamm |
