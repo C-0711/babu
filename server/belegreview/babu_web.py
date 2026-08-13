@@ -755,6 +755,54 @@ HOCHLADEN_ENDUNGEN = {".jpg", ".jpeg", ".png", ".pdf", ".heic", ".xml"}
 HOCHLADEN_MAX = 40 * 1024 * 1024
 
 
+@app.post("/ablage")
+async def ablage(request: Request) -> Response:
+    """Beleg-Eingang, vertragsgleich zum bisherigen :7843-Eingang — aber über
+    boxschreiber (frischer fetch+reset vor jedem Push, ein Retry). Grund:
+    der alte Eingang blieb nach Fremd-Commits (Watcher-Reviews!) dauerhaft
+    auf 502, weil sein Retry die abgeschnittene Git-Meldung nicht erkennt.
+
+    Wire-Format der App: multipart Feld "file" (+ optional "notiz"),
+    Antwort {ok, ref, commit, datei}; txt → 400 (Verbindungstest-Semantik).
+    """
+    un = angemeldet(request)   # App schickt Bearer; Portal-Cookie geht auch
+    if un is None:
+        return JSONResponse({"fehler": "Token fehlt oder ungültig"}, status_code=401)
+    if un not in ERLAUBT:
+        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    try:
+        form = await request.form()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "multipart erwartet"}, status_code=400)
+    datei = form.get("file")
+    if datei is None or not getattr(datei, "filename", None):
+        return JSONResponse({"fehler": "file fehlt"}, status_code=422)
+    name = datei.filename
+    if Path(name).suffix.lower() not in HOCHLADEN_ENDUNGEN:
+        return JSONResponse({"fehler": "kein Beleg-Format"}, status_code=400)
+    daten = await datei.read()
+    if not daten:
+        return JSONResponse({"fehler": "leer"}, status_code=400)
+    if len(daten) > HOCHLADEN_MAX:
+        return JSONResponse({"fehler": "zu groß"}, status_code=413)
+    notiz = str(form.get("notiz") or "").strip()[:200]
+    import boxschreiber  # noqa: PLC0415
+    dateiname = boxschreiber.beleg_dateiname(name)
+    monat = time.strftime("%Y-%m")
+    nachricht = f"aufnahme: {dateiname}" + (f"\n\n{notiz}" if notiz else "")
+    try:
+        commit = boxschreiber.schreiben(f"docs/{monat}/{dateiname}", daten,
+                                        nachricht, un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "Push fehlgeschlagen"}, status_code=502)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True,
+                         "ref": os.environ.get("BABU_REF",
+                                               "inspektor/ws-christoph0711.io/babu"),
+                         "commit": commit, "datei": f"docs/{monat}/{dateiname}"})
+
+
 @app.post("/api/hochladen")
 async def api_hochladen(request: Request, name: str = "beleg.jpg") -> Response:
     """Portal-Upload ohne gespeicherten Zugangscode: Cookie-Session + Rohbytes.

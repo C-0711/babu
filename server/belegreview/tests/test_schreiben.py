@@ -149,6 +149,33 @@ def test_kpi(welt):
     assert d["betrieb"]["requests"] > 0
 
 
+def test_ablage_vertragsgleich(welt):
+    """POST /ablage wie der alte Eingang: multipart file, {ok,ref,commit,datei};
+    txt → 400 (Verbindungstest), Bearer-Auth."""
+    client, bare = welt
+    # Verbindungstest-Semantik: txt wird mit 400 abgelehnt = Token gültig
+    r = client.post("/ablage", files={"file": ("verbindungstest.txt", b"x", "text/plain")},
+                    headers={"Authorization": "Bearer test-pat"})
+    assert r.status_code == 400
+    # Echter Beleg
+    r = client.post("/ablage",
+                    files={"file": ("beleg_neu.jpg", b"\xff\xd8\xff\xe0bild", "image/jpeg")},
+                    data={"notiz": "Team-Abend"},
+                    headers={"Authorization": "Bearer test-pat"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["ok"] is True and d["ref"].endswith("/babu")
+    assert d["datei"].endswith("-beleg_neu.jpg")
+    log = subprocess.run(["git", "-C", str(bare), "log", "-1", "--format=%s|%b|%an"],
+                         capture_output=True, text=True).stdout.strip()
+    assert log.startswith("aufnahme: ") and "Team-Abend" in log
+    assert log.endswith("|christoph0711.io")
+    # Ohne gültigen Token und ohne Cookie → 401 (App-Mapping tokenFehler)
+    client.cookies.clear()
+    assert client.post("/ablage", files={"file": ("x.jpg", b"x", "image/jpeg")},
+                       headers={"Authorization": "Bearer quatsch"}).status_code == 401
+
+
 def test_hochladen_grenzen(welt):
     client, _ = welt
     assert client.post("/api/hochladen", params={"name": "boese.exe"},
