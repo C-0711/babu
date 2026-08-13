@@ -377,7 +377,9 @@ def _index_bauen(head: str) -> None:
             "netto": f.get("netto"),
             "ust": f.get("ust"),
             "ust_satz": f.get("ust_satz"),
-            "belegart": (review or {}).get("semantik", {}).get("belegart") if review else None,
+            # Vorsicht: Stub-Reviews haben "semantik": null — get-Default greift
+            # nur bei FEHLENDEM Schlüssel, deshalb das `or {}`.
+            "belegart": ((review.get("semantik") or {}).get("belegart")) if review else None,
             "dokumentklasse": (review or {}).get("dokumentklasse") if review else None,
             "konto_skr04": e.get("konto_skr04"),
             "steuerschluessel": e.get("steuerschluessel"),

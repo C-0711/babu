@@ -40,6 +40,9 @@ def store(tmp_path_factory) -> Path:
     (arbeit / "docs" / "2026-08").mkdir(parents=True)
     (arbeit / "docs" / "2026-08" / f"{STAMM}.jpg").write_bytes(b"\xff\xd8\xff\xe0testjpeg")
     (arbeit / "docs" / "2026-08" / "20260812-211943-99b8fb-beleg-test.pdf").write_bytes(b"%PDF-1.4 test")
+    # Stub-Review wie vom Watcher bei unlesbaren Fotos: semantik/vlm sind null —
+    # der Index darf daran nicht sterben (Regression 13.08.).
+    (arbeit / "docs" / "2026-08" / "20260813-000000-abcdef-kaputt.jpg").write_bytes(b"\xff\xd8kaputt")
     _git(arbeit, "add", "-A")
     _git(arbeit, "commit", "-q", "-m", f"aufnahme: {STAMM}.jpg",
          "--author", "christoph0711.io <aufnahme@gitchain.local>")
@@ -50,6 +53,17 @@ def store(tmp_path_factory) -> Path:
     (arbeit / "review" / f"{STAMM}.md").write_text("# BelegReview\n")
     (arbeit / "review" / f"{STAMM}.embedding.json").write_text(
         json.dumps({"modell": "embeddinggemma", "dim": 3, "vektor": [0.1, 0.2, 0.3]}))
+    (arbeit / "review" / "20260813-000000-abcdef-kaputt.json").write_text(json.dumps({
+        "datei": "docs/2026-08/20260813-000000-abcdef-kaputt.jpg",
+        "engine": "BelegReview-Stub", "dokumentklasse": "unlesbar",
+        "semantik": None, "vlm": None, "aehnlich": None,
+        "felder": {"lieferant": None, "beleg_nr": None, "datum": None,
+                   "netto": None, "ust": None, "brutto": None, "ust_satz": 19,
+                   "summenprobe_ok": False, "bewirtungssignal": False,
+                   "offen": ["Das Foto war schwer zu lesen."]},
+        "einschaetzung": {"belegart": "unlesbar", "konto_skr04": None,
+                          "steuerschluessel": "9", "hinweise": []},
+        "ocr_text": ""}, ensure_ascii=False))
     _git(arbeit, "add", "-A")
     _git(arbeit, "commit", "-q", "-m", f"review: {STAMM}.jpg",
          "--author", "belegreview <review@gitchain.local>")
@@ -104,11 +118,12 @@ def test_belege_liste_und_etag(client):
     r = client.get("/api/belege")
     assert r.status_code == 200
     d = r.json()
-    assert d["gesamt"] == 2                      # 1 JPG (Review) + 1 PDF (erfasst)
+    assert d["gesamt"] == 3                      # JPG (Review) + PDF (erfasst) + Stub
     assert d["monate"] == ["2026-08"]
     stati = {z["stamm"]: z["status"] for z in d["belege"]}
     assert stati[STAMM] == "nachfrage"           # offen: Trinkgeld-Differenz
     assert stati["20260812-211943-99b8fb-beleg-test"] == "erfasst"
+    assert stati["20260813-000000-abcdef-kaputt"] == "nachfrage"   # Stub → „neu fotografieren"
     weingaertle = next(z for z in d["belege"] if z["stamm"] == STAMM)
     assert weingaertle["lieferant"] == "Rotenberger Weingärtle"
     assert weingaertle["brutto"] == 142.6
@@ -122,7 +137,7 @@ def test_belege_liste_und_etag(client):
 def test_belege_filter(client):
     _anmelden(client)
     r = client.get("/api/belege", params={"status": "nachfrage"})
-    assert [z["stamm"] for z in r.json()["belege"]] == [STAMM]
+    assert {z["stamm"] for z in r.json()["belege"]} == {STAMM, "20260813-000000-abcdef-kaputt"}
     r = client.get("/api/belege", params={"monat": "2026-07"})
     assert r.json()["gesamt"] == 0
 
@@ -162,12 +177,12 @@ def test_beleg_bild(client):
 def test_monat_aggregation(client):
     _anmelden(client)
     d = client.get("/api/monat/2026-08").json()
-    assert d["anzahl"] == 2
+    assert d["anzahl"] == 3
     assert d["brutto"] == 142.6
     assert d["belegarten"][0]["belegart"] == "Bewirtung"
     assert d["belegarten"][0]["lieferanten"] == ["Rotenberger Weingärtle"]
     assert d["konten"][0] == {"konto": "6640", "brutto": 142.6, "anzahl": 1}
-    assert len(d["offene"]) == 2                 # nachfrage + erfasstes PDF
+    assert len(d["offene"]) == 3                 # nachfrage + erfasstes PDF + Stub
     assert d["groesste_position"]["lieferant"] == "Rotenberger Weingärtle"
     assert d["vormonat"]["anzahl"] == 0
 
