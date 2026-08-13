@@ -61,18 +61,26 @@ def _bereit() -> None:
     _git("reset", "--hard", "origin/main")
 
 
-def schreiben(rel_pfad: str, inhalt: bytes, nachricht: str, autor_un: str) -> str:
-    """Datei committen + pushen; gibt den Kurz-Hash zurück. Ein Push-Retry."""
-    if not re.match(r"^[A-Za-z0-9._/ -]{1,200}$", rel_pfad) or ".." in rel_pfad:
-        raise SchreibFehler("ungültiger Pfad")
+def schreiben(rel_pfad: str | dict[str, bytes], inhalt: bytes | None,
+              nachricht: str, autor_un: str) -> str:
+    """Datei(en) committen + pushen; gibt den Kurz-Hash zurück. Ein Push-Retry.
+
+    Entweder (pfad, inhalt) für eine Datei oder ein dict {pfad: bytes} für
+    mehrere Dateien in EINEM Commit (z. B. Dokument + Meta-Sidecar).
+    """
+    dateien = rel_pfad if isinstance(rel_pfad, dict) else {rel_pfad: inhalt}
+    for pfad in dateien:
+        if not re.match(r"^[A-Za-z0-9._/ -]{1,200}$", pfad) or ".." in pfad:
+            raise SchreibFehler("ungültiger Pfad")
     autor = f"{autor_un} <portal@gitchain.local>"
     letzter_fehler = ""
     for versuch in (1, 2):
         _bereit()
-        ziel = KLON / rel_pfad
-        ziel.parent.mkdir(parents=True, exist_ok=True)
-        ziel.write_bytes(inhalt)
-        _git("add", rel_pfad)
+        for pfad, daten in dateien.items():
+            ziel = KLON / pfad
+            ziel.parent.mkdir(parents=True, exist_ok=True)
+            ziel.write_bytes(daten)
+            _git("add", pfad)
         r = _git("commit", "-m", nachricht, "--author", autor)
         if r.returncode != 0:
             raise SchreibFehler(f"Commit fehlgeschlagen: {r.stderr.strip()[:200]}")

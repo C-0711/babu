@@ -17,6 +17,7 @@ import json
 import os
 import re
 import secrets
+import sqlite3
 import subprocess
 import threading
 import time
@@ -33,6 +34,51 @@ STORE = Path(os.environ.get("BABU_STORE", str(Path.home() / "inspektor-store" / 
 GEHEIMNIS_PFAD = Path(os.environ.get("BABU_SESSION_GEHEIMNIS",
                                      str(Path.home() / "babu-web" / ".session_geheimnis")))
 PORTAL_ORIGIN = os.environ.get("BABU_ORIGIN", "https://babu.0711.io")
+PORTAL_DB = Path(os.environ.get("BABU_PORTAL_DB", str(Path.home() / "babu-web" / "portal.db")))
+
+
+# ---------------------------------------------------------------------------
+# Portal-State (Lesestatus, Einstellungen): SQLite — kein Audit-Material,
+# gehört nicht als Rauschen in die Belegbox-Historie.
+# ---------------------------------------------------------------------------
+
+_DB_LOCK = threading.Lock()
+
+
+def _db() -> sqlite3.Connection:
+    PORTAL_DB.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(PORTAL_DB)
+    conn.execute("""CREATE TABLE IF NOT EXISTS lesestatus
+        (un TEXT NOT NULL, dokument TEXT NOT NULL, zeit TEXT NOT NULL,
+         PRIMARY KEY (un, dokument))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS einstellungen
+        (un TEXT NOT NULL, schluessel TEXT NOT NULL, wert TEXT NOT NULL,
+         PRIMARY KEY (un, schluessel))""")
+    return conn
+
+
+def db_gelesen(un: str) -> set[str]:
+    with _DB_LOCK, _db() as c:
+        return {z[0] for z in c.execute(
+            "SELECT dokument FROM lesestatus WHERE un=?", (un,))}
+
+
+def db_gelesen_setzen(un: str, dokument: str) -> None:
+    with _DB_LOCK, _db() as c:
+        c.execute("INSERT OR REPLACE INTO lesestatus VALUES (?,?,?)",
+                  (un, dokument, time.strftime("%Y-%m-%dT%H:%M:%S")))
+
+
+def db_einstellungen(un: str) -> dict[str, str]:
+    with _DB_LOCK, _db() as c:
+        return dict(c.execute(
+            "SELECT schluessel, wert FROM einstellungen WHERE un=?", (un,)))
+
+
+def db_einstellung_setzen(un: str, schluessel: str, wert: str) -> None:
+    with _DB_LOCK, _db() as c:
+        c.execute("INSERT OR REPLACE INTO einstellungen VALUES (?,?,?)",
+                  (un, schluessel, wert))
 GITCHAIN_ID = os.environ.get("GITCHAIN_ID_HOST", "https://gitchain.de").rstrip("/")
 GEMMA_API = os.environ.get("GEMMA_API", "http://127.0.0.1:11435/v1/chat/completions")
 GEMMA_MODELL = os.environ.get("GEMMA_MODELL", "gemma4-mm")
@@ -177,7 +223,7 @@ INDEX_TTL = float(os.environ.get("BABU_INDEX_TTL", "5"))
 
 _INDEX_LOCK = threading.Lock()
 _INDEX: dict = {"head": None, "geprueft": 0.0, "belege": {}, "reviews": {},
-                "zeiten": {}, "oid_cache": {}}
+                "dokumente": [], "zeiten": {}, "oid_cache": {}}
 
 
 def _git(args: list[str], timeout: int = 30) -> str | None:
@@ -315,6 +361,32 @@ def _index_bauen(head: str) -> None:
         belege[stamm] = eintrag
         if review is not None:
             reviews[stamm] = review
+
+    # Kanzlei-Dokumente: dokumente/JJJJ-MM/<name> + <name>.meta.json-Sidecar
+    meta_pfade = {p_: oid for p_, oid in pfade.items()
+                  if p_.startswith("dokumente/") and p_.endswith(".meta.json")}
+    fehlend_meta = [oid for oid in meta_pfade.values() if oid not in oid_cache]
+    for oid, roh in _blobs_lesen(fehlend_meta).items():
+        try:
+            oid_cache[oid] = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            oid_cache[oid] = None
+    dokumente: list[dict] = []
+    for pfad, oid in pfade.items():
+        if not pfad.startswith("dokumente/") or pfad.endswith(".meta.json"):
+            continue
+        meta = oid_cache.get(meta_pfade.get(pfad + ".meta.json", "")) or {}
+        name = pfad.rsplit("/", 1)[-1]
+        dokumente.append({
+            "pfad": pfad,
+            "name": name,
+            "titel": (meta.get("titel") or name) if isinstance(meta, dict) else name,
+            "art": (meta.get("art") or "dokument") if isinstance(meta, dict) else "dokument",
+            "von": (zeiten.get(pfad) or {}).get("autor"),
+            "zeit": (zeiten.get(pfad) or {}).get("zeit"),
+        })
+    dokumente.sort(key=lambda d_: d_["zeit"] or "", reverse=True)
+    _INDEX["dokumente"] = dokumente
 
     _INDEX["belege"] = belege
     _INDEX["reviews"] = reviews
@@ -623,6 +695,115 @@ async def api_hochladen(request: Request, name: str = "beleg.jpg") -> Response:
     with _INDEX_LOCK:
         _INDEX["geprueft"] = 0.0
     return JSONResponse({"ok": True, "commit": commit, "datei": f"docs/{monat}/{dateiname}"})
+
+
+DOKUMENT_ENDUNGEN = {".pdf", ".jpg", ".jpeg", ".png"}
+DOKUMENT_PFAD_RE = re.compile(r"^dokumente/[A-Za-z0-9._/ -]{1,200}$")
+
+
+@app.get("/api/dokumente")
+def api_dokumente(request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    gelesen = db_gelesen(un)
+    dokumente = [dict(d, gelesen=d["pfad"] in gelesen)
+                 for d in index_aktuell()["dokumente"]]
+    return JSONResponse({"dokumente": dokumente,
+                         "ungelesen": sum(1 for d in dokumente if not d["gelesen"])})
+
+
+@app.get("/api/dokument/{pfad:path}")
+def api_dokument(pfad: str, request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if not DOKUMENT_PFAD_RE.match(pfad) or ".." in pfad:
+        return JSONResponse({"fehler": "ungültiger Pfad"}, status_code=400)
+    daten = git_show(pfad)
+    if daten is None:
+        return JSONResponse({"fehler": "unbekanntes Dokument"}, status_code=404)
+    endung = Path(pfad).suffix.lower()
+    typ = {".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+           ".png": "image/png"}.get(endung, "application/octet-stream")
+    return Response(content=daten, media_type=typ,
+                    headers={"Cache-Control": "private, max-age=3600",
+                             "Content-Disposition": f'inline; filename="{Path(pfad).name}"'})
+
+
+@app.post("/api/dokumente")
+async def api_dokument_hochladen(request: Request, name: str = "dokument.pdf",
+                                 titel: str = "", art: str = "dokument") -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    endung = Path(name).suffix.lower()
+    if endung not in DOKUMENT_ENDUNGEN:
+        return JSONResponse({"fehler": "kein Dokument-Format"}, status_code=400)
+    daten = await request.body()
+    if not daten:
+        return JSONResponse({"fehler": "leer"}, status_code=400)
+    if len(daten) > HOCHLADEN_MAX:
+        return JSONResponse({"fehler": "zu groß"}, status_code=413)
+    import boxschreiber  # noqa: PLC0415
+    dateiname = boxschreiber.beleg_dateiname(name)
+    monat = time.strftime("%Y-%m")
+    meta = json.dumps({"titel": (titel or name)[:120], "art": art[:40], "von": un},
+                      ensure_ascii=False, indent=1).encode()
+    try:
+        commit = boxschreiber.schreiben(
+            {f"dokumente/{monat}/{dateiname}": daten,
+             f"dokumente/{monat}/{dateiname}.meta.json": meta},
+            None, f"dokument: {dateiname}", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"}, status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit,
+                         "pfad": f"dokumente/{monat}/{dateiname}"})
+
+
+@app.post("/api/dokument-gelesen")
+async def api_dokument_gelesen(request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    pfad = str(body.get("pfad", ""))
+    if not DOKUMENT_PFAD_RE.match(pfad):
+        return JSONResponse({"fehler": "ungültiger Pfad"}, status_code=400)
+    db_gelesen_setzen(un, pfad)
+    return JSONResponse({"ok": True})
+
+
+EINSTELLUNG_SCHLUESSEL = {"benachrichtigung_frage", "benachrichtigung_post",
+                          "benachrichtigung_abend", "kanzlei_name", "betrieb_name"}
+
+
+@app.get("/api/einstellungen")
+def api_einstellungen(request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    return JSONResponse(db_einstellungen(un))
+
+
+@app.post("/api/einstellungen")
+async def api_einstellungen_setzen(request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    for schluessel, wert in body.items():
+        if schluessel in EINSTELLUNG_SCHLUESSEL:
+            db_einstellung_setzen(un, schluessel, str(wert)[:200])
+    return JSONResponse(db_einstellungen(un))
 
 
 @app.get("/api/monat/{monat}")

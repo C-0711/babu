@@ -246,6 +246,8 @@ main{padding:26px 22px 60px;min-height:70dvh}
   <nav>
     <button data-ziel="heute">Heute</button>
     <button data-ziel="belege">Belege</button>
+    <button data-ziel="post" style="position:relative">Post<span id="post-punkt" hidden
+      style="position:absolute;top:4px;right:2px;width:7px;height:7px;border-radius:50%;background:var(--gc-accent)"></span></button>
     <button data-ziel="fragen">Fragen</button>
   </nav>
   <div id="kopf-recht">
@@ -287,6 +289,36 @@ main{padding:26px 22px 60px;min-height:70dvh}
   <section class="ansicht" id="a-detail">
     <a class="zurueck" href="#belege">‹ Alle Belege</a>
     <div id="detail-inhalt"><div class="skelett" style="height:300px"></div></div>
+  </section>
+
+  <!-- POST -->
+  <section class="ansicht" id="a-post">
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Post</div>
+    <p style="color:var(--gc-desc);margin-bottom:16px">Was deine Kanzlei für dich bereitlegt.</p>
+    <div id="post-liste"><div class="skelett"></div><div class="skelett"></div></div>
+  </section>
+
+  <!-- EINSTELLUNGEN -->
+  <section class="ansicht" id="a-einstellungen">
+    <div class="gruss" style="font-size:22px;margin-bottom:14px">Einstellungen</div>
+    <div class="sektion lbl">Zugang</div>
+    <div class="karte"><div class="feld"><span>Angemeldet als</span><b id="einst-un" style="font-family:var(--gc-sans)"></b></div>
+      <button class="chip" style="margin-top:10px" id="abmelden-knopf">Abmelden</button></div>
+    <div class="sektion lbl">Sag mir Bescheid</div>
+    <div class="karte" id="einst-schalter">
+      <label class="feld" style="cursor:pointer"><span>Wenn ein Beleg eine Frage hat</span>
+        <input type="checkbox" data-s="benachrichtigung_frage"></label>
+      <label class="feld" style="cursor:pointer"><span>Wenn Post von der Kanzlei kommt</span>
+        <input type="checkbox" data-s="benachrichtigung_post"></label>
+      <label class="feld" style="cursor:pointer"><span>Einmal am Abend eine Zusammenfassung</span>
+        <input type="checkbox" data-s="benachrichtigung_abend"></label>
+    </div>
+    <div class="sektion lbl">Meine Kanzlei</div>
+    <div class="karte"><input id="einst-kanzlei" placeholder="Name der Kanzlei"
+      style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit"></div>
+    <div class="sektion lbl">Mein Betrieb</div>
+    <div class="karte"><input id="einst-betrieb" placeholder="Name des Salons"
+      style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit"></div>
   </section>
 
   <!-- AUFRÄUMEN -->
@@ -363,7 +395,7 @@ function offenSatz(o){
 
 /* ————— Anmeldung ————— */
 function zeigeLogin(){ $("#app").hidden = true; $("#login").hidden = false; $("#zugangscode").focus(); }
-function zeigeApp(){ $("#login").hidden = true; $("#app").hidden = false; routen(); }
+function zeigeApp(){ $("#login").hidden = true; $("#app").hidden = false; routen(); postPunktAktualisieren(); }
 
 $("#anmelden").addEventListener("click", async () => {
   const f = $("#login-fehler"); f.style.display = "none";
@@ -383,7 +415,8 @@ $("#zugangscode").addEventListener("keydown", e => { if(e.key==="Enter") $("#anm
 
 /* ————— Router ————— */
 const ansichten = { heute: ladeHeute, belege: ladeBelege, fragen: () => {},
-                    aufraeumen: ladeAufraeumen, detail: null };
+                    aufraeumen: ladeAufraeumen, post: ladePost,
+                    einstellungen: ladeEinstellungen, detail: null };
 function routen(){
   const h = location.hash.slice(1) || "heute";
   const [ziel, arg] = h.split("/");
@@ -445,6 +478,14 @@ async function ladeHeute(){
 
   html += `<div class="karte" style="background:var(--gc-accent-subtle);border:none">
     Deine Kanzlei braucht die ${monatName(monat).split(" ")[0]}-Belege bis <b>5. ${fristMonat}</b>.</div>`;
+
+  const ungelesen = await postPunktAktualisieren();
+  if (ungelesen){
+    html += `<button class="karte zeile einflug" style="display:block;width:100%;text-align:left"
+      onclick="location.hash='#post'">
+      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gc-accent);margin-right:8px"></span>
+      <b>${ungelesen === 1 ? "Ein neues Dokument" : ungelesen + " neue Dokumente"} von deiner Kanzlei</b> — zur Post ›</button>`;
+  }
 
   try{
     const l = await (await api("/api/belege?limit=3")).json();
@@ -645,6 +686,71 @@ $("#chatform").addEventListener("submit", async ev => {
   }
   antwort.classList.remove("tippt");
 });
+
+/* ————— POST (Kanzlei-Dokumente) ————— */
+async function ladePost(){
+  let d;
+  try{ d = await (await api("/api/dokumente")).json(); }
+  catch{ return; }
+  $("#post-punkt").hidden = !d.ungelesen;
+  const ziel = $("#post-liste");
+  if (!d.dokumente.length){
+    ziel.innerHTML = `<div class="leer"><b>Noch keine Post.</b>
+      Dokumente deiner Kanzlei erscheinen hier — Auswertungen, Bescheide, Lohnunterlagen.</div>`;
+    return;
+  }
+  ziel.innerHTML = d.dokumente.map(doc => `
+    <button class="zeile einflug" onclick="postOeffnen('${doc.pfad}', this)">
+      ${doc.gelesen ? "" : `<span style="width:8px;height:8px;border-radius:50%;background:var(--gc-accent);flex:none"></span>`}
+      <div class="thumb doc">▤</div>
+      <div class="zmitte"><div class="zname" ${doc.gelesen ? "" : 'style="font-weight:700"'}>${doc.titel}</div>
+      <div class="zstatus laeuft">${zeitKurz(doc.zeit)}</div></div>
+      <div class="zrechts"><span class="chip">Ansehen</span></div>
+    </button>`).join("");
+}
+async function postOeffnen(pfad, knopf){
+  window.open("/api/dokument/" + pfad, "_blank");
+  try{
+    await api("/api/dokument-gelesen", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({pfad})});
+  }catch{}
+  ladePost();
+}
+
+/* ————— EINSTELLUNGEN ————— */
+async function ladeEinstellungen(){
+  try{
+    const ich = await (await api("/api/ich")).json();
+    $("#einst-un").textContent = ich.un;
+    const e = await (await api("/api/einstellungen")).json();
+    document.querySelectorAll("#einst-schalter input").forEach(s =>
+      s.checked = e[s.dataset.s] === "1");
+    $("#einst-kanzlei").value = e.kanzlei_name || "";
+    $("#einst-betrieb").value = e.betrieb_name || "";
+  }catch{}
+}
+async function einstellungSpeichern(objekt){
+  try{ await api("/api/einstellungen", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify(objekt)}); }catch{}
+}
+document.querySelectorAll("#einst-schalter input").forEach(s =>
+  s.addEventListener("change", () => einstellungSpeichern({[s.dataset.s]: s.checked ? "1" : "0"})));
+$("#einst-kanzlei").addEventListener("change", ev => einstellungSpeichern({kanzlei_name: ev.target.value.trim()}));
+$("#einst-betrieb").addEventListener("change", ev => einstellungSpeichern({betrieb_name: ev.target.value.trim()}));
+$("#abmelden-knopf").addEventListener("click", async () => {
+  try{ await api("/api/abmelden", {method:"POST"}); }catch{}
+  zeigeLogin();
+});
+$("#avatar").addEventListener("click", () => location.hash = "#einstellungen");
+$("#avatar").style.cursor = "pointer";
+
+async function postPunktAktualisieren(){
+  try{
+    const d = await (await api("/api/dokumente")).json();
+    $("#post-punkt").hidden = !d.ungelesen;
+    return d.ungelesen;
+  }catch{ return 0; }
+}
 
 /* ————— Bewirtungs-Sheet ————— */
 let sheetStamm = null;
