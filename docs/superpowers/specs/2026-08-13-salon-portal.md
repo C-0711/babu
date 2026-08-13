@@ -252,6 +252,31 @@ Messbar aus vorhandenen Daten: `audit.aufnahme.zeit` / `audit.review.zeit` (in j
 | **DATEV-Import-Erfolg** (ab Stufe 5) | Stapel ohne Importfehler ÷ Stapel | 100 % |
 | **Portal-Nutzung** | Tage/Woche mit Anmeldung (Portal oder App) | ≥ 3 |
 
+## Abschluss-Stand (13.08.2026, Ende der Bau-Session)
+
+**Alle Stufen 0–6 gebaut, getestet (33 Tests) und auf der H200V deployed.**
+`/review` blieb über alle sieben Deploys byte-gleich (Golden-Diffs ✓), die
+iOS-App ist unverändert kompatibel. KPI-Instrumentierung live
+(`GET /api/kpi/{monat}` gegen die Zielwerte dieser Spec).
+
+| Stufe | Stand |
+|---|---|
+| 1 Lese-Portal | ✓ live (babu.0711.io/portal): Heute, Belege, Detail (Beleg-Weg, 5 Sektionen), Fragen-Chat |
+| 2 Rückkanal | ✓ Bewirtungs-Sheet → Commit → grüner Haken; Portal-Upload ohne Zugangscode-Speicherung; Aufräumen; PWA |
+| 3 Post | ✓ Dokumentenkanal + Ungelesen, 3 Benachrichtigungs-Schalter, Einstellungen (SQLite) |
+| 4 Watcher | ✓ PDF (Seite 1 @200 dpi) + HEIC + Rotation + Salon-Katalog (Planity→6837 im Trockenlauf) + unlesbar-Stub statt Endlos-Retry + E-Rechnungs-Stub |
+| 5 Kanzlei | ✓ Workbench (/workbench) an echten Daten, Korrektur-Commits fließen in Liste+EXTF, Freigabe-Flow, **EXTF v13 mit Mehrsatz-Split** (Weingärtle = 85,40 à 7 % + 57,20 à 19 %) |
+| 6 Kontoabgleich | ✓ KSK-Parser (am echten Auszug validiert: 69 Umsätze, SumUp 19.126,40 € erkannt), /api/kontoauszug + /api/abgleich, Heute-Karte „N Zahlungen ohne Beleg" |
+
+**Bleibt offen (braucht den Menschen):**
+1. **DATEV-Import-Abnahme** des EXTF-Exports in echter Instanz (+ `BABU_BERATER`/`BABU_MANDANT` als Env setzen) — deklariertes Abnahmekriterium.
+2. Salon-Kontenrahmen (5400/5900/6310/6330/6400/6600) vom Steuerberater bestätigen.
+3. Echte Kontoauszüge über „Kontoauszug ablegen" einspielen (Datenschutz-Entscheid: Box ja/nein — technisch bereit).
+4. `pm2 save` + Reboot-Test, sobald die Parallel-Session ruht (Q.2).
+5. Demo-Leichen auf dem iPhone wischen (Q.3, 85,40-Weingärtle-Duplikat).
+6. 2024er-Monats-Bündel: echter Mehrseiten-Split (aktuell Seite 1 + Hinweis).
+7. Mail-Versand der Abend-Zusammenfassung (Schalter existieren, SMTP fehlt).
+
 ## Offene Fragen (im Bau zu entscheiden, blockieren den Start nicht)
 
 1. Anmeldefluss langfristig: Gerätecode-Fluss vs. Magic-Link (Stufe 1: Zugangscode-Feld).
