@@ -552,6 +552,7 @@ def _api_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]
     if un is None:
         return None, JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
     if un not in ERLAUBT:
+        print(f"[wache] 403: '{un}' nicht in BABU_ERLAUBT", flush=True)
         return None, JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
     return un, None
 
@@ -776,6 +777,7 @@ async def ablage(request: Request) -> Response:
     if un is None:
         return JSONResponse({"fehler": "Token fehlt oder ungültig"}, status_code=401)
     if un not in ERLAUBT:
+        print(f"[ablage] 403: '{un}' nicht in BABU_ERLAUBT", flush=True)
         return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
     try:
         form = await request.form()

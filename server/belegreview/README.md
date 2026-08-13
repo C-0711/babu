@@ -19,7 +19,8 @@ Neustart nach einem H200V-Reboot (bis `pm2 save` nachgeholt ist):
 ```bash
 pm2 start ~/gitchain-eingang/babu_eingang.py --name babu-eingang --interpreter ~/gitchain-eingang/.venv/bin/python
 pm2 start ~/belegreview/review_watcher.py --name belegreview --interpreter ~/paddle-ocr-env/bin/python
-pm2 start ~/belegreview/.venv/bin/python --name babu-web -- ~/belegreview/babu_web.py
+BABU_ERLAUBT="christoph0711.io,nina0711.io" BABU_ROLLEN="christoph0711.io:kanzlei" \
+  pm2 start ~/belegreview/.venv/bin/python --name babu-web -- ~/belegreview/babu_web.py
 pm2 start /usr/bin/cloudflared --name babu-tunnel -- tunnel --config ~/.cloudflared/babu-0711.yml run babu-0711
 ```
 
