@@ -38,7 +38,11 @@ REF = os.environ.get("BABU_REF", "inspektor/ws-christoph0711.io/babu")
 REMOTE = f"{GATEWAY}/git/{REF}.git"
 TAKT = int(os.environ.get("REVIEW_TAKT", "15"))
 AUTOR = "belegreview <review@gitchain.local>"
-BILD_ENDUNGEN = {".jpg", ".jpeg", ".png"}   # PDF/HEIC: Stufe 2 (Konvertierung)
+BILD_ENDUNGEN = {".jpg", ".jpeg", ".png"}
+PDF_ENDUNGEN = {".pdf"}
+HEIC_ENDUNGEN = {".heic"}
+XML_ENDUNGEN = {".xml"}                      # E-Rechnung: Stub, XML-Lane folgt
+BELEG_ENDUNGEN = BILD_ENDUNGEN | PDF_ENDUNGEN | HEIC_ENDUNGEN | XML_ENDUNGEN
 
 sys.path.insert(0, str(WURZEL))
 from doc_classify import classify_doc  # noqa: E402  (Kopie aus ~/OCR, standalone)
@@ -100,9 +104,39 @@ def ocr_engine():
         from paddleocr import PaddleOCR
         # Deutsch gibt es in dieser Installation als PP-OCRv5-Modell.
         # CPU: beide H200 sind dauerhaft von vLLM belegt; Bons brauchen Sekunden.
-        _OCR = PaddleOCR(lang="german", ocr_version="PP-OCRv5", device="cpu")
-        log("PaddleOCR bereit (german, PP-OCRv5, CPU)")
+        # Rotations-Korrektur: die 2024er-Bündel enthalten kopfüber gescannte
+        # Thermobons — Dokument- und Zeilen-Orientierung mitlaufen lassen.
+        try:
+            _OCR = PaddleOCR(lang="german", ocr_version="PP-OCRv5", device="cpu",
+                             use_doc_orientation_classify=True,
+                             use_textline_orientation=True)
+            log("PaddleOCR bereit (german, PP-OCRv5, CPU, Orientierung an)")
+        except TypeError:   # ältere Signatur ohne Orientierungs-Parameter
+            _OCR = PaddleOCR(lang="german", ocr_version="PP-OCRv5", device="cpu")
+            log("PaddleOCR bereit (german, PP-OCRv5, CPU)")
     return _OCR
+
+
+# ── Konvertierung: PDF/HEIC → Bild (Stufe 4) ────────────────────────────────
+
+def pdf_zu_bild(quelle: Path, ziel: Path) -> int:
+    """Seite 1 als PNG (~200 dpi); gibt die Seitenzahl zurück. pypdfium2 ist
+    pip-only — kein Poppler-Systempaket nötig."""
+    import pypdfium2 as pdfium
+    doc = pdfium.PdfDocument(str(quelle))
+    try:
+        seiten = len(doc)
+        doc[0].render(scale=200 / 72).to_pil().save(ziel, "PNG")
+    finally:
+        doc.close()
+    return seiten
+
+
+def heic_zu_bild(quelle: Path, ziel: Path) -> None:
+    from PIL import Image
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+    Image.open(quelle).convert("RGB").save(ziel, "JPEG", quality=92)
 
 
 def ocr_zeilen(bildpfad: Path) -> list[tuple[str, float]]:
@@ -165,9 +199,32 @@ BABU_KATALOG = [
     ("geschenk", "6610", "Geschenke",
      "Blumen Blumenstrauß Geschenk Präsent Aufmerksamkeit Gutschein Anlass"),
     ("it", "6837", "IT/Hosting",
-     "Hosting Server Cloud Domain Software Lizenz SaaS IT-Dienstleistung Rechenzentrum Hetzner AWS"),
+     "Hosting Cloud Domain Software Lizenz SaaS IT-Dienstleistung Rechenzentrum "
+     "Hetzner AWS Terminbuchung Online-Kalender Planity Buchungssystem Salonsoftware Monatsabo"),
     ("sonstiges", "6850", "Sonstiger Betriebsbedarf",
      "Quittung Kassenbon Einkauf Baumarkt Drogerie allgemeiner Betriebsbedarf"),
+    # ── Salon-Katalog (SupremeBeauty): Konten vor Produktivgang vom
+    #    Steuerberater bestätigen lassen — Texte sind die Embedding-Anker. ──
+    ("wareneingang", "5400", "Wareneinkauf",
+     "Friseurbedarf Haarfarbe Coloration Tönung Blondierung Shampoo Conditioner "
+     "Haarpflege Styling Wella L'Oréal Schwarzkopf Henkel Kosmetik Nagellack Gel "
+     "Wimpern Extensions Haarverlängerung Echthaar Slavic Hair delila Verkaufsware "
+     "Großhandel Salonbedarf"),
+    ("fremdleistung", "5900", "Fremdleistungen",
+     "Stuhlmiete Untermiete Kosmetikerin selbständig Fremdleistung Subunternehmer "
+     "freie Mitarbeiterin Nageldesignerin auf Rechnung Provision"),
+    ("miete", "6310", "Miete Geschäftsräume",
+     "Miete Salonräume Gewerbemiete Nebenkosten Pacht Vermieter monatliche Miete "
+     "Ladenlokal Geschäftsräume"),
+    ("reinigung", "6330", "Reinigung",
+     "Reinigungsfirma Gebäudereinigung Handtuchservice Wäscheservice Mietwäsche "
+     "Handtücher Umhänge Fensterputzer Reinigungsmittel"),
+    ("versicherung", "6400", "Versicherungen",
+     "Betriebshaftpflicht Inhaltsversicherung Geschäftsversicherung Police Beitrag "
+     "Versicherungsschein Prämie Jahresbeitrag"),
+    ("werbung", "6600", "Werbung",
+     "Anzeige Social Media Ads Instagram Facebook Flyer Druck Visitenkarten "
+     "Gutscheinkarten Werbung Marketing Kampagne"),
 ]
 
 
@@ -256,6 +313,7 @@ def vlm_lesen(bildpfad: Path) -> dict | None:
     """Gemma 4 liest das Beleg-BILD (Lane B): strukturiertes JSON, nichts raten."""
     import base64
     b64 = base64.b64encode(bildpfad.read_bytes()).decode()
+    mime = "image/png" if bildpfad.suffix.lower() == ".png" else "image/jpeg"
     anweisung = (
         "Du liest einen deutschen Geschäftsbeleg (Foto). Antworte NUR mit einem "
         "JSON-Objekt ohne Markdown und ohne Erklärung, exakt diese Schlüssel "
@@ -274,7 +332,7 @@ def vlm_lesen(bildpfad: Path) -> dict | None:
         "temperature": 0,
         "max_tokens": 500,
         "messages": [{"role": "user", "content": [
-            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
             {"type": "text", "text": anweisung},
         ]}],
     }
@@ -466,10 +524,67 @@ def offene_belege() -> list[str]:
     if r.returncode != 0:
         return []
     dateien = r.stdout.splitlines()
-    reviews = {Path(d).stem for d in dateien if d.startswith("review/") and d.endswith(".json")}
+    reviews = {Path(d).stem for d in dateien if d.startswith("review/") and d.endswith(".json")
+               and not d.endswith(".embedding.json") and not d.endswith(".bewirtung.json")}
     return [d for d in dateien
-            if d.startswith("docs/") and Path(d).suffix.lower() in BILD_ENDUNGEN
+            if d.startswith("docs/") and Path(d).suffix.lower() in BELEG_ENDUNGEN
             and Path(d).stem not in reviews]
+
+
+def review_committen(name: str, review: dict, md_zeilen: list[str],
+                     vektor: list[float] | None = None) -> bool:
+    """Review-Dateien schreiben, committen, pushen (gemeinsamer Schlussakt)."""
+    ordner = ARBEIT / "review"
+    ordner.mkdir(exist_ok=True)
+    (ordner / f"{name}.json").write_text(
+        json.dumps(review, ensure_ascii=False, indent=1), encoding="utf-8")
+    (ordner / f"{name}.md").write_text("\n".join(md_zeilen) + "\n", encoding="utf-8")
+    zu_committen = [f"review/{name}.json", f"review/{name}.md"]
+    if vektor is not None:
+        (ordner / f"{name}.embedding.json").write_text(json.dumps(
+            {"modell": EMBED_MODELL, "dim": len(vektor), "vektor": vektor}))
+        zu_committen.append(f"review/{name}.embedding.json")
+    git("add", *zu_committen)
+    c = git("commit", "--author", AUTOR, "-m", f"review: {name}")
+    if c.returncode != 0:
+        log(f"commit fehlgeschlagen für {name}: {c.stderr.strip()[-150:]}")
+        return False
+    p = git("push", "origin", "main")
+    if p.returncode != 0:
+        log(f"push fehlgeschlagen ({name}), reset + neuer Versuch nächste Runde: "
+            + p.stderr.strip()[-150:])
+        git("fetch", "origin")
+        git("reset", "--hard", "origin/main")
+        return False
+    return True
+
+
+def stub_schreiben(pfad: str, grund: str, dokumentklasse: str = "unlesbar",
+                   extra: dict | None = None) -> None:
+    """Abschluss-Review ohne Lesung — beendet die Retry-Schleife und gibt der
+    App/dem Portal einen Zustand, den sie menschlich erklären können."""
+    name = Path(pfad).stem
+    review = {
+        "datei": pfad,
+        "engine": "BelegReview-Stub",
+        "gelesen": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "dauer_s": 0, "zeilen": 0, "ocr_konfidenz": 0,
+        "dokumentklasse": dokumentklasse,
+        "semantik": None, "vlm": None, "aehnlich": None,
+        "felder": {"lieferant": None, "beleg_nr": None, "datum": None,
+                   "netto": None, "ust": None, "brutto": None, "ust_satz": 19,
+                   "summenprobe_ok": False, "bewirtungssignal": False,
+                   "offen": [grund]},
+        "einschaetzung": {"belegart": dokumentklasse, "konto_skr04": None,
+                          "steuerschluessel": "9", "hinweise": [grund]},
+        "ocr_text": "",
+    }
+    if extra:
+        review.update(extra)
+    md = [f"# BelegReview · {Path(pfad).name}", "", f"> {review['engine']}", "",
+          f"- **Dokumentklasse:** {dokumentklasse}", f"- {grund}"]
+    if review_committen(name, review, md):
+        log(f"stub: {Path(pfad).name} — {dokumentklasse}")
 
 
 def verarbeite(pfad: str) -> None:
@@ -478,12 +593,30 @@ def verarbeite(pfad: str) -> None:
     lokal = TMP / Path(pfad).name
     lokal.write_bytes((ARBEIT / pfad).read_bytes())
 
+    endung = lokal.suffix.lower()
+    if endung in XML_ENDUNGEN:
+        stub_schreiben(pfad, "Kam als E-Rechnung — die Auswertung dafür folgt.",
+                       dokumentklasse="E-Rechnung", extra={"lane": "xml"})
+        return
+    seiten = 1
+    if endung in PDF_ENDUNGEN:
+        bild = lokal.with_suffix(".png")
+        seiten = pdf_zu_bild(lokal, bild)
+        lokal = bild
+    elif endung in HEIC_ENDUNGEN:
+        bild = lokal.with_suffix(".jpg")
+        heic_zu_bild(lokal, bild)
+        lokal = bild
+
     t0 = time.time()
     zeilen = ocr_zeilen(lokal)
     dauer = time.time() - t0
     text = "\n".join(t for t, _ in zeilen)
-    dokumentklasse = classify_doc(text, name=Path(pfad).name, pages=1)
+    dokumentklasse = classify_doc(text, name=Path(pfad).name, pages=seiten)
     f = felder_extrahieren(zeilen)
+    if seiten > 1:
+        f["offen"].append(f"{seiten} Seiten — gelesen ist Seite 1. "
+                          "Ein Bündel bitte als einzelne Belege einreichen.")
 
     # Semantik-Lane: embeddinggemma → Belegart/Konto + Ähnlichkeits-Historie.
     sem, vektor, aehnlich = None, None, None
@@ -532,16 +665,8 @@ def verarbeite(pfad: str) -> None:
         "einschaetzung": e,
         "ocr_text": text[:8000],
     }
-
-    ordner = ARBEIT / "review"
-    ordner.mkdir(exist_ok=True)
-    (ordner / f"{name}.json").write_text(
-        json.dumps(review, ensure_ascii=False, indent=1), encoding="utf-8")
-    zu_committen = [f"review/{name}.json", f"review/{name}.md"]
-    if vektor is not None:
-        (ordner / f"{name}.embedding.json").write_text(json.dumps(
-            {"modell": EMBED_MODELL, "dim": len(vektor), "vektor": vektor}))
-        zu_committen.append(f"review/{name}.embedding.json")
+    if seiten > 1:
+        review["seiten"] = seiten
 
     md = [f"# BelegReview · {Path(pfad).name}", "",
           f"> {review['engine']} · {review['zeilen']} Zeilen · "
@@ -557,21 +682,15 @@ def verarbeite(pfad: str) -> None:
     md += [f"- {h}" for h in e["hinweise"]]
     if f["offen"]:
         md += ["", "Offen:"] + [f"- {o}" for o in f["offen"]]
-    (ordner / f"{name}.md").write_text("\n".join(md) + "\n", encoding="utf-8")
 
-    git("add", *zu_committen)
-    c = git("commit", "--author", AUTOR, "-m", f"review: {Path(pfad).name}")
-    if c.returncode != 0:
-        log(f"commit fehlgeschlagen für {name}: {c.stderr.strip()[-150:]}")
-        return
-    p = git("push", "origin", "main")
-    if p.returncode != 0:
-        log(f"push fehlgeschlagen ({name}), reset + neuer Versuch nächste Runde: "
-            + p.stderr.strip()[-150:])
-        git("fetch", "origin")
-        git("reset", "--hard", "origin/main")
-        return
-    log(f"review: {Path(pfad).name} — {e['belegart']}, brutto {f['brutto']}, {dauer:.1f}s OCR")
+    if review_committen(name, review, md, vektor):
+        log(f"review: {Path(pfad).name} — {e['belegart']}, brutto {f['brutto']}, {dauer:.1f}s OCR")
+
+
+# Pro Datei zählen, nicht endlos wiederholen: nach 3 Fehlversuchen (~45 s,
+# deckt Dienst-Schluckaufe ab) bekommt der Beleg einen unlesbar-Stub und die
+# Nutzerin die Bitte um ein neues Foto — statt einer stillen Endlosschleife.
+_FEHLVERSUCHE: dict[str, int] = {}
 
 
 def hauptschleife() -> None:
@@ -580,7 +699,20 @@ def hauptschleife() -> None:
         try:
             if arbeitskopie_bereit():
                 for pfad in offene_belege():
-                    verarbeite(pfad)
+                    try:
+                        verarbeite(pfad)
+                        _FEHLVERSUCHE.pop(pfad, None)
+                    except Exception as ex:  # noqa: BLE001
+                        n = _FEHLVERSUCHE.get(pfad, 0) + 1
+                        _FEHLVERSUCHE[pfad] = n
+                        log(f"Fehler bei {pfad} (Versuch {n}/3): {ex!r}")
+                        if n >= 3:
+                            try:
+                                stub_schreiben(pfad, "Das Foto war schwer zu lesen — "
+                                               "neu fotografieren hilft meistens.")
+                                _FEHLVERSUCHE.pop(pfad, None)
+                            except Exception as ex2:  # noqa: BLE001
+                                log(f"Stub fehlgeschlagen für {pfad}: {ex2!r}")
         except Exception as e:  # noqa: BLE001
             log(f"Fehler: {e!r}")
         time.sleep(TAKT)
