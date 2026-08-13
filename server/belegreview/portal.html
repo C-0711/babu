@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f4f1ec">
+<link rel="manifest" href="/portal/manifest.json">
+<title>babu — dein Salon-Cockpit</title>
+<style>
+/* Unlimited-OCR-Designsprache — Tokens aus design/unlimited-ocr/, Fonts als
+   System-Stacks (kein CDN, DSGVO). Genau drei Motion-Momente: Stempel,
+   Zeitleisten-Schritt, Karten-Einflug. */
+:root{
+  --gc-bg:#fff; --gc-canvas:#faf9f5; --gc-desk:#efece6; --gc-chrome:#f4f1ec;
+  --gc-fg:#111; --gc-body:#333; --gc-desc:#555; --gc-muted:#999;
+  --gc-accent:#857b61; --gc-accent-hover:#736950; --gc-accent-subtle:#f0ebe3;
+  --gc-border:#e5e7eb; --gc-border-l:#efefef;
+  --gc-ok:#6f8a6e; --gc-warn:#b0821f; --gc-danger:#a8433a;
+  --gc-gold:#c9b98d; --gc-scan:#1f1e1a;
+  --gc-serif:'Playfair Display',Georgia,serif;
+  --gc-sans:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --gc-mono:'SF Mono',ui-monospace,Menlo,monospace;
+  --r:12px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{background:var(--gc-desk)}
+body{font:14px/1.5 var(--gc-sans);color:var(--gc-body);background:var(--gc-canvas);
+  min-height:100dvh;max-width:1060px;margin:0 auto;
+  box-shadow:0 0 0 1px var(--gc-border-l),0 18px 60px rgba(0,0,0,.07)}
+.num{font-family:var(--gc-mono);font-variant-numeric:tabular-nums}
+.lbl{font:600 9.5px var(--gc-sans);letter-spacing:.11em;text-transform:uppercase;color:var(--gc-muted)}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+a{color:var(--gc-accent)}
+:focus-visible{outline:2px solid var(--gc-accent);outline-offset:2px}
+
+/* Kopf */
+header{position:sticky;top:0;z-index:20;background:var(--gc-chrome);
+  border-bottom:1px solid var(--gc-border);padding:10px 22px;
+  display:flex;align-items:center;gap:18px}
+header h1{font:600 17px var(--gc-serif);letter-spacing:-.015em;color:var(--gc-fg)}
+nav{display:flex;gap:2px;margin-left:6px}
+nav button{padding:7px 13px;border-radius:999px;font-weight:550;color:var(--gc-desc)}
+nav button.an{background:var(--gc-accent-subtle);color:var(--gc-fg)}
+#kopf-recht{margin-left:auto;display:flex;align-items:center;gap:12px}
+#stand{font-size:11px;color:var(--gc-muted)}
+#avatar{width:30px;height:30px;border-radius:50%;background:var(--gc-accent);
+  color:#fff;font:600 12px var(--gc-sans);display:grid;place-items:center}
+
+main{padding:26px 22px 60px;min-height:70dvh}
+.ansicht{display:none}.ansicht.an{display:block}
+
+/* Karten & Zeilen */
+.karte{background:var(--gc-bg);border:1px solid var(--gc-border);border-radius:var(--r);
+  padding:16px 18px;margin-bottom:12px}
+.einflug{animation:einflug .32s cubic-bezier(.2,.9,.3,1)}
+@keyframes einflug{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+.gruss{font:600 26px var(--gc-serif);letter-spacing:-.015em;color:var(--gc-fg);margin:4px 0 2px}
+.sektion{margin:26px 0 10px}
+.zeile{display:flex;align-items:center;gap:14px;background:var(--gc-bg);
+  border:1px solid var(--gc-border);border-radius:var(--r);padding:12px 16px;
+  margin-bottom:9px;width:100%;text-align:left}
+.zeile:hover{border-color:var(--gc-accent)}
+.thumb{width:44px;height:56px;object-fit:cover;border-radius:4px;background:var(--gc-desk);
+  box-shadow:0 1px 4px rgba(0,0,0,.12);flex:none}
+.thumb.doc{display:grid;place-items:center;color:var(--gc-muted);font-size:20px}
+.zmitte{flex:1;min-width:0}
+.zname{font-weight:600;color:var(--gc-fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.zstatus{font-size:12.5px;margin-top:1px}
+.zstatus.ok{color:var(--gc-ok)}.zstatus.frage{color:var(--gc-warn)}.zstatus.laeuft{color:var(--gc-muted)}
+.zrechts{text-align:right;flex:none}
+.zbetrag{font:600 14px var(--gc-mono);font-variant-numeric:tabular-nums;color:var(--gc-fg)}
+.zkonto{font:11px var(--gc-mono);color:var(--gc-muted);margin-top:1px}
+
+/* Chips & Schalter */
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 16px}
+.chip{padding:6px 13px;border-radius:999px;border:1px solid var(--gc-border);
+  background:var(--gc-bg);font-size:12.5px;color:var(--gc-desc)}
+.chip.an{background:var(--gc-fg);border-color:var(--gc-fg);color:#fff}
+.mon-schalter{display:flex;align-items:center;gap:10px;margin-left:auto}
+.mon-schalter button{width:28px;height:28px;border-radius:8px;border:1px solid var(--gc-border);background:var(--gc-bg)}
+.mon-schalter b{font:600 13px var(--gc-sans);color:var(--gc-fg);min-width:110px;text-align:center}
+
+/* Nachfrage-Karte */
+.nachfrage{border-left:3px solid var(--gc-warn)}
+.nachfrage h3{font:600 15px var(--gc-serif);color:var(--gc-fg);margin-bottom:2px}
+.nachfrage p{font-size:12.5px;color:var(--gc-desc)}
+.nachfrage .hin{margin-top:10px;display:inline-block;padding:7px 14px;border-radius:8px;
+  background:var(--gc-accent-subtle);color:var(--gc-fg);font-weight:550;font-size:13px}
+
+/* Monat in Zahlen */
+.mrow{display:flex;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px solid var(--gc-border-l)}
+.mrow:last-child{border-bottom:none}
+.mrow .art{font-weight:600;color:var(--gc-fg)}
+.mrow .wer{font-size:12px;color:var(--gc-muted);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mrow .summe{font:600 14px var(--gc-mono);font-variant-numeric:tabular-nums;color:var(--gc-fg)}
+
+/* Detail */
+#detail-grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:22px}
+@media(max-width:820px){#detail-grid{grid-template-columns:1fr}}
+#buehne{background:var(--gc-desk);border-radius:var(--r);padding:22px;display:flex;
+  align-items:flex-start;justify-content:center;min-height:340px}
+#buehne img{max-width:100%;max-height:74dvh;border-radius:5px;
+  box-shadow:0 6px 26px rgba(0,0,0,.18);cursor:zoom-in}
+#buehne img.zoom{max-height:none;cursor:zoom-out}
+#buehne .pdfhinweis{align-self:center;color:var(--gc-muted);text-align:center;font-size:13px}
+.sekt{margin-bottom:20px}
+.sekt .lbl{display:block;margin-bottom:8px}
+.feld{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--gc-border-l);font-size:13.5px}
+.feld:last-child{border-bottom:none}
+.feld b{font-family:var(--gc-mono);font-variant-numeric:tabular-nums;font-weight:600;color:var(--gc-fg)}
+.feld span{color:var(--gc-desc)}
+
+/* Beleg-Weg */
+.weg{list-style:none}
+.weg li{display:flex;gap:12px;padding:0 0 16px;position:relative}
+.weg li::before{content:"";position:absolute;left:5.5px;top:16px;bottom:0;width:1px;background:var(--gc-border)}
+.weg li:last-child::before{display:none}
+.weg .punkt{width:12px;height:12px;border-radius:50%;flex:none;margin-top:3px;
+  background:var(--gc-accent);transition:transform .3s}
+.weg li.offen .punkt{background:var(--gc-bg);border:1.5px solid var(--gc-border)}
+.weg li.frage .punkt{background:var(--gc-warn)}
+.weg .wtitel{font-weight:600;color:var(--gc-fg);font-size:13px}
+.weg .wsub{font-size:12px;color:var(--gc-desc)}
+.weg li.offen .wtitel{color:var(--gc-muted);font-weight:500}
+
+/* Haken & Siegel */
+.haken{display:flex;align-items:center;gap:12px}
+.haken .kreis{width:38px;height:38px;border-radius:50%;background:var(--gc-ok);color:#fff;
+  display:grid;place-items:center;font-size:19px;flex:none}
+.haken.warte .kreis{background:var(--gc-desk);color:var(--gc-muted)}
+.haken .txt b{display:block;color:var(--gc-fg);font-size:14px}
+.haken .txt span{font-size:12.5px;color:var(--gc-desc)}
+.stempel{animation:stempel .45s cubic-bezier(.2,1.4,.4,1)}
+@keyframes stempel{0%{transform:scale(1.7);opacity:0}60%{transform:scale(.95);opacity:1}100%{transform:scale(1)}}
+.datev{display:flex;flex-wrap:wrap;gap:8px}
+.datev .box{background:var(--gc-canvas);border:1px solid var(--gc-border);border-radius:8px;padding:8px 12px}
+.datev .box i{display:block;font:600 9px var(--gc-sans);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--gc-muted);font-style:normal}
+.datev .box b{font:600 13px var(--gc-mono);font-variant-numeric:tabular-nums;color:var(--gc-fg)}
+.siegel{display:flex;align-items:center;gap:10px;background:var(--gc-accent-subtle);
+  border-radius:8px;padding:10px 14px}
+.siegel .rosette{color:var(--gc-accent);font-size:17px}
+.siegel .code{font:12px var(--gc-mono);color:var(--gc-fg)}
+.siegel small{display:block;color:var(--gc-desc);font-size:11.5px}
+.siegel button{margin-left:auto;font-size:12px;color:var(--gc-accent);font-weight:600}
+
+/* Chat */
+#chatlog{display:flex;flex-direction:column;gap:12px;margin-bottom:16px;min-height:180px}
+.msg{max-width:82%;padding:10px 14px;border-radius:14px;font-size:13.5px;white-space:pre-wrap}
+.msg.ich{align-self:flex-end;background:var(--gc-fg);color:#fff;border-bottom-right-radius:4px}
+.msg.babu{align-self:flex-start;background:var(--gc-bg);border:1px solid var(--gc-border);border-bottom-left-radius:4px}
+.msg.babu.tippt::after{content:"▋";animation:blink 1s steps(1) infinite;color:var(--gc-muted)}
+@keyframes blink{50%{opacity:0}}
+#chatform{display:flex;gap:8px;position:sticky;bottom:14px}
+#chatfrage{flex:1;padding:11px 14px;border:1px solid var(--gc-border);border-radius:999px;
+  font:inherit;background:var(--gc-bg)}
+#chatform button{background:var(--gc-fg);color:#fff;border-radius:999px;padding:0 18px;font-weight:600}
+.beispiele{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+#chat-anker{display:none;align-items:center;gap:8px;background:var(--gc-accent-subtle);
+  border-radius:8px;padding:6px 12px;margin-bottom:8px;font-size:12.5px}
+#chat-anker button{color:var(--gc-muted)}
+.quellen{font-size:11.5px;color:var(--gc-muted);margin-top:4px}
+
+/* Login */
+#login{max-width:400px;margin:11dvh auto 0;padding:0 20px}
+#login .kicker{margin-bottom:10px}
+#login h2{font:600 30px var(--gc-serif);letter-spacing:-.015em;color:var(--gc-fg);margin-bottom:6px}
+#login p{color:var(--gc-desc);margin-bottom:20px}
+#login input{width:100%;padding:12px 14px;border:1px solid var(--gc-border);border-radius:8px;
+  font:14px var(--gc-mono);background:var(--gc-bg);margin-bottom:10px}
+#login button{width:100%;background:var(--gc-fg);color:#fff;padding:12px;border-radius:8px;font-weight:600}
+#login .fehler{color:var(--gc-danger);font-size:13px;margin-top:10px;display:none}
+#login small{display:block;margin-top:14px;color:var(--gc-muted);font-size:12px;line-height:1.5}
+
+/* Zustände */
+.leer{color:var(--gc-desc);text-align:center;padding:44px 20px}
+.leer b{display:block;font:600 17px var(--gc-serif);color:var(--gc-fg);margin-bottom:5px}
+.skelett{height:58px;border-radius:var(--r);background:linear-gradient(100deg,var(--gc-accent-subtle) 30%,var(--gc-canvas) 50%,var(--gc-accent-subtle) 70%);
+  background-size:200% 100%;animation:schimmer 1.4s infinite;margin-bottom:9px}
+@keyframes schimmer{to{background-position:-200% 0}}
+#offline{display:none;background:var(--gc-warn);color:#fff;padding:8px 22px;font-size:13px}
+.zurueck{color:var(--gc-accent);font-weight:600;font-size:13px;margin-bottom:14px;display:inline-block}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media(max-width:640px){
+  header{padding:10px 14px;gap:8px}
+  nav button{padding:7px 10px}
+  main{padding:20px 14px 60px}
+  #stand{display:none}
+}
+</style>
+</head>
+<body>
+
+<div id="offline">Gerade keine Verbindung. Deine Belege sind sicher — wir zeigen den Stand von eben.</div>
+
+<div id="login" hidden>
+  <div class="lbl kicker">0711 Intelligence · Babu</div>
+  <h2>Dein Salon-Cockpit</h2>
+  <p>Belege, Zweitprüfung und Antworten — alles an einem Ort.</p>
+  <input id="zugangscode" type="password" placeholder="Zugangscode" autocomplete="current-password">
+  <button id="anmelden">Anmelden</button>
+  <div class="fehler" id="login-fehler"></div>
+  <small>Den Zugangscode bekommst du einmalig bei der Einrichtung.
+  Er bleibt nicht im Browser gespeichert — angemeldet bleibst du trotzdem.</small>
+</div>
+
+<div id="app" hidden>
+<header>
+  <h1>babu</h1>
+  <nav>
+    <button data-ziel="heute">Heute</button>
+    <button data-ziel="belege">Belege</button>
+    <button data-ziel="fragen">Fragen</button>
+  </nav>
+  <div id="kopf-recht">
+    <span id="stand"></span>
+    <div id="avatar" title="Angemeldet">·</div>
+  </div>
+</header>
+
+<main>
+  <!-- HEUTE -->
+  <section class="ansicht" id="a-heute">
+    <div class="lbl" id="heute-eyebrow">DEIN MONAT</div>
+    <div class="gruss" id="heute-gruss">Guten Tag ✨</div>
+    <div id="heute-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+  </section>
+
+  <!-- BELEGE -->
+  <section class="ansicht" id="a-belege">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="gruss" style="font-size:22px">Belege</div>
+      <div class="mon-schalter">
+        <button id="mon-zurueck" aria-label="Vormonat">‹</button>
+        <b id="mon-anzeige"></b>
+        <button id="mon-vor" aria-label="Folgemonat">›</button>
+      </div>
+    </div>
+    <div class="chips" id="filter-chips">
+      <button class="chip an" data-f="">Alle</button>
+      <button class="chip" data-f="nachfrage">Braucht dich</button>
+      <button class="chip" data-f="erfasst">In Prüfung</button>
+      <button class="chip" data-f="geprüft">Fertig</button>
+    </div>
+    <div id="belege-liste"><div class="skelett"></div><div class="skelett"></div><div class="skelett"></div></div>
+  </section>
+
+  <!-- DETAIL -->
+  <section class="ansicht" id="a-detail">
+    <a class="zurueck" href="#belege">‹ Alle Belege</a>
+    <div id="detail-inhalt"><div class="skelett" style="height:300px"></div></div>
+  </section>
+
+  <!-- FRAGEN -->
+  <section class="ansicht" id="a-fragen">
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Fragen</div>
+    <p style="color:var(--gc-desc);margin-bottom:16px">Ich antworte nur aus deinen Belegen.</p>
+    <div class="beispiele" id="chat-beispiele">
+      <button class="chip">Was habe ich diesen Monat für Ware ausgegeben?</button>
+      <button class="chip">Welche Belege brauchen mich noch?</button>
+      <button class="chip">Was war der größte Posten?</button>
+    </div>
+    <div id="chatlog"></div>
+    <div id="chat-anker"><span id="chat-anker-text"></span><button id="chat-anker-weg" aria-label="Anker entfernen">✕</button></div>
+    <form id="chatform">
+      <input id="chatfrage" placeholder="Frag mich etwas zu deinen Belegen …" autocomplete="off">
+      <button>Fragen</button>
+    </form>
+  </section>
+</main>
+</div>
+
+<script>
+"use strict";
+/* ————— Werkzeuge ————— */
+const $ = s => document.querySelector(s);
+const euro = n => n == null ? "—" : n.toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2}) + " €";
+const MONATE = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+const monatName = m => { const [j,mm] = m.split("-"); return MONATE[+mm-1] + " " + j; };
+const jetztMonat = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0"); };
+const zeitKurz = iso => { if(!iso) return ""; const d = new Date(iso);
+  return d.toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"}) + ", " +
+         d.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"}); };
+
+async function api(pfad, opts){
+  const r = await fetch(pfad, Object.assign({credentials:"same-origin"}, opts));
+  if (r.status === 401) { zeigeLogin(); throw new Error("abgemeldet"); }
+  return r;
+}
+
+/* ————— Status-Sätze (Sprachregel: menschlich, kein Technik-Vokabular) ————— */
+function statusSatz(z){
+  if (z.status === "geprüft") return ["geprüft ✓","ok"];
+  if (z.status === "erfasst") return ["wird noch gelesen …","laeuft"];
+  if (z.bewirtung && !z.bewirtung_beantwortet) return ["Mit wem warst du essen?","frage"];
+  if (z.offen && z.offen.length) return [offenSatz(z.offen[0]),"frage"];
+  return ["eine Frage ist offen","frage"];
+}
+function offenSatz(o){
+  const m = /Differenz Zahlbetrag ([\d.,]+) vs\. Brutto ([\d.,]+)/.exec(o||"");
+  if (m) return `Gezahlt ${m[1]} € bei ${m[2]} € Rechnung — Trinkgeld?`;
+  return o || "eine Frage ist offen";
+}
+
+/* ————— Anmeldung ————— */
+function zeigeLogin(){ $("#app").hidden = true; $("#login").hidden = false; $("#zugangscode").focus(); }
+function zeigeApp(){ $("#login").hidden = true; $("#app").hidden = false; routen(); }
+
+$("#anmelden").addEventListener("click", async () => {
+  const f = $("#login-fehler"); f.style.display = "none";
+  try{
+    const r = await fetch("/api/anmelden",{method:"POST",credentials:"same-origin",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({pat:$("#zugangscode").value.trim()})});
+    if(!r.ok){ f.textContent = r.status===401 ? "Der Zugangscode stimmt nicht — magst du ihn nochmal prüfen?"
+      : "Damit können wir dich leider nicht anmelden."; f.style.display="block"; return; }
+    const d = await r.json();
+    $("#avatar").textContent = (d.un||"·")[0].toUpperCase();
+    $("#zugangscode").value = "";
+    zeigeApp();
+  }catch{ f.textContent = "Gerade keine Verbindung — gleich nochmal versuchen."; f.style.display = "block"; }
+});
+$("#zugangscode").addEventListener("keydown", e => { if(e.key==="Enter") $("#anmelden").click(); });
+
+/* ————— Router ————— */
+const ansichten = { heute: ladeHeute, belege: ladeBelege, fragen: () => {}, detail: null };
+function routen(){
+  const h = location.hash.slice(1) || "heute";
+  const [ziel, arg] = h.split("/");
+  const name = ansichten[ziel] !== undefined ? ziel : "heute";
+  document.querySelectorAll(".ansicht").forEach(a => a.classList.remove("an"));
+  document.querySelectorAll("nav button").forEach(b =>
+    b.classList.toggle("an", b.dataset.ziel === (name==="detail" ? "belege" : name)));
+  $("#a-" + name).classList.add("an");
+  if (name === "detail") ladeDetail(arg);
+  else if (ansichten[name]) ansichten[name]();
+}
+window.addEventListener("hashchange", routen);
+document.querySelectorAll("nav button").forEach(b =>
+  b.addEventListener("click", () => location.hash = "#" + b.dataset.ziel));
+
+/* ————— HEUTE ————— */
+async function ladeHeute(){
+  const monat = jetztMonat();
+  $("#heute-eyebrow").textContent = "DEIN " + monatName(monat).split(" ")[0].toUpperCase();
+  const stunde = new Date().getHours();
+  $("#heute-gruss").textContent = stunde < 11 ? "Guten Morgen ✨" : stunde < 18 ? "Schön, dass du da bist ✨" : "Guten Abend ✨";
+  let d;
+  try{ d = await (await api("/api/monat/" + monat)).json(); }
+  catch{ return; }
+  const ziel = $("#heute-inhalt");
+  const naechster = new Date(); naechster.setMonth(naechster.getMonth()+1);
+  const fristMonat = MONATE[naechster.getMonth()];
+  let html = "";
+
+  const fragen = (d.offene||[]).filter(o => o.status === "nachfrage");
+  if (fragen.length){
+    html += `<div class="sektion lbl">Braucht dich</div>`;
+    for (const o of fragen){
+      const frage = o.bewirtung && !o.bewirtung_beantwortet ? "Mit wem warst du essen?" : offenSatz((o.offen||[])[0]);
+      html += `<button class="karte nachfrage einflug zeile" style="display:block" onclick="location.hash='#detail/${o.stamm}'">
+        <h3>${frage}</h3><p>${o.lieferant||"Beleg"} · ${euro(o.brutto)}</p>
+        <span class="hin">Kurz klären ›</span></button>`;
+    }
+  }
+
+  html += `<div class="sektion lbl">Dein Monat in Zahlen</div><div class="karte">`;
+  if (!d.anzahl){
+    html += `<div class="leer"><b>Noch keine Belege in diesem Monat.</b>
+      Der erste dauert keine fünf Sekunden — einfach mit dem Handy fotografieren.</div>`;
+  } else {
+    for (const a of d.belegarten)
+      html += `<div class="mrow"><span class="art">${a.belegart}</span>
+        <span class="wer">${(a.lieferanten||[]).slice(0,3).join(" · ")}</span>
+        <span class="summe">${euro(a.brutto)}</span></div>`;
+    html += `<div class="mrow"><span class="art">Zusammen</span><span class="wer">${d.anzahl} Beleg${d.anzahl===1?"":"e"}</span>
+      <span class="summe">${euro(d.brutto)}</span></div>`;
+  }
+  html += `</div>`;
+
+  html += `<div class="karte" style="background:var(--gc-accent-subtle);border:none">
+    Deine Kanzlei braucht die ${monatName(monat).split(" ")[0]}-Belege bis <b>5. ${fristMonat}</b>.</div>`;
+
+  try{
+    const l = await (await api("/api/belege?limit=3")).json();
+    if (l.belege.length){
+      html += `<div class="sektion lbl">Zuletzt</div>`;
+      for (const z of l.belege) html += belegZeile(z);
+    }
+  }catch{}
+  ziel.innerHTML = html;
+}
+
+/* ————— BELEGE ————— */
+let aktMonat = jetztMonat(), aktFilter = "", etag = null;
+function belegZeile(z){
+  const [satz, art] = statusSatz(z);
+  const bild = z.datei && /\.(jpg|jpeg|png)$/i.test(z.datei)
+    ? `<img class="thumb" loading="lazy" alt="" src="/api/beleg/${z.stamm}/bild?v=${z.bild_oid}">`
+    : `<div class="thumb doc">▤</div>`;
+  return `<button class="zeile einflug" onclick="location.hash='#detail/${z.stamm}'">
+    ${bild}<div class="zmitte"><div class="zname">${z.lieferant || "Beleg vom " + (z.datum || zeitKurz(z.hochgeladen))}</div>
+    <div class="zstatus ${art}">${satz}</div></div>
+    <div class="zrechts"><div class="zbetrag">${euro(z.brutto)}</div>
+    <div class="zkonto">${z.konto_skr04 ? z.konto_skr04 + (z.ust_satz!=null ? " · " + z.ust_satz + " %" : "") : ""}</div></div>
+  </button>`;
+}
+async function ladeBelege(){
+  $("#mon-anzeige").textContent = monatName(aktMonat);
+  let d;
+  try{ d = await (await api(`/api/belege?monat=${aktMonat}` + (aktFilter ? `&status=${encodeURIComponent(aktFilter)}` : ""))).json(); }
+  catch{ return; }
+  etag = d.stand;
+  $("#stand").textContent = "Stand " + new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});
+  $("#belege-liste").innerHTML = d.belege.length
+    ? d.belege.map(belegZeile).join("")
+    : `<div class="leer"><b>${aktFilter ? "Hier ist gerade nichts." : "Noch keine Belege in diesem Monat."}</b>
+       ${aktFilter ? "Schau bei „Alle“ nach dem Rest." : "Der erste dauert keine fünf Sekunden."}</div>`;
+}
+$("#mon-zurueck").addEventListener("click", () => { aktMonat = monatSchieben(aktMonat,-1); ladeBelege(); });
+$("#mon-vor").addEventListener("click", () => { aktMonat = monatSchieben(aktMonat, 1); ladeBelege(); });
+function monatSchieben(m, dm){ const [j,mm] = m.split("-").map(Number);
+  const d = new Date(j, mm-1+dm, 1); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
+document.querySelectorAll("#filter-chips .chip").forEach(c => c.addEventListener("click", () => {
+  document.querySelectorAll("#filter-chips .chip").forEach(x => x.classList.remove("an"));
+  c.classList.add("an"); aktFilter = c.dataset.f; ladeBelege();
+}));
+
+/* ————— DETAIL ————— */
+async function ladeDetail(stamm){
+  const ziel = $("#detail-inhalt");
+  ziel.innerHTML = `<div class="skelett" style="height:300px"></div>`;
+  let d;
+  try{
+    const r = await api("/api/beleg/" + stamm);
+    if (!r.ok){ ziel.innerHTML = `<div class="leer"><b>Diesen Beleg finden wir gerade nicht.</b></div>`; return; }
+    d = await r.json();
+  }catch{ return; }
+  const f = d.felder || {}, e = d.einschaetzung || {}, v = d.vlm || {}, b = d.buchungssatz;
+  const lieferant = v.lieferant || f.lieferant || "Beleg";
+  const geprueft = d.status === "geprüft";
+  const inArbeit = d.status === "erfasst";
+  const frage = d.status === "nachfrage";
+  const bildTag = /\.(jpg|jpeg|png)$/i.test(d.datei||"")
+    ? `<img id="belegbild" alt="Foto des Belegs" src="${d.bild_url}">`
+    : `<div class="pdfhinweis">▤<br>Dieses Dokument kam als Datei —<br><a href="${d.bild_url}">herunterladen und ansehen</a></div>`;
+
+  /* Beleg-Weg */
+  const aufn = d.audit && d.audit.aufnahme, rev = d.audit && d.audit.review;
+  const weg = [
+    {t:"Foto erhalten", s: aufn ? zeitKurz(aufn.zeit) + " — sicher abgelegt" : "sicher abgelegt", klasse:""},
+    {t:"Gelesen", s: rev ? "Betrag, Datum und mehr erkannt" : "dauert einen Moment …", klasse: rev ? "" : "offen"},
+    frage ? {t:"Zweitprüfung", s:"eine Frage ist offen — siehe unten", klasse:"frage"}
+          : {t:"Zweitprüfung " + (geprueft||b ? "✓" : ""), s: rev ? "alles stimmig" : "kommt gleich", klasse: rev ? "" : "offen"},
+    {t:"Liegt für DATEV bereit", s: b ? "im " + monatName(d.monat||jetztMonat()).split(" ")[0] + "-Stapel deiner Kanzlei" : "sobald alles klar ist", klasse: b ? "" : "offen"},
+    {t:"Bei der Kanzlei", s:"sobald sie den Stapel abholt", klasse:"offen"},
+  ];
+
+  let html = `<div id="detail-grid"><div><div id="buehne">${bildTag}</div></div><div>`;
+  html += `<div class="gruss" style="font-size:22px;margin-bottom:2px">${lieferant}</div>
+    <div style="color:var(--gc-desc);font-size:13px;margin-bottom:18px">${f.datum || ""} ${f.brutto!=null ? "· " + euro(f.brutto) : ""}</div>`;
+
+  html += `<div class="sekt"><span class="lbl">Beleg-Weg</span><ul class="weg">` +
+    weg.map(w => `<li class="${w.klasse}"><span class="punkt"></span><div>
+      <div class="wtitel">${w.t}</div><div class="wsub">${w.s}</div></div></li>`).join("") + `</ul></div>`;
+
+  if (!inArbeit){
+    html += `<div class="sekt"><span class="lbl">Aus dem Foto</span><div class="karte" style="margin:0">`;
+    if (f.lieferant || v.lieferant) html += feld("Wer", lieferant);
+    if (f.datum) html += feld("Wann", f.datum);
+    if (f.netto != null) html += feld("Netto", euro(f.netto));
+    if (f.ust != null) html += feld(`Umsatzsteuer${f.ust_satz!=null ? " ("+f.ust_satz+" %)" : ""}`, euro(f.ust));
+    if (f.brutto != null) html += feld("Gesamt", euro(f.brutto));
+    if (v.trinkgeld) html += feld("Trinkgeld", euro(v.trinkgeld));
+    if (f.beleg_nr) html += feld("Beleg-Nr.", f.beleg_nr);
+    if (v.zahlungsart) html += feld("Bezahlt", v.zahlungsart);
+    html += `</div></div>`;
+
+    html += `<div class="sekt"><span class="lbl">Zweitprüfung</span>
+      <div class="haken ${geprueft||b ? "" : "warte"}">
+        <div class="kreis ${geprueft ? "stempel" : ""}">${frage ? "?" : "✓"}</div>
+        <div class="txt"><b>${frage ? offenSatz((f.offen||[])[0]) : "Alles stimmig"}</b>
+        <span>${b && b.buchungstext ? b.buchungstext : (e.belegart || "")}</span></div>
+      </div></div>`;
+
+    if (b){
+      html += `<div class="sekt"><span class="lbl">Das geht an DATEV</span><div class="datev">
+        <div class="box"><i>Betrag</i><b>${b.umsatz} €</b></div>
+        <div class="box"><i>Konto</i><b>${b.konto}</b></div>
+        <div class="box"><i>Gegenkonto</i><b>${b.gegenkonto}</b></div>
+        <div class="box"><i>Steuer</i><b>${b.bu_schluessel || "—"}</b></div>
+        ${b.belegfeld1 ? `<div class="box"><i>Beleg</i><b>${b.belegfeld1}</b></div>` : ""}
+        <div class="box" style="flex:1"><i>Buchungstext</i><b style="font-size:12px">${b.buchungstext || "—"}</b></div>
+      </div></div>`;
+    }
+
+    const siegelZeit = rev ? rev.zeit : (aufn ? aufn.zeit : null);
+    if (aufn){
+      html += `<div class="sekt"><span class="lbl">Unverändert seit</span>
+        <div class="siegel"><span class="rosette">✦</span>
+        <div><span class="code">${aufn.commit}${rev ? " · " + rev.commit : ""}</span>
+        <small>Seit ${zeitKurz(siegelZeit)} unverändert — jederzeit nachweisbar.</small></div>
+        <button onclick="navigator.clipboard.writeText('${aufn.commit}${rev ? " "+rev.commit : ""}');this.textContent='Kopiert ✓'">Kopieren</button>
+        </div></div>`;
+    }
+  } else {
+    html += `<div class="karte">Dieser Beleg wird gerade gelesen — das dauert normalerweise unter einer Minute.
+      Kam er als PDF, dauert es noch etwas länger.</div>`;
+  }
+
+  html += `<button class="chip" onclick="fragenZuBeleg('${d.stamm}','${(lieferant+"").replace(/'/g,"")}')">Frag zu diesem Beleg</button>`;
+  html += `</div></div>`;
+  ziel.innerHTML = html;
+  const bild = $("#belegbild");
+  if (bild) bild.addEventListener("click", () => bild.classList.toggle("zoom"));
+}
+const feld = (k,v) => `<div class="feld"><span>${k}</span><b>${v}</b></div>`;
+
+/* ————— FRAGEN ————— */
+let anker = null;
+function fragenZuBeleg(stamm, name){
+  anker = stamm;
+  $("#chat-anker").style.display = "flex";
+  $("#chat-anker-text").textContent = "Zu diesem Beleg: " + name;
+  location.hash = "#fragen";
+  $("#chatfrage").focus();
+}
+$("#chat-anker-weg").addEventListener("click", () => { anker = null; $("#chat-anker").style.display = "none"; });
+document.querySelectorAll("#chat-beispiele .chip").forEach(c =>
+  c.addEventListener("click", () => { $("#chatfrage").value = c.textContent; $("#chatform").requestSubmit(); }));
+
+$("#chatform").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  let frage = $("#chatfrage").value.trim();
+  if (!frage) return;
+  $("#chatfrage").value = "";
+  const log = $("#chatlog");
+  log.insertAdjacentHTML("beforeend", `<div class="msg ich"></div>`);
+  log.lastElementChild.textContent = frage;
+  const antwort = document.createElement("div");
+  antwort.className = "msg babu tippt";
+  log.appendChild(antwort);
+  antwort.scrollIntoView({block:"end"});
+  if (anker) frage = `Zum Beleg ${anker}: ${frage}`;
+  try{
+    const r = await api("/chat",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({frage, stream:true})});
+    if (!r.ok || !r.body) throw new Error();
+    const leser = r.body.getReader(); const dec = new TextDecoder();
+    let puffer = "";
+    for(;;){
+      const {done, value} = await leser.read();
+      if (done) break;
+      puffer += dec.decode(value, {stream:true});
+      let i;
+      while((i = puffer.indexOf("\n\n")) >= 0){
+        const zeile = puffer.slice(0, i).trim(); puffer = puffer.slice(i+2);
+        if (!zeile.startsWith("data: ")) continue;
+        const roh = zeile.slice(6);
+        if (roh === "[DONE]") continue;
+        try{
+          const j = JSON.parse(roh);
+          if (j.d) antwort.textContent += j.d;
+          if (j.antwort) antwort.textContent = j.antwort;
+          if (j.fehler) antwort.textContent = "Da ist die Antwort abgerissen — magst du nochmal fragen?";
+        }catch{}
+      }
+      antwort.scrollIntoView({block:"end"});
+    }
+  }catch{
+    antwort.textContent = "Da ist die Antwort abgerissen — magst du nochmal fragen?";
+  }
+  antwort.classList.remove("tippt");
+});
+
+/* ————— Start ————— */
+(async () => {
+  try{
+    const r = await fetch("/api/ich",{credentials:"same-origin"});
+    if (r.ok){ const d = await r.json(); $("#avatar").textContent = (d.un||"·")[0].toUpperCase(); zeigeApp(); }
+    else zeigeLogin();
+  }catch{
+    $("#offline").style.display = "block"; zeigeLogin();
+  }
+  if ("serviceWorker" in navigator && location.protocol === "https:")
+    navigator.serviceWorker.register("/portal/sw.js", {scope:"/portal"}).catch(()=>{});
+})();
+</script>
+</body>
+</html>
