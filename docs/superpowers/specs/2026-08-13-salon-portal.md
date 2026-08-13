@@ -276,6 +276,18 @@ iOS-App ist unverändert kompatibel. KPI-Instrumentierung live
 5. Demo-Leichen auf dem iPhone wischen (Q.3, 85,40-Weingärtle-Duplikat).
 6. 2024er-Monats-Bündel: echter Mehrseiten-Split (aktuell Seite 1 + Hinweis).
 7. Mail-Versand der Abend-Zusammenfassung (Schalter existieren, SMTP fehlt).
+8. **Für die Parallel-Session (babu-eingang, 13.08. vormittags live beobachtet):**
+   Der non-fast-forward-Retry in `commit_und_push()` greift nicht, wenn andere
+   Schreiber (Portal, Watcher) zwischenzeitlich gepusht haben — `letzter =
+   stderr[-300:]` schneidet die „! [rejected]"-Zeile ab, übrig bleiben nur
+   „hint:"-Zeilen, der Regex matcht nicht → dauerhafter 502 statt fetch+reset.
+   Workaround angewandt (Arbeitskopie `~/gitchain-eingang/babu` per
+   fetch+reset synchronisiert, Prozess/Code unangetastet); Fix gehört in
+   babu_eingang.py: Regex über das VOLLE stderr laufen lassen (oder auf
+   `p.returncode` + „[rejected]" am Anfang prüfen).
+9. Service-PAT `~/gitchain-eingang/.pat_babu` bei Gelegenheit rotieren —
+   er wurde am 13.08. durch einen Quoting-Fehler einmalig in einer lokalen
+   Terminal-Sitzung angezeigt (Rotation ohne Neustart: Datei ersetzen).
 
 ## Offene Fragen (im Bau zu entscheiden, blockieren den Start nicht)
 
