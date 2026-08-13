@@ -124,6 +124,31 @@ def test_export_nach_bewirtung(welt):
     assert d["status"] == "exportiert"
 
 
+def test_korrektur_fliesst_in_liste_und_export(welt):
+    client, bare = welt
+    r = client.post(f"/api/korrektur/{STAMM}",
+                    json={"konto_skr04": "6640", "steuerschluessel": "8",
+                          "buchungstext": "Bewirtung Weingärtle Team-Essen"})
+    assert r.status_code == 200
+    log = subprocess.run(["git", "-C", str(bare), "log", "-1", "--format=%s|%an"],
+                         capture_output=True, text=True).stdout.strip()
+    assert log == f"korrektur: {STAMM}|christoph0711.io"
+    z = next(x for x in client.get("/api/belege").json()["belege"] if x["stamm"] == STAMM)
+    assert z["korrigiert"] is True
+    assert z["buchungstext"] == "Bewirtung Weingärtle Team-Essen"
+    assert client.post(f"/api/korrektur/{STAMM}",
+                       json={"konto_skr04": "abc"}).status_code == 400
+
+
+def test_kpi(welt):
+    client, _ = welt
+    d = client.get("/api/kpi/2026-08").json()
+    assert d["belege"] >= 1
+    assert d["auto_geprueft_quote"]["ziel"] == 0.8
+    assert d["offen_zur_frist"]["wert"] >= 0
+    assert d["betrieb"]["requests"] > 0
+
+
 def test_hochladen_grenzen(welt):
     client, _ = welt
     assert client.post("/api/hochladen", params={"name": "boese.exe"},

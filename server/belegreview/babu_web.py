@@ -87,6 +87,23 @@ NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,120}$")
 
 app = FastAPI(title="babu-web", docs_url=None, redoc_url=None)
 
+# Betriebs-Zähler (KPI, in-memory seit Prozessstart)
+_METRIK = {"start": time.time(), "requests": 0, "fehler_5xx": 0, "davon_304": 0,
+           "dauer_summe": 0.0}
+
+
+@app.middleware("http")
+async def _metrik_mw(request: Request, call_next):
+    t0 = time.perf_counter()
+    antwort = await call_next(request)
+    _METRIK["requests"] += 1
+    _METRIK["dauer_summe"] += time.perf_counter() - t0
+    if antwort.status_code >= 500:
+        _METRIK["fehler_5xx"] += 1
+    if antwort.status_code == 304:
+        _METRIK["davon_304"] += 1
+    return antwort
+
 # whoami-Cache: Token-Hash → (un, bis) — schont gitchain.de bei App-Polling.
 _CACHE: dict[int, tuple[str, float]] = {}
 
@@ -307,14 +324,18 @@ def _index_bauen(head: str) -> None:
     review_pfade = {p: oid for p, oid in pfade.items()
                     if p.startswith("review/") and p.endswith(".json")
                     and not p.endswith(".embedding.json")
-                    and not p.endswith(".bewirtung.json")}
+                    and not p.endswith(".bewirtung.json")
+                    and not p.endswith(".korrektur.json")}
+    korrektur_pfade = {p[len("review/"):-len(".korrektur.json")]: oid
+                       for p, oid in pfade.items() if p.endswith(".korrektur.json")}
     bewirtung_staemme = {p[len("review/"):-len(".bewirtung.json")]
                          for p in pfade if p.endswith(".bewirtung.json")}
     beleg_pfade = [p for p in pfade
                    if p.startswith("docs/") and Path(p).suffix.lower() in BELEG_ENDUNGEN]
 
     oid_cache = _INDEX["oid_cache"]
-    fehlend = [oid for oid in review_pfade.values() if oid not in oid_cache]
+    fehlend = [oid for oid in list(review_pfade.values()) + list(korrektur_pfade.values())
+               if oid not in oid_cache]
     for oid, roh in _blobs_lesen(fehlend).items():
         try:
             oid_cache[oid] = json.loads(roh)
@@ -358,6 +379,21 @@ def _index_bauen(head: str) -> None:
             "bewirtung": bool(f.get("bewirtungssignal")),
             "bewirtung_beantwortet": bewirtung_da,
         }
+        korrektur = oid_cache.get(korrektur_pfade.get(stamm, ""))
+        if isinstance(korrektur, dict):
+            eintrag["korrigiert"] = True
+            for kk in ("konto_skr04", "steuerschluessel", "buchungstext"):
+                if korrektur.get(kk):
+                    eintrag[kk] = korrektur[kk]
+            if review is not None:
+                review = json.loads(json.dumps(review))  # Kopie, Original bleibt
+                review.setdefault("einschaetzung", {})
+                for kk in ("konto_skr04", "steuerschluessel"):
+                    if korrektur.get(kk):
+                        review["einschaetzung"][kk] = korrektur[kk]
+                if korrektur.get("buchungstext"):
+                    review.setdefault("vlm", {})
+                    (review["vlm"] or {}).update(buchungstext=korrektur["buchungstext"])
         belege[stamm] = eintrag
         if review is not None:
             reviews[stamm] = review
@@ -815,6 +851,49 @@ async def api_dokument_gelesen(request: Request) -> Response:
     return JSONResponse({"ok": True})
 
 
+@app.get("/workbench")
+def workbench_seite() -> FileResponse:
+    return FileResponse(WURZEL / "workbench.html", media_type="text/html")
+
+
+@app.post("/api/korrektur/{stamm}")
+async def api_korrektur(stamm: str, request: Request) -> Response:
+    """Kanzlei-Korrektur (Konto/BU/Buchungstext) — als eigener Commit, damit
+    Autorenschaft und Historie sauber bleiben; fließt in Liste + EXTF ein."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) != "kanzlei":
+        return JSONResponse({"fehler": "nur für die Kanzlei"}, status_code=403)
+    if not NAME_RE.match(stamm):
+        return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
+    if stamm not in index_aktuell()["belege"]:
+        return JSONResponse({"fehler": "unbekannter Beleg"}, status_code=404)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    konto = str(body.get("konto_skr04", "")).strip()
+    if konto and not re.match(r"^\d{4,8}$", konto):
+        return JSONResponse({"fehler": "Konto prüfen"}, status_code=400)
+    daten = {"konto_skr04": konto or None,
+             "steuerschluessel": str(body.get("steuerschluessel", "")).strip()[:2] or None,
+             "buchungstext": str(body.get("buchungstext", "")).strip()[:60] or None,
+             "von": un, "am": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    import boxschreiber  # noqa: PLC0415
+    try:
+        commit = boxschreiber.schreiben(
+            f"review/{stamm}.korrektur.json",
+            json.dumps(daten, ensure_ascii=False, indent=1).encode(),
+            f"korrektur: {stamm}", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit})
+
+
 @app.post("/api/freigabe")
 async def api_freigabe(request: Request) -> Response:
     """Freigabe einer Kanzlei-Anfrage — protokollierte Portal-Handlung
@@ -923,6 +1002,64 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
     return Response(content=daten, media_type="text/csv; charset=windows-1252",
                     headers={"Content-Disposition":
                              f'attachment; filename="EXTF_Buchungsstapel_{monat}.csv"'})
+
+
+def _median(werte: list[float]) -> float | None:
+    if not werte:
+        return None
+    werte = sorted(werte)
+    n = len(werte)
+    return round(werte[n // 2] if n % 2 else (werte[n // 2 - 1] + werte[n // 2]) / 2, 1)
+
+
+@app.get("/api/kpi/{monat}")
+def api_kpi(monat: str, request: Request) -> Response:
+    """Kennzahlen des Monats gegen die Spec-Ziele (docs/…/2026-08-13-salon-portal.md)."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if not re.match(r"^\d{4}-\d{2}$", monat):
+        return JSONResponse({"fehler": "ungültiger Monat"}, status_code=400)
+    idx = index_aktuell()
+    zeilen = [z for z in idx["belege"].values() if z["monat"] == monat]
+    mit_review = [z for z in zeilen if z["review_zeit"]]
+    latenzen = []
+    for z in mit_review:
+        try:
+            from datetime import datetime as _dt
+            a = _dt.fromisoformat(z["hochgeladen"])
+            r_ = _dt.fromisoformat(z["review_zeit"])
+            latenzen.append((r_ - a).total_seconds())
+        except Exception:  # noqa: BLE001
+            pass
+    fertig = [z for z in zeilen if z["status"] in ("geprüft", "exportiert")]
+    unlesbar = [z for z in mit_review if z["dokumentklasse"] == "unlesbar"]
+    fallback = [z for z in mit_review if z["konto_skr04"] == "6850"]
+    summenprobe = [z for z in mit_review if z["summenprobe_ok"]]
+    laufzeit = time.time() - _METRIK["start"]
+    return JSONResponse({
+        "monat": monat,
+        "belege": len(zeilen),
+        "brutto": round(sum(z["brutto"] or 0 for z in zeilen), 2),
+        "zeit_bis_haken_s": {"median": _median(latenzen),
+                             "ziel": 60, "werte": len(latenzen)},
+        "auto_geprueft_quote": {"wert": round(len(fertig) / len(mit_review), 3) if mit_review else None,
+                                "ziel": 0.8},
+        "unlesbar_quote": {"wert": round(len(unlesbar) / len(mit_review), 3) if mit_review else None,
+                           "ziel": 0.03},
+        "fallback_6850_quote": {"wert": round(len(fallback) / len(mit_review), 3) if mit_review else None,
+                                "ziel": 0.15},
+        "summenprobe_quote": {"wert": round(len(summenprobe) / len(mit_review), 3) if mit_review else None,
+                              "ziel": 0.9},
+        "offen_zur_frist": {"wert": sum(1 for z in zeilen if z["status"] in ("nachfrage", "erfasst")),
+                            "ziel": 0},
+        "pflicht_metadaten_pro_beleg": {"wert": 0, "ziel": 0},
+        "betrieb": {"seit_s": round(laufzeit),
+                    "requests": _METRIK["requests"],
+                    "fehler_5xx_quote": round(_METRIK["fehler_5xx"] / _METRIK["requests"], 4) if _METRIK["requests"] else 0,
+                    "quote_304": round(_METRIK["davon_304"] / _METRIK["requests"], 3) if _METRIK["requests"] else 0,
+                    "mittlere_dauer_ms": round(_METRIK["dauer_summe"] / _METRIK["requests"] * 1000, 1) if _METRIK["requests"] else 0},
+    })
 
 
 @app.get("/api/monat/{monat}")
