@@ -181,6 +181,41 @@ main{padding:26px 22px 60px;min-height:70dvh}
 #offline{display:none;background:var(--gc-warn);color:#fff;padding:8px 22px;font-size:13px}
 .zurueck{color:var(--gc-accent);font-weight:600;font-size:13px;margin-bottom:14px;display:inline-block}
 
+/* Sheet (Bewirtung) */
+#schleier{position:fixed;inset:0;background:rgba(17,17,17,.34);z-index:40;display:none;
+  align-items:flex-end;justify-content:center}
+#schleier.an{display:flex}
+#sheet{background:var(--gc-bg);border-radius:18px 18px 0 0;padding:22px 22px 30px;
+  width:min(560px,100%);animation:einflug .32s cubic-bezier(.2,.9,.3,1)}
+#sheet h3{font:600 19px var(--gc-serif);color:var(--gc-fg);margin-bottom:4px}
+#sheet p{color:var(--gc-desc);font-size:13px;margin-bottom:14px}
+#sheet label{display:block;font:600 9.5px var(--gc-sans);letter-spacing:.11em;
+  text-transform:uppercase;color:var(--gc-muted);margin:12px 0 5px}
+#sheet input{width:100%;padding:11px 13px;border:1px solid var(--gc-border);
+  border-radius:8px;font:inherit;background:var(--gc-bg)}
+#sheet .fuss{font-size:10.5px;color:var(--gc-muted);margin-top:12px}
+#sheet .aktion{width:100%;margin-top:16px;background:var(--gc-fg);color:#fff;
+  padding:13px;border-radius:10px;font-weight:600}
+#sheet .aktion:disabled{opacity:.4}
+
+/* Drop-Overlay */
+#drop{position:fixed;inset:0;z-index:50;display:none;place-items:center;
+  background:rgba(250,249,245,.92);border:3px dashed var(--gc-accent);border-radius:18px}
+#drop.an{display:grid}
+#drop b{font:600 24px var(--gc-serif);color:var(--gc-fg)}
+
+/* Aufräumen */
+#a-aufraeumen .stapel{max-width:520px;margin:0 auto}
+#a-aufraeumen .bild{background:var(--gc-desk);border-radius:var(--r);padding:18px;
+  display:grid;place-items:center;margin-bottom:14px}
+#a-aufraeumen .bild img{max-width:100%;max-height:44dvh;border-radius:5px;
+  box-shadow:0 6px 26px rgba(0,0,0,.18)}
+#a-aufraeumen .aktionen{display:flex;gap:10px;margin-top:14px}
+#a-aufraeumen .aktionen button{flex:1;padding:13px;border-radius:10px;font-weight:600}
+#a-aufraeumen .spaeter{border:1px solid var(--gc-border);background:var(--gc-bg)}
+#a-aufraeumen .klaeren{background:var(--gc-fg);color:#fff}
+.fertig-stempel{font-size:44px;color:var(--gc-ok);text-align:center}
+
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media(max-width:640px){
   header{padding:10px 14px;gap:8px}
@@ -215,6 +250,8 @@ main{padding:26px 22px 60px;min-height:70dvh}
   </nav>
   <div id="kopf-recht">
     <span id="stand"></span>
+    <button class="chip" id="hochladen-knopf">Beleg hochladen</button>
+    <input type="file" id="hochladen-datei" accept=".jpg,.jpeg,.png,.pdf,.heic,image/*,application/pdf" multiple hidden>
     <div id="avatar" title="Angemeldet">·</div>
   </div>
 </header>
@@ -252,6 +289,12 @@ main{padding:26px 22px 60px;min-height:70dvh}
     <div id="detail-inhalt"><div class="skelett" style="height:300px"></div></div>
   </section>
 
+  <!-- AUFRÄUMEN -->
+  <section class="ansicht" id="a-aufraeumen">
+    <a class="zurueck" href="#heute">‹ Heute</a>
+    <div class="stapel" id="stapel-inhalt"></div>
+  </section>
+
   <!-- FRAGEN -->
   <section class="ansicht" id="a-fragen">
     <div class="gruss" style="font-size:22px;margin-bottom:4px">Fragen</div>
@@ -269,6 +312,21 @@ main{padding:26px 22px 60px;min-height:70dvh}
     </form>
   </section>
 </main>
+</div>
+
+<div id="drop"><b>Ablegen — ich kümmere mich drum</b></div>
+
+<div id="schleier">
+  <div id="sheet" role="dialog" aria-modal="true">
+    <h3>Mit wem warst du essen?</h3>
+    <p id="sheet-sub"></p>
+    <label for="sheet-anlass">Anlass</label>
+    <input id="sheet-anlass" placeholder="z. B. Team-Essen nach der Schulung">
+    <label for="sheet-leute">Wer war dabei? (auch du)</label>
+    <input id="sheet-leute" placeholder="z. B. Nicole, Jana, Frau Holder">
+    <button class="aktion" id="sheet-fertig">Fertig — buchen</button>
+    <div class="fuss">§4 Abs. 5 Nr. 2 EStG · die Unterschrift gehört aufs Papier</div>
+  </div>
 </div>
 
 <script>
@@ -324,7 +382,8 @@ $("#anmelden").addEventListener("click", async () => {
 $("#zugangscode").addEventListener("keydown", e => { if(e.key==="Enter") $("#anmelden").click(); });
 
 /* ————— Router ————— */
-const ansichten = { heute: ladeHeute, belege: ladeBelege, fragen: () => {}, detail: null };
+const ansichten = { heute: ladeHeute, belege: ladeBelege, fragen: () => {},
+                    aufraeumen: ladeAufraeumen, detail: null };
 function routen(){
   const h = location.hash.slice(1) || "heute";
   const [ziel, arg] = h.split("/");
@@ -356,10 +415,15 @@ async function ladeHeute(){
 
   const fragen = (d.offene||[]).filter(o => o.status === "nachfrage");
   if (fragen.length){
-    html += `<div class="sektion lbl">Braucht dich</div>`;
+    html += `<div class="sektion lbl" style="display:flex;justify-content:space-between">Braucht dich
+      ${fragen.length > 1 ? '<a href="#aufraeumen" style="letter-spacing:normal;text-transform:none;font-size:12px">Alle nacheinander ›</a>' : ""}</div>`;
     for (const o of fragen){
-      const frage = o.bewirtung && !o.bewirtung_beantwortet ? "Mit wem warst du essen?" : offenSatz((o.offen||[])[0]);
-      html += `<button class="karte nachfrage einflug zeile" style="display:block" onclick="location.hash='#detail/${o.stamm}'">
+      const bewirtungOffen = o.bewirtung && !o.bewirtung_beantwortet;
+      const frage = bewirtungOffen ? "Mit wem warst du essen?" : offenSatz((o.offen||[])[0]);
+      const klick = bewirtungOffen
+        ? `bewirtungSheet('${o.stamm}','${(o.lieferant||"Beleg")} · ${euro(o.brutto)}')`
+        : `location.hash='#detail/${o.stamm}'`;
+      html += `<button class="karte nachfrage einflug zeile" style="display:block" onclick="${klick}">
         <h3>${frage}</h3><p>${o.lieferant||"Beleg"} · ${euro(o.brutto)}</p>
         <span class="hin">Kurz klären ›</span></button>`;
     }
@@ -477,12 +541,20 @@ async function ladeDetail(stamm){
     if (v.zahlungsart) html += feld("Bezahlt", v.zahlungsart);
     html += `</div></div>`;
 
+    const bewirtungOffen = f.bewirtungssignal && !d.bewirtung_beantwortet;
     html += `<div class="sekt"><span class="lbl">Zweitprüfung</span>
       <div class="haken ${geprueft||b ? "" : "warte"}">
         <div class="kreis ${geprueft ? "stempel" : ""}">${frage ? "?" : "✓"}</div>
-        <div class="txt"><b>${frage ? offenSatz((f.offen||[])[0]) : "Alles stimmig"}</b>
+        <div class="txt"><b>${frage ? (bewirtungOffen ? "Mit wem warst du essen?" : offenSatz((f.offen||[])[0])) : "Alles stimmig"}</b>
         <span>${b && b.buchungstext ? b.buchungstext : (e.belegart || "")}</span></div>
-      </div></div>`;
+      </div>
+      ${bewirtungOffen ? `<button class="karte nachfrage" style="display:block;width:100%;text-align:left;margin-top:10px"
+        onclick="bewirtungSheet('${d.stamm}','${lieferant} · ${euro(f.brutto)}')">
+        <h3>Mit wem warst du essen?</h3><p>Kurz notiert, und der Beleg zählt voll.</p>
+        <span class="hin">Kurz klären ›</span></button>` : ""}
+      ${d.bewirtung ? `<div class="feld" style="margin-top:8px"><span>Anlass</span><b style="font-family:var(--gc-sans)">${d.bewirtung.anlass}</b></div>
+        <div class="feld"><span>Dabei waren</span><b style="font-family:var(--gc-sans)">${(d.bewirtung.teilnehmer||[]).join(", ")}</b></div>` : ""}
+      </div>`;
 
     if (b){
       html += `<div class="sekt"><span class="lbl">Das geht an DATEV</span><div class="datev">
@@ -572,6 +644,152 @@ $("#chatform").addEventListener("submit", async ev => {
     antwort.textContent = "Da ist die Antwort abgerissen — magst du nochmal fragen?";
   }
   antwort.classList.remove("tippt");
+});
+
+/* ————— Bewirtungs-Sheet ————— */
+let sheetStamm = null;
+function bewirtungSheet(stamm, sub){
+  sheetStamm = stamm;
+  $("#sheet-sub").textContent = sub || "";
+  $("#sheet-anlass").value = ""; $("#sheet-leute").value = "";
+  $("#schleier").classList.add("an");
+  $("#sheet-anlass").focus();
+}
+$("#schleier").addEventListener("click", ev => { if (ev.target.id === "schleier") $("#schleier").classList.remove("an"); });
+document.addEventListener("keydown", ev => { if (ev.key === "Escape") $("#schleier").classList.remove("an"); });
+$("#sheet-fertig").addEventListener("click", async () => {
+  const anlass = $("#sheet-anlass").value.trim();
+  const leute = $("#sheet-leute").value.split(/[,;]| und /).map(s => s.trim()).filter(Boolean);
+  if (!anlass || !leute.length){ $("#sheet-anlass").focus(); return; }
+  const knopf = $("#sheet-fertig");
+  knopf.disabled = true; knopf.textContent = "Wird gebucht …";
+  try{
+    const r = await api("/api/bewirtung/" + sheetStamm, {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({anlass, teilnehmer: leute})});
+    if (r.ok){
+      knopf.textContent = "Gebucht ✓"; knopf.classList.add("stempel");
+      setTimeout(() => { $("#schleier").classList.remove("an");
+        knopf.disabled = false; knopf.textContent = "Fertig — buchen"; knopf.classList.remove("stempel");
+        if (sheetNachStapel){ sheetNachStapel = false; stapelWeiter(true); }
+        else routen(); }, 650);
+      return;
+    }
+  }catch{}
+  knopf.disabled = false; knopf.textContent = "Gerade nicht speicherbar — nochmal";
+});
+
+/* ————— Hochladen (Drop überall + Knopf), mit Live-Echo ————— */
+let dropTiefe = 0;
+document.addEventListener("dragenter", ev => { ev.preventDefault(); if (++dropTiefe) $("#drop").classList.add("an"); });
+document.addEventListener("dragover", ev => ev.preventDefault());
+document.addEventListener("dragleave", () => { if (--dropTiefe <= 0){ dropTiefe = 0; $("#drop").classList.remove("an"); } });
+document.addEventListener("drop", ev => {
+  ev.preventDefault(); dropTiefe = 0; $("#drop").classList.remove("an");
+  if (ev.dataTransfer && ev.dataTransfer.files.length) hochladen([...ev.dataTransfer.files]);
+});
+$("#hochladen-knopf").addEventListener("click", () => $("#hochladen-datei").click());
+$("#hochladen-datei").addEventListener("change", ev => { hochladen([...ev.target.files]); ev.target.value = ""; });
+
+async function hochladen(dateien){
+  location.hash = "#belege";
+  for (const datei of dateien){
+    const kennung = "up-" + Math.random().toString(36).slice(2, 8);
+    const zeile = document.createElement("div");
+    zeile.className = "zeile einflug"; zeile.id = kennung;
+    zeile.innerHTML = `<div class="thumb doc">▤</div><div class="zmitte">
+      <div class="zname">${datei.name}</div>
+      <div class="zstatus laeuft">wird sicher abgelegt …</div></div>`;
+    const liste = $("#belege-liste");
+    liste.prepend(zeile);
+    try{
+      const r = await api("/api/hochladen?name=" + encodeURIComponent(datei.name),
+        {method:"POST", body: datei});
+      const d = await r.json();
+      if (!r.ok){
+        zeile.querySelector(".zstatus").textContent =
+          r.status === 413 ? "zu groß (max. 40 MB)" :
+          r.status === 400 ? "dieses Format kann ich nicht ablegen" :
+          "gerade nicht speicherbar — gleich nochmal";
+        zeile.querySelector(".zstatus").className = "zstatus frage";
+        continue;
+      }
+      zeile.querySelector(".zstatus").textContent = "abgelegt ✓ — wird gelesen …";
+      etag = null;  // nächster Poll holt frisch
+    }catch{
+      zeile.querySelector(".zstatus").textContent = "gerade keine Verbindung";
+      zeile.querySelector(".zstatus").className = "zstatus frage";
+    }
+  }
+  setTimeout(ladeBelege, 800);
+}
+
+/* ————— Frische: ETag-Poll alle 30 s ————— */
+setInterval(async () => {
+  if ($("#app").hidden || document.hidden) return;
+  // Mitten im Aufräumen oder mit offenem Sheet nicht unterm Hintern auffrischen.
+  if ($("#a-aufraeumen").classList.contains("an") || $("#schleier").classList.contains("an")) return;
+  try{
+    const r = await fetch("/api/belege?limit=1", {credentials:"same-origin",
+      headers: etag ? {"If-None-Match": `"${etag}"`} : {}});
+    if (r.status === 200){
+      const d = await r.json();
+      if (etag && d.stand !== etag) routen();   // etwas hat sich getan → Ansicht auffrischen
+      etag = d.stand;
+    }
+  }catch{}
+}, 30000);
+
+/* ————— Aufräumen: die offenen Fragen, eine nach der anderen ————— */
+let stapel = [], stapelSumme = 0, stapelZahl = 0;
+async function ladeAufraeumen(){
+  let d;
+  try{ d = await (await api(`/api/monat/${jetztMonat()}`)).json(); }
+  catch{ return; }
+  stapel = (d.offene||[]).filter(o => o.status === "nachfrage");
+  stapelSumme = 0; stapelZahl = 0;
+  zeigeStapel();
+}
+function zeigeStapel(){
+  const ziel = $("#stapel-inhalt");
+  if (!stapel.length){
+    ziel.innerHTML = `<div class="leer"><div class="fertig-stempel stempel">✓</div>
+      <b>${stapelZahl ? `Fertig für heute — ${stapelZahl} geklärt, ${euro(stapelSumme)}.` : "Nichts zu tun. Schöner Zustand."}</b></div>`;
+    return;
+  }
+  const o = stapel[0];
+  const bewirtungOffen = o.bewirtung && !o.bewirtung_beantwortet;
+  const frage = bewirtungOffen ? "Mit wem warst du essen?" : offenSatz((o.offen||[])[0]);
+  ziel.innerHTML = `
+    <div class="lbl" style="margin-bottom:10px">Noch ${stapel.length} zu klären</div>
+    <div class="bild"><img alt="" src="/api/beleg/${o.stamm}/bild"></div>
+    <div class="karte nachfrage" style="margin:0"><h3>${frage}</h3>
+      <p>${o.lieferant||"Beleg"} · ${euro(o.brutto)}</p></div>
+    <div class="aktionen">
+      <button class="spaeter" onclick="stapelWeiter(false)">Später</button>
+      <button class="klaeren" onclick="stapelKlaeren()">${bewirtungOffen ? "Kurz klären" : "Ansehen"}</button>
+    </div>`;
+}
+function stapelWeiter(geklaert){
+  const o = stapel.shift();
+  if (geklaert && o){ stapelZahl++; stapelSumme += o.brutto || 0; }
+  zeigeStapel();
+}
+function stapelKlaeren(){
+  const o = stapel[0];
+  if (!o) return;
+  if (o.bewirtung && !o.bewirtung_beantwortet){
+    sheetNachStapel = true;
+    bewirtungSheet(o.stamm, `${o.lieferant||"Beleg"} · ${euro(o.brutto)}`);
+  } else {
+    location.hash = "#detail/" + o.stamm;
+  }
+}
+let sheetNachStapel = false;
+document.addEventListener("keydown", ev => {
+  if (!$("#a-aufraeumen").classList.contains("an") || $("#schleier").classList.contains("an")) return;
+  if (ev.key === "ArrowLeft") stapelWeiter(false);
+  if (ev.key === "ArrowRight" || ev.key === "Enter") stapelKlaeren();
 });
 
 /* ————— Start ————— */

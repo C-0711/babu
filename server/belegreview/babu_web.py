@@ -85,6 +85,9 @@ def wer(request: Request) -> str | None:
 
 SESSION_COOKIE = "babu_sitzung"
 SESSION_DAUER = 30 * 24 * 3600  # 30 Tage, gleitend
+# Produktiv immer Secure (babu.0711.io ist TLS); nur lokale Dev-Server ohne HTTPS
+# dürfen das abschalten (BABU_COOKIE_SECURE=0).
+SESSION_SECURE = os.environ.get("BABU_COOKIE_SECURE", "1") != "0"
 
 
 def _geheimnis() -> bytes:
@@ -234,9 +237,12 @@ def _status_ableiten(review: dict | None, bewirtung_da: bool) -> str:
     if review is None:
         return "erfasst"
     f = review.get("felder") or {}
-    offen = list(f.get("offen") or [])
+    # Trinkgeld-Differenzen sind Information, keine Frage — das Trinkgeld hat
+    # die Bild-Lane bereits erfasst. Eine Frage bleibt nur die Bewirtung selbst
+    # (§4 Abs. 5: Anlass + Teilnehmer), bis sie beantwortet ist.
+    echte_offen = [o for o in (f.get("offen") or []) if "trinkgeld" not in str(o).lower()]
     braucht_bewirtung = bool(f.get("bewirtungssignal")) and not bewirtung_da
-    if not offen and not braucht_bewirtung and f.get("summenprobe_ok"):
+    if not echte_offen and not braucht_bewirtung and f.get("summenprobe_ok"):
         return "geprüft"
     return "nachfrage"
 
@@ -361,6 +367,14 @@ def portal_sw() -> FileResponse:
     return FileResponse(WURZEL / "portal.sw.js", media_type="text/javascript")
 
 
+@app.get("/portal/icon-{groesse}.png")
+def portal_icon(groesse: str) -> Response:
+    if groesse not in ("192", "512"):
+        return JSONResponse({"fehler": "unbekannt"}, status_code=404)
+    return FileResponse(WURZEL / f"portal-icon-{groesse}.png", media_type="image/png",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+
 # ---------------------------------------------------------------------------
 # Portal-API
 # ---------------------------------------------------------------------------
@@ -390,7 +404,7 @@ async def api_anmelden(request: Request) -> Response:
     exp = int(time.time()) + SESSION_DAUER
     antwort = JSONResponse({"un": un})
     antwort.set_cookie(SESSION_COOKIE, _signieren(un, exp), max_age=SESSION_DAUER,
-                       httponly=True, secure=True, samesite="lax", path="/")
+                       httponly=True, secure=SESSION_SECURE, samesite="lax", path="/")
     return antwort
 
 
@@ -411,7 +425,7 @@ def api_ich(request: Request) -> Response:
     antwort = JSONResponse({"un": un})
     if request.cookies.get(SESSION_COOKIE):
         antwort.set_cookie(SESSION_COOKIE, _signieren(un, exp), max_age=SESSION_DAUER,
-                           httponly=True, secure=True, samesite="lax", path="/")
+                           httponly=True, secure=SESSION_SECURE, samesite="lax", path="/")
     return antwort
 
 
@@ -473,6 +487,13 @@ def api_beleg(stamm: str, request: Request) -> Response:
     d["datei"] = eintrag["datei"]
     d["bild_url"] = f"/api/beleg/{stamm}/bild?v={eintrag['bild_oid']}"
     d["bewirtung_beantwortet"] = eintrag["bewirtung_beantwortet"]
+    if eintrag["bewirtung_beantwortet"]:
+        roh = git_show(f"review/{stamm}.bewirtung.json")
+        if roh is not None:
+            try:
+                d["bewirtung"] = json.loads(roh)
+            except Exception:  # noqa: BLE001
+                pass
     return JSONResponse(d)
 
 
@@ -532,6 +553,76 @@ def _monat_summen(monat: str) -> dict:
             "belegarten": sorted(arten.values(), key=lambda a: -a["brutto"]),
             "konten": sorted(konten.values(), key=lambda k: -k["brutto"]),
             "offene": offen_gesamt, "groesste_position": groesster}
+
+
+@app.post("/api/bewirtung/{stamm}")
+async def api_bewirtung(stamm: str, request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if not NAME_RE.match(stamm):
+        return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
+    eintrag = index_aktuell()["belege"].get(stamm)
+    if eintrag is None:
+        return JSONResponse({"fehler": "unbekannter Beleg"}, status_code=404)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    anlass = str(body.get("anlass", "")).strip()[:200]
+    teilnehmer = [str(t).strip()[:80] for t in (body.get("teilnehmer") or []) if str(t).strip()][:20]
+    if not anlass or not teilnehmer:
+        return JSONResponse({"fehler": "Anlass und Teilnehmer gehören dazu"}, status_code=400)
+    inhalt = json.dumps({
+        "anlass": anlass,
+        "teilnehmer": teilnehmer,
+        "beantwortet_von": un,
+        "beantwortet_am": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    }, ensure_ascii=False, indent=1).encode()
+    import boxschreiber  # noqa: PLC0415 — erst beim ersten Schreiben laden
+    try:
+        commit = boxschreiber.schreiben(f"review/{stamm}.bewirtung.json", inhalt,
+                                        f"bewirtung: {stamm}", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"}, status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0  # nächster Read sieht den neuen Stand sofort
+    return JSONResponse({"ok": True, "commit": commit})
+
+
+HOCHLADEN_ENDUNGEN = {".jpg", ".jpeg", ".png", ".pdf", ".heic", ".xml"}
+HOCHLADEN_MAX = 40 * 1024 * 1024
+
+
+@app.post("/api/hochladen")
+async def api_hochladen(request: Request, name: str = "beleg.jpg") -> Response:
+    """Portal-Upload ohne gespeicherten Zugangscode: Cookie-Session + Rohbytes.
+
+    Schreibt den aufnahme:-Commit selbst über das Gateway — :7843 bleibt
+    unangetastet, der Watcher findet die Datei wie jede andere.
+    """
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    endung = Path(name).suffix.lower()
+    if endung not in HOCHLADEN_ENDUNGEN:
+        return JSONResponse({"fehler": "kein Beleg-Format"}, status_code=400)
+    daten = await request.body()
+    if not daten:
+        return JSONResponse({"fehler": "leer"}, status_code=400)
+    if len(daten) > HOCHLADEN_MAX:
+        return JSONResponse({"fehler": "zu groß"}, status_code=413)
+    import boxschreiber  # noqa: PLC0415
+    dateiname = boxschreiber.beleg_dateiname(name)
+    monat = time.strftime("%Y-%m")
+    try:
+        commit = boxschreiber.schreiben(f"docs/{monat}/{dateiname}", daten,
+                                        f"aufnahme: {dateiname}", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"}, status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit, "datei": f"docs/{monat}/{dateiname}"})
 
 
 @app.get("/api/monat/{monat}")

@@ -1,0 +1,92 @@
+"""boxschreiber — Schreibpfad des Portals in die GitChain-Belegbox.
+
+Eigener Clone (~/babu-web/box), NIE die Arbeitskopie des Watchers
+(~/belegreview/babu — dessen `reset --hard` frisst lokale Commits) und nie
+der Bare-Store direkt. Muster wie review_watcher.py: fetch + reset --hard →
+Datei schreiben → Commit mit Autor = angemeldete Nutzerin → Push via Gateway
+mit Service-PAT im Header (Wert ohne Newline — bekannte Falle Nr. 2).
+Push-Rennen mit dem Watcher (15-s-Takt): genau ein Retry, sonst Fehler.
+"""
+import os
+import re
+import secrets
+import subprocess
+import time
+from pathlib import Path
+
+KLON = Path(os.environ.get("BABU_BOX_KLON", str(Path.home() / "babu-web" / "box")))
+GATEWAY = os.environ.get("BABU_GATEWAY", "http://127.0.0.1:7808")
+REF = os.environ.get("BABU_REF", "inspektor/ws-christoph0711.io/babu")
+PAT_PFAD = Path(os.environ.get("BABU_PUSH_PAT", str(Path.home() / "gitchain-eingang" / ".pat_babu")))
+REMOTE = os.environ.get("BABU_BOX_REMOTE", f"{GATEWAY}/git/{REF}.git")
+
+
+class SchreibFehler(RuntimeError):
+    pass
+
+
+def _pat_umgebung() -> dict[str, str]:
+    env = dict(os.environ)
+    try:
+        pat = PAT_PFAD.read_text().strip()
+    except FileNotFoundError:
+        return env  # Tests: Remote ohne Auth (file://)
+    env.update({
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "http.extraHeader",
+        "GIT_CONFIG_VALUE_0": f"Authorization: Bearer {pat}",
+    })
+    return env
+
+
+def _git(*args: str, timeout: int = 30) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-C", str(KLON), *args],
+                          capture_output=True, text=True, timeout=timeout,
+                          env=_pat_umgebung())
+
+
+def _bereit() -> None:
+    if not (KLON / ".git").exists():
+        KLON.parent.mkdir(parents=True, exist_ok=True)
+        r = subprocess.run(["git", "clone", REMOTE, str(KLON)],
+                           capture_output=True, text=True, timeout=60,
+                           env=_pat_umgebung())
+        if r.returncode != 0:
+            raise SchreibFehler(f"Clone fehlgeschlagen: {r.stderr.strip()[:200]}")
+        _git("config", "user.name", "babu-portal")
+        _git("config", "user.email", "portal@gitchain.local")
+    r = _git("fetch", "origin", timeout=30)
+    if r.returncode != 0:
+        raise SchreibFehler(f"Fetch fehlgeschlagen: {r.stderr.strip()[:200]}")
+    _git("reset", "--hard", "origin/main")
+
+
+def schreiben(rel_pfad: str, inhalt: bytes, nachricht: str, autor_un: str) -> str:
+    """Datei committen + pushen; gibt den Kurz-Hash zurück. Ein Push-Retry."""
+    if not re.match(r"^[A-Za-z0-9._/ -]{1,200}$", rel_pfad) or ".." in rel_pfad:
+        raise SchreibFehler("ungültiger Pfad")
+    autor = f"{autor_un} <portal@gitchain.local>"
+    letzter_fehler = ""
+    for versuch in (1, 2):
+        _bereit()
+        ziel = KLON / rel_pfad
+        ziel.parent.mkdir(parents=True, exist_ok=True)
+        ziel.write_bytes(inhalt)
+        _git("add", rel_pfad)
+        r = _git("commit", "-m", nachricht, "--author", autor)
+        if r.returncode != 0:
+            raise SchreibFehler(f"Commit fehlgeschlagen: {r.stderr.strip()[:200]}")
+        p = _git("push", "origin", "main", timeout=30)
+        if p.returncode == 0:
+            h = _git("rev-parse", "--short", "HEAD")
+            return h.stdout.strip()
+        letzter_fehler = p.stderr.strip()[:200]
+        time.sleep(0.7)  # Watcher-Push abklingen lassen, dann frisch aufsetzen
+    raise SchreibFehler(f"Push fehlgeschlagen (auch nach Retry): {letzter_fehler}")
+
+
+def beleg_dateiname(original: str) -> str:
+    """Server-Namensschema JJJJMMTT-HHMMSS-<hex>-<name> wie beim Eingang."""
+    stamm = re.sub(r"[^A-Za-z0-9._-]", "_", original)[-80:] or "beleg"
+    zeit = time.strftime("%Y%m%d-%H%M%S")
+    return f"{zeit}-{secrets.token_hex(3)}-{stamm}"
