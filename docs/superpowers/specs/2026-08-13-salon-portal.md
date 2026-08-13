@@ -257,3 +257,13 @@ Messbar aus vorhandenen Daten: `audit.aufnahme.zeit` / `audit.review.zeit` (in j
 1. Anmeldefluss langfristig: Gerätecode-Fluss vs. Magic-Link (Stufe 1: Zugangscode-Feld).
 2. Zeigt der Beleg-Weg „Bei der Kanzlei" schon vor dem EXTF-Writer (dann endet er bei „liegt bereit")? → Ja, so bauen.
 3. Web-Push für die PWA oder Mail genügt (Stufe 3)? → Mail zuerst.
+
+## Anhang: Bestandsaufnahme Belegbox (Task 0.3, Stand 13.08.2026)
+
+| Zustand | Anzahl | Beispiel-Stamm |
+|---|---|---|
+| Review vorhanden, Status **nachfrage** (offen: Trinkgeld-Differenz 160,00 vs. 142,60; Bewirtung 6640) | 1 | `20260812-225200-c781d6-beleg_2026-07-21_weingaerty_22bf8b36` |
+| **erfasst** ohne Review (PDF — Watcher kann noch kein PDF, Stufe 4) | 2 | `20260812-211943-99b8fb-beleg-test.pdf`, `20260812-211943-a018da-beleg-test.pdf` |
+| Status **geprüft** (offen leer + Summenprobe ok) | 0 | — (entsteht mit den nächsten Foto-Belegen) |
+
+Golden-Fixtures: `server/belegreview/tests/golden/` (review_weingaertle.json byte-stabil; chat_sse_mitschnitt.txt = Protokollform). pm2-Dienste zum Zeitpunkt der Aufnahme online: `babu-eingang`, `babu-tunnel`, `babu-web`, `belege-review` (Achtung: pm2-Name ist `belege-review`, nicht `belegreview`).

@@ -1,0 +1,118 @@
+data: {"d": "Der"}
+
+data: {"d": " Be"}
+
+data: {"d": "leg"}
+
+data: {"d": " vom"}
+
+data: {"d": " Rot"}
+
+data: {"d": "en"}
+
+data: {"d": "berger"}
+
+data: {"d": " Weing"}
+
+data: {"d": "ärt"}
+
+data: {"d": "le"}
+
+data: {"d": " ("}
+
+data: {"d": "2"}
+
+data: {"d": "1"}
+
+data: {"d": "."}
+
+data: {"d": "0"}
+
+data: {"d": "7"}
+
+data: {"d": "."}
+
+data: {"d": "2"}
+
+data: {"d": "0"}
+
+data: {"d": "2"}
+
+data: {"d": "6"}
+
+data: {"d": ")"}
+
+data: {"d": " ist"}
+
+data: {"d": " ein"}
+
+data: {"d": " Bew"}
+
+data: {"d": "irt"}
+
+data: {"d": "ungs"}
+
+data: {"d": "be"}
+
+data: {"d": "leg"}
+
+data: {"d": " über"}
+
+data: {"d": " einen"}
+
+data: {"d": " Br"}
+
+data: {"d": "utt"}
+
+data: {"d": "ob"}
+
+data: {"d": "et"}
+
+data: {"d": "rag"}
+
+data: {"d": " von"}
+
+data: {"d": " "}
+
+data: {"d": "1"}
+
+data: {"d": "4"}
+
+data: {"d": "2"}
+
+data: {"d": ","}
+
+data: {"d": "6"}
+
+data: {"d": "0"}
+
+data: {"d": " €"}
+
+data: {"d": " z"}
+
+data: {"d": "zgl"}
+
+data: {"d": "."}
+
+data: {"d": " "}
+
+data: {"d": "1"}
+
+data: {"d": "7"}
+
+data: {"d": ","}
+
+data: {"d": "4"}
+
+data: {"d": "0"}
+
+data: {"d": " €"}
+
+data: {"d": " Trink"}
+
+data: {"d": "geld"}
+
+data: {"d": "."}
+
+data: [DONE]
+
