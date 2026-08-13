@@ -10,10 +10,15 @@
 Liest NUR aus dem Bare-Store (git show) — schreibt nichts, kein Lock-Risiko.
 /ablage und /health laufen weiter direkt zum Eingang (:7843, Tunnel-Ingress).
 """
+import base64
+import hmac
+import hashlib
 import json
 import os
 import re
+import secrets
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -22,8 +27,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 WURZEL = Path(__file__).resolve().parent
-SEITE = Path.home() / "babu-web" / "index.html"
-STORE = Path.home() / "inspektor-store" / "inspektor" / "ws-christoph0711.io" / "babu.git"
+SEITE = Path(os.environ.get("BABU_SEITE", str(Path.home() / "babu-web" / "index.html")))
+STORE = Path(os.environ.get("BABU_STORE", str(Path.home() / "inspektor-store" / "inspektor"
+                                              / "ws-christoph0711.io" / "babu.git")))
+GEHEIMNIS_PFAD = Path(os.environ.get("BABU_SESSION_GEHEIMNIS",
+                                     str(Path.home() / "babu-web" / ".session_geheimnis")))
+PORTAL_ORIGIN = os.environ.get("BABU_ORIGIN", "https://babu.0711.io")
 GITCHAIN_ID = os.environ.get("GITCHAIN_ID_HOST", "https://gitchain.de").rstrip("/")
 GEMMA_API = os.environ.get("GEMMA_API", "http://127.0.0.1:11435/v1/chat/completions")
 GEMMA_MODELL = os.environ.get("GEMMA_MODELL", "gemma4-mm")
@@ -36,14 +45,10 @@ app = FastAPI(title="babu-web", docs_url=None, redoc_url=None)
 _CACHE: dict[int, tuple[str, float]] = {}
 
 
-def wer(request: Request) -> str | None:
-    hdr = request.headers.get("authorization", "")
-    if not hdr.lower().startswith("bearer "):
-        return None
-    token = hdr[7:].strip()
+def wer_token(token: str) -> str | None:
+    """PAT → Benutzername via whoami (mit 5-min-Cache). Kein Format-Vorurteil."""
     if not token:
         return None
-    # Kein Format-Vorurteil: wie der Eingang entscheidet allein whoami.
     schluessel = hash(token)
     jetzt = time.time()
     eintrag = _CACHE.get(schluessel)
@@ -66,6 +71,78 @@ def wer(request: Request) -> str | None:
     return un
 
 
+def wer(request: Request) -> str | None:
+    hdr = request.headers.get("authorization", "")
+    if not hdr.lower().startswith("bearer "):
+        return None
+    return wer_token(hdr[7:].strip())
+
+
+# ---------------------------------------------------------------------------
+# Session (Portal): PAT einmal einlösen → HttpOnly-Cookie. Der PAT wird nicht
+# gespeichert; das Cookie trägt nur {un, exp}, HMAC-signiert.
+# ---------------------------------------------------------------------------
+
+SESSION_COOKIE = "babu_sitzung"
+SESSION_DAUER = 30 * 24 * 3600  # 30 Tage, gleitend
+
+
+def _geheimnis() -> bytes:
+    try:
+        wert = GEHEIMNIS_PFAD.read_text().strip()
+        if wert:
+            return wert.encode()
+    except FileNotFoundError:
+        pass
+    wert = secrets.token_hex(32)
+    GEHEIMNIS_PFAD.parent.mkdir(parents=True, exist_ok=True)
+    GEHEIMNIS_PFAD.write_text(wert + "\n")
+    GEHEIMNIS_PFAD.chmod(0o600)
+    return wert.encode()
+
+
+def _signieren(un: str, exp: int) -> str:
+    nutz = base64.urlsafe_b64encode(f"{un}|{exp}".encode()).decode().rstrip("=")
+    sig = hmac.new(_geheimnis(), nutz.encode(), hashlib.sha256).hexdigest()
+    return f"{nutz}.{sig}"
+
+
+def _pruefen(wert: str) -> str | None:
+    try:
+        nutz, sig = wert.split(".", 1)
+        erwartet = hmac.new(_geheimnis(), nutz.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, erwartet):
+            return None
+        roh = base64.urlsafe_b64decode(nutz + "=" * (-len(nutz) % 4)).decode()
+        un, exp = roh.split("|", 1)
+        if int(exp) < time.time():
+            return None
+        return un.lower() or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _origin_ok(request: Request) -> bool:
+    """CSRF-Schutz für Cookie-POSTs: Origin (falls gesendet) muss passen."""
+    origin = request.headers.get("origin")
+    if not origin:
+        return True
+    return origin.rstrip("/") in {PORTAL_ORIGIN.rstrip("/"),
+                                  "http://127.0.0.1:7844", "http://localhost:7844"}
+
+
+def angemeldet(request: Request) -> str | None:
+    """Cookie ODER Bearer — Portal und App teilen dieselben /api/*-Routen."""
+    cookie = request.cookies.get(SESSION_COOKIE)
+    if cookie:
+        un = _pruefen(cookie)
+        if un:
+            if request.method not in ("GET", "HEAD") and not _origin_ok(request):
+                return None
+            return un
+    return wer(request)
+
+
 def git_show(pfad: str) -> bytes | None:
     r = subprocess.run(["git", "-C", str(STORE), "show", f"HEAD:{pfad}"],
                        capture_output=True, timeout=20)
@@ -85,9 +162,387 @@ def review_pfad(stamm: str) -> str | None:
     return f"review/{kandidaten[0]}" if len(kandidaten) == 1 else None
 
 
+# ---------------------------------------------------------------------------
+# Index über den Git-Store: einmal lesen, aus dem Speicher servieren.
+# Invalidierung über HEAD (rev-parse, ~5 s TTL); Blobs Blob-OID-gecacht via
+# cat-file --batch — kein Subprocess-Sturm pro Request.
+# ---------------------------------------------------------------------------
+
+BILD_ENDUNGEN = {".jpg", ".jpeg", ".png"}
+BELEG_ENDUNGEN = BILD_ENDUNGEN | {".pdf", ".heic", ".xml"}
+INDEX_TTL = float(os.environ.get("BABU_INDEX_TTL", "5"))
+
+_INDEX_LOCK = threading.Lock()
+_INDEX: dict = {"head": None, "geprueft": 0.0, "belege": {}, "reviews": {},
+                "zeiten": {}, "oid_cache": {}}
+
+
+def _git(args: list[str], timeout: int = 30) -> str | None:
+    r = subprocess.run(["git", "-C", str(STORE), *args],
+                       capture_output=True, text=True, timeout=timeout)
+    return r.stdout if r.returncode == 0 else None
+
+
+def _blobs_lesen(oids: list[str]) -> dict[str, bytes]:
+    """Mehrere Blobs mit EINEM cat-file-Prozess lesen."""
+    if not oids:
+        return {}
+    p = subprocess.run(["git", "-C", str(STORE), "cat-file", "--batch"],
+                       input="\n".join(oids).encode() + b"\n",
+                       capture_output=True, timeout=60)
+    ergebnis: dict[str, bytes] = {}
+    daten = p.stdout
+    pos = 0
+    while pos < len(daten):
+        ende = daten.find(b"\n", pos)
+        if ende < 0:
+            break
+        kopf = daten[pos:ende].decode(errors="replace").split()
+        pos = ende + 1
+        if len(kopf) == 3 and kopf[1] == "blob":
+            groesse = int(kopf[2])
+            ergebnis[kopf[0]] = daten[pos:pos + groesse]
+            pos += groesse + 1  # + Trenn-Newline
+        # "missing"-Zeilen haben keinen Body
+    return ergebnis
+
+
+def _monat_aus_name(name: str, pfad: str) -> str | None:
+    m = re.match(r"^(\d{4})(\d{2})\d{2}-", name)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}"
+    m = re.match(r"^docs/(\d{4}-\d{2})/", pfad)
+    return m.group(1) if m else None
+
+
+def _zeiten_walk() -> dict[str, dict]:
+    """Pro Pfad der jüngste Commit (== `git log -1 -- pfad`), ein Prozess."""
+    out = _git(["log", "--format=@%h|%cI|%an", "--name-status"], 60) or ""
+    zeiten: dict[str, dict] = {}
+    aktuell: dict | None = None
+    for zeile in out.splitlines():
+        if zeile.startswith("@"):
+            h, zeit, autor = zeile[1:].split("|", 2)
+            aktuell = {"commit": h, "zeit": zeit, "autor": autor}
+        elif "\t" in zeile and aktuell:
+            pfad = zeile.split("\t")[-1]  # bei Renames zählt das Ziel
+            zeiten.setdefault(pfad, aktuell)
+    return zeiten
+
+
+def _status_ableiten(review: dict | None, bewirtung_da: bool) -> str:
+    if review is None:
+        return "erfasst"
+    f = review.get("felder") or {}
+    offen = list(f.get("offen") or [])
+    braucht_bewirtung = bool(f.get("bewirtungssignal")) and not bewirtung_da
+    if not offen and not braucht_bewirtung and f.get("summenprobe_ok"):
+        return "geprüft"
+    return "nachfrage"
+
+
+def _index_bauen(head: str) -> None:
+    out = _git(["ls-tree", "-r", "HEAD", "--format=%(objectname) %(path)"], 60) or ""
+    pfade: dict[str, str] = {}
+    for zeile in out.splitlines():
+        teile = zeile.split(" ", 1)
+        if len(teile) == 2:
+            pfade[teile[1]] = teile[0]
+
+    review_pfade = {p: oid for p, oid in pfade.items()
+                    if p.startswith("review/") and p.endswith(".json")
+                    and not p.endswith(".embedding.json")
+                    and not p.endswith(".bewirtung.json")}
+    bewirtung_staemme = {p[len("review/"):-len(".bewirtung.json")]
+                         for p in pfade if p.endswith(".bewirtung.json")}
+    beleg_pfade = [p for p in pfade
+                   if p.startswith("docs/") and Path(p).suffix.lower() in BELEG_ENDUNGEN]
+
+    oid_cache = _INDEX["oid_cache"]
+    fehlend = [oid for oid in review_pfade.values() if oid not in oid_cache]
+    for oid, roh in _blobs_lesen(fehlend).items():
+        try:
+            oid_cache[oid] = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            oid_cache[oid] = None
+
+    zeiten = _zeiten_walk()
+
+    belege: dict[str, dict] = {}
+    reviews: dict[str, dict] = {}
+    for pfad in beleg_pfade:
+        name = pfad.rsplit("/", 1)[-1]
+        stamm = re.sub(r"\.[A-Za-z0-9]+$", "", name)
+        review_pfad_ = f"review/{stamm}.json"
+        review = oid_cache.get(review_pfade.get(review_pfad_, ""))
+        bewirtung_da = stamm in bewirtung_staemme
+        f = (review or {}).get("felder") or {}
+        v = (review or {}).get("vlm") or {}
+        e = (review or {}).get("einschaetzung") or {}
+        eintrag = {
+            "stamm": stamm,
+            "datei": pfad,
+            "bild_oid": pfade.get(pfad),
+            "monat": _monat_aus_name(name, pfad),
+            "hochgeladen": (zeiten.get(pfad) or {}).get("zeit"),
+            "status": _status_ableiten(review, bewirtung_da),
+            "review_zeit": (zeiten.get(review_pfad_) or {}).get("zeit") if review else None,
+            "lieferant": v.get("lieferant") or f.get("lieferant"),
+            "datum": f.get("datum"),
+            "brutto": f.get("brutto"),
+            "netto": f.get("netto"),
+            "ust": f.get("ust"),
+            "ust_satz": f.get("ust_satz"),
+            "belegart": (review or {}).get("semantik", {}).get("belegart") if review else None,
+            "dokumentklasse": (review or {}).get("dokumentklasse") if review else None,
+            "konto_skr04": e.get("konto_skr04"),
+            "steuerschluessel": e.get("steuerschluessel"),
+            "buchungstext": (datev_buchungssatz(review) or {}).get("buchungstext") if review else None,
+            "offen": list(f.get("offen") or []),
+            "summenprobe_ok": f.get("summenprobe_ok"),
+            "bewirtung": bool(f.get("bewirtungssignal")),
+            "bewirtung_beantwortet": bewirtung_da,
+        }
+        belege[stamm] = eintrag
+        if review is not None:
+            reviews[stamm] = review
+
+    _INDEX["belege"] = belege
+    _INDEX["reviews"] = reviews
+    _INDEX["zeiten"] = zeiten
+    _INDEX["head"] = head
+    _INDEX["geprueft"] = time.time()
+
+
+def index_aktuell() -> dict:
+    with _INDEX_LOCK:
+        jetzt = time.time()
+        if _INDEX["head"] is not None and jetzt - _INDEX["geprueft"] < INDEX_TTL:
+            return _INDEX
+        kopf = (_git(["rev-parse", "HEAD"], 10) or "").strip()
+        if kopf and kopf != _INDEX["head"]:
+            _index_bauen(kopf)
+        else:
+            _INDEX["geprueft"] = jetzt
+        return _INDEX
+
+
+def _beleg_liste(monat: str | None = None, status: str | None = None) -> list[dict]:
+    idx = index_aktuell()
+    zeilen = list(idx["belege"].values())
+    if monat:
+        zeilen = [z for z in zeilen if z["monat"] == monat]
+    if status:
+        zeilen = [z for z in zeilen if z["status"] == status]
+    zeilen.sort(key=lambda z: (z["hochgeladen"] or "", z["stamm"]), reverse=True)
+    return zeilen
+
+
 @app.get("/")
 def seite() -> FileResponse:
     return FileResponse(SEITE, media_type="text/html")
+
+
+@app.get("/portal")
+def portal_seite() -> FileResponse:
+    return FileResponse(WURZEL / "portal.html", media_type="text/html")
+
+
+@app.get("/portal/manifest.json")
+def portal_manifest() -> FileResponse:
+    return FileResponse(WURZEL / "portal.manifest.json", media_type="application/manifest+json")
+
+
+@app.get("/portal/sw.js")
+def portal_sw() -> FileResponse:
+    return FileResponse(WURZEL / "portal.sw.js", media_type="text/javascript")
+
+
+# ---------------------------------------------------------------------------
+# Portal-API
+# ---------------------------------------------------------------------------
+
+def _api_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]:
+    un = angemeldet(request)
+    if un is None:
+        return None, JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
+    if un not in ERLAUBT:
+        return None, JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    return un, None
+
+
+@app.post("/api/anmelden")
+async def api_anmelden(request: Request) -> Response:
+    if not _origin_ok(request):
+        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    un = wer_token(str(body.get("pat", "")).strip())
+    if un is None:
+        return JSONResponse({"fehler": "Zugangscode ungültig"}, status_code=401)
+    if un not in ERLAUBT:
+        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    exp = int(time.time()) + SESSION_DAUER
+    antwort = JSONResponse({"un": un})
+    antwort.set_cookie(SESSION_COOKIE, _signieren(un, exp), max_age=SESSION_DAUER,
+                       httponly=True, secure=True, samesite="lax", path="/")
+    return antwort
+
+
+@app.post("/api/abmelden")
+def api_abmelden(request: Request) -> Response:
+    antwort = JSONResponse({"ok": True})
+    antwort.delete_cookie(SESSION_COOKIE, path="/")
+    return antwort
+
+
+@app.get("/api/ich")
+def api_ich(request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    # Gleitende Verlängerung: bei jedem Besuch frisch gesetzt.
+    exp = int(time.time()) + SESSION_DAUER
+    antwort = JSONResponse({"un": un})
+    if request.cookies.get(SESSION_COOKIE):
+        antwort.set_cookie(SESSION_COOKIE, _signieren(un, exp), max_age=SESSION_DAUER,
+                           httponly=True, secure=True, samesite="lax", path="/")
+    return antwort
+
+
+@app.get("/api/belege")
+def api_belege(request: Request, monat: str | None = None, status: str | None = None,
+               limit: int = 200, seite_nr: int = 1) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    idx = index_aktuell()
+    etag = f'"{idx["head"]}"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers={"ETag": etag})
+    zeilen = _beleg_liste(monat, status)
+    gesamt = len(zeilen)
+    limit = max(1, min(limit, 500))
+    seite_nr = max(1, seite_nr)
+    anfang = (seite_nr - 1) * limit
+    monate = sorted({z["monat"] for z in idx["belege"].values() if z["monat"]}, reverse=True)
+    return JSONResponse({"belege": zeilen[anfang:anfang + limit], "gesamt": gesamt,
+                         "monate": monate, "stand": idx["head"]},
+                        headers={"ETag": etag})
+
+
+@app.get("/api/beleg/{stamm}")
+def api_beleg(stamm: str, request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if not NAME_RE.match(stamm):
+        return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
+    stamm = re.sub(r"\.(jpg|jpeg|png|pdf|heic|xml)$", "", stamm, flags=re.I)
+    idx = index_aktuell()
+    eintrag = idx["belege"].get(stamm)
+    if eintrag is None:
+        # Suffix-Match wie /review (die App kennt nur ihren lokalen Namen).
+        treffer = [s for s in idx["belege"] if s.endswith("-" + stamm)]
+        if len(treffer) == 1:
+            stamm = treffer[0]
+            eintrag = idx["belege"][stamm]
+    if eintrag is None:
+        return JSONResponse({"fehler": "unbekannter Beleg"}, status_code=404)
+
+    d: dict = {}
+    pfad = review_pfad(stamm)
+    if pfad is not None:
+        roh = git_show(pfad)
+        if roh is not None:
+            try:
+                d = json.loads(roh)
+            except Exception:  # noqa: BLE001
+                d = {}
+    d["audit"] = {"aufnahme": commit_info(eintrag["datei"]),
+                  "review": commit_info(pfad) if pfad else None}
+    d["buchungssatz"] = datev_buchungssatz(d) if d else None
+    d["status"] = eintrag["status"]
+    d["stamm"] = stamm
+    d["monat"] = eintrag["monat"]
+    d["datei"] = eintrag["datei"]
+    d["bild_url"] = f"/api/beleg/{stamm}/bild?v={eintrag['bild_oid']}"
+    d["bewirtung_beantwortet"] = eintrag["bewirtung_beantwortet"]
+    return JSONResponse(d)
+
+
+@app.get("/api/beleg/{stamm}/bild")
+def api_beleg_bild(stamm: str, request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if not NAME_RE.match(stamm):
+        return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
+    eintrag = index_aktuell()["belege"].get(stamm)
+    if eintrag is None:
+        return JSONResponse({"fehler": "unbekannter Beleg"}, status_code=404)
+    daten = git_show(eintrag["datei"])
+    if daten is None:
+        return JSONResponse({"fehler": "Lesefehler"}, status_code=500)
+    endung = Path(eintrag["datei"]).suffix.lower()
+    typ = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+           ".pdf": "application/pdf", ".heic": "image/heic", ".xml": "application/xml"}.get(endung, "application/octet-stream")
+    return Response(content=daten, media_type=typ,
+                    headers={"Cache-Control": "private, max-age=31536000, immutable"})
+
+
+def _monat_summen(monat: str) -> dict:
+    zeilen = [z for z in index_aktuell()["belege"].values() if z["monat"] == monat]
+    arten: dict[str, dict] = {}
+    konten: dict[str, dict] = {}
+    offen_gesamt: list[dict] = []
+    brutto_summe = 0.0
+    groesster: dict | None = None
+    for z in zeilen:
+        if z["brutto"] is not None:
+            brutto_summe += z["brutto"]
+            art = z["belegart"] or "Sonstiges"
+            a = arten.setdefault(art, {"belegart": art, "brutto": 0.0, "netto": 0.0,
+                                       "ust": 0.0, "anzahl": 0, "lieferanten": []})
+            a["brutto"] += z["brutto"]
+            a["netto"] += z["netto"] or 0.0
+            a["ust"] += z["ust"] or 0.0
+            a["anzahl"] += 1
+            if z["lieferant"] and z["lieferant"] not in a["lieferanten"]:
+                a["lieferanten"].append(z["lieferant"])
+            if z["konto_skr04"]:
+                k = konten.setdefault(z["konto_skr04"], {"konto": z["konto_skr04"],
+                                                         "brutto": 0.0, "anzahl": 0})
+                k["brutto"] += z["brutto"]
+                k["anzahl"] += 1
+            if groesster is None or z["brutto"] > groesster["brutto"]:
+                groesster = {"stamm": z["stamm"], "lieferant": z["lieferant"],
+                             "brutto": z["brutto"], "belegart": z["belegart"]}
+        if z["status"] in ("nachfrage", "erfasst"):
+            offen_gesamt.append({"stamm": z["stamm"], "status": z["status"],
+                                 "lieferant": z["lieferant"], "brutto": z["brutto"],
+                                 "offen": z["offen"], "bewirtung": z["bewirtung"],
+                                 "bewirtung_beantwortet": z["bewirtung_beantwortet"]})
+    return {"monat": monat, "anzahl": len(zeilen), "brutto": round(brutto_summe, 2),
+            "belegarten": sorted(arten.values(), key=lambda a: -a["brutto"]),
+            "konten": sorted(konten.values(), key=lambda k: -k["brutto"]),
+            "offene": offen_gesamt, "groesste_position": groesster}
+
+
+@app.get("/api/monat/{monat}")
+def api_monat(monat: str, request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if not re.match(r"^\d{4}-\d{2}$", monat):
+        return JSONResponse({"fehler": "ungültiger Monat"}, status_code=400)
+    jahr, mon = int(monat[:4]), int(monat[5:7])
+    vor = f"{jahr - 1}-12" if mon == 1 else f"{jahr}-{mon - 1:02d}"
+    daten = _monat_summen(monat)
+    daten["vormonat"] = _monat_summen(vor)
+    return JSONResponse(daten)
 
 
 @app.get("/review/{stamm}")
@@ -167,23 +622,16 @@ def datev_buchungssatz(d: dict) -> dict | None:
 
 
 def belegdaten_kontext(max_zeichen: int = 12000) -> str:
-    """Kompakte Zusammenfassung aller Reviews als Chat-Kontext (neueste zuerst)."""
-    r = subprocess.run(["git", "-C", str(STORE), "ls-tree", "--name-only", "HEAD:review"],
-                       capture_output=True, text=True, timeout=20)
-    if r.returncode != 0:
-        return ""
-    dateien = [z for z in r.stdout.splitlines()
-               if z.endswith(".json") and not z.endswith(".embedding.json")]
+    """Kompakte Zusammenfassung aller Reviews als Chat-Kontext (neueste zuerst).
+
+    Liest aus dem Index (ein rev-parse im warmen Fall) — Textformat unverändert.
+    """
+    reviews = index_aktuell()["reviews"]
     bloecke: list[str] = []
     laenge = 0
-    for name in sorted(dateien, reverse=True):
-        roh = git_show(f"review/{name}")
-        if roh is None:
-            continue
-        try:
-            d = json.loads(roh)
-        except Exception:  # noqa: BLE001
-            continue
+    for stamm in sorted(reviews, reverse=True):
+        d = reviews[stamm]
+        name = f"{stamm}.json"
         f = d.get("felder", {})
         e = d.get("einschaetzung", {})
         v = d.get("vlm") or {}
@@ -210,7 +658,7 @@ def belegdaten_kontext(max_zeichen: int = 12000) -> str:
 
 @app.post("/chat")
 async def chat(request: Request) -> Response:
-    un = wer(request)
+    un = angemeldet(request)   # Cookie (Portal) ODER Bearer (App) — Wire-Format unverändert
     if un is None:
         return JSONResponse({"fehler": "Token fehlt oder ungültig"}, status_code=401)
     if un not in ERLAUBT:
