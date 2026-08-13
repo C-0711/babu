@@ -94,6 +94,13 @@ _METRIK = {"start": time.time(), "requests": 0, "fehler_5xx": 0, "davon_304": 0,
 
 @app.middleware("http")
 async def _metrik_mw(request: Request, call_next):
+    # Tippfehler-Toleranz: //portal → /portal (308 behält die Methode bei)
+    pfad = request.url.path
+    if "//" in pfad:
+        sauber = re.sub(r"/{2,}", "/", pfad)
+        from fastapi.responses import RedirectResponse  # noqa: PLC0415
+        return RedirectResponse(url=sauber + (("?" + request.url.query) if request.url.query else ""),
+                                status_code=308)
     t0 = time.perf_counter()
     antwort = await call_next(request)
     _METRIK["requests"] += 1
