@@ -242,12 +242,15 @@ def _status_ableiten(review: dict | None, bewirtung_da: bool) -> str:
 
 
 def _index_bauen(head: str) -> None:
-    out = _git(["ls-tree", "-r", "HEAD", "--format=%(objectname) %(path)"], 60) or ""
+    # Klassisches ls-tree-Format „<mode> <typ> <oid>\t<pfad>“ — läuft auch auf
+    # Git < 2.36 (H200V: 2.34), das --format für ls-tree noch nicht kennt.
+    out = _git(["ls-tree", "-r", "HEAD"], 60) or ""
     pfade: dict[str, str] = {}
     for zeile in out.splitlines():
-        teile = zeile.split(" ", 1)
-        if len(teile) == 2:
-            pfade[teile[1]] = teile[0]
+        kopf, _, pfad = zeile.partition("\t")
+        teile = kopf.split()
+        if pfad and len(teile) == 3 and teile[1] == "blob":
+            pfade[pfad] = teile[2]
 
     review_pfade = {p: oid for p, oid in pfade.items()
                     if p.startswith("review/") and p.endswith(".json")
