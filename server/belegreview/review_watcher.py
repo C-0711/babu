@@ -256,7 +256,6 @@ def vlm_lesen(bildpfad: Path) -> dict | None:
     """Gemma 4 liest das Beleg-BILD (Lane B): strukturiertes JSON, nichts raten."""
     import base64
     b64 = base64.b64encode(bildpfad.read_bytes()).decode()
-    mime = "image/png" if bildpfad.suffix.lower() == ".png" else "image/jpeg"
     anweisung = (
         "Du liest einen deutschen Geschäftsbeleg (Foto). Antworte NUR mit einem "
         "JSON-Objekt ohne Markdown und ohne Erklärung, exakt diese Schlüssel "
@@ -275,7 +274,7 @@ def vlm_lesen(bildpfad: Path) -> dict | None:
         "temperature": 0,
         "max_tokens": 500,
         "messages": [{"role": "user", "content": [
-            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
             {"type": "text", "text": anweisung},
         ]}],
     }
@@ -520,7 +519,6 @@ def verarbeite(pfad: str) -> None:
 
     review = {
         "datei": pfad,
-        "status": "ok",
         "engine": "PaddleOCR PP-OCRv5 (CPU, H200V)",
         "gelesen": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "dauer_s": round(dauer, 2),
@@ -576,57 +574,13 @@ def verarbeite(pfad: str) -> None:
     log(f"review: {Path(pfad).name} — {e['belegart']}, brutto {f['brutto']}, {dauer:.1f}s OCR")
 
 
-# Ein kaputter Beleg darf die Kette nicht dauerhaft blockieren (Poison Pill):
-# pro Beleg eigener try/except; nach MAX_VERSUCHE wird ein Fehl-Review
-# committet, damit der Beleg aus `offene_belege()` verschwindet und die App
-# einen ehrlichen Status zeigen kann.
-FEHLVERSUCHE: dict[str, int] = {}
-MAX_VERSUCHE = 3
-
-
-def fehlreview_schreiben(pfad: str, grund: str) -> None:
-    name = Path(pfad).stem
-    ordner = ARBEIT / "review"
-    ordner.mkdir(exist_ok=True)
-    review = {
-        "datei": pfad,
-        "status": "fehlgeschlagen",
-        "grund": grund[:300],
-        "versuche": FEHLVERSUCHE.get(pfad, MAX_VERSUCHE),
-        "gelesen": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-    }
-    (ordner / f"{name}.json").write_text(
-        json.dumps(review, ensure_ascii=False, indent=1), encoding="utf-8")
-    (ordner / f"{name}.md").write_text(
-        f"# BelegReview · {Path(pfad).name}\n\n"
-        f"**Zweitprüfung fehlgeschlagen** nach {review['versuche']} Versuchen.\n\n"
-        f"Grund: {review['grund']}\n", encoding="utf-8")
-    git("add", f"review/{name}.json", f"review/{name}.md")
-    c = git("commit", "--author", AUTOR, "-m", f"review: {Path(pfad).name} fehlgeschlagen")
-    if c.returncode != 0:
-        log(f"fehl-review commit fehlgeschlagen für {name}: {c.stderr.strip()[-150:]}")
-        return
-    p = git("push", "origin", "main")
-    if p.returncode != 0:
-        git("fetch", "origin")
-        git("reset", "--hard", "origin/main")
-
-
 def hauptschleife() -> None:
     log(f"BelegReview-Watcher startet (Takt {TAKT}s, Remote {REMOTE})")
     while True:
         try:
             if arbeitskopie_bereit():
                 for pfad in offene_belege():
-                    try:
-                        verarbeite(pfad)
-                        FEHLVERSUCHE.pop(pfad, None)
-                    except Exception as ex:  # noqa: BLE001 — nur dieser Beleg
-                        FEHLVERSUCHE[pfad] = FEHLVERSUCHE.get(pfad, 0) + 1
-                        log(f"{pfad} fehlgeschlagen "
-                            f"(Versuch {FEHLVERSUCHE[pfad]}/{MAX_VERSUCHE}): {ex!r}")
-                        if FEHLVERSUCHE[pfad] >= MAX_VERSUCHE:
-                            fehlreview_schreiben(pfad, repr(ex))
+                    verarbeite(pfad)
         except Exception as e:  # noqa: BLE001
             log(f"Fehler: {e!r}")
         time.sleep(TAKT)

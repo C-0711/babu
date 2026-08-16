@@ -474,7 +474,7 @@ struct DetailView: View {
             if let audit = r.audit {
                 store.auditSetzen(id: b.id, aufnahme: audit.aufnahme?.commit,
                                   review: audit.review?.commit,
-                                  status: r.status ?? "ok")
+                                  status: r.fehlgeschlagen ? "fehlgeschlagen" : "ok")
             }
         case .nochNicht where review == nil:
             reviewHinweis = "Zweitprüfung läuft — gleich verfügbar (↻ zum Aktualisieren)."

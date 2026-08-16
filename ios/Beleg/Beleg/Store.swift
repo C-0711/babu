@@ -221,7 +221,7 @@ final class AppStore: ObservableObject {
         guard case .fertig(let review) = await AblageService.reviewAbrufen(
             stamm: stamm, basis: url, pat: pat), let audit = review.audit else { return }
         auditSetzen(id: id, aufnahme: audit.aufnahme?.commit, review: audit.review?.commit,
-                    status: review.status ?? "ok")
+                    status: review.fehlgeschlagen ? "fehlgeschlagen" : "ok")
     }
 
     func auditSetzen(id: UUID, aufnahme: String?, review: String?, status: String? = nil) {

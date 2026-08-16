@@ -240,17 +240,22 @@ struct BelegReviewDaten: Codable {
     var engine: String?
     var zeilen: Int?
     var ocrKonfidenz: Double?
-    /// "ok" oder "fehlgeschlagen" — Fehl-Reviews haben weder Felder noch
-    /// Einschätzung, deshalb sind beide optional.
+    var dokumentklasse: String?
     var status: String?
-    var grund: String?
     var felder: Felder?
     var einschaetzung: Einschaetzung?
     var vlm: Vlm?
     var audit: Audit?
     var buchungssatz: Buchungssatz?
 
-    var fehlgeschlagen: Bool { status == "fehlgeschlagen" }
+    /// Lesung gescheitert? Der Watcher schließt so einen Beleg mit einem
+    /// Stub-Review ab (engine "BelegReview-Stub", Dokumentklasse "unlesbar") —
+    /// das ist der Live-Vertrag des Salon-Portals; `status` bleibt als
+    /// zusätzliche, zukunftssichere Kennung verstanden.
+    var fehlgeschlagen: Bool {
+        status == "fehlgeschlagen"
+            || (engine == "BelegReview-Stub" && dokumentklasse?.lowercased() == "unlesbar")
+    }
 }
 
 /// PAT-Ablage ausschließlich in der iOS-Keychain — nie im JSON-Store, nie im Log.
