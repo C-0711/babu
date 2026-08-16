@@ -129,6 +129,8 @@ final class AppStore: ObservableObject {
         )
         beleg.bildJpeg = bildJpeg
         beleg.ocrText = ocrText
+        beleg.steuerPositionen = felder.steuerPositionen.isEmpty ? nil : felder.steuerPositionen
+        beleg.gutschriftSignal = felder.gutschriftSignal ? true : nil
 
         if beleg.confidence >= 95 {
             siegeln(&beleg, status: .automatisch)
@@ -257,6 +259,28 @@ final class AppStore: ObservableObject {
         belege[i] = b
         geprueft += 1
         if let d = dauer { pruefSekunden.append(d) }
+    }
+
+    /// Kernfelder von Hand korrigieren — die Lesung kann danebenliegen
+    /// (119 → 19 €), und Löschen + neu fotografieren ist keine Antwort.
+    /// Fixierte Belege sind unantastbar; gesiegelte werden neu gesiegelt.
+    func felderKorrigieren(id: UUID, lieferant: String, belegNr: String,
+                           datumText: String, netto: Double, ust: Double, brutto: Double) {
+        guard let i = belege.firstIndex(where: { $0.id == id }),
+              belege[i].status != .fixiert else { return }
+        var b = belege[i]
+        b.lieferant = lieferant.trimmingCharacters(in: .whitespacesAndNewlines)
+        b.belegNr = belegNr.trimmingCharacters(in: .whitespacesAndNewlines)
+        b.datumText = datumText.trimmingCharacters(in: .whitespaces)
+        b.netto = netto
+        b.ust = ust
+        b.brutto = brutto
+        b.summenprobeOK = abs(netto + ust - brutto) < 0.011
+        b.herkunft = .mensch
+        // Handkorrektur ersetzt die gelesene Tabelle — sie passt nicht mehr.
+        b.steuerPositionen = nil
+        if b.siegel != nil { siegeln(&b, status: b.status) }
+        belege[i] = b
     }
 
     /// Beleg entfernen — fixierte (exportierte) Belege sind unantastbar.

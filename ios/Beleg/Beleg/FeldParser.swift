@@ -13,11 +13,20 @@ struct Felder {
     var felderZahl = 0
     var ocrKonfidenz: Double = 0
     var bewirtungsSignal = false
+    var gutschriftSignal = false
+    /// Steuertabelle je Satz (7 % und 19 % getrennt) — bleibt am Beleg,
+    /// damit der Export Mehrsatz-Belege aufteilen kann.
+    var steuerPositionen: [SteuerPosition] = []
 }
 
 /// Heuristischer Parser über den erkannten Textzeilen — die On-Device-Lane
 /// des Dual-Lane-Konzepts. Deutsch formatierte Beträge (1.234,56).
 enum FeldParser {
+
+    /// Deutsche Beträge: mit Tausenderpunkt (1.234,56) ODER ohne (1234,56) —
+    /// viele Kassen drucken vierstellig ohne Punkt; das alte Muster verlor
+    /// dadurch jeden Betrag ab 1.000 €.
+    static let betragMuster = #"\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,6},\d{2}"#
 
     static func parse(zeilen: [(text: String, conf: Double)]) -> Felder {
         var f = Felder()
@@ -36,10 +45,14 @@ enum FeldParser {
             break
         }
 
-        // Datum: dd.MM.yyyy bzw. dd.MM.yy
-        if let m = ersterTreffer(gesamt, #"\b(\d{1,2}\.\d{1,2}\.\d{2,4})\b"#) {
-            f.datumText = m
-        }
+        // Datum: dd.MM.yyyy bzw. dd.MM.yy — nur plausible Werte (Tag 1–31,
+        // Monat 1–12); eine Zeile mit „Datum"-Label gewinnt vor dem ersten
+        // Treffer im Volltext (der oft „gültig bis" oder Lieferdatum ist).
+        let datumMuster = #"\b(\d{1,2}\.\d{1,2}\.\d{2,4})\b"#
+        let datumsKandidaten = alleZeilen.filter { matcht($0, #"datum"#, caseInsensitive: true) }
+            .compactMap { ersterTreffer($0, datumMuster) }
+            + alleTreffer(gesamt, datumMuster)
+        f.datumText = datumsKandidaten.first(where: datumPlausibel)
 
         // Belegnummer: erst explizite Labels (Rechnungs-Nr., Bon-Nr. …), dann
         // ein nacktes „-Nr.:" (Thermobons schneiden das Label oft links ab),
@@ -55,6 +68,14 @@ enum FeldParser {
         // Steuersatz-Heuristik (Fallback; eine Steuertabelle überstimmt sie unten)
         if matcht(gesamt, #"7\s*%"#), !matcht(gesamt, #"19\s*%"#) { f.ustSatz = 7 }
 
+        // Kein Steuerausweis (§19 UStG, Porto, steuerfrei): dann wird unten
+        // KEINE Vorsteuer aus dem Brutto zurückgerechnet — erfundene 19 %
+        // wären unberechtigter Vorsteuerabzug.
+        if matcht(gesamt, #"kleinunternehmer|§\s*19\s*ustg|kein(e|en)?\s+(ausweis|umsatzsteuer)|ohne\s+umsatzsteuer|steuerfrei|umsatzsteuerbefreit|nicht\s+umsatzsteuerpflichtig"#,
+                  caseInsensitive: true) {
+            f.ustSatz = 0
+        }
+
         // Bewirtungssignal aus dem Volltext — nicht nur aus dem Lieferantennamen.
         // „inkgeld" fängt links beschnittene Thermobon-Zeilen („Trinkgeld") ab.
         let klein = gesamt.lowercased()
@@ -63,8 +84,19 @@ enum FeldParser {
         f.bewirtungsSignal = bewirtungsWorte.contains { klein.contains($0) }
             || matcht(klein, #"\btisch\b"#)
 
-        // Beträge (deutsches Format)
-        let betraege = alleTreffer(gesamt, #"\b\d{1,3}(?:\.\d{3})*,\d{2}\b"#)
+        // Gutschrift/Storno: Betrag mit Vorzeichen oder klare Wortsignale —
+        // so ein Beleg wird nie automatisch als Aufwand gesiegelt.
+        f.gutschriftSignal = matcht(klein, #"gutschrift|storno|retoure|erstattung"#)
+            || matcht(gesamt, #"(^|\s)[-−]\d{1,6},\d{2}\b"#)
+
+        // Beträge (deutsches Format). Zeilen mit Gegeben/Rückgeld sind
+        // Zahlungsverkehr, kein Rechnungsbetrag — sonst „besteht" auf einem
+        // Barbon 44,50 + 5,50 = 50,00 fälschlich die Summenprobe.
+        let zahlungsZeile = #"gegeben|r(ü|ue)ckgeld|wechselgeld|zur(ü|ue)ck\b"#
+        let betragRegex = #"\b(?:"# + betragMuster + #")\b"#
+        let betraege = alleZeilen
+            .filter { !matcht($0, zahlungsZeile, caseInsensitive: true) }
+            .flatMap { alleTreffer($0, betragRegex) }
             .compactMap { parseBetrag($0) }
         let tabelle = steuerTabelle(gesamt)
         let tabellenBrutto = tabelle.reduce(0) { $0 + $1.brutto }
@@ -79,6 +111,7 @@ enum FeldParser {
             f.ust = runde2(tabelle.reduce(0) { $0 + $1.ust })
             f.brutto = runde2(tabellenBrutto)
             f.summenprobeOK = true
+            f.steuerPositionen = tabelle
             if let dominant = tabelle.max(by: { $0.netto < $1.netto }) {
                 f.ustSatz = dominant.satz
             }
@@ -96,12 +129,18 @@ enum FeldParser {
                     }
                 }
             }
-            if f.netto == nil, f.ustSatz > 0 {
-                // Rückrechnung aus Brutto, falls Netto/USt nicht einzeln lesbar
-                let satz = Double(f.ustSatz) / 100.0
-                let netto = (max / (1 + satz) * 100).rounded() / 100
-                f.netto = netto
-                f.ust = ((max - netto) * 100).rounded() / 100
+            if f.netto == nil {
+                if f.ustSatz > 0 {
+                    // Rückrechnung aus Brutto, falls Netto/USt nicht einzeln lesbar
+                    let satz = Double(f.ustSatz) / 100.0
+                    let netto = (max / (1 + satz) * 100).rounded() / 100
+                    f.netto = netto
+                    f.ust = ((max - netto) * 100).rounded() / 100
+                } else {
+                    // Ohne Steuerausweis gibt es nichts zurückzurechnen.
+                    f.netto = max
+                    f.ust = 0
+                }
             }
         }
 
@@ -114,14 +153,15 @@ enum FeldParser {
         Double(s.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: "."))
     }
 
-    // MARK: - Steuertabelle
-
-    private struct SteuerZeile {
-        let satz: Int
-        let netto: Double
-        let ust: Double
-        let brutto: Double
+    /// Tag 1–31, Monat 1–12 — sonst ist es kein Belegdatum (32.13. kommt
+    /// aus Artikelnummern und OCR-Fehllesungen).
+    static func datumPlausibel(_ s: String) -> Bool {
+        let t = s.split(separator: ".")
+        guard t.count == 3, let tag = Int(t[0]), let monat = Int(t[1]) else { return false }
+        return (1...31).contains(tag) && (1...12).contains(monat)
     }
+
+    // MARK: - Steuertabelle
 
     /// Liest die Steuersatz-Tabelle eines Bons (Netto/USt/Brutto je Satz) aus
     /// einem Token-Strom von Raten und Beträgen. Funktioniert für zeilenweise
@@ -129,9 +169,9 @@ enum FeldParser {
     /// („85,40 · 79,81 · 5,59 · 7%"), weil pro Rate beide Nachbarschafts-Fenster
     /// geprüft werden: drei Beträge müssen die Summenprobe UND die
     /// Satz-Plausibilität (USt ≈ Netto × Satz) bestehen.
-    private static func steuerTabelle(_ text: String) -> [SteuerZeile] {
+    static func steuerTabelle(_ text: String) -> [SteuerPosition] {
         enum Token { case satz(Int); case betrag(Double) }
-        let muster = #"\b(\d{1,2})(?:[.,]0{1,2})?\s*%|\b(\d{1,3}(?:\.\d{3})*,\d{2})\b"#
+        let muster = #"\b(\d{1,2})(?:[.,]0{1,2})?\s*%|\b("# + betragMuster + #")\b"#
         guard let re = try? NSRegularExpression(pattern: muster) else { return [] }
 
         let ns = text as NSString
@@ -148,7 +188,7 @@ enum FeldParser {
             }
         }
 
-        var zeilen: [SteuerZeile] = []
+        var zeilen: [SteuerPosition] = []
         for (i, token) in tokens.enumerated() {
             guard case .satz(let satz) = token else { continue }
 
@@ -172,7 +212,7 @@ enum FeldParser {
             let pool = seite(-1) + seite(1)
             guard pool.count >= 3 else { continue }
 
-            var treffer: [SteuerZeile] = []
+            var treffer: [SteuerPosition] = []
             for a in 0..<pool.count {
                 for b in (a + 1)..<pool.count {
                     for c in (b + 1)..<pool.count {
@@ -190,16 +230,16 @@ enum FeldParser {
     }
 
     /// Tripel gültig, wenn Summenprobe hält UND die USt zum Satz passt.
-    private static func pruefeTripel(_ werte: [Double], satz: Int) -> SteuerZeile? {
+    private static func pruefeTripel(_ werte: [Double], satz: Int) -> SteuerPosition? {
         let s = werte.sorted(by: >)
         let (brutto, netto, ust) = (s[0], s[1], s[2])
         guard abs(netto + ust - brutto) < 0.011 else { return nil }
         let erwartet = netto * Double(satz) / 100
         guard abs(ust - erwartet) <= Swift.max(0.03, erwartet * 0.02) else { return nil }
-        return SteuerZeile(satz: satz, netto: netto, ust: ust, brutto: brutto)
+        return SteuerPosition(satz: satz, netto: netto, ust: ust, brutto: brutto)
     }
 
-    private static func gleich(_ a: SteuerZeile, _ b: SteuerZeile) -> Bool {
+    private static func gleich(_ a: SteuerPosition, _ b: SteuerPosition) -> Bool {
         abs(a.brutto - b.brutto) < 0.011 && abs(a.netto - b.netto) < 0.011 && abs(a.ust - b.ust) < 0.011
     }
 
@@ -266,6 +306,17 @@ enum Kontierung {
     ]
 
     static func vorschlag(felder: Felder) -> Vorschlag {
+        var v = basisVorschlag(felder: felder)
+        // Gutschrift/Storno nie automatisch als Aufwand siegeln — Vorzeichen
+        // und Buchungsrichtung muss ein Mensch bestätigen.
+        if felder.gutschriftSignal {
+            v.confidence = min(v.confidence, 70)
+            v.begruendung += " Sieht nach Gutschrift/Erstattung aus — bitte prüfen."
+        }
+        return v
+    }
+
+    private static func basisVorschlag(felder: Felder) -> Vorschlag {
         let name = (felder.lieferant ?? "").lowercased()
         let ksDefault = felder.ustSatz == 7 ? "8" : (felder.ustSatz == 0 ? "0" : "9")
 

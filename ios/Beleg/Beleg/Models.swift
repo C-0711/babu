@@ -102,6 +102,15 @@ private func slug(_ text: String) -> String {
     return ergebnis.isEmpty ? "beleg" : String(ergebnis)
 }
 
+/// Eine Zeile der Steuertabelle des Belegs (7 % und 19 % getrennt) — wird
+/// persistiert, damit der Export Mehrsatz-Belege korrekt aufteilen kann.
+struct SteuerPosition: Codable, Equatable {
+    var satz: Int
+    var netto: Double
+    var ust: Double
+    var brutto: Double
+}
+
 struct Beleg: Identifiable, Codable {
     var id = UUID()
     var lieferant: String
@@ -137,6 +146,9 @@ struct Beleg: Identifiable, Codable {
     var bewirtungPersonen: String?
     // Beispiel-Beleg (Erststart/Simulator) — niemals exportieren
     var istDemo: Bool?
+    // Steuertabelle je Satz (Mehrsatz-Belege) und Gutschrift-Signal
+    var steuerPositionen: [SteuerPosition]?
+    var gutschriftSignal: Bool?
 
     /// Bewirtungsbeleg ohne erfasste Angaben? Dann fragt die App nach.
     var brauchtBewirtungsangaben: Bool {

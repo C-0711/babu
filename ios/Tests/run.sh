@@ -8,3 +8,7 @@ mkdir -p "$ZIEL"
 echo "— EXTF-Harness —"
 swiftc -o "$ZIEL/extf" ../Beleg/Beleg/Models.swift ../Beleg/Beleg/ExtfWriter.swift extf/main.swift
 "$ZIEL/extf"
+
+echo "— Parser-Harness —"
+swiftc -o "$ZIEL/parser" ../Beleg/Beleg/Models.swift ../Beleg/Beleg/FeldParser.swift parser/main.swift
+"$ZIEL/parser"

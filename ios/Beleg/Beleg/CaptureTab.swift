@@ -274,6 +274,13 @@ struct ErgebnisKarte: View {
                     .foregroundStyle(GC.warn)
             }
 
+            if aktuell.gutschriftSignal == true {
+                Label("Sieht nach Gutschrift oder Erstattung aus — bitte vor dem Buchen prüfen.",
+                      systemImage: "arrow.uturn.left.circle")
+                    .font(.footnote)
+                    .foregroundStyle(GC.warn)
+            }
+
             if moeglichesDuplikat != nil {
                 Label("Sieht aus wie ein Beleg, den du schon hast — gleicher Betrag, gleicher Tag. Doppelt erfasst? Einen davon in der Belegliste nach links wischen und löschen.",
                       systemImage: "doc.on.doc")

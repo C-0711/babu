@@ -172,6 +172,8 @@ struct DetailView: View {
     @State private var reviewLaedt = false
     @State private var reviewHinweis: String?
     @State private var zeigeBewirtung = false
+    @State private var zeigeFeldEditor = false
+    @State private var zeigeKontierung = false
 
     private var beleg: Beleg? { store.belege.first { $0.id == belegID } }
 
@@ -202,6 +204,29 @@ struct DetailView: View {
                             Text(fmtEur(b.brutto)).font(.subheadline.monospaced())
                         }
                         BuchsatzView(beleg: b)
+
+                        // Korrektur-Wege: Kernfelder und Kategorie sind bis zur
+                        // Fixierung änderbar — Löschen ist keine Korrektur.
+                        if b.status != .fixiert {
+                            HStack(spacing: 10) {
+                                Button {
+                                    zeigeFeldEditor = true
+                                } label: {
+                                    Label("Angaben korrigieren", systemImage: "pencil")
+                                        .font(.caption)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                Button {
+                                    zeigeKontierung = true
+                                } label: {
+                                    Label("Kategorie ändern", systemImage: "tray")
+                                        .font(.caption)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
+                        }
 
                         // Kein Nachweis-Block mehr — Vertrauen ist der grüne Haken
                         // oben; nur eine ausstehende Ablage bekommt einen Knopf.
@@ -272,6 +297,12 @@ struct DetailView: View {
         }
         .sheet(isPresented: $zeigeBewirtung) {
             BewirtungsangabenSheet(belegID: belegID)
+        }
+        .sheet(isPresented: $zeigeFeldEditor) {
+            FeldEditorSheet(belegID: belegID)
+        }
+        .sheet(isPresented: $zeigeKontierung) {
+            ReviewSheet(belegID: belegID, startZeit: Date())
         }
     }
 
