@@ -124,6 +124,12 @@ struct BelegZeile: View {
                 Text("\(beleg.belegNr) · \(beleg.status.label)")
                     .font(.caption2.monospaced())
                     .foregroundStyle(GC.muted)
+                if beleg.istDemo == true {
+                    Text("BEISPIEL · GEHT NICHT AN DATEV")
+                        .font(.system(size: 9, design: .monospaced))
+                        .kerning(0.5)
+                        .foregroundStyle(GC.muted)
+                }
                 if beleg.brauchtBewirtungsangaben {
                     HStack(spacing: 4) {
                         Image(systemName: "person.2")

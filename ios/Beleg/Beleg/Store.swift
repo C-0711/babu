@@ -48,8 +48,16 @@ final class AppStore: ObservableObject {
                 ablageURL = AppStore.ablageStandardURL
             }
             ablageAktiv = z.ablageAktiv ?? false
+            // Ältere Stände: Demo-Belege am festen Demo-Siegel nachträglich
+            // markieren, damit sie nie im echten Stapel landen.
+            let demoSiegel: Set<String> = ["77b2e0c4 9a11 f38d", "0d31f6a8 5be2 c974"]
+            for i in belege.indices where belege[i].istDemo != true && demoSiegel.contains(belege[i].siegel ?? "") {
+                belege[i].istDemo = true
+            }
         } else {
-            belege = Demo.archiv()   // Erststart: Demo-Archiv als Ausgangslage
+            #if targetEnvironment(simulator)
+            belege = Demo.archiv()   // Nur im Simulator: Demo-Archiv als Ausgangslage
+            #endif
         }
         geladen = true
     }
@@ -244,31 +252,26 @@ final class AppStore: ObservableObject {
     }
 
     var exportierbar: [Beleg] {
-        belege.filter { [.automatisch, .bestaetigt, .korrigiert].contains($0.status) }
+        exportierbareBelege(belege)
     }
 
     var stapelSumme: Double { exportierbar.reduce(0) { $0 + $1.brutto } }
 
     // MARK: - EXTF
 
-    /// Vereinfachte EXTF-Vorschau — der vollständige v13-Writer ist ein
-    /// Backend-Modul (siehe docs/build-plan.md, Phase 5).
+    /// Vorschau des aktuellen Stapels (Logik in ExtfWriter.swift, harness-getestet).
     func extfText() -> String {
-        var zeilen = ["\"EXTF\";700;21;\"Buchungsstapel\";13;;;", ";\"RE\";\"DE\";;\"20260801\";\"20260831\";"]
-        for b in exportierbar {
-            let betrag = fmtBetrag(b.brutto)
-            let dd = String(b.datumText.replacingOccurrences(of: ".", with: "").prefix(4))
-            zeilen.append("\(betrag);\"S\";\"EUR\";;;;\"\(b.kreditor)\";\"\(b.konto ?? "")\";\(b.steuerschluessel);\"\(dd)\";\"\(b.belegNr)\";\"\(b.lieferant)\"")
-        }
-        return zeilen.joined(separator: "\r\n")
+        let monat = extfMonat()
+        return extfStapelText(belege: exportierbar, von: monat.von, bis: monat.bis)
     }
 
-    /// Schreibt den Stapel als CP1252-kodierte Datei (DATEV-Kodierung).
-    func extfDatei() -> URL? {
-        let text = extfText()
+    /// Schreibt eine feste Belegmenge als CP1252-kodierte Datei (DATEV-Kodierung).
+    func extfDatei(fuer stapel: [Beleg]) -> URL? {
+        let monat = extfMonat()
+        let text = extfStapelText(belege: stapel, von: monat.von, bis: monat.bis)
         let data = text.data(using: .windowsCP1252, allowLossyConversion: true) ?? Data(text.utf8)
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("EXTF_Buchungsstapel_2026-08.csv")
+            .appendingPathComponent(monat.dateiname)
         do {
             try data.write(to: url, options: .atomic)
             return url
@@ -277,11 +280,21 @@ final class AppStore: ObservableObject {
         }
     }
 
-    func fixieren() {
-        for i in belege.indices where [.automatisch, .bestaetigt, .korrigiert].contains(belege[i].status) {
+    /// Vorschau-Datei über den aktuell exportierbaren Stapel.
+    func extfDatei() -> URL? { extfDatei(fuer: exportierbar) }
+
+    /// Stapel exportieren: ERST die Datei aus dem Schnappschuss erzeugen,
+    /// DANN genau diese Belege fixieren — andersherum wäre die Datei leer,
+    /// weil `exportierbar` fixierte Belege ausfiltert.
+    func exportieren() -> URL? {
+        let stapel = exportierbar
+        guard !stapel.isEmpty, let url = extfDatei(fuer: stapel) else { return nil }
+        let ids = Set(stapel.map(\.id))
+        for i in belege.indices where ids.contains(belege[i].id) {
             belege[i].status = .fixiert
         }
         exportiert = true
+        return url
     }
 
     var durchsatzText: String? {

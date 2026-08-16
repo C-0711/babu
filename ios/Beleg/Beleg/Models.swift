@@ -133,6 +133,8 @@ struct Beleg: Identifiable, Codable {
     // Bewirtungsangaben (§4 Abs. 5 Nr. 2 EStG): Pflicht bei Konto 6640
     var bewirtungAnlass: String?
     var bewirtungPersonen: String?
+    // Beispiel-Beleg (Erststart/Simulator) — niemals exportieren
+    var istDemo: Bool?
 
     /// Bewirtungsbeleg ohne erfasste Angaben? Dann fragt die App nach.
     var brauchtBewirtungsangaben: Bool {
@@ -187,6 +189,7 @@ enum Demo {
                       begruendung: "Regel „Stadtwerke → Energie“ griff.", summenprobeOK: true)
         a.siegel = "77b2e0c4 9a11 f38d"
         a.siegelZeit = Date(timeIntervalSinceNow: -3 * 86400)
+        a.istDemo = true
 
         var b = Beleg(lieferant: "Hetzner Online GmbH", belegNr: "R2026-0psd83", datumText: "01.08.2026",
                       netto: 200.00, ust: 38.00, brutto: 238.00, ustSatz: 19,
@@ -195,6 +198,7 @@ enum Demo {
                       begruendung: "Kreditor 9× zuvor auf 6837 gebucht.", summenprobeOK: true)
         b.siegel = "0d31f6a8 5be2 c974"
         b.siegelZeit = Date(timeIntervalSinceNow: -5 * 86400)
+        b.istDemo = true
 
         return [a, b]
     }

@@ -10,7 +10,7 @@ struct ExportView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Buchungsstapel August 2026")
+                        Text(extfMonat().titel)
                             .font(.headline)
                             .fontDesign(.serif)
                         Text("\(store.exportierbar.count) Buchungen · \(fmtEur(store.stapelSumme)) · bereit für den Import beim Steuerberater.")
@@ -34,19 +34,21 @@ struct ExportView: View {
                         }
 
                         Button {
-                            store.fixieren()
-                            datei = store.extfDatei()
+                            // Erzeugt die Datei aus dem Schnappschuss und fixiert
+                            // danach genau diese Belege (Reihenfolge wichtig).
+                            if let url = store.exportieren() { datei = url }
                         } label: {
-                            Text(store.exportiert ? "Stapel fixiert ✓" : "Stapel erzeugen & fixieren")
+                            Text(store.exportierbar.isEmpty && store.exportiert
+                                 ? "Stapel fixiert ✓" : "Stapel erzeugen & fixieren")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
-                        .disabled(store.exportierbar.isEmpty && !store.exportiert)
+                        .disabled(store.exportierbar.isEmpty)
 
                         if store.exportiert {
                             HStack(spacing: 8) {
                                 Image(systemName: "checkmark.seal")
-                                Text("Stapel 08/26 gesiegelt · exportierte Buchungen sind fixiert")
+                                Text("Exportierte Buchungen sind fixiert und bleiben unverändert.")
                                     .font(.caption2.monospaced())
                             }
                             .foregroundStyle(GC.accent)

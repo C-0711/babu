@@ -10,7 +10,7 @@ struct CaptureTab: View {
     @State private var schritte = 0
     @State private var startZeit = Date()
 
-    enum Phase { case bereit, verarbeitet, ergebnis }
+    enum Phase { case bereit, verarbeitet, ergebnis, nichtsErkannt }
 
     var body: some View {
         NavigationStack {
@@ -20,6 +20,7 @@ struct CaptureTab: View {
                 case .bereit: bereitView
                 case .verarbeitet: verarbeitungView
                 case .ergebnis: ergebnisView
+                case .nichtsErkannt: nichtsErkanntView
                 }
             }
             .navigationTitle("Erfassen")
@@ -74,14 +75,18 @@ struct CaptureTab: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                 }
+                #if targetEnvironment(simulator)
+                // Nur im Simulator — auf dem Gerät hat der Beispiel-Beleg
+                // im echten Bestand nichts verloren.
                 Button {
                     Task { await verarbeite(DemoBeleg.bild()) }
                 } label: {
-                    Text(ScannerView.verfuegbar ? "Demo-Beleg einlesen" : "Demo-Beleg einlesen (Simulator)")
+                    Text("Demo-Beleg einlesen (Simulator)")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
+                #endif
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 12)
@@ -133,6 +138,49 @@ struct CaptureTab: View {
         }
     }
 
+    // MARK: - Nichts erkannt
+
+    /// Kein Betrag und kein Name lesbar → nichts anlegen, ehrlich nachfragen.
+    private var nichtsErkanntView: some View {
+        VStack(spacing: 18) {
+            Spacer()
+            Image(systemName: "doc.text.magnifyingglass")
+                .font(.system(size: 44, weight: .light))
+                .foregroundStyle(GC.muted)
+            Text("Da war nichts zu lesen")
+                .font(.title3.weight(.semibold))
+                .fontDesign(.serif)
+            Text("Auf dem Foto war weder ein Betrag noch ein Name zu erkennen. Am besten noch einmal mit mehr Licht und ruhiger Hand.")
+                .font(.footnote)
+                .foregroundStyle(GC.desc)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 36)
+            Spacer()
+            VStack(spacing: 10) {
+                if ScannerView.verfuegbar {
+                    Button {
+                        phase = .bereit
+                        zeigeScanner = true
+                    } label: {
+                        Label("Noch mal versuchen", systemImage: "doc.viewfinder")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                }
+                Button {
+                    phase = .bereit
+                } label: {
+                    Text("Abbrechen").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 12)
+        }
+    }
+
     // MARK: - Pipeline
 
     private func verarbeite(_ bild: UIImage) async {
@@ -146,6 +194,12 @@ struct CaptureTab: View {
         try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 2
         let felder = FeldParser.parse(zeilen: ocr.zeilen)
+
+        // Komplett unlesbares Foto: keinen 0,00-€-Beleg anlegen.
+        if felder.brutto == nil && felder.lieferant == nil {
+            phase = .nichtsErkannt
+            return
+        }
 
         try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 3
