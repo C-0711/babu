@@ -207,6 +207,15 @@ def test_chat_ohne_reviews_ok_mit_cookie(client):
     assert r.json() == {"fehler": "frage fehlt oder zu lang"}
 
 
+def test_chat_route_ist_sync():
+    """chat muss sync bleiben: requests/subprocess würden async den Event-Loop
+    blockieren (workers=1) — GET /review liefe dann in Timeouts."""
+    import inspect
+    sys.path.insert(0, str(HIER.parent))
+    import babu_web
+    assert not inspect.iscoroutinefunction(babu_web.chat)
+
+
 def test_origin_check(client):
     _anmelden(client)
     r = client.post("/chat", json={"frage": "x"},

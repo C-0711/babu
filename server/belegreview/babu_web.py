@@ -1326,16 +1326,15 @@ def belegdaten_kontext(max_zeichen: int = 12000) -> str:
 
 
 @app.post("/chat")
-async def chat(request: Request) -> Response:
+def chat(body: dict, request: Request) -> Response:
+    # Sync-Route: läuft im Starlette-Threadpool, damit requests/subprocess
+    # den Event-Loop nicht blockieren (workers=1). Auch der sse()-Generator
+    # unten wird von StreamingResponse im Threadpool iteriert.
     un = angemeldet(request)   # Cookie (Portal) ODER Bearer (App) — Wire-Format unverändert
     if un is None:
         return JSONResponse({"fehler": "Token fehlt oder ungültig"}, status_code=401)
     if un not in ERLAUBT:
         return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
-    try:
-        body = await request.json()
-    except Exception:  # noqa: BLE001
-        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
     frage = str(body.get("frage", "")).strip()
     if not frage or len(frage) > 2000:
         return JSONResponse({"fehler": "frage fehlt oder zu lang"}, status_code=400)
