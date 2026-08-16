@@ -138,20 +138,26 @@ struct FragenTab: View {
             nachrichten.append(Nachricht(vonMir: false, text: ""))
             let index = nachrichten.count - 1
 
-            // SSE-Stream: Text erscheint, während Gemma schreibt.
+            // Stream: Text erscheint, während die Antwort entsteht.
             var gestreamt = false
+            var gemeldet: String?
             do {
                 for try await stueck in AblageService.fragenStream(frage, basis: url, pat: pat) {
                     gestreamt = true
                     nachrichten[index].text += stueck
                 }
+            } catch let fehler as ChatFehler {
+                // Klarer Serverbescheid — anzeigen statt noch einmal 2 Minuten warten.
+                gemeldet = "Das klappt gerade nicht: \(fehler.meldung). Später noch einmal versuchen."
             } catch {
                 // Stream fehlgeschlagen — unten klassischer Fallback.
             }
-            if !gestreamt {
+            if let gemeldet {
+                nachrichten[index].text = gemeldet
+            } else if !gestreamt {
                 let antwort = await AblageService.fragen(frage, basis: url, pat: pat)
                 nachrichten[index].text = antwort
-                    ?? "Keine Antwort vom Server — Verbindung im Export-Tab testen."
+                    ?? "Gerade keine Verbindung — im Export-Tab (Zahnrad) prüfen und noch einmal fragen."
             }
             laeuft = false
         }

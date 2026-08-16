@@ -111,12 +111,12 @@ struct BelegZeile: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Grüner Haken = alles gut (gebucht + abgelegt + zweitgeprüft).
+            // Grüner Haken = alles gut (gebucht + abgelegt + Zweitprüfung OK).
             Image(systemName: beleg.status == .offen ? "circle.dotted" :
-                    (beleg.auditReview != nil || beleg.status == .fixiert)
+                    (beleg.zweitgeprueft || beleg.status == .fixiert)
                     ? "checkmark.seal.fill" : "checkmark.seal")
                 .foregroundStyle(beleg.status == .offen ? GC.muted :
-                    beleg.auditReview != nil ? GC.ok : GC.accent)
+                    beleg.zweitgeprueft ? GC.ok : GC.accent)
             VStack(alignment: .leading, spacing: 2) {
                 Text(beleg.lieferant)
                     .font(.subheadline.weight(.semibold))
@@ -129,6 +129,17 @@ struct BelegZeile: View {
                         .font(.system(size: 9, design: .monospaced))
                         .kerning(0.5)
                         .foregroundStyle(GC.muted)
+                }
+                if beleg.reviewStatus == "fehlgeschlagen" {
+                    Text("ZWEITPRÜFUNG NICHT MÖGLICH — FOTO PRÜFEN")
+                        .font(.system(size: 9, design: .monospaced))
+                        .kerning(0.5)
+                        .foregroundStyle(GC.warn)
+                } else if beleg.ablageStatus == .fehlgeschlagen {
+                    Text("NOCH NICHT ABGELEGT — WIRD ERNEUT VERSUCHT")
+                        .font(.system(size: 9, design: .monospaced))
+                        .kerning(0.5)
+                        .foregroundStyle(GC.warn)
                 }
                 if beleg.brauchtBewirtungsangaben {
                     HStack(spacing: 4) {
@@ -182,7 +193,7 @@ struct DetailView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(spacing: 8) {
                             Text(b.lieferant).font(.headline).fontDesign(.serif)
-                            if b.auditReview != nil {
+                            if b.zweitgeprueft {
                                 Image(systemName: "checkmark.seal.fill")
                                     .foregroundStyle(GC.ok)
                                     .accessibilityLabel("Alles in Ordnung")
@@ -300,9 +311,20 @@ struct DetailView: View {
             .accessibilityLabel("Zweitprüfung aktualisieren")
         }
 
-        if let r = review {
-            let f = r.felder
-            if let art = r.einschaetzung.belegart {
+        if let r = review, r.fehlgeschlagen {
+            // Ehrlich statt „läuft noch": die Prüfung hat es versucht und ist
+            // an diesem Foto gescheitert.
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.caption2)
+                    .foregroundStyle(GC.warn)
+                Text("Dieser Beleg konnte nicht gelesen werden. Am besten neu fotografieren und noch einmal ablegen.")
+                    .font(.caption)
+                    .foregroundStyle(GC.desc)
+            }
+        } else if let r = review {
+            let f = r.felder ?? BelegReviewDaten.Felder()
+            if let art = r.einschaetzung?.belegart {
                 // Ohne Methoden-Zusatz („semantisch, 30 %") — nur die Einordnung.
                 provZeile("Eingeordnet", String(art.split(separator: "(").first ?? "").trimmingCharacters(in: .whitespaces))
             }
@@ -316,7 +338,7 @@ struct DetailView: View {
                       gleich: f.datum.map { $0 == b.datumText })
             vergleich("Beleg-Nr.", lokal: b.belegNr, server: f.belegNr,
                       gleich: f.belegNr.map { $0 == b.belegNr })
-            if let konto = r.einschaetzung.kontoSkr04 {
+            if let konto = r.einschaetzung?.kontoSkr04 {
                 let gleich = konto == b.konto
                 provZeile("Konto", "\(konto) \(Kontenplan.bezeichnung(konto))" + (gleich ? " ✓" : " · Gerät: \(b.konto ?? "—")"))
             }
@@ -363,7 +385,7 @@ struct DetailView: View {
                     datevBox("Buchungstext", text)
                 }
             }
-            ForEach(r.einschaetzung.hinweise ?? [], id: \.self) { hinweis in
+            ForEach(r.einschaetzung?.hinweise ?? [], id: \.self) { hinweis in
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Image(systemName: "info.circle")
                         .font(.caption2)
@@ -444,16 +466,26 @@ struct DetailView: View {
         reviewLaedt = true
         defer { reviewLaedt = false }
         let stamm = (dateiname as NSString).deletingPathExtension
-        if let r = await AblageService.reviewAbrufen(stamm: stamm, basis: url, pat: pat) {
+        switch await AblageService.reviewAbrufen(stamm: stamm, basis: url, pat: pat) {
+        case .fertig(let r):
             review = r
             reviewHinweis = nil
             // Audit-Stempel am Beleg persistieren — sichtbar in der Belegliste.
             if let audit = r.audit {
                 store.auditSetzen(id: b.id, aufnahme: audit.aufnahme?.commit,
-                                  review: audit.review?.commit)
+                                  review: audit.review?.commit,
+                                  status: r.status ?? "ok")
             }
-        } else if review == nil {
+        case .nochNicht where review == nil:
             reviewHinweis = "Zweitprüfung läuft — gleich verfügbar (↻ zum Aktualisieren)."
+        case .zugangFehlt:
+            reviewHinweis = "Der Zugang zur Belegbox ist abgelaufen — einmal neu verbinden (Export → Zahnrad)."
+        case .keineVerbindung where review == nil:
+            reviewHinweis = "Gerade keine Verbindung — später noch einmal versuchen."
+        case .serverProblem where review == nil:
+            reviewHinweis = "Die Belegbox meldet einen Fehler — später noch einmal versuchen."
+        default:
+            break   // Es gibt schon ein Ergebnis — das behalten wir.
         }
     }
 }

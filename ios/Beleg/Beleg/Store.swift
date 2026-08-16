@@ -156,14 +156,21 @@ final class AppStore: ObservableObject {
         }
     }
 
+    /// Läuft gerade ein Upload für diese ID? Verhindert doppelte
+    /// `aufnahme:`-Commits, wenn routen() und ablageRetry() zusammenfallen.
+    private var uploadLaeuft: Set<UUID> = []
+
     /// Einzelnen Beleg in die GitChain-Ablage hochladen; Status am Beleg nachführen.
     func uebertrage(_ id: UUID) async {
+        guard !uploadLaeuft.contains(id) else { return }
         guard ablageAktiv,
               let url = URL(string: ablageURL),
               let pat = KeychainHelfer.ladePAT(),
               let i = belege.firstIndex(where: { $0.id == id }),
               belege[i].ablageStatus != .uebertragen,
               let jpeg = belege[i].bildJpeg else { return }
+        uploadLaeuft.insert(id)
+        defer { uploadLaeuft.remove(id) }
 
         let dateiname = belege[i].ablageDateiname ?? ablageDateiname(fuer: belege[i])
         belege[i].ablageDateiname = dateiname
@@ -179,10 +186,14 @@ final class AppStore: ObservableObject {
             // Serverseitiger Name (mit Zeitstempel-Präfix) ist der Schlüssel
             // zum BelegReview-Ergebnis.
             if let serverDatei { belege[j].ablageDateiname = serverDatei }
-            // Audit-Stempel nachladen, sobald der Watcher reviewt hat (~30 s).
+            // Audit-Stempel nachladen — Backoff-Polling statt Einmal-Schuss:
+            // die Prüfung braucht je nach Rückstau Sekunden bis Minuten.
             Task {
-                try? await Task.sleep(nanoseconds: 30_000_000_000)
-                await self.auditLaden(id)
+                for wartezeit: UInt64 in [10, 20, 40, 80, 160] {
+                    try? await Task.sleep(nanoseconds: wartezeit * 1_000_000_000)
+                    await self.auditLaden(id)
+                    if self.belege.first(where: { $0.id == id })?.auditReview != nil { break }
+                }
             }
         default:
             belege[j].ablageStatus = .fehlgeschlagen
@@ -207,15 +218,17 @@ final class AppStore: ObservableObject {
               belege[i].auditReview == nil,
               let dateiname = belege[i].ablageDateiname else { return }
         let stamm = (dateiname as NSString).deletingPathExtension
-        guard let review = await AblageService.reviewAbrufen(stamm: stamm, basis: url, pat: pat),
-              let audit = review.audit else { return }
-        auditSetzen(id: id, aufnahme: audit.aufnahme?.commit, review: audit.review?.commit)
+        guard case .fertig(let review) = await AblageService.reviewAbrufen(
+            stamm: stamm, basis: url, pat: pat), let audit = review.audit else { return }
+        auditSetzen(id: id, aufnahme: audit.aufnahme?.commit, review: audit.review?.commit,
+                    status: review.status ?? "ok")
     }
 
-    func auditSetzen(id: UUID, aufnahme: String?, review: String?) {
+    func auditSetzen(id: UUID, aufnahme: String?, review: String?, status: String? = nil) {
         guard let i = belege.firstIndex(where: { $0.id == id }) else { return }
         if let aufnahme { belege[i].auditAufnahme = aufnahme }
         if let review { belege[i].auditReview = review }
+        if let status { belege[i].reviewStatus = status }
     }
 
     /// Bewirtungsangaben (§4 Abs. 5 EStG) am Beleg erfassen.

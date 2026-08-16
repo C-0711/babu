@@ -130,6 +130,8 @@ struct Beleg: Identifiable, Codable {
     // Audit-Stempel: GitChain-Commits der vollständigen Kette
     var auditAufnahme: String?
     var auditReview: String?
+    // Ergebnis der Zweitprüfung: "ok" oder "fehlgeschlagen" (nil = unbekannt)
+    var reviewStatus: String?
     // Bewirtungsangaben (§4 Abs. 5 Nr. 2 EStG): Pflicht bei Konto 6640
     var bewirtungAnlass: String?
     var bewirtungPersonen: String?
@@ -139,6 +141,11 @@ struct Beleg: Identifiable, Codable {
     /// Bewirtungsbeleg ohne erfasste Angaben? Dann fragt die App nach.
     var brauchtBewirtungsangaben: Bool {
         konto == "6640" && (bewirtungPersonen ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// Grüner Haken nur, wenn die Zweitprüfung da ist UND nicht gescheitert.
+    var zweitgeprueft: Bool {
+        auditReview != nil && reviewStatus != "fehlgeschlagen"
     }
 
     var ksLabel: String {

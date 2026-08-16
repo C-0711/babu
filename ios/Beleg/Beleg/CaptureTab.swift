@@ -227,6 +227,17 @@ struct ErgebnisKarte: View {
 
     private var aktuell: Beleg { store.belege.first { $0.id == beleg.id } ?? beleg }
 
+    /// Gleicher Betrag, gleicher Tag, gleicher Lieferant oder gleiche Nummer —
+    /// vermutlich derselbe Beleg noch einmal fotografiert.
+    private var moeglichesDuplikat: Beleg? {
+        store.belege.first {
+            $0.id != beleg.id &&
+            abs($0.brutto - aktuell.brutto) < 0.005 &&
+            $0.datumText == aktuell.datumText &&
+            ($0.lieferant == aktuell.lieferant || $0.belegNr == aktuell.belegNr)
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
@@ -259,6 +270,13 @@ struct ErgebnisKarte: View {
 
             if !aktuell.summenprobeOK {
                 Label("Summenprobe nicht bestanden — Beträge bitte prüfen.", systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(GC.warn)
+            }
+
+            if moeglichesDuplikat != nil {
+                Label("Sieht aus wie ein Beleg, den du schon hast — gleicher Betrag, gleicher Tag. Doppelt erfasst? Einen davon in der Belegliste nach links wischen und löschen.",
+                      systemImage: "doc.on.doc")
                     .font(.footnote)
                     .foregroundStyle(GC.warn)
             }

@@ -9,6 +9,21 @@ enum AblageErgebnis: Equatable {
     case nichtErreichbar      // Netzfehler (kein WLAN, falsches Netz, Timeout)
 }
 
+/// Ergebnis des Review-Abrufs — die Ursachen sind für die Nutzerin
+/// grundverschieden und dürfen nicht alle wie „läuft noch" aussehen.
+enum ReviewAntwort {
+    case fertig(BelegReviewDaten)
+    case nochNicht           // 404: Prüfung existiert (noch) nicht
+    case zugangFehlt         // 401/403: Zugang ungültig oder nicht erlaubt
+    case serverProblem       // 5xx oder unlesbare Antwort
+    case keineVerbindung     // Netzfehler / Timeout
+}
+
+/// Fehlermeldung aus dem Chat-Stream (SSE-Frame `{"fehler": …}`).
+struct ChatFehler: Error {
+    let meldung: String
+}
+
 /// Client für die GitChain-Ablage auf der H200V:
 /// `POST <basis>/ablage`, Multipart-Feld `file`, `Authorization: Bearer <PAT>`.
 /// Jeder erfolgreiche Upload wird serverseitig ein Commit `aufnahme: …` in babu.git.
@@ -59,9 +74,15 @@ enum AblageService {
                         guard zeile.hasPrefix("data: ") else { continue }
                         let roh = String(zeile.dropFirst(6))
                         if roh == "[DONE]" { break }
-                        if let json = try? JSONSerialization.jsonObject(with: Data(roh.utf8)) as? [String: Any],
-                           let stueck = json["d"] as? String {
-                            continuation.yield(stueck)
+                        if let json = try? JSONSerialization.jsonObject(with: Data(roh.utf8)) as? [String: Any] {
+                            if let stueck = json["d"] as? String {
+                                continuation.yield(stueck)
+                            } else if let fehler = json["fehler"] as? String {
+                                // Fehlerframe nicht verschlucken — sonst wartet die
+                                // Nutzerin auf eine Antwort, die nie kommt.
+                                continuation.finish(throwing: ChatFehler(meldung: fehler))
+                                return
+                            }
                         }
                     }
                     continuation.finish()
@@ -89,16 +110,25 @@ enum AblageService {
     }
 
     /// BelegReview-Ergebnis abrufen (`GET /review/<stamm>`, Bearer-PAT).
-    static func reviewAbrufen(stamm: String, basis: URL, pat: String) async -> BelegReviewDaten? {
+    static func reviewAbrufen(stamm: String, basis: URL, pat: String) async -> ReviewAntwort {
         var request = URLRequest(url: basis.appendingPathComponent("review")
             .appendingPathComponent(stamm))
         request.timeoutInterval = 12
         request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
         guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
-              (antwort as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return try? decoder.decode(BelegReviewDaten.self, from: daten)
+              let http = antwort as? HTTPURLResponse else { return .keineVerbindung }
+        switch http.statusCode {
+        case 200:
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            guard let r = try? decoder.decode(BelegReviewDaten.self, from: daten) else {
+                return .serverProblem
+            }
+            return .fertig(r)
+        case 404: return .nochNicht
+        case 401, 403: return .zugangFehlt
+        default: return .serverProblem
+        }
     }
 
     /// Verbindungs- und Token-Test OHNE Müll-Commit: eine Mini-txt-Datei senden.
@@ -210,11 +240,17 @@ struct BelegReviewDaten: Codable {
     var engine: String?
     var zeilen: Int?
     var ocrKonfidenz: Double?
-    var felder: Felder
-    var einschaetzung: Einschaetzung
+    /// "ok" oder "fehlgeschlagen" — Fehl-Reviews haben weder Felder noch
+    /// Einschätzung, deshalb sind beide optional.
+    var status: String?
+    var grund: String?
+    var felder: Felder?
+    var einschaetzung: Einschaetzung?
     var vlm: Vlm?
     var audit: Audit?
     var buchungssatz: Buchungssatz?
+
+    var fehlgeschlagen: Bool { status == "fehlgeschlagen" }
 }
 
 /// PAT-Ablage ausschließlich in der iOS-Keychain — nie im JSON-Store, nie im Log.
