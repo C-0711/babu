@@ -27,7 +27,7 @@ struct ExportView: View {
 
                         if let url = datei {
                             ShareLink(item: url) {
-                                Label("EXTF-Stapel teilen (CP1252)", systemImage: "square.and.arrow.up")
+                                Label("Stapel teilen", systemImage: "square.and.arrow.up")
                                     .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.borderedProminent)
@@ -56,7 +56,7 @@ struct ExportView: View {
                     }
                     .gcCard()
 
-                    Text("Vereinfachte EXTF-Vorschau — der vollständige DATEV-v13-Writer mit Golden-File-Tests ist Phase 5 des Bauplans. Später: Direct-Push über den DATEV-Buchungsdatenservice.")
+                    Text("Das hier ist die Vorschau für unterwegs. Den fertigen Stapel für dein Steuerbüro erstellt die Belegbox am Monatsende — automatisch aus allen geprüften Belegen.")
                         .font(.caption)
                         .foregroundStyle(GC.muted)
                         .padding(.horizontal, 4)

@@ -5,6 +5,7 @@ struct ListeView: View {
     @EnvironmentObject var store: AppStore
     @State private var filter: Filter = .alle
     @State private var zeigeAufraeumen = false
+    @State private var loeschKandidat: UUID?
 
     private var offeneAnzahl: Int {
         store.belege.filter { $0.status == .offen }.count
@@ -73,7 +74,9 @@ struct ListeView: View {
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         if b.status != .fixiert {
                             Button(role: .destructive) {
-                                store.loeschen(id: b.id)
+                                // Erst nachfragen — gelöscht ist gelöscht,
+                                // es gibt keinen Papierkorb.
+                                loeschKandidat = b.id
                             } label: {
                                 Label("Löschen", systemImage: "trash")
                             }
@@ -101,6 +104,18 @@ struct ListeView: View {
             }
             .fullScreenCover(isPresented: $zeigeAufraeumen) {
                 AufraeumenView()
+            }
+            .confirmationDialog("Diesen Beleg endgültig löschen?",
+                                isPresented: Binding(get: { loeschKandidat != nil },
+                                                     set: { if !$0 { loeschKandidat = nil } }),
+                                titleVisibility: .visible) {
+                Button("Endgültig löschen", role: .destructive) {
+                    if let id = loeschKandidat { store.loeschen(id: id) }
+                    loeschKandidat = nil
+                }
+                Button("Behalten", role: .cancel) { loeschKandidat = nil }
+            } message: {
+                Text("Foto und alle Angaben sind danach weg.")
             }
         }
     }
@@ -264,22 +279,12 @@ struct DetailView: View {
                             reviewBereich(fuer: b)
                         }
 
-                        if let s = b.siegel, let z = b.siegelZeit {
-                            Button {
-                                UIPasteboard.general.string = "\(s) · \(DateFormatter.siegel.string(from: z))"
-                            } label: {
-                                HStack {
-                                    Text("\(s) · \(DateFormatter.siegel.string(from: z))")
-                                        .font(.caption2.monospaced())
-                                        .foregroundStyle(GC.accentHover)
-                                    Spacer()
-                                    Text("KOPIEREN")
-                                        .font(.system(size: 9, design: .monospaced))
-                                        .foregroundStyle(GC.muted)
-                                }
-                                .padding(10)
-                                .background(GC.canvas, in: RoundedRectangle(cornerRadius: 8))
-                            }
+                        // Kein Hex-Fingerabdruck mehr in der Oberfläche —
+                        // nur die menschliche Aussage, seit wann er festgehalten ist.
+                        if b.siegel != nil, let z = b.siegelZeit {
+                            Text("Festgehalten am \(DateFormatter.siegel.string(from: z)) — bleibt unverändert")
+                                .font(.caption2)
+                                .foregroundStyle(GC.muted)
                         }
                     }
                     .gcCard()

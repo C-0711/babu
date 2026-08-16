@@ -10,6 +10,9 @@ struct BelegApp: App {
             RootView()
                 .environmentObject(store)
                 .tint(GC.accent)
+                // Das Design ist bewusst hell (feste Farb-Tokens); ohne diese
+                // Festlegung wären Listen und Editoren im Dunkelmodus unlesbar.
+                .preferredColorScheme(.light)
         }
         .onChange(of: scenePhase) { _, neu in
             switch neu {

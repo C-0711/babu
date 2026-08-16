@@ -30,7 +30,7 @@ struct FragenTab: View {
                             if laeuft, nachrichten.last?.text.isEmpty != false {
                                 HStack(spacing: 8) {
                                     ProgressView()
-                                    Text("Gemma liest die Belegbox …")
+                                    Text("Einen Moment — ich schaue in deine Belege …")
                                         .font(.footnote)
                                         .foregroundStyle(GC.muted)
                                 }
@@ -60,7 +60,7 @@ struct FragenTab: View {
             Text("Frag die Belegbox")
                 .font(.title3.weight(.semibold))
                 .fontDesign(.serif)
-            Text("Gemma 4 antwortet nur aus deinen Beleg-Reviews — zum Beispiel:")
+            Text("Die Antworten kommen nur aus deinen eigenen Belegen — zum Beispiel:")
                 .font(.footnote)
                 .foregroundStyle(GC.desc)
             ForEach(["Wie viel habe ich im Juli für Bewirtung ausgegeben?",
@@ -129,7 +129,7 @@ struct FragenTab: View {
 
         guard let url = URL(string: store.ablageURL), KeychainHelfer.ladePAT() != nil else {
             nachrichten.append(Nachricht(vonMir: false,
-                text: "Dafür brauche ich die Belegbox: Server-URL und PAT im Export-Tab (Zahnrad) hinterlegen."))
+                text: "Dafür braucht die App die Belegbox — einmal im Export-Tab über das Zahnrad verbinden."))
             return
         }
         laeuft = true

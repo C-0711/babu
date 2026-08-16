@@ -57,7 +57,7 @@ struct CaptureTab: View {
                         .foregroundStyle(.white.opacity(0.55))
                 }
             }
-            Text("Der Beleg wird automatisch erkannt, begradigt und gelesen — direkt auf dem iPhone, in unter einer Sekunde.")
+            Text("Der Beleg wird automatisch erkannt, begradigt und gelesen.")
                 .font(.footnote)
                 .foregroundStyle(GC.desc)
                 .multilineTextAlignment(.center)
@@ -101,7 +101,7 @@ struct CaptureTab: View {
                 Text("Verarbeitung")
                     .font(.title3.weight(.semibold))
                     .fontDesign(.serif)
-                schrittZeile(1, "Beleg lesen — direkt auf dem iPhone")
+                schrittZeile(1, "Beleg lesen")
                 schrittZeile(2, "Beträge und Summen prüfen")
                 schrittZeile(3, "Kategorie zuordnen")
                 schrittZeile(4, "Versiegeln und ablegen")
@@ -391,12 +391,13 @@ struct SiegelZeile: View {
     let beleg: Beleg
 
     var body: some View {
-        if let siegel = beleg.siegel, let zeit = beleg.siegelZeit {
+        // Kein Hex-Fingerabdruck in der Oberfläche — Vertrauen ist der Haken.
+        if beleg.siegel != nil, let zeit = beleg.siegelZeit {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.seal")
                     .foregroundStyle(GC.accent)
-                Text("\(siegel) · \(DateFormatter.siegel.string(from: zeit)) · gesiegelt")
-                    .font(.caption2.monospaced())
+                Text("Festgehalten am \(DateFormatter.siegel.string(from: zeit)) — bleibt unverändert")
+                    .font(.caption2)
                     .foregroundStyle(GC.accent)
             }
         }

@@ -169,9 +169,21 @@ struct Beleg: Identifiable, Codable {
     }
 }
 
-/// Merkle-Siegel-Kurzform: SHA-256 über Beleginhalt + Zeitstempel.
+/// Merkle-Siegel-Kurzform: SHA-256 über ALLE buchungsrelevanten Felder
+/// inkl. Belegbild — vorher deckte das Siegel nur 4 Felder ab, Netto/USt/
+/// Datum/Bild konnten sich unbemerkt ändern.
 func siegelHash(_ beleg: Beleg, zeit: Date) -> String {
-    let basis = "\(beleg.lieferant)|\(beleg.belegNr)|\(beleg.brutto)|\(beleg.konto ?? "-")|\(zeit.timeIntervalSince1970)"
+    var bildHash = "-"
+    if let bild = beleg.bildJpeg {
+        bildHash = String(SHA256.hash(data: bild)
+            .map { String(format: "%02x", $0) }.joined().prefix(16))
+    }
+    let basis = [beleg.lieferant, beleg.belegNr, beleg.datumText,
+                 String(beleg.netto), String(beleg.ust), String(beleg.brutto),
+                 String(beleg.ustSatz), beleg.konto ?? "-", beleg.steuerschluessel,
+                 beleg.kreditor, beleg.bewirtungAnlass ?? "-",
+                 beleg.bewirtungPersonen ?? "-", bildHash,
+                 String(zeit.timeIntervalSince1970)].joined(separator: "|")
     let digest = SHA256.hash(data: Data(basis.utf8))
     let hex = digest.map { String(format: "%02x", $0) }.joined()
     let a = hex.prefix(8)

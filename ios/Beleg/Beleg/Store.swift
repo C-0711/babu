@@ -149,6 +149,19 @@ final class AppStore: ObservableObject {
 
     // MARK: - Belegbox-Übertragung
 
+    /// Beim Einschalten der Belegbox: Bestandsbelege ohne Übertragungsstatus
+    /// in die Warteschlange nehmen — sonst würden sie nie zweitgeprüft.
+    func altBelegeNachreichen() {
+        guard ablageAktiv else { return }
+        for i in belege.indices where belege[i].ablageStatus == nil
+            && belege[i].bildJpeg != nil && belege[i].istDemo != true {
+            belege[i].ablageStatus = .ausstehend
+            belege[i].ablageDateiname = belege[i].ablageDateiname
+                ?? ablageDateiname(fuer: belege[i])
+        }
+        ablageRetry()
+    }
+
     /// Alle offenen Übertragungen erneut anstoßen (App-Start, Foreground, manuell).
     func ablageRetry() {
         guard ablageAktiv else { return }
@@ -233,11 +246,17 @@ final class AppStore: ObservableObject {
         if let status { belege[i].reviewStatus = status }
     }
 
-    /// Bewirtungsangaben (§4 Abs. 5 EStG) am Beleg erfassen.
+    /// Bewirtungsangaben (§4 Abs. 5 EStG) am Beleg erfassen. Fixierte Belege
+    /// sind unantastbar; gesiegelte werden mit den Angaben neu gesiegelt —
+    /// das Siegel deckt die Bewirtungsangaben mit ab.
     func bewirtungSetzen(id: UUID, anlass: String, personen: String) {
-        guard let i = belege.firstIndex(where: { $0.id == id }) else { return }
-        belege[i].bewirtungAnlass = anlass.trimmingCharacters(in: .whitespacesAndNewlines)
-        belege[i].bewirtungPersonen = personen.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let i = belege.firstIndex(where: { $0.id == id }),
+              belege[i].status != .fixiert else { return }
+        var b = belege[i]
+        b.bewirtungAnlass = anlass.trimmingCharacters(in: .whitespacesAndNewlines)
+        b.bewirtungPersonen = personen.trimmingCharacters(in: .whitespacesAndNewlines)
+        if b.siegel != nil { siegeln(&b, status: b.status) }
+        belege[i] = b
     }
 
     func siegeln(_ beleg: inout Beleg, status: BelegStatus) {
@@ -249,7 +268,8 @@ final class AppStore: ObservableObject {
 
     /// Bestätigen/Korrigieren aus Ein-Tap-Karte oder Review.
     func buchen(id: UUID, konto: String?, steuerschluessel: String?, dauer: Double?) {
-        guard let i = belege.firstIndex(where: { $0.id == id }) else { return }
+        guard let i = belege.firstIndex(where: { $0.id == id }),
+              belege[i].status != .fixiert else { return }
         var b = belege[i]
         var korrigiert = false
         if let k = konto, k != b.konto { b.konto = k; korrigiert = true }

@@ -16,13 +16,16 @@ struct EinstellungenView: View {
         NavigationStack {
             Form {
                 Section {
-                    Toggle("Belege automatisch in die Belegbox übertragen",
+                    Toggle("Belege automatisch ablegen und gegenprüfen",
                            isOn: $store.ablageAktiv)
                 } footer: {
-                    Text("Jeder gesiegelte Beleg wird als Commit „aufnahme: …“ im Container babu abgelegt — Grundlage für BelegReview (Server-Verifikation + steuerliche Einschätzung).")
+                    Text("Jeder Beleg wandert nach der Aufnahme in deine Belegbox und wird dort ein zweites Mal geprüft.")
+                }
+                .onChange(of: store.ablageAktiv) { _, an in
+                    if an { store.altBelegeNachreichen() }
                 }
 
-                Section("Server") {
+                Section("Adresse der Belegbox") {
                     TextField(AppStore.ablageStandardURL, text: $store.ablageURL)
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
@@ -31,21 +34,21 @@ struct EinstellungenView: View {
                 }
 
                 Section {
-                    SecureField(patGespeichert ? "PAT gespeichert ✓ — zum Ersetzen neu eingeben"
-                                               : "Upload-PAT (aus dem --zeigen-Lauf)",
+                    SecureField(patGespeichert ? "Zugangsschlüssel gespeichert ✓ — zum Ersetzen neu einfügen"
+                                               : "Zugangsschlüssel einfügen",
                                 text: $pat)
                         .font(.callout.monospaced())
                     if patGespeichert {
-                        Button("PAT löschen", role: .destructive) {
+                        Button("Zugangsschlüssel löschen", role: .destructive) {
                             KeychainHelfer.loeschePAT()
                             patGespeichert = false
                             pat = ""
                         }
                     }
                 } header: {
-                    Text("Zugriffstoken")
+                    Text("Zugangsschlüssel")
                 } footer: {
-                    Text("Der Token wird ausschließlich in der iOS-Keychain abgelegt — nie in Dateien oder Logs.")
+                    Text("Der Schlüssel bleibt sicher auf diesem Gerät.")
                 }
 
                 Section {
@@ -60,11 +63,11 @@ struct EinstellungenView: View {
                     .disabled(testLaeuft)
                     if let ergebnis = testErgebnis {
                         Text(ergebnis)
-                            .font(.footnote.monospaced())
+                            .font(.footnote)
                             .foregroundStyle(ergebnis.hasPrefix("Verbunden") ? GC.ok : GC.warn)
                     }
                 } footer: {
-                    Text("Stufe 1 ist LAN-only ohne TLS: Übertragung funktioniert nur im eigenen Netz (WLAN mit der H200V). Unterwegs bleiben Belege in der Warteschlange und werden nachgereicht.")
+                    Text("Ohne Verbindung bleiben Belege in der Warteschlange und werden nachgereicht, sobald es wieder klappt.")
                 }
             }
             .navigationTitle("Belegbox")
@@ -91,11 +94,11 @@ struct EinstellungenView: View {
     private func teste() {
         patSpeichernFallsEingegeben()
         guard let url = URL(string: store.ablageURL) else {
-            testErgebnis = "Ungültige Server-URL"
+            testErgebnis = "Die Adresse sieht nicht richtig aus — bitte prüfen."
             return
         }
         guard let gespeichert = KeychainHelfer.ladePAT() else {
-            testErgebnis = "Kein PAT gespeichert"
+            testErgebnis = "Bitte zuerst den Zugangsschlüssel einfügen."
             return
         }
         testLaeuft = true
@@ -103,10 +106,10 @@ struct EinstellungenView: View {
         Task {
             let ergebnis = await AblageService.verbindungstest(basis: url, pat: gespeichert)
             switch ergebnis {
-            case .uebertragen: testErgebnis = "Verbunden ✓ — Server erreichbar, Token gültig"
-            case .tokenFehler: testErgebnis = "Token ungültig (401)"
-            case .abgelehnt(let code): testErgebnis = "Server meldet HTTP \(code)"
-            case .nichtErreichbar: testErgebnis = "Server nicht erreichbar — im WLAN mit der H200V?"
+            case .uebertragen: testErgebnis = "Verbunden ✓ — alles bereit."
+            case .tokenFehler: testErgebnis = "Der Zugangsschlüssel stimmt nicht — bitte neu einfügen."
+            case .abgelehnt: testErgebnis = "Die Belegbox meldet einen Fehler — später noch einmal versuchen."
+            case .nichtErreichbar: testErgebnis = "Keine Verbindung — Internet prüfen und noch einmal versuchen."
             }
             testLaeuft = false
         }

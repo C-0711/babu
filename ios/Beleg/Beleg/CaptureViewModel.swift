@@ -28,6 +28,9 @@ final class CaptureViewModel: ObservableObject {
     private var belichtungGesetzt = false
     private var nimmtAuf = false
     private var unterbrechungsTask: Task<Void, Never>?
+    private var wiederaufnahmeTask: Task<Void, Never>?
+    private var fehlerTask: Task<Void, Never>?
+    private var ausloeseTask: Task<Void, Never>?
 
     private var onScan: ((UIImage) -> Void)?
     private var onCancel: (() -> Void)?
@@ -79,16 +82,44 @@ final class CaptureViewModel: ObservableObject {
                 self.torchAn = false
             }
         }
+        // Ende der Unterbrechung (Anruf vorbei): Sucher wieder anwerfen —
+        // sonst bleibt ein schwarzes Standbild ohne Ausweg.
+        wiederaufnahmeTask = Task { [weak self] in
+            let ende = NotificationCenter.default.notifications(
+                named: AVCaptureSession.interruptionEndedNotification)
+            for await _ in ende {
+                guard let self else { return }
+                self.kamera.starte(delegate: self.detector)
+                self.phase = .suchen
+            }
+        }
+        // Laufzeitfehler der Session: einmal neu starten statt still stehen.
+        fehlerTask = Task { [weak self] in
+            let fehler = NotificationCenter.default.notifications(
+                named: AVCaptureSession.runtimeErrorNotification)
+            for await _ in fehler {
+                guard let self else { return }
+                self.kamera.stoppe()
+                self.kamera.starte(delegate: self.detector)
+                self.phase = .suchen
+            }
+        }
 
         kamera.starte(delegate: detector)
     }
 
     func stoppe() {
         unterbrechungsTask?.cancel()
+        wiederaufnahmeTask?.cancel()
+        fehlerTask?.cancel()
+        ausloeseTask?.cancel()
         kamera.stoppe()
     }
 
     func abbrechen() {
+        // Abbruch gilt auch mitten im Snap-Moment: der laufende Auslöse-Task
+        // darf danach keinen Beleg mehr erzeugen.
+        ausloeseTask?.cancel()
         onCancel?()
     }
 
@@ -143,7 +174,7 @@ final class CaptureViewModel: ObservableObject {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         let quad = rohQuad
 
-        Task {
+        ausloeseTask = Task {
             do {
                 let foto = try await kamera.fotoAufnehmen()
                 let bild = await Task.detached(priority: .userInitiated) {
@@ -158,6 +189,7 @@ final class CaptureViewModel: ObservableObject {
                 }
                 // Snap-Moment kurz stehen lassen, dann übernimmt die Pipeline.
                 try? await Task.sleep(nanoseconds: reduziert ? 120_000_000 : 550_000_000)
+                guard !Task.isCancelled else { return }
                 onScan?(bild)
             } catch {
                 // Foto fehlgeschlagen (z. B. Unterbrechung): zurück in den Sucher.
