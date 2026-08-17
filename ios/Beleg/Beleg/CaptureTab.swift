@@ -9,6 +9,8 @@ struct CaptureTab: View {
     @State private var beleg: Beleg?
     @State private var schritte = 0
     @State private var startZeit = Date()
+    @State private var ergebnisBild: UIImage?
+    @State private var markierungen: [CGRect] = []
 
     enum Phase { case bereit, verarbeitet, ergebnis, nichtsErkannt }
 
@@ -127,13 +129,9 @@ struct CaptureTab: View {
     @ViewBuilder
     private var ergebnisView: some View {
         if let b = beleg {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    ErgebnisKarte(beleg: b, startZeit: startZeit) {
-                        phase = .bereit
-                    }
-                }
-                .padding(20)
+            ErgebnisUebersicht(belegID: b.id, bild: ergebnisBild,
+                               markierungen: markierungen, startZeit: startZeit) {
+                phase = .bereit
             }
         }
     }
@@ -193,13 +191,17 @@ struct CaptureTab: View {
 
         try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 2
-        let felder = FeldParser.parse(zeilen: ocr.zeilen)
+        let felder = FeldParser.parse(zeilen: ocr.parserZeilen)
 
         // Komplett unlesbares Foto: keinen 0,00-€-Beleg anlegen.
         if felder.brutto == nil && felder.lieferant == nil {
             phase = .nichtsErkannt
             return
         }
+
+        // Für die Ergebnis-Ansicht: Foto + Positionen der erkannten Felder.
+        ergebnisBild = bild
+        markierungen = FeldMarker.markierungen(zeilen: ocr.zeilen, felder: felder)
 
         try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 3

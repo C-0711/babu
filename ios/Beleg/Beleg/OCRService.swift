@@ -6,8 +6,19 @@ import UIKit
 enum OCRService {
 
     struct Ergebnis {
-        let zeilen: [(text: String, conf: Double)]
+        /// Eine erkannte Zeile inkl. Position im Bild (Vision-normiert,
+        /// Ursprung unten links) — Grundlage für die grünen Feld-Markierungen.
+        struct Zeile {
+            let text: String
+            let conf: Double
+            let box: CGRect
+        }
+        let zeilen: [Zeile]
         var text: String { zeilen.map { $0.text }.joined(separator: "\n") }
+        /// Für den FeldParser (der nur Text + Konfidenz braucht).
+        var parserZeilen: [(text: String, conf: Double)] {
+            zeilen.map { ($0.text, $0.conf) }
+        }
     }
 
     static func erkenne(_ image: UIImage) async -> Ergebnis {
@@ -17,9 +28,10 @@ enum OCRService {
                 let obs = (request.results as? [VNRecognizedTextObservation]) ?? []
                 // Von oben nach unten sortieren (Vision liefert normierte Koordinaten, y=0 unten).
                 let sortiert = obs.sorted { $0.boundingBox.midY > $1.boundingBox.midY }
-                let zeilen: [(String, Double)] = sortiert.compactMap { o in
+                let zeilen: [Ergebnis.Zeile] = sortiert.compactMap { o in
                     guard let best = o.topCandidates(1).first else { return nil }
-                    return (best.string, Double(best.confidence))
+                    return Ergebnis.Zeile(text: best.string, conf: Double(best.confidence),
+                                          box: o.boundingBox)
                 }
                 continuation.resume(returning: Ergebnis(zeilen: zeilen))
             }
