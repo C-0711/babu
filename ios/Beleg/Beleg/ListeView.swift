@@ -186,42 +186,168 @@ struct DetailView: View {
     @State private var review: BelegReviewDaten?
     @State private var reviewLaedt = false
     @State private var reviewHinweis: String?
+    @State private var zeigeAlle = false
     @State private var zeigeBewirtung = false
     @State private var zeigeFeldEditor = false
     @State private var zeigeKontierung = false
+    @State private var detailBild: UIImage?
+    @State private var markierungen: [CGRect] = []
 
     private var beleg: Beleg? { store.belege.first { $0.id == belegID } }
 
+    // Wie die Ergebnis-Ansicht nach der Aufnahme: das Beleg-Foto groß, die
+    // erkannten Felder grün markiert, der grüne Haken als EINZIGES Signal —
+    // alles Weitere liegt hinter dem ⓘ oben rechts.
     var body: some View {
-        ScrollView {
+        Group {
             if let b = beleg {
-                VStack(alignment: .leading, spacing: 14) {
-                    if let data = b.bildJpeg, let img = UIImage(data: data) {
-                        Image(uiImage: img)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxHeight: 320)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .shadow(color: Color(hex: 0x1F1E1A).opacity(0.25), radius: 12, y: 6)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
+                ZStack(alignment: .topTrailing) {
+                    VStack(spacing: 12) {
+                        belegAnsicht(b)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text(b.lieferant)
+                                .font(.title3.weight(.semibold))
+                                .fontDesign(.serif)
+                                .foregroundStyle(GC.fg)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                            Spacer()
+                            Text(fmtEur(b.brutto))
+                                .font(.system(size: 22, weight: .medium, design: .monospaced))
+                                .foregroundStyle(GC.fg)
+                                .layoutPriority(1)
+                        }
+                        statusZeile(b)
                     }
+                    .padding(.horizontal, 14)
+                    .padding(.top, 4)
+                    .padding(.bottom, 12)
 
+                    Button {
+                        zeigeAlle = true
+                    } label: {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 20))
+                            .foregroundStyle(GC.desc)
+                            .frame(width: 40, height: 40)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .accessibilityLabel("Alle Angaben zum Beleg")
+                    .padding(.trailing, 18)
+                    .padding(.top, 6)
+                }
+            }
+        }
+        .background(GC.canvas)
+        .navigationTitle(beleg?.belegNr ?? "Beleg")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await laden() }
+        .sheet(isPresented: $zeigeAlle) { alleAngabenSheet }
+    }
+
+    // MARK: - Beleg groß, Markierungen, Haken
+
+    @ViewBuilder
+    private func belegAnsicht(_ b: Beleg) -> some View {
+        Group {
+            if let bild = detailBild {
+                Image(uiImage: bild)
+                    .resizable()
+                    .scaledToFit()
+                    .overlay {
+                        GeometryReader { geo in
+                            ZStack {
+                                ForEach(Array(markierungen.enumerated()), id: \.offset) { _, r in
+                                    RoundedRectangle(cornerRadius: 5)
+                                        .fill(GC.ok.opacity(0.16))
+                                        .overlay(RoundedRectangle(cornerRadius: 5)
+                                            .stroke(GC.ok, lineWidth: 1.6))
+                                        .frame(width: r.width * geo.size.width + 10,
+                                               height: r.height * geo.size.height + 8)
+                                        .position(x: r.midX * geo.size.width,
+                                                  y: (1 - r.midY) * geo.size.height)
+                                }
+                            }
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .shadow(color: Color(hex: 0x1F1E1A).opacity(0.22), radius: 14, y: 7)
+            } else {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(GC.accentSubtle)
+                    .overlay(Image(systemName: "doc.text")
+                        .font(.system(size: 34, weight: .light))
+                        .foregroundStyle(GC.accent))
+            }
+        }
+        .overlay {
+            if b.zweitgeprueft || b.status == .fixiert {
+                ZStack {
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 96, height: 96)
+                        .shadow(color: Color(hex: 0x1F1E1A).opacity(0.25), radius: 12, y: 5)
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 92))
+                        .foregroundStyle(GC.ok)
+                }
+                .accessibilityLabel("Alles in Ordnung")
+            }
+        }
+    }
+
+    /// Eine leise Zeile statt Warntafeln — Details stehen unterm ⓘ.
+    @ViewBuilder
+    private func statusZeile(_ b: Beleg) -> some View {
+        if b.reviewStatus == "fehlgeschlagen" {
+            Text("Der Beleg war schwer zu lesen — am besten neu fotografieren.")
+                .font(.footnote)
+                .foregroundStyle(GC.warn)
+        } else if b.brauchtBewirtungsangaben || b.ablageStatus == .fehlgeschlagen {
+            Button {
+                zeigeAlle = true
+            } label: {
+                Label("Ein Hinweis dazu", systemImage: "info.circle")
+                    .font(.footnote)
+                    .foregroundStyle(GC.muted)
+            }
+        } else if !b.zweitgeprueft, b.ablageStatus == .uebertragen, b.status != .fixiert {
+            Text("Wird gerade noch einmal geprüft …")
+                .font(.footnote)
+                .foregroundStyle(GC.muted)
+        }
+    }
+
+    private func laden() async {
+        guard let b = beleg else { return }
+        if detailBild == nil, let daten = b.bildJpeg {
+            detailBild = UIImage(data: daten)
+        }
+        if markierungen.isEmpty, let bild = detailBild {
+            let ocr = await OCRService.erkenne(bild)
+            markierungen = FeldMarker.markierungen(zeilen: ocr.zeilen, beleg: b)
+        }
+        if b.ablageStatus == .uebertragen {
+            await reviewLaden(fuer: b)
+        }
+    }
+
+    // MARK: - ⓘ: alle Angaben (der bisherige Detail-Inhalt)
+
+    private var alleAngabenSheet: some View {
+        NavigationStack {
+            ScrollView {
+                if let b = beleg {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(spacing: 8) {
                             Text(b.lieferant).font(.headline).fontDesign(.serif)
-                            if b.zweitgeprueft {
-                                Image(systemName: "checkmark.seal.fill")
-                                    .foregroundStyle(GC.ok)
-                                    .accessibilityLabel("Alles in Ordnung")
-                            }
                             Spacer()
                             Text(fmtEur(b.brutto)).font(.subheadline.monospaced())
                         }
                         BuchsatzView(beleg: b)
 
-                        // Korrektur-Wege: Kernfelder und Kategorie sind bis zur
-                        // Fixierung änderbar — Löschen ist keine Korrektur.
+                        // Korrektur-Wege: bis zur Fixierung änderbar.
                         if b.status != .fixiert {
                             HStack(spacing: 10) {
                                 Button {
@@ -243,8 +369,6 @@ struct DetailView: View {
                             }
                         }
 
-                        // Kein Nachweis-Block mehr — Vertrauen ist der grüne Haken
-                        // oben; nur eine ausstehende Ablage bekommt einen Knopf.
                         if let ablage = b.ablageStatus, ablage != .uebertragen {
                             Button {
                                 Task { await store.uebertrage(b.id) }
@@ -279,8 +403,6 @@ struct DetailView: View {
                             reviewBereich(fuer: b)
                         }
 
-                        // Kein Hex-Fingerabdruck mehr in der Oberfläche —
-                        // nur die menschliche Aussage, seit wann er festgehalten ist.
                         if b.siegel != nil, let z = b.siegelZeit {
                             Text("Festgehalten am \(DateFormatter.siegel.string(from: z)) — bleibt unverändert")
                                 .font(.caption2)
@@ -288,27 +410,28 @@ struct DetailView: View {
                         }
                     }
                     .gcCard()
+                    .padding(16)
                 }
-                .padding(20)
+            }
+            .background(GC.canvas)
+            .navigationTitle("Alle Angaben")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Fertig") { zeigeAlle = false }
+                }
+            }
+            .sheet(isPresented: $zeigeBewirtung) {
+                BewirtungsangabenSheet(belegID: belegID)
+            }
+            .sheet(isPresented: $zeigeFeldEditor) {
+                FeldEditorSheet(belegID: belegID)
+            }
+            .sheet(isPresented: $zeigeKontierung) {
+                ReviewSheet(belegID: belegID, startZeit: Date())
             }
         }
-        .background(GC.canvas)
-        .navigationTitle(beleg?.belegNr ?? "Beleg")
-        .navigationBarTitleDisplayMode(.inline)
-        .task {
-            if let b = beleg, b.ablageStatus == .uebertragen {
-                await reviewLaden(fuer: b)
-            }
-        }
-        .sheet(isPresented: $zeigeBewirtung) {
-            BewirtungsangabenSheet(belegID: belegID)
-        }
-        .sheet(isPresented: $zeigeFeldEditor) {
-            FeldEditorSheet(belegID: belegID)
-        }
-        .sheet(isPresented: $zeigeKontierung) {
-            ReviewSheet(belegID: belegID, startZeit: Date())
-        }
+        .presentationDetents([.medium, .large])
     }
 
     private func provZeile(_ key: String, _ value: String) -> some View {

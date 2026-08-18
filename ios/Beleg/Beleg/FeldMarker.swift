@@ -34,4 +34,15 @@ enum FeldMarker {
         }
         return rects
     }
+
+    /// Variante für gespeicherte Belege (Detail-Ansicht): baut die Feldwerte
+    /// aus dem Beleg zusammen und markiert dieselben Stellen.
+    static func markierungen(zeilen: [OCRService.Ergebnis.Zeile], beleg: Beleg) -> [CGRect] {
+        var f = Felder()
+        f.lieferant = beleg.lieferant
+        f.belegNr = beleg.belegNr == "ohne Nr." ? nil : beleg.belegNr
+        f.datumText = beleg.datumText
+        f.brutto = beleg.brutto > 0 ? beleg.brutto : nil
+        return markierungen(zeilen: zeilen, felder: f)
+    }
 }
