@@ -14,7 +14,7 @@ Finanzamt-Post, FAQ, Profi-Upload im Footer, Babu-Chat-Widget.
 
 ```
 ssh h200v 'cp ~/babu-web/index.html ~/babu-web/index.html.vor-landing-JJJJMMTT'
-scp index-deploy.html h200v:~/babu-web/index.html
+scp index.html h200v:~/babu-web/index.html
 ```
 
 `GET /` liefert die Datei direkt (babu_web.py, Env `BABU_SEITE`).
