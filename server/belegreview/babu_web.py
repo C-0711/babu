@@ -545,6 +545,46 @@ def portal_icon(groesse: str) -> Response:
                         headers={"Cache-Control": "public, max-age=86400"})
 
 
+# Statik für Landing-Bilder und den App-Download — feste Ordner neben der
+# Startseite (~/babu-web/), strikte Namens-Allowlists, kein Pfad-Traversal.
+BILDER_ORDNER = SEITE.parent / "bilder"
+APP_ORDNER = SEITE.parent / "app"
+APP_DATEIEN = {
+    "babu.ipa": "application/octet-stream",
+    "manifest.plist": "application/xml",
+    "icon.png": "image/png",
+}
+
+
+@app.get("/bilder/{name}")
+def landing_bild(name: str) -> Response:
+    if not re.fullmatch(r"[a-z0-9-]{1,40}\.png", name):
+        return JSONResponse({"fehler": "unbekannt"}, status_code=404)
+    pfad = BILDER_ORDNER / name
+    if not pfad.is_file():
+        return JSONResponse({"fehler": "unbekannt"}, status_code=404)
+    return FileResponse(pfad, media_type="image/png",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/app")
+def app_seite() -> Response:
+    pfad = APP_ORDNER / "index.html"
+    if not pfad.is_file():
+        return JSONResponse({"fehler": "kommt bald"}, status_code=404)
+    return FileResponse(pfad, media_type="text/html")
+
+
+@app.get("/app/{name}")
+def app_datei(name: str) -> Response:
+    if name not in APP_DATEIEN:
+        return JSONResponse({"fehler": "unbekannt"}, status_code=404)
+    pfad = APP_ORDNER / name
+    if not pfad.is_file():
+        return JSONResponse({"fehler": "kommt bald"}, status_code=404)
+    return FileResponse(pfad, media_type=APP_DATEIEN[name])
+
+
 # ---------------------------------------------------------------------------
 # Portal-API
 # ---------------------------------------------------------------------------
