@@ -178,25 +178,54 @@ main{padding:26px 22px 60px;min-height:70dvh}
 /* Login — im Look der Startseite: Papier, Serif, weiße Karten.
    Luft oben als PADDING, nicht Margin — Margin würde aus dem Blatt
    herauskollabieren und die Seite wirkt oben angeschnitten. */
-#login{max-width:480px;margin:0 auto;padding:min(11dvh,110px) 20px 70px}
-#login .kicker{margin-bottom:14px;color:var(--gc-accent);text-align:center}
+#login{max-width:480px;margin:0 auto;padding:min(9dvh,90px) 20px 40px}
+#login .heim{display:block;text-align:center;font:600 26px var(--gc-serif);
+  color:var(--gc-fg);text-decoration:none;letter-spacing:-.015em;margin-bottom:22px}
+#login .kicker{margin-bottom:14px;color:var(--gc-accent-hover);text-align:center}
 #login h2{font:600 clamp(30px,6vw,40px) var(--gc-serif);letter-spacing:-.015em;
-  color:var(--gc-fg);margin-bottom:8px;text-align:center;line-height:1.1}
+  color:var(--gc-fg);margin-bottom:8px;text-align:center;line-height:1.1;text-wrap:balance}
 #login > p{color:var(--gc-desc);margin-bottom:26px;text-align:center;font-size:15px}
 .lkarte{background:var(--gc-bg);border:1px solid var(--gc-border);border-radius:16px;
   padding:24px;margin-bottom:16px;box-shadow:0 10px 30px rgba(31,30,26,.07)}
 #login input{width:100%;padding:14px 16px;border:1px solid var(--gc-border);border-radius:10px;
-  font:15px var(--gc-sans);background:var(--gc-bg);margin-bottom:10px}
-#login input:focus{border-color:var(--gc-accent);outline:none}
-#login .voll{width:100%;background:var(--gc-fg);color:#fff;padding:14px;border-radius:10px;
-  font-weight:600;font-size:15px}
-#login .voll:active{transform:scale(.99)}
-#login .fehler{color:var(--gc-danger);font-size:13px;margin-top:10px;display:none}
+  font:16px var(--gc-sans);background:var(--gc-bg);margin-bottom:10px;
+  transition:border-color .15s ease, box-shadow .15s ease}
+#login input:focus{border-color:var(--gc-accent);outline:none;
+  box-shadow:0 0 0 3px rgba(133,123,97,.18)}
+#login input::placeholder{color:#767676}
+#login .voll{width:100%;background:var(--gc-fg);color:#fff;padding:14px 26px;
+  border-radius:12px;font-weight:600;font-size:16px;margin-top:10px;
+  transition:transform .12s ease, background .15s ease}
+#login .voll:hover{background:#000}
+#login .voll:active{transform:translateY(1px)}
+#login .voll[disabled]{opacity:.55;cursor:progress}
+#login .fehler{color:var(--gc-danger);font-size:13px;margin-top:12px;display:none;
+  background:rgba(168,67,58,.08);border-radius:8px;padding:9px 12px}
 #login small{display:block;margin-top:12px;color:var(--gc-muted);font-size:12px;line-height:1.5}
+.pw-wrap{position:relative}
+.pw-wrap input{padding-right:46px}
+#pw-auge{position:absolute;right:6px;top:50%;transform:translateY(-50%);
+  width:36px;height:36px;display:grid;place-items:center;color:#767676;margin-top:-5px}
+#pw-auge svg{width:20px;height:20px}
+/* Aufklapper: gestylt statt Browser-Dreieck */
+#login details{margin-top:14px;border-top:1px solid var(--gc-border-l);padding-top:12px}
+#login details>summary{list-style:none;cursor:pointer;font-size:13px;
+  color:var(--gc-desc);display:flex;align-items:center;gap:8px;padding:5px 0}
+#login details>summary::-webkit-details-marker{display:none}
+#login details>summary::before{content:"";width:6px;height:6px;flex:none;
+  border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;
+  transform:rotate(-45deg);transition:transform .18s ease}
+#login details[open]>summary::before{transform:rotate(45deg)}
+#login .hilfetext{font-size:13px;color:var(--gc-desc);padding:8px 0 4px;line-height:1.55}
+.login-fuss{text-align:center;font-size:12px;color:var(--gc-muted);
+  margin-top:28px;line-height:1.7}
+.login-fuss a{color:var(--gc-accent-hover)}
 #reg-einstieg b{font:600 17px var(--gc-serif);color:var(--gc-fg)}
 #reg-einstieg p{margin:4px 0 14px;color:var(--gc-desc);font-size:13.5px}
 #reg-einstieg .zart{width:100%;background:var(--gc-accent-subtle);color:var(--gc-fg);
-  padding:14px;border-radius:10px;font-weight:600;font-size:15px}
+  padding:14px 26px;border-radius:12px;font-weight:600;font-size:16px;
+  transition:transform .12s ease}
+#reg-einstieg .zart:active{transform:translateY(1px)}
 
 /* Zustände */
 .leer{color:var(--gc-desc);text-align:center;padding:44px 20px}
@@ -256,19 +285,32 @@ main{padding:26px 22px 60px;min-height:70dvh}
 <div id="offline">Gerade keine Verbindung. Deine Belege sind sicher — wir zeigen den Stand von eben.</div>
 
 <div id="login" hidden>
-  <div class="lbl kicker">babu · für deinen Salon</div>
+  <a class="heim" href="/">babu</a>
+  <div class="lbl kicker">für deinen Salon</div>
   <h2>Schön, dass du da bist.</h2>
   <p>Belege, Kassenbuch und Antworten — alles an einem Ort.</p>
   <div id="login-felder">
     <div class="lkarte">
-      <input id="login-email" type="email" placeholder="E-Mail" autocomplete="username">
-      <input id="login-passwort" type="password" placeholder="Passwort" autocomplete="current-password">
-      <button id="anmelden" class="voll">Anmelden</button>
-      <div class="fehler" id="login-fehler"></div>
-      <details id="code-login" style="margin-top:12px;border:none">
-        <summary style="padding:4px 0;font-size:12.5px;color:var(--gc-muted);font-weight:500;cursor:pointer">Mit Zugangscode anmelden (Einrichtung)</summary>
+      <form id="login-form" novalidate>
+        <input id="login-email" type="email" placeholder="E-Mail" autocomplete="username" required>
+        <div class="pw-wrap">
+          <input id="login-passwort" type="password" placeholder="Passwort" autocomplete="current-password" required>
+          <button type="button" id="pw-auge" aria-label="Passwort anzeigen" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+        <button id="anmelden" class="voll" type="submit">Anmelden</button>
+        <div class="fehler" id="login-fehler" role="alert" aria-live="polite"></div>
+      </form>
+      <details id="pw-vergessen">
+        <summary>Passwort vergessen?</summary>
+        <p class="hilfetext">Halb so wild: Sag deiner babu-Ansprechperson kurz Bescheid —
+        du bekommst ein neues Startpasswort und wählst danach wieder dein eigenes.</p>
+      </details>
+      <details id="code-login">
+        <summary>Mit Zugangscode anmelden (Einrichtung)</summary>
         <input id="zugangscode" type="password" placeholder="Zugangscode" autocomplete="off" style="margin-top:10px">
-        <button id="anmelden-code" class="voll" style="background:var(--gc-accent-subtle);color:var(--gc-fg)">Mit Code anmelden</button>
+        <button id="anmelden-code" class="voll" style="background:var(--gc-accent-subtle);color:var(--gc-fg);margin-top:0">Mit Code anmelden</button>
       </details>
     </div>
     <div class="lkarte" id="reg-einstieg">
@@ -279,6 +321,8 @@ main{padding:26px 22px 60px;min-height:70dvh}
     </div>
   </div>
   <div id="reg-bereich" hidden></div>
+  <div class="login-fuss">babu · 0711 Intelligence · Stuttgart · <a href="/">Zur Startseite</a><br>
+  babu ersetzt keine individuelle Steuerberatung.</div>
 </div>
 
 <div id="app" hidden>
@@ -505,21 +549,47 @@ function zeigeLogin(){ $("#app").hidden = true; $("#login").hidden = false; $("#
 function zeigeApp(){ $("#login").hidden = true; $("#app").hidden = false; routen(); postPunktAktualisieren(); }
 
 let meineRolle = "salon";
-$("#anmelden").addEventListener("click", async () => {
+$("#login-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
   const f = $("#login-fehler"); f.style.display = "none";
+  const email = $("#login-email").value.trim();
+  const passwort = $("#login-passwort").value;
+  if (!email || !passwort){
+    f.textContent = "Bitte E-Mail und Passwort eingeben.";
+    f.style.display = "block";
+    (email ? $("#login-passwort") : $("#login-email")).focus();
+    return;
+  }
+  const knopf = $("#anmelden");
+  knopf.disabled = true;
+  knopf.textContent = "Einen Moment …";
   try{
     const r = await fetch("/api/login",{method:"POST",credentials:"same-origin",
       headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({email:$("#login-email").value.trim(),
-                           passwort:$("#login-passwort").value})});
+      body:JSON.stringify({email, passwort})});
     const d = await r.json().catch(() => ({}));
-    if(!r.ok){ f.textContent = d.fehler || "Damit können wir dich leider nicht anmelden.";
-      f.style.display="block"; return; }
+    if(!r.ok){
+      f.textContent = d.fehler || "Damit können wir dich leider nicht anmelden.";
+      f.style.display = "block";
+      // E-Mail bleibt stehen — nur das Passwort neu.
+      $("#login-passwort").value = "";
+      $("#login-passwort").focus();
+      return;
+    }
     meineRolle = d.rolle || "salon";
     $("#avatar").textContent = (d.un||"·")[0].toUpperCase();
     $("#login-passwort").value = "";
     zeigeApp();
   }catch{ f.textContent = "Gerade keine Verbindung — gleich nochmal versuchen."; f.style.display = "block"; }
+  finally{ knopf.disabled = false; knopf.textContent = "Anmelden"; }
+});
+$("#pw-auge").addEventListener("click", () => {
+  const feld = $("#login-passwort");
+  const offen = feld.type === "text";
+  feld.type = offen ? "password" : "text";
+  $("#pw-auge").setAttribute("aria-pressed", String(!offen));
+  $("#pw-auge").setAttribute("aria-label", offen ? "Passwort anzeigen" : "Passwort verbergen");
+  feld.focus();
 });
 $("#anmelden-code").addEventListener("click", async () => {
   const f = $("#login-fehler"); f.style.display = "none";
@@ -535,7 +605,6 @@ $("#anmelden-code").addEventListener("click", async () => {
     zeigeApp();
   }catch{ f.textContent = "Gerade keine Verbindung — gleich nochmal versuchen."; f.style.display = "block"; }
 });
-$("#login-passwort").addEventListener("keydown", e => { if(e.key==="Enter") $("#anmelden").click(); });
 $("#zugangscode").addEventListener("keydown", e => { if(e.key==="Enter") $("#anmelden-code").click(); });
 
 /* ————— Router ————— */
