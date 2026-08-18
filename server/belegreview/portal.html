@@ -38,8 +38,9 @@ header{position:sticky;top:0;z-index:20;background:var(--gc-chrome);
   border-bottom:1px solid var(--gc-border);padding:10px 22px;
   display:flex;align-items:center;gap:18px}
 header h1{font:600 17px var(--gc-serif);letter-spacing:-.015em;color:var(--gc-fg)}
-nav{display:flex;gap:2px;margin-left:6px}
-nav button{padding:7px 13px;border-radius:999px;font-weight:550;color:var(--gc-desc)}
+nav{display:flex;gap:2px;margin-left:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav button{padding:7px 13px;border-radius:999px;font-weight:550;color:var(--gc-desc);flex:none}
 nav button.an{background:var(--gc-accent-subtle);color:var(--gc-fg)}
 #kopf-recht{margin-left:auto;display:flex;align-items:center;gap:12px}
 #stand{font-size:11px;color:var(--gc-muted)}
@@ -93,6 +94,19 @@ main{padding:26px 22px 60px;min-height:70dvh}
 .mrow .art{font-weight:600;color:var(--gc-fg)}
 .mrow .wer{font-size:12px;color:var(--gc-muted);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mrow .summe{font:600 14px var(--gc-mono);font-variant-numeric:tabular-nums;color:var(--gc-fg)}
+
+/* Auswertung („Zahlen") — BH-Auswertung light */
+.arow{padding:10px 0;border-bottom:1px solid var(--gc-border-l)}
+.arow:last-child{border-bottom:none}
+.arow .kopfz{display:flex;align-items:baseline;gap:10px}
+.arow .kopfz .art{font-weight:600;color:var(--gc-fg);flex:1}
+.arow .kopfz .delta{font-size:11.5px;font-weight:600}
+.delta.hoch{color:var(--gc-warn)}.delta.runter{color:var(--gc-ok)}.delta.neu{color:var(--gc-muted)}
+.balken{height:6px;background:var(--gc-accent-subtle);border-radius:3px;margin-top:7px;overflow:hidden}
+.balken i{display:block;height:100%;background:var(--gc-accent);border-radius:3px}
+.gruppe-kopf{margin:20px 0 8px}
+.suchfeld{width:100%;padding:10px 14px;border:1px solid var(--gc-border);border-radius:999px;
+  font:inherit;background:var(--gc-bg);margin:4px 0 10px}
 
 /* Detail */
 #detail-grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:22px}
@@ -246,6 +260,8 @@ main{padding:26px 22px 60px;min-height:70dvh}
   <nav>
     <button data-ziel="heute">Heute</button>
     <button data-ziel="belege">Belege</button>
+    <button data-ziel="zahlen">Zahlen</button>
+    <button data-ziel="bank">Bank</button>
     <button data-ziel="post" style="position:relative">Post<span id="post-punkt" hidden
       style="position:absolute;top:4px;right:2px;width:7px;height:7px;border-radius:50%;background:var(--gc-accent)"></span></button>
     <button data-ziel="fragen">Fragen</button>
@@ -291,12 +307,46 @@ main{padding:26px 22px 60px;min-height:70dvh}
     <div id="detail-inhalt"><div class="skelett" style="height:300px"></div></div>
   </section>
 
+  <!-- ZAHLEN (Auswertung wie die BH-Auswertung der Kanzlei, nur lesbar) -->
+  <section class="ansicht" id="a-zahlen">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="gruss" style="font-size:22px">Deine Zahlen</div>
+      <div class="mon-schalter">
+        <button id="z-mon-zurueck" aria-label="Vormonat">‹</button>
+        <b id="z-mon-anzeige"></b>
+        <button id="z-mon-vor" aria-label="Folgemonat">›</button>
+      </div>
+    </div>
+    <p style="color:var(--gc-desc);margin-bottom:14px">Wohin dein Geld geht — und wie es sich zum Vormonat verändert.</p>
+    <div id="zahlen-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+  </section>
+
+  <!-- BANK (Zahlungs-Abgleich Konto ↔ Belege) -->
+  <section class="ansicht" id="a-bank">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="gruss" style="font-size:22px">Konto</div>
+      <div class="mon-schalter">
+        <button id="b-mon-zurueck" aria-label="Vormonat">‹</button>
+        <b id="b-mon-anzeige"></b>
+        <button id="b-mon-vor" aria-label="Folgemonat">›</button>
+      </div>
+    </div>
+    <p style="color:var(--gc-desc);margin-bottom:10px">Hat jede Zahlung vom Konto ihren Beleg?</p>
+    <button class="chip" id="bank-auszug-knopf" style="margin-bottom:14px">Kontoauszug ablegen</button>
+    <div id="bank-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+  </section>
+
   <!-- POST -->
   <section class="ansicht" id="a-post">
     <div class="gruss" style="font-size:22px;margin-bottom:4px">Post</div>
     <p style="color:var(--gc-desc);margin-bottom:10px">Was deine Kanzlei für dich bereitlegt.</p>
-    <button class="chip" id="auszug-knopf" style="margin-bottom:14px">Kontoauszug ablegen</button>
+    <button class="chip" id="auszug-knopf" style="margin-bottom:10px">Kontoauszug ablegen</button>
     <input type="file" id="auszug-datei" accept=".pdf,application/pdf" hidden>
+    <input class="suchfeld" id="post-suche" placeholder="Suchen — z. B. Lohn, Auswertung …" autocomplete="off">
+    <div class="chips" style="margin-top:0">
+      <button class="chip an" id="post-f-alle">Alle</button>
+      <button class="chip" id="post-f-ungelesen">Ungelesen</button>
+    </div>
     <div id="post-liste"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
 
@@ -419,6 +469,7 @@ $("#zugangscode").addEventListener("keydown", e => { if(e.key==="Enter") $("#anm
 /* ————— Router ————— */
 const ansichten = { heute: ladeHeute, belege: ladeBelege, fragen: () => {},
                     aufraeumen: ladeAufraeumen, post: ladePost,
+                    zahlen: ladeZahlen, bank: ladeBank,
                     einstellungen: ladeEinstellungen, detail: null };
 function routen(){
   const h = location.hash.slice(1) || "heute";
@@ -528,6 +579,19 @@ function belegZeile(z){
     <div class="zkonto">${z.konto_skr04 ? z.konto_skr04 + (z.ust_satz!=null ? " · " + z.ust_satz + " %" : "") : ""}</div></div>
   </button>`;
 }
+/* Zeitraum-Gruppen wie im Kanzlei-Standard: Diese Woche / Letzte Woche / Früher */
+function wochenGruppe(iso){
+  if (!iso) return "Früher";
+  const d = new Date(iso), heute = new Date();
+  const tagesanfang = x => { const y = new Date(x); y.setHours(0,0,0,0); return y; };
+  const wochenanfang = x => { const y = tagesanfang(x);
+    y.setDate(y.getDate() - ((y.getDay() + 6) % 7)); return y; };   // Montag
+  const dieseWoche = wochenanfang(heute);
+  const letzteWoche = new Date(dieseWoche); letzteWoche.setDate(letzteWoche.getDate() - 7);
+  if (d >= dieseWoche) return "Diese Woche";
+  if (d >= letzteWoche) return "Letzte Woche";
+  return "Früher";
+}
 async function ladeBelege(){
   $("#mon-anzeige").textContent = monatName(aktMonat);
   let d;
@@ -535,10 +599,19 @@ async function ladeBelege(){
   catch{ return; }
   etag = d.stand;
   $("#stand").textContent = "Stand " + new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});
-  $("#belege-liste").innerHTML = d.belege.length
-    ? d.belege.map(belegZeile).join("")
-    : `<div class="leer"><b>${aktFilter ? "Hier ist gerade nichts." : "Noch keine Belege in diesem Monat."}</b>
+  if (!d.belege.length){
+    $("#belege-liste").innerHTML =
+      `<div class="leer"><b>${aktFilter ? "Hier ist gerade nichts." : "Noch keine Belege in diesem Monat."}</b>
        ${aktFilter ? "Schau bei „Alle“ nach dem Rest." : "Der erste dauert keine fünf Sekunden."}</div>`;
+    return;
+  }
+  let html = "", gruppe = null;
+  for (const z of d.belege){
+    const g = wochenGruppe(z.hochgeladen);
+    if (g !== gruppe){ gruppe = g; html += `<div class="lbl gruppe-kopf">${g}</div>`; }
+    html += belegZeile(z);
+  }
+  $("#belege-liste").innerHTML = html;
 }
 $("#mon-zurueck").addEventListener("click", () => { aktMonat = monatSchieben(aktMonat,-1); ladeBelege(); });
 $("#mon-vor").addEventListener("click", () => { aktMonat = monatSchieben(aktMonat, 1); ladeBelege(); });
@@ -706,7 +779,140 @@ $("#chatform").addEventListener("submit", async ev => {
   antwort.classList.remove("tippt");
 });
 
+/* ————— ZAHLEN (Auswertung mit Vormonats-Vergleich + DATEV-Stapel) ————— */
+let zMonat = jetztMonat();
+function deltaHtml(jetzt, vorher){
+  if (vorher == null || vorher === 0) return `<span class="delta neu">neu</span>`;
+  const p = Math.round((jetzt - vorher) / vorher * 100);
+  if (Math.abs(p) < 1) return `<span class="delta neu">wie im Vormonat</span>`;
+  return p > 0 ? `<span class="delta hoch">▲ ${p} %</span>`
+               : `<span class="delta runter">▼ ${Math.abs(p)} %</span>`;
+}
+async function ladeZahlen(){
+  $("#z-mon-anzeige").textContent = monatName(zMonat);
+  let d;
+  try{ d = await (await api("/api/monat/" + zMonat)).json(); }
+  catch{ return; }
+  const ziel = $("#zahlen-inhalt");
+  if (!d.anzahl){
+    ziel.innerHTML = `<div class="leer"><b>Noch keine Belege in ${monatName(zMonat).split(" ")[0]}.</b>
+      Sobald welche da sind, siehst du hier, wohin dein Geld geht.</div>`;
+    return;
+  }
+  const vor = d.vormonat || {};
+  const vorArten = {};
+  (vor.belegarten || []).forEach(a => { vorArten[a.belegart] = a.brutto; });
+  const max = Math.max(...(d.belegarten || []).map(a => a.brutto || 0), 1);
+
+  let html = `<div class="sektion lbl">Ausgaben nach Art</div><div class="karte">`;
+  for (const a of (d.belegarten || [])){
+    html += `<div class="arow"><div class="kopfz">
+        <span class="art">${a.belegart}</span>
+        ${deltaHtml(a.brutto, vorArten[a.belegart])}
+        <span class="summe num">${euro(a.brutto)}</span></div>
+      <div class="balken"><i style="width:${Math.max(3, Math.round((a.brutto||0)/max*100))}%"></i></div>
+      <div style="font-size:11.5px;color:var(--gc-muted);margin-top:4px">
+        ${a.anzahl} Beleg${a.anzahl===1?"":"e"}${(a.lieferanten||[]).length ? " · " + a.lieferanten.slice(0,3).join(" · ") : ""}</div>
+    </div>`;
+  }
+  html += `<div class="arow"><div class="kopfz"><span class="art">Zusammen</span>
+      ${deltaHtml(d.brutto, vor.brutto)}
+      <span class="summe num">${euro(d.brutto)}</span></div></div></div>`;
+
+  if (d.groesste_position && d.groesste_position.brutto != null){
+    const g = d.groesste_position;
+    html += `<div class="sektion lbl">Größter Posten</div><div class="karte">
+      <div class="mrow"><span class="art">${g.lieferant || g.belegart || "Beleg"}</span>
+      <span class="wer">${g.datum || ""}</span>
+      <span class="summe">${euro(g.brutto)}</span></div></div>`;
+  }
+
+  if ((d.konten || []).length){
+    html += `<div class="sektion lbl">Nach Konto (für deine Kanzlei)</div><div class="karte">`;
+    for (const k of d.konten){
+      const nr = k.konto || k.konto_skr04 || k.nr || "";
+      html += `<div class="mrow"><span class="art num">${nr}</span>
+        <span class="wer">${k.bez || k.label || ""}${k.anzahl ? " · " + k.anzahl + " Beleg" + (k.anzahl===1?"":"e") : ""}</span>
+        <span class="summe">${euro(k.brutto)}</span></div>`;
+    }
+    html += `</div>`;
+  }
+
+  html += `<div class="sektion lbl">Für die Kanzlei</div><div class="karte">
+    <p style="color:var(--gc-desc);font-size:13px">Der fertige Buchungsstapel dieses Monats —
+    im Format, das DATEV versteht.</p>
+    <button class="chip" style="margin-top:10px" id="stapel-knopf">Stapel herunterladen</button>
+    <span id="stapel-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span></div>`;
+
+  ziel.innerHTML = html;
+  $("#stapel-knopf").addEventListener("click", stapelLaden);
+}
+async function stapelLaden(){
+  const status = $("#stapel-status");
+  status.textContent = "wird geholt …";
+  try{
+    const r = await api("/api/export/" + zMonat + ".csv");
+    if (r.status === 403){ status.textContent = "Diesen Stapel lädt deine Kanzlei herunter."; return; }
+    if (!r.ok){ status.textContent = "Gerade nicht möglich."; return; }
+    const blob = await r.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "EXTF_Buchungsstapel_" + zMonat + ".csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    status.textContent = "Geladen ✓";
+  }catch{ status.textContent = "Gerade keine Verbindung."; }
+}
+$("#z-mon-zurueck").addEventListener("click", () => { zMonat = monatSchieben(zMonat,-1); ladeZahlen(); });
+$("#z-mon-vor").addEventListener("click", () => { zMonat = monatSchieben(zMonat, 1); ladeZahlen(); });
+
+/* ————— BANK (Zahlungs-Abgleich Konto ↔ Belege) ————— */
+let bMonat = jetztMonat();
+async function ladeBank(){
+  $("#b-mon-anzeige").textContent = monatName(bMonat);
+  let ab;
+  try{ ab = await (await api("/api/abgleich/" + bMonat)).json(); }
+  catch{ return; }
+  const ziel = $("#bank-inhalt");
+  if (!ab.auszug_da){
+    ziel.innerHTML = `<div class="leer"><b>Für ${monatName(bMonat).split(" ")[0]} liegt noch kein Kontoauszug da.</b>
+      Leg ihn oben ab (PDF von deiner Bank) — dann prüfe ich, ob zu jeder Zahlung ein Beleg da ist.</div>`;
+    return;
+  }
+  const gedeckt = Array.isArray(ab.gedeckt) ? ab.gedeckt.length : (ab.gedeckt || 0);
+  const fehlend = ab.fehlend || [];
+  let html = `<div class="karte"><div class="datev">
+    <div class="box"><i>Mit Beleg</i><b style="color:var(--gc-ok)">${gedeckt} ✓</b></div>
+    <div class="box"><i>Ohne Beleg</i><b style="color:${fehlend.length ? "var(--gc-warn)" : "var(--gc-ok)"}">${fehlend.length}</b></div>
+    ${ab.fehlend_summe ? `<div class="box"><i>Fehlt zusammen</i><b>${euro(ab.fehlend_summe)}</b></div>` : ""}
+    ${ab.einnahmen_summe ? `<div class="box"><i>Eingegangen</i><b>${euro(ab.einnahmen_summe)}</b></div>` : ""}
+  </div></div>`;
+
+  if (fehlend.length){
+    html += `<div class="sektion lbl">Diese Zahlungen haben noch keinen Beleg</div>`;
+    for (const u of fehlend){
+      html += `<div class="zeile"><div class="thumb doc">?</div>
+        <div class="zmitte"><div class="zname">${(u.gegenpartei||"Zahlung").split(" ").slice(0,5).join(" ")}</div>
+        <div class="zstatus frage">vom ${u.datum || ""} — Beleg nachreichen: einfach oben rechts hochladen</div></div>
+        <div class="zrechts"><div class="zbetrag">${euro(Math.abs(u.betrag||0))}</div></div></div>`;
+    }
+  } else {
+    html += `<div class="karte" style="border-left:3px solid var(--gc-ok)">
+      Alle Zahlungen vom Konto haben ihren Beleg ✓</div>`;
+  }
+  ziel.innerHTML = html;
+}
+$("#b-mon-zurueck").addEventListener("click", () => { bMonat = monatSchieben(bMonat,-1); ladeBank(); });
+$("#b-mon-vor").addEventListener("click", () => { bMonat = monatSchieben(bMonat, 1); ladeBank(); });
+$("#bank-auszug-knopf").addEventListener("click", () => $("#auszug-datei").click());
+
 /* ————— POST (Kanzlei-Dokumente) ————— */
+let postNurUngelesen = false, postSuche = "";
+function artLabel(art){
+  if (art === "behoerde") return "Vom Amt";
+  if (art === "vollmacht") return "Vollmacht";
+  return "Von deiner Kanzlei";
+}
 async function ladePost(){
   let d;
   try{ d = await (await api("/api/dokumente")).json(); }
@@ -734,15 +940,32 @@ async function ladePost(){
               onclick="freigeben('${doc.pfad}', this)">Freigeben ✓</button>
           </div></div>`;
   }
-  ziel.innerHTML = kopfHtml + d.dokumente.filter(doc => doc.art !== "freigabe_anfrage").map(doc => `
+  const suchwort = postSuche.trim().toLowerCase();
+  const liste = d.dokumente
+    .filter(doc => doc.art !== "freigabe_anfrage")
+    .filter(doc => !postNurUngelesen || !doc.gelesen)
+    .filter(doc => !suchwort || (doc.titel||"").toLowerCase().includes(suchwort));
+  ziel.innerHTML = kopfHtml + (liste.length ? liste.map(doc => `
     <button class="zeile einflug" onclick="postOeffnen('${doc.pfad}', this)">
       ${doc.gelesen ? "" : `<span style="width:8px;height:8px;border-radius:50%;background:var(--gc-accent);flex:none"></span>`}
       <div class="thumb doc">▤</div>
       <div class="zmitte"><div class="zname" ${doc.gelesen ? "" : 'style="font-weight:700"'}>${doc.titel}</div>
-      <div class="zstatus laeuft">${zeitKurz(doc.zeit)}</div></div>
+      <div class="zstatus laeuft">${artLabel(doc.art)} · ${zeitKurz(doc.zeit)}</div></div>
       <div class="zrechts"><span class="chip">Ansehen</span></div>
-    </button>`).join("");
+    </button>`).join("")
+    : `<div class="leer"><b>${postNurUngelesen ? "Alles gelesen ✓" : "Nichts gefunden."}</b></div>`);
 }
+$("#post-suche").addEventListener("input", ev => { postSuche = ev.target.value; ladePost(); });
+$("#post-f-alle").addEventListener("click", () => {
+  postNurUngelesen = false;
+  $("#post-f-alle").classList.add("an"); $("#post-f-ungelesen").classList.remove("an");
+  ladePost();
+});
+$("#post-f-ungelesen").addEventListener("click", () => {
+  postNurUngelesen = true;
+  $("#post-f-ungelesen").classList.add("an"); $("#post-f-alle").classList.remove("an");
+  ladePost();
+});
 $("#auszug-knopf").addEventListener("click", () => $("#auszug-datei").click());
 $("#auszug-datei").addEventListener("change", async ev => {
   const datei = ev.target.files[0];
@@ -757,6 +980,7 @@ $("#auszug-datei").addEventListener("change", async ev => {
     knopf.textContent = r.ok
       ? `Gelesen ✓ — ${d.umsaetze} Zahlungen aus ${monatName(d.monat)}`
       : (d.fehler || "Das hat nicht geklappt — nochmal?");
+    if (r.ok && $("#a-bank").classList.contains("an")){ bMonat = d.monat; ladeBank(); }
   }catch{ knopf.textContent = "Gerade keine Verbindung — nochmal?"; }
   setTimeout(() => { knopf.textContent = "Kontoauszug ablegen"; }, 4000);
 });
