@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>babu — dein Papierkram macht sich von selbst</title>
+<meta name="description" content="Beleg fotografieren, grüner Haken, fertig. babu erledigt Belege, Kassenbuch und die Übergabe an dein Steuerbüro — gemacht für Friseursalons.">
+<style>
+/* ── babu Landing — Papier-Palette wie App & Portal, kein CDN ─────────── */
+:root{
+  --desk:#efece6; --canvas:#faf9f5; --chrome:#f4f1ec; --karte:#ffffff;
+  --fg:#111111; --body:#333333; --desc:#555555; --muted:#999999;
+  --akzent:#857b61; --akzent-hover:#736950; --akzent-subtil:#f0ebe3;
+  --ok:#6f8a6e; --warn:#b0821f; --linie:#e5e7eb; --gold:#c9b98d;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--desk);color:var(--body);
+  font:15px/1.6 Inter,-apple-system,"Segoe UI",Roboto,sans-serif}
+.blatt{max-width:1060px;margin:0 auto;background:var(--canvas);
+  box-shadow:0 18px 60px rgba(31,30,26,.12)}
+section{padding:64px 24px}
+@media(min-width:720px){section{padding:88px 56px}}
+h1,h2,h3,.serif{font-family:"Playfair Display",Georgia,"Times New Roman",serif;
+  color:var(--fg);letter-spacing:-.015em}
+h2{font-size:clamp(26px,4vw,38px);margin-bottom:14px}
+.lbl{font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--akzent);font-weight:600;margin-bottom:10px;font-family:ui-monospace,"SF Mono",Menlo,monospace}
+.sub{font-size:17px;color:var(--desc);max-width:620px}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-variant-numeric:tabular-nums}
+a{color:var(--akzent-hover)}
+.knopf{display:inline-block;padding:14px 26px;border-radius:12px;border:0;
+  font-size:16px;font-weight:600;text-decoration:none;cursor:pointer;
+  transition:transform .15s ease}
+.knopf:active{transform:scale(.98)}
+.knopf.voll{background:var(--fg);color:#fff}
+.knopf.zart{background:var(--akzent-subtil);color:var(--fg)}
+.gruen{color:var(--ok)}
+.karte{background:var(--karte);border:1px solid var(--linie);border-radius:12px;padding:22px}
+
+/* Hero */
+.hero{padding-top:84px;text-align:center}
+.hero .lbl{margin-bottom:18px}
+.hero h1{font-size:clamp(40px,7vw,72px);line-height:1.05;margin-bottom:18px}
+.hero .sub{margin:0 auto 30px}
+.hero .haken{display:inline-flex;align-items:center;gap:10px;margin-top:34px;
+  color:var(--ok);font-weight:600;font-size:15px}
+.hakenkreis{width:30px;height:30px;border-radius:50%;background:var(--ok);
+  display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
+.hakenkreis svg{width:16px;height:16px}
+.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+
+/* Schritte */
+.dreier{display:grid;gap:18px;margin-top:34px}
+@media(min-width:720px){.dreier{grid-template-columns:repeat(3,1fr)}}
+.schritt .nr{font-family:Georgia,serif;font-size:44px;color:var(--gold);line-height:1}
+.schritt h3{font-size:19px;margin:10px 0 6px}
+
+/* Telefone */
+.telefone{display:grid;gap:26px;margin-top:40px}
+@media(min-width:720px){.telefone{grid-template-columns:repeat(4,1fr)}}
+.telefon{text-align:center}
+.telefon .rahmen{border-radius:26px;border:1px solid var(--linie);
+  background:#000;padding:7px;box-shadow:0 14px 34px rgba(31,30,26,.16)}
+.telefon img{width:100%;display:block;border-radius:20px}
+.telefon p{font-size:13.5px;color:var(--desc);margin-top:12px;padding:0 6px}
+.telefon strong{color:var(--fg)}
+
+/* Kostenvergleich */
+.vergleich{display:grid;gap:18px;margin-top:30px}
+@media(min-width:720px){.vergleich{grid-template-columns:1fr 1fr}}
+.preis{font-family:Georgia,serif;font-size:38px;color:var(--fg)}
+.preis small{font-size:15px;color:var(--muted);font-family:Inter,sans-serif}
+.spalte h3{font-size:18px;margin-bottom:4px}
+.spalte ul{list-style:none;margin-top:14px}
+.spalte li{padding:7px 0;border-top:1px solid var(--linie);font-size:14px}
+.spalte li:first-child{border-top:0}
+.beispiel{display:inline-block;background:var(--akzent-subtil);color:var(--akzent-hover);
+  border-radius:999px;padding:3px 12px;font-size:11px;font-weight:600;
+  letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px}
+.fussnote{font-size:12.5px;color:var(--muted);margin-top:14px}
+
+/* Listen mit Haken */
+.hakenliste{list-style:none;margin-top:22px;max-width:640px}
+.hakenliste li{display:flex;gap:12px;padding:11px 0;border-top:1px solid var(--linie);
+  font-size:15px;align-items:flex-start}
+.hakenliste li:first-child{border-top:0}
+.hakenliste .hakenkreis{width:22px;height:22px;margin-top:2px}
+.hakenliste .hakenkreis svg{width:12px;height:12px}
+
+/* FAQ */
+details{border-top:1px solid var(--linie)}
+details:last-of-type{border-bottom:1px solid var(--linie)}
+summary{cursor:pointer;padding:18px 4px;font-weight:600;color:var(--fg);
+  font-size:16px;list-style:none;display:flex;justify-content:space-between;gap:14px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";color:var(--akzent);font-size:20px;flex:0 0 auto}
+details[open] summary::after{content:"–"}
+details .antwort{padding:0 4px 20px;max-width:660px;color:var(--desc)}
+
+/* Wechsel-Schritte */
+.wechsel{counter-reset:s;margin-top:26px;max-width:640px}
+.wechsel li{list-style:none;display:flex;gap:16px;padding:14px 0;border-top:1px solid var(--linie)}
+.wechsel li:first-child{border-top:0}
+.wechsel li::before{counter-increment:s;content:counter(s);
+  font-family:Georgia,serif;font-size:22px;color:var(--gold);min-width:26px}
+
+/* Footer / Profi-Eingang */
+footer{background:var(--chrome);padding:44px 24px 60px;border-top:1px solid var(--linie)}
+@media(min-width:720px){footer{padding:44px 56px 60px}}
+footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.drop{border:2px dashed var(--akzent);border-radius:12px;padding:34px;text-align:center;
+  cursor:pointer;margin-top:14px;background:var(--canvas)}
+.drop.aktiv{background:var(--akzent-subtil)}
+.feld{width:100%;padding:12px 14px;border:1px solid var(--linie);border-radius:10px;
+  font:14px ui-monospace,"SF Mono",Menlo,monospace;background:var(--karte);margin-top:10px}
+.status{font-size:13px;margin-top:10px}
+
+/* Babu-Chat */
+#babu-knopf{position:fixed;right:18px;bottom:18px;width:60px;height:60px;border-radius:50%;
+  background:var(--canvas);border:1px solid var(--linie);cursor:pointer;z-index:50;
+  box-shadow:0 10px 28px rgba(31,30,26,.25);font-family:Georgia,serif;font-size:30px;
+  color:var(--fg);display:flex;align-items:center;justify-content:center}
+#babu-knopf .punkt{position:absolute;right:2px;bottom:4px;width:20px;height:20px;
+  border-radius:50%;background:var(--ok);display:flex;align-items:center;justify-content:center}
+#babu-knopf .punkt svg{width:11px;height:11px}
+#babu-panel{position:fixed;right:18px;bottom:90px;width:min(360px,calc(100vw - 36px));
+  height:480px;max-height:70vh;background:var(--karte);border:1px solid var(--linie);
+  border-radius:16px;box-shadow:0 24px 60px rgba(31,30,26,.3);z-index:50;
+  display:none;flex-direction:column;overflow:hidden}
+#babu-panel.offen{display:flex}
+#babu-kopf{padding:14px 16px;border-bottom:1px solid var(--linie);background:var(--chrome);
+  font-weight:600;color:var(--fg);display:flex;justify-content:space-between;align-items:center}
+#babu-kopf button{border:0;background:none;font-size:18px;cursor:pointer;color:var(--muted)}
+#babu-verlauf{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.blase{max-width:85%;padding:10px 13px;border-radius:14px;font-size:14px;line-height:1.5;white-space:pre-wrap}
+.blase.bot{background:var(--chrome);color:var(--body);align-self:flex-start;border-bottom-left-radius:4px}
+.blase.ich{background:var(--fg);color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+#babu-eingabe{display:flex;gap:8px;padding:12px;border-top:1px solid var(--linie)}
+#babu-eingabe input{flex:1;padding:11px 13px;border:1px solid var(--linie);border-radius:999px;
+  font:14px Inter,sans-serif;outline:none}
+#babu-eingabe button{width:42px;height:42px;border-radius:50%;border:0;background:var(--ok);
+  color:#fff;font-size:17px;cursor:pointer}
+.chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 10px}
+.chips button{border:1px solid var(--linie);background:var(--canvas);border-radius:999px;
+  padding:6px 11px;font-size:12px;cursor:pointer;color:var(--desc)}
+</style>
+</head>
+<body>
+<div class="blatt">
+
+<!-- ── 1 · Hero ─────────────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="lbl">babu · für deinen Salon</div>
+  <h1>Dein Papierkram<br>macht sich von selbst.</h1>
+  <p class="sub">Beleg fotografieren — fertig. babu liest ihn, prüft ihn und
+  legt ihn sicher ab. Dein Steuerbüro bekommt am Monatsende alles fertig.
+  Du schneidest weiter Haare.</p>
+  <div class="cta">
+    <a class="knopf voll" href="#app">App laden</a>
+    <a class="knopf zart" href="/portal">Anmelden</a>
+  </div>
+  <div class="haken">
+    <span class="hakenkreis"><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-7" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+    Grüner Haken = alles erledigt. Mehr musst du nicht wissen.
+  </div>
+</section>
+
+<!-- ── 2 · So geht's ────────────────────────────────────────────────── -->
+<section>
+  <div class="lbl">So geht's</div>
+  <h2>Drei Schritte. Einer davon ist deiner.</h2>
+  <div class="dreier">
+    <div class="karte schritt"><div class="nr">1</div>
+      <h3>Du fotografierst</h3>
+      <p>Beleg in den Rahmen halten — das Foto macht die App von selbst.
+      Zwischen zwei Terminen, direkt an der Kasse, egal wo.</p></div>
+    <div class="karte schritt"><div class="nr">2</div>
+      <h3>babu liest und prüft</h3>
+      <p>Betrag, Datum, Laden — alles wird gelesen, richtig einsortiert und
+      danach noch ein zweites Mal gegengeprüft. Dann kommt der grüne Haken.</p></div>
+    <div class="karte schritt"><div class="nr">3</div>
+      <h3>Dein Steuerbüro bekommt alles</h3>
+      <p>Am Monatsende liegt der fertige Stapel bereit — in genau dem Format,
+      das Steuerbüros brauchen. Kein Schuhkarton, kein Nachfragen.</p></div>
+  </div>
+</section>
+
+<!-- ── 3 · Screenshots ──────────────────────────────────────────────── -->
+<section style="background:var(--chrome)">
+  <div class="lbl">Die App</div>
+  <h2>So sieht das aus.</h2>
+  <p class="sub">Echte Bilder aus der App — nichts nachgestellt.</p>
+  <div class="telefone">
+    <figure class="telefon"><div class="rahmen"><img src="bilder/ergebnis.png" alt="Ein gelesener Beleg: die wichtigen Stellen sind grün markiert, daneben ein grüner Haken"></div>
+      <p><strong>Beleg gelesen.</strong> Die wichtigen Stellen sind grün markiert — du siehst sofort: hat geklappt.</p></figure>
+    <figure class="telefon"><div class="rahmen"><img src="bilder/kasse.png" alt="Kalender des Kassenbuchs mit grünem Punkt an erledigten Tagen"></div>
+      <p><strong>Dein Kassenbuch.</strong> Grüner Punkt = Tag erledigt. Ein Blick reicht.</p></figure>
+    <figure class="telefon"><div class="rahmen"><img src="bilder/schritt.png" alt="Kassenbuch-Eingabe: eine große Frage, ein Eingabefeld"></div>
+      <p><strong>Eine Zahl nach der anderen.</strong> Die App fragt, du tippst. Rechnen macht sie selbst.</p></figure>
+    <figure class="telefon"><div class="rahmen"><img src="bilder/fragen.png" alt="Fragen-Bereich der App mit Beispielfragen zu den eigenen Belegen"></div>
+      <p><strong>Einfach fragen.</strong> „Wie viel hab ich im Juli für Bewirtung ausgegeben?" — babu antwortet aus deinen Belegen.</p></figure>
+  </div>
+</section>
+
+<!-- ── 4 · Kostenvergleich ──────────────────────────────────────────── -->
+<section>
+  <div class="lbl">Was es kostet</div>
+  <h2>Rechne selbst.</h2>
+  <span class="beispiel">Beispielrechnung — endgültige Preise folgen</span>
+  <div class="vergleich">
+    <div class="karte spalte">
+      <h3>Bisher: alles beim Steuerberater</h3>
+      <div class="preis">250–400 €<small> / Monat*</small></div>
+      <ul>
+        <li>Belege sammeln, sortieren, hinbringen — machst du</li>
+        <li>Kassenbuch auf Papier führen — machst du</li>
+        <li>Rückfragen beantworten — machst du</li>
+        <li>Buchhaltung + Abschluss — macht die Kanzlei</li>
+      </ul>
+    </div>
+    <div class="karte spalte" style="border-color:var(--ok)">
+      <h3 class="gruen">Mit babu</h3>
+      <div class="preis">ab 49 €<small> / Monat*</small></div>
+      <ul>
+        <li>Belege fotografieren — 10 Sekunden pro Beleg</li>
+        <li>Kassenbuch in der App — 2 Minuten am Abend</li>
+        <li>Sortieren, prüfen, einordnen — macht babu</li>
+        <li>Steuer-Abschluss — macht das Steuer-Backend dahinter</li>
+      </ul>
+    </div>
+  </div>
+  <p class="fussnote">* Beispielwerte zur Einordnung. Was ein Steuerberater kostet,
+  hängt von deinem Umsatz ab. Der babu-Preis steht noch nicht fest — trag dich
+  ein, dann bekommst du ihn zuerst.</p>
+</section>
+
+<!-- ── 5 · Für deinen Salon ─────────────────────────────────────────── -->
+<section style="background:var(--chrome)">
+  <div class="lbl">Für deinen Salon gebaut</div>
+  <h2>babu kennt deinen Alltag.</h2>
+  <ul class="hakenliste">
+    <li><span class="hakenkreis"><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-7" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span><strong>Farbe, Bedarf, Handtücher</strong> — Einkäufe werden automatisch richtig einsortiert.</span></li>
+    <li><span class="hakenkreis"><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-7" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span><strong>Essen mit der Vertreterin?</strong> babu fragt kurz nach, mit wem du warst — damit das Finanzamt es anerkennt.</span></li>
+    <li><span class="hakenkreis"><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-7" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span><strong>Trinkgeld</strong> versteht babu — es landet nicht falsch in der Buchhaltung.</span></li>
+    <li><span class="hakenkreis"><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-7" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span><strong>Das Kassenbuch</strong> sieht aus wie dein Papier-Formular — nur dass babu rechnet und nichts verloren geht.</span></li>
+    <li><span class="hakenkreis"><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-7" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span><strong>Kontoauszug abgeben</strong> — babu prüft, ob zu jeder Abbuchung ein Beleg da ist. Fehlt einer, sagt es dir welcher.</span></li>
+  </ul>
+</section>
+
+<!-- ── 6 · Kassenbuch ───────────────────────────────────────────────── -->
+<section>
+  <div class="lbl">Das Kassenbuch</div>
+  <h2>Abends kurz zählen. Den Rest rechnet babu.</h2>
+  <p class="sub">Im Kalender siehst du sofort, welche Tage erledigt sind
+  (grüner Punkt). Zum Eintragen fragt dich die App eine Zahl nach der
+  anderen — genau die Felder von deinem Papier-Kassenbericht. Am Ende sagt
+  sie dir in einem Satz: <strong class="gruen">„Deine Kasse stimmt."</strong></p>
+  <p class="sub" style="margin-top:14px">Wichtig: babu ist <strong>keine
+  Registrierkasse</strong>. Deine Kasse im Laden bleibt genau wie sie ist —
+  babu ersetzt nur den Zettel, auf dem du abends alles zusammenrechnest.</p>
+</section>
+
+<!-- ── 7 · Steuerberater-Wechsel ────────────────────────────────────── -->
+<section style="background:var(--chrome)">
+  <div class="lbl">Schon beim Steuerberater?</div>
+  <h2>Der Wechsel ist leichter, als du denkst.</h2>
+  <ol class="wechsel">
+    <li><span><strong>Du sagst kurz Bescheid.</strong> Deinem bisherigen Steuerberater
+      zu kündigen ist normal und passiert ständig — eine kurze Nachricht reicht,
+      wir geben dir eine Vorlage.</span></li>
+    <li><span><strong>Eine Unterschrift.</strong> Mit einer Vollmacht dürfen wir deine
+      Unterlagen anfordern. Du musst nichts zusammensuchen.</span></li>
+    <li><span><strong>babu übernimmt.</strong> Ab dann laufen Belege, Kassenbuch und
+      Abschluss über babu. Dahinter arbeitet <strong>Buhl</strong> — einer der
+      größten Steuer-Software-Anbieter Deutschlands. Dein Kram ist in
+      Profi-Händen.</span></li>
+  </ol>
+</section>
+
+<!-- ── 8 · App laden ────────────────────────────────────────────────── -->
+<section id="app">
+  <div class="lbl">Loslegen</div>
+  <h2>App laden, anmelden, ersten Beleg fotografieren.</h2>
+  <div class="dreier" style="margin-top:26px">
+    <div class="karte"><h3 class="serif" style="font-size:18px">1 · App laden</h3>
+      <p style="margin-top:8px">Die babu-App kommt für dein iPhone.
+      <strong>Der Download-Link folgt hier in Kürze</strong> — trag dich per
+      Chat unten rechts ein oder schreib uns, dann bekommst du ihn zuerst.</p></div>
+    <div class="karte"><h3 class="serif" style="font-size:18px">2 · Anmelden</h3>
+      <p style="margin-top:8px">Bei der Einrichtung bekommst du deine
+      Zugangsdaten. Damit meldest du dich in der App <strong>und</strong> hier im
+      Portal an — beides ist immer verbunden, alles ist an beiden Orten da.</p>
+      <a class="knopf zart" style="margin-top:14px" href="/portal">Zum Portal-Login</a></div>
+    <div class="karte"><h3 class="serif" style="font-size:18px">3 · Kurz einrichten</h3>
+      <p style="margin-top:8px">Nach der ersten Anmeldung fragt dich babu einmal
+      die wichtigsten Angaben ab — Salon-Name, Steuernummer, Finanzamt. Eine
+      Frage nach der anderen, dauert fünf Minuten.</p></div>
+  </div>
+</section>
+
+<!-- ── 9 · Konto & Post vom Finanzamt ──────────────────────────────── -->
+<section style="background:var(--chrome)">
+  <div class="lbl">Und bald noch mehr</div>
+  <h2>Konto und Finanzamt-Post — auch erledigt.</h2>
+  <div class="vergleich">
+    <div class="karte spalte">
+      <h3>Dein Konto <span class="gruen">✓ schon da</span></h3>
+      <p style="margin-top:8px">Kontoauszug im Portal abgeben — babu vergleicht:
+      Zu jeder Abbuchung ein Beleg? Fehlt einer, steht da genau welcher.
+      Bald auch als Datei-Import von jeder Bank und als direkte Verbindung.</p>
+    </div>
+    <div class="karte spalte">
+      <h3>Post vom Finanzamt <span style="color:var(--warn)">kommt als Nächstes</span></h3>
+      <p style="margin-top:8px">Brief vom Finanzamt, den keiner versteht?
+      Fotografieren — babu erklärt dir in einfachen Worten, was drinsteht,
+      was du tun musst und bis wann. Die Frist landet automatisch in deinem
+      Kalender, dem gleichen wie beim Kassenbuch.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ── 10 · FAQ ─────────────────────────────────────────────────────── -->
+<section>
+  <div class="lbl">Häufige Fragen</div>
+  <h2>Kurz beantwortet.</h2>
+  <div style="margin-top:26px">
+    <details><summary>Ich bin schon bei einem Steuerberater. Kann ich einfach wechseln?</summary>
+      <div class="antwort">Ja. Du darfst jederzeit wechseln — das ist dein gutes
+      Recht und kommt ständig vor. Kurze Kündigung (Vorlage bekommst du von uns),
+      eine Vollmacht, fertig. Deine Unterlagen fordern wir für dich an.</div></details>
+    <details><summary>Wer macht denn dann meine Steuer?</summary>
+      <div class="antwort">Hinter babu arbeitet Buhl — einer der größten
+      Steuer-Software-Anbieter Deutschlands (bekannt durch WISO Steuer). babu
+      sammelt und ordnet, das Steuer-Backend übernimmt den fachlichen Teil.
+      Du hast einen Ansprechpartner: babu.</div></details>
+    <details><summary>Brauche ich eine elektronische Kasse (TSE)?</summary>
+      <div class="antwort">Nein, deswegen nicht. Es gibt in Deutschland keine
+      Pflicht, eine elektronische Kasse zu benutzen — deine Bargeldkasse mit
+      Kassenbericht ist erlaubt. babu ersetzt genau diesen Papier-Kassenbericht:
+      Es fragt abends die Tagessummen ab, wie auf deinem Formular. Es kassiert
+      nicht und speichert keine einzelnen Verkäufe — darum entsteht auch keine
+      TSE-Pflicht.</div></details>
+    <details><summary>Wo liegen meine Daten?</summary>
+      <div class="antwort">Auf eigenen Servern in Deutschland, verschlüsselt
+      übertragen. Jeder Beleg wird beim Ablegen versiegelt — nachträglich
+      unbemerkt ändern geht nicht. Du meldest dich mit deinem persönlichen
+      Zugang an; ohne den sieht niemand deine Belege.</div></details>
+    <details><summary>Was kostet babu?</summary>
+      <div class="antwort">Der endgültige Preis steht noch nicht fest — die
+      Zahlen oben sind eine Beispielrechnung zur Einordnung. Sicher ist: deutlich
+      weniger als die klassische Komplett-Betreuung, weil babu dir die Handarbeit
+      abnimmt. Trag dich ein, dann erfährst du den Preis zuerst.</div></details>
+    <details><summary>Kann ich mein Bankkonto anbinden?</summary>
+      <div class="antwort">Heute gibst du deinen Kontoauszug im Portal ab (PDF von
+      der Sparkasse geht schon). Der Datei-Import für alle Banken und die direkte
+      Konto-Verbindung kommen als Nächstes. babu gleicht dann automatisch ab, ob
+      zu jeder Zahlung ein Beleg da ist.</div></details>
+    <details><summary>Was, wenn meine Kasse mal nicht stimmt?</summary>
+      <div class="antwort">Das passiert jedem. babu rechnet nach, zeigt dir den
+      Unterschied und schreibt ihn ordentlich auf — genau das will das Finanzamt
+      sehen. Kein Drama, kein Schimpfen.</div></details>
+    <details><summary>Was passiert mit einem Beleg, den babu nicht lesen kann?</summary>
+      <div class="antwort">Dann sagt dir die App ehrlich: „Der war schwer zu
+      lesen — bitte nochmal fotografieren." Es geht nichts verloren und nichts
+      wird geraten.</div></details>
+  </div>
+</section>
+
+<!-- ── 11 · Footer + Profi-Eingang ─────────────────────────────────── -->
+<footer>
+  <div class="zeile">
+    <div>
+      <div class="serif" style="font-size:26px;color:var(--fg)">babu</div>
+      <div style="font-size:12.5px;color:var(--muted)">0711 Intelligence · Stuttgart</div>
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <a class="knopf voll" href="/portal">Anmelden</a>
+      <a class="knopf zart" href="#app">App laden</a>
+    </div>
+  </div>
+  <details style="margin-top:34px;border:0">
+    <summary style="font-size:13px;color:var(--muted);font-weight:500">Beleg-Eingang für Profis (Direkt-Upload)</summary>
+    <div style="max-width:560px;padding-top:8px">
+      <input id="pat" class="feld" type="password" placeholder="Zugangsschlüssel">
+      <div id="drop" class="drop">Belege hier ablegen<br>
+        <span style="font-size:13px;color:var(--muted)">oder klicken zum Auswählen — PDF, JPG, PNG, HEIC · max. 40 MB</span></div>
+      <input id="datei" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.heic" style="display:none">
+      <div id="upload-status" class="status"></div>
+    </div>
+  </details>
+  <div style="font-size:12px;color:var(--muted);margin-top:30px">
+    Impressum &amp; Datenschutz folgen · babu ersetzt keine individuelle Steuerberatung.
+  </div>
+</footer>
+</div>
+
+<!-- ── Babu-Chat ────────────────────────────────────────────────────── -->
+<button id="babu-knopf" aria-label="Babu fragen">b
+  <span class="punkt"><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-7" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+</button>
+<div id="babu-panel" role="dialog" aria-label="Babu-Chat">
+  <div id="babu-kopf">Babu — frag mich was <button id="babu-zu" aria-label="Schließen">×</button></div>
+  <div id="babu-verlauf"></div>
+  <div class="chips" id="babu-chips"></div>
+  <form id="babu-eingabe">
+    <input id="babu-frage" type="text" maxlength="500" placeholder="Deine Frage …" autocomplete="off">
+    <button type="submit" aria-label="Senden">↑</button>
+  </form>
+</div>
+
+<script>
+/* ── Babu-Chat: echter KI-Chat über /api/babu-chat (SSE), mit ehrlichem
+   Fallback auf eingebaute Antworten, solange der Endpunkt fehlt. ─────── */
+(function(){
+  var knopf=document.getElementById('babu-knopf'),
+      panel=document.getElementById('babu-panel'),
+      verlauf=document.getElementById('babu-verlauf'),
+      form=document.getElementById('babu-eingabe'),
+      eingabe=document.getElementById('babu-frage'),
+      chips=document.getElementById('babu-chips');
+
+  var faq=[
+    ['steuerberater|wechsel|kündig','Wechseln ist leicht: kurz beim alten Steuerberater Bescheid sagen (Vorlage bekommst du), eine Vollmacht unterschreiben — den Rest holen wir für dich. Mehr steht oben unter „Schon beim Steuerberater?".'],
+    ['kosten|preis|teuer','Der endgültige Preis steht noch nicht fest — oben siehst du eine Beispielrechnung. Sicher ist: deutlich günstiger als die klassische Komplett-Betreuung, weil babu die Handarbeit übernimmt.'],
+    ['kasse|kassenbuch|tse|registrier','babu ist keine Registrierkasse — es ersetzt deinen Papier-Kassenbericht: abends die Tagessummen eintragen, eine Zahl nach der anderen, babu rechnet. Darum brauchst du auch keine TSE.'],
+    ['app|laden|download|iphone','Die App kommt für dein iPhone — der Download-Link folgt hier in Kürze. Deine Zugangsdaten bekommst du bei der Einrichtung, damit meldest du dich in App und Portal an.'],
+    ['konto|bank|auszug|csv','Heute: Kontoauszug im Portal abgeben (Sparkassen-PDF geht schon), babu prüft, ob zu jeder Abbuchung ein Beleg da ist. Import für alle Banken und direkte Konto-Verbindung kommen als Nächstes.'],
+    ['finanzamt|brief|bescheid|post','Bald kannst du Finanzamt-Briefe einfach fotografieren — babu erklärt dir in einfachen Worten, was drinsteht und bis wann du etwas tun musst. Die Frist landet in deinem Kalender.'],
+    ['daten|sicher|dsgvo|server','Deine Daten liegen auf eigenen Servern in Deutschland und werden verschlüsselt übertragen. Jeder Beleg wird beim Ablegen versiegelt — unbemerkt ändern geht nicht.'],
+    ['buhl|wiso|backend','Hinter babu arbeitet Buhl — einer der größten Steuer-Software-Anbieter Deutschlands (WISO Steuer). babu sammelt und ordnet, das Steuer-Backend macht den fachlichen Teil.']
+  ];
+
+  function blase(text,wer){
+    var b=document.createElement('div');
+    b.className='blase '+wer;
+    b.textContent=text;               // textContent — nie innerHTML
+    verlauf.appendChild(b);
+    verlauf.scrollTop=verlauf.scrollHeight;
+    return b;
+  }
+  function fallback(frage){
+    var f=frage.toLowerCase();
+    for(var i=0;i<faq.length;i++){
+      if(new RegExp(faq[i][0]).test(f)) return faq[i][1];
+    }
+    return 'Gute Frage! Meine Live-Antworten werden gerade angeschlossen. Bis dahin: Schau in die häufigen Fragen weiter oben — oder melde dich im Portal an und frag mich dort zu deinen eigenen Belegen.';
+  }
+  async function senden(frage){
+    blase(frage,'ich');
+    eingabe.value='';
+    var antwort=blase('…','bot');
+    try{
+      var res=await fetch('/api/babu-chat',{method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({frage:frage,stream:true})});
+      if(!res.ok) throw new Error('kein Endpoint');
+      antwort.textContent='';
+      var leser=res.body.getReader(),dec=new TextDecoder(),rest='';
+      for(;;){
+        var teil=await leser.read();
+        if(teil.done) break;
+        rest+=dec.decode(teil.value,{stream:true});
+        var zeilen=rest.split('\n\n'); rest=zeilen.pop();
+        for(var z of zeilen){
+          if(!z.startsWith('data: ')) continue;
+          var roh=z.slice(6);
+          if(roh==='[DONE]') break;
+          try{var d=JSON.parse(roh);
+            if(d.d) antwort.textContent+=d.d;
+            else if(d.fehler) antwort.textContent=fallback(frage);
+          }catch(e){}
+        }
+        verlauf.scrollTop=verlauf.scrollHeight;
+      }
+      if(!antwort.textContent) antwort.textContent=fallback(frage);
+    }catch(e){
+      antwort.textContent=fallback(frage);
+    }
+  }
+  ['Was kostet babu?','Wie wechsle ich den Steuerberater?','Brauche ich eine TSE?'].forEach(function(t){
+    var c=document.createElement('button');
+    c.type='button'; c.textContent=t;
+    c.onclick=function(){senden(t)};
+    chips.appendChild(c);
+  });
+  knopf.onclick=function(){
+    panel.classList.toggle('offen');
+    if(panel.classList.contains('offen')&&!verlauf.childElementCount){
+      blase('Hallo, ich bin Babu. Frag mich alles zu babu, zum Kassenbuch oder zum Steuerberater-Wechsel.','bot');
+    }
+  };
+  document.getElementById('babu-zu').onclick=function(){panel.classList.remove('offen')};
+  form.onsubmit=function(ev){
+    ev.preventDefault();
+    var f=eingabe.value.trim();
+    if(f) senden(f);
+  };
+})();
+
+/* ── Profi-Upload (Funktion der bisherigen Startseite, kompakt) ──────── */
+(function(){
+  var drop=document.getElementById('drop'),
+      datei=document.getElementById('datei'),
+      pat=document.getElementById('pat'),
+      status=document.getElementById('upload-status');
+  try{pat.value=localStorage.getItem('babu_pat')||'';}catch(e){}
+  pat.addEventListener('change',function(){
+    try{localStorage.setItem('babu_pat',pat.value.trim());}catch(e){}
+  });
+  function melde(text,farbe){
+    var z=document.createElement('div');
+    z.textContent=text;               // textContent — nie innerHTML (XSS)
+    if(farbe) z.style.color=farbe;
+    status.appendChild(z);
+  }
+  async function lade(fs){
+    var schluessel=pat.value.trim();
+    if(!schluessel){melde('Bitte zuerst den Zugangsschlüssel eintragen.','#a8433a');return;}
+    for(var f of fs){
+      if(f.size>40*1024*1024){melde(f.name+' — zu groß (max. 40 MB)','#a8433a');continue;}
+      var fd=new FormData(); fd.append('file',f,f.name);
+      try{
+        var res=await fetch('/ablage',{method:'POST',
+          headers:{'Authorization':'Bearer '+schluessel},body:fd});
+        if(res.ok){var j=await res.json();
+          melde(f.name+' ✓ abgelegt'+(j.commit?' ('+j.commit.slice(0,7)+')':''),'#6f8a6e');}
+        else if(res.status===401){melde(f.name+' — Zugangsschlüssel ungültig','#a8433a');}
+        else{melde(f.name+' — abgelehnt ('+res.status+')','#a8433a');}
+      }catch(e){melde(f.name+' — keine Verbindung','#a8433a');}
+    }
+  }
+  drop.onclick=function(){datei.click();};
+  datei.onchange=function(){lade(datei.files);datei.value='';};
+  drop.ondragover=function(ev){ev.preventDefault();drop.classList.add('aktiv');};
+  drop.ondragleave=function(){drop.classList.remove('aktiv');};
+  drop.ondrop=function(ev){ev.preventDefault();drop.classList.remove('aktiv');lade(ev.dataTransfer.files);};
+})();
+</script>
+</body>
+</html>
