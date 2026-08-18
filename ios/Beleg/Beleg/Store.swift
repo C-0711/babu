@@ -12,11 +12,12 @@ private let zustandsDatei: URL = {
 
 @MainActor
 final class AppStore: ObservableObject {
-    enum Tab: Hashable { case erfassen, belege, fragen, export }
+    enum Tab: Hashable { case erfassen, belege, kasse, fragen, export }
 
     @Published var onboarded = false { didSet { speichern() } }
     @Published var skr = "SKR04" { didSet { speichern() } }
     @Published var belege: [Beleg] = [] { didSet { speichern() } }
+    @Published var kassenberichte: [Kassenbericht] = [] { didSet { speichern() } }
     @Published var exportiert = false { didSet { speichern() } }
     @Published var geprueft = 0 { didSet { speichern() } }
     @Published var pruefSekunden: [Double] = [] { didSet { speichern() } }
@@ -48,6 +49,7 @@ final class AppStore: ObservableObject {
                 ablageURL = AppStore.ablageStandardURL
             }
             ablageAktiv = z.ablageAktiv ?? false
+            kassenberichte = z.kassenberichte ?? []
             // Ältere Stände: Demo-Belege am festen Demo-Siegel nachträglich
             // markieren, damit sie nie im echten Stapel landen.
             let demoSiegel: Set<String> = ["77b2e0c4 9a11 f38d", "0d31f6a8 5be2 c974"]
@@ -75,12 +77,14 @@ final class AppStore: ObservableObject {
         var pruefSekunden: [Double]
         var ablageURL: String?
         var ablageAktiv: Bool?
+        var kassenberichte: [Kassenbericht]?
     }
 
     private var zustand: Zustand {
         Zustand(onboarded: onboarded, skr: skr, belege: belege,
                 exportiert: exportiert, geprueft: geprueft, pruefSekunden: pruefSekunden,
-                ablageURL: ablageURL, ablageAktiv: ablageAktiv)
+                ablageURL: ablageURL, ablageAktiv: ablageAktiv,
+                kassenberichte: kassenberichte)
     }
 
     /// Entprellt auf ~0,25 s, damit Serien-Änderungen nicht pro Mutation schreiben.
@@ -352,6 +356,28 @@ final class AppStore: ObservableObject {
         }
         exportiert = true
         return url
+    }
+
+    // MARK: - Kassenbuch (Tagessummen, siehe Kassenbuch.swift)
+
+    func kassenbericht(fuer tag: String) -> Kassenbericht? {
+        kassenberichte.first { $0.datum == tag }
+    }
+
+    /// Speichert oder ersetzt den Bericht des Tages (ein Bericht pro Tag).
+    func kassenberichtSpeichern(_ bericht: Kassenbericht) {
+        if let i = kassenberichte.firstIndex(where: { $0.datum == bericht.datum }) {
+            kassenberichte[i] = bericht
+        } else {
+            kassenberichte.append(bericht)
+        }
+    }
+
+    /// Vorschlag für „Bestand am Vortag": der gezählte Schluss des jüngsten
+    /// Berichts VOR dem Tag — so muss die Zahl nicht abgetippt werden.
+    func kassenVortagsbestand(vor tag: String) -> Double? {
+        kassenberichte.filter { $0.datum < tag }
+            .max { $0.datum < $1.datum }?.gezaehltSchluss
     }
 
     var durchsatzText: String? {
