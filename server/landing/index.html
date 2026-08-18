@@ -8,35 +8,35 @@
 <style>
 /* ── babu Landing — Papier-Palette wie App & Portal, kein CDN ─────────── */
 :root{
-  --desk:#efece6; --canvas:#faf9f5; --chrome:#f4f1ec; --karte:#ffffff;
-  --fg:#111111; --body:#333333; --desc:#555555; --muted:#999999;
-  --akzent:#857b61; --akzent-hover:#736950; --akzent-subtil:#f0ebe3;
-  --ok:#6f8a6e; --warn:#b0821f; --linie:#e5e7eb; --gold:#c9b98d;
+  --gc-desk:#efece6; --gc-canvas:#faf9f5; --gc-chrome:#f4f1ec; --gc-bg:#ffffff;
+  --gc-fg:#111111; --gc-body:#333333; --gc-desc:#555555; --gc-muted:#999999;
+  --gc-accent:#857b61; --gc-accent-hover:#736950; --gc-accent-subtle:#f0ebe3;
+  --gc-ok:#6f8a6e; --gc-warn:#b0821f; --gc-border:#e5e7eb; --gc-gold:#c9b98d;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
-body{background:var(--desk);color:var(--body);
+body{background:var(--gc-desk);color:var(--gc-body);
   font:15px/1.6 Inter,-apple-system,"Segoe UI",Roboto,sans-serif}
-.blatt{max-width:1060px;margin:0 auto;background:var(--canvas);
+.blatt{max-width:1060px;margin:0 auto;background:var(--gc-canvas);
   box-shadow:0 18px 60px rgba(31,30,26,.12)}
 section{padding:64px 24px}
 @media(min-width:720px){section{padding:88px 56px}}
 h1,h2,h3,.serif{font-family:"Playfair Display",Georgia,"Times New Roman",serif;
-  color:var(--fg);letter-spacing:-.015em}
+  color:var(--gc-fg);letter-spacing:-.015em}
 h2{font-size:clamp(26px,4vw,38px);margin-bottom:14px}
 .lbl{font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
-  color:var(--akzent);font-weight:600;margin-bottom:10px;font-family:ui-monospace,"SF Mono",Menlo,monospace}
-.sub{font-size:17px;color:var(--desc);max-width:620px}
+  color:var(--gc-accent);font-weight:600;margin-bottom:10px;font-family:ui-monospace,"SF Mono",Menlo,monospace}
+.sub{font-size:17px;color:var(--gc-desc);max-width:620px}
 .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-variant-numeric:tabular-nums}
-a{color:var(--akzent-hover)}
+a{color:var(--gc-accent-hover)}
 .knopf{display:inline-block;padding:14px 26px;border-radius:12px;border:0;
   font-size:16px;font-weight:600;text-decoration:none;cursor:pointer;
   transition:transform .15s ease}
 .knopf:active{transform:scale(.98)}
-.knopf.voll{background:var(--fg);color:#fff}
-.knopf.zart{background:var(--akzent-subtil);color:var(--fg)}
-.gruen{color:var(--ok)}
-.karte{background:var(--karte);border:1px solid var(--linie);border-radius:12px;padding:22px}
+.knopf.voll{background:var(--gc-fg);color:#fff}
+.knopf.zart{background:var(--gc-accent-subtle);color:var(--gc-fg)}
+.gruen{color:var(--gc-ok)}
+.karte{background:var(--gc-bg);border:1px solid var(--gc-border);border-radius:12px;padding:22px}
 
 /* Hero */
 .hero{padding-top:84px;text-align:center}
@@ -44,8 +44,8 @@ a{color:var(--akzent-hover)}
 .hero h1{font-size:clamp(40px,7vw,72px);line-height:1.05;margin-bottom:18px}
 .hero .sub{margin:0 auto 30px}
 .hero .haken{display:inline-flex;align-items:center;gap:10px;margin-top:34px;
-  color:var(--ok);font-weight:600;font-size:15px}
-.hakenkreis{width:30px;height:30px;border-radius:50%;background:var(--ok);
+  color:var(--gc-ok);font-weight:600;font-size:15px}
+.hakenkreis{width:30px;height:30px;border-radius:50%;background:var(--gc-ok);
   display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
 .hakenkreis svg{width:16px;height:16px}
 .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
@@ -53,97 +53,97 @@ a{color:var(--akzent-hover)}
 /* Schritte */
 .dreier{display:grid;gap:18px;margin-top:34px}
 @media(min-width:720px){.dreier{grid-template-columns:repeat(3,1fr)}}
-.schritt .nr{font-family:Georgia,serif;font-size:44px;color:var(--gold);line-height:1}
+.schritt .nr{font-family:Georgia,serif;font-size:44px;color:var(--gc-gold);line-height:1}
 .schritt h3{font-size:19px;margin:10px 0 6px}
 
 /* Telefone */
 .telefone{display:grid;gap:26px;margin-top:40px}
 @media(min-width:720px){.telefone{grid-template-columns:repeat(4,1fr)}}
 .telefon{text-align:center}
-.telefon .rahmen{border-radius:26px;border:1px solid var(--linie);
+.telefon .rahmen{border-radius:26px;border:1px solid var(--gc-border);
   background:#000;padding:7px;box-shadow:0 14px 34px rgba(31,30,26,.16)}
 .telefon img{width:100%;display:block;border-radius:20px}
-.telefon p{font-size:13.5px;color:var(--desc);margin-top:12px;padding:0 6px}
-.telefon strong{color:var(--fg)}
+.telefon p{font-size:13.5px;color:var(--gc-desc);margin-top:12px;padding:0 6px}
+.telefon strong{color:var(--gc-fg)}
 
 /* Kostenvergleich */
 .vergleich{display:grid;gap:18px;margin-top:30px}
 @media(min-width:720px){.vergleich{grid-template-columns:1fr 1fr}}
-.preis{font-family:Georgia,serif;font-size:38px;color:var(--fg)}
-.preis small{font-size:15px;color:var(--muted);font-family:Inter,sans-serif}
+.preis{font-family:Georgia,serif;font-size:38px;color:var(--gc-fg)}
+.preis small{font-size:15px;color:var(--gc-muted);font-family:Inter,sans-serif}
 .spalte h3{font-size:18px;margin-bottom:4px}
 .spalte ul{list-style:none;margin-top:14px}
-.spalte li{padding:7px 0;border-top:1px solid var(--linie);font-size:14px}
+.spalte li{padding:7px 0;border-top:1px solid var(--gc-border);font-size:14px}
 .spalte li:first-child{border-top:0}
-.beispiel{display:inline-block;background:var(--akzent-subtil);color:var(--akzent-hover);
+.beispiel{display:inline-block;background:var(--gc-accent-subtle);color:var(--gc-accent-hover);
   border-radius:999px;padding:3px 12px;font-size:11px;font-weight:600;
   letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px}
-.fussnote{font-size:12.5px;color:var(--muted);margin-top:14px}
+.fussnote{font-size:12.5px;color:var(--gc-muted);margin-top:14px}
 
 /* Listen mit Haken */
 .hakenliste{list-style:none;margin-top:22px;max-width:640px}
-.hakenliste li{display:flex;gap:12px;padding:11px 0;border-top:1px solid var(--linie);
+.hakenliste li{display:flex;gap:12px;padding:11px 0;border-top:1px solid var(--gc-border);
   font-size:15px;align-items:flex-start}
 .hakenliste li:first-child{border-top:0}
 .hakenliste .hakenkreis{width:22px;height:22px;margin-top:2px}
 .hakenliste .hakenkreis svg{width:12px;height:12px}
 
 /* FAQ */
-details{border-top:1px solid var(--linie)}
-details:last-of-type{border-bottom:1px solid var(--linie)}
-summary{cursor:pointer;padding:18px 4px;font-weight:600;color:var(--fg);
+details{border-top:1px solid var(--gc-border)}
+details:last-of-type{border-bottom:1px solid var(--gc-border)}
+summary{cursor:pointer;padding:18px 4px;font-weight:600;color:var(--gc-fg);
   font-size:16px;list-style:none;display:flex;justify-content:space-between;gap:14px}
 summary::-webkit-details-marker{display:none}
-summary::after{content:"+";color:var(--akzent);font-size:20px;flex:0 0 auto}
+summary::after{content:"+";color:var(--gc-accent);font-size:20px;flex:0 0 auto}
 details[open] summary::after{content:"–"}
-details .antwort{padding:0 4px 20px;max-width:660px;color:var(--desc)}
+details .antwort{padding:0 4px 20px;max-width:660px;color:var(--gc-desc)}
 
 /* Wechsel-Schritte */
 .wechsel{counter-reset:s;margin-top:26px;max-width:640px}
-.wechsel li{list-style:none;display:flex;gap:16px;padding:14px 0;border-top:1px solid var(--linie)}
+.wechsel li{list-style:none;display:flex;gap:16px;padding:14px 0;border-top:1px solid var(--gc-border)}
 .wechsel li:first-child{border-top:0}
 .wechsel li::before{counter-increment:s;content:counter(s);
-  font-family:Georgia,serif;font-size:22px;color:var(--gold);min-width:26px}
+  font-family:Georgia,serif;font-size:22px;color:var(--gc-gold);min-width:26px}
 
 /* Footer / Profi-Eingang */
-footer{background:var(--chrome);padding:44px 24px 60px;border-top:1px solid var(--linie)}
+footer{background:var(--gc-chrome);padding:44px 24px 60px;border-top:1px solid var(--gc-border)}
 @media(min-width:720px){footer{padding:44px 56px 60px}}
 footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-content:space-between}
-.drop{border:2px dashed var(--akzent);border-radius:12px;padding:34px;text-align:center;
-  cursor:pointer;margin-top:14px;background:var(--canvas)}
-.drop.aktiv{background:var(--akzent-subtil)}
-.feld{width:100%;padding:12px 14px;border:1px solid var(--linie);border-radius:10px;
-  font:14px ui-monospace,"SF Mono",Menlo,monospace;background:var(--karte);margin-top:10px}
+.drop{border:2px dashed var(--gc-accent);border-radius:12px;padding:34px;text-align:center;
+  cursor:pointer;margin-top:14px;background:var(--gc-canvas)}
+.drop.aktiv{background:var(--gc-accent-subtle)}
+.feld{width:100%;padding:12px 14px;border:1px solid var(--gc-border);border-radius:10px;
+  font:14px ui-monospace,"SF Mono",Menlo,monospace;background:var(--gc-bg);margin-top:10px}
 .status{font-size:13px;margin-top:10px}
 
 /* Babu-Chat */
 #babu-knopf{position:fixed;right:18px;bottom:18px;width:60px;height:60px;border-radius:50%;
-  background:var(--canvas);border:1px solid var(--linie);cursor:pointer;z-index:50;
+  background:var(--gc-canvas);border:1px solid var(--gc-border);cursor:pointer;z-index:50;
   box-shadow:0 10px 28px rgba(31,30,26,.25);font-family:Georgia,serif;font-size:30px;
-  color:var(--fg);display:flex;align-items:center;justify-content:center}
+  color:var(--gc-fg);display:flex;align-items:center;justify-content:center}
 #babu-knopf .punkt{position:absolute;right:2px;bottom:4px;width:20px;height:20px;
-  border-radius:50%;background:var(--ok);display:flex;align-items:center;justify-content:center}
+  border-radius:50%;background:var(--gc-ok);display:flex;align-items:center;justify-content:center}
 #babu-knopf .punkt svg{width:11px;height:11px}
 #babu-panel{position:fixed;right:18px;bottom:90px;width:min(360px,calc(100vw - 36px));
-  height:480px;max-height:70vh;background:var(--karte);border:1px solid var(--linie);
+  height:480px;max-height:70vh;background:var(--gc-bg);border:1px solid var(--gc-border);
   border-radius:16px;box-shadow:0 24px 60px rgba(31,30,26,.3);z-index:50;
   display:none;flex-direction:column;overflow:hidden}
 #babu-panel.offen{display:flex}
-#babu-kopf{padding:14px 16px;border-bottom:1px solid var(--linie);background:var(--chrome);
-  font-weight:600;color:var(--fg);display:flex;justify-content:space-between;align-items:center}
-#babu-kopf button{border:0;background:none;font-size:18px;cursor:pointer;color:var(--muted)}
+#babu-kopf{padding:14px 16px;border-bottom:1px solid var(--gc-border);background:var(--gc-chrome);
+  font-weight:600;color:var(--gc-fg);display:flex;justify-content:space-between;align-items:center}
+#babu-kopf button{border:0;background:none;font-size:18px;cursor:pointer;color:var(--gc-muted)}
 #babu-verlauf{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
 .blase{max-width:85%;padding:10px 13px;border-radius:14px;font-size:14px;line-height:1.5;white-space:pre-wrap}
-.blase.bot{background:var(--chrome);color:var(--body);align-self:flex-start;border-bottom-left-radius:4px}
-.blase.ich{background:var(--fg);color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
-#babu-eingabe{display:flex;gap:8px;padding:12px;border-top:1px solid var(--linie)}
-#babu-eingabe input{flex:1;padding:11px 13px;border:1px solid var(--linie);border-radius:999px;
+.blase.bot{background:var(--gc-chrome);color:var(--gc-body);align-self:flex-start;border-bottom-left-radius:4px}
+.blase.ich{background:var(--gc-fg);color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+#babu-eingabe{display:flex;gap:8px;padding:12px;border-top:1px solid var(--gc-border)}
+#babu-eingabe input{flex:1;padding:11px 13px;border:1px solid var(--gc-border);border-radius:999px;
   font:14px Inter,sans-serif;outline:none}
-#babu-eingabe button{width:42px;height:42px;border-radius:50%;border:0;background:var(--ok);
+#babu-eingabe button{width:42px;height:42px;border-radius:50%;border:0;background:var(--gc-ok);
   color:#fff;font-size:17px;cursor:pointer}
 .chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 10px}
-.chips button{border:1px solid var(--linie);background:var(--canvas);border-radius:999px;
-  padding:6px 11px;font-size:12px;cursor:pointer;color:var(--desc)}
+.chips button{border:1px solid var(--gc-border);background:var(--gc-canvas);border-radius:999px;
+  padding:6px 11px;font-size:12px;cursor:pointer;color:var(--gc-desc)}
 </style>
 </head>
 <body>
@@ -187,7 +187,7 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
 </section>
 
 <!-- ── 3 · Screenshots ──────────────────────────────────────────────── -->
-<section style="background:var(--chrome)">
+<section style="background:var(--gc-chrome)">
   <div class="lbl">Die App</div>
   <h2>So sieht das aus.</h2>
   <p class="sub">Echte Bilder aus der App — nichts nachgestellt.</p>
@@ -219,7 +219,7 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
         <li>Buchhaltung + Abschluss — macht die Kanzlei</li>
       </ul>
     </div>
-    <div class="karte spalte" style="border-color:var(--ok)">
+    <div class="karte spalte" style="border-color:var(--gc-ok)">
       <h3 class="gruen">Mit babu</h3>
       <div class="preis">ab 49 €<small> / Monat*</small></div>
       <ul>
@@ -236,7 +236,7 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
 </section>
 
 <!-- ── 5 · Für deinen Salon ─────────────────────────────────────────── -->
-<section style="background:var(--chrome)">
+<section style="background:var(--gc-chrome)">
   <div class="lbl">Für deinen Salon gebaut</div>
   <h2>babu kennt deinen Alltag.</h2>
   <ul class="hakenliste">
@@ -267,7 +267,7 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
 </section>
 
 <!-- ── 7 · Steuerberater-Wechsel ────────────────────────────────────── -->
-<section style="background:var(--chrome)">
+<section style="background:var(--gc-chrome)">
   <div class="lbl">Schon beim Steuerberater?</div>
   <h2>Der Wechsel ist leichter, als du denkst.</h2>
   <ol class="wechsel">
@@ -305,7 +305,7 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
 </section>
 
 <!-- ── 9 · Konto & Post vom Finanzamt ──────────────────────────────── -->
-<section style="background:var(--chrome)">
+<section style="background:var(--gc-chrome)">
   <div class="lbl">Und bald noch mehr</div>
   <h2>Konto und Finanzamt-Post — auch erledigt.</h2>
   <div class="vergleich">
@@ -316,7 +316,7 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
       Bald auch als Datei-Import von jeder Bank und als direkte Verbindung.</p>
     </div>
     <div class="karte spalte">
-      <h3>Post vom Finanzamt <span style="color:var(--warn)">kommt als Nächstes</span></h3>
+      <h3>Post vom Finanzamt <span style="color:var(--gc-warn)">kommt als Nächstes</span></h3>
       <p style="margin-top:8px">Brief vom Finanzamt, den keiner versteht?
       Fotografieren — babu erklärt dir in einfachen Worten, was drinsteht,
       was du tun musst und bis wann. Die Frist landet automatisch in deinem
@@ -376,8 +376,8 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
 <footer>
   <div class="zeile">
     <div>
-      <div class="serif" style="font-size:26px;color:var(--fg)">babu</div>
-      <div style="font-size:12.5px;color:var(--muted)">0711 Intelligence · Stuttgart</div>
+      <div class="serif" style="font-size:26px;color:var(--gc-fg)">babu</div>
+      <div style="font-size:12.5px;color:var(--gc-muted)">0711 Intelligence · Stuttgart</div>
     </div>
     <div style="display:flex;gap:12px;flex-wrap:wrap">
       <a class="knopf voll" href="/portal">Anmelden</a>
@@ -385,16 +385,16 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
     </div>
   </div>
   <details style="margin-top:34px;border:0">
-    <summary style="font-size:13px;color:var(--muted);font-weight:500">Beleg-Eingang für Profis (Direkt-Upload)</summary>
+    <summary style="font-size:13px;color:var(--gc-muted);font-weight:500">Beleg-Eingang für Profis (Direkt-Upload)</summary>
     <div style="max-width:560px;padding-top:8px">
       <input id="pat" class="feld" type="password" placeholder="Zugangsschlüssel">
       <div id="drop" class="drop">Belege hier ablegen<br>
-        <span style="font-size:13px;color:var(--muted)">oder klicken zum Auswählen — PDF, JPG, PNG, HEIC · max. 40 MB</span></div>
+        <span style="font-size:13px;color:var(--gc-muted)">oder klicken zum Auswählen — PDF, JPG, PNG, HEIC · max. 40 MB</span></div>
       <input id="datei" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.heic" style="display:none">
       <div id="upload-status" class="status"></div>
     </div>
   </details>
-  <div style="font-size:12px;color:var(--muted);margin-top:30px">
+  <div style="font-size:12px;color:var(--gc-muted);margin-top:30px">
     Impressum &amp; Datenschutz folgen · babu ersetzt keine individuelle Steuerberatung.
   </div>
 </footer>
