@@ -205,13 +205,20 @@ struct DetailView: View {
                     VStack(spacing: 12) {
                         belegAnsicht(b)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(b.lieferant)
                                 .font(.title3.weight(.semibold))
                                 .fontDesign(.serif)
                                 .foregroundStyle(GC.fg)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.7)
+                            // Haken an der Seite — bestätigt, ohne den Beleg zu verdecken.
+                            if b.zweitgeprueft || b.status == .fixiert {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 22))
+                                    .foregroundStyle(GC.ok)
+                                    .accessibilityLabel("Alles in Ordnung")
+                            }
                             Spacer()
                             Text(fmtEur(b.brutto))
                                 .font(.system(size: 22, weight: .medium, design: .monospaced))
@@ -279,20 +286,6 @@ struct DetailView: View {
                     .overlay(Image(systemName: "doc.text")
                         .font(.system(size: 34, weight: .light))
                         .foregroundStyle(GC.accent))
-            }
-        }
-        .overlay {
-            if b.zweitgeprueft || b.status == .fixiert {
-                ZStack {
-                    Circle()
-                        .fill(.white)
-                        .frame(width: 96, height: 96)
-                        .shadow(color: Color(hex: 0x1F1E1A).opacity(0.25), radius: 12, y: 5)
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 92))
-                        .foregroundStyle(GC.ok)
-                }
-                .accessibilityLabel("Alles in Ordnung")
             }
         }
     }

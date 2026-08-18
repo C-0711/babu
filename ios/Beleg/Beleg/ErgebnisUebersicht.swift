@@ -16,9 +16,11 @@ struct ErgebnisUebersicht: View {
     var fertig: () -> Void
 
     @State private var hakenDa = false
+    @State private var hakenGeparkt = false   // nach dem Moment: klein neben den Namen
     @State private var markierungenDa = false
     @State private var zeigeInfo = false
     @State private var zeigeBewirtung = false
+    @Namespace private var hakenNS
 
     private var aktuell: Beleg? { store.belege.first { $0.id == belegID } }
 
@@ -34,13 +36,20 @@ struct ErgebnisUebersicht: View {
                     // Der Beleg bekommt allen verfügbaren Platz.
                     belegAnsicht
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(b.lieferant)
                             .font(.title3.weight(.semibold))
                             .fontDesign(.serif)
                             .foregroundStyle(GC.fg)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
+                        if hakenGeparkt {
+                            // Der Haken landet hier — bestätigt, ohne zu verdecken.
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 22))
+                                .foregroundStyle(GC.ok)
+                                .matchedGeometryEffect(id: "haken", in: hakenNS)
+                        }
                         Spacer()
                         Text(fmtEur(b.brutto))
                             .font(.system(size: 22, weight: .medium, design: .monospaced))
@@ -122,7 +131,14 @@ struct ErgebnisUebersicht: View {
                     .frame(height: 260)
             }
         }
-        .overlay { grosserHaken }
+        .overlay {
+            // Der Haken feiert kurz groß in der Mitte und fliegt dann in die
+            // Namenszeile — die Sicht gehört dem Beleg.
+            if !hakenGeparkt {
+                grosserHaken
+                    .matchedGeometryEffect(id: "haken", in: hakenNS)
+            }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Beleg erfolgreich gelesen — die erkannten Angaben sind markiert")
     }
@@ -146,6 +162,7 @@ struct ErgebnisUebersicht: View {
         if reduceMotion {
             hakenDa = true
             markierungenDa = true
+            hakenGeparkt = true
             return
         }
         withAnimation(.spring(response: 0.45, dampingFraction: 0.62).delay(0.05)) {
@@ -153,6 +170,12 @@ struct ErgebnisUebersicht: View {
         }
         withAnimation(.easeIn(duration: 0.35).delay(0.3)) {
             markierungenDa = true
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: 1_400_000_000)
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.8)) {
+                hakenGeparkt = true
+            }
         }
     }
 
