@@ -121,6 +121,27 @@ def test_anfrage_einrichten_und_login(bw, client):
     assert nina.get("/api/ich").status_code == 403   # alte Session greift nicht mehr
 
 
+def test_signup_direkt(bw, client):
+    # Zu kurzes Passwort → 400 (und kein Rate-Limit-Verbrauch).
+    r = client.post("/api/signup", json={"salon": "Signup Salon", "email": "selbst@salon.de",
+                                         "passwort": "kurz"})
+    assert r.status_code == 400
+    # Echtes Signup: Konto + sofort angemeldet + Steuerdaten vorbefüllt.
+    r = client.post("/api/signup", json={"salon": "Signup Salon", "name": "Selbst Macher",
+                                         "email": "selbst@salon.de",
+                                         "passwort": "selbst-gewaehlt", "rechtsform": "GbR"})
+    assert r.status_code == 200
+    assert r.json() == {"un": "selbst@salon.de", "rolle": "salon"}
+    assert client.get("/api/ich").json()["un"] == "selbst@salon.de"
+    e = client.get("/api/einstellungen").json()
+    assert e["rechtsform"] == "GbR" and e["betrieb_name"] == "Signup Salon"
+    # Gleiche E-Mail nochmal → 409 mit freundlichem Hinweis.
+    bw._REG_ZULETZT.clear()
+    r = client.post("/api/signup", json={"salon": "x", "email": "selbst@salon.de",
+                                         "passwort": "selbst-gewaehlt"})
+    assert r.status_code == 409
+
+
 def test_selbstschutz_eigenes_konto(bw, client):
     _als_kanzlei(client)
     r = client.post("/api/nutzer", json={"email": "chefin@salon.de",

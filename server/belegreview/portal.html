@@ -175,16 +175,26 @@ main{padding:26px 22px 60px;min-height:70dvh}
 #chat-anker button{color:var(--gc-muted)}
 .quellen{font-size:11.5px;color:var(--gc-muted);margin-top:4px}
 
-/* Login */
-#login{max-width:400px;margin:11dvh auto 0;padding:0 20px}
-#login .kicker{margin-bottom:10px}
-#login h2{font:600 30px var(--gc-serif);letter-spacing:-.015em;color:var(--gc-fg);margin-bottom:6px}
-#login p{color:var(--gc-desc);margin-bottom:20px}
-#login input{width:100%;padding:12px 14px;border:1px solid var(--gc-border);border-radius:8px;
-  font:14px var(--gc-mono);background:var(--gc-bg);margin-bottom:10px}
-#login button{width:100%;background:var(--gc-fg);color:#fff;padding:12px;border-radius:8px;font-weight:600}
+/* Login — im Look der Startseite: Papier, Serif, weiße Karten */
+#login{max-width:480px;margin:7dvh auto 60px;padding:0 20px}
+#login .kicker{margin-bottom:14px;color:var(--gc-accent);text-align:center}
+#login h2{font:600 clamp(30px,6vw,40px) var(--gc-serif);letter-spacing:-.015em;
+  color:var(--gc-fg);margin-bottom:8px;text-align:center;line-height:1.1}
+#login > p{color:var(--gc-desc);margin-bottom:26px;text-align:center;font-size:15px}
+.lkarte{background:var(--gc-bg);border:1px solid var(--gc-border);border-radius:16px;
+  padding:24px;margin-bottom:16px;box-shadow:0 10px 30px rgba(31,30,26,.07)}
+#login input{width:100%;padding:14px 16px;border:1px solid var(--gc-border);border-radius:10px;
+  font:15px var(--gc-sans);background:var(--gc-bg);margin-bottom:10px}
+#login input:focus{border-color:var(--gc-accent);outline:none}
+#login .voll{width:100%;background:var(--gc-fg);color:#fff;padding:14px;border-radius:10px;
+  font-weight:600;font-size:15px}
+#login .voll:active{transform:scale(.99)}
 #login .fehler{color:var(--gc-danger);font-size:13px;margin-top:10px;display:none}
-#login small{display:block;margin-top:14px;color:var(--gc-muted);font-size:12px;line-height:1.5}
+#login small{display:block;margin-top:12px;color:var(--gc-muted);font-size:12px;line-height:1.5}
+#reg-einstieg b{font:600 17px var(--gc-serif);color:var(--gc-fg)}
+#reg-einstieg p{margin:4px 0 14px;color:var(--gc-desc);font-size:13.5px}
+#reg-einstieg .zart{width:100%;background:var(--gc-accent-subtle);color:var(--gc-fg);
+  padding:14px;border-radius:10px;font-weight:600;font-size:15px}
 
 /* Zustände */
 .leer{color:var(--gc-desc);text-align:center;padding:44px 20px}
@@ -244,32 +254,29 @@ main{padding:26px 22px 60px;min-height:70dvh}
 <div id="offline">Gerade keine Verbindung. Deine Belege sind sicher — wir zeigen den Stand von eben.</div>
 
 <div id="login" hidden>
-  <div class="lbl kicker">0711 Intelligence · Babu</div>
-  <h2>Dein Salon-Cockpit</h2>
-  <p>Belege, Zweitprüfung und Antworten — alles an einem Ort.</p>
+  <div class="lbl kicker">babu · für deinen Salon</div>
+  <h2>Schön, dass du da bist.</h2>
+  <p>Belege, Kassenbuch und Antworten — alles an einem Ort.</p>
   <div id="login-felder">
-    <input id="login-email" type="email" placeholder="E-Mail" autocomplete="username">
-    <input id="login-passwort" type="password" placeholder="Passwort" autocomplete="current-password">
-    <button id="anmelden">Anmelden</button>
-    <div class="fehler" id="login-fehler"></div>
-    <small>Deine Zugangsdaten bekommst du bei der Einrichtung —
-    angemeldet bleibst du danach von selbst.</small>
-    <details id="code-login" style="margin-top:14px;border:none">
-      <summary style="padding:6px 0;font-size:12.5px;color:var(--gc-muted);font-weight:500">Mit Zugangscode anmelden (Einrichtung)</summary>
-      <input id="zugangscode" type="password" placeholder="Zugangscode" autocomplete="off" style="margin-top:8px">
-      <button id="anmelden-code" style="background:var(--gc-accent-subtle);color:var(--gc-fg)">Mit Code anmelden</button>
-    </details>
+    <div class="lkarte">
+      <input id="login-email" type="email" placeholder="E-Mail" autocomplete="username">
+      <input id="login-passwort" type="password" placeholder="Passwort" autocomplete="current-password">
+      <button id="anmelden" class="voll">Anmelden</button>
+      <div class="fehler" id="login-fehler"></div>
+      <details id="code-login" style="margin-top:12px;border:none">
+        <summary style="padding:4px 0;font-size:12.5px;color:var(--gc-muted);font-weight:500;cursor:pointer">Mit Zugangscode anmelden (Einrichtung)</summary>
+        <input id="zugangscode" type="password" placeholder="Zugangscode" autocomplete="off" style="margin-top:10px">
+        <button id="anmelden-code" class="voll" style="background:var(--gc-accent-subtle);color:var(--gc-fg)">Mit Code anmelden</button>
+      </details>
+    </div>
+    <div class="lkarte" id="reg-einstieg">
+      <b>Neu bei babu?</b>
+      <p>Leg dir jetzt deinen Zugang an — ein paar kurze Fragen,
+      dann bist du drin. Dauert zwei Minuten.</p>
+      <button id="reg-start" class="zart">Konto anlegen</button>
+    </div>
   </div>
-
-  <div id="reg-einstieg" style="margin-top:30px;border-top:1px solid var(--gc-border);padding-top:20px">
-    <b style="font:600 16px var(--gc-serif);color:var(--gc-fg)">Neu bei babu?</b>
-    <p style="margin:4px 0 12px">Beantworte ein paar kurze Fragen — wir richten
-    dich persönlich ein und melden uns mit deinem Zugang.</p>
-    <button id="reg-start" style="width:100%;border:1px solid var(--gc-border);
-      background:var(--gc-bg);padding:12px;border-radius:8px;font-weight:600;color:var(--gc-fg)">
-      Zugang anfragen</button>
-  </div>
-  <div id="reg-bereich" hidden style="margin-top:26px"></div>
+  <div id="reg-bereich" hidden></div>
 </div>
 
 <div id="app" hidden>
@@ -1445,6 +1452,7 @@ function strecke(container, schritte, titel, beiWert, beiFertig){
       const wert = feld ? feld.value.trim() : "";
       if (!s.optional && !wert){ if (feld) feld.focus(); return; }
       if (s.typ === "email" && wert && !wert.includes("@")){ feld.focus(); return; }
+      if (s.minlen && wert.length < s.minlen){ feld.focus(); return; }
       werte[s.k] = wert;
       if (beiWert && wert) beiWert(s.k, wert);
       i++; frageZeigen();
@@ -1477,32 +1485,43 @@ const REG_SCHRITTE = [
    hilfe:"Kleinunternehmerin heißt: Du weist auf Rechnungen keine Umsatzsteuer aus."},
   {f:"Hast du schon einen Steuerberater?", k:"steuerberater", wahl:["Ja","Nein"],
    hilfe:"Wenn ja: Beim Wechsel helfen wir dir — Kündigungsvorlage und Vollmacht kommen von uns."},
+  {f:"Wähl dein Passwort", k:"passwort", typ:"password", minlen:8,
+   platzhalter:"mindestens 8 Zeichen",
+   hilfe:"Damit meldest du dich ab jetzt an — in App und Portal."},
 ];
 $("#reg-start").addEventListener("click", () => {
   // Die Fragen ERSETZEN das Login — nicht darunterkleben.
-  $("#reg-einstieg").hidden = true;
   $("#login-felder").hidden = true;
   document.querySelector("#login p").textContent =
-    "Schön, dass du dabei bist — ein paar kurze Fragen, dann richten wir dich persönlich ein.";
+    "Ein paar kurze Fragen — dann ist dein Zugang fertig.";
   const bereich = $("#reg-bereich");
   bereich.hidden = false;
   bereich.innerHTML = `
     <button id="reg-abbruch" style="color:var(--gc-muted);font-size:13px;margin-bottom:14px">‹ Ich habe schon einen Zugang</button>
-    <div id="reg-stepper" style="background:var(--gc-bg);border:1px solid var(--gc-border);
-      border-radius:var(--r);padding:22px"></div>`;
+    <div id="reg-stepper" class="lkarte"></div>`;
   $("#reg-abbruch").addEventListener("click", () => location.reload());
   const ziel = $("#reg-stepper");
-  strecke(ziel, REG_SCHRITTE, "Zugang anfragen", null, async werte => {
-    ziel.innerHTML = `<p style="color:var(--gc-desc)">Wird gesendet …</p>`;
+  strecke(ziel, REG_SCHRITTE, "Konto anlegen", null, async werte => {
+    ziel.innerHTML = `<p style="color:var(--gc-desc)">Dein Zugang wird angelegt …</p>`;
     try{
-      const r = await fetch("/api/registrierung", {method:"POST", credentials:"same-origin",
+      const r = await fetch("/api/signup", {method:"POST", credentials:"same-origin",
         headers:{"Content-Type":"application/json"}, body: JSON.stringify(werte)});
-      ziel.innerHTML = r.ok
-        ? `<div class="haken"><div class="kreis stempel">✓</div><div class="txt">
-           <b>Danke, ${(werte.name||"").split(" ")[0] || "wir haben alles"}!</b>
-           <span>Wir richten dich ein und melden uns bei ${werte.email} mit deinem Zugang.</span></div></div>`
-        : `<p style="color:var(--gc-danger)">Das hat gerade nicht geklappt — bitte später nochmal.</p>
-           <button class="chip" onclick="location.reload()">Nochmal</button>`;
+      const d = await r.json().catch(() => ({}));
+      if (r.ok){
+        // Sofort drin — Konto ist angelegt und angemeldet.
+        meineRolle = d.rolle || "salon";
+        $("#avatar").textContent = (d.un||"·")[0].toUpperCase();
+        ziel.innerHTML = `<div class="haken"><div class="kreis stempel">✓</div><div class="txt">
+          <b>Fertig, ${(werte.name||"").split(" ")[0] || "willkommen"}!</b>
+          <span>Dein Zugang ist angelegt — es geht direkt los.</span></div></div>`;
+        setTimeout(() => { location.hash = "#heute"; zeigeApp(); }, 900);
+      } else if (r.status === 409){
+        ziel.innerHTML = `<p style="color:var(--gc-desc)">${d.fehler}</p>
+          <button class="chip" style="margin-top:10px" onclick="location.reload()">Zur Anmeldung ›</button>`;
+      } else {
+        ziel.innerHTML = `<p style="color:var(--gc-danger)">${d.fehler || "Das hat gerade nicht geklappt — bitte später nochmal."}</p>
+          <button class="chip" style="margin-top:10px" onclick="location.reload()">Nochmal</button>`;
+      }
     }catch{
       ziel.innerHTML = `<p style="color:var(--gc-danger)">Gerade keine Verbindung — bitte später nochmal.</p>`;
     }

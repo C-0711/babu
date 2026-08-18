@@ -274,12 +274,14 @@ def nutzer_holen(email: str) -> dict | None:
             "aktiv": bool(z[5]), "angelegt": z[6], "letzter_login": z[7]}
 
 
-def nutzer_anlegen(email: str, name: str, salon: str, rolle_neu: str) -> str | None:
-    """Legt ein Konto an und gibt das Startpasswort zurück (None = existiert)."""
+def nutzer_anlegen(email: str, name: str, salon: str, rolle_neu: str,
+                   passwort: str | None = None) -> str | None:
+    """Legt ein Konto an und gibt das Passwort zurück (None = existiert schon).
+    Ohne `passwort` wird ein Startpasswort generiert (Verwaltungs-Weg)."""
     email = email.strip().lower()
     if nutzer_holen(email):
         return None
-    passwort = startpasswort()
+    passwort = passwort or startpasswort()
     with _DB_LOCK, _db() as c:
         c.execute("""INSERT INTO nutzer (email, name, salon, rolle, pw, aktiv, angelegt)
                      VALUES (?,?,?,?,?,1,?)""",
@@ -1284,6 +1286,50 @@ def api_registrierung(daten: dict, request: Request) -> Response:
                    json.dumps(sauber, ensure_ascii=False)))
     print(f"[registrierung] {sauber['salon']} <{sauber['email']}>", flush=True)
     return JSONResponse({"ok": True})
+
+
+@app.post("/api/signup")
+def api_signup(daten: dict, request: Request) -> Response:
+    """Ganz normales Self-Signup: Konto mit eigenem Passwort, sofort angemeldet.
+    Steuerdaten aus der Strecke landen direkt in den Einstellungen; die
+    Verwaltung sieht den Neuzugang in der Anfragen-Historie."""
+    if not _origin_ok(request):
+        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    ip = request.client.host if request.client else "?"
+    jetzt = time.time()
+    if jetzt - _REG_ZULETZT.get(ip, 0.0) < 30:
+        return JSONResponse({"fehler": "kurz warten, dann nochmal"}, status_code=429)
+    sauber = {k: str(daten.get(k, "") or "")[:200].strip() for k in REG_FELDER}
+    passwort = str(daten.get("passwort", "") or "")
+    if not sauber["salon"] or "@" not in sauber["email"]:
+        return JSONResponse({"fehler": "Salon-Name und E-Mail brauchen wir mindestens"},
+                            status_code=400)
+    if len(passwort) < 8:
+        return JSONResponse({"fehler": "Das Passwort braucht mindestens 8 Zeichen."},
+                            status_code=400)
+    email = sauber["email"].lower()
+    if nutzer_anlegen(email, sauber["name"], sauber["salon"], "salon",
+                      passwort=passwort) is None:
+        return JSONResponse({"fehler": "Für diese E-Mail gibt es schon einen Zugang — melde dich einfach an."},
+                            status_code=409)
+    _REG_ZULETZT[ip] = jetzt
+    vorbelegung = {"betrieb_name": sauber["salon"], "rechtsform": sauber["rechtsform"],
+                   "steuernummer": sauber["steuernummer"], "finanzamt": sauber["finanzamt"],
+                   "kleinunternehmer": sauber["kleinunternehmer"],
+                   "steuerberater_status": sauber["steuerberater"],
+                   "telefon": sauber["telefon"], "email": email}
+    for schluessel, wert in vorbelegung.items():
+        if wert:
+            db_einstellung_setzen(email, schluessel, str(wert)[:200])
+    with _DB_LOCK, _db() as c:
+        c.execute("INSERT INTO registrierungen (zeit, daten, status) VALUES (?, ?, 'selbst registriert')",
+                  (_jetzt_iso(), json.dumps(sauber, ensure_ascii=False)))
+    print(f"[signup] {sauber['salon']} <{email}>", flush=True)
+    exp = int(time.time()) + SESSION_DAUER
+    antwort = JSONResponse({"un": email, "rolle": "salon"})
+    antwort.set_cookie(SESSION_COOKIE, _signieren(email, exp), max_age=SESSION_DAUER,
+                       httponly=True, secure=SESSION_SECURE, samesite="lax", path="/")
+    return antwort
 
 
 @app.get("/api/registrierungen")
