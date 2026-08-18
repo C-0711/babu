@@ -30,18 +30,22 @@ struct ErgebnisUebersicht: View {
     var body: some View {
         if let b = aktuell {
             ZStack(alignment: .topTrailing) {
-                VStack(spacing: 16) {
-                    Spacer(minLength: 4)
+                VStack(spacing: 12) {
+                    // Der Beleg bekommt allen verfügbaren Platz.
                     belegAnsicht
-                    VStack(spacing: 2) {
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
                         Text(b.lieferant)
                             .font(.title3.weight(.semibold))
                             .fontDesign(.serif)
                             .foregroundStyle(GC.fg)
                             .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        Spacer()
                         Text(fmtEur(b.brutto))
-                            .font(.system(size: 30, weight: .medium, design: .monospaced))
+                            .font(.system(size: 22, weight: .medium, design: .monospaced))
                             .foregroundStyle(GC.fg)
+                            .layoutPriority(1)
                     }
                     if hatHinweis {
                         // Sanfter Fingerzeig statt Warntafel — Details unterm ⓘ.
@@ -52,23 +56,26 @@ struct ErgebnisUebersicht: View {
                                 .font(.footnote)
                                 .foregroundStyle(GC.muted)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    Spacer()
                     aktionen(b)
                 }
-                .padding(.horizontal, 24)
-                .padding(.bottom, 14)
+                .padding(.horizontal, 14)
+                .padding(.top, 4)
+                .padding(.bottom, 12)
 
                 Button {
                     zeigeInfo = true
                 } label: {
                     Image(systemName: "info.circle")
                         .font(.system(size: 20))
-                        .foregroundStyle(GC.muted)
-                        .frame(width: 44, height: 44)
+                        .foregroundStyle(GC.desc)
+                        .frame(width: 40, height: 40)
+                        .background(.ultraThinMaterial, in: Circle())
                 }
                 .accessibilityLabel("Alle Angaben zum Beleg")
-                .padding(.trailing, 6)
+                .padding(.trailing, 18)
+                .padding(.top, 10)
             }
             .onAppear(perform: einblenden)
             .sheet(isPresented: $zeigeInfo) { infoSheet(b) }
@@ -115,7 +122,6 @@ struct ErgebnisUebersicht: View {
                     .frame(height: 260)
             }
         }
-        .frame(maxHeight: 380)
         .overlay { grosserHaken }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Beleg erfolgreich gelesen — die erkannten Angaben sind markiert")
