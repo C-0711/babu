@@ -517,14 +517,19 @@ def _beleg_liste(monat: str | None = None, status: str | None = None) -> list[di
     return zeilen
 
 
+# HTML immer revalidieren lassen: ohne Cache-Control nutzen Browser die
+# Heuristik und zeigen nach einem Deploy stundenlang die alte Seite.
+HTML_FRISCH = {"Cache-Control": "no-cache"}
+
+
 @app.get("/")
 def seite() -> FileResponse:
-    return FileResponse(SEITE, media_type="text/html")
+    return FileResponse(SEITE, media_type="text/html", headers=HTML_FRISCH)
 
 
 @app.get("/portal")
 def portal_seite() -> FileResponse:
-    return FileResponse(WURZEL / "portal.html", media_type="text/html")
+    return FileResponse(WURZEL / "portal.html", media_type="text/html", headers=HTML_FRISCH)
 
 
 @app.get("/portal/manifest.json")
@@ -572,7 +577,7 @@ def app_seite() -> Response:
     pfad = APP_ORDNER / "index.html"
     if not pfad.is_file():
         return JSONResponse({"fehler": "kommt bald"}, status_code=404)
-    return FileResponse(pfad, media_type="text/html")
+    return FileResponse(pfad, media_type="text/html", headers=HTML_FRISCH)
 
 
 @app.get("/app/{name}")
