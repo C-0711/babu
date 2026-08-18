@@ -252,6 +252,16 @@ main{padding:26px 22px 60px;min-height:70dvh}
   <div class="fehler" id="login-fehler"></div>
   <small>Den Zugangscode bekommst du einmalig bei der Einrichtung.
   Er bleibt nicht im Browser gespeichert — angemeldet bleibst du trotzdem.</small>
+
+  <div id="reg-einstieg" style="margin-top:30px;border-top:1px solid var(--gc-border);padding-top:20px">
+    <b style="font:600 16px var(--gc-serif);color:var(--gc-fg)">Neu bei babu?</b>
+    <p style="margin:4px 0 12px">Beantworte ein paar kurze Fragen — wir richten
+    dich persönlich ein und melden uns mit deinem Zugang.</p>
+    <button id="reg-start" style="width:100%;border:1px solid var(--gc-border);
+      background:var(--gc-bg);padding:12px;border-radius:8px;font-weight:600;color:var(--gc-fg)">
+      Zugang anfragen</button>
+  </div>
+  <div id="reg-bereich" hidden style="margin-top:26px"></div>
 </div>
 
 <div id="app" hidden>
@@ -373,6 +383,12 @@ main{padding:26px 22px 60px;min-height:70dvh}
       style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit"></div>
   </section>
 
+  <!-- EINRICHTUNG (Steuerdaten, eine Frage pro Schritt) -->
+  <section class="ansicht" id="a-einrichtung">
+    <a class="zurueck" href="#heute">‹ Heute</a>
+    <div style="max-width:560px;margin:0 auto" id="einrichtung-inhalt"></div>
+  </section>
+
   <!-- AUFRÄUMEN -->
   <section class="ansicht" id="a-aufraeumen">
     <a class="zurueck" href="#heute">‹ Heute</a>
@@ -470,6 +486,7 @@ $("#zugangscode").addEventListener("keydown", e => { if(e.key==="Enter") $("#anm
 const ansichten = { heute: ladeHeute, belege: ladeBelege, fragen: () => {},
                     aufraeumen: ladeAufraeumen, post: ladePost,
                     zahlen: ladeZahlen, bank: ladeBank,
+                    einrichtung: ladeEinrichtung,
                     einstellungen: ladeEinstellungen, detail: null };
 function routen(){
   const h = location.hash.slice(1) || "heute";
@@ -499,6 +516,18 @@ async function ladeHeute(){
   const naechster = new Date(); naechster.setMonth(naechster.getMonth()+1);
   const fristMonat = MONATE[naechster.getMonth()];
   let html = "";
+
+  // Einrichtung noch offen? Dann freundlich oben erinnern (bis Rechtsform da ist).
+  try{
+    const e = await (await api("/api/einstellungen")).json();
+    if (!e.rechtsform){
+      html += `<button class="karte nachfrage einflug" style="display:block;width:100%;text-align:left"
+        onclick="location.hash='#einrichtung'">
+        <h3>Einmal kurz einrichten</h3>
+        <p>6 Fragen — Salon, Steuernummer &amp; Co. Dauert zwei Minuten.</p>
+        <span class="hin">Los geht's ›</span></button>`;
+    }
+  }catch{}
 
   const fragen = (d.offene||[]).filter(o => o.status === "nachfrage");
   if (fragen.length){
@@ -1184,6 +1213,134 @@ document.addEventListener("keydown", ev => {
   if (ev.key === "ArrowLeft") stapelWeiter(false);
   if (ev.key === "ArrowRight" || ev.key === "Enter") stapelKlaeren();
 });
+
+/* ————— Frage-Strecke (eine Frage pro Schritt, große Schrift) —————
+   Wird zweimal benutzt: Registrierung (vor dem Login) und Einrichtung
+   (nach dem ersten Login). */
+function strecke(container, schritte, titel, beiWert, beiFertig){
+  let i = 0;
+  const werte = {};
+  function frageZeigen(){
+    if (i >= schritte.length){ beiFertig(werte); return; }
+    const s = schritte[i];
+    const rest = schritte.length - i;
+    let eingabeHtml;
+    if (s.wahl){
+      eingabeHtml = `<div class="chips" style="margin:16px 0">` + s.wahl.map(w =>
+        `<button type="button" class="chip" data-wahl="${w}" style="font-size:15px;padding:10px 18px">${w}</button>`).join("") + `</div>`;
+    } else {
+      eingabeHtml = `<input id="strecke-feld" type="${s.typ||"text"}" placeholder="${s.platzhalter||""}"
+        autocomplete="off" style="width:100%;padding:14px;border:1px solid var(--gc-border);
+        border-radius:10px;font:18px var(--gc-sans);background:var(--gc-bg);margin:16px 0 10px">`;
+    }
+    container.innerHTML = `
+      <div class="lbl" style="margin-bottom:8px">${titel} · ${rest === 1 ? "Letzte Frage" : "Noch " + rest + " Fragen"}</div>
+      <div style="font:600 21px var(--gc-serif);color:var(--gc-fg);letter-spacing:-.015em">${s.f}</div>
+      ${s.hilfe ? `<p style="color:var(--gc-desc);font-size:13px;margin-top:6px">${s.hilfe}</p>` : ""}
+      ${eingabeHtml}
+      <div style="display:flex;gap:10px">
+        ${s.wahl ? "" : `<button id="strecke-weiter" style="flex:1;background:var(--gc-fg);color:#fff;
+          padding:13px;border-radius:10px;font-weight:600">Weiter</button>`}
+        ${s.optional ? `<button id="strecke-nichts" style="flex:1;border:1px solid var(--gc-border);
+          background:var(--gc-bg);padding:13px;border-radius:10px">Überspringen</button>` : ""}
+      </div>
+      ${i > 0 ? `<button id="strecke-zurueck" style="margin-top:10px;color:var(--gc-muted);font-size:13px">‹ Zurück</button>` : ""}`;
+    const feld = container.querySelector("#strecke-feld");
+    if (feld){
+      feld.value = werte[s.k] || "";
+      feld.focus();
+      feld.addEventListener("keydown", ev => { if (ev.key === "Enter") weiter(); });
+    }
+    container.querySelectorAll("[data-wahl]").forEach(b => b.addEventListener("click", () => {
+      werte[s.k] = b.dataset.wahl;
+      if (beiWert) beiWert(s.k, werte[s.k]);
+      i++; frageZeigen();
+    }));
+    const weiter = () => {
+      const wert = feld ? feld.value.trim() : "";
+      if (!s.optional && !wert){ if (feld) feld.focus(); return; }
+      if (s.typ === "email" && wert && !wert.includes("@")){ feld.focus(); return; }
+      werte[s.k] = wert;
+      if (beiWert && wert) beiWert(s.k, wert);
+      i++; frageZeigen();
+    };
+    const wk = container.querySelector("#strecke-weiter");
+    if (wk) wk.addEventListener("click", weiter);
+    const nk = container.querySelector("#strecke-nichts");
+    if (nk) nk.addEventListener("click", () => { werte[s.k] = werte[s.k] || ""; i++; frageZeigen(); });
+    const zk = container.querySelector("#strecke-zurueck");
+    if (zk) zk.addEventListener("click", () => { i--; frageZeigen(); });
+  }
+  frageZeigen();
+}
+
+/* ————— Registrierung (vor dem Login): alle Daten einsammeln ————— */
+const REG_SCHRITTE = [
+  {f:"Wie heißt dein Salon?", k:"salon", platzhalter:"z. B. CAP² Hairlounge"},
+  {f:"Und wie heißt du?", k:"name", platzhalter:"Vor- und Nachname"},
+  {f:"Deine E-Mail-Adresse?", k:"email", typ:"email", platzhalter:"du@…",
+   hilfe:"Darüber melden wir uns mit deinem Zugang."},
+  {f:"Deine Handynummer?", k:"telefon", optional:true,
+   hilfe:"Nur fürs Einrichten — wir rufen kurz an oder schreiben."},
+  {f:"Welche Rechtsform hat dein Salon?", k:"rechtsform",
+   wahl:["Einzelunternehmen","GbR","GmbH","UG","Weiß nicht"]},
+  {f:"Deine Steuernummer?", k:"steuernummer", optional:true,
+   hilfe:"Steht auf jedem Brief vom Finanzamt. Nicht zur Hand? Überspringen."},
+  {f:"Welches Finanzamt ist für dich zuständig?", k:"finanzamt", optional:true},
+  {f:"Bist du Kleinunternehmerin (§19)?", k:"kleinunternehmer",
+   wahl:["Ja","Nein","Weiß nicht"],
+   hilfe:"Kleinunternehmerin heißt: Du weist auf Rechnungen keine Umsatzsteuer aus."},
+  {f:"Hast du schon einen Steuerberater?", k:"steuerberater", wahl:["Ja","Nein"],
+   hilfe:"Wenn ja: Beim Wechsel helfen wir dir — Kündigungsvorlage und Vollmacht kommen von uns."},
+];
+$("#reg-start").addEventListener("click", () => {
+  $("#reg-einstieg").hidden = true;
+  const ziel = $("#reg-bereich");
+  ziel.hidden = false;
+  strecke(ziel, REG_SCHRITTE, "Zugang anfragen", null, async werte => {
+    ziel.innerHTML = `<p style="color:var(--gc-desc)">Wird gesendet …</p>`;
+    try{
+      const r = await fetch("/api/registrierung", {method:"POST", credentials:"same-origin",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify(werte)});
+      ziel.innerHTML = r.ok
+        ? `<div class="haken"><div class="kreis stempel">✓</div><div class="txt">
+           <b>Danke, ${(werte.name||"").split(" ")[0] || "wir haben alles"}!</b>
+           <span>Wir richten dich ein und melden uns bei ${werte.email} mit deinem Zugang.</span></div></div>`
+        : `<p style="color:var(--gc-danger)">Das hat gerade nicht geklappt — bitte später nochmal.</p>
+           <button class="chip" onclick="location.reload()">Nochmal</button>`;
+    }catch{
+      ziel.innerHTML = `<p style="color:var(--gc-danger)">Gerade keine Verbindung — bitte später nochmal.</p>`;
+    }
+  });
+});
+
+/* ————— Einrichtung (nach dem Login): Steuerdaten, sofort gespeichert ————— */
+const EINRICHTUNG_SCHRITTE = [
+  {f:"Wie heißt dein Salon?", k:"betrieb_name", platzhalter:"z. B. CAP² Hairlounge"},
+  {f:"Welche Rechtsform hat dein Salon?", k:"rechtsform",
+   wahl:["Einzelunternehmen","GbR","GmbH","UG","Weiß nicht"]},
+  {f:"Deine Steuernummer?", k:"steuernummer", optional:true,
+   hilfe:"Steht auf jedem Brief vom Finanzamt. Später nachtragen geht auch."},
+  {f:"Welches Finanzamt ist für dich zuständig?", k:"finanzamt", optional:true},
+  {f:"Bist du Kleinunternehmerin (§19)?", k:"kleinunternehmer",
+   wahl:["Ja","Nein","Weiß nicht"]},
+  {f:"Hast du schon einen Steuerberater?", k:"steuerberater_status", wahl:["Ja","Nein"]},
+];
+function ladeEinrichtung(){
+  const ziel = $("#einrichtung-inhalt");
+  strecke(ziel, EINRICHTUNG_SCHRITTE, "Einrichtung",
+    (k, wert) => einstellungSpeichern({[k]: wert}),
+    werte => {
+      ziel.innerHTML = `<div class="haken"><div class="kreis stempel">✓</div><div class="txt">
+        <b>Alles da — danke!</b><span>Du findest und änderst das jederzeit unter Einstellungen.</span></div></div>
+        ${werte.steuerberater_status === "Ja" ? `<div class="karte" style="margin-top:16px">
+          <b>Du bist noch bei einem Steuerberater?</b>
+          <p style="color:var(--gc-desc);font-size:13px;margin-top:4px">Kein Problem — der Wechsel ist
+          leicht: kurz kündigen (Vorlage kommt von uns), eine Vollmacht, den Rest holen wir.
+          Wir melden uns dazu bei dir.</p></div>` : ""}
+        <button class="chip" style="margin-top:16px" onclick="location.hash='#heute'">Zurück zu Heute</button>`;
+    });
+}
 
 /* ————— Start ————— */
 (async () => {

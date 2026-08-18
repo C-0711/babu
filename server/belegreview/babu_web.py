@@ -54,6 +54,9 @@ def _db() -> sqlite3.Connection:
     conn.execute("""CREATE TABLE IF NOT EXISTS einstellungen
         (un TEXT NOT NULL, schluessel TEXT NOT NULL, wert TEXT NOT NULL,
          PRIMARY KEY (un, schluessel))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS registrierungen
+        (id INTEGER PRIMARY KEY AUTOINCREMENT, zeit TEXT NOT NULL,
+         daten TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'neu')""")
     return conn
 
 
@@ -1112,7 +1115,54 @@ async def api_freigabe(request: Request) -> Response:
 
 
 EINSTELLUNG_SCHLUESSEL = {"benachrichtigung_frage", "benachrichtigung_post",
-                          "benachrichtigung_abend", "kanzlei_name", "betrieb_name"}
+                          "benachrichtigung_abend", "kanzlei_name", "betrieb_name",
+                          # Einrichtung/Steuerdaten (Onboarding nach dem ersten Login)
+                          "rechtsform", "steuernummer", "finanzamt",
+                          "kleinunternehmer", "steuerberater_status",
+                          "telefon", "email"}
+
+
+# Registrierung: Interessentinnen hinterlassen alle Daten — der Zugang wird
+# danach persönlich eingerichtet (Allowlist bleibt der Schalter). Ohne Auth,
+# aber Origin-Check, einfaches Rate-Limit je IP und strikte Feld-Whitelist.
+REG_FELDER = ("salon", "name", "email", "telefon", "rechtsform", "steuernummer",
+              "finanzamt", "kleinunternehmer", "steuerberater", "nachricht")
+_REG_ZULETZT: dict[str, float] = {}
+
+
+@app.post("/api/registrierung")
+def api_registrierung(daten: dict, request: Request) -> Response:
+    if not _origin_ok(request):
+        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    ip = request.client.host if request.client else "?"
+    jetzt = time.time()
+    if jetzt - _REG_ZULETZT.get(ip, 0.0) < 30:
+        return JSONResponse({"fehler": "kurz warten, dann nochmal"}, status_code=429)
+    sauber = {k: str(daten.get(k, "") or "")[:200].strip() for k in REG_FELDER}
+    if not sauber["salon"] or "@" not in sauber["email"]:
+        return JSONResponse({"fehler": "Salon-Name und E-Mail brauchen wir mindestens"},
+                            status_code=400)
+    _REG_ZULETZT[ip] = jetzt
+    with _DB_LOCK, _db() as c:
+        c.execute("INSERT INTO registrierungen (zeit, daten) VALUES (?, ?)",
+                  (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                   json.dumps(sauber, ensure_ascii=False)))
+    print(f"[registrierung] {sauber['salon']} <{sauber['email']}>", flush=True)
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/registrierungen")
+def api_registrierungen(request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) != "kanzlei":
+        return JSONResponse({"fehler": "nur für die Kanzlei"}, status_code=403)
+    with _DB_LOCK, _db() as c:
+        zeilen = [{"id": z[0], "zeit": z[1], "status": z[3], **json.loads(z[2])}
+                  for z in c.execute(
+                      "SELECT id, zeit, daten, status FROM registrierungen ORDER BY id DESC")]
+    return JSONResponse({"registrierungen": zeilen})
 
 
 @app.get("/api/einstellungen")
