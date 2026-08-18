@@ -247,11 +247,19 @@ main{padding:26px 22px 60px;min-height:70dvh}
   <div class="lbl kicker">0711 Intelligence · Babu</div>
   <h2>Dein Salon-Cockpit</h2>
   <p>Belege, Zweitprüfung und Antworten — alles an einem Ort.</p>
-  <input id="zugangscode" type="password" placeholder="Zugangscode" autocomplete="current-password">
-  <button id="anmelden">Anmelden</button>
-  <div class="fehler" id="login-fehler"></div>
-  <small>Den Zugangscode bekommst du einmalig bei der Einrichtung.
-  Er bleibt nicht im Browser gespeichert — angemeldet bleibst du trotzdem.</small>
+  <div id="login-felder">
+    <input id="login-email" type="email" placeholder="E-Mail" autocomplete="username">
+    <input id="login-passwort" type="password" placeholder="Passwort" autocomplete="current-password">
+    <button id="anmelden">Anmelden</button>
+    <div class="fehler" id="login-fehler"></div>
+    <small>Deine Zugangsdaten bekommst du bei der Einrichtung —
+    angemeldet bleibst du danach von selbst.</small>
+    <details id="code-login" style="margin-top:14px;border:none">
+      <summary style="padding:6px 0;font-size:12.5px;color:var(--gc-muted);font-weight:500">Mit Zugangscode anmelden (Einrichtung)</summary>
+      <input id="zugangscode" type="password" placeholder="Zugangscode" autocomplete="off" style="margin-top:8px">
+      <button id="anmelden-code" style="background:var(--gc-accent-subtle);color:var(--gc-fg)">Mit Code anmelden</button>
+    </details>
+  </div>
 
   <div id="reg-einstieg" style="margin-top:30px;border-top:1px solid var(--gc-border);padding-top:20px">
     <b style="font:600 16px var(--gc-serif);color:var(--gc-fg)">Neu bei babu?</b>
@@ -365,7 +373,19 @@ main{padding:26px 22px 60px;min-height:70dvh}
     <div class="gruss" style="font-size:22px;margin-bottom:14px">Einstellungen</div>
     <div class="sektion lbl">Zugang</div>
     <div class="karte"><div class="feld"><span>Angemeldet als</span><b id="einst-un" style="font-family:var(--gc-sans)"></b></div>
-      <button class="chip" style="margin-top:10px" id="abmelden-knopf">Abmelden</button></div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="chip" id="abmelden-knopf">Abmelden</button>
+        <button class="chip" id="verwaltung-knopf" hidden onclick="location.hash='#verwaltung'">Zugänge verwalten ›</button>
+      </div></div>
+    <div class="sektion lbl" id="einst-pw-lbl" hidden>Passwort ändern</div>
+    <div class="karte" id="einst-pw" hidden>
+      <input id="pw-alt" type="password" placeholder="Bisheriges Passwort" autocomplete="current-password"
+        style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-bottom:8px">
+      <input id="pw-neu" type="password" placeholder="Neues Passwort (mindestens 8 Zeichen)" autocomplete="new-password"
+        style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-bottom:10px">
+      <button class="chip" id="pw-speichern">Passwort ändern</button>
+      <span id="pw-status" style="font-size:12px;margin-left:8px;color:var(--gc-muted)"></span>
+    </div>
     <div class="sektion lbl">Sag mir Bescheid</div>
     <div class="karte" id="einst-schalter">
       <label class="feld" style="cursor:pointer"><span>Wenn ein Beleg eine Frage hat</span>
@@ -381,6 +401,15 @@ main{padding:26px 22px 60px;min-height:70dvh}
     <div class="sektion lbl">Mein Betrieb</div>
     <div class="karte"><input id="einst-betrieb" placeholder="Name des Salons"
       style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit"></div>
+  </section>
+
+  <!-- VERWALTUNG (nur Verwaltungs-Rolle): Anfragen einrichten, Nutzer pflegen -->
+  <section class="ansicht" id="a-verwaltung">
+    <a class="zurueck" href="#einstellungen">‹ Einstellungen</a>
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Zugänge</div>
+    <p style="color:var(--gc-desc);margin-bottom:16px">Anfragen einrichten, Zugänge verwalten.
+    Startpasswörter erscheinen genau einmal — gleich notieren und persönlich weitergeben.</p>
+    <div id="verwaltung-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
 
   <!-- EINRICHTUNG (Steuerdaten, eine Frage pro Schritt) -->
@@ -466,7 +495,24 @@ function offenSatz(o){
 function zeigeLogin(){ $("#app").hidden = true; $("#login").hidden = false; $("#zugangscode").focus(); }
 function zeigeApp(){ $("#login").hidden = true; $("#app").hidden = false; routen(); postPunktAktualisieren(); }
 
+let meineRolle = "salon";
 $("#anmelden").addEventListener("click", async () => {
+  const f = $("#login-fehler"); f.style.display = "none";
+  try{
+    const r = await fetch("/api/login",{method:"POST",credentials:"same-origin",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({email:$("#login-email").value.trim(),
+                           passwort:$("#login-passwort").value})});
+    const d = await r.json().catch(() => ({}));
+    if(!r.ok){ f.textContent = d.fehler || "Damit können wir dich leider nicht anmelden.";
+      f.style.display="block"; return; }
+    meineRolle = d.rolle || "salon";
+    $("#avatar").textContent = (d.un||"·")[0].toUpperCase();
+    $("#login-passwort").value = "";
+    zeigeApp();
+  }catch{ f.textContent = "Gerade keine Verbindung — gleich nochmal versuchen."; f.style.display = "block"; }
+});
+$("#anmelden-code").addEventListener("click", async () => {
   const f = $("#login-fehler"); f.style.display = "none";
   try{
     const r = await fetch("/api/anmelden",{method:"POST",credentials:"same-origin",
@@ -480,13 +526,14 @@ $("#anmelden").addEventListener("click", async () => {
     zeigeApp();
   }catch{ f.textContent = "Gerade keine Verbindung — gleich nochmal versuchen."; f.style.display = "block"; }
 });
-$("#zugangscode").addEventListener("keydown", e => { if(e.key==="Enter") $("#anmelden").click(); });
+$("#login-passwort").addEventListener("keydown", e => { if(e.key==="Enter") $("#anmelden").click(); });
+$("#zugangscode").addEventListener("keydown", e => { if(e.key==="Enter") $("#anmelden-code").click(); });
 
 /* ————— Router ————— */
 const ansichten = { heute: ladeHeute, belege: ladeBelege, fragen: () => {},
                     aufraeumen: ladeAufraeumen, post: ladePost,
                     zahlen: ladeZahlen, bank: ladeBank,
-                    einrichtung: ladeEinrichtung,
+                    einrichtung: ladeEinrichtung, verwaltung: ladeVerwaltung,
                     einstellungen: ladeEinstellungen, detail: null };
 function routen(){
   const h = location.hash.slice(1) || "heute";
@@ -1038,6 +1085,11 @@ async function ladeEinstellungen(){
   try{
     const ich = await (await api("/api/ich")).json();
     $("#einst-un").textContent = ich.un;
+    meineRolle = ich.rolle || meineRolle;
+    $("#verwaltung-knopf").hidden = !(meineRolle === "admin" || meineRolle === "kanzlei");
+    const eigenesKonto = (ich.un || "").includes("@");
+    $("#einst-pw-lbl").hidden = !eigenesKonto;
+    $("#einst-pw").hidden = !eigenesKonto;
     const e = await (await api("/api/einstellungen")).json();
     document.querySelectorAll("#einst-schalter input").forEach(s =>
       s.checked = e[s.dataset.s] === "1");
@@ -1053,6 +1105,18 @@ document.querySelectorAll("#einst-schalter input").forEach(s =>
   s.addEventListener("change", () => einstellungSpeichern({[s.dataset.s]: s.checked ? "1" : "0"})));
 $("#einst-kanzlei").addEventListener("change", ev => einstellungSpeichern({kanzlei_name: ev.target.value.trim()}));
 $("#einst-betrieb").addEventListener("change", ev => einstellungSpeichern({betrieb_name: ev.target.value.trim()}));
+$("#pw-speichern").addEventListener("click", async () => {
+  const status = $("#pw-status");
+  status.textContent = "…";
+  try{
+    const r = await api("/api/passwort", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({alt: $("#pw-alt").value, neu: $("#pw-neu").value})});
+    const d = await r.json();
+    status.textContent = r.ok ? "Geändert ✓" : (d.fehler || "Ging gerade nicht.");
+    if (r.ok){ $("#pw-alt").value = ""; $("#pw-neu").value = ""; }
+  }catch{ status.textContent = "Gerade keine Verbindung."; }
+});
 $("#abmelden-knopf").addEventListener("click", async () => {
   try{ await api("/api/abmelden", {method:"POST"}); }catch{}
   zeigeLogin();
@@ -1214,6 +1278,127 @@ document.addEventListener("keydown", ev => {
   if (ev.key === "ArrowRight" || ev.key === "Enter") stapelKlaeren();
 });
 
+/* ————— VERWALTUNG: Anfragen einrichten, Nutzer pflegen ————— */
+async function ladeVerwaltung(){
+  const ziel = $("#verwaltung-inhalt");
+  let regs = [], nutzer = [];
+  try{
+    const r1 = await api("/api/registrierungen");
+    if (r1.status === 403){ ziel.innerHTML = `<div class="leer"><b>Nur für die Verwaltung.</b></div>`; return; }
+    regs = (await r1.json()).registrierungen || [];
+    nutzer = (await (await api("/api/nutzer")).json()).nutzer || [];
+  }catch{ return; }
+
+  let html = "";
+  const offen = regs.filter(r => r.status === "neu");
+  html += `<div class="sektion lbl">Anfragen (${offen.length})</div>`;
+  if (!offen.length){
+    html += `<div class="karte" style="color:var(--gc-desc)">Keine offenen Anfragen.</div>`;
+  }
+  for (const r of offen){
+    html += `<div class="karte nachfrage" id="reg-${r.id}">
+      <h3>${r.salon || "Salon"} — ${r.name || "?"}</h3>
+      <p>${r.email || "keine E-Mail"}${r.telefon ? " · " + r.telefon : ""}</p>
+      <p style="margin-top:4px;font-size:12px;color:var(--gc-muted)">
+        ${[r.rechtsform, r.steuernummer && "St-Nr. " + r.steuernummer, r.finanzamt,
+           r.kleinunternehmer && "§19: " + r.kleinunternehmer,
+           r.steuerberater && "Steuerberater: " + r.steuerberater]
+          .filter(Boolean).join(" · ") || "keine weiteren Angaben"}</p>
+      <button class="hin" style="margin-top:10px" onclick="anfrageEinrichten(${r.id})">Zugang einrichten ›</button>
+    </div>`;
+  }
+
+  html += `<div class="sektion lbl">Zugänge (${nutzer.length})</div>`;
+  if (!nutzer.length){
+    html += `<div class="karte" style="color:var(--gc-desc)">Noch keine eigenen Zugänge —
+      richte den ersten aus einer Anfrage ein oder lege unten einen an.</div>`;
+  }
+  for (const n of nutzer){
+    html += `<div class="karte" style="${n.aktiv ? "" : "opacity:.55"}">
+      <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+        <b style="color:var(--gc-fg)">${n.name || n.email}</b>
+        <span style="font-size:12px;color:var(--gc-muted)">${n.email}${n.salon ? " · " + n.salon : ""}</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--gc-muted)">
+          ${n.letzter_login ? "zuletzt " + zeitKurz(n.letzter_login) : "noch nie angemeldet"}</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
+        <select onchange="nutzerAktion('${n.email}','rolle',this.value)"
+          style="padding:6px 10px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
+          ${["salon","kanzlei","admin"].map(x =>
+            `<option value="${x}" ${n.rolle===x?"selected":""}>${x === "salon" ? "Salon" : x === "kanzlei" ? "Kanzlei" : "Admin"}</option>`).join("")}
+        </select>
+        <button class="chip" onclick="nutzerAktion('${n.email}','${n.aktiv ? "deaktivieren" : "aktivieren"}')">
+          ${n.aktiv ? "Abschalten" : "Wieder anschalten"}</button>
+        <button class="chip" onclick="nutzerAktion('${n.email}','passwort_neu')">Neues Startpasswort</button>
+      </div>
+      <div id="pw-${n.email.replace(/[^a-z0-9]/g,"_")}"></div>
+    </div>`;
+  }
+
+  html += `<div class="sektion lbl">Zugang anlegen</div><div class="karte">
+    <div style="display:grid;gap:8px;grid-template-columns:1fr 1fr">
+      <input id="nv-email" placeholder="E-Mail" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+      <input id="nv-name" placeholder="Name" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+      <input id="nv-salon" placeholder="Salon" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+      <select id="nv-rolle" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
+        <option value="salon">Salon</option><option value="kanzlei">Kanzlei</option><option value="admin">Admin</option>
+      </select>
+    </div>
+    <button class="hin" style="margin-top:10px" onclick="nutzerAnlegen()">Anlegen</button>
+    <div id="nv-ergebnis"></div>
+  </div>`;
+  ziel.innerHTML = html;
+}
+function startpasswortKarte(email, passwort){
+  return `<div class="siegel" style="margin-top:10px"><span class="rosette">✦</span>
+    <div><span class="code">${email} · ${passwort}</span>
+    <small>Startpasswort — erscheint nur dieses eine Mal. Jetzt notieren und persönlich weitergeben.</small></div>
+    <button onclick="navigator.clipboard.writeText('${email} ${passwort}');this.textContent='Kopiert ✓'">Kopieren</button></div>`;
+}
+async function anfrageEinrichten(id){
+  try{
+    const r = await api("/api/registrierung-einrichten", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({id})});
+    const d = await r.json();
+    const karte = $("#reg-" + id);
+    if (r.ok){
+      karte.classList.remove("nachfrage");
+      karte.insertAdjacentHTML("beforeend", startpasswortKarte(d.email, d.startpasswort));
+      karte.querySelector("button.hin").remove();
+    } else {
+      karte.insertAdjacentHTML("beforeend",
+        `<p style="color:var(--gc-danger);margin-top:8px">${d.fehler || "Ging gerade nicht."}</p>`);
+    }
+  }catch{}
+}
+async function nutzerAktion(email, aktion, rolleNeu){
+  try{
+    const r = await api("/api/nutzer-aktion", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({email, aktion, rolle: rolleNeu})});
+    const d = await r.json();
+    if (aktion === "passwort_neu" && r.ok){
+      $("#pw-" + email.replace(/[^a-z0-9]/g,"_")).innerHTML = startpasswortKarte(email, d.startpasswort);
+      return;
+    }
+    if (!r.ok) alert(d.fehler || "Ging gerade nicht.");
+    ladeVerwaltung();
+  }catch{}
+}
+async function nutzerAnlegen(){
+  try{
+    const r = await api("/api/nutzer", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({email: $("#nv-email").value.trim(),
+        name: $("#nv-name").value.trim(), salon: $("#nv-salon").value.trim(),
+        rolle: $("#nv-rolle").value})});
+    const d = await r.json();
+    $("#nv-ergebnis").innerHTML = r.ok
+      ? startpasswortKarte(d.email, d.startpasswort)
+      : `<p style="color:var(--gc-danger);margin-top:8px">${d.fehler || "Ging gerade nicht."}</p>`;
+  }catch{}
+}
+
 /* ————— Frage-Strecke (eine Frage pro Schritt, große Schrift) —————
    Wird zweimal benutzt: Registrierung (vor dem Login) und Einrichtung
    (nach dem ersten Login). */
@@ -1294,9 +1479,19 @@ const REG_SCHRITTE = [
    hilfe:"Wenn ja: Beim Wechsel helfen wir dir — Kündigungsvorlage und Vollmacht kommen von uns."},
 ];
 $("#reg-start").addEventListener("click", () => {
+  // Die Fragen ERSETZEN das Login — nicht darunterkleben.
   $("#reg-einstieg").hidden = true;
-  const ziel = $("#reg-bereich");
-  ziel.hidden = false;
+  $("#login-felder").hidden = true;
+  document.querySelector("#login p").textContent =
+    "Schön, dass du dabei bist — ein paar kurze Fragen, dann richten wir dich persönlich ein.";
+  const bereich = $("#reg-bereich");
+  bereich.hidden = false;
+  bereich.innerHTML = `
+    <button id="reg-abbruch" style="color:var(--gc-muted);font-size:13px;margin-bottom:14px">‹ Ich habe schon einen Zugang</button>
+    <div id="reg-stepper" style="background:var(--gc-bg);border:1px solid var(--gc-border);
+      border-radius:var(--r);padding:22px"></div>`;
+  $("#reg-abbruch").addEventListener("click", () => location.reload());
+  const ziel = $("#reg-stepper");
   strecke(ziel, REG_SCHRITTE, "Zugang anfragen", null, async werte => {
     ziel.innerHTML = `<p style="color:var(--gc-desc)">Wird gesendet …</p>`;
     try{
@@ -1346,7 +1541,8 @@ function ladeEinrichtung(){
 (async () => {
   try{
     const r = await fetch("/api/ich",{credentials:"same-origin"});
-    if (r.ok){ const d = await r.json(); $("#avatar").textContent = (d.un||"·")[0].toUpperCase(); zeigeApp(); }
+    if (r.ok){ const d = await r.json(); meineRolle = d.rolle || "salon";
+      $("#avatar").textContent = (d.un||"·")[0].toUpperCase(); zeigeApp(); }
     else zeigeLogin();
   }catch{
     $("#offline").style.display = "block"; zeigeLogin();

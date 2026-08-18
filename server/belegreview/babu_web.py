@@ -57,6 +57,11 @@ def _db() -> sqlite3.Connection:
     conn.execute("""CREATE TABLE IF NOT EXISTS registrierungen
         (id INTEGER PRIMARY KEY AUTOINCREMENT, zeit TEXT NOT NULL,
          daten TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'neu')""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS nutzer
+        (email TEXT PRIMARY KEY, name TEXT, salon TEXT,
+         rolle TEXT NOT NULL DEFAULT 'salon', pw TEXT NOT NULL,
+         aktiv INTEGER NOT NULL DEFAULT 1,
+         angelegt TEXT, letzter_login TEXT)""")
     return conn
 
 
@@ -217,6 +222,79 @@ def angemeldet(request: Request) -> str | None:
                 return None
             return un
     return wer(request)
+
+
+# ---------------------------------------------------------------------------
+# Eigene Nutzerkonten (E-Mail + Passwort) mit Rollen — zusätzlich zum
+# PAT-Weg (App/Einrichtung). Passwörter als scrypt (stdlib); Startpasswörter
+# erscheinen GENAU EINMAL in der API-Antwort (kein Mailversand vorhanden,
+# Übergabe persönlich) und nie in Logs.
+# ---------------------------------------------------------------------------
+
+NUTZER_ROLLEN = ("admin", "kanzlei", "salon")
+
+
+def pw_hash(passwort: str) -> str:
+    salz = secrets.token_bytes(16)
+    h = hashlib.scrypt(passwort.encode(), salt=salz, n=16384, r=8, p=1)
+    return f"scrypt${salz.hex()}${h.hex()}"
+
+
+def pw_pruefen(passwort: str, gespeichert: str) -> bool:
+    try:
+        art, salz_hex, hash_hex = gespeichert.split("$", 2)
+        if art != "scrypt":
+            return False
+        h = hashlib.scrypt(passwort.encode(), salt=bytes.fromhex(salz_hex),
+                           n=16384, r=8, p=1)
+        return hmac.compare_digest(h.hex(), hash_hex)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def startpasswort() -> str:
+    """Lesbar, ohne verwechselbare Zeichen — wird persönlich weitergegeben."""
+    zeichen = "abcdefghjkmnpqrstuvwxyz23456789"
+    return "-".join("".join(secrets.choice(zeichen) for _ in range(4))
+                    for _ in range(2))
+
+
+def _jetzt_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def nutzer_holen(email: str) -> dict | None:
+    with _DB_LOCK, _db() as c:
+        z = c.execute("""SELECT email, name, salon, rolle, pw, aktiv, angelegt,
+                         letzter_login FROM nutzer WHERE email=?""",
+                      (email.strip().lower(),)).fetchone()
+    if not z:
+        return None
+    return {"email": z[0], "name": z[1], "salon": z[2], "rolle": z[3], "pw": z[4],
+            "aktiv": bool(z[5]), "angelegt": z[6], "letzter_login": z[7]}
+
+
+def nutzer_anlegen(email: str, name: str, salon: str, rolle_neu: str) -> str | None:
+    """Legt ein Konto an und gibt das Startpasswort zurück (None = existiert)."""
+    email = email.strip().lower()
+    if nutzer_holen(email):
+        return None
+    passwort = startpasswort()
+    with _DB_LOCK, _db() as c:
+        c.execute("""INSERT INTO nutzer (email, name, salon, rolle, pw, aktiv, angelegt)
+                     VALUES (?,?,?,?,?,1,?)""",
+                  (email, name.strip()[:120], salon.strip()[:120],
+                   rolle_neu if rolle_neu in NUTZER_ROLLEN else "salon",
+                   pw_hash(passwort), _jetzt_iso()))
+    return passwort
+
+
+def zugelassen(un: str) -> bool:
+    """PAT-Allowlist ODER aktives eigenes Konto."""
+    if un in ERLAUBT:
+        return True
+    n = nutzer_holen(un)
+    return bool(n and n["aktiv"])
 
 
 def git_show(pfad: str) -> bytes | None:
@@ -601,8 +679,8 @@ def _api_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]
     un = angemeldet(request)
     if un is None:
         return None, JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
-    if un not in ERLAUBT:
-        print(f"[wache] 403: '{un}' nicht in BABU_ERLAUBT", flush=True)
+    if not zugelassen(un):
+        print(f"[wache] 403: '{un}' weder Allowlist noch aktives Konto", flush=True)
         return None, JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
     return un, None
 
@@ -627,6 +705,63 @@ async def api_anmelden(request: Request) -> Response:
     return antwort
 
 
+# Login mit eigenem Konto (E-Mail + Passwort) — gleiche Session wie der
+# Zugangscode-Weg. Fehlermeldung immer generisch, Rate-Limit je IP.
+_LOGIN_VERSUCHE: dict[str, list[float]] = {}
+
+
+@app.post("/api/login")
+def api_login(body: dict, request: Request) -> Response:
+    if not _origin_ok(request):
+        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    ip = request.client.host if request.client else "?"
+    jetzt = time.time()
+    versuche = [t for t in _LOGIN_VERSUCHE.get(ip, []) if jetzt - t < 60]
+    if len(versuche) >= 5:
+        _LOGIN_VERSUCHE[ip] = versuche
+        return JSONResponse({"fehler": "Zu viele Versuche — bitte eine Minute warten."},
+                            status_code=429)
+    versuche.append(jetzt)
+    _LOGIN_VERSUCHE[ip] = versuche
+    email = str(body.get("email", "")).strip().lower()
+    passwort = str(body.get("passwort", ""))
+    n = nutzer_holen(email) if email else None
+    if not n or not n["aktiv"] or not pw_pruefen(passwort, n["pw"]):
+        return JSONResponse({"fehler": "E-Mail oder Passwort stimmt nicht."},
+                            status_code=401)
+    with _DB_LOCK, _db() as c:
+        c.execute("UPDATE nutzer SET letzter_login=? WHERE email=?",
+                  (_jetzt_iso(), email))
+    exp = int(time.time()) + SESSION_DAUER
+    antwort = JSONResponse({"un": email, "rolle": n["rolle"]})
+    antwort.set_cookie(SESSION_COOKIE, _signieren(email, exp), max_age=SESSION_DAUER,
+                       httponly=True, secure=SESSION_SECURE, samesite="lax", path="/")
+    return antwort
+
+
+@app.post("/api/passwort")
+async def api_passwort(request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    n = nutzer_holen(un)
+    if not n:
+        return JSONResponse({"fehler": "Dein Zugang hat kein Passwort — er läuft über den Zugangscode."},
+                            status_code=400)
+    if not pw_pruefen(str(body.get("alt", "")), n["pw"]):
+        return JSONResponse({"fehler": "Das bisherige Passwort stimmt nicht."}, status_code=401)
+    neu = str(body.get("neu", ""))
+    if len(neu) < 8:
+        return JSONResponse({"fehler": "Mindestens 8 Zeichen, bitte."}, status_code=400)
+    with _DB_LOCK, _db() as c:
+        c.execute("UPDATE nutzer SET pw=? WHERE email=?", (pw_hash(neu), un))
+    return JSONResponse({"ok": True})
+
+
 @app.post("/api/abmelden")
 def api_abmelden(request: Request) -> Response:
     antwort = JSONResponse({"ok": True})
@@ -641,7 +776,7 @@ def api_ich(request: Request) -> Response:
         return fehler
     # Gleitende Verlängerung: bei jedem Besuch frisch gesetzt.
     exp = int(time.time()) + SESSION_DAUER
-    antwort = JSONResponse({"un": un})
+    antwort = JSONResponse({"un": un, "rolle": rolle(un)})
     if request.cookies.get(SESSION_COOKIE):
         antwort.set_cookie(SESSION_COOKIE, _signieren(un, exp), max_age=SESSION_DAUER,
                            httponly=True, secure=SESSION_SECURE, samesite="lax", path="/")
@@ -987,7 +1122,7 @@ async def api_korrektur(stamm: str, request: Request) -> Response:
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
-    if rolle(un) != "kanzlei":
+    if not darf_verwalten(un):
         return JSONResponse({"fehler": "nur für die Kanzlei"}, status_code=403)
     if not NAME_RE.match(stamm):
         return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
@@ -1156,7 +1291,7 @@ def api_registrierungen(request: Request) -> Response:
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
-    if rolle(un) != "kanzlei":
+    if not darf_verwalten(un):
         return JSONResponse({"fehler": "nur für die Kanzlei"}, status_code=403)
     with _DB_LOCK, _db() as c:
         zeilen = [{"id": z[0], "zeit": z[1], "status": z[3], **json.loads(z[2])}
@@ -1193,7 +1328,140 @@ ROLLEN = {t.split(":")[0].strip().lower(): t.split(":")[1].strip().lower()
 
 
 def rolle(un: str) -> str:
+    n = nutzer_holen(un)
+    if n:
+        return n["rolle"]
     return ROLLEN.get(un, "kanzlei" if not ROLLEN else "salon")
+
+
+def darf_verwalten(un: str) -> bool:
+    return rolle(un) in ("admin", "kanzlei")
+
+
+def _verwalter_wache(request: Request):
+    un, fehler = _api_wache(request)
+    if fehler:
+        return None, fehler
+    if not darf_verwalten(un):
+        return None, JSONResponse({"fehler": "nur für die Verwaltung"}, status_code=403)
+    return un, None
+
+
+# ---------------------------------------------------------------------------
+# Verwaltung: Nutzer anlegen/ändern, Registrierungs-Anfragen einrichten.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/nutzer")
+def api_nutzer_liste(request: Request) -> Response:
+    un, fehler = _verwalter_wache(request)
+    if fehler:
+        return fehler
+    with _DB_LOCK, _db() as c:
+        zeilen = [{"email": z[0], "name": z[1], "salon": z[2], "rolle": z[3],
+                   "aktiv": bool(z[4]), "angelegt": z[5], "letzter_login": z[6]}
+                  for z in c.execute("""SELECT email, name, salon, rolle, aktiv,
+                      angelegt, letzter_login FROM nutzer ORDER BY angelegt DESC""")]
+    return JSONResponse({"nutzer": zeilen})
+
+
+@app.post("/api/nutzer")
+async def api_nutzer_anlegen(request: Request) -> Response:
+    un, fehler = _verwalter_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    email = str(body.get("email", "")).strip().lower()
+    if "@" not in email:
+        return JSONResponse({"fehler": "Das sieht nicht nach einer E-Mail aus."}, status_code=400)
+    passwort = nutzer_anlegen(email, str(body.get("name", "")),
+                              str(body.get("salon", "")), str(body.get("rolle", "salon")))
+    if passwort is None:
+        return JSONResponse({"fehler": "Für diese E-Mail gibt es schon einen Zugang."},
+                            status_code=409)
+    return JSONResponse({"ok": True, "email": email, "startpasswort": passwort})
+
+
+@app.post("/api/nutzer-aktion")
+async def api_nutzer_aktion(request: Request) -> Response:
+    un, fehler = _verwalter_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    email = str(body.get("email", "")).strip().lower()
+    aktion = str(body.get("aktion", ""))
+    if not nutzer_holen(email):
+        return JSONResponse({"fehler": "Diesen Zugang gibt es nicht."}, status_code=404)
+    # Selbstschutz: das eigene Konto weder abschalten noch zurückstufen.
+    if email == un and aktion in ("deaktivieren", "rolle"):
+        return JSONResponse({"fehler": "Das eigene Konto kannst du hier nicht ändern."},
+                            status_code=400)
+    if aktion == "deaktivieren":
+        with _DB_LOCK, _db() as c:
+            c.execute("UPDATE nutzer SET aktiv=0 WHERE email=?", (email,))
+    elif aktion == "aktivieren":
+        with _DB_LOCK, _db() as c:
+            c.execute("UPDATE nutzer SET aktiv=1 WHERE email=?", (email,))
+    elif aktion == "rolle":
+        neu = str(body.get("rolle", ""))
+        if neu not in NUTZER_ROLLEN:
+            return JSONResponse({"fehler": "unbekannte Rolle"}, status_code=400)
+        with _DB_LOCK, _db() as c:
+            c.execute("UPDATE nutzer SET rolle=? WHERE email=?", (neu, email))
+    elif aktion == "passwort_neu":
+        passwort = startpasswort()
+        with _DB_LOCK, _db() as c:
+            c.execute("UPDATE nutzer SET pw=? WHERE email=?", (pw_hash(passwort), email))
+        return JSONResponse({"ok": True, "email": email, "startpasswort": passwort})
+    else:
+        return JSONResponse({"fehler": "unbekannte Aktion"}, status_code=400)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/registrierung-einrichten")
+async def api_registrierung_einrichten(request: Request) -> Response:
+    un, fehler = _verwalter_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+        reg_id = int(body.get("id"))
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON mit id erwartet"}, status_code=400)
+    with _DB_LOCK, _db() as c:
+        z = c.execute("SELECT daten, status FROM registrierungen WHERE id=?",
+                      (reg_id,)).fetchone()
+    if not z:
+        return JSONResponse({"fehler": "Diese Anfrage gibt es nicht."}, status_code=404)
+    daten = json.loads(z[0])
+    email = str(daten.get("email", "")).strip().lower()
+    if "@" not in email:
+        return JSONResponse({"fehler": "Die Anfrage hat keine brauchbare E-Mail."},
+                            status_code=400)
+    passwort = nutzer_anlegen(email, daten.get("name", ""), daten.get("salon", ""), "salon")
+    if passwort is None:
+        return JSONResponse({"fehler": "Für diese E-Mail gibt es schon einen Zugang."},
+                            status_code=409)
+    # Steuerdaten aus der Anfrage als Einstellungen des neuen Kontos vorbefüllen.
+    vorbelegung = {"betrieb_name": daten.get("salon", ""),
+                   "rechtsform": daten.get("rechtsform", ""),
+                   "steuernummer": daten.get("steuernummer", ""),
+                   "finanzamt": daten.get("finanzamt", ""),
+                   "kleinunternehmer": daten.get("kleinunternehmer", ""),
+                   "steuerberater_status": daten.get("steuerberater", ""),
+                   "telefon": daten.get("telefon", ""),
+                   "email": email}
+    for schluessel, wert in vorbelegung.items():
+        if wert:
+            db_einstellung_setzen(email, schluessel, str(wert)[:200])
+    with _DB_LOCK, _db() as c:
+        c.execute("UPDATE registrierungen SET status='eingerichtet' WHERE id=?", (reg_id,))
+    return JSONResponse({"ok": True, "email": email, "startpasswort": passwort})
 
 
 @app.get("/api/export/{monat}.csv")
@@ -1204,7 +1472,7 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
-    if rolle(un) != "kanzlei":
+    if not darf_verwalten(un):
         return JSONResponse({"fehler": "nur für die Kanzlei"}, status_code=403)
     if not re.match(r"^\d{4}-\d{2}$", monat):
         return JSONResponse({"fehler": "ungültiger Monat"}, status_code=400)
@@ -1428,7 +1696,7 @@ def chat(body: dict, request: Request) -> Response:
     un = angemeldet(request)   # Cookie (Portal) ODER Bearer (App) — Wire-Format unverändert
     if un is None:
         return JSONResponse({"fehler": "Token fehlt oder ungültig"}, status_code=401)
-    if un not in ERLAUBT:
+    if not zugelassen(un):
         return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
     frage = str(body.get("frage", "")).strip()
     if not frage or len(frage) > 2000:
