@@ -9,10 +9,6 @@ Finanzamt-Post, FAQ, Profi-Upload im Footer, Babu-Chat-Widget.
 
 - `index.html` — Quelle (referenziert `bilder/*.png`), für lokale Arbeit.
 - `bilder/` — echte App-Screenshots aus dem Simulator (simctl, sips -Z 860).
-- `index-deploy.html` — GENERIERT: wie index.html, aber Bilder als data-URIs
-  eingebettet (babu-web hat keine Static-Route für /bilder/*). Neu erzeugen:
-  Python-Dreizeiler siehe Git-Historie oder einfach `bau.sh`-Muster:
-  `re.sub(r'src="bilder/(…png)"', data-URI, html)`.
 
 ## Deploy (Static-Swap, kein pm2-Restart)
 
