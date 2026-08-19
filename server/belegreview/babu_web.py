@@ -503,17 +503,28 @@ def _index_bauen(head: str) -> None:
             oid_cache[oid] = json.loads(roh)
         except Exception:  # noqa: BLE001
             oid_cache[oid] = None
+    erklaerung_pfade = {p_: oid for p_, oid in pfade.items()
+                        if p_.startswith("dokumente/") and p_.endswith(".erklaerung.json")}
+    fehlend_erkl = [oid for oid in erklaerung_pfade.values() if oid not in oid_cache]
+    for oid, roh in _blobs_lesen(fehlend_erkl).items():
+        try:
+            oid_cache[oid] = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            oid_cache[oid] = None
     dokumente: list[dict] = []
     for pfad, oid in pfade.items():
-        if not pfad.startswith("dokumente/") or pfad.endswith(".meta.json"):
+        if not pfad.startswith("dokumente/") or pfad.endswith(".meta.json") \
+                or pfad.endswith(".erklaerung.json"):
             continue
         meta = oid_cache.get(meta_pfade.get(pfad + ".meta.json", "")) or {}
+        erklaerung = oid_cache.get(erklaerung_pfade.get(pfad + ".erklaerung.json", ""))
         name = pfad.rsplit("/", 1)[-1]
         dokumente.append({
             "pfad": pfad,
             "name": name,
             "titel": (meta.get("titel") or name) if isinstance(meta, dict) else name,
             "art": (meta.get("art") or "dokument") if isinstance(meta, dict) else "dokument",
+            "erklaerung": erklaerung if isinstance(erklaerung, dict) else None,
             "von": (zeiten.get(pfad) or {}).get("autor"),
             "zeit": (zeiten.get(pfad) or {}).get("zeit"),
         })
@@ -1095,6 +1106,11 @@ async def api_dokument_hochladen(request: Request, name: str = "dokument.pdf",
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"}, status_code=503)
     with _INDEX_LOCK:
         _INDEX["geprueft"] = 0.0
+    if art[:40] == "behoerde":
+        # Brief vom Amt: im Hintergrund lesen und einfach erklären.
+        threading.Thread(target=_brief_job,
+                         args=(f"dokumente/{monat}/{dateiname}", daten, name, un),
+                         daemon=True).start()
     return JSONResponse({"ok": True, "commit": commit,
                          "pfad": f"dokumente/{monat}/{dateiname}"})
 
@@ -1259,7 +1275,10 @@ EINSTELLUNG_SCHLUESSEL = {"benachrichtigung_frage", "benachrichtigung_post",
                           # Einrichtung/Steuerdaten (Onboarding nach dem ersten Login)
                           "rechtsform", "steuernummer", "finanzamt",
                           "kleinunternehmer", "steuerberater_status",
-                          "telefon", "email"}
+                          "telefon", "email",
+                          # Paket-Einstufung (Fragebogen/Salon-Check)
+                          "ust_befreiung_medizinisch", "steuerberater_modus",
+                          "filialen", "mehrere_unternehmen", "abschluss_art"}
 
 
 # Registrierung: Interessentinnen hinterlassen alle Daten — der Zugang wird
@@ -1349,12 +1368,19 @@ def api_registrierungen(request: Request) -> Response:
     return JSONResponse({"registrierungen": zeilen})
 
 
+def _einstellungen_mit_paket(un: str) -> dict:
+    import saloncheck  # noqa: PLC0415
+    e = db_einstellungen(un)
+    e["paket_empfehlung"] = saloncheck.paket_empfehlung(e)
+    return e
+
+
 @app.get("/api/einstellungen")
 def api_einstellungen(request: Request) -> Response:
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
-    return JSONResponse(db_einstellungen(un))
+    return JSONResponse(_einstellungen_mit_paket(un))
 
 
 @app.post("/api/einstellungen")
@@ -1369,7 +1395,7 @@ async def api_einstellungen_setzen(request: Request) -> Response:
     for schluessel, wert in body.items():
         if schluessel in EINSTELLUNG_SCHLUESSEL:
             db_einstellung_setzen(un, schluessel, str(wert)[:200])
-    return JSONResponse(db_einstellungen(un))
+    return JSONResponse(_einstellungen_mit_paket(un))
 
 
 ROLLEN = {t.split(":")[0].strip().lower(): t.split(":")[1].strip().lower()
@@ -1410,6 +1436,9 @@ def api_nutzer_liste(request: Request) -> Response:
                    "aktiv": bool(z[4]), "angelegt": z[5], "letzter_login": z[6]}
                   for z in c.execute("""SELECT email, name, salon, rolle, aktiv,
                       angelegt, letzter_login FROM nutzer ORDER BY angelegt DESC""")]
+    import saloncheck  # noqa: PLC0415
+    for z in zeilen:
+        z["paket"] = saloncheck.paket_empfehlung(db_einstellungen(z["email"]))["name"]
     return JSONResponse({"nutzer": zeilen})
 
 
@@ -1760,13 +1789,18 @@ def chat(body: dict, request: Request) -> Response:
         "max_tokens": 700,
         "messages": [
             {"role": "system", "content":
-                "Du bist der Belegbox-Assistent von babu (0711 Intelligence). "
-                "Antworte auf Deutsch, knapp und präzise, AUSSCHLIESSLICH auf Basis "
-                "der mitgelieferten Belegdaten. Keine Sie-Anrede — neutrale Formen "
-                "oder Du. Nenne bei Aussagen den Beleg (Lieferant oder Dateiname). "
-                "Beträge deutsch formatieren (1.234,56 €). Steht etwas nicht in den "
-                "Daten, sage das offen. Keine Steuerberatung — Hinweise sind "
-                "Ersteinschätzungen."},
+                "Du bist der Assistent von babu (0711 Intelligence) für "
+                "Friseursalons. Antworte auf Deutsch, knapp und präzise. Keine "
+                "Sie-Anrede — neutrale Formen oder Du. Zwei Arten von Fragen: "
+                "(1) Fragen zu den eigenen Belegen beantwortest du AUSSCHLIESSLICH "
+                "aus den mitgelieferten Belegdaten und nennst den Beleg (Lieferant "
+                "oder Dateiname); steht etwas nicht in den Daten, sage das offen. "
+                "(2) Allgemeine Steuer-Grundfragen (Kleinunternehmer-Regel, "
+                "Kassenbuch-Pflicht, TSE, was man absetzen kann) erklärst du in "
+                "einfachen Worten für den Salon-Alltag — und sagst dazu, dass das "
+                "eine erste Einordnung ist. Beträge deutsch formatieren "
+                "(1.234,56 €). Keine Steuerberatung — Hinweise sind "
+                "Ersteinschätzungen, im Zweifel an die Ansprechperson verweisen."},
             {"role": "user", "content": f"BELEGDATEN:\n{kontext}\n\nFRAGE: {frage}"},
         ],
     }
@@ -1898,6 +1932,10 @@ def _abschluss_job(un: str, jahr: int, pfade: list[Path]) -> None:
             for feld in status["felder"]:
                 if feld["schluessel"] in kennzahlen["unsicher"]:
                     feld["sicher"] = False
+        # Eine gelesene EÜR beantwortet die Paket-Frage nach der Abschluss-Art.
+        if any(q["art"] == "euer" for q in kennzahlen["quellen"]) \
+                and not (db_einstellungen(un).get("abschluss_art") or "").strip():
+            db_einstellung_setzen(un, "abschluss_art", "EÜR")
         boxschreiber.schreiben(
             f"abschluss/{jahr}/kennzahlen.json",
             json.dumps(kennzahlen, ensure_ascii=False, indent=1).encode(),
@@ -2032,6 +2070,101 @@ def api_salon_check(request: Request, jahr: int = 0) -> Response:
                          "karten": saloncheck.karten_bauen(kennzahlen),
                          "unsicher": kennzahlen.get("unsicher") or [],
                          "quellen": kennzahlen.get("quellen") or []})
+
+
+# ---------------------------------------------------------------------------
+# Finanzamt-Briefe: fotografieren/ablegen (art=behoerde) → babu erklärt sie
+# in einfachen Worten als Sidecar <datei>.erklaerung.json.
+# ---------------------------------------------------------------------------
+
+def brief_erklaerung_bauen(daten: bytes, name: str, llm=None) -> dict:
+    import abschluss_lesen  # noqa: PLC0415
+    if llm is None:
+        llm = abschluss_lesen.llm_json
+    frage = ("Das ist ein Brief vom Finanzamt oder einer Behörde an eine "
+             "Friseursalon-Inhaberin. Erklär ihn ihr in einfachen Worten "
+             "(du-Form, kein Amtsdeutsch). Gib NUR JSON zurück: "
+             '{"einfach": "2-3 Sätze, was der Brief bedeutet", '
+             '"was_tun": "was sie jetzt tun muss — ein Satz, oder null", '
+             '"bis_wann": "Datum als JJJJ-MM-TT, oder null"}. Rate nie.')
+    import tempfile  # noqa: PLC0415
+    endung = Path(name).suffix.lower() or ".pdf"
+    with tempfile.NamedTemporaryFile(suffix=endung) as f:
+        f.write(daten)
+        f.flush()
+        texte = abschluss_lesen.seiten_text(f.name) if endung == ".pdf" else []
+        if texte and len((texte[0] or "").strip()) >= abschluss_lesen.TEXT_SCHWELLE:
+            roh = llm([{"role": "user", "content":
+                        frage + "\n\nBRIEF:\n" + "\n\n".join(t[:6000] for t in texte[:5])}])
+        else:
+            bilder = abschluss_lesen.seiten_bilder(f.name)
+            roh = llm([abschluss_lesen._bild_nachricht(frage, bilder[0])])
+    return {"einfach": str(roh.get("einfach") or "").strip()[:600],
+            "was_tun": (str(roh.get("was_tun")).strip()[:300]
+                        if roh.get("was_tun") else None),
+            "bis_wann": (str(roh.get("bis_wann")).strip()[:20]
+                         if roh.get("bis_wann") else None)}
+
+
+def _brief_job(pfad: str, daten: bytes, name: str, un: str) -> None:
+    import boxschreiber  # noqa: PLC0415
+    try:
+        with _LLM_SEMAPHORE:
+            erklaerung = brief_erklaerung_bauen(daten, name)
+        boxschreiber.schreiben(
+            pfad + ".erklaerung.json",
+            json.dumps(erklaerung, ensure_ascii=False, indent=1).encode(),
+            f"erklaerung: {name}", un)
+        with _INDEX_LOCK:
+            _INDEX["geprueft"] = 0.0
+    except Exception as e:  # noqa: BLE001
+        print(f"[brief] Erklärung für {pfad} gescheitert: {e}", flush=True)
+
+
+# ---------------------------------------------------------------------------
+# Kassenbuch-Empfang: die App legt jedes gepflegte Tagesblatt in der Box ab.
+# ---------------------------------------------------------------------------
+
+KASSENBUCH_ZAHLEN = ("bestandVortag", "einnahmenBar", "privateinlagen",
+                     "barabhebungBank", "ecZahlungen", "trinkgeldTeamEC",
+                     "sonstigeAusgaben", "privatentnahmen", "einzahlungBank",
+                     "gezaehltSchluss")
+KASSENBUCH_NOTIZEN = ("differenzGrund", "sonstigeNotiz")
+_KASSEN_DATUM_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+@app.post("/api/kassenbuch")
+async def api_kassenbuch(request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    datum = str(body.get("datum", ""))
+    if not _KASSEN_DATUM_RE.match(datum):
+        return JSONResponse({"fehler": "Datum fehlt (JJJJ-MM-TT)"}, status_code=400)
+    blatt: dict = {"datum": datum, "von": un}
+    for feld in KASSENBUCH_ZAHLEN:
+        try:
+            blatt[feld] = round(float(body.get(feld) or 0), 2)
+        except (TypeError, ValueError):
+            blatt[feld] = 0.0
+    for feld in KASSENBUCH_NOTIZEN:
+        wert = str(body.get(feld) or "").strip()[:300]
+        if wert:
+            blatt[feld] = wert
+    import boxschreiber  # noqa: PLC0415
+    try:
+        commit = boxschreiber.schreiben(
+            f"kassenbuch/{datum[:7]}/{datum}.json",
+            json.dumps(blatt, ensure_ascii=False, indent=1).encode(),
+            f"kassenbuch: {datum}", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    return JSONResponse({"ok": True, "commit": commit, "datum": datum})
 
 
 if __name__ == "__main__":

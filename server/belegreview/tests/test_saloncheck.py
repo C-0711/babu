@@ -101,6 +101,28 @@ def test_fehlender_umsatz_macht_anteile_grau():
         assert _karte(karten, karte_id)["ampel"] == "grau", karte_id
 
 
+def test_paket_empfehlung():
+    solo = saloncheck.paket_empfehlung({"kleinunternehmer": "Ja"})
+    assert solo["paket"] == "solo" and solo["preis_beispiel"] == 39
+    salon = saloncheck.paket_empfehlung({"kleinunternehmer": "Nein"})
+    assert salon["paket"] == "salon" and salon["name"] == "Salon"
+    # Plus schlägt alles — auch bei Kleinunternehmerin.
+    plus = saloncheck.paket_empfehlung({"kleinunternehmer": "Ja", "filialen": "Ja"})
+    assert plus["paket"] == "plus"
+    assert saloncheck.paket_empfehlung({"abschluss_art": "Bilanz"})["paket"] == "plus"
+    assert saloncheck.paket_empfehlung({"mehrere_unternehmen": "Ja"})["paket"] == "plus"
+
+
+def test_paket_hinweise():
+    p = saloncheck.paket_empfehlung({"kleinunternehmer": "Weiß nicht",
+                                     "steuerberater_modus": "Mein Steuerbüro bleibt",
+                                     "ust_befreiung_medizinisch": "Ja"})
+    text = " ".join(p["hinweise"])
+    assert "günstiger" in text and "Umsatzsteuer" in text and "Salon-Check" in text
+    assert saloncheck.paket_empfehlung({"kleinunternehmer": "Ja",
+                                        "abschluss_art": "EÜR"})["hinweise"] == []
+
+
 def test_kartensprache_ohne_fachwoerter():
     """Sprachregel wie in test_sprachregel.py, plus Zahlen-Fachjargon."""
     verboten = [r"\bServer\b", r"\bOCR\b", r"\bKI\b", r"\bModell\b",

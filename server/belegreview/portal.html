@@ -435,7 +435,9 @@ main{padding:26px 22px 60px;min-height:70dvh}
     <div class="gruss" style="font-size:22px;margin-bottom:4px">Post</div>
     <p style="color:var(--gc-desc);margin-bottom:10px">Was deine Kanzlei für dich bereitlegt.</p>
     <button class="chip" id="auszug-knopf" style="margin-bottom:10px">Kontoauszug ablegen</button>
+    <button class="chip" id="brief-knopf" style="margin-bottom:10px">Brief vom Amt ablegen</button>
     <input type="file" id="auszug-datei" accept=".pdf,application/pdf" hidden>
+    <input type="file" id="brief-datei" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*" hidden>
     <input class="suchfeld" id="post-suche" placeholder="Suchen — z. B. Lohn, Auswertung …" autocomplete="off">
     <div class="chips" style="margin-top:0">
       <button class="chip an" id="post-f-alle">Alle</button>
@@ -462,6 +464,8 @@ main{padding:26px 22px 60px;min-height:70dvh}
       <button class="chip" id="pw-speichern">Passwort ändern</button>
       <span id="pw-status" style="font-size:12px;margin-left:8px;color:var(--gc-muted)"></span>
     </div>
+    <div class="sektion lbl">Dein Paket</div>
+    <div class="karte" id="einst-paket"><div class="skelett"></div></div>
     <div class="sektion lbl">Sag mir Bescheid</div>
     <div class="karte" id="einst-schalter">
       <label class="feld" style="cursor:pointer"><span>Wenn ein Beleg eine Frage hat</span>
@@ -503,11 +507,12 @@ main{padding:26px 22px 60px;min-height:70dvh}
   <!-- FRAGEN -->
   <section class="ansicht" id="a-fragen">
     <div class="gruss" style="font-size:22px;margin-bottom:4px">Fragen</div>
-    <p style="color:var(--gc-desc);margin-bottom:16px">Ich antworte nur aus deinen Belegen.</p>
+    <p style="color:var(--gc-desc);margin-bottom:16px">Frag mich zu deinen Belegen — oder ganz allgemein zu Steuer-Grundfragen.</p>
     <div class="beispiele" id="chat-beispiele">
       <button class="chip">Was habe ich diesen Monat für Ware ausgegeben?</button>
       <button class="chip">Welche Belege brauchen mich noch?</button>
-      <button class="chip">Was war der größte Posten?</button>
+      <button class="chip">Was kann ich als Friseurin absetzen?</button>
+      <button class="chip">Was ist die Kleinunternehmer-Regel?</button>
     </div>
     <div id="chatlog"></div>
     <div id="chat-anker"><span id="chat-anker-text"></span><button id="chat-anker-weg" aria-label="Anker entfernen">✕</button></div>
@@ -1117,9 +1122,25 @@ async function ladePost(){
               onclick="freigeben('${doc.pfad}', this)">Freigeben ✓</button>
           </div></div>`;
   }
+  // Briefe vom Amt: babu erklärt sie in einfachen Worten — als Karte oben.
+  for (const doc of d.dokumente.filter(x => x.art === "behoerde")){
+    const e = doc.erklaerung;
+    kopfHtml += e
+      ? `<div class="karte einflug" style="border-left:3px solid var(--gc-accent)">
+          <b>${esc(doc.titel)}</b>
+          <p style="margin-top:6px">${esc(e.einfach)}</p>
+          ${e.was_tun ? `<p style="margin-top:6px"><b>Was du tun musst:</b> ${esc(e.was_tun)}</p>` : ""}
+          ${e.bis_wann ? `<p style="margin-top:4px;color:var(--gc-accent)"><b>Bis ${esc(e.bis_wann)}</b></p>` : ""}
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button class="chip" onclick="postOeffnen('${doc.pfad}', this)">Brief ansehen</button>
+          </div></div>`
+      : `<div class="karte einflug"><b>${esc(doc.titel)}</b>
+          <p style="color:var(--gc-desc);font-size:13px;margin-top:4px">Wir lesen den Brief gerade —
+          die Erklärung erscheint gleich hier.</p></div>`;
+  }
   const suchwort = postSuche.trim().toLowerCase();
   const liste = d.dokumente
-    .filter(doc => doc.art !== "freigabe_anfrage")
+    .filter(doc => doc.art !== "freigabe_anfrage" && doc.art !== "behoerde")
     .filter(doc => !postNurUngelesen || !doc.gelesen)
     .filter(doc => !suchwort || (doc.titel||"").toLowerCase().includes(suchwort));
   ziel.innerHTML = kopfHtml + (liste.length ? liste.map(doc => `
@@ -1142,6 +1163,23 @@ $("#post-f-ungelesen").addEventListener("click", () => {
   postNurUngelesen = true;
   $("#post-f-ungelesen").classList.add("an"); $("#post-f-alle").classList.remove("an");
   ladePost();
+});
+$("#brief-knopf").addEventListener("click", () => $("#brief-datei").click());
+$("#brief-datei").addEventListener("change", async ev => {
+  const datei = ev.target.files[0];
+  ev.target.value = "";
+  if (!datei) return;
+  const knopf = $("#brief-knopf");
+  knopf.textContent = "Wird abgelegt …";
+  try{
+    const r = await api("/api/dokumente?art=behoerde&name=" + encodeURIComponent(datei.name)
+      + "&titel=" + encodeURIComponent("Brief vom Amt · " + datei.name),
+      {method:"POST", body: datei});
+    knopf.textContent = r.ok ? "Abgelegt ✓ — wir erklären ihn dir gleich hier"
+                             : "Das hat nicht geklappt — nochmal?";
+    if (r.ok){ setTimeout(ladePost, 1200); setTimeout(ladePost, 15000); }
+  }catch{ knopf.textContent = "Gerade keine Verbindung — nochmal?"; }
+  setTimeout(() => { knopf.textContent = "Brief vom Amt ablegen"; }, 6000);
 });
 $("#auszug-knopf").addEventListener("click", () => $("#auszug-datei").click());
 $("#auszug-datei").addEventListener("change", async ev => {
@@ -1372,6 +1410,10 @@ async function ladeEinstellungen(){
       s.checked = e[s.dataset.s] === "1");
     $("#einst-kanzlei").value = e.kanzlei_name || "";
     $("#einst-betrieb").value = e.betrieb_name || "";
+    const p = e.paket_empfehlung;
+    if (p) $("#einst-paket").innerHTML =
+      `<b>${esc(p.name)}</b> — ${p.preis_beispiel} € im Monat <span style="font-size:12px;color:var(--gc-muted)">(Beispielpreis — endgültige Preise folgen)</span>` +
+      (p.hinweise || []).map(h => `<p style="color:var(--gc-desc);font-size:13px;margin-top:6px">${esc(h)}</p>`).join("");
   }catch{}
 }
 async function einstellungSpeichern(objekt){
@@ -1594,7 +1636,7 @@ async function ladeVerwaltung(){
     html += `<div class="karte" style="${n.aktiv ? "" : "opacity:.55"}">
       <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
         <b style="color:var(--gc-fg)">${n.name || n.email}</b>
-        <span style="font-size:12px;color:var(--gc-muted)">${n.email}${n.salon ? " · " + n.salon : ""}</span>
+        <span style="font-size:12px;color:var(--gc-muted)">${n.email}${n.salon ? " · " + n.salon : ""}${n.paket ? " · " + n.paket : ""}</span>
         <span style="margin-left:auto;font-size:11px;color:var(--gc-muted)">
           ${n.letzter_login ? "zuletzt " + zeitKurz(n.letzter_login) : "noch nie angemeldet"}</span>
       </div>
@@ -1781,6 +1823,22 @@ $("#reg-start").addEventListener("click", () => {
         // Sofort drin — Konto ist angelegt und angemeldet.
         meineRolle = d.rolle || "salon";
         $("#avatar").textContent = (d.un||"·")[0].toUpperCase();
+        // Antworten aus dem Paket-Fragebogen der Startseite übernehmen.
+        try{
+          const q = JSON.parse(sessionStorage.getItem("babu-paket") || "null");
+          if (q){
+            const map = {};
+            if (q.medizinisch) map.ust_befreiung_medizinisch = q.medizinisch;
+            if (q.steuerbuero) map.steuerberater_modus =
+              q.steuerbuero === "Eigenes Steuerbüro" ? "Mein Steuerbüro bleibt" : "Alles über babu";
+            if (q.filialen) map.filialen = q.filialen;
+            if (q.firmen) map.mehrere_unternehmen = q.firmen;
+            if (q.abschluss) map.abschluss_art =
+              q.abschluss === "Einfache Gewinnrechnung" ? "EÜR" : q.abschluss;
+            if (Object.keys(map).length) einstellungSpeichern(map);
+            sessionStorage.removeItem("babu-paket");
+          }
+        }catch{}
         ziel.innerHTML = `<div class="haken"><div class="kreis stempel">✓</div><div class="txt">
           <b>Fertig, ${(werte.name||"").split(" ")[0] || "willkommen"}!</b>
           <span>Dein Zugang ist angelegt — es geht direkt los.</span></div></div>`;
@@ -1808,15 +1866,34 @@ const EINRICHTUNG_SCHRITTE = [
   {f:"Welches Finanzamt ist für dich zuständig?", k:"finanzamt", optional:true},
   {f:"Bist du Kleinunternehmerin (§19)?", k:"kleinunternehmer",
    wahl:["Ja","Nein","Weiß nicht"]},
+  {f:"Machst du medizinische Behandlungen ohne Umsatzsteuer — zum Beispiel podologische Fußpflege?",
+   k:"ust_befreiung_medizinisch", wahl:["Ja","Nein"]},
   {f:"Hast du schon einen Steuerberater?", k:"steuerberater_status", wahl:["Ja","Nein"]},
+  {f:"Soll babu alles machen — oder bleibt dein Steuerbüro und wir arbeiten zu?",
+   k:"steuerberater_modus", wahl:["Alles über babu","Mein Steuerbüro bleibt"]},
+  {f:"Hat dein Salon mehr als einen Standort?", k:"filialen", wahl:["Ja","Nein"]},
+  {f:"Hast du mehrere Firmen?", k:"mehrere_unternehmen", wahl:["Ja","Nein"]},
+  {f:"Machst du eine Bilanz — oder die einfache Gewinnrechnung (EÜR)?",
+   k:"abschluss_art", wahl:["Bilanz","EÜR","Weiß nicht"],
+   hilfe:"Nicht sicher? Der Salon-Check liest es aus deinen Unterlagen heraus."},
 ];
 function ladeEinrichtung(){
   const ziel = $("#einrichtung-inhalt");
   strecke(ziel, EINRICHTUNG_SCHRITTE, "Einrichtung",
     (k, wert) => einstellungSpeichern({[k]: wert}),
-    werte => {
+    async werte => {
+      let paketHtml = "";
+      try{
+        const e = await (await api("/api/einstellungen")).json();
+        const p = e.paket_empfehlung;
+        if (p) paketHtml = `<div class="karte" style="margin-top:16px;border-color:var(--gc-ok)">
+          <b>Dein Paket: ${esc(p.name)}</b> — ${p.preis_beispiel} € im Monat
+          <span style="font-size:12px;color:var(--gc-muted)">(Beispielpreis)</span>
+          ${(p.hinweise || []).map(h => `<p style="color:var(--gc-desc);font-size:13px;margin-top:6px">${esc(h)}</p>`).join("")}</div>`;
+      }catch{}
       ziel.innerHTML = `<div class="haken"><div class="kreis stempel">✓</div><div class="txt">
         <b>Alles da — danke!</b><span>Du findest und änderst das jederzeit unter Einstellungen.</span></div></div>
+        ${paketHtml}
         ${werte.steuerberater_status === "Ja" ? `<div class="karte" style="margin-top:16px">
           <b>Du bist noch bei einem Steuerberater?</b>
           <p style="color:var(--gc-desc);font-size:13px;margin-top:4px">Kein Problem — der Wechsel ist

@@ -182,6 +182,41 @@ def _ust_karte(stammdaten: dict, zahlen: dict, unsicher: set[str]) -> dict:
     }
 
 
+PAKETE = {
+    "solo": {"name": "Solo", "preis_beispiel": 39},
+    "salon": {"name": "Salon", "preis_beispiel": 79},
+    "plus": {"name": "Salon Plus", "preis_beispiel": 149},
+}
+
+
+def paket_empfehlung(einstellungen: dict) -> dict:
+    """Transparente Einstufung aus den Einstellungen (Werte sind Strings).
+
+    Plus schlägt alles (Filialen, mehrere Firmen, Bilanz); Solo nur für
+    Kleinunternehmerinnen; sonst Salon. Beispielpreise, bis die
+    endgültigen feststehen.
+    """
+    e = {k: (v or "").strip() for k, v in (einstellungen or {}).items()}
+    if (e.get("filialen") == "Ja" or e.get("mehrere_unternehmen") == "Ja"
+            or e.get("abschluss_art") == "Bilanz"):
+        stufe = "plus"
+    elif e.get("kleinunternehmer") == "Ja":
+        stufe = "solo"
+    else:
+        stufe = "salon"
+    hinweise = []
+    if e.get("steuerberater_modus") in ("vorbereitend", "Mein Steuerbüro bleibt"):
+        hinweise.append("Dein Steuerbüro bleibt und babu arbeitet zu — "
+                        "das wird günstiger. Wir melden uns dazu.")
+    if e.get("ust_befreiung_medizinisch") == "Ja":
+        hinweise.append("Deine medizinischen Behandlungen bleiben ohne "
+                        "Umsatzsteuer — das ist eingestellt.")
+    if e.get("kleinunternehmer") == "Weiß nicht" or e.get("abschluss_art") in ("", "Weiß nicht"):
+        hinweise.append("Noch unsicher? Der Salon-Check liest es aus "
+                        "deinen Unterlagen heraus.")
+    return {"paket": stufe, **PAKETE[stufe], "hinweise": hinweise}
+
+
 def karten_bauen(kennzahlen: dict) -> list[dict]:
     """Baut die Ampel-Karten des Salon-Checks aus kennzahlen.json."""
     zahlen = kennzahlen.get("zahlen") or {}

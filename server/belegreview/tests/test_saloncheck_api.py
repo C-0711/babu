@@ -40,6 +40,9 @@ def welt(tmp_path, monkeypatch):
     monkeypatch.setattr(boxschreiber, "KLON", tmp_path / "klon")
     monkeypatch.setattr(boxschreiber, "REMOTE", str(bare))
     monkeypatch.setattr(boxschreiber, "PAT_PFAD", tmp_path / "kein-pat")
+    monkeypatch.setattr(babu_web, "INDEX_TTL", 0.0)
+    babu_web._INDEX.update(head=None, geprueft=0.0, belege={}, reviews={},
+                           dokumente=[], zeiten={}, oid_cache={})
     babu_web._ABSCHLUSS_JOBS.clear()
     babu_web.wer_token = lambda t: "christoph0711.io" if t == "test-pat" else None
 
@@ -154,6 +157,62 @@ def test_salon_check_ohne_kennzahlen_ist_leer(welt):
     client, _, _ = welt
     r = client.get("/api/salon-check", params={"jahr": 2024}).json()
     assert r == {"jahr": 2024, "stand": "leer", "karten": []}
+
+
+def test_paket_felder_und_empfehlung(welt):
+    client, _, _ = welt
+    d = client.post("/api/einstellungen",
+                    json={"kleinunternehmer": "Ja", "filialen": "Nein",
+                          "steuerberater_modus": "Mein Steuerbüro bleibt"}).json()
+    assert d["paket_empfehlung"]["paket"] == "solo"
+    assert any("günstiger" in h for h in d["paket_empfehlung"]["hinweise"])
+    d = client.post("/api/einstellungen", json={"filialen": "Ja"}).json()
+    assert d["paket_empfehlung"]["paket"] == "plus"
+    assert client.get("/api/einstellungen").json() == d
+
+
+def test_kassenbuch_empfang(welt):
+    client, bare, _ = welt
+    r = client.post("/api/kassenbuch", json={
+        "datum": "2026-08-18", "bestandVortag": 150, "einnahmenBar": 420.5,
+        "gezaehltSchluss": 540, "differenzGrund": "10 € Wechselgeld verzählt"})
+    assert r.status_code == 200
+    blatt = json.loads(subprocess.run(
+        ["git", "-C", str(bare), "show", "HEAD:kassenbuch/2026-08/2026-08-18.json"],
+        capture_output=True, check=True).stdout)
+    assert blatt["einnahmenBar"] == 420.5
+    assert blatt["differenzGrund"] == "10 € Wechselgeld verzählt"
+    assert blatt["von"] == "christoph0711.io"
+    # Ohne Datum → 400, kaputte Zahl wird 0.
+    assert client.post("/api/kassenbuch", json={}).status_code == 400
+    r = client.post("/api/kassenbuch", json={"datum": "2026-08-19",
+                                             "einnahmenBar": "quatsch"})
+    assert r.status_code == 200
+
+
+def test_brief_wird_erklaert(welt, monkeypatch):
+    client, _, bw = welt
+    monkeypatch.setattr(bw, "brief_erklaerung_bauen", lambda daten, name: {
+        "einfach": "Das Finanzamt will deine Umsatzsteuer-Voranmeldung.",
+        "was_tun": "Schick sie bis zur Frist ab.", "bis_wann": "2026-09-10"})
+    r = client.post("/api/dokumente",
+                    params={"name": "brief.pdf", "titel": "Brief vom Amt",
+                            "art": "behoerde"},
+                    content=b"%PDF-1.4 brief")
+    assert r.status_code == 200
+    frist = time.time() + 5
+    erklaerung = None
+    while time.time() < frist:
+        docs = client.get("/api/dokumente").json()["dokumente"]
+        erklaerung = next((d["erklaerung"] for d in docs
+                           if d["art"] == "behoerde"), None)
+        if erklaerung:
+            break
+        time.sleep(0.1)
+    assert erklaerung and erklaerung["bis_wann"] == "2026-09-10"
+    # Das Sidecar taucht nicht als eigenes Dokument auf.
+    assert all(not d["pfad"].endswith(".erklaerung.json")
+               for d in client.get("/api/dokumente").json()["dokumente"])
 
 
 def test_upload_grenzen(welt):
