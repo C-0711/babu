@@ -77,6 +77,45 @@ enum AblageService {
         }
     }
 
+    /// Brief vom Amt ablegen — babu liest ihn und erklärt ihn danach
+    /// in einfachen Worten (Sidecar-Erklärung, siehe `briefErklaerung`).
+    static func briefAblegen(daten: Data, dateiname: String, basis: URL,
+                             pat: String) async -> String? {
+        var teile = URLComponents(url: basis.appendingPathComponent("api/dokumente"),
+                                  resolvingAgainstBaseURL: false)
+        teile?.queryItems = [URLQueryItem(name: "name", value: dateiname),
+                             URLQueryItem(name: "titel", value: "Brief vom Amt · " + dateiname),
+                             URLQueryItem(name: "art", value: "behoerde")]
+        guard let url = teile?.url else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.httpBody = daten
+        let (ergebnis, antwort) = await ausfuehrenMitDaten(request)
+        guard ergebnis == .uebertragen, let antwort,
+              let json = try? JSONSerialization.jsonObject(with: antwort) as? [String: Any]
+        else { return nil }
+        return json["pfad"] as? String
+    }
+
+    /// Erklärung zum abgelegten Brief holen (entsteht im Hintergrund).
+    static func briefErklaerung(pfad: String, basis: URL,
+                                pat: String) async -> (einfach: String, wasTun: String?,
+                                                       bisWann: String?)? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/dokumente"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+              let liste = json["dokumente"] as? [[String: Any]],
+              let treffer = liste.first(where: { ($0["pfad"] as? String) == pfad }),
+              let e = treffer["erklaerung"] as? [String: Any],
+              let einfach = e["einfach"] as? String, !einfach.isEmpty
+        else { return nil }
+        return (einfach, e["was_tun"] as? String, e["bis_wann"] as? String)
+    }
+
     /// Tagesblatt des Kassenbuchs in die Belegbox legen (POST /api/kassenbuch).
     static func kassenblattSenden(_ b: Kassenbericht, basis: URL, pat: String) async -> Bool {
         var request = URLRequest(url: basis.appendingPathComponent("api/kassenbuch"))

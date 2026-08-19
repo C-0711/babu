@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 /// Eine Chat-Nachricht — Codable, damit der Verlauf App-Neustarts überlebt.
 struct ChatNachricht: Identifiable, Equatable, Codable {
@@ -24,6 +25,9 @@ struct FragenTab: View {
     @State private var laeuft = false
     @State private var aktuelleID: UUID?
     @State private var zeigeVerlauf = false
+    @State private var briefAuswahl: PhotosPickerItem?
+    @State private var zeigeBriefDateien = false
+    @State private var briefLaeuft = false
     @FocusState private var feldAktiv: Bool
 
     private var aktuelleIndex: Int? {
@@ -97,6 +101,60 @@ struct FragenTab: View {
                 }
             }
             .sheet(isPresented: $zeigeVerlauf) { verlaufsListe }
+            .fileImporter(isPresented: $zeigeBriefDateien,
+                          allowedContentTypes: [.pdf, .image]) { ergebnis in
+                guard case .success(let url) = ergebnis else { return }
+                let zugriff = url.startAccessingSecurityScopedResource()
+                defer { if zugriff { url.stopAccessingSecurityScopedResource() } }
+                if let daten = try? Data(contentsOf: url) {
+                    briefSchicken(daten, name: url.lastPathComponent)
+                }
+            }
+            .onChange(of: briefAuswahl) { _, neu in
+                guard let neu else { return }
+                Task {
+                    let daten = try? await neu.loadTransferable(type: Data.self)
+                    briefAuswahl = nil
+                    if let daten { briefSchicken(daten, name: "brief.jpg") }
+                }
+            }
+        }
+    }
+
+    // MARK: - Brief vom Amt: ablegen, lesen lassen, erklären
+
+    private func briefSchicken(_ daten: Data, name: String) {
+        guard let url = URL(string: store.ablageURL), let pat = KeychainHelfer.ladePAT() else {
+            _ = anhaengen(ChatNachricht(vonMir: false,
+                text: "Dafür braucht die App die Belegbox — einmal im Export-Tab über das Zahnrad verbinden."))
+            return
+        }
+        briefLaeuft = true
+        _ = anhaengen(ChatNachricht(vonMir: true, text: "📄 Brief vom Amt"))
+        let index = anhaengen(ChatNachricht(vonMir: false,
+            text: "Ich lese deinen Brief — das dauert einen Moment …"))
+        Task {
+            guard let pfad = await AblageService.briefAblegen(daten: daten, dateiname: name,
+                                                              basis: url, pat: pat) else {
+                textSetzen(index, "Der Brief ließ sich gerade nicht ablegen — später noch einmal versuchen.")
+                briefLaeuft = false
+                return
+            }
+            // Die Erklärung entsteht im Hintergrund — geduldig nachfragen.
+            for wartezeit: UInt64 in [6, 8, 10, 15, 20, 30] {
+                try? await Task.sleep(nanoseconds: wartezeit * 1_000_000_000)
+                if let e = await AblageService.briefErklaerung(pfad: pfad, basis: url, pat: pat) {
+                    var text = e.einfach
+                    if let tun = e.wasTun, !tun.isEmpty { text += "\n\nWas du tun musst: \(tun)" }
+                    if let bis = e.bisWann, !bis.isEmpty { text += "\n\nZeit bis: \(bis)" }
+                    text += "\n\nDer Brief liegt jetzt sicher in deiner Belegbox."
+                    textSetzen(index, text)
+                    briefLaeuft = false
+                    return
+                }
+            }
+            textSetzen(index, "Der Brief liegt in deiner Belegbox. Die Erklärung dauert diesmal länger — schau gleich noch einmal rein.")
+            briefLaeuft = false
         }
     }
 
@@ -105,12 +163,13 @@ struct FragenTab: View {
             Text("Frag babu")
                 .font(.title3.weight(.semibold))
                 .fontDesign(.serif)
-            Text("Zu deinen eigenen Belegen — oder ganz allgemein zu Steuerfragen. Zum Beispiel:")
+            Text("Zu deinen Belegen, zur App und zu Steuerfragen. Und: Brief vom Amt fotografieren — babu erklärt ihn dir. Zum Beispiel:")
                 .font(.footnote)
                 .foregroundStyle(GC.desc)
             ForEach(["Wie viel habe ich im Juli für Bewirtung ausgegeben?",
-                     "Welche Belege haben offene Punkte?",
-                     "Was kann ich als Friseurin absetzen?"], id: \.self) { beispiel in
+                     "Was kann ich als Friseurin absetzen?",
+                     "Wie trage ich mein Kassenbuch ein?",
+                     "Brauche ich eine Kasse mit TSE?"], id: \.self) { beispiel in
                 Button {
                     eingabe = beispiel
                     senden()
@@ -205,6 +264,23 @@ struct FragenTab: View {
 
     private var eingabeleiste: some View {
         HStack(spacing: 10) {
+            Menu {
+                PhotosPicker(selection: $briefAuswahl, matching: .images,
+                             photoLibrary: .shared()) {
+                    Label("Brief fotografieren oder aus Fotos", systemImage: "camera")
+                }
+                Button {
+                    zeigeBriefDateien = true
+                } label: {
+                    Label("Brief aus Dateien (PDF)", systemImage: "folder")
+                }
+            } label: {
+                Image(systemName: briefLaeuft ? "hourglass" : "paperclip")
+                    .font(.system(size: 22))
+                    .foregroundStyle(briefLaeuft ? GC.muted : GC.accent)
+            }
+            .disabled(briefLaeuft)
+            .accessibilityLabel("Brief vom Amt ablegen")
             TextField("Frag mich etwas …", text: $eingabe, axis: .vertical)
                 .lineLimit(1...4)
                 .focused($feldAktiv)

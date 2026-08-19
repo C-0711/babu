@@ -181,6 +181,7 @@ struct BelegZeile: View {
 
 struct DetailView: View {
     @EnvironmentObject var store: AppStore
+    @Environment(\.dismiss) private var zurueck
     let belegID: UUID
 
     @State private var review: BelegReviewDaten?
@@ -192,6 +193,7 @@ struct DetailView: View {
     @State private var zeigeKontierung = false
     @State private var detailBild: UIImage?
     @State private var markierungen: [CGRect] = []
+    @State private var zeigeLoeschen = false
 
     private var beleg: Beleg? { store.belege.first { $0.id == belegID } }
 
@@ -251,6 +253,17 @@ struct DetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await laden() }
         .sheet(isPresented: $zeigeAlle) { alleAngabenSheet }
+        .confirmationDialog("Diesen Beleg endgültig löschen?",
+                            isPresented: $zeigeLoeschen, titleVisibility: .visible) {
+            Button("Endgültig löschen", role: .destructive) {
+                zeigeAlle = false
+                store.loeschen(id: belegID)
+                zurueck()
+            }
+            Button("Behalten", role: .cancel) {}
+        } message: {
+            Text("Foto und alle Angaben sind danach weg. Richtig so, wenn der Beleg gar nicht zu dir gehört.")
+        }
     }
 
     // MARK: - Beleg groß, Markierungen, Haken
@@ -360,6 +373,18 @@ struct DetailView: View {
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
                             }
+
+                            // Fremder Beleg im Stapel? Muss ohne Wischgeste
+                            // wegzubekommen sein — Rückfrage kommt danach.
+                            Button(role: .destructive) {
+                                zeigeLoeschen = true
+                            } label: {
+                                Label("Gehört nicht zu mir — löschen", systemImage: "trash")
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .tint(GC.warn)
                         }
 
                         if let ablage = b.ablageStatus, ablage != .uebertragen {

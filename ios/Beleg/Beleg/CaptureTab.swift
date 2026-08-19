@@ -1,5 +1,7 @@
 import SwiftUI
 import UIKit
+import PhotosUI
+import PDFKit
 
 /// Erfassen: Scan → On-Device-OCR → Prüfschritte → Confidence-Routing.
 struct CaptureTab: View {
@@ -14,6 +16,11 @@ struct CaptureTab: View {
     // Abbruch-Marke: ein X während der Verarbeitung entwertet den laufenden
     // Durchlauf, damit er die Ansicht nicht später doch noch umschaltet.
     @State private var verarbeitungsLauf = UUID()
+    // Beleg aus der Mediathek oder aus Dateien — nicht jede Rechnung
+    // liegt als Papier auf dem Tresen.
+    @State private var fotoAuswahl: PhotosPickerItem?
+    @State private var zeigeDateien = false
+    @State private var ladeFehler: String?
 
     enum Phase { case bereit, verarbeitet, ergebnis, nichtsErkannt }
 
@@ -40,7 +47,58 @@ struct CaptureTab: View {
                 )
                 .ignoresSafeArea()
             }
+            .fileImporter(isPresented: $zeigeDateien,
+                          allowedContentTypes: [.pdf, .image]) { ergebnis in
+                switch ergebnis {
+                case .success(let url): ladeFehler = nil; ladeDatei(url)
+                case .failure: ladeFehler = "Die Datei ließ sich nicht öffnen — bitte noch einmal versuchen."
+                }
+            }
+            .onChange(of: fotoAuswahl) { _, neu in
+                guard let neu else { return }
+                ladeFehler = nil
+                Task {
+                    if let daten = try? await neu.loadTransferable(type: Data.self),
+                       let bild = UIImage(data: daten) {
+                        fotoAuswahl = nil
+                        await verarbeite(bild)
+                    } else {
+                        fotoAuswahl = nil
+                        ladeFehler = "Dieses Foto konnten wir nicht laden — bitte ein anderes wählen."
+                    }
+                }
+            }
         }
+    }
+
+    /// Datei aus dem Dateien-Bereich: Bild direkt, PDF wird zur Seite 1
+    /// gerendert (mehrseitige Bündel bitte einzeln — wie beim Scannen).
+    private func ladeDatei(_ url: URL) {
+        let zugriff = url.startAccessingSecurityScopedResource()
+        defer { if zugriff { url.stopAccessingSecurityScopedResource() } }
+        guard let daten = try? Data(contentsOf: url) else {
+            ladeFehler = "Die Datei ließ sich nicht lesen — bitte noch einmal versuchen."
+            return
+        }
+        if let bild = UIImage(data: daten) {
+            Task { await verarbeite(bild) }
+            return
+        }
+        guard let doc = PDFDocument(data: daten), let seite = doc.page(at: 0) else {
+            ladeFehler = "Damit können wir nichts anfangen — bitte ein Foto oder ein PDF wählen."
+            return
+        }
+        let feld = seite.bounds(for: .mediaBox)
+        let skala = min(2200 / max(feld.width, feld.height), 3.0)
+        let groesse = CGSize(width: feld.width * skala, height: feld.height * skala)
+        let bild = UIGraphicsImageRenderer(size: groesse).image { ctx in
+            UIColor.white.setFill()
+            ctx.fill(CGRect(origin: .zero, size: groesse))
+            ctx.cgContext.translateBy(x: 0, y: groesse.height)
+            ctx.cgContext.scaleBy(x: skala, y: -skala)
+            seite.draw(with: .mediaBox, to: ctx.cgContext)
+        }
+        Task { await verarbeite(bild) }
     }
 
     // MARK: - Bereit
@@ -79,6 +137,30 @@ struct CaptureTab: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
+                }
+                Menu {
+                    PhotosPicker(selection: $fotoAuswahl, matching: .images,
+                                 photoLibrary: .shared()) {
+                        Label("Aus deinen Fotos", systemImage: "photo.on.rectangle")
+                    }
+                    Button {
+                        zeigeDateien = true
+                    } label: {
+                        Label("Aus Dateien (auch PDF)", systemImage: "folder")
+                    }
+                } label: {
+                    Label("Beleg aus Datei oder Foto hochladen",
+                          systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+
+                if let ladeFehler {
+                    Text(ladeFehler)
+                        .font(.footnote)
+                        .foregroundStyle(GC.warn)
+                        .multilineTextAlignment(.center)
                 }
                 #if targetEnvironment(simulator)
                 // Nur im Simulator — auf dem Gerät hat der Beispiel-Beleg
