@@ -1,10 +1,10 @@
 import SwiftUI
 import UIKit
 
-/// Verbindung zur Belegbox — so einfach wie das Portal: E-Mail + Passwort,
-/// der Geräteschlüssel entsteht unsichtbar im Hintergrund und wandert in die
-/// Keychain. Der technische Zugangscode-Weg bleibt für die Einrichtung
-/// erreichbar, aber außer Sicht.
+/// Verbindung zur Belegbox — genau eine Sache: mit dem babu-Konto anmelden.
+/// Der Geräteschlüssel kommt automatisch vom Server und wandert unsichtbar
+/// in die Keychain. Technik (GitChain, Schlüssel, Adressen) bleibt komplett
+/// hinter den Kulissen — sichtbar ist nur „running on GitChain".
 struct EinstellungenView: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) private var dismiss
@@ -14,8 +14,7 @@ struct EinstellungenView: View {
     @State private var kontoFehler: String?
     @State private var verbindet = false
 
-    @State private var pat = ""
-    @State private var patGespeichert = KeychainHelfer.ladePAT() != nil
+    @State private var verbunden = KeychainHelfer.ladePAT() != nil
     @State private var testErgebnis: String?
     @State private var testLaeuft = false
     @State private var zeigeLoeschDialog = false
@@ -23,7 +22,7 @@ struct EinstellungenView: View {
     var body: some View {
         NavigationStack {
             Form {
-                if patGespeichert {
+                if verbunden {
                     verbundenBereich
                 } else {
                     anmeldenBereich
@@ -48,7 +47,7 @@ struct EinstellungenView: View {
                             if testLaeuft { Spacer(); ProgressView() }
                         }
                     }
-                    .disabled(testLaeuft || !patGespeichert)
+                    .disabled(testLaeuft || !verbunden)
                     if let ergebnis = testErgebnis {
                         Text(ergebnis)
                             .font(.footnote)
@@ -58,26 +57,22 @@ struct EinstellungenView: View {
                     Text("Ohne Verbindung bleiben Belege in der Warteschlange und werden nachgereicht, sobald es wieder klappt.")
                 }
 
-                DisclosureGroup("Für die Einrichtung (Technik)") {
-                    TextField(AppStore.ablageStandardURL, text: $store.ablageURL)
-                        .keyboardType(.URL)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .font(.callout.monospaced())
-                    SecureField(patGespeichert ? "Zugangscode ersetzen — neu einfügen"
-                                               : "Zugangscode einfügen",
-                                text: $pat)
-                        .font(.callout.monospaced())
+                Section {
+                } footer: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "seal")
+                        Text("running on GitChain")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(GC.muted)
                 }
             }
             .navigationTitle("Belegbox")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Fertig") {
-                        patSpeichernFallsEingegeben()
-                        dismiss()
-                    }
+                    Button("Fertig") { dismiss() }
                 }
             }
         }
@@ -134,8 +129,7 @@ struct EinstellungenView: View {
                             titleVisibility: .visible) {
             Button("Ja, trennen", role: .destructive) {
                 KeychainHelfer.loeschePAT()
-                patGespeichert = false
-                pat = ""
+                verbunden = false
                 store.verbundenAls = nil
                 store.ablageAktiv = false   // ehrlich: ohne Verbindung geht nichts mehr
                 testErgebnis = nil
@@ -148,10 +142,7 @@ struct EinstellungenView: View {
     }
 
     private func verbinden() {
-        guard let url = URL(string: store.ablageURL) else {
-            kontoFehler = "Die Adresse sieht nicht richtig aus — bitte unter Technik prüfen."
-            return
-        }
+        guard let url = URL(string: store.ablageURL) else { return }
         verbindet = true
         kontoFehler = nil
         Task {
@@ -162,7 +153,7 @@ struct EinstellungenView: View {
                 basis: url)
             if let schluessel = ergebnis.schluessel {
                 KeychainHelfer.speicherePAT(schluessel)
-                patGespeichert = true
+                verbunden = true
                 store.verbundenAls = ergebnis.un
                 store.ablageAktiv = true
                 email = ""
@@ -176,22 +167,8 @@ struct EinstellungenView: View {
         }
     }
 
-    // MARK: - Technik-Weg (Zugangscode) — für die Einrichtung, nicht für den Alltag
-
-    private func patSpeichernFallsEingegeben() {
-        let neu = pat.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !neu.isEmpty else { return }
-        KeychainHelfer.speicherePAT(neu)
-        patGespeichert = true
-        pat = ""
-    }
-
     private func teste() {
-        patSpeichernFallsEingegeben()
-        guard let url = URL(string: store.ablageURL) else {
-            testErgebnis = "Die Adresse sieht nicht richtig aus — bitte prüfen."
-            return
-        }
+        guard let url = URL(string: store.ablageURL) else { return }
         guard let gespeichert = KeychainHelfer.ladePAT() else {
             testErgebnis = "Bitte zuerst mit deinem Konto verbinden."
             return
