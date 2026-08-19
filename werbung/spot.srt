@@ -1,0 +1,15 @@
+1
+00:00:00,400 --> 00:00:07,600
+Januar: 350 €. Februar: 350 €.
+
+2
+00:00:08,400 --> 00:00:15,600
+Beratung? … Kostet extra.
+
+3
+00:00:16,400 --> 00:00:23,600
+Beleg? Foto. Fertig.
+
+4
+00:00:24,400 --> 00:00:31,600
+Ich zahl 79 € im Monat — und mein Haken ist grüner als seiner.
