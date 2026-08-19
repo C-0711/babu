@@ -51,6 +51,32 @@ enum AblageService {
         return (ergebnis, serverDatei)
     }
 
+    /// Konto-Anmeldung der App: E-Mail + Passwort → Geräteschlüssel.
+    /// Der Schlüssel kommt genau einmal zurück und wandert in die Keychain —
+    /// die Nutzerin sieht ihn nie.
+    static func appAnmelden(email: String, passwort: String, geraet: String,
+                            basis: URL) async -> (schluessel: String?, un: String?,
+                                                  fehler: String?) {
+        var request = URLRequest(url: basis.appendingPathComponent("api/app-anmelden"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject:
+            ["email": email, "passwort": passwort, "geraet": geraet])
+        do {
+            let (daten, antwort) = try await URLSession.shared.data(for: request)
+            let code = (antwort as? HTTPURLResponse)?.statusCode ?? 0
+            let json = (try? JSONSerialization.jsonObject(with: daten)) as? [String: Any]
+            if code == 200, let schluessel = json?["schluessel"] as? String {
+                return (schluessel, json?["un"] as? String, nil)
+            }
+            return (nil, nil, json?["fehler"] as? String
+                    ?? "Das hat gerade nicht geklappt — später noch einmal versuchen.")
+        } catch {
+            return (nil, nil, "Gerade keine Verbindung — Internet prüfen und noch einmal versuchen.")
+        }
+    }
+
     /// Tagesblatt des Kassenbuchs in die Belegbox legen (POST /api/kassenbuch).
     static func kassenblattSenden(_ b: Kassenbericht, basis: URL, pat: String) async -> Bool {
         var request = URLRequest(url: basis.appendingPathComponent("api/kassenbuch"))

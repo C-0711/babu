@@ -29,6 +29,7 @@ final class AppStore: ObservableObject {
     static let ablageStandardURL = "https://babu.0711.io"
     @Published var ablageURL = AppStore.ablageStandardURL { didSet { speichern() } }
     @Published var ablageAktiv = false { didSet { speichern() } }
+    @Published var verbundenAls: String? { didSet { speichern() } }   // E-Mail des Kontos
 
     private var geladen = false
     private var speicherTask: Task<Void, Never>?
@@ -52,6 +53,7 @@ final class AppStore: ObservableObject {
             ablageAktiv = z.ablageAktiv ?? false
             kassenberichte = z.kassenberichte ?? []
             chatVerlauf = z.chatVerlauf ?? []
+            verbundenAls = z.verbundenAls
             // Ältere Stände: Demo-Belege am festen Demo-Siegel nachträglich
             // markieren, damit sie nie im echten Stapel landen.
             let demoSiegel: Set<String> = ["77b2e0c4 9a11 f38d", "0d31f6a8 5be2 c974"]
@@ -81,13 +83,15 @@ final class AppStore: ObservableObject {
         var ablageAktiv: Bool?
         var kassenberichte: [Kassenbericht]?
         var chatVerlauf: [ChatUnterhaltung]?
+        var verbundenAls: String?
     }
 
     private var zustand: Zustand {
         Zustand(onboarded: onboarded, skr: skr, belege: belege,
                 exportiert: exportiert, geprueft: geprueft, pruefSekunden: pruefSekunden,
                 ablageURL: ablageURL, ablageAktiv: ablageAktiv,
-                kassenberichte: kassenberichte, chatVerlauf: chatVerlauf)
+                kassenberichte: kassenberichte, chatVerlauf: chatVerlauf,
+                verbundenAls: verbundenAls)
     }
 
     /// Entprellt auf ~0,25 s, damit Serien-Änderungen nicht pro Mutation schreiben.
