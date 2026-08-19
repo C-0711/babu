@@ -34,10 +34,10 @@ struct KassenberichtWorkflow: View {
                 hilfe: "Steht auf dem Tagesabschluss deines Kartenlesers.",
                 optional: false, pfad: \.ecZahlungen),
         Schritt(frage: "Trinkgeld fürs Team bar aus der Kasse gegeben, das mit Karte bezahlt war?",
-                hilfe: "",
+                hilfe: "Nur das Team-Trinkgeld, das Kundinnen mit Karte gegeben haben und du bar auszahlst. Es wird sauber notiert — wie es steuerlich läuft, klärt deine Ansprechperson.",
                 optional: true, pfad: \.trinkgeldTeamEC),
         Schritt(frage: "Hast du sonst etwas aus der Kasse bezahlt?",
-                hilfe: "Zum Beispiel Blumen, Getränke, Kleinkram.",
+                hilfe: "Zum Beispiel Blumen, Getränke, Kleinkram — oder ein Vorschuss fürs Team. Am Ende kannst du dazuschreiben, wofür es war.",
                 optional: true, pfad: \.sonstigeAusgaben),
         Schritt(frage: "Hast du Geld für dich privat herausgenommen?",
                 hilfe: "",
@@ -54,6 +54,8 @@ struct KassenberichtWorkflow: View {
     @State private var index = 0
     @State private var eingabe = ""
     @State private var fertig = false
+    @State private var differenzGrund = ""
+    @State private var sonstigeNotiz = ""
     @FocusState private var feldAktiv: Bool
 
     private var schritt: Schritt { Self.schritte[index] }
@@ -195,9 +197,25 @@ struct KassenberichtWorkflow: View {
                 .foregroundStyle(GC.fg)
                 .multilineTextAlignment(.center)
             if !bericht.kasseStimmt {
-                Text("Das kann passieren — es ist so notiert.")
+                Text("Das kann passieren — es wird so notiert und am Monatsende geklärt.")
                     .font(.body)
                     .foregroundStyle(GC.desc)
+                TextField("Magst du kurz notieren, warum? (z. B. verzählt, Geld fehlt)",
+                          text: $differenzGrund)
+                    .font(.subheadline)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 10)
+                    .background(GC.bg, in: RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal, 24)
+            }
+            if bericht.sonstigeAusgaben > 0 {
+                TextField("Wofür war die sonstige Ausgabe? (z. B. Blumen, Vorschuss)",
+                          text: $sonstigeNotiz)
+                    .font(.subheadline)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 10)
+                    .background(GC.bg, in: RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal, 24)
             }
 
             VStack(spacing: 10) {
@@ -215,6 +233,12 @@ struct KassenberichtWorkflow: View {
             Spacer()
 
             Button {
+                // Notizen mitnehmen und den Tag (erneut) sichern + übermitteln.
+                let grund = differenzGrund.trimmingCharacters(in: .whitespaces)
+                let notiz = sonstigeNotiz.trimmingCharacters(in: .whitespaces)
+                bericht.differenzGrund = grund.isEmpty ? nil : grund
+                bericht.sonstigeNotiz = notiz.isEmpty ? nil : notiz
+                store.kassenberichtSpeichern(bericht)
                 dismiss()
             } label: {
                 Text("Fertig")
@@ -246,6 +270,8 @@ struct KassenberichtWorkflow: View {
     private func vorbereiten() {
         if let vorhanden = store.kassenbericht(fuer: tag) {
             bericht = vorhanden            // Ändern: alte Zahlen stehen schon drin
+            differenzGrund = vorhanden.differenzGrund ?? ""
+            sonstigeNotiz = vorhanden.sonstigeNotiz ?? ""
         } else {
             bericht = Kassenbericht(datum: tag)
             if let vortag = store.kassenVortagsbestand(vor: tag) {

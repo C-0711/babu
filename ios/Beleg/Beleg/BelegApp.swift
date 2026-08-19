@@ -50,7 +50,7 @@ struct MainTabs: View {
                 .tabItem { Label("Belege", systemImage: "doc.text") }
                 .tag(AppStore.Tab.belege)
             KasseTab()
-                .tabItem { Label("Kasse", systemImage: "banknote") }
+                .tabItem { Label("Kassenbuch", systemImage: "banknote") }
                 .tag(AppStore.Tab.kasse)
             FragenTab()
                 .tabItem { Label("Fragen", systemImage: "questionmark.bubble") }

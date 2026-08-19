@@ -20,6 +20,10 @@ struct Kassenbericht: Codable, Identifiable, Equatable {
     var einzahlungBank = 0.0
     var gezaehltSchluss = 0.0
     var erstellt = Date()
+    // Optional, damit ältere zustand.json weiter dekodiert (Migration).
+    var differenzGrund: String?    // z. B. „10 € Wechselgeld verzählt"
+    var sonstigeNotiz: String?     // wofür die sonstige Ausgabe war
+    var uebermittelt: Date?        // Tagesblatt liegt in der Belegbox
 
     var summeEinnahmen: Double { bestandVortag + einnahmenBar + privateinlagen + barabhebungBank }
     var summeAusgaben: Double { trinkgeldTeamEC + sonstigeAusgaben + privatentnahmen + einzahlungBank }

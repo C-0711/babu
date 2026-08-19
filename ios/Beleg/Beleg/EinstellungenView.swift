@@ -11,6 +11,7 @@ struct EinstellungenView: View {
     @State private var patGespeichert = KeychainHelfer.ladePAT() != nil
     @State private var testErgebnis: String?
     @State private var testLaeuft = false
+    @State private var zeigeLoeschDialog = false
 
     var body: some View {
         NavigationStack {
@@ -40,15 +41,27 @@ struct EinstellungenView: View {
                         .font(.callout.monospaced())
                     if patGespeichert {
                         Button("Zugangsschlüssel löschen", role: .destructive) {
-                            KeychainHelfer.loeschePAT()
-                            patGespeichert = false
-                            pat = ""
+                            zeigeLoeschDialog = true
                         }
                     }
                 } header: {
                     Text("Zugangsschlüssel")
                 } footer: {
-                    Text("Der Schlüssel bleibt sicher auf diesem Gerät.")
+                    Text("Der Schlüssel verbindet die App mit deiner Belegbox. Er bleibt sicher auf diesem Gerät.")
+                }
+                .confirmationDialog("Zugangsschlüssel wirklich löschen?",
+                                    isPresented: $zeigeLoeschDialog,
+                                    titleVisibility: .visible) {
+                    Button("Ja, löschen", role: .destructive) {
+                        KeychainHelfer.loeschePAT()
+                        patGespeichert = false
+                        pat = ""
+                        store.ablageAktiv = false   // ehrlich: ohne Schlüssel geht nichts mehr
+                        testErgebnis = "Schlüssel gelöscht. Einen neuen bekommst du von deiner Ansprechperson — einfach hier wieder einfügen."
+                    }
+                    Button("Abbrechen", role: .cancel) {}
+                } message: {
+                    Text("Danach kann die App keine Belege und kein Kassenbuch mehr in deine Belegbox legen, und Fragen bleiben unbeantwortet. Einen neuen Schlüssel bekommst du von deiner Ansprechperson.")
                 }
 
                 Section {

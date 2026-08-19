@@ -51,6 +51,28 @@ enum AblageService {
         return (ergebnis, serverDatei)
     }
 
+    /// Tagesblatt des Kassenbuchs in die Belegbox legen (POST /api/kassenbuch).
+    static func kassenblattSenden(_ b: Kassenbericht, basis: URL, pat: String) async -> Bool {
+        var request = URLRequest(url: basis.appendingPathComponent("api/kassenbuch"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var blatt: [String: Any] = [
+            "datum": b.datum,
+            "bestandVortag": b.bestandVortag, "einnahmenBar": b.einnahmenBar,
+            "privateinlagen": b.privateinlagen, "barabhebungBank": b.barabhebungBank,
+            "ecZahlungen": b.ecZahlungen, "trinkgeldTeamEC": b.trinkgeldTeamEC,
+            "sonstigeAusgaben": b.sonstigeAusgaben, "privatentnahmen": b.privatentnahmen,
+            "einzahlungBank": b.einzahlungBank, "gezaehltSchluss": b.gezaehltSchluss,
+        ]
+        if let grund = b.differenzGrund, !grund.isEmpty { blatt["differenzGrund"] = grund }
+        if let notiz = b.sonstigeNotiz, !notiz.isEmpty { blatt["sonstigeNotiz"] = notiz }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: blatt)
+        let (ergebnis, _) = await ausfuehrenMitDaten(request)
+        return ergebnis == .uebertragen
+    }
+
     /// Frage an den Belegbox-Assistenten — gestreamt (SSE): liefert Text-Stücke,
     /// sobald Gemma sie erzeugt.
     static func fragenStream(_ frage: String, basis: URL,

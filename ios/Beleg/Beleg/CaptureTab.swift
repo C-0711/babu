@@ -11,6 +11,9 @@ struct CaptureTab: View {
     @State private var startZeit = Date()
     @State private var ergebnisBild: UIImage?
     @State private var markierungen: [CGRect] = []
+    // Abbruch-Marke: ein X während der Verarbeitung entwertet den laufenden
+    // Durchlauf, damit er die Ansicht nicht später doch noch umschaltet.
+    @State private var verarbeitungsLauf = UUID()
 
     enum Phase { case bereit, verarbeitet, ergebnis, nichtsErkannt }
 
@@ -99,6 +102,22 @@ struct CaptureTab: View {
 
     private var verarbeitungView: some View {
         VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Button {
+                    verarbeitungsLauf = UUID()
+                    phase = .bereit
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(GC.desc)
+                        .frame(width: 44, height: 44)
+                        .background(GC.chrome, in: Circle())
+                }
+                .accessibilityLabel("Schließen")
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
             VStack(alignment: .leading, spacing: 12) {
                 Text("Verarbeitung")
                     .font(.title3.weight(.semibold))
@@ -128,10 +147,38 @@ struct CaptureTab: View {
 
     @ViewBuilder
     private var ergebnisView: some View {
-        if let b = beleg {
+        // Der Beleg kann inzwischen gelöscht sein (Belegliste) — dann darf
+        // hier keine leere Sackgasse stehen, sondern ein Weg zurück.
+        if let b = beleg, store.belege.contains(where: { $0.id == b.id }) {
             ErgebnisUebersicht(belegID: b.id, bild: ergebnisBild,
                                markierungen: markierungen, startZeit: startZeit) {
                 phase = .bereit
+            }
+        } else {
+            VStack(spacing: 18) {
+                Spacer()
+                Image(systemName: "tray")
+                    .font(.system(size: 44, weight: .light))
+                    .foregroundStyle(GC.muted)
+                Text("Der Beleg ist nicht mehr da")
+                    .font(.title3.weight(.semibold))
+                    .fontDesign(.serif)
+                Text("Wahrscheinlich wurde er gerade in der Belegliste gelöscht — alles gut.")
+                    .font(.footnote)
+                    .foregroundStyle(GC.desc)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 36)
+                Spacer()
+                Button {
+                    beleg = nil
+                    phase = .bereit
+                } label: {
+                    Text("Weiter erfassen").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 12)
             }
         }
     }
@@ -182,6 +229,7 @@ struct CaptureTab: View {
     // MARK: - Pipeline
 
     private func verarbeite(_ bild: UIImage) async {
+        let lauf = verarbeitungsLauf
         phase = .verarbeitet
         schritte = 0
         startZeit = Date()
@@ -195,7 +243,7 @@ struct CaptureTab: View {
 
         // Komplett unlesbares Foto: keinen 0,00-€-Beleg anlegen.
         if felder.brutto == nil && felder.lieferant == nil {
-            phase = .nichtsErkannt
+            if lauf == verarbeitungsLauf { phase = .nichtsErkannt }
             return
         }
 
@@ -212,6 +260,9 @@ struct CaptureTab: View {
         schritte = 4
         try? await Task.sleep(nanoseconds: 300_000_000)
 
+        // Abgebrochen (X während der Verarbeitung)? Der Beleg ist trotzdem
+        // aufgenommen und liegt in der Belegliste — nur nicht mehr aufdrängen.
+        guard lauf == verarbeitungsLauf else { return }
         beleg = store.belege.first { $0.id == neu.id } ?? neu
         phase = .ergebnis
     }

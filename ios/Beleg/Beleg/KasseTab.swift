@@ -26,7 +26,7 @@ struct KasseTab: View {
                 .padding(16)
             }
             .background(GC.canvas)
-            .navigationTitle("Kasse")
+            .navigationTitle("Kassenbuch")
             .toolbarTitleDisplayMode(.inline)
             .fullScreenCover(item: $workflow) { ref in
                 KassenberichtWorkflow(tag: ref.id)
@@ -157,10 +157,25 @@ struct KasseTab: View {
                         .font(.body.weight(.medium))
                         .foregroundStyle(GC.fg)
                 }
+                if let grund = b.differenzGrund, !grund.isEmpty {
+                    Text("Grund: \(grund)")
+                        .font(.footnote)
+                        .foregroundStyle(GC.desc)
+                }
                 zeile("Bargeld eingenommen", fmtEur(b.einnahmenBar))
                 zeile("Mit Karte bezahlt", fmtEur(b.ecZahlungen))
                 zeile("Tagesumsatz gesamt", fmtEur(b.tagesumsatz))
                 zeile("Abends gezählt", fmtEur(b.gezaehltSchluss))
+                HStack(spacing: 6) {
+                    Image(systemName: b.uebermittelt != nil
+                          ? "checkmark.icloud" : "icloud.slash")
+                        .font(.caption)
+                    Text(b.uebermittelt != nil
+                         ? "In deiner Belegbox ✓"
+                         : "Kommt in die Belegbox, sobald Verbindung da ist.")
+                        .font(.caption)
+                }
+                .foregroundStyle(b.uebermittelt != nil ? GC.ok : GC.muted)
                 Button {
                     workflow = TagRef(id: gewaehlt)
                 } label: {

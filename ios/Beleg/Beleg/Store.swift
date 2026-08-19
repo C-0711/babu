@@ -18,6 +18,7 @@ final class AppStore: ObservableObject {
     @Published var skr = "SKR04" { didSet { speichern() } }
     @Published var belege: [Beleg] = [] { didSet { speichern() } }
     @Published var kassenberichte: [Kassenbericht] = [] { didSet { speichern() } }
+    @Published var chatVerlauf: [ChatUnterhaltung] = [] { didSet { speichern() } }
     @Published var exportiert = false { didSet { speichern() } }
     @Published var geprueft = 0 { didSet { speichern() } }
     @Published var pruefSekunden: [Double] = [] { didSet { speichern() } }
@@ -50,6 +51,7 @@ final class AppStore: ObservableObject {
             }
             ablageAktiv = z.ablageAktiv ?? false
             kassenberichte = z.kassenberichte ?? []
+            chatVerlauf = z.chatVerlauf ?? []
             // Ältere Stände: Demo-Belege am festen Demo-Siegel nachträglich
             // markieren, damit sie nie im echten Stapel landen.
             let demoSiegel: Set<String> = ["77b2e0c4 9a11 f38d", "0d31f6a8 5be2 c974"]
@@ -78,13 +80,14 @@ final class AppStore: ObservableObject {
         var ablageURL: String?
         var ablageAktiv: Bool?
         var kassenberichte: [Kassenbericht]?
+        var chatVerlauf: [ChatUnterhaltung]?
     }
 
     private var zustand: Zustand {
         Zustand(onboarded: onboarded, skr: skr, belege: belege,
                 exportiert: exportiert, geprueft: geprueft, pruefSekunden: pruefSekunden,
                 ablageURL: ablageURL, ablageAktiv: ablageAktiv,
-                kassenberichte: kassenberichte)
+                kassenberichte: kassenberichte, chatVerlauf: chatVerlauf)
     }
 
     /// Entprellt auf ~0,25 s, damit Serien-Änderungen nicht pro Mutation schreiben.
@@ -173,6 +176,7 @@ final class AppStore: ObservableObject {
             let id = b.id
             Task { await self.uebertrage(id) }
         }
+        kassenRetry()
     }
 
     /// Läuft gerade ein Upload für diese ID? Verhindert doppelte
@@ -344,6 +348,12 @@ final class AppStore: ObservableObject {
     /// Vorschau-Datei über den aktuell exportierbaren Stapel.
     func extfDatei() -> URL? { extfDatei(fuer: exportierbar) }
 
+    /// Bereits fixierte Belege — damit die Datei nach einem App-Neustart
+    /// weiter teilbar ist (sie lässt sich jederzeit neu erzeugen).
+    var fixierte: [Beleg] {
+        belege.filter { $0.status == .fixiert && $0.istDemo != true }
+    }
+
     /// Stapel exportieren: ERST die Datei aus dem Schnappschuss erzeugen,
     /// DANN genau diese Belege fixieren — andersherum wäre die Datei leer,
     /// weil `exportierbar` fixierte Belege ausfiltert.
@@ -364,12 +374,39 @@ final class AppStore: ObservableObject {
         kassenberichte.first { $0.datum == tag }
     }
 
-    /// Speichert oder ersetzt den Bericht des Tages (ein Bericht pro Tag).
+    /// Speichert oder ersetzt den Bericht des Tages (ein Bericht pro Tag)
+    /// und legt das Tagesblatt in der Belegbox ab (wenn verbunden).
     func kassenberichtSpeichern(_ bericht: Kassenbericht) {
+        var neu = bericht
+        neu.uebermittelt = nil   // geänderte Zahlen → frisch übermitteln
         if let i = kassenberichte.firstIndex(where: { $0.datum == bericht.datum }) {
-            kassenberichte[i] = bericht
+            kassenberichte[i] = neu
         } else {
-            kassenberichte.append(bericht)
+            kassenberichte.append(neu)
+        }
+        let tag = neu.datum
+        Task { await self.kassenblattSenden(tag) }
+    }
+
+    /// Ein Tagesblatt an die Belegbox senden (POST /api/kassenbuch).
+    func kassenblattSenden(_ tag: String) async {
+        guard ablageAktiv,
+              let url = URL(string: ablageURL),
+              let pat = KeychainHelfer.ladePAT(),
+              let bericht = kassenbericht(fuer: tag),
+              bericht.uebermittelt == nil else { return }
+        let ok = await AblageService.kassenblattSenden(bericht, basis: url, pat: pat)
+        if ok, let i = kassenberichte.firstIndex(where: { $0.datum == tag }) {
+            kassenberichte[i].uebermittelt = Date()
+        }
+    }
+
+    /// Noch nicht übermittelte Tagesblätter nachreichen (App-Start/Foreground).
+    func kassenRetry() {
+        guard ablageAktiv else { return }
+        for b in kassenberichte where b.uebermittelt == nil {
+            let tag = b.datum
+            Task { await self.kassenblattSenden(tag) }
         }
     }
 

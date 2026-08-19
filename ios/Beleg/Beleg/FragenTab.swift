@@ -1,18 +1,37 @@
 import SwiftUI
 
+/// Eine Chat-Nachricht — Codable, damit der Verlauf App-Neustarts überlebt.
+struct ChatNachricht: Identifiable, Equatable, Codable {
+    var id = UUID()
+    let vonMir: Bool
+    var text: String
+}
+
+/// Eine Unterhaltung: Titel ist die erste Frage — wie man es von Chats kennt.
+struct ChatUnterhaltung: Identifiable, Equatable, Codable {
+    var id = UUID()
+    var titel: String
+    var nachrichten: [ChatNachricht]
+    var zuletzt: Date
+}
+
 /// Fragen an die Belegbox: Chat mit Gemma 4 auf der H200V — Antworten
-/// ausschließlich aus den BelegReview-Daten (`POST /chat`, PAT-geschützt).
+/// aus den BelegReview-Daten plus Steuer-Grundfragen (`POST /chat`).
 struct FragenTab: View {
     @EnvironmentObject var store: AppStore
 
     @State private var eingabe = ""
-    @State private var nachrichten: [Nachricht] = []
     @State private var laeuft = false
+    @State private var aktuelleID: UUID?
+    @State private var zeigeVerlauf = false
+    @FocusState private var feldAktiv: Bool
 
-    struct Nachricht: Identifiable, Equatable {
-        let id = UUID()
-        let vonMir: Bool
-        var text: String
+    private var aktuelleIndex: Int? {
+        guard let id = aktuelleID else { return nil }
+        return store.chatVerlauf.firstIndex { $0.id == id }
+    }
+    private var nachrichten: [ChatNachricht] {
+        aktuelleIndex.map { store.chatVerlauf[$0].nachrichten } ?? []
     }
 
     var body: some View {
@@ -30,7 +49,7 @@ struct FragenTab: View {
                             if laeuft, nachrichten.last?.text.isEmpty != false {
                                 HStack(spacing: 8) {
                                     ProgressView()
-                                    Text("Einen Moment — ich schaue in deine Belege …")
+                                    Text("Einen Moment — ich schaue nach …")
                                         .font(.footnote)
                                         .foregroundStyle(GC.muted)
                                 }
@@ -40,6 +59,7 @@ struct FragenTab: View {
                         .padding(16)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    .scrollDismissesKeyboard(.interactively)
                     .onChange(of: nachrichten) { _, neu in
                         if let letzte = neu.last {
                             withAnimation { leser.scrollTo(letzte.id, anchor: .bottom) }
@@ -52,20 +72,45 @@ struct FragenTab: View {
             .background(GC.canvas)
             .navigationTitle("Fragen")
             .toolbarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        zeigeVerlauf = true
+                    } label: {
+                        Image(systemName: "clock.arrow.circlepath")
+                    }
+                    .accessibilityLabel("Frühere Fragen")
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        aktuelleID = nil
+                        feldAktiv = true
+                    } label: {
+                        Image(systemName: "square.and.pencil")
+                    }
+                    .accessibilityLabel("Neue Frage")
+                    .disabled(nachrichten.isEmpty)
+                }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Fertig") { feldAktiv = false }
+                }
+            }
+            .sheet(isPresented: $zeigeVerlauf) { verlaufsListe }
         }
     }
 
     private var leerHinweis: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Frag die Belegbox")
+            Text("Frag babu")
                 .font(.title3.weight(.semibold))
                 .fontDesign(.serif)
-            Text("Die Antworten kommen nur aus deinen eigenen Belegen — zum Beispiel:")
+            Text("Zu deinen eigenen Belegen — oder ganz allgemein zu Steuerfragen. Zum Beispiel:")
                 .font(.footnote)
                 .foregroundStyle(GC.desc)
             ForEach(["Wie viel habe ich im Juli für Bewirtung ausgegeben?",
                      "Welche Belege haben offene Punkte?",
-                     "Was war der letzte Beleg und wie ist er kontiert?"], id: \.self) { beispiel in
+                     "Was kann ich als Friseurin absetzen?"], id: \.self) { beispiel in
                 Button {
                     eingabe = beispiel
                     senden()
@@ -80,7 +125,68 @@ struct FragenTab: View {
         .padding(.top, 24)
     }
 
-    private func blase(_ nachricht: Nachricht) -> some View {
+    // MARK: - Verlauf (frühere Unterhaltungen, wie man es von Chats kennt)
+
+    private var verlaufsListe: some View {
+        NavigationStack {
+            Group {
+                if store.chatVerlauf.isEmpty {
+                    Text("Noch keine früheren Fragen — stell einfach die erste.")
+                        .font(.footnote)
+                        .foregroundStyle(GC.desc)
+                        .padding(24)
+                } else {
+                    List {
+                        ForEach(store.chatVerlauf.sorted { $0.zuletzt > $1.zuletzt }) { u in
+                            Button {
+                                aktuelleID = u.id
+                                zeigeVerlauf = false
+                            } label: {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(u.titel)
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(GC.fg)
+                                        .lineLimit(2)
+                                    Text(u.zuletzt.formatted(date: .abbreviated,
+                                                            time: .shortened))
+                                        .font(.caption2)
+                                        .foregroundStyle(GC.muted)
+                                }
+                            }
+                            .swipeActions {
+                                Button(role: .destructive) {
+                                    store.chatVerlauf.removeAll { $0.id == u.id }
+                                    if aktuelleID == u.id { aktuelleID = nil }
+                                } label: {
+                                    Label("Löschen", systemImage: "trash")
+                                }
+                            }
+                        }
+                    }
+                    .listStyle(.plain)
+                }
+            }
+            .navigationTitle("Frühere Fragen")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Fertig") { zeigeVerlauf = false }
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        aktuelleID = nil
+                        zeigeVerlauf = false
+                        feldAktiv = true
+                    } label: {
+                        Label("Neue Frage", systemImage: "square.and.pencil")
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func blase(_ nachricht: ChatNachricht) -> some View {
         HStack {
             if nachricht.vonMir { Spacer(minLength: 40) }
             Text(nachricht.text)
@@ -99,8 +205,9 @@ struct FragenTab: View {
 
     private var eingabeleiste: some View {
         HStack(spacing: 10) {
-            TextField("Frage zu deinen Belegen …", text: $eingabe, axis: .vertical)
+            TextField("Frag mich etwas …", text: $eingabe, axis: .vertical)
                 .lineLimit(1...4)
+                .focused($feldAktiv)
                 .padding(.horizontal, 13)
                 .padding(.vertical, 9)
                 .background(GC.bg, in: RoundedRectangle(cornerRadius: 18))
@@ -121,30 +228,52 @@ struct FragenTab: View {
         .background(GC.chrome)
     }
 
+    // MARK: - Senden (Verlauf liegt im Store und überlebt Neustarts)
+
+    private func anhaengen(_ nachricht: ChatNachricht) -> Int {
+        if aktuelleIndex == nil {
+            let neu = ChatUnterhaltung(titel: nachricht.text, nachrichten: [],
+                                       zuletzt: Date())
+            store.chatVerlauf.append(neu)
+            aktuelleID = neu.id
+        }
+        let i = aktuelleIndex!
+        store.chatVerlauf[i].nachrichten.append(nachricht)
+        store.chatVerlauf[i].zuletzt = Date()
+        return store.chatVerlauf[i].nachrichten.count - 1
+    }
+
+    private func textSetzen(_ index: Int, _ text: String) {
+        guard let i = aktuelleIndex,
+              store.chatVerlauf[i].nachrichten.indices.contains(index) else { return }
+        store.chatVerlauf[i].nachrichten[index].text = text
+    }
+
     private func senden() {
         let frage = eingabe.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !frage.isEmpty, !laeuft else { return }
         eingabe = ""
-        nachrichten.append(Nachricht(vonMir: true, text: frage))
+        _ = anhaengen(ChatNachricht(vonMir: true, text: frage))
 
         guard let url = URL(string: store.ablageURL), KeychainHelfer.ladePAT() != nil else {
-            nachrichten.append(Nachricht(vonMir: false,
+            _ = anhaengen(ChatNachricht(vonMir: false,
                 text: "Dafür braucht die App die Belegbox — einmal im Export-Tab über das Zahnrad verbinden."))
             return
         }
         laeuft = true
         Task {
             let pat = KeychainHelfer.ladePAT() ?? ""
-            nachrichten.append(Nachricht(vonMir: false, text: ""))
-            let index = nachrichten.count - 1
+            let index = anhaengen(ChatNachricht(vonMir: false, text: ""))
 
             // Stream: Text erscheint, während die Antwort entsteht.
             var gestreamt = false
+            var gesammelt = ""
             var gemeldet: String?
             do {
                 for try await stueck in AblageService.fragenStream(frage, basis: url, pat: pat) {
                     gestreamt = true
-                    nachrichten[index].text += stueck
+                    gesammelt += stueck
+                    textSetzen(index, gesammelt)
                 }
             } catch let fehler as ChatFehler {
                 // Klarer Serverbescheid — anzeigen statt noch einmal 2 Minuten warten.
@@ -153,11 +282,11 @@ struct FragenTab: View {
                 // Stream fehlgeschlagen — unten klassischer Fallback.
             }
             if let gemeldet {
-                nachrichten[index].text = gemeldet
+                textSetzen(index, gemeldet)
             } else if !gestreamt {
                 let antwort = await AblageService.fragen(frage, basis: url, pat: pat)
-                nachrichten[index].text = antwort
-                    ?? "Gerade keine Verbindung — im Export-Tab (Zahnrad) prüfen und noch einmal fragen."
+                textSetzen(index, antwort
+                    ?? "Gerade keine Verbindung — im Export-Tab (Zahnrad) prüfen und noch einmal fragen.")
             }
             laeuft = false
         }
