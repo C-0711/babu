@@ -55,6 +55,20 @@ main{padding:26px 22px 60px;min-height:70dvh}
   padding:16px 18px;margin-bottom:12px}
 .einflug{animation:einflug .32s cubic-bezier(.2,.9,.3,1)}
 @keyframes einflug{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+/* Salon-Check: Zuschauen-Zeilen + Ampel-Karten */
+.sc-zeile{display:flex;justify-content:space-between;align-items:center;gap:10px;
+  padding:9px 2px;border-bottom:1px solid var(--gc-border-l)}
+.sc-zeile b{font-variant-numeric:tabular-nums}
+.sc-haken{opacity:0;color:var(--gc-ok);animation:scHaken .3s ease .45s forwards}
+@keyframes scHaken{to{opacity:1}}
+.sc-karten{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.ampel{width:10px;height:10px;border-radius:50%;flex:none;margin-top:6px}
+.ampel.gruen{background:var(--gc-ok)} .ampel.gelb{background:var(--gc-gold)}
+.ampel.rot{background:var(--gc-danger)} .ampel.grau{background:var(--gc-muted)}
+.sc-puls{display:inline-block;width:9px;height:9px;border-radius:50%;flex:none;
+  background:var(--gc-ok);animation:scPuls 1.2s ease infinite}
+@keyframes scPuls{50%{opacity:.35}}
+@media print{header,#sc-vorschlaege,.chip{display:none!important}}
 .gruss{font:600 26px var(--gc-serif);letter-spacing:-.015em;color:var(--gc-fg);margin:4px 0 2px}
 .sektion{margin:26px 0 10px}
 .zeile{display:flex;align-items:center;gap:14px;background:var(--gc-bg);
@@ -332,6 +346,7 @@ main{padding:26px 22px 60px;min-height:70dvh}
     <button data-ziel="heute">Heute</button>
     <button data-ziel="belege">Belege</button>
     <button data-ziel="zahlen">Zahlen</button>
+    <button data-ziel="saloncheck">Salon-Check</button>
     <button data-ziel="bank">Bank</button>
     <button data-ziel="post" style="position:relative">Post<span id="post-punkt" hidden
       style="position:absolute;top:4px;right:2px;width:7px;height:7px;border-radius:50%;background:var(--gc-accent)"></span></button>
@@ -390,6 +405,14 @@ main{padding:26px 22px 60px;min-height:70dvh}
     </div>
     <p style="color:var(--gc-desc);margin-bottom:14px">Wohin dein Geld geht — und wie es sich zum Vormonat verändert.</p>
     <div id="zahlen-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+  </section>
+
+  <!-- SALON-CHECK (Abschluss-Unterlagen → zuschauen → Ampel-Report) -->
+  <section class="ansicht" id="a-saloncheck">
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Salon-Check</div>
+    <p style="color:var(--gc-desc);margin-bottom:14px">Dein letztes Jahr auf einen Blick — wir lesen deine Unterlagen selbst.</p>
+    <div id="saloncheck-inhalt"><div class="skelett"></div></div>
+    <input type="file" id="sc-datei" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*" multiple hidden>
   </section>
 
   <!-- BANK (Zahlungs-Abgleich Konto ↔ Belege) -->
@@ -610,7 +633,7 @@ $("#zugangscode").addEventListener("keydown", e => { if(e.key==="Enter") $("#anm
 /* ————— Router ————— */
 const ansichten = { heute: ladeHeute, belege: ladeBelege, fragen: () => {},
                     aufraeumen: ladeAufraeumen, post: ladePost,
-                    zahlen: ladeZahlen, bank: ladeBank,
+                    zahlen: ladeZahlen, bank: ladeBank, saloncheck: ladeSalonCheck,
                     einrichtung: ladeEinrichtung, verwaltung: ladeVerwaltung,
                     einstellungen: ladeEinstellungen, detail: null };
 function routen(){
@@ -1138,6 +1161,182 @@ $("#auszug-datei").addEventListener("change", async ev => {
   }catch{ knopf.textContent = "Gerade keine Verbindung — nochmal?"; }
   setTimeout(() => { knopf.textContent = "Kontoauszug ablegen"; }, 4000);
 });
+
+/* ————— SALON-CHECK: Unterlagen ablegen, zuschauen, Ampel-Karten ————— */
+const esc = s => String(s ?? "").replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const SC_JAHR = new Date().getFullYear() - 1;
+const SC_NAMEN = {umsatz:"Dein Umsatz", wareneinsatz:"Material", personal:"Dein Team",
+  raumkosten:"Miete & Räume", afa:"Abschreibungen", sonstige_kosten:"Sonstige Kosten",
+  gewinn:"Dein Gewinn", ust_zahllast:"Umsatzsteuer",
+  est_vorauszahlungen:"Steuer-Vorauszahlungen", rechtsform:"Rechtsform",
+  steuernummer:"Steuernummer", finanzamt:"Finanzamt",
+  kleinunternehmer:"Kleinunternehmer-Regel"};
+let scTimer = null, scGezeigt = 0, scHochgeladen = 0;
+
+function scStop(){ if (scTimer){ clearInterval(scTimer); scTimer = null; } }
+const scWert = w => typeof w === "number"
+  ? w.toLocaleString("de-DE", {maximumFractionDigits: 0}) + " €" : esc(w);
+
+async function ladeSalonCheck(){
+  scStop();
+  const ziel = $("#saloncheck-inhalt");
+  let status = {stand: "leer"};
+  try{ status = await (await api("/api/abschluss/status")).json(); }catch{ return; }
+  if (status.stand === "wartet" || status.stand === "liest"){
+    scZuschauen(ziel, status); return;
+  }
+  let check = {stand: "leer"};
+  try{ check = await (await api("/api/salon-check?jahr=" + SC_JAHR)).json(); }
+  catch{ return; }
+  if (check.stand === "fertig"){ scReport(ziel, check, status); return; }
+  scStart(ziel, status);
+}
+
+function scStart(ziel, status){
+  scHochgeladen = 0;
+  const hinweis = (status.stand === "unterbrochen" || status.stand === "fehler")
+    ? `<div class="karte nachfrage" style="margin-bottom:12px">${esc(status.hinweis)}</div>` : "";
+  ziel.innerHTML = hinweis + `
+    <div class="karte" style="text-align:center;padding:34px 20px">
+      <div style="font:600 20px var(--gc-serif);margin-bottom:6px">Leg einfach alles vom letzten Jahr hier ab.</div>
+      <p style="color:var(--gc-desc);max-width:46ch;margin:0 auto 16px">Gewinnrechnung, Steuerbescheid, Anlagenliste — als Foto oder PDF,
+        egal in welcher Reihenfolge. Wir lesen das.</p>
+      <button class="chip" id="sc-waehlen">Unterlagen auswählen</button>
+      <div id="sc-liste" style="margin:12px auto 0;max-width:420px;text-align:left"></div>
+      <button class="chip an" id="sc-los" style="margin-top:14px" hidden>Loslesen ›</button>
+    </div>`;
+  $("#sc-waehlen").addEventListener("click", () => $("#sc-datei").click());
+  $("#sc-los").addEventListener("click", scLoslesen);
+}
+
+$("#sc-datei").addEventListener("change", async ev => {
+  const dateien = [...ev.target.files];
+  ev.target.value = "";
+  const liste = $("#sc-liste");
+  if (!dateien.length || !liste) return;
+  for (const datei of dateien){
+    const zeile = document.createElement("div");
+    zeile.className = "sc-zeile einflug";
+    zeile.innerHTML = `<span>${esc(datei.name)}</span><span>lädt …</span>`;
+    liste.appendChild(zeile);
+    try{
+      const r = await api(`/api/abschluss?jahr=${SC_JAHR}&name=` +
+                          encodeURIComponent(datei.name), {method:"POST", body: datei});
+      const d = await r.json();
+      zeile.lastElementChild.innerHTML = r.ok ? '<span style="color:var(--gc-ok)">abgelegt ✓</span>'
+                                              : esc(d.fehler || "hat nicht geklappt");
+      if (r.ok) scHochgeladen++;
+    }catch{ zeile.lastElementChild.textContent = "gerade keine Verbindung"; }
+  }
+  if (scHochgeladen > 0 && $("#sc-los")) $("#sc-los").hidden = false;
+});
+
+async function scLoslesen(){
+  const knopf = $("#sc-los");
+  if (knopf){ knopf.disabled = true; knopf.textContent = "Einen Moment …"; }
+  try{
+    const r = await api("/api/abschluss/start?jahr=" + SC_JAHR, {method:"POST"});
+    if (r.ok || r.status === 409){ ladeSalonCheck(); return; }
+    const d = await r.json();
+    if (knopf){ knopf.disabled = false; knopf.textContent = d.fehler || "Nochmal versuchen"; }
+  }catch{
+    if (knopf){ knopf.disabled = false; knopf.textContent = "Gerade keine Verbindung — nochmal"; }
+  }
+}
+
+function scZuschauen(ziel, status){
+  scGezeigt = 0;
+  ziel.innerHTML = `
+    <div class="karte" style="padding:18px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="sc-puls"></span>
+        <div id="sc-hinweis" style="color:var(--gc-desc)">${esc(status.hinweis || "Wir schauen uns alles an …")}</div>
+      </div>
+      <p style="color:var(--gc-muted);font-size:13px;margin:8px 0 0">Das kann ein paar Minuten dauern — du kannst zuschauen oder später wiederkommen.</p>
+      <div id="sc-felder" style="margin-top:10px"></div>
+      <div id="sc-vorschlaege"></div>
+    </div>`;
+  scPoll();
+  scTimer = setInterval(scPoll, 1000);
+}
+
+async function scPoll(){
+  let d;
+  try{ d = await (await api("/api/abschluss/status")).json(); }catch{ return; }
+  const hinweis = $("#sc-hinweis");
+  if (hinweis && d.hinweis) hinweis.textContent = d.hinweis;
+  const liste = $("#sc-felder");
+  if (liste && d.felder && d.felder.length > scGezeigt){
+    d.felder.slice(scGezeigt).forEach(f => {
+      liste.insertAdjacentHTML("beforeend",
+        `<div class="sc-zeile einflug"><span>${esc(SC_NAMEN[f.schluessel] || f.schluessel)}</span>` +
+        `<span><b>${scWert(f.wert)}</b> <span class="sc-haken">✓</span></span></div>`);
+    });
+    scGezeigt = d.felder.length;
+  }
+  scVorschlaege(d.vorschlaege);
+  if (d.stand === "fertig"){ scStop(); setTimeout(ladeSalonCheck, 1200); }
+  else if (d.stand === "fehler" || d.stand === "unterbrochen"){
+    scStop(); scStart($("#saloncheck-inhalt"), d);
+  }
+}
+
+function scVorschlaege(vorschlaege){
+  const ziel = $("#sc-vorschlaege");
+  if (!ziel || !vorschlaege) return;
+  vorschlaege.forEach(v => {
+    if (ziel.querySelector(`[data-k="${v.schluessel}"]`)) return;
+    const karte = document.createElement("div");
+    karte.className = "karte nachfrage einflug";
+    karte.dataset.k = v.schluessel;
+    karte.style.marginTop = "10px";
+    karte.innerHTML =
+      `<div style="margin-bottom:8px">In deinen Unterlagen steht bei ` +
+      `${esc(SC_NAMEN[v.schluessel] || v.schluessel)} „${esc(v.neu)}" — bei uns „${esc(v.alt)}". Übernehmen?</div>` +
+      `<button class="chip an">Ja, übernehmen</button> <button class="chip">So lassen</button>`;
+    const [ja, nein] = karte.querySelectorAll("button");
+    ja.addEventListener("click", async () => {
+      ja.disabled = true;
+      try{
+        await api("/api/einstellungen", {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({[v.schluessel]: v.neu})});
+        karte.remove();
+      }catch{ ja.disabled = false; }
+    });
+    nein.addEventListener("click", () => karte.remove());
+    ziel.appendChild(karte);
+  });
+}
+
+function scReport(ziel, check, status){
+  const karten = (check.karten || []).map(k => `
+    <div class="karte einflug" style="display:flex;gap:10px">
+      <span class="ampel ${esc(k.ampel)}"></span>
+      <div style="min-width:0">
+        <b>${esc(k.titel)}</b>
+        <div style="margin-top:3px">${esc(k.satz)}</div>
+        <details style="margin-top:6px">
+          <summary style="cursor:pointer;color:var(--gc-muted);font-size:13px">Mehr dazu</summary>
+          <p style="color:var(--gc-desc);font-size:13px;margin-top:6px">${esc(k.detail)}</p>
+          ${k.wert ? `<p style="font-size:13px;margin-top:4px"><b>${esc(k.wert)}</b>${k.ueblich ? ` · üblich: ${esc(k.ueblich)}` : ""}</p>` : ""}
+        </details>
+      </div>
+    </div>`).join("");
+  ziel.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+      <div class="lbl">DEIN JAHR ${check.jahr}</div>
+      <span style="flex:1"></span>
+      <button class="chip" id="sc-drucken">Für die Kanzlei drucken</button>
+      <button class="chip" id="sc-neu">Neu lesen</button>
+    </div>
+    <div id="sc-vorschlaege" style="margin-bottom:10px"></div>
+    <div class="sc-karten">${karten}</div>`;
+  $("#sc-drucken").addEventListener("click", () => window.print());
+  $("#sc-neu").addEventListener("click", () => scStart(ziel, {stand: "leer"}));
+  scVorschlaege(status.vorschlaege);
+}
 
 async function freigeben(pfad, knopf){
   knopf.disabled = true; knopf.textContent = "Wird freigegeben …";

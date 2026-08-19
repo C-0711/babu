@@ -62,6 +62,9 @@ def _db() -> sqlite3.Connection:
          rolle TEXT NOT NULL DEFAULT 'salon', pw TEXT NOT NULL,
          aktiv INTEGER NOT NULL DEFAULT 1,
          angelegt TEXT, letzter_login TEXT)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS abschluss_status
+        (un TEXT PRIMARY KEY, jahr INTEGER, json TEXT NOT NULL,
+         zeit TEXT NOT NULL)""")
     return conn
 
 
@@ -1802,6 +1805,233 @@ def chat(body: dict, request: Request) -> Response:
     except Exception:  # noqa: BLE001
         return JSONResponse({"fehler": "Gemma nicht erreichbar"}, status_code=502)
     return JSONResponse({"antwort": antwort})
+
+
+# ---------------------------------------------------------------------------
+# Salon-Check: Abschluss-Unterlagen hochladen, im Hintergrund lesen, zuschauen.
+# Der Job läuft als Thread im Prozess (workers=1 → genau ein Prozess, das
+# Status-Dict ist für alle Requests sichtbar); das Portal pollt 1×/Sekunde.
+# ---------------------------------------------------------------------------
+
+ABSCHLUSS_MAX = 80 * 1024 * 1024   # Scan-Bündel eines Monats sind bis ~70 MB
+ABSCHLUSS_TMP = Path(os.environ.get("BABU_ABSCHLUSS_TMP",
+                                    str(Path.home() / "babu-web" / "abschluss-tmp")))
+ABSCHLUSS_STAMM_KEYS = ("rechtsform", "steuernummer", "finanzamt", "kleinunternehmer")
+_ABSCHLUSS_JOBS: dict[str, dict] = {}
+_ABSCHLUSS_LOCK = threading.Lock()
+# vLLM (:11435/:11436) teilt sich mit dem Review-Watcher — nie parallel fluten.
+_LLM_SEMAPHORE = threading.Semaphore(1)
+
+
+def db_abschluss_snapshot(un: str, jahr: int | None, status: dict) -> None:
+    with _DB_LOCK, _db() as c:
+        c.execute("INSERT OR REPLACE INTO abschluss_status VALUES (?,?,?,?)",
+                  (un, jahr, json.dumps(status, ensure_ascii=False),
+                   time.strftime("%Y-%m-%dT%H:%M:%S")))
+
+
+def db_abschluss_lesen(un: str) -> dict | None:
+    with _DB_LOCK, _db() as c:
+        zeile = c.execute("SELECT json FROM abschluss_status WHERE un=?",
+                          (un,)).fetchone()
+    if not zeile:
+        return None
+    try:
+        return json.loads(zeile[0])
+    except ValueError:
+        return None
+
+
+def _abschluss_feld_uebernehmen(un: str, status: dict, feld: dict,
+                                einstellungen: dict) -> None:
+    """Konfliktregel: leere Einstellung wird gesetzt, belegte nie überschrieben."""
+    k = feld["schluessel"]
+    if k not in ABSCHLUSS_STAMM_KEYS or not feld.get("sicher"):
+        return
+    if k == "kleinunternehmer":
+        neu = "Ja" if feld["wert"] else "Nein"
+    else:
+        neu = str(feld["wert"]).strip()[:200]
+    alt = (einstellungen.get(k) or "").strip()
+    if not alt:
+        db_einstellung_setzen(un, k, neu)
+        einstellungen[k] = neu
+        feld["uebernommen"] = True
+    elif alt != neu:
+        status["vorschlaege"].append({"schluessel": k, "alt": alt, "neu": neu})
+
+
+def _abschluss_job(un: str, jahr: int, pfade: list[Path]) -> None:
+    import abschluss_lesen  # noqa: PLC0415
+    import boxschreiber  # noqa: PLC0415
+    status = _ABSCHLUSS_JOBS[un]
+    einstellungen = db_einstellungen(un)
+
+    def melden(feld: dict) -> None:
+        feld["zeit"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        with _ABSCHLUSS_LOCK:
+            _abschluss_feld_uebernehmen(un, status, feld, einstellungen)
+            status["felder"].append(feld)
+            if len(status["felder"]) % 5 == 0:
+                db_abschluss_snapshot(un, jahr, status)
+
+    def fortschritt(text: str) -> None:
+        status["hinweis"] = text
+
+    try:
+        status["stand"] = "liest"
+        ergebnisse = []
+        for pfad in pfade:
+            eintrag = {"datei": pfad.name, "art": None, "seiten": None,
+                       "stand": "liest"}
+            with _ABSCHLUSS_LOCK:
+                status["dokumente"].append(eintrag)
+            with _LLM_SEMAPHORE:
+                d = abschluss_lesen.dokument_lesen(
+                    pfad, jahr=jahr, melden=melden, fortschritt=fortschritt)
+            ergebnisse.append(d)
+            with _ABSCHLUSS_LOCK:
+                eintrag.update(art=d["art"], seiten=d["seiten"], stand="gelesen")
+        kennzahlen = abschluss_lesen.zusammenfuehren(ergebnisse, jahr=jahr)
+        with _ABSCHLUSS_LOCK:
+            # Was die Summenprobe anzweifelt, verliert seinen Haken.
+            for feld in status["felder"]:
+                if feld["schluessel"] in kennzahlen["unsicher"]:
+                    feld["sicher"] = False
+        boxschreiber.schreiben(
+            f"abschluss/{jahr}/kennzahlen.json",
+            json.dumps(kennzahlen, ensure_ascii=False, indent=1).encode(),
+            f"abschluss: kennzahlen {jahr}", un)
+        with _ABSCHLUSS_LOCK:
+            status["stand"] = "fertig"
+            status["hinweis"] = "Fertig — dein Salon-Check steht."
+            db_abschluss_snapshot(un, jahr, status)
+        for pfad in pfade:
+            pfad.unlink(missing_ok=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[abschluss] Job für {un} gescheitert: {e}", flush=True)
+        with _ABSCHLUSS_LOCK:
+            status["stand"] = "fehler"
+            status["hinweis"] = ("Das hat gerade nicht geklappt — "
+                                 "versuch es später nochmal.")
+            db_abschluss_snapshot(un, jahr, status)
+
+
+def _abschluss_jahr(jahr: int) -> int | None:
+    return jahr if 2000 <= jahr <= 2100 else None
+
+
+@app.post("/api/abschluss")
+async def api_abschluss_hochladen(request: Request, jahr: int = 0,
+                                  name: str = "unterlage.pdf") -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    jahr = _abschluss_jahr(jahr or int(time.strftime("%Y")) - 1)
+    if jahr is None:
+        return JSONResponse({"fehler": "ungültiges Jahr"}, status_code=400)
+    endung = Path(name).suffix.lower()
+    if endung not in DOKUMENT_ENDUNGEN:
+        return JSONResponse({"fehler": "kein Dokument-Format"}, status_code=400)
+    daten = await request.body()
+    if not daten:
+        return JSONResponse({"fehler": "leer"}, status_code=400)
+    if len(daten) > ABSCHLUSS_MAX:
+        return JSONResponse({"fehler": "zu groß"}, status_code=413)
+    import boxschreiber  # noqa: PLC0415
+    dateiname = boxschreiber.beleg_dateiname(name)
+    meta = json.dumps({"titel": name[:120], "art": "abschluss", "jahr": jahr,
+                       "von": un}, ensure_ascii=False, indent=1).encode()
+    try:
+        commit = boxschreiber.schreiben(
+            {f"abschluss/{jahr}/{dateiname}": daten,
+             f"abschluss/{jahr}/{dateiname}.meta.json": meta},
+            None, f"abschluss: {dateiname}", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    # Arbeitskopie für den Lese-Job (der Job liest nicht aus Git).
+    ablage = ABSCHLUSS_TMP / _un_ordner(un) / str(jahr)
+    ablage.mkdir(parents=True, exist_ok=True)
+    (ablage / dateiname).write_bytes(daten)
+    return JSONResponse({"ok": True, "commit": commit, "jahr": jahr,
+                         "datei": dateiname})
+
+
+def _un_ordner(un: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]", "_", un)[:80]
+
+
+@app.post("/api/abschluss/start")
+def api_abschluss_start(request: Request, jahr: int = 0) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    jahr = _abschluss_jahr(jahr or int(time.strftime("%Y")) - 1)
+    if jahr is None:
+        return JSONResponse({"fehler": "ungültiges Jahr"}, status_code=400)
+    with _ABSCHLUSS_LOCK:
+        laufend = _ABSCHLUSS_JOBS.get(un)
+        if laufend and laufend["stand"] in ("wartet", "liest"):
+            return JSONResponse({"fehler": "wir lesen schon"}, status_code=409)
+        ablage = ABSCHLUSS_TMP / _un_ordner(un) / str(jahr)
+        pfade = sorted(p for p in ablage.glob("*")
+                       if p.suffix.lower() in DOKUMENT_ENDUNGEN) \
+            if ablage.is_dir() else []
+        if not pfade:
+            return JSONResponse({"fehler": "erst Unterlagen hochladen"},
+                                status_code=400)
+        status = {"stand": "wartet", "jahr": jahr, "dokumente": [],
+                  "felder": [], "vorschlaege": [],
+                  "hinweis": "Gleich geht's los — wir schauen uns alles an."}
+        _ABSCHLUSS_JOBS[un] = status
+    db_abschluss_snapshot(un, jahr, status)
+    threading.Thread(target=_abschluss_job, args=(un, jahr, pfade),
+                     daemon=True).start()
+    return JSONResponse({"ok": True, "jahr": jahr, "dateien": len(pfade)})
+
+
+@app.get("/api/abschluss/status")
+def api_abschluss_status(request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    with _ABSCHLUSS_LOCK:
+        status = _ABSCHLUSS_JOBS.get(un)
+        if status is not None:
+            return JSONResponse(status, headers={"Cache-Control": "no-store"})
+    status = db_abschluss_lesen(un)
+    if status is None:
+        return JSONResponse({"stand": "leer"},
+                            headers={"Cache-Control": "no-store"})
+    if status.get("stand") in ("wartet", "liest"):
+        # Prozess wurde zwischendurch neu gestartet — ehrlich sagen.
+        status["stand"] = "unterbrochen"
+        status["hinweis"] = ("Das Lesen wurde unterbrochen — "
+                             "starte es einfach nochmal.")
+    return JSONResponse(status, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/salon-check")
+def api_salon_check(request: Request, jahr: int = 0) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    jahr = _abschluss_jahr(jahr or int(time.strftime("%Y")) - 1)
+    if jahr is None:
+        return JSONResponse({"fehler": "ungültiges Jahr"}, status_code=400)
+    daten = git_show(f"abschluss/{jahr}/kennzahlen.json")
+    if daten is None:
+        return JSONResponse({"jahr": jahr, "stand": "leer", "karten": []})
+    import saloncheck  # noqa: PLC0415
+    try:
+        kennzahlen = json.loads(daten)
+    except ValueError:
+        return JSONResponse({"fehler": "Kennzahlen unlesbar"}, status_code=500)
+    return JSONResponse({"jahr": jahr, "stand": "fertig",
+                         "karten": saloncheck.karten_bauen(kennzahlen),
+                         "unsicher": kennzahlen.get("unsicher") or [],
+                         "quellen": kennzahlen.get("quellen") or []})
 
 
 if __name__ == "__main__":
