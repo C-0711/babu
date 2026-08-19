@@ -142,6 +142,43 @@ def test_signup_direkt(bw, client):
     assert r.status_code == 409
 
 
+def test_app_anmelden_erzeugt_geraeteschluessel(bw, client):
+    """Die App verbindet sich mit E-Mail + Passwort — der Schlüssel entsteht
+    im Hintergrund und trägt danach als Bearer durch alle /api-Routen."""
+    bw._REG_ZULETZT.clear()
+    r = client.post("/api/signup", json={"salon": "App Salon", "email": "app@salon.de",
+                                         "passwort": "app-passwort"})
+    assert r.status_code == 200
+
+    bw._LOGIN_VERSUCHE.clear()
+    r = client.post("/api/app-anmelden", json={"email": "app@salon.de",
+                                               "passwort": "app-passwort",
+                                               "geraet": "Ninas iPhone"})
+    assert r.status_code == 200
+    schluessel = r.json()["schluessel"]
+    assert len(schluessel) >= 40 and r.json()["un"] == "app@salon.de"
+
+    # Frischer Client ohne Cookie: nur der Bearer-Geräteschlüssel zählt.
+    from fastapi.testclient import TestClient  # noqa: PLC0415
+    app_client = TestClient(bw.app, base_url="https://testserver")
+    r = app_client.get("/api/ich", headers={"Authorization": f"Bearer {schluessel}"})
+    assert r.status_code == 200 and r.json()["un"] == "app@salon.de"
+
+    # Falsches Passwort bleibt generisch; Quatsch-Schlüssel kommt nicht rein.
+    bw._LOGIN_VERSUCHE.clear()
+    assert client.post("/api/app-anmelden", json={"email": "app@salon.de",
+        "passwort": "falsch"}).status_code == 401
+    assert app_client.get("/api/ich",
+        headers={"Authorization": "Bearer quatsch"}).status_code == 401
+
+    # Konto abgeschaltet → der Geräteschlüssel ist sofort tot.
+    _als_kanzlei(client)
+    assert client.post("/api/nutzer-aktion", json={"email": "app@salon.de",
+        "aktion": "deaktivieren"}).status_code == 200
+    assert app_client.get("/api/ich",
+        headers={"Authorization": f"Bearer {schluessel}"}).status_code in (401, 403)
+
+
 def test_selbstschutz_eigenes_konto(bw, client):
     _als_kanzlei(client)
     r = client.post("/api/nutzer", json={"email": "chefin@salon.de",

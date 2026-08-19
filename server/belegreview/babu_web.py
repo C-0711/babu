@@ -65,6 +65,9 @@ def _db() -> sqlite3.Connection:
     conn.execute("""CREATE TABLE IF NOT EXISTS abschluss_status
         (un TEXT PRIMARY KEY, jahr INTEGER, json TEXT NOT NULL,
          zeit TEXT NOT NULL)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS app_schluessel
+        (hash TEXT PRIMARY KEY, un TEXT NOT NULL, geraet TEXT,
+         erstellt TEXT NOT NULL, zuletzt TEXT)""")
     return conn
 
 
@@ -152,11 +155,31 @@ def wer_token(token: str) -> str | None:
     return un
 
 
+def app_schluessel_pruefen(token: str) -> str | None:
+    """Geräteschlüssel der App (bei der Konto-Anmeldung erzeugt): Hash-Lookup,
+    nur für aktive Konten. Nebenläufig günstig — kein Netz, eine SQLite-Zeile."""
+    if not token:
+        return None
+    h = hashlib.sha256(token.encode()).hexdigest()
+    with _DB_LOCK, _db() as c:
+        zeile = c.execute("""SELECT s.un FROM app_schluessel s
+            JOIN nutzer n ON n.email = s.un
+            WHERE s.hash=? AND n.aktiv=1""", (h,)).fetchone()
+        if not zeile:
+            return None
+        c.execute("UPDATE app_schluessel SET zuletzt=? WHERE hash=?",
+                  (_jetzt_iso(), h))
+    return zeile[0]
+
+
 def wer(request: Request) -> str | None:
     hdr = request.headers.get("authorization", "")
     if not hdr.lower().startswith("bearer "):
         return None
-    return wer_token(hdr[7:].strip())
+    token = hdr[7:].strip()
+    # Erst der eigene Geräteschlüssel (Konto-Anmeldung), dann der PAT-Weg.
+    un = app_schluessel_pruefen(token)
+    return un or wer_token(token)
 
 
 # ---------------------------------------------------------------------------
@@ -753,6 +776,39 @@ def api_login(body: dict, request: Request) -> Response:
     antwort.set_cookie(SESSION_COOKIE, _signieren(email, exp), max_age=SESSION_DAUER,
                        httponly=True, secure=SESSION_SECURE, samesite="lax", path="/")
     return antwort
+
+
+@app.post("/api/app-anmelden")
+def api_app_anmelden(body: dict, request: Request) -> Response:
+    """Die App verbindet sich mit dem ganz normalen Konto (E-Mail + Passwort).
+    Dabei entsteht unsichtbar ein Geräteschlüssel — er erscheint GENAU EINMAL
+    in der Antwort, gespeichert wird nur sein Hash. Kein Schlüssel-Gefrickel
+    mehr für die Nutzerin."""
+    ip = request.client.host if request.client else "?"
+    jetzt = time.time()
+    versuche = [t for t in _LOGIN_VERSUCHE.get(ip, []) if jetzt - t < 60]
+    if len(versuche) >= 5:
+        _LOGIN_VERSUCHE[ip] = versuche
+        return JSONResponse({"fehler": "Zu viele Versuche — bitte eine Minute warten."},
+                            status_code=429)
+    versuche.append(jetzt)
+    _LOGIN_VERSUCHE[ip] = versuche
+    email = str(body.get("email", "")).strip().lower()
+    passwort = str(body.get("passwort", ""))
+    geraet = str(body.get("geraet", "") or "")[:80]
+    n = nutzer_holen(email) if email else None
+    if not n or not n["aktiv"] or not pw_pruefen(passwort, n["pw"]):
+        return JSONResponse({"fehler": "E-Mail oder Passwort stimmt nicht."},
+                            status_code=401)
+    token = secrets.token_urlsafe(32)
+    with _DB_LOCK, _db() as c:
+        c.execute("INSERT INTO app_schluessel VALUES (?,?,?,?,?)",
+                  (hashlib.sha256(token.encode()).hexdigest(), email, geraet,
+                   _jetzt_iso(), None))
+        c.execute("UPDATE nutzer SET letzter_login=? WHERE email=?",
+                  (_jetzt_iso(), email))
+    print(f"[app] Gerät verbunden: {email} ({geraet or 'ohne Namen'})", flush=True)
+    return JSONResponse({"schluessel": token, "un": email, "rolle": n["rolle"]})
 
 
 @app.post("/api/passwort")
