@@ -65,6 +65,29 @@ a{color:var(--gc-accent-hover)}
 .telefon img{width:100%;display:block;border-radius:20px}
 .telefon p{font-size:13.5px;color:var(--gc-desc);margin-top:12px;padding:0 6px}
 .telefon strong{color:var(--gc-fg)}
+/* Salon-Check: Foto + Telefon, das sich von selbst ausfüllt */
+.sc-duo{display:grid;gap:32px;margin-top:40px;align-items:center;justify-items:center}
+@media(min-width:720px){.sc-duo{grid-template-columns:1fr 1fr}}
+.sc-foto{max-width:400px}
+.sc-foto img{width:100%;display:block;border-radius:22px;border:1px solid var(--gc-border)}
+.sc-foto figcaption{font-size:13.5px;color:var(--gc-desc);margin-top:12px;text-align:center}
+.sc-schirm{background:var(--gc-bg);border-radius:20px;padding:18px 16px;text-align:left;
+  min-height:340px}
+.sc-schirm h4{font-family:var(--gc-serif);font-size:17px;margin-bottom:2px}
+.sc-schirm .klein{font-size:12px;color:var(--gc-muted);margin-bottom:10px}
+.sc-feld{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  padding:8px 0;border-bottom:1px solid var(--gc-border);font-size:13.5px;
+  opacity:0;transform:translateY(6px);transition:opacity .4s ease,transform .4s ease}
+.sc-feld.da{opacity:1;transform:none}
+.sc-feld b{font-variant-numeric:tabular-nums;white-space:nowrap}
+.sc-feld .ok{color:var(--gc-ok);opacity:0;transition:opacity .3s ease .35s}
+.sc-feld.da .ok{opacity:1}
+.sc-fertig{margin-top:12px;font-size:13.5px;color:var(--gc-ok);font-weight:600;
+  opacity:0;transition:opacity .5s ease}
+.sc-fertig.da{opacity:1}
+@media (prefers-reduced-motion:reduce){
+  .sc-feld,.sc-feld.da,.sc-fertig{opacity:1;transform:none;transition:none}
+  .sc-feld .ok{opacity:1;transition:none}}
 
 /* Kostenvergleich */
 .vergleich{display:grid;gap:18px;margin-top:30px}
@@ -200,6 +223,41 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
       <p><strong>Eine Zahl nach der anderen.</strong> Die App fragt, du tippst. Rechnen macht sie selbst.</p></figure>
     <figure class="telefon"><div class="rahmen"><img src="/bilder/fragen.png" alt="Fragen-Bereich der App mit Beispielfragen zu den eigenen Belegen"></div>
       <p><strong>Einfach fragen.</strong> „Wie viel hab ich im Juli für Bewirtung ausgegeben?" — babu antwortet aus deinen Belegen.</p></figure>
+  </div>
+</section>
+
+<!-- ── 3b · Salon-Check ─────────────────────────────────────────────── -->
+<section style="background:var(--gc-accent-subtle)">
+  <div class="lbl">Neu · Der Salon-Check</div>
+  <h2>Wirf uns deinen Papierstapel hin.<br>Wir lesen alles.</h2>
+  <p class="sub">Leg die Unterlagen vom letzten Jahr einfach ab — Gewinnrechnung,
+  Steuerbescheid, Anlagenliste. Als Foto oder PDF, egal in welcher Reihenfolge.
+  Dann schau zu, wie sich alles von selbst ausfüllt — und am Ende weißt du,
+  wo dein Salon steht. Mit Ampeln statt Steuer-Deutsch.</p>
+  <div class="sc-duo">
+    <figure class="sc-foto">
+      <img src="/bilder/salon-check.png" alt="Friseurin mit einem großen Stapel Ordner und Belegen vom letzten Jahr im Arm">
+      <figcaption><strong>Alles vom letzten Jahr?</strong> Genau so. Einfach mitbringen.</figcaption>
+    </figure>
+    <figure class="telefon" style="max-width:310px;width:100%">
+      <div class="rahmen"><div class="sc-schirm" id="sc-demo">
+        <h4>Dein Salon-Check</h4>
+        <div class="klein">babu liest deine Unterlagen …</div>
+        <div class="sc-feld"><span>Rechtsform</span><span><b>Einzelunternehmen</b> <span class="ok">✓</span></span></div>
+        <div class="sc-feld"><span>Steuernummer</span><span><b>71/123/45678</b> <span class="ok">✓</span></span></div>
+        <div class="sc-feld"><span>Finanzamt</span><span><b>Ludwigsburg</b> <span class="ok">✓</span></span></div>
+        <div class="sc-feld"><span>Dein Umsatz</span><span><b>100.000 €</b> <span class="ok">✓</span></span></div>
+        <div class="sc-feld"><span>Material</span><span><b>11.000 €</b> <span class="ok">✓</span></span></div>
+        <div class="sc-feld"><span>Dein Team</span><span><b>48.000 €</b> <span class="ok">✓</span></span></div>
+        <div class="sc-feld"><span>Dein Gewinn</span><span><b>20.000 €</b> <span class="ok">✓</span></span></div>
+        <div class="sc-fertig">✓ Fertig — dein Salon-Check steht.</div>
+      </div></div>
+      <p><strong>Zuschauen statt Abtippen.</strong> Jede Zahl, die babu findet,
+      trägt sich selbst ein — mit grünem Haken.</p>
+    </figure>
+  </div>
+  <div class="cta" style="margin-top:34px">
+    <a class="knopf voll" href="/portal">Salon-Check starten</a>
   </div>
 </section>
 
@@ -415,6 +473,32 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
 </div>
 
 <script>
+/* ── Salon-Check-Demo: das Telefon füllt sich von selbst aus. ────────── */
+(function(){
+  var demo=document.getElementById('sc-demo');
+  if(!demo) return;
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches) return; // CSS zeigt den Endzustand
+  var felder=demo.querySelectorAll('.sc-feld'),
+      fertig=demo.querySelector('.sc-fertig'),
+      sichtbar=false, laeuft=false;
+  function runde(){
+    if(laeuft) return;
+    laeuft=true;
+    felder.forEach(function(f){f.classList.remove('da');});
+    fertig.classList.remove('da');
+    felder.forEach(function(f,i){
+      setTimeout(function(){f.classList.add('da');}, 500+i*650);
+    });
+    setTimeout(function(){fertig.classList.add('da');}, 500+felder.length*650);
+    setTimeout(function(){laeuft=false; if(sichtbar) runde();},
+               500+felder.length*650+3200);
+  }
+  new IntersectionObserver(function(eintraege){
+    sichtbar=eintraege[0].isIntersecting;
+    if(sichtbar) runde();
+  },{threshold:.35}).observe(demo);
+})();
+
 /* ── Babu-Chat: echter KI-Chat über /api/babu-chat (SSE), mit ehrlichem
    Fallback auf eingebaute Antworten, solange der Endpunkt fehlt. ─────── */
 (function(){
