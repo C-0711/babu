@@ -55,6 +55,29 @@ main{padding:26px 22px 60px;min-height:70dvh}
   padding:16px 18px;margin-bottom:12px}
 .einflug{animation:einflug .32s cubic-bezier(.2,.9,.3,1)}
 @keyframes einflug{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+/* Konto-Menü rechts oben */
+#konto-knopf{display:flex;align-items:center;gap:7px;background:none;border:0;
+  padding:3px 4px;cursor:pointer;border-radius:20px}
+#konto-knopf:hover{background:var(--gc-chrome)}
+#konto-knopf .striche{display:flex;flex-direction:column;gap:3px}
+#konto-knopf .striche i{display:block;width:16px;height:1.8px;border-radius:2px;
+  background:var(--gc-fg)}
+#konto-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:60;width:262px;
+  background:var(--gc-bg);border:1px solid var(--gc-border);border-radius:14px;
+  box-shadow:0 16px 40px rgba(31,30,26,.16);padding:6px;text-align:left}
+#konto-menu[hidden]{display:none}
+#konto-menu .kopf{padding:11px 12px 9px;border-bottom:1px solid var(--gc-border);
+  margin-bottom:5px}
+#konto-menu .kopf b{display:block;font:600 14px var(--gc-sans);word-break:break-all}
+#konto-menu .kopf span{font-size:12px;color:var(--gc-muted)}
+#konto-menu button{display:flex;align-items:center;gap:10px;width:100%;background:none;
+  border:0;padding:10px 12px;border-radius:9px;font:400 14px var(--gc-sans);
+  color:var(--gc-fg);cursor:pointer;text-align:left}
+#konto-menu button:hover{background:var(--gc-chrome)}
+#konto-menu button[hidden]{display:none}
+#konto-menu button .sym{width:18px;text-align:center;flex:none;opacity:.75}
+#konto-menu .trenner{height:1px;background:var(--gc-border);margin:5px 0}
+#konto-menu .weg{color:var(--gc-danger)}
 /* Unterreiter innerhalb eines Bereichs — das Schema sichtbar machen */
 .unterreiter{display:flex;gap:4px;flex-wrap:wrap;margin:2px 0 18px;
   border-bottom:1px solid var(--gc-border);padding-bottom:0}
@@ -376,11 +399,27 @@ main{padding:26px 22px 60px;min-height:70dvh}
       style="position:absolute;top:4px;right:2px;width:7px;height:7px;border-radius:50%;background:var(--gc-accent)"></span></button>
     <button data-ziel="fragen">Fragen</button>
   </nav>
-  <div id="kopf-recht">
+  <div id="kopf-recht" style="position:relative">
     <span id="stand"></span>
     <button class="chip" id="hochladen-knopf">Beleg hochladen</button>
     <input type="file" id="hochladen-datei" accept=".jpg,.jpeg,.png,.pdf,.heic,image/*,application/pdf" multiple hidden>
-    <div id="avatar" title="Angemeldet">·</div>
+    <button id="konto-knopf" aria-label="Dein Konto und Einstellungen"
+            aria-haspopup="true" aria-expanded="false">
+      <span class="striche"><i></i><i></i><i></i></span>
+      <span id="avatar" title="Angemeldet">·</span>
+    </button>
+    <div id="konto-menu" hidden role="menu">
+      <div class="kopf"><b id="menu-un">…</b><span id="menu-rolle"></span></div>
+      <button role="menuitem" onclick="menuGeh('#einstellungen')">
+        <span class="sym">⚙️</span> Konto &amp; Einstellungen</button>
+      <button role="menuitem" onclick="menuGeh('#export')">
+        <span class="sym">📦</span> Export für die Buchhaltung</button>
+      <button role="menuitem" id="menu-verwaltung" hidden onclick="menuGeh('#verwaltung')">
+        <span class="sym">🔑</span> Zugänge verwalten</button>
+      <div class="trenner"></div>
+      <button role="menuitem" class="weg" id="menu-abmelden">
+        <span class="sym">↩</span> Abmelden</button>
+    </div>
   </div>
 </header>
 
@@ -506,6 +545,25 @@ main{padding:26px 22px 60px;min-height:70dvh}
   </section>
 
   <!-- EINSTELLUNGEN -->
+  <!-- EXPORT: Buchungsstapel für die Buchhaltung -->
+  <section class="ansicht" id="a-export">
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Export für die Buchhaltung</div>
+    <p style="color:var(--gc-desc);margin-bottom:16px">Der fertige Buchungsstapel eines
+      Monats — im Format, das Buchhaltungsprogramme lesen. Normalerweise holt ihn deine
+      Kanzlei selbst; hier kannst du ihn zusätzlich herunterladen.</p>
+    <div class="karte">
+      <div class="mon-schalter" style="margin-bottom:12px">
+        <button id="e-mon-zurueck" aria-label="Vormonat">‹</button>
+        <b id="e-mon-anzeige"></b>
+        <button id="e-mon-vor" aria-label="Folgemonat">›</button>
+      </div>
+      <div id="export-inhalt"><div class="skelett"></div></div>
+    </div>
+    <p style="color:var(--gc-muted);font-size:13px;margin-top:14px">Fertige Stapel liegen
+      auch in deiner <a href="#ablage" style="color:var(--gc-accent)">Ablage</a> unter
+      „Buchungsstapel".</p>
+  </section>
+
   <section class="ansicht" id="a-einstellungen">
     <div class="gruss" style="font-size:22px;margin-bottom:14px">Einstellungen</div>
     <div class="sektion lbl">Zugang</div>
@@ -696,7 +754,7 @@ $("#zugangscode").addEventListener("keydown", e => { if(e.key==="Enter") $("#anm
 
 /* ————— Router ————— */
 const ansichten = { heute: ladeHeute, belege: ladeBelege, fragen: () => {},
-                    aufraeumen: ladeAufraeumen, post: ladePost, ablage: ladeAblage,
+                    aufraeumen: ladeAufraeumen, post: ladePost, ablage: ladeAblage, export: ladeExport,
                     zahlen: ladeZahlen, bank: ladeBank, saloncheck: ladeSalonCheck,
                     einrichtung: ladeEinrichtung, verwaltung: ladeVerwaltung,
                     einstellungen: ladeEinstellungen, detail: null };
@@ -1088,17 +1146,18 @@ async function ladeZahlen(){
   ziel.innerHTML = html;
   $("#stapel-knopf").addEventListener("click", stapelLaden);
 }
-async function stapelLaden(){
-  const status = $("#stapel-status");
+async function stapelLaden(monat, statusWahl){
+  const status = $(statusWahl || "#stapel-status");
+  const welcher = monat || zMonat;
   status.textContent = "wird geholt …";
   try{
-    const r = await api("/api/export/" + zMonat + ".csv");
+    const r = await api("/api/export/" + welcher + ".csv");
     if (r.status === 403){ status.textContent = "Diesen Stapel lädt deine Kanzlei herunter."; return; }
     if (!r.ok){ status.textContent = "Gerade nicht möglich."; return; }
     const blob = await r.blob();
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "EXTF_Buchungsstapel_" + zMonat + ".csv";
+    a.download = "EXTF_Buchungsstapel_" + welcher + ".csv";
     a.click();
     URL.revokeObjectURL(a.href);
     status.textContent = "Geladen ✓";
@@ -1535,7 +1594,59 @@ $("#abmelden-knopf").addEventListener("click", async () => {
   try{ await api("/api/abmelden", {method:"POST"}); }catch{}
   zeigeLogin();
 });
-$("#avatar").addEventListener("click", () => location.hash = "#einstellungen");
+/* ————— Konto-Menü rechts oben ————— */
+function menuZu(){ $("#konto-menu").hidden = true;
+  $("#konto-knopf").setAttribute("aria-expanded", "false"); }
+function menuGeh(ziel){ menuZu(); location.hash = ziel; }
+$("#konto-knopf").addEventListener("click", async ev => {
+  ev.stopPropagation();
+  const menu = $("#konto-menu");
+  const auf = menu.hidden;
+  menu.hidden = !auf;
+  $("#konto-knopf").setAttribute("aria-expanded", String(auf));
+  if (auf){
+    try{
+      const d = await (await api("/api/ich")).json();
+      $("#menu-un").textContent = d.un || "";
+      $("#menu-rolle").textContent = d.rolle === "salon" ? "Dein Salon"
+        : d.rolle === "kanzlei" ? "Kanzlei" : "Verwaltung";
+      $("#menu-verwaltung").hidden = !(d.rolle === "admin" || d.rolle === "kanzlei");
+    }catch{}
+  }
+});
+document.addEventListener("click", ev => {
+  if (!$("#konto-menu").hidden && !ev.target.closest("#kopf-recht")) menuZu();
+});
+document.addEventListener("keydown", ev => { if (ev.key === "Escape") menuZu(); });
+$("#menu-abmelden").addEventListener("click", async () => {
+  menuZu();
+  try{ await api("/api/abmelden", {method:"POST"}); }catch{}
+  zeigeLogin();
+});
+
+/* ————— Export-Ansicht ————— */
+let eMonat = jetztMonat();
+async function ladeExport(){
+  $("#e-mon-anzeige").textContent = monatName(eMonat);
+  const ziel = $("#export-inhalt");
+  let d;
+  try{ d = await (await api("/api/monat/" + eMonat)).json(); }
+  catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+  if (!d.anzahl){
+    ziel.innerHTML = `<div class="leer"><b>In diesem Monat ist noch nichts zu übergeben.</b>
+      Sobald Belege da sind, entsteht der Stapel von selbst.</div>`;
+    return;
+  }
+  ziel.innerHTML = `<div class="mrow"><span class="art">Belege im Monat</span>
+      <span class="summe">${d.anzahl}</span></div>
+    <div class="mrow"><span class="art">Summe</span>
+      <span class="summe">${euro(d.summe || 0)}</span></div>
+    <button class="chip" style="margin-top:12px" id="export-knopf">Stapel herunterladen</button>
+    <span id="export-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>`;
+  $("#export-knopf").addEventListener("click", () => stapelLaden(eMonat, "#export-status"));
+}
+$("#e-mon-zurueck").addEventListener("click", () => { eMonat = monatSchieben(eMonat, -1); ladeExport(); });
+$("#e-mon-vor").addEventListener("click", () => { eMonat = monatSchieben(eMonat, 1); ladeExport(); });
 $("#avatar").style.cursor = "pointer";
 
 async function postPunktAktualisieren(){
