@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>babu — dein Papierkram macht sich von selbst</title>
-<meta name="description" content="Beleg fotografieren, grüner Haken, fertig. babu erledigt Belege, Kassenbuch und die Übergabe an dein Steuerbüro — gemacht für Friseursalons.">
+<meta name="description" content="Beleg fotografieren, grüner Haken, fertig. babu erledigt Belege, Kassenbuch und deine ganze Buchhaltung — mit oder ohne eigenes Steuerbüro. Gemacht für Friseursalons.">
 <style>
 /* ── babu Landing — Papier-Palette wie App & Portal, kein CDN ─────────── */
 :root{
@@ -65,6 +65,13 @@ a{color:var(--gc-accent-hover)}
 .telefon img{width:100%;display:block;border-radius:20px}
 .telefon p{font-size:13.5px;color:var(--gc-desc);margin-top:12px;padding:0 6px}
 .telefon strong{color:var(--gc-fg)}
+/* Spar-Tabelle im Kostenvergleich */
+.sparen-tab{width:100%;border-collapse:collapse;font-size:14.5px}
+.sparen-tab th,.sparen-tab td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--gc-border)}
+.sparen-tab th:first-child,.sparen-tab td:first-child{text-align:left}
+.sparen-tab th{font-size:12.5px;color:var(--gc-muted);font-weight:600}
+.sparen-tab tr:last-child td{border-bottom:0}
+.sparen-tab .gruen{color:var(--gc-ok)}
 /* Salon-Check: Foto + Telefon, das sich von selbst ausfüllt */
 .sc-duo{display:grid;gap:32px;margin-top:40px;align-items:center;justify-items:center}
 @media(min-width:720px){.sc-duo{grid-template-columns:1fr 1fr}}
@@ -177,8 +184,8 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
   <div class="lbl">babu · für deinen Salon</div>
   <h1>Dein Papierkram<br>macht sich von selbst.</h1>
   <p class="sub">Beleg fotografieren — fertig. babu liest ihn, prüft ihn und
-  legt ihn sicher ab. Dein Steuerbüro bekommt am Monatsende alles fertig.
-  Du schneidest weiter Haare.</p>
+  legt ihn sicher ab. Am Monatsende ist deine Buchhaltung fertig — ganz ohne
+  eigenes Steuerbüro. Du schneidest weiter Haare.</p>
   <div class="cta">
     <a class="knopf voll" href="/app">App laden</a>
     <a class="knopf zart" href="/portal">Anmelden</a>
@@ -203,9 +210,10 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
       <p>Betrag, Datum, Laden — alles wird gelesen, richtig einsortiert und
       danach noch ein zweites Mal gegengeprüft. Dann kommt der grüne Haken.</p></div>
     <div class="karte schritt"><div class="nr">3</div>
-      <h3>Dein Steuerbüro bekommt alles</h3>
-      <p>Am Monatsende liegt der fertige Stapel bereit — in genau dem Format,
-      das Steuerbüros brauchen. Kein Schuhkarton, kein Nachfragen.</p></div>
+      <h3>Alles ist fertig — direkt in babu</h3>
+      <p>Am Monatsende liegt der fertige Stapel bereit, in genau dem Format,
+      das das Finanzamt braucht. Du brauchst kein eigenes Steuerbüro mehr —
+      und wenn du eins behalten willst, bekommt es alles fix und fertig.</p></div>
   </div>
 </section>
 
@@ -288,9 +296,99 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
       </ul>
     </div>
   </div>
+  <div class="karte" style="margin-top:18px;overflow-x:auto">
+    <table class="sparen-tab">
+      <tr><th></th><th>Steuerberater</th><th class="gruen">Mit babu (79 €)</th><th>Du sparst</th></tr>
+      <tr><td>Im Monat</td><td>250–400 €</td><td class="gruen">79 €</td><td><b>171–321 €</b></td></tr>
+      <tr><td>Im Jahr</td><td>3.000–4.800 €</td><td class="gruen">948 €</td><td><b>2.052–3.852 €</b></td></tr>
+      <tr><td>In 5 Jahren</td><td>15.000–24.000 €</td><td class="gruen">4.740 €</td><td><b>10.260–19.260 €</b></td></tr>
+    </table>
+    <p style="font-size:13px;color:var(--gc-desc);margin-top:10px">In fünf Jahren
+    ist das ein Kleinwagen — oder ein sehr langer Urlaub.</p>
+  </div>
   <p class="fussnote">* Beispielwerte zur Einordnung. Was ein Steuerberater kostet,
   hängt von deinem Umsatz ab. Der babu-Preis steht noch nicht fest — trag dich
   ein, dann bekommst du ihn zuerst.</p>
+</section>
+
+<!-- ── 4b · Preise & Paket-Fragebogen ───────────────────────────────── -->
+<section style="background:var(--gc-chrome)">
+  <div class="lbl">Unsere Pakete</div>
+  <h2>Ein Preis, der zu deinem Salon passt.</h2>
+  <span class="beispiel">Beispielpreise — endgültige Preise folgen</span>
+  <p class="sub">Je nachdem, wie dein Salon aufgestellt ist, brauchst du mehr
+  oder weniger. Deshalb gibt es drei Pakete — und wenn du unsicher bist,
+  beantworte einfach die paar Fragen darunter.</p>
+  <div class="dreier" style="margin-top:26px">
+    <div class="karte spalte">
+      <h3>Solo</h3>
+      <div class="preis">39 €<small> / Monat*</small></div>
+      <ul>
+        <li>Du arbeitest allein</li>
+        <li>Kleinunternehmerin (§ 19 UStG) — keine Umsatzsteuer</li>
+        <li>Einfache Gewinnrechnung (EÜR)</li>
+        <li>Belege, Kassenbuch, Salon-Check — alles drin</li>
+      </ul>
+    </div>
+    <div class="karte spalte" style="border-color:var(--gc-ok)">
+      <h3 class="gruen">Salon</h3>
+      <div class="preis">79 €<small> / Monat*</small></div>
+      <ul>
+        <li>Du hast ein Team</li>
+        <li>Mit Umsatzsteuer</li>
+        <li>Einfache Gewinnrechnung (EÜR)</li>
+        <li>Alles aus Solo — plus Lohn-Unterlagen ablegen</li>
+      </ul>
+    </div>
+    <div class="karte spalte">
+      <h3>Salon Plus</h3>
+      <div class="preis">149 €<small> / Monat*</small></div>
+      <ul>
+        <li>Mehrere Standorte oder mehrere Firmen</li>
+        <li>Oder: Bilanz statt einfacher Gewinnrechnung</li>
+        <li>Alles aus Salon — plus getrennte Auswertungen</li>
+      </ul>
+    </div>
+  </div>
+  <p class="fussnote">Du hast ein eigenes Steuerbüro und babu soll nur
+  vorbereiten? Dann wird es günstiger — sag uns kurz Bescheid.
+  Machst du umsatzsteuerfreie medizinische Behandlungen (z. B. podologische
+  Fußpflege, § 4 Nr. 14 UStG)? babu stellt das richtig ein.</p>
+
+  <div class="karte" id="paket-quiz" style="margin-top:26px;max-width:560px;margin-left:auto;margin-right:auto;padding:26px 22px;text-align:center">
+    <h3 style="font-family:var(--gc-serif)">Welches Paket passt zu dir?</h3>
+    <p style="color:var(--gc-desc);font-size:14px;margin:6px 0 16px" id="quiz-zaehler">Sieben kurze Fragen — dann weißt du es.</p>
+    <div id="quiz-frage" style="font:600 18px var(--gc-serif);margin-bottom:14px"></div>
+    <div id="quiz-antworten" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"></div>
+    <div id="quiz-ergebnis" hidden></div>
+    <button class="knopf zart" id="quiz-start" style="margin-top:4px">Los geht's</button>
+  </div>
+</section>
+
+<!-- ── 4c · Dein Telefon kann das alles ─────────────────────────────── -->
+<section>
+  <div class="lbl">Scanner · Helfer · Berater</div>
+  <h2>Dein Telefon kann das jetzt alles.</h2>
+  <p class="sub">Kein Ordner, kein Extra-Gerät, kein Warten aufs Steuerbüro.
+  Dein Telefon verbindet dich mit allem, was zu deinem Salon gehört —
+  deinen Belegen, deinen Zahlen, deinen Antworten.</p>
+  <div class="dreier" style="margin-top:32px">
+    <figure class="telefon">
+      <img src="/bilder/telefon-scan.png" alt="Friseurin fotografiert am Empfangstresen einen Beleg mit dem Telefon, im Hintergrund wartet eine Kundin mit Folien" style="width:100%;display:block;border-radius:22px;border:1px solid var(--gc-border)">
+      <p><strong>Der Scanner.</strong> Beleg hinhalten — gelesen, geprüft,
+      sicher abgelegt. Mitten zwischen zwei Terminen.</p>
+    </figure>
+    <figure class="telefon">
+      <img src="/bilder/telefon-abend.png" alt="Friseurin lehnt nach Feierabend entspannt am Tresen und schaut zufrieden auf ihr Telefon, daneben ein Kaffee" style="width:100%;display:block;border-radius:22px;border:1px solid var(--gc-border)">
+      <p><strong>Der Helfer.</strong> Feierabend: Kassenbuch in zwei Minuten,
+      grüner Haken, Kaffee. Der Tag ist wirklich vorbei.</p>
+    </figure>
+    <figure class="telefon">
+      <img src="/bilder/telefon-brief.png" alt="Friseurin fotografiert amüsiert einen Brief vom Amt, der vor ihr auf dem Tisch liegt" style="width:100%;display:block;border-radius:22px;border:1px solid var(--gc-border)">
+      <p><strong>Der Berater.</strong> Brief vom Amt? Fotografieren — babu
+      erklärt dir in deinen Worten, was drinsteht und bis wann.</p>
+    </figure>
+  </div>
 </section>
 
 <!-- ── 5 · Für deinen Salon ─────────────────────────────────────────── -->
@@ -347,7 +445,7 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
   <h2>App laden, anmelden, ersten Beleg fotografieren.</h2>
   <div class="dreier" style="margin-top:26px">
     <div class="karte"><h3 class="serif" style="font-size:18px">1 · App laden</h3>
-      <p style="margin-top:8px">Direkt aufs iPhone — ein Knopf, kurz warten,
+      <p style="margin-top:8px">Direkt aufs iPhone — ein Button, kurz warten,
       fertig. In der Testphase läuft die App auf freigeschalteten iPhones.</p>
       <a class="knopf voll" style="margin-top:14px" href="/app">App installieren</a></div>
     <div class="karte"><h3 class="serif" style="font-size:18px">2 · Anmelden</h3>
@@ -473,6 +571,63 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
 </div>
 
 <script>
+/* ── Paket-Fragebogen: sieben Fragen, eine Empfehlung. ───────────────── */
+(function(){
+  var start=document.getElementById('quiz-start');
+  if(!start) return;
+  var frageEl=document.getElementById('quiz-frage'),
+      antwortenEl=document.getElementById('quiz-antworten'),
+      zaehler=document.getElementById('quiz-zaehler'),
+      ergebnisEl=document.getElementById('quiz-ergebnis');
+  var FRAGEN=[
+    {k:'team', f:'Arbeitest du allein oder mit Team?', a:['Allein','Mit Team']},
+    {k:'klein', f:'Bist du Kleinunternehmerin? Dann steht auf deiner Rechnung „ohne Umsatzsteuer" (§ 19 UStG).', a:['Ja','Nein','Weiß nicht']},
+    {k:'medizinisch', f:'Machst du medizinische Behandlungen ohne Umsatzsteuer — zum Beispiel podologische Fußpflege?', a:['Ja','Nein']},
+    {k:'steuerbuero', f:'Soll babu alles machen — oder hast du ein Steuerbüro, dem wir nur zuarbeiten?', a:['Alles über babu','Eigenes Steuerbüro']},
+    {k:'filialen', f:'Hat dein Salon mehr als einen Standort?', a:['Ja','Nein']},
+    {k:'firmen', f:'Hast du mehrere Firmen?', a:['Ja','Nein']},
+    {k:'abschluss', f:'Machst du eine Bilanz — oder die einfache Gewinnrechnung (EÜR)?', a:['Bilanz','Einfache Gewinnrechnung','Weiß nicht']}
+  ];
+  var antworten={}, i=0;
+  function zeige(){
+    if(i>=FRAGEN.length){ fertig(); return; }
+    var q=FRAGEN[i];
+    zaehler.textContent=(FRAGEN.length-i)===1?'Letzte Frage':'Noch '+(FRAGEN.length-i)+' Fragen';
+    frageEl.textContent=q.f;
+    antwortenEl.innerHTML='';
+    q.a.forEach(function(a){
+      var b=document.createElement('button');
+      b.type='button'; b.className='knopf zart'; b.textContent=a;
+      b.onclick=function(){ antworten[q.k]=a; i++; zeige(); };
+      antwortenEl.appendChild(b);
+    });
+  }
+  function fertig(){
+    frageEl.textContent=''; antwortenEl.innerHTML='';
+    var plus=antworten.filialen==='Ja'||antworten.firmen==='Ja'||antworten.abschluss==='Bilanz';
+    var solo=antworten.team==='Allein'&&antworten.klein==='Ja';
+    var paket=plus?['Salon Plus','149 €']:(solo?['Solo','39 €']:['Salon','79 €']);
+    var extra=[];
+    if(antworten.steuerbuero==='Eigenes Steuerbüro')
+      extra.push('Du behältst dein Steuerbüro und babu arbeitet nur zu — das wird günstiger. Sag uns kurz Bescheid.');
+    if(antworten.medizinisch==='Ja')
+      extra.push('Deine medizinischen Behandlungen bleiben ohne Umsatzsteuer — babu stellt das richtig ein.');
+    if(antworten.klein==='Weiß nicht'||antworten.abschluss==='Weiß nicht')
+      extra.push('Nicht sicher? Kein Problem — der Salon-Check liest es einfach aus deinen Unterlagen heraus.');
+    try{ sessionStorage.setItem('babu-paket', JSON.stringify(antworten)); }catch(e){}
+    zaehler.textContent='Unsere Empfehlung für dich';
+    ergebnisEl.hidden=false;
+    ergebnisEl.innerHTML='<div style="font:600 26px var(--gc-serif);margin:6px 0">'+paket[0]+' — '+paket[1]+' im Monat*</div>'
+      +extra.map(function(t){return '<p style="color:var(--gc-desc);font-size:14px;margin-top:8px">'+t+'</p>';}).join('')
+      +'<a class="knopf voll" style="margin-top:16px" href="/portal">Konto anlegen</a>'
+      +'<div><button type="button" class="knopf zart" style="margin-top:10px" id="quiz-neu">Nochmal von vorn</button></div>';
+    document.getElementById('quiz-neu').onclick=function(){
+      antworten={}; i=0; ergebnisEl.hidden=true; ergebnisEl.innerHTML=''; zeige();
+    };
+  }
+  start.onclick=function(){ start.hidden=true; zeige(); };
+})();
+
 /* ── Salon-Check-Demo: das Telefon füllt sich von selbst aus. ────────── */
 (function(){
   var demo=document.getElementById('sc-demo');
@@ -510,10 +665,12 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
       chips=document.getElementById('babu-chips');
 
   var faq=[
+    ['absetzen|abschreib|steuer sparen','Typisch im Salon: Material und Werkzeug (Scheren, Farben, Föhn), Miete, Fortbildungen, Arbeitskleidung, Fahrten, Telefon. babu sortiert deine Belege automatisch richtig ein — die genaue Einordnung macht am Ende das Steuer-Backend. Das ist eine erste Einordnung, keine Steuerberatung.'],
+    ['kleinunternehm|§ ?19','Kleinunternehmerin (§ 19 UStG) heißt: Du weist keine Umsatzsteuer aus, solange dein Umsatz im Vorjahr unter 25.000 € lag. Ob das zu dir passt, findet babu im Salon-Check mit heraus.'],
     ['steuerberater|wechsel|kündig','Wechseln ist leicht: kurz beim alten Steuerberater Bescheid sagen (Vorlage bekommst du), eine Vollmacht unterschreiben — den Rest holen wir für dich. Mehr steht oben unter „Schon beim Steuerberater?".'],
-    ['kosten|preis|teuer','Der endgültige Preis steht noch nicht fest — oben siehst du eine Beispielrechnung. Sicher ist: deutlich günstiger als die klassische Komplett-Betreuung, weil babu die Handarbeit übernimmt.'],
+    ['kosten|preis|teuer|paket','Drei Pakete als Beispielpreise: Solo 39 €, Salon 79 €, Salon Plus 149 € im Monat — endgültige Preise folgen. Welches passt, sagt dir der kurze Fragebogen oben unter „Unsere Pakete". Sicher ist: deutlich günstiger als die klassische Komplett-Betreuung.'],
     ['kasse|kassenbuch|tse|registrier','babu ist keine Registrierkasse — es ersetzt deinen Papier-Kassenbericht: abends die Tagessummen eintragen, eine Zahl nach der anderen, babu rechnet. Darum brauchst du auch keine TSE.'],
-    ['app|laden|download|iphone','Geh auf babu.0711.io/app — dort ist der Installieren-Knopf. In der Testphase läuft die App auf freigeschalteten iPhones; deine Zugangsdaten bekommst du bei der Einrichtung.'],
+    ['app|laden|download|iphone','Geh auf babu.0711.io/app — dort ist der Installieren-Button. In der Testphase läuft die App auf freigeschalteten iPhones; deine Zugangsdaten bekommst du bei der Einrichtung.'],
     ['konto|bank|auszug|csv','Heute: Kontoauszug im Portal abgeben (Sparkassen-PDF geht schon), babu prüft, ob zu jeder Abbuchung ein Beleg da ist. Import für alle Banken und direkte Konto-Verbindung kommen als Nächstes.'],
     ['finanzamt|brief|bescheid|post','Bald kannst du Finanzamt-Briefe einfach fotografieren — babu erklärt dir in einfachen Worten, was drinsteht und bis wann du etwas tun musst. Die Frist landet in deinem Kalender.'],
     ['daten|sicher|dsgvo|server','Deine Daten liegen auf eigenen Servern in Deutschland und werden verschlüsselt übertragen. Jeder Beleg wird beim Ablegen versiegelt — unbemerkt ändern geht nicht.'],
@@ -567,7 +724,8 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
       antwort.textContent=fallback(frage);
     }
   }
-  ['Was kostet babu?','Wie wechsle ich den Steuerberater?','Brauche ich eine TSE?'].forEach(function(t){
+  ['Was kann ich als Friseurin absetzen?','Was ist die Kleinunternehmer-Regel?',
+   'Brauche ich eine Kasse mit TSE?','Was kostet babu?'].forEach(function(t){
     var c=document.createElement('button');
     c.type='button'; c.textContent=t;
     c.onclick=function(){senden(t)};
@@ -576,7 +734,7 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
   knopf.onclick=function(){
     panel.classList.toggle('offen');
     if(panel.classList.contains('offen')&&!verlauf.childElementCount){
-      blase('Hallo, ich bin Babu. Frag mich alles zu babu, zum Kassenbuch oder zum Steuerberater-Wechsel.','bot');
+      blase('Hallo, ich bin Babu. Frag mich alles zur App und zu Steuer-Grundfragen — Kassenbuch, Kleinunternehmer-Regel, Absetzen, Steuerberater-Wechsel. Was ich sage, ist eine erste Einordnung, keine Steuerberatung.','bot');
     }
   };
   document.getElementById('babu-zu').onclick=function(){panel.classList.remove('offen')};
