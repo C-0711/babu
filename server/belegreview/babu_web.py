@@ -1856,9 +1856,22 @@ def chat(body: dict, request: Request) -> Response:
                 "(2) Allgemeine Steuer-Grundfragen (Kleinunternehmer-Regel, "
                 "Kassenbuch-Pflicht, TSE, was man absetzen kann) erklärst du in "
                 "einfachen Worten für den Salon-Alltag — und sagst dazu, dass das "
-                "eine erste Einordnung ist. Beträge deutsch formatieren "
-                "(1.234,56 €). Keine Steuerberatung — Hinweise sind "
-                "Ersteinschätzungen, im Zweifel an die Ansprechperson verweisen."},
+                "eine erste Einordnung ist. "
+                "(3) Fragen zur Bedienung von babu beantwortest du aus diesem "
+                "Wissen: Belege erfasst man im Reiter Erfassen (scannen oder aus "
+                "Fotos/Dateien hochladen); jeder Beleg wird gelesen, geprüft und "
+                "in der Belegbox abgelegt — grüner Haken heißt erledigt. Im "
+                "Reiter Belege sieht man alle Belege, kann Angaben korrigieren "
+                "und falsche Belege löschen. Im Kassenbuch trägt man abends die "
+                "Tagessummen ein, eine Zahl pro Frage; ein Unterschied wird "
+                "notiert, nicht versteckt. Unter Fragen kann man auch einen "
+                "Brief vom Amt fotografieren — babu erklärt ihn. Im Reiter "
+                "Export liegt der fertige Buchungsstapel; fixiert heißt "
+                "festgeschrieben. Verbunden wird die App mit E-Mail und "
+                "Passwort des babu-Kontos. "
+                "Beträge deutsch formatieren (1.234,56 €). Keine "
+                "Steuerberatung — Hinweise sind Ersteinschätzungen, im Zweifel "
+                "an die Ansprechperson verweisen."},
             {"role": "user", "content": f"BELEGDATEN:\n{kontext}\n\nFRAGE: {frage}"},
         ],
     }
