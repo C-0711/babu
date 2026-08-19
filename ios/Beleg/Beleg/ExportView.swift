@@ -3,12 +3,10 @@ import SwiftUI
 struct ExportView: View {
     @EnvironmentObject var store: AppStore
     @State private var datei: URL?
-    @State private var zeigeEinstellungen = false
     @State private var zeigeFixiertInfo = false
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
+        ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(extfMonat().titel)
@@ -83,31 +81,17 @@ struct ExportView: View {
             .background(GC.canvas)
             .navigationTitle("Export")
             .toolbarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        zeigeEinstellungen = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                    .accessibilityLabel("Belegbox-Einstellungen")
-                }
-            }
-            .sheet(isPresented: $zeigeEinstellungen) {
-                EinstellungenView()
-            }
             .alert("Was heißt „fixiert“?", isPresented: $zeigeFixiertInfo) {
                 Button("Verstanden") {}
             } message: {
                 Text("Fixiert heißt festgeschrieben: Diese Buchungen ändern sich nicht mehr — so verlangt es das Finanzamt für die Buchhaltung. Neue Belege kommen einfach in den nächsten Stapel.")
             }
-            .onAppear {
-                if !store.exportierbar.isEmpty {
-                    datei = store.extfDatei()
-                } else if store.exportiert, !store.fixierte.isEmpty {
-                    // Nach App-Neustart bleibt der fixierte Stapel teilbar.
-                    datei = store.extfDatei(fuer: store.fixierte)
-                }
+        .onAppear {
+            if !store.exportierbar.isEmpty {
+                datei = store.extfDatei()
+            } else if store.exportiert, !store.fixierte.isEmpty {
+                // Nach App-Neustart bleibt der fixierte Stapel teilbar.
+                datei = store.extfDatei(fuer: store.fixierte)
             }
         }
     }

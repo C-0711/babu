@@ -55,9 +55,6 @@ struct MainTabs: View {
             FragenTab()
                 .tabItem { Label("Fragen", systemImage: "questionmark.bubble") }
                 .tag(AppStore.Tab.fragen)
-            ExportView()
-                .tabItem { Label("Export", systemImage: "square.and.arrow.up") }
-                .tag(AppStore.Tab.export)
         }
     }
 }

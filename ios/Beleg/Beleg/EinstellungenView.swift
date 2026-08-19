@@ -20,8 +20,7 @@ struct EinstellungenView: View {
     @State private var zeigeLoeschDialog = false
 
     var body: some View {
-        NavigationStack {
-            Form {
+        Form {
                 if verbunden {
                     verbundenBereich
                 } else {
@@ -68,14 +67,8 @@ struct EinstellungenView: View {
                     .foregroundStyle(GC.muted)
                 }
             }
-            .navigationTitle("Belegbox")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Fertig") { dismiss() }
-                }
-            }
-        }
+        .navigationTitle("Einstellungen")
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     // MARK: - Verbinden mit dem ganz normalen Konto

@@ -37,6 +37,7 @@ struct CaptureTab: View {
             }
             .navigationTitle("Erfassen")
             .toolbarTitleDisplayMode(.inline)
+            .mitKontoMenu()
             .fullScreenCover(isPresented: $zeigeScanner) {
                 ScannerView(
                     onScan: { bild in

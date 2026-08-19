@@ -89,6 +89,7 @@ struct ListeView: View {
                 }
             }
             .navigationTitle("Belege")
+            .mitKontoMenu()
             .navigationDestination(for: UUID.self) { id in
                 DetailView(belegID: id)
             }

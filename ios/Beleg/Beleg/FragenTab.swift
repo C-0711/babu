@@ -75,6 +75,7 @@ struct FragenTab: View {
             }
             .background(GC.canvas)
             .navigationTitle("Fragen")
+            .mitKontoMenu()
             .toolbarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {

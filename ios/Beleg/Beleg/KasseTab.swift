@@ -28,6 +28,7 @@ struct KasseTab: View {
             .background(GC.canvas)
             .navigationTitle("Kassenbuch")
             .toolbarTitleDisplayMode(.inline)
+            .mitKontoMenu()
             .fullScreenCover(item: $workflow) { ref in
                 KassenberichtWorkflow(tag: ref.id)
             }
