@@ -2204,6 +2204,89 @@ KASSENBUCH_NOTIZEN = ("differenzGrund", "sonstigeNotiz")
 _KASSEN_DATUM_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
+# ---------------------------------------------------------------------------
+# Ablage: alle Unterlagen an einem Ort, nach Jahr und Art sortiert — damit
+# sichtbar ist, dass die Aufbewahrungspflichten erfüllt sind.
+# ---------------------------------------------------------------------------
+
+ABLAGE_ARTEN = {
+    "behoerde": ("Post vom Amt", "Bescheide, Schreiben und Fristen"),
+    "kanzlei": ("Von deiner Kanzlei", "Auswertungen, Lohnunterlagen, Post"),
+    "abschluss": ("Jahresabschluss", "EÜR, Bilanz, Anlagen, Bescheide"),
+    "kontoauszug": ("Kontoauszüge", "Deine Bankunterlagen"),
+    "export": ("Buchungsstapel", "Übergaben an die Buchhaltung"),
+    "kassenbuch": ("Kassenbuch", "Deine Tagesblätter"),
+}
+
+
+def _jahr_aus(pfad: str, zeit: str | None) -> str:
+    for teil in pfad.split("/"):
+        if len(teil) >= 4 and teil[:4].isdigit() and "2000" < teil[:4] < "2100":
+            return teil[:4]
+    return (zeit or "")[:4] or "ohne Jahr"
+
+
+@app.get("/api/ablage")
+def api_ablage(request: Request) -> Response:
+    """Alles Abgelegte als Ordnerbaum: Jahr → Art → Dokumente."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    index = index_aktuell()
+    zeiten = index["zeiten"]
+    eintraege: list[dict] = []
+
+    for d in index["dokumente"]:
+        art = d.get("art") or "kanzlei"
+        if art not in ABLAGE_ARTEN:
+            art = "behoerde" if art == "behoerde" else "kanzlei"
+        eintraege.append({"pfad": d["pfad"], "titel": d["titel"], "art": art,
+                          "zeit": d.get("zeit"), "gelesen": d.get("gelesen"),
+                          "erklaerung": d.get("erklaerung")})
+
+    # Kontoauszüge, Abschlüsse, Stapel und Kassenblätter direkt aus dem Baum.
+    kopf = _git(["rev-parse", "HEAD"])
+    baum = _git(["ls-tree", "-r", "--name-only", (kopf or "HEAD").strip()]) or ""
+    for pfad in baum.splitlines():
+        if pfad.endswith((".umsaetze.json", ".meta.json", ".erklaerung.json")):
+            continue
+        name = pfad.rsplit("/", 1)[-1]
+        if pfad.startswith("auszuege/"):
+            art, titel = "kontoauszug", name
+        elif pfad.startswith("abschluss/") and not name.startswith("kennzahlen"):
+            art, titel = "abschluss", name
+        elif pfad.startswith("export/") and pfad.endswith(".csv"):
+            art, titel = "export", name
+        elif pfad.startswith("kassenbuch/"):
+            art, titel = "kassenbuch", "Kassenbuch " + name.removesuffix(".json")
+        else:
+            continue
+        eintraege.append({"pfad": pfad, "titel": titel, "art": art,
+                          "zeit": (zeiten.get(pfad) or {}).get("zeit"),
+                          "gelesen": None, "erklaerung": None})
+
+    jahre: dict[str, dict] = {}
+    for e in eintraege:
+        jahr = _jahr_aus(e["pfad"], e["zeit"])
+        ordner = jahre.setdefault(jahr, {})
+        ordner.setdefault(e["art"], []).append(e)
+
+    ausgabe = []
+    for jahr in sorted(jahre, reverse=True):
+        arten = []
+        for art, (name, hinweis) in ABLAGE_ARTEN.items():
+            stuecke = jahre[jahr].get(art)
+            if not stuecke:
+                continue
+            stuecke.sort(key=lambda x: x["zeit"] or "", reverse=True)
+            arten.append({"art": art, "name": name, "hinweis": hinweis,
+                          "anzahl": len(stuecke), "stuecke": stuecke})
+        ausgabe.append({"jahr": jahr, "anzahl": sum(a["anzahl"] for a in arten),
+                        "arten": arten})
+    return JSONResponse({"jahre": ausgabe,
+                         "gesamt": sum(j["anzahl"] for j in ausgabe)})
+
+
 @app.post("/api/kassenbuch")
 async def api_kassenbuch(request: Request) -> Response:
     un, fehler = _api_wache(request)

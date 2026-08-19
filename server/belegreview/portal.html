@@ -55,6 +55,32 @@ main{padding:26px 22px 60px;min-height:70dvh}
   padding:16px 18px;margin-bottom:12px}
 .einflug{animation:einflug .32s cubic-bezier(.2,.9,.3,1)}
 @keyframes einflug{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+/* Unterreiter innerhalb eines Bereichs — das Schema sichtbar machen */
+.unterreiter{display:flex;gap:4px;flex-wrap:wrap;margin:2px 0 18px;
+  border-bottom:1px solid var(--gc-border);padding-bottom:0}
+.unterreiter button{background:none;border:0;border-bottom:2px solid transparent;
+  padding:8px 12px;font:500 14px var(--gc-sans);color:var(--gc-muted);cursor:pointer}
+.unterreiter button:hover{color:var(--gc-fg)}
+.unterreiter button.an{color:var(--gc-fg);border-bottom-color:var(--gc-accent)}
+/* Ablage: Ordner wie in einem Laufwerk */
+.ordner{border:1px solid var(--gc-border);border-radius:12px;background:var(--gc-bg);
+  margin-bottom:10px;overflow:hidden}
+.ordner>summary{list-style:none;cursor:pointer;padding:13px 15px;display:flex;
+  align-items:center;gap:11px;font:600 15px var(--gc-sans)}
+.ordner>summary::-webkit-details-marker{display:none}
+.ordner>summary::before{content:"";width:9px;height:9px;flex:none;
+  border-right:2px solid var(--gc-muted);border-bottom:2px solid var(--gc-muted);
+  transform:rotate(-45deg);transition:transform .18s ease;margin-right:2px}
+.ordner[open]>summary::before{transform:rotate(45deg)}
+.ordner .zaehler{margin-left:auto;font:400 12.5px var(--gc-sans);color:var(--gc-muted)}
+.ordner .hinweis{font:400 12.5px var(--gc-sans);color:var(--gc-desc)}
+.ordner-inhalt{padding:0 15px 12px 37px}
+.ablage-zeile{display:flex;align-items:center;gap:10px;padding:9px 0;
+  border-top:1px solid var(--gc-border);font-size:14px}
+.ablage-zeile a{color:var(--gc-fg);text-decoration:none;flex:1}
+.ablage-zeile a:hover{text-decoration:underline}
+.ablage-zeile .wann{font-size:12px;color:var(--gc-muted);flex:none}
+.jahr-kopf{font:600 20px var(--gc-serif);margin:22px 0 10px}
 /* Salon-Check: Zuschauen-Zeilen + Ampel-Karten */
 .sc-zeile{display:flex;justify-content:space-between;align-items:center;gap:10px;
   padding:9px 2px;border-bottom:1px solid var(--gc-border-l)}
@@ -344,11 +370,9 @@ main{padding:26px 22px 60px;min-height:70dvh}
   <h1>babu</h1>
   <nav>
     <button data-ziel="heute">Heute</button>
-    <button data-ziel="belege">Belege</button>
-    <button data-ziel="zahlen">Zahlen</button>
-    <button data-ziel="saloncheck">Salon-Check</button>
-    <button data-ziel="bank">Bank</button>
-    <button data-ziel="post" style="position:relative">Post<span id="post-punkt" hidden
+    <button data-ziel="belege">Buchhaltung</button>
+    <button data-ziel="zahlen">Auswertung</button>
+    <button data-ziel="ablage" style="position:relative">Ablage<span id="post-punkt" hidden
       style="position:absolute;top:4px;right:2px;width:7px;height:7px;border-radius:50%;background:var(--gc-accent)"></span></button>
     <button data-ziel="fragen">Fragen</button>
   </nav>
@@ -368,8 +392,13 @@ main{padding:26px 22px 60px;min-height:70dvh}
     <div id="heute-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
 
-  <!-- BELEGE -->
+  <!-- BUCHHALTUNG: Belege -->
   <section class="ansicht" id="a-belege">
+    <div class="unterreiter">
+      <button class="an" onclick="location.hash='#belege'">Belege</button>
+      <button onclick="location.hash='#bank'">Bank</button>
+      <button onclick="location.hash='#saloncheck'">Salon-Check</button>
+    </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div class="gruss" style="font-size:22px">Belege</div>
       <div class="mon-schalter">
@@ -409,6 +438,11 @@ main{padding:26px 22px 60px;min-height:70dvh}
 
   <!-- SALON-CHECK (Abschluss-Unterlagen → zuschauen → Ampel-Report) -->
   <section class="ansicht" id="a-saloncheck">
+    <div class="unterreiter">
+      <button onclick="location.hash='#belege'">Belege</button>
+      <button onclick="location.hash='#bank'">Bank</button>
+      <button class="an" onclick="location.hash='#saloncheck'">Salon-Check</button>
+    </div>
     <div class="gruss" style="font-size:22px;margin-bottom:4px">Salon-Check</div>
     <p style="color:var(--gc-desc);margin-bottom:14px">Dein letztes Jahr auf einen Blick — wir lesen deine Unterlagen selbst.</p>
     <div id="saloncheck-inhalt"><div class="skelett"></div></div>
@@ -417,6 +451,11 @@ main{padding:26px 22px 60px;min-height:70dvh}
 
   <!-- BANK (Zahlungs-Abgleich Konto ↔ Belege) -->
   <section class="ansicht" id="a-bank">
+    <div class="unterreiter">
+      <button onclick="location.hash='#belege'">Belege</button>
+      <button class="an" onclick="location.hash='#bank'">Bank</button>
+      <button onclick="location.hash='#saloncheck'">Salon-Check</button>
+    </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div class="gruss" style="font-size:22px">Konto</div>
       <div class="mon-schalter">
@@ -431,7 +470,27 @@ main{padding:26px 22px 60px;min-height:70dvh}
   </section>
 
   <!-- POST -->
+  <!-- ABLAGE: alle Unterlagen an einem Ort, nach Jahr sortiert -->
+  <section class="ansicht" id="a-ablage">
+    <div class="unterreiter">
+      <button class="an" onclick="location.hash='#ablage'">Alle Unterlagen</button>
+      <button onclick="location.hash='#post'">Neue Post</button>
+    </div>
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Deine Ablage</div>
+    <p style="color:var(--gc-desc);margin-bottom:14px">Alles, was zu deinem Salon
+      gehört — geordnet nach Jahr. Aufheben musst du nichts mehr selbst.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+      <button class="chip" id="ablage-brief">Brief vom Amt ablegen</button>
+      <button class="chip" id="ablage-auszug">Kontoauszug ablegen</button>
+    </div>
+    <div id="ablage-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+  </section>
+
   <section class="ansicht" id="a-post">
+    <div class="unterreiter">
+      <button onclick="location.hash='#ablage'">Alle Unterlagen</button>
+      <button class="an" onclick="location.hash='#post'">Neue Post</button>
+    </div>
     <div class="gruss" style="font-size:22px;margin-bottom:4px">Post</div>
     <p style="color:var(--gc-desc);margin-bottom:10px">Was deine Kanzlei für dich bereitlegt.</p>
     <button class="chip" id="auszug-knopf" style="margin-bottom:10px">Kontoauszug ablegen</button>
@@ -637,7 +696,7 @@ $("#zugangscode").addEventListener("keydown", e => { if(e.key==="Enter") $("#anm
 
 /* ————— Router ————— */
 const ansichten = { heute: ladeHeute, belege: ladeBelege, fragen: () => {},
-                    aufraeumen: ladeAufraeumen, post: ladePost,
+                    aufraeumen: ladeAufraeumen, post: ladePost, ablage: ladeAblage,
                     zahlen: ladeZahlen, bank: ladeBank, saloncheck: ladeSalonCheck,
                     einrichtung: ladeEinrichtung, verwaltung: ladeVerwaltung,
                     einstellungen: ladeEinstellungen, detail: null };
@@ -1095,6 +1154,42 @@ function artLabel(art){
   if (art === "vollmacht") return "Vollmacht";
   return "Von deiner Kanzlei";
 }
+const ABLAGE_SYMBOL = {behoerde:"🏛", kanzlei:"📄", abschluss:"📊",
+                       kontoauszug:"🏦", export:"📦", kassenbuch:"💶"};
+
+async function ladeAblage(){
+  const ziel = $("#ablage-inhalt");
+  let d;
+  try{ d = await (await api("/api/ablage")).json(); }
+  catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+  if (!d.gesamt){
+    ziel.innerHTML = `<div class="leer"><b>Noch nichts abgelegt.</b>
+      Sobald Belege, Kontoauszüge oder Post vom Amt da sind, ordnen wir sie hier ein.</div>`;
+    return;
+  }
+  let html = "";
+  d.jahre.forEach((j, i) => {
+    html += `<div class="jahr-kopf">${esc(j.jahr)} <span style="font:400 13px var(--gc-sans);color:var(--gc-muted)">· ${j.anzahl} ${j.anzahl === 1 ? "Unterlage" : "Unterlagen"}</span></div>`;
+    for (const a of j.arten){
+      html += `<details class="ordner"${i === 0 ? " open" : ""}>
+        <summary><span>${ABLAGE_SYMBOL[a.art] || "📁"}</span>
+          <span>${esc(a.name)}</span>
+          <span class="hinweis">${esc(a.hinweis)}</span>
+          <span class="zaehler">${a.anzahl}</span></summary>
+        <div class="ordner-inhalt">` +
+        a.stuecke.map(s => `<div class="ablage-zeile">
+            <a href="/api/dokument/${encodeURI(s.pfad)}" target="_blank" rel="noopener">${esc(s.titel)}</a>
+            ${s.erklaerung ? `<span class="chip" style="font-size:11px">erklärt ✓</span>` : ""}
+            <span class="wann">${s.zeit ? zeitKurz(s.zeit) : ""}</span>
+          </div>`).join("") +
+        `</div></details>`;
+    }
+  });
+  ziel.innerHTML = html;
+}
+$("#ablage-brief").addEventListener("click", () => $("#brief-datei").click());
+$("#ablage-auszug").addEventListener("click", () => $("#auszug-datei").click());
+
 async function ladePost(){
   let d;
   try{ d = await (await api("/api/dokumente")).json(); }

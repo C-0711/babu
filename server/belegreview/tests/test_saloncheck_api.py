@@ -223,3 +223,21 @@ def test_upload_grenzen(welt):
                        content=b"x").status_code == 400
     assert client.post("/api/abschluss", params={"jahr": 2024, "name": "a.pdf"},
                        content=b"").status_code == 400
+
+
+def test_ablage_ordnet_nach_jahr_und_art(welt):
+    client, _, _ = welt
+    client.post("/api/dokumente", params={"name": "bescheid.pdf", "titel": "ESt-Bescheid",
+                                          "art": "behoerde"}, content=b"%PDF-1.4 x")
+    client.post("/api/kassenbuch", json={"datum": "2026-08-18", "einnahmenBar": 10})
+    d = client.get("/api/ablage").json()
+    assert d["gesamt"] >= 2
+    jahre = {j["jahr"]: j for j in d["jahre"]}
+    assert "2026" in jahre
+    arten = {a["art"]: a for a in jahre["2026"]["arten"]}
+    assert "kassenbuch" in arten and arten["kassenbuch"]["name"] == "Kassenbuch"
+    assert "behoerde" in arten
+    # Sidecars tauchen nie als eigene Unterlage auf.
+    alle = [s["pfad"] for j in d["jahre"] for a in j["arten"] for s in a["stuecke"]]
+    assert not any(p.endswith((".meta.json", ".erklaerung.json", ".umsaetze.json"))
+                   for p in alle)
