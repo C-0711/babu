@@ -683,12 +683,14 @@ APP_DATEIEN = {
 
 @app.get("/bilder/{name}")
 def landing_bild(name: str) -> Response:
-    if not re.fullmatch(r"[a-z0-9-]{1,40}\.png", name):
+    m = re.fullmatch(r"[a-z0-9-]{1,40}\.(png|jpg|mp4)", name)
+    if not m:
         return JSONResponse({"fehler": "unbekannt"}, status_code=404)
     pfad = BILDER_ORDNER / name
     if not pfad.is_file():
         return JSONResponse({"fehler": "unbekannt"}, status_code=404)
-    return FileResponse(pfad, media_type="image/png",
+    typ = {"png": "image/png", "jpg": "image/jpeg", "mp4": "video/mp4"}[m.group(1)]
+    return FileResponse(pfad, media_type=typ,
                         headers={"Cache-Control": "public, max-age=86400"})
 
 
