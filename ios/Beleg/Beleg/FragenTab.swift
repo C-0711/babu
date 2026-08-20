@@ -28,6 +28,8 @@ struct FragenTab: View {
     @State private var briefAuswahl: PhotosPickerItem?
     @State private var zeigeBriefDateien = false
     @State private var briefLaeuft = false
+    @State private var vertragAuswahl: PhotosPickerItem?
+    @State private var zeigeVertragDateien = false
     @FocusState private var feldAktiv: Bool
 
     private var aktuelleIndex: Int? {
@@ -111,6 +113,23 @@ struct FragenTab: View {
                     briefSchicken(daten, name: url.lastPathComponent)
                 }
             }
+            .fileImporter(isPresented: $zeigeVertragDateien,
+                          allowedContentTypes: [.pdf, .image]) { ergebnis in
+                guard case .success(let url) = ergebnis else { return }
+                let zugriff = url.startAccessingSecurityScopedResource()
+                defer { if zugriff { url.stopAccessingSecurityScopedResource() } }
+                if let daten = try? Data(contentsOf: url) {
+                    vertragSchicken(daten, name: url.lastPathComponent)
+                }
+            }
+            .onChange(of: vertragAuswahl) { _, neu in
+                guard let neu else { return }
+                Task {
+                    let daten = try? await neu.loadTransferable(type: Data.self)
+                    vertragAuswahl = nil
+                    if let daten { vertragSchicken(daten, name: "vertrag.jpg") }
+                }
+            }
             .onChange(of: briefAuswahl) { _, neu in
                 guard let neu else { return }
                 Task {
@@ -159,12 +178,48 @@ struct FragenTab: View {
         }
     }
 
+    /// Vertrag fotografiert: ablegen, lesen lassen, Eckdaten zeigen.
+    private func vertragSchicken(_ daten: Data, name: String) {
+        guard let url = URL(string: store.ablageURL), let pat = KeychainHelfer.ladePAT() else {
+            _ = anhaengen(ChatNachricht(vonMir: false,
+                text: "Dafür braucht die App die Belegbox — einmal oben rechts im Menü verbinden."))
+            return
+        }
+        briefLaeuft = true
+        _ = anhaengen(ChatNachricht(vonMir: true, text: "📄 Vertrag"))
+        let index = anhaengen(ChatNachricht(vonMir: false,
+            text: "Ich lese deinen Vertrag — einen Moment …"))
+        Task {
+            guard let pfad = await AblageService.vertragAblegen(
+                daten: daten, dateiname: name, basis: url, pat: pat) else {
+                textSetzen(index, "Der Vertrag ließ sich gerade nicht ablegen — später noch einmal.")
+                briefLaeuft = false
+                return
+            }
+            for wartezeit: UInt64 in [6, 8, 10, 15, 20, 30] {
+                try? await Task.sleep(nanoseconds: wartezeit * 1_000_000_000)
+                if let v = await AblageService.vertragDaten(pfad: pfad, basis: url, pat: pat) {
+                    var text = "\(v.art)\(v.partner.map { " mit \($0)" } ?? "")\n\n\(v.einfach)"
+                    if let betrag = v.betrag {
+                        text += "\n\nIch rechne ab jetzt mit \(fmtEur(betrag)) im Monat — "
+                             + "auch wenn dafür mal keine Rechnung kommt."
+                    }
+                    textSetzen(index, text)
+                    briefLaeuft = false
+                    return
+                }
+            }
+            textSetzen(index, "Der Vertrag liegt in deiner Ablage. Das Lesen dauert diesmal länger.")
+            briefLaeuft = false
+        }
+    }
+
     private var leerHinweis: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Frag babu")
                 .font(.title3.weight(.semibold))
                 .fontDesign(.serif)
-            Text("Zu deinen Belegen, zur App und zu Steuerfragen. Und: Brief vom Amt fotografieren — babu erklärt ihn dir. Zum Beispiel:")
+            Text("Zu deinen Belegen, zur App und zu Steuerfragen. Mit der Büroklammer legst du Briefe vom Amt und Verträge ab — babu liest sie. Zum Beispiel:")
                 .font(.footnote)
                 .foregroundStyle(GC.desc)
             ForEach(["Wie viel habe ich im Juli für Bewirtung ausgegeben?",
@@ -266,14 +321,27 @@ struct FragenTab: View {
     private var eingabeleiste: some View {
         HStack(spacing: 10) {
             Menu {
-                PhotosPicker(selection: $briefAuswahl, matching: .images,
-                             photoLibrary: .shared()) {
-                    Label("Brief fotografieren oder aus Fotos", systemImage: "camera")
+                Section("Brief vom Amt") {
+                    PhotosPicker(selection: $briefAuswahl, matching: .images,
+                                 photoLibrary: .shared()) {
+                        Label("Fotografieren oder aus Fotos", systemImage: "camera")
+                    }
+                    Button {
+                        zeigeBriefDateien = true
+                    } label: {
+                        Label("Aus Dateien (PDF)", systemImage: "folder")
+                    }
                 }
-                Button {
-                    zeigeBriefDateien = true
-                } label: {
-                    Label("Brief aus Dateien (PDF)", systemImage: "folder")
+                Section("Vertrag") {
+                    PhotosPicker(selection: $vertragAuswahl, matching: .images,
+                                 photoLibrary: .shared()) {
+                        Label("Mietvertrag & Co. fotografieren", systemImage: "doc.text")
+                    }
+                    Button {
+                        zeigeVertragDateien = true
+                    } label: {
+                        Label("Vertrag aus Dateien (PDF)", systemImage: "folder")
+                    }
                 }
             } label: {
                 Image(systemName: briefLaeuft ? "hourglass" : "paperclip")

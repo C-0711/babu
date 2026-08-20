@@ -99,6 +99,45 @@ enum AblageService {
         return json["pfad"] as? String
     }
 
+    /// Vertrag ablegen — babu liest, was er monatlich kostet.
+    static func vertragAblegen(daten: Data, dateiname: String, basis: URL,
+                               pat: String) async -> String? {
+        var teile = URLComponents(url: basis.appendingPathComponent("api/dokumente"),
+                                  resolvingAgainstBaseURL: false)
+        teile?.queryItems = [URLQueryItem(name: "name", value: dateiname),
+                             URLQueryItem(name: "titel", value: "Vertrag · " + dateiname),
+                             URLQueryItem(name: "art", value: "vertrag")]
+        guard let url = teile?.url else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.httpBody = daten
+        let (ergebnis, antwort) = await ausfuehrenMitDaten(request)
+        guard ergebnis == .uebertragen, let antwort,
+              let json = try? JSONSerialization.jsonObject(with: antwort) as? [String: Any]
+        else { return nil }
+        return json["pfad"] as? String
+    }
+
+    /// Eckdaten eines gelesenen Vertrags (entstehen im Hintergrund).
+    static func vertragDaten(pfad: String, basis: URL,
+                             pat: String) async -> (art: String, partner: String?,
+                                                    betrag: Double?, einfach: String)? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/dokumente"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+              let liste = json["dokumente"] as? [[String: Any]],
+              let treffer = liste.first(where: { ($0["pfad"] as? String) == pfad }),
+              let v = treffer["vertrag"] as? [String: Any],
+              let einfach = v["einfach"] as? String, !einfach.isEmpty
+        else { return nil }
+        return (v["art_name"] as? String ?? "Vertrag", v["partner"] as? String,
+                v["betrag_monat"] as? Double, einfach)
+    }
+
     /// Erklärung zum abgelegten Brief holen (entsteht im Hintergrund).
     static func briefErklaerung(pfad: String, basis: URL,
                                 pat: String) async -> (einfach: String, wasTun: String?,
