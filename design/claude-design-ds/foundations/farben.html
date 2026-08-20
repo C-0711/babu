@@ -1,0 +1,35 @@
+<!-- @dsCard group="Farben" -->
+<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>Farben</title>
+<style>:root{--gc-bg:#ffffff;--gc-canvas:#faf9f5;--gc-desk:#efece6;--gc-chrome:#f4f1ec;--gc-fg:#111111;--gc-body:#333333;--gc-desc:#555555;--gc-muted:#999999;--gc-accent:#857b61;--gc-accent-hover:#736950;--gc-accent-subtle:#f0ebe3;--gc-ok:#6f8a6e;--gc-warn:#b0821f;--gc-danger:#a8433a;--gc-scan:#1f1e1a;--gc-gold:#c9b98d}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;background:var(--gc-desk);padding:24px;color:var(--gc-body)}
+.serif{font-family:Georgia,'Times New Roman',serif}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace}
+.karte{background:var(--gc-bg);border-radius:14px;padding:16px;box-shadow:0 3px 8px rgba(31,30,26,.08)}
+.label{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--gc-muted);font-family:ui-monospace,'SF Mono',Menlo,monospace;margin:14px 0 8px}
+.raster{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.chip{border-radius:10px;overflow:hidden;background:var(--gc-bg);box-shadow:0 2px 6px rgba(31,30,26,.08)}
+.chip .f{height:54px}.chip .t{padding:7px 9px}
+.chip b{display:block;font-size:11px;color:var(--gc-fg)}
+.chip span{font-size:10px;color:var(--gc-muted);font-family:ui-monospace,Menlo,monospace}
+</style></head><body>
+<div class="label">Warme Papier-Palette · identisch als --gc-* (Web) und GC (SwiftUI)</div>
+<div class="raster">
+<div class="chip"><div class="f" style="background:#efece6"></div><div class="t"><b>desk</b><span>#EFECE6</span></div></div>
+<div class="chip"><div class="f" style="background:#faf9f5"></div><div class="t"><b>canvas</b><span>#FAF9F5</span></div></div>
+<div class="chip"><div class="f" style="background:#f4f1ec"></div><div class="t"><b>chrome</b><span>#F4F1EC</span></div></div>
+<div class="chip"><div class="f" style="background:#f0ebe3"></div><div class="t"><b>accent-subtle</b><span>#F0EBE3</span></div></div>
+<div class="chip"><div class="f" style="background:#ffffff;border-bottom:1px solid #eee"></div><div class="t"><b>bg</b><span>#FFFFFF</span></div></div>
+<div class="chip"><div class="f" style="background:#857b61"></div><div class="t"><b>accent · Bronze</b><span>#857B61</span></div></div>
+<div class="chip"><div class="f" style="background:#736950"></div><div class="t"><b>accent-hover</b><span>#736950</span></div></div>
+<div class="chip"><div class="f" style="background:#c9b98d"></div><div class="t"><b>gold · Capture</b><span>#C9B98D</span></div></div>
+<div class="chip"><div class="f" style="background:#6f8a6e"></div><div class="t"><b>ok</b><span>#6F8A6E</span></div></div>
+<div class="chip"><div class="f" style="background:#b0821f"></div><div class="t"><b>warn</b><span>#B0821F</span></div></div>
+<div class="chip"><div class="f" style="background:#a8433a"></div><div class="t"><b>danger</b><span>#A8433A</span></div></div>
+<div class="chip"><div class="f" style="background:#1f1e1a"></div><div class="t"><b>scan · Sucher</b><span>#1F1E1A</span></div></div>
+<div class="chip"><div class="f" style="background:#111111"></div><div class="t"><b>fg</b><span>#111111</span></div></div>
+<div class="chip"><div class="f" style="background:#555555"></div><div class="t"><b>desc</b><span>#555555</span></div></div>
+<div class="chip"><div class="f" style="background:#999999"></div><div class="t"><b>muted</b><span>#999999</span></div></div>
+</div>
+<div class="label" style="margin-top:16px">Regel: EINE Signalfarbe je Bedeutung — Bronze = verifiziert/gesiegelt · Grün = bestanden · Amber = prüfen · Rot = Fehler. Confidence nie nur über Farbe (immer + Zahl).</div>
+</body></html>

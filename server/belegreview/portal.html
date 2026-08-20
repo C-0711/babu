@@ -1,0 +1,2464 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f4f1ec">
+<link rel="manifest" href="/portal/manifest.json">
+<title>babu — dein Salon-Cockpit</title>
+<style>
+/* Unlimited-OCR-Designsprache — Tokens aus design/unlimited-ocr/, Fonts als
+   System-Stacks (kein CDN, DSGVO). Genau drei Motion-Momente: Stempel,
+   Zeitleisten-Schritt, Karten-Einflug. */
+:root{
+  --gc-bg:#fff; --gc-canvas:#faf9f5; --gc-desk:#efece6; --gc-chrome:#f4f1ec;
+  --gc-fg:#111; --gc-body:#333; --gc-desc:#555; --gc-muted:#999;
+  --gc-accent:#857b61; --gc-accent-hover:#736950; --gc-accent-subtle:#f0ebe3;
+  --gc-border:#e5e7eb; --gc-border-l:#efefef;
+  --gc-ok:#6f8a6e; --gc-warn:#b0821f; --gc-danger:#a8433a;
+  --gc-gold:#c9b98d; --gc-scan:#1f1e1a;
+  --gc-serif:'Playfair Display',Georgia,serif;
+  --gc-sans:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --gc-mono:'SF Mono',ui-monospace,Menlo,monospace;
+  --r:12px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{background:var(--gc-desk)}
+body{font:14px/1.5 var(--gc-sans);color:var(--gc-body);background:var(--gc-canvas);
+  min-height:100dvh;max-width:1060px;margin:0 auto;
+  box-shadow:0 0 0 1px var(--gc-border-l),0 18px 60px rgba(0,0,0,.07)}
+.num{font-family:var(--gc-mono);font-variant-numeric:tabular-nums}
+.lbl{font:600 9.5px var(--gc-sans);letter-spacing:.11em;text-transform:uppercase;color:var(--gc-muted)}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+a{color:var(--gc-accent)}
+:focus-visible{outline:2px solid var(--gc-accent);outline-offset:2px}
+
+/* Kopf */
+header{position:sticky;top:0;z-index:20;background:var(--gc-chrome);
+  border-bottom:1px solid var(--gc-border);padding:10px 22px;
+  display:flex;align-items:center;gap:18px}
+header h1{font:600 17px var(--gc-serif);letter-spacing:-.015em;color:var(--gc-fg)}
+nav{display:flex;gap:2px;margin-left:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav button{padding:7px 13px;border-radius:999px;font-weight:550;color:var(--gc-desc);flex:none}
+nav button.an{background:var(--gc-accent-subtle);color:var(--gc-fg)}
+#kopf-recht{margin-left:auto;display:flex;align-items:center;gap:12px}
+#stand{font-size:11px;color:var(--gc-muted)}
+#avatar{width:30px;height:30px;border-radius:50%;background:var(--gc-accent);
+  color:#fff;font:600 12px var(--gc-sans);display:grid;place-items:center}
+
+main{padding:26px 22px 60px;min-height:70dvh}
+.ansicht{display:none}.ansicht.an{display:block}
+
+/* Karten & Zeilen */
+.karte{background:var(--gc-bg);border:1px solid var(--gc-border);border-radius:var(--r);
+  padding:16px 18px;margin-bottom:12px}
+.einflug{animation:einflug .32s cubic-bezier(.2,.9,.3,1)}
+@keyframes einflug{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+/* Konto-Menü rechts oben */
+#konto-knopf{display:flex;align-items:center;gap:7px;background:none;border:0;
+  padding:3px 4px;cursor:pointer;border-radius:20px}
+#konto-knopf:hover{background:var(--gc-chrome)}
+#konto-knopf .striche{display:flex;flex-direction:column;gap:3px}
+#konto-knopf .striche i{display:block;width:16px;height:1.8px;border-radius:2px;
+  background:var(--gc-fg)}
+#konto-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:60;width:262px;
+  background:var(--gc-bg);border:1px solid var(--gc-border);border-radius:14px;
+  box-shadow:0 16px 40px rgba(31,30,26,.16);padding:6px;text-align:left}
+#konto-menu[hidden]{display:none}
+#konto-menu .kopf{padding:11px 12px 9px;border-bottom:1px solid var(--gc-border);
+  margin-bottom:5px}
+#konto-menu .kopf b{display:block;font:600 14px var(--gc-sans);word-break:break-all}
+#konto-menu .kopf span{font-size:12px;color:var(--gc-muted)}
+#konto-menu button{display:flex;align-items:center;gap:10px;width:100%;background:none;
+  border:0;padding:10px 12px;border-radius:9px;font:400 14px var(--gc-sans);
+  color:var(--gc-fg);cursor:pointer;text-align:left}
+#konto-menu button:hover{background:var(--gc-chrome)}
+#konto-menu button[hidden]{display:none}
+#konto-menu button .sym{width:18px;text-align:center;flex:none;opacity:.75}
+#konto-menu .trenner{height:1px;background:var(--gc-border);margin:5px 0}
+#konto-menu .weg{color:var(--gc-danger)}
+/* Unterreiter innerhalb eines Bereichs — das Schema sichtbar machen */
+.unterreiter{display:flex;gap:4px;flex-wrap:wrap;margin:2px 0 18px;
+  border-bottom:1px solid var(--gc-border);padding-bottom:0}
+.unterreiter button{background:none;border:0;border-bottom:2px solid transparent;
+  padding:8px 12px;font:500 14px var(--gc-sans);color:var(--gc-muted);cursor:pointer}
+.unterreiter button:hover{color:var(--gc-fg)}
+.unterreiter button.an{color:var(--gc-fg);border-bottom-color:var(--gc-accent)}
+/* Ablage: Ordner wie in einem Laufwerk */
+.ordner{border:1px solid var(--gc-border);border-radius:12px;background:var(--gc-bg);
+  margin-bottom:10px;overflow:hidden}
+.ordner>summary{list-style:none;cursor:pointer;padding:13px 15px;display:flex;
+  align-items:center;gap:11px;font:600 15px var(--gc-sans)}
+.ordner>summary::-webkit-details-marker{display:none}
+.ordner>summary::before{content:"";width:9px;height:9px;flex:none;
+  border-right:2px solid var(--gc-muted);border-bottom:2px solid var(--gc-muted);
+  transform:rotate(-45deg);transition:transform .18s ease;margin-right:2px}
+.ordner[open]>summary::before{transform:rotate(45deg)}
+.ordner .zaehler{margin-left:auto;font:400 12.5px var(--gc-sans);color:var(--gc-muted)}
+.ordner .hinweis{font:400 12.5px var(--gc-sans);color:var(--gc-desc)}
+.ordner-inhalt{padding:0 15px 12px 37px}
+.ablage-zeile{display:flex;align-items:center;gap:10px;padding:9px 0;
+  border-top:1px solid var(--gc-border);font-size:14px}
+.ablage-zeile a{color:var(--gc-fg);text-decoration:none;flex:1}
+.ablage-zeile a:hover{text-decoration:underline}
+.ablage-zeile .wann{font-size:12px;color:var(--gc-muted);flex:none}
+.jahr-kopf{font:600 20px var(--gc-serif);margin:22px 0 10px}
+/* Salon-Check: Zuschauen-Zeilen + Ampel-Karten */
+.sc-zeile{display:flex;justify-content:space-between;align-items:center;gap:10px;
+  padding:9px 2px;border-bottom:1px solid var(--gc-border-l)}
+.sc-zeile b{font-variant-numeric:tabular-nums}
+.sc-haken{opacity:0;color:var(--gc-ok);animation:scHaken .3s ease .45s forwards}
+@keyframes scHaken{to{opacity:1}}
+.sc-karten{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.ampel{width:10px;height:10px;border-radius:50%;flex:none;margin-top:6px}
+.ampel.gruen{background:var(--gc-ok)} .ampel.gelb{background:var(--gc-gold)}
+.ampel.rot{background:var(--gc-danger)} .ampel.grau{background:var(--gc-muted)}
+.sc-puls{display:inline-block;width:9px;height:9px;border-radius:50%;flex:none;
+  background:var(--gc-ok);animation:scPuls 1.2s ease infinite}
+@keyframes scPuls{50%{opacity:.35}}
+@media print{header,#sc-vorschlaege,.chip{display:none!important}}
+.gruss{font:600 26px var(--gc-serif);letter-spacing:-.015em;color:var(--gc-fg);margin:4px 0 2px}
+.sektion{margin:26px 0 10px}
+.zeile{display:flex;align-items:center;gap:14px;background:var(--gc-bg);
+  border:1px solid var(--gc-border);border-radius:var(--r);padding:12px 16px;
+  margin-bottom:9px;width:100%;text-align:left}
+.zeile:hover{border-color:var(--gc-accent)}
+.thumb{width:44px;height:56px;object-fit:cover;border-radius:4px;background:var(--gc-desk);
+  box-shadow:0 1px 4px rgba(0,0,0,.12);flex:none}
+.thumb.doc{display:grid;place-items:center;color:var(--gc-muted);font-size:20px}
+.zmitte{flex:1;min-width:0}
+.zname{font-weight:600;color:var(--gc-fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.zstatus{font-size:12.5px;margin-top:1px}
+.zstatus.ok{color:var(--gc-ok)}.zstatus.frage{color:var(--gc-warn)}.zstatus.laeuft{color:var(--gc-muted)}
+.zrechts{text-align:right;flex:none}
+.zbetrag{font:600 14px var(--gc-mono);font-variant-numeric:tabular-nums;color:var(--gc-fg)}
+.zkonto{font:11px var(--gc-mono);color:var(--gc-muted);margin-top:1px}
+
+/* Chips & Schalter */
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 16px}
+.chip{padding:6px 13px;border-radius:999px;border:1px solid var(--gc-border);
+  background:var(--gc-bg);font-size:12.5px;color:var(--gc-desc)}
+.chip.an{background:var(--gc-fg);border-color:var(--gc-fg);color:#fff}
+.mon-schalter{display:flex;align-items:center;gap:10px;margin-left:auto}
+.mon-schalter button{width:28px;height:28px;border-radius:8px;border:1px solid var(--gc-border);background:var(--gc-bg)}
+.mon-schalter b{font:600 13px var(--gc-sans);color:var(--gc-fg);min-width:110px;text-align:center}
+
+/* Nachfrage-Karte */
+.nachfrage{border-left:3px solid var(--gc-warn)}
+.nachfrage h3{font:600 15px var(--gc-serif);color:var(--gc-fg);margin-bottom:2px}
+.nachfrage p{font-size:12.5px;color:var(--gc-desc)}
+.nachfrage .hin{margin-top:10px;display:inline-block;padding:7px 14px;border-radius:8px;
+  background:var(--gc-accent-subtle);color:var(--gc-fg);font-weight:550;font-size:13px}
+
+/* Monat in Zahlen */
+.mrow{display:flex;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px solid var(--gc-border-l)}
+.mrow:last-child{border-bottom:none}
+.mrow .art{font-weight:600;color:var(--gc-fg)}
+.mrow .wer{font-size:12px;color:var(--gc-muted);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mrow .summe{font:600 14px var(--gc-mono);font-variant-numeric:tabular-nums;color:var(--gc-fg)}
+
+/* Auswertung („Zahlen") — BH-Auswertung light */
+.arow{padding:10px 0;border-bottom:1px solid var(--gc-border-l)}
+.arow:last-child{border-bottom:none}
+.arow .kopfz{display:flex;align-items:baseline;gap:10px}
+.arow .kopfz .art{font-weight:600;color:var(--gc-fg);flex:1}
+.arow .kopfz .delta{font-size:11.5px;font-weight:600}
+.delta.hoch{color:var(--gc-warn)}.delta.runter{color:var(--gc-ok)}.delta.neu{color:var(--gc-muted)}
+.balken{height:6px;background:var(--gc-accent-subtle);border-radius:3px;margin-top:7px;overflow:hidden}
+.balken i{display:block;height:100%;background:var(--gc-accent);border-radius:3px}
+.gruppe-kopf{margin:20px 0 8px}
+.suchfeld{width:100%;padding:10px 14px;border:1px solid var(--gc-border);border-radius:999px;
+  font:inherit;background:var(--gc-bg);margin:4px 0 10px}
+
+/* Detail */
+#detail-grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:22px}
+@media(max-width:820px){#detail-grid{grid-template-columns:1fr}}
+#buehne{background:var(--gc-desk);border-radius:var(--r);padding:22px;display:flex;
+  align-items:flex-start;justify-content:center;min-height:340px}
+#buehne img{max-width:100%;max-height:74dvh;border-radius:5px;
+  box-shadow:0 6px 26px rgba(0,0,0,.18);cursor:zoom-in}
+#buehne img.zoom{max-height:none;cursor:zoom-out}
+#buehne .pdfhinweis{align-self:center;color:var(--gc-muted);text-align:center;font-size:13px}
+.sekt{margin-bottom:20px}
+.sekt .lbl{display:block;margin-bottom:8px}
+.feld{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--gc-border-l);font-size:13.5px}
+.feld:last-child{border-bottom:none}
+.feld b{font-family:var(--gc-mono);font-variant-numeric:tabular-nums;font-weight:600;color:var(--gc-fg)}
+.feld span{color:var(--gc-desc)}
+
+/* Beleg-Weg */
+.weg{list-style:none}
+.weg li{display:flex;gap:12px;padding:0 0 16px;position:relative}
+.weg li::before{content:"";position:absolute;left:5.5px;top:16px;bottom:0;width:1px;background:var(--gc-border)}
+.weg li:last-child::before{display:none}
+.weg .punkt{width:12px;height:12px;border-radius:50%;flex:none;margin-top:3px;
+  background:var(--gc-accent);transition:transform .3s}
+.weg li.offen .punkt{background:var(--gc-bg);border:1.5px solid var(--gc-border)}
+.weg li.frage .punkt{background:var(--gc-warn)}
+.weg .wtitel{font-weight:600;color:var(--gc-fg);font-size:13px}
+.weg .wsub{font-size:12px;color:var(--gc-desc)}
+.weg li.offen .wtitel{color:var(--gc-muted);font-weight:500}
+
+/* Haken & Siegel */
+.haken{display:flex;align-items:center;gap:12px}
+.haken .kreis{width:38px;height:38px;border-radius:50%;background:var(--gc-ok);color:#fff;
+  display:grid;place-items:center;font-size:19px;flex:none}
+.haken.warte .kreis{background:var(--gc-desk);color:var(--gc-muted)}
+.haken .txt b{display:block;color:var(--gc-fg);font-size:14px}
+.haken .txt span{font-size:12.5px;color:var(--gc-desc)}
+.stempel{animation:stempel .45s cubic-bezier(.2,1.4,.4,1)}
+@keyframes stempel{0%{transform:scale(1.7);opacity:0}60%{transform:scale(.95);opacity:1}100%{transform:scale(1)}}
+.datev{display:flex;flex-wrap:wrap;gap:8px}
+.datev .box{background:var(--gc-canvas);border:1px solid var(--gc-border);border-radius:8px;padding:8px 12px}
+.datev .box i{display:block;font:600 9px var(--gc-sans);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--gc-muted);font-style:normal}
+.datev .box b{font:600 13px var(--gc-mono);font-variant-numeric:tabular-nums;color:var(--gc-fg)}
+.siegel{display:flex;align-items:center;gap:10px;background:var(--gc-accent-subtle);
+  border-radius:8px;padding:10px 14px}
+.siegel .rosette{color:var(--gc-accent);font-size:17px}
+.siegel .code{font:12px var(--gc-mono);color:var(--gc-fg)}
+.siegel small{display:block;color:var(--gc-desc);font-size:11.5px}
+.siegel button{margin-left:auto;font-size:12px;color:var(--gc-accent);font-weight:600}
+
+/* Chat */
+#chatlog{display:flex;flex-direction:column;gap:12px;margin-bottom:16px;min-height:180px}
+.msg{max-width:82%;padding:10px 14px;border-radius:14px;font-size:13.5px;white-space:pre-wrap}
+.msg.ich{align-self:flex-end;background:var(--gc-fg);color:#fff;border-bottom-right-radius:4px}
+.msg.babu{align-self:flex-start;background:var(--gc-bg);border:1px solid var(--gc-border);border-bottom-left-radius:4px}
+.msg.babu.tippt::after{content:"▋";animation:blink 1s steps(1) infinite;color:var(--gc-muted)}
+@keyframes blink{50%{opacity:0}}
+#chatform{display:flex;gap:8px;position:sticky;bottom:14px}
+#chatfrage{flex:1;padding:11px 14px;border:1px solid var(--gc-border);border-radius:999px;
+  font:inherit;background:var(--gc-bg)}
+#chatform button{background:var(--gc-fg);color:#fff;border-radius:999px;padding:0 18px;font-weight:600}
+.beispiele{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+#chat-anker{display:none;align-items:center;gap:8px;background:var(--gc-accent-subtle);
+  border-radius:8px;padding:6px 12px;margin-bottom:8px;font-size:12.5px}
+#chat-anker button{color:var(--gc-muted)}
+.quellen{font-size:11.5px;color:var(--gc-muted);margin-top:4px}
+
+/* Login — im Look der Startseite: Papier, Serif, weiße Karten.
+   Luft oben als PADDING, nicht Margin — Margin würde aus dem Blatt
+   herauskollabieren und die Seite wirkt oben angeschnitten. */
+#login{max-width:480px;margin:0 auto;padding:min(9dvh,90px) 20px 40px}
+#login .heim{display:block;text-align:center;font:600 26px var(--gc-serif);
+  color:var(--gc-fg);text-decoration:none;letter-spacing:-.015em;margin-bottom:22px}
+#login .kicker{margin-bottom:14px;color:var(--gc-accent-hover);text-align:center}
+#login h2{font:600 clamp(30px,6vw,40px) var(--gc-serif);letter-spacing:-.015em;
+  color:var(--gc-fg);margin-bottom:8px;text-align:center;line-height:1.1;text-wrap:balance}
+#login > p{color:var(--gc-desc);margin-bottom:26px;text-align:center;font-size:15px}
+.lkarte{background:var(--gc-bg);border:1px solid var(--gc-border);border-radius:16px;
+  padding:24px;margin-bottom:16px;box-shadow:0 10px 30px rgba(31,30,26,.07)}
+#login input{width:100%;padding:14px 16px;border:1px solid var(--gc-border);border-radius:10px;
+  font:16px var(--gc-sans);background:var(--gc-bg);margin-bottom:10px;
+  transition:border-color .15s ease, box-shadow .15s ease}
+#login input:focus{border-color:var(--gc-accent);outline:none;
+  box-shadow:0 0 0 3px rgba(133,123,97,.18)}
+#login input::placeholder{color:#767676}
+#login .voll{width:100%;background:var(--gc-fg);color:#fff;padding:14px 26px;
+  border-radius:12px;font-weight:600;font-size:16px;margin-top:10px;
+  transition:transform .12s ease, background .15s ease}
+#login .voll:hover{background:#000}
+#login .voll:active{transform:translateY(1px)}
+#login .voll[disabled]{opacity:.55;cursor:progress}
+#login .fehler{color:var(--gc-danger);font-size:13px;margin-top:12px;display:none;
+  background:rgba(168,67,58,.08);border-radius:8px;padding:9px 12px}
+#login small{display:block;margin-top:12px;color:var(--gc-muted);font-size:12px;line-height:1.5}
+.pw-wrap{position:relative}
+.pw-wrap input{padding-right:46px}
+#pw-auge{position:absolute;right:6px;top:50%;transform:translateY(-50%);
+  width:36px;height:36px;display:grid;place-items:center;color:#767676;margin-top:-5px}
+#pw-auge svg{width:20px;height:20px}
+/* Aufklapper: gestylt statt Browser-Dreieck */
+#login details{margin-top:14px;border-top:1px solid var(--gc-border-l);padding-top:12px}
+#login details>summary{list-style:none;cursor:pointer;font-size:13px;
+  color:var(--gc-desc);display:flex;align-items:center;gap:8px;padding:5px 0}
+#login details>summary::-webkit-details-marker{display:none}
+#login details>summary::before{content:"";width:6px;height:6px;flex:none;
+  border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;
+  transform:rotate(-45deg);transition:transform .18s ease}
+#login details[open]>summary::before{transform:rotate(45deg)}
+#login .hilfetext{font-size:13px;color:var(--gc-desc);padding:8px 0 4px;line-height:1.55}
+.login-fuss{text-align:center;font-size:12px;color:var(--gc-muted);
+  margin-top:28px;line-height:1.7}
+.login-fuss a{color:var(--gc-accent-hover)}
+#reg-einstieg b{font:600 17px var(--gc-serif);color:var(--gc-fg)}
+#reg-einstieg p{margin:4px 0 14px;color:var(--gc-desc);font-size:13.5px}
+#reg-einstieg .zart{width:100%;background:var(--gc-accent-subtle);color:var(--gc-fg);
+  padding:14px 26px;border-radius:12px;font-weight:600;font-size:16px;
+  transition:transform .12s ease}
+#reg-einstieg .zart:active{transform:translateY(1px)}
+
+/* Zustände */
+.leer{color:var(--gc-desc);text-align:center;padding:44px 20px}
+.leer b{display:block;font:600 17px var(--gc-serif);color:var(--gc-fg);margin-bottom:5px}
+.skelett{height:58px;border-radius:var(--r);background:linear-gradient(100deg,var(--gc-accent-subtle) 30%,var(--gc-canvas) 50%,var(--gc-accent-subtle) 70%);
+  background-size:200% 100%;animation:schimmer 1.4s infinite;margin-bottom:9px}
+@keyframes schimmer{to{background-position:-200% 0}}
+#offline{display:none;background:var(--gc-warn);color:#fff;padding:8px 22px;font-size:13px}
+.zurueck{color:var(--gc-accent);font-weight:600;font-size:13px;margin-bottom:14px;display:inline-block}
+
+/* Sheet (Bewirtung) */
+#schleier{position:fixed;inset:0;background:rgba(17,17,17,.34);z-index:40;display:none;
+  align-items:flex-end;justify-content:center}
+#schleier.an{display:flex}
+#sheet{background:var(--gc-bg);border-radius:18px 18px 0 0;padding:22px 22px 30px;
+  width:min(560px,100%);animation:einflug .32s cubic-bezier(.2,.9,.3,1)}
+#sheet h3{font:600 19px var(--gc-serif);color:var(--gc-fg);margin-bottom:4px}
+#sheet p{color:var(--gc-desc);font-size:13px;margin-bottom:14px}
+#sheet label{display:block;font:600 9.5px var(--gc-sans);letter-spacing:.11em;
+  text-transform:uppercase;color:var(--gc-muted);margin:12px 0 5px}
+#sheet input{width:100%;padding:11px 13px;border:1px solid var(--gc-border);
+  border-radius:8px;font:inherit;background:var(--gc-bg)}
+#sheet .fuss{font-size:10.5px;color:var(--gc-muted);margin-top:12px}
+#sheet .aktion{width:100%;margin-top:16px;background:var(--gc-fg);color:#fff;
+  padding:13px;border-radius:10px;font-weight:600}
+#sheet .aktion:disabled{opacity:.4}
+
+/* Drop-Overlay */
+#drop{position:fixed;inset:0;z-index:50;display:none;place-items:center;
+  background:rgba(250,249,245,.92);border:3px dashed var(--gc-accent);border-radius:18px}
+#drop.an{display:grid}
+#drop b{font:600 24px var(--gc-serif);color:var(--gc-fg)}
+
+/* Aufräumen */
+#a-aufraeumen .stapel{max-width:520px;margin:0 auto}
+#a-aufraeumen .bild{background:var(--gc-desk);border-radius:var(--r);padding:18px;
+  display:grid;place-items:center;margin-bottom:14px}
+#a-aufraeumen .bild img{max-width:100%;max-height:44dvh;border-radius:5px;
+  box-shadow:0 6px 26px rgba(0,0,0,.18)}
+#a-aufraeumen .aktionen{display:flex;gap:10px;margin-top:14px}
+#a-aufraeumen .aktionen button{flex:1;padding:13px;border-radius:10px;font-weight:600}
+#a-aufraeumen .spaeter{border:1px solid var(--gc-border);background:var(--gc-bg)}
+#a-aufraeumen .klaeren{background:var(--gc-fg);color:#fff}
+.fertig-stempel{font-size:44px;color:var(--gc-ok);text-align:center}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media(max-width:640px){
+  header{padding:10px 14px;gap:8px}
+  nav button{padding:7px 10px}
+  main{padding:20px 14px 60px}
+  #stand{display:none}
+}
+</style>
+</head>
+<body>
+
+<div id="offline">Gerade keine Verbindung. Deine Belege sind sicher — wir zeigen den Stand von eben.</div>
+
+<div id="login" hidden>
+  <a class="heim" href="/">babu</a>
+  <div class="lbl kicker">für deinen Salon</div>
+  <h2>Schön, dass du da bist.</h2>
+  <p>Belege, Kassenbuch und Antworten — alles an einem Ort.</p>
+  <div id="login-felder">
+    <div class="lkarte">
+      <form id="login-form" novalidate>
+        <input id="login-email" type="email" placeholder="E-Mail" autocomplete="username" required>
+        <div class="pw-wrap">
+          <input id="login-passwort" type="password" placeholder="Passwort" autocomplete="current-password" required>
+          <button type="button" id="pw-auge" aria-label="Passwort anzeigen" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+        <button id="anmelden" class="voll" type="submit">Anmelden</button>
+        <div class="fehler" id="login-fehler" role="alert" aria-live="polite"></div>
+      </form>
+      <details id="pw-vergessen">
+        <summary>Passwort vergessen?</summary>
+        <p class="hilfetext">Halb so wild: Sag deiner babu-Ansprechperson kurz Bescheid —
+        du bekommst ein neues Startpasswort und wählst danach wieder dein eigenes.</p>
+      </details>
+      <details id="code-login">
+        <summary>Mit Zugangscode anmelden (Einrichtung)</summary>
+        <input id="zugangscode" type="password" placeholder="Zugangscode" autocomplete="off" style="margin-top:10px">
+        <button id="anmelden-code" class="voll" style="background:var(--gc-accent-subtle);color:var(--gc-fg);margin-top:0">Mit Code anmelden</button>
+      </details>
+    </div>
+    <div class="lkarte" id="reg-einstieg">
+      <b>Neu bei babu?</b>
+      <p>Leg dir jetzt deinen Zugang an — ein paar kurze Fragen,
+      dann bist du drin. Dauert zwei Minuten.</p>
+      <button id="reg-start" class="zart">Konto anlegen</button>
+    </div>
+  </div>
+  <div id="reg-bereich" hidden></div>
+  <div class="login-fuss">babu · 0711 Intelligence · Stuttgart · <a href="/">Zur Startseite</a><br>
+  babu ersetzt keine individuelle Steuerberatung.</div>
+</div>
+
+<div id="app" hidden>
+<header>
+  <h1>babu</h1>
+  <nav>
+    <button data-ziel="heute">Heute</button>
+    <button data-ziel="belege">Buchhaltung</button>
+    <button data-ziel="zahlen">Auswertung</button>
+    <button data-ziel="ablage" style="position:relative">Ablage<span id="post-punkt" hidden
+      style="position:absolute;top:4px;right:2px;width:7px;height:7px;border-radius:50%;background:var(--gc-accent)"></span></button>
+    <button data-ziel="fragen">Fragen</button>
+  </nav>
+  <div id="kopf-recht" style="position:relative">
+    <span id="stand"></span>
+    <button class="chip" id="hochladen-knopf">Beleg hochladen</button>
+    <input type="file" id="hochladen-datei" accept=".jpg,.jpeg,.png,.pdf,.heic,image/*,application/pdf" multiple hidden>
+    <button id="konto-knopf" aria-label="Dein Konto und Einstellungen"
+            aria-haspopup="true" aria-expanded="false">
+      <span class="striche"><i></i><i></i><i></i></span>
+      <span id="avatar" title="Angemeldet">·</span>
+    </button>
+    <div id="konto-menu" hidden role="menu">
+      <div class="kopf"><b id="menu-un">…</b><span id="menu-rolle"></span></div>
+      <button role="menuitem" onclick="menuGeh('#einstellungen')">
+        <span class="sym">⚙️</span> Konto &amp; Einstellungen</button>
+      <button role="menuitem" onclick="menuGeh('#team')">
+        <span class="sym">✂️</span> Dein Team</button>
+      <button role="menuitem" onclick="menuGeh('#export')">
+        <span class="sym">📦</span> Export für die Buchhaltung</button>
+      <button role="menuitem" id="menu-verwaltung" hidden onclick="menuGeh('#verwaltung')">
+        <span class="sym">🔑</span> Zugänge verwalten</button>
+      <div class="trenner"></div>
+      <button role="menuitem" class="weg" id="menu-abmelden">
+        <span class="sym">↩</span> Abmelden</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- HEUTE -->
+  <section class="ansicht" id="a-heute">
+    <div class="lbl" id="heute-eyebrow">DEIN MONAT</div>
+    <div class="gruss" id="heute-gruss">Guten Tag ✨</div>
+    <div id="heute-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+  </section>
+
+  <!-- BUCHHALTUNG: Belege -->
+  <section class="ansicht" id="a-belege">
+    <div class="unterreiter">
+      <button class="an" onclick="location.hash='#belege'">Belege</button>
+      <button onclick="location.hash='#bank'">Bank</button>
+      <button onclick="location.hash='#saloncheck'">Salon-Check</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="gruss" style="font-size:22px">Belege</div>
+      <div class="mon-schalter">
+        <button id="mon-zurueck" aria-label="Vormonat">‹</button>
+        <b id="mon-anzeige"></b>
+        <button id="mon-vor" aria-label="Folgemonat">›</button>
+      </div>
+    </div>
+    <div class="chips" id="filter-chips">
+      <button class="chip an" data-f="">Alle</button>
+      <button class="chip" data-f="nachfrage">Braucht dich</button>
+      <button class="chip" data-f="erfasst">In Prüfung</button>
+      <button class="chip" data-f="geprüft">Fertig</button>
+    </div>
+    <div id="belege-liste"><div class="skelett"></div><div class="skelett"></div><div class="skelett"></div></div>
+  </section>
+
+  <!-- DETAIL -->
+  <section class="ansicht" id="a-detail">
+    <a class="zurueck" href="#belege">‹ Alle Belege</a>
+    <div id="detail-inhalt"><div class="skelett" style="height:300px"></div></div>
+  </section>
+
+  <!-- MONATSABSCHLUSS: BWA + Umsatzsteuer-Entwurf aus eigenen Daten -->
+  <section class="ansicht" id="a-abschluss">
+    <div class="unterreiter">
+      <button onclick="location.hash='#zahlen'">Ausgaben</button>
+      <button class="an" onclick="location.hash='#abschluss'">Monatsabschluss</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="gruss" style="font-size:22px">Monatsabschluss</div>
+      <div class="mon-schalter">
+        <button id="ab-mon-zurueck" aria-label="Vormonat">‹</button>
+        <b id="ab-mon-anzeige"></b>
+        <button id="ab-mon-vor" aria-label="Folgemonat">›</button>
+      </div>
+    </div>
+    <p style="color:var(--gc-desc);margin:6px 0 16px">Aus deinen Belegen und
+      deinem Kassenbuch gerechnet — ein Entwurf, den dein Steuer-Backend prüft.</p>
+    <div id="abschluss-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+  </section>
+
+  <!-- ZAHLEN (Auswertung wie die BH-Auswertung der Kanzlei, nur lesbar) -->
+  <section class="ansicht" id="a-zahlen">
+    <div class="unterreiter">
+      <button class="an" onclick="location.hash='#zahlen'">Ausgaben</button>
+      <button onclick="location.hash='#abschluss'">Monatsabschluss</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="gruss" style="font-size:22px">Deine Zahlen</div>
+      <div class="mon-schalter">
+        <button id="z-mon-zurueck" aria-label="Vormonat">‹</button>
+        <b id="z-mon-anzeige"></b>
+        <button id="z-mon-vor" aria-label="Folgemonat">›</button>
+      </div>
+    </div>
+    <p style="color:var(--gc-desc);margin-bottom:14px">Wohin dein Geld geht — und wie es sich zum Vormonat verändert.</p>
+    <div id="zahlen-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+  </section>
+
+  <!-- SALON-CHECK (Abschluss-Unterlagen → zuschauen → Ampel-Report) -->
+  <section class="ansicht" id="a-saloncheck">
+    <div class="unterreiter">
+      <button onclick="location.hash='#belege'">Belege</button>
+      <button onclick="location.hash='#bank'">Bank</button>
+      <button class="an" onclick="location.hash='#saloncheck'">Salon-Check</button>
+    </div>
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Salon-Check</div>
+    <p style="color:var(--gc-desc);margin-bottom:14px">Dein letztes Jahr auf einen Blick — wir lesen deine Unterlagen selbst.</p>
+    <div id="saloncheck-inhalt"><div class="skelett"></div></div>
+    <input type="file" id="sc-datei" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*" multiple hidden>
+  </section>
+
+  <!-- BANK (Zahlungs-Abgleich Konto ↔ Belege) -->
+  <section class="ansicht" id="a-bank">
+    <div class="unterreiter">
+      <button onclick="location.hash='#belege'">Belege</button>
+      <button class="an" onclick="location.hash='#bank'">Bank</button>
+      <button onclick="location.hash='#saloncheck'">Salon-Check</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="gruss" style="font-size:22px">Konto</div>
+      <div class="mon-schalter">
+        <button id="b-mon-zurueck" aria-label="Vormonat">‹</button>
+        <b id="b-mon-anzeige"></b>
+        <button id="b-mon-vor" aria-label="Folgemonat">›</button>
+      </div>
+    </div>
+    <p style="color:var(--gc-desc);margin-bottom:10px">Hat jede Zahlung vom Konto ihren Beleg?</p>
+    <button class="chip" id="bank-auszug-knopf" style="margin-bottom:14px">Kontoauszug ablegen</button>
+    <div id="bank-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+  </section>
+
+  <!-- POST -->
+  <!-- ABLAGE: alle Unterlagen an einem Ort, nach Jahr sortiert -->
+  <section class="ansicht" id="a-ablage">
+    <div class="unterreiter">
+      <button class="an" onclick="location.hash='#ablage'">Alle Unterlagen</button>
+      <button onclick="location.hash='#post'">Neue Post</button>
+    </div>
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Deine Ablage</div>
+    <p style="color:var(--gc-desc);margin-bottom:14px">Alles, was zu deinem Salon
+      gehört — geordnet nach Jahr. Aufheben musst du nichts mehr selbst.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+      <button class="chip" id="ablage-brief">Brief vom Amt ablegen</button>
+      <button class="chip" id="ablage-vertrag">Vertrag ablegen</button>
+      <button class="chip" id="ablage-auszug">Kontoauszug ablegen</button>
+      <input type="file" id="vertrag-datei" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*" hidden>
+    </div>
+    <div id="ablage-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+  </section>
+
+  <section class="ansicht" id="a-post">
+    <div class="unterreiter">
+      <button onclick="location.hash='#ablage'">Alle Unterlagen</button>
+      <button class="an" onclick="location.hash='#post'">Neue Post</button>
+    </div>
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Post</div>
+    <p style="color:var(--gc-desc);margin-bottom:10px">Was deine Kanzlei für dich bereitlegt.</p>
+    <button class="chip" id="auszug-knopf" style="margin-bottom:10px">Kontoauszug ablegen</button>
+    <button class="chip" id="brief-knopf" style="margin-bottom:10px">Brief vom Amt ablegen</button>
+    <input type="file" id="auszug-datei" accept=".pdf,application/pdf" hidden>
+    <input type="file" id="brief-datei" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*" hidden>
+    <input class="suchfeld" id="post-suche" placeholder="Suchen — z. B. Lohn, Auswertung …" autocomplete="off">
+    <div class="chips" style="margin-top:0">
+      <button class="chip an" id="post-f-alle">Alle</button>
+      <button class="chip" id="post-f-ungelesen">Ungelesen</button>
+    </div>
+    <div id="post-liste"><div class="skelett"></div><div class="skelett"></div></div>
+  </section>
+
+  <!-- EINSTELLUNGEN -->
+  <!-- TEAM: wer im Salon arbeitet und was er kostet -->
+  <section class="ansicht" id="a-team">
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Dein Team</div>
+    <p style="color:var(--gc-desc);margin-bottom:16px">Wer bei dir arbeitet und
+      was du zahlst. Mehr braucht babu nicht — Steuerklasse und Sozialversicherung
+      macht das Lohnbüro. Die Summe rechnen wir in deiner Auswertung mit.</p>
+    <div id="team-inhalt"><div class="skelett"></div></div>
+  </section>
+
+  <!-- EXPORT: Buchungsstapel für die Buchhaltung -->
+  <section class="ansicht" id="a-export">
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Export für die Buchhaltung</div>
+    <p style="color:var(--gc-desc);margin-bottom:16px">Der fertige Buchungsstapel eines
+      Monats — im Format, das Buchhaltungsprogramme lesen. Normalerweise holt ihn deine
+      Kanzlei selbst; hier kannst du ihn zusätzlich herunterladen.</p>
+    <div class="karte">
+      <div class="mon-schalter" style="margin-bottom:12px">
+        <button id="e-mon-zurueck" aria-label="Vormonat">‹</button>
+        <b id="e-mon-anzeige"></b>
+        <button id="e-mon-vor" aria-label="Folgemonat">›</button>
+      </div>
+      <div id="export-inhalt"><div class="skelett"></div></div>
+    </div>
+    <p style="color:var(--gc-muted);font-size:13px;margin-top:14px">Fertige Stapel liegen
+      auch in deiner <a href="#ablage" style="color:var(--gc-accent)">Ablage</a> unter
+      „Buchungsstapel".</p>
+  </section>
+
+  <section class="ansicht" id="a-einstellungen">
+    <div class="gruss" style="font-size:22px;margin-bottom:14px">Einstellungen</div>
+    <div class="sektion lbl">Zugang</div>
+    <div class="karte"><div class="feld"><span>Angemeldet als</span><b id="einst-un" style="font-family:var(--gc-sans)"></b></div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="chip" id="abmelden-knopf">Abmelden</button>
+        <button class="chip" id="verwaltung-knopf" hidden onclick="location.hash='#verwaltung'">Zugänge verwalten ›</button>
+      </div></div>
+    <div class="sektion lbl" id="einst-pw-lbl" hidden>Passwort ändern</div>
+    <div class="karte" id="einst-pw" hidden>
+      <input id="pw-alt" type="password" placeholder="Bisheriges Passwort" autocomplete="current-password"
+        style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-bottom:8px">
+      <input id="pw-neu" type="password" placeholder="Neues Passwort (mindestens 8 Zeichen)" autocomplete="new-password"
+        style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-bottom:10px">
+      <button class="chip" id="pw-speichern">Passwort ändern</button>
+      <span id="pw-status" style="font-size:12px;margin-left:8px;color:var(--gc-muted)"></span>
+    </div>
+    <div class="sektion lbl">Dein Paket</div>
+    <div class="karte" id="einst-paket"><div class="skelett"></div></div>
+    <div class="sektion lbl">Sag mir Bescheid</div>
+    <div class="karte" id="einst-schalter">
+      <label class="feld" style="cursor:pointer"><span>Wenn ein Beleg eine Frage hat</span>
+        <input type="checkbox" data-s="benachrichtigung_frage"></label>
+      <label class="feld" style="cursor:pointer"><span>Wenn Post von der Kanzlei kommt</span>
+        <input type="checkbox" data-s="benachrichtigung_post"></label>
+      <label class="feld" style="cursor:pointer"><span>Einmal am Abend eine Zusammenfassung</span>
+        <input type="checkbox" data-s="benachrichtigung_abend"></label>
+    </div>
+    <div class="sektion lbl">Meine Kanzlei</div>
+    <div class="karte"><input id="einst-kanzlei" placeholder="Name der Kanzlei"
+      style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit"></div>
+    <div class="sektion lbl">Mein Betrieb</div>
+    <div class="karte"><input id="einst-betrieb" placeholder="Name des Salons"
+      style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit"></div>
+  </section>
+
+  <!-- VERWALTUNG (nur Verwaltungs-Rolle): Anfragen einrichten, Nutzer pflegen -->
+  <section class="ansicht" id="a-verwaltung">
+    <a class="zurueck" href="#einstellungen">‹ Einstellungen</a>
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Zugänge</div>
+    <p style="color:var(--gc-desc);margin-bottom:16px">Anfragen einrichten, Zugänge verwalten.
+    Startpasswörter erscheinen genau einmal — gleich notieren und persönlich weitergeben.</p>
+    <div id="verwaltung-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+  </section>
+
+  <!-- EINRICHTUNG (Steuerdaten, eine Frage pro Schritt) -->
+  <section class="ansicht" id="a-einrichtung">
+    <a class="zurueck" href="#heute">‹ Heute</a>
+    <div style="max-width:560px;margin:0 auto" id="einrichtung-inhalt"></div>
+  </section>
+
+  <!-- AUFRÄUMEN -->
+  <section class="ansicht" id="a-aufraeumen">
+    <a class="zurueck" href="#heute">‹ Heute</a>
+    <div class="stapel" id="stapel-inhalt"></div>
+  </section>
+
+  <!-- FRAGEN -->
+  <section class="ansicht" id="a-fragen">
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Fragen</div>
+    <p style="color:var(--gc-desc);margin-bottom:16px">Frag mich zu deinen Belegen — oder ganz allgemein zu Steuer-Grundfragen.</p>
+    <div class="beispiele" id="chat-beispiele">
+      <button class="chip">Was habe ich diesen Monat für Ware ausgegeben?</button>
+      <button class="chip">Welche Belege brauchen mich noch?</button>
+      <button class="chip">Was kann ich als Friseurin absetzen?</button>
+      <button class="chip">Was ist die Kleinunternehmer-Regel?</button>
+    </div>
+    <div id="chatlog"></div>
+    <div id="chat-anker"><span id="chat-anker-text"></span><button id="chat-anker-weg" aria-label="Anker entfernen">✕</button></div>
+    <form id="chatform">
+      <input id="chatfrage" placeholder="Frag mich etwas zu deinen Belegen …" autocomplete="off">
+      <button>Fragen</button>
+    </form>
+  </section>
+</main>
+</div>
+
+<div id="drop"><b>Ablegen — ich kümmere mich drum</b></div>
+
+<div id="schleier">
+  <div id="sheet" role="dialog" aria-modal="true">
+    <h3>Mit wem warst du essen?</h3>
+    <p id="sheet-sub"></p>
+    <label for="sheet-anlass">Anlass</label>
+    <input id="sheet-anlass" placeholder="z. B. Team-Essen nach der Schulung">
+    <label for="sheet-leute">Wer war dabei? (auch du)</label>
+    <input id="sheet-leute" placeholder="z. B. Nicole, Jana, Frau Holder">
+    <button class="aktion" id="sheet-fertig">Fertig — buchen</button>
+    <div class="fuss">§4 Abs. 5 Nr. 2 EStG · die Unterschrift gehört aufs Papier</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ————— Werkzeuge ————— */
+const $ = s => document.querySelector(s);
+const euro = n => n == null ? "—" : n.toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2}) + " €";
+const MONATE = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+const monatName = m => { const [j,mm] = m.split("-"); return MONATE[+mm-1] + " " + j; };
+const jetztMonat = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0"); };
+const zeitKurz = iso => { if(!iso) return ""; const d = new Date(iso);
+  return d.toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"}) + ", " +
+         d.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"}); };
+
+async function api(pfad, opts){
+  const r = await fetch(pfad, Object.assign({credentials:"same-origin"}, opts));
+  if (r.status === 401) { zeigeLogin(); throw new Error("abgemeldet"); }
+  return r;
+}
+
+/* ————— Status-Sätze (Sprachregel: menschlich, kein Technik-Vokabular) ————— */
+function statusSatz(z){
+  if (z.status === "exportiert") return ["bei der Kanzlei ✓","ok"];
+  if (z.status === "geprüft") return ["geprüft ✓","ok"];
+  if (z.status === "erfasst") return ["wird noch gelesen …","laeuft"];
+  if (z.bewirtung && !z.bewirtung_beantwortet) return ["Mit wem warst du essen?","frage"];
+  if (z.offen && z.offen.length) return [offenSatz(z.offen[0]),"frage"];
+  return ["eine Frage ist offen","frage"];
+}
+function offenSatz(o){
+  const m = /Differenz Zahlbetrag ([\d.,]+) vs\. Brutto ([\d.,]+)/.exec(o||"");
+  if (m) return `Gezahlt ${m[1]} € bei ${m[2]} € Rechnung — Trinkgeld?`;
+  return o || "eine Frage ist offen";
+}
+
+/* ————— Anmeldung ————— */
+function zeigeLogin(){ $("#app").hidden = true; $("#login").hidden = false; $("#zugangscode").focus(); }
+function zeigeApp(){ $("#login").hidden = true; $("#app").hidden = false; routen(); postPunktAktualisieren(); }
+
+let meineRolle = "salon";
+$("#login-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const f = $("#login-fehler"); f.style.display = "none";
+  const email = $("#login-email").value.trim();
+  const passwort = $("#login-passwort").value;
+  if (!email || !passwort){
+    f.textContent = "Bitte E-Mail und Passwort eingeben.";
+    f.style.display = "block";
+    (email ? $("#login-passwort") : $("#login-email")).focus();
+    return;
+  }
+  const knopf = $("#anmelden");
+  knopf.disabled = true;
+  knopf.textContent = "Einen Moment …";
+  try{
+    const r = await fetch("/api/login",{method:"POST",credentials:"same-origin",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({email, passwort})});
+    const d = await r.json().catch(() => ({}));
+    if(!r.ok){
+      f.textContent = d.fehler || "Damit können wir dich leider nicht anmelden.";
+      f.style.display = "block";
+      // E-Mail bleibt stehen — nur das Passwort neu.
+      $("#login-passwort").value = "";
+      $("#login-passwort").focus();
+      return;
+    }
+    meineRolle = d.rolle || "salon";
+    $("#avatar").textContent = (d.un||"·")[0].toUpperCase();
+    $("#login-passwort").value = "";
+    zeigeApp();
+  }catch{ f.textContent = "Gerade keine Verbindung — gleich nochmal versuchen."; f.style.display = "block"; }
+  finally{ knopf.disabled = false; knopf.textContent = "Anmelden"; }
+});
+$("#pw-auge").addEventListener("click", () => {
+  const feld = $("#login-passwort");
+  const offen = feld.type === "text";
+  feld.type = offen ? "password" : "text";
+  $("#pw-auge").setAttribute("aria-pressed", String(!offen));
+  $("#pw-auge").setAttribute("aria-label", offen ? "Passwort anzeigen" : "Passwort verbergen");
+  feld.focus();
+});
+$("#anmelden-code").addEventListener("click", async () => {
+  const f = $("#login-fehler"); f.style.display = "none";
+  try{
+    const r = await fetch("/api/anmelden",{method:"POST",credentials:"same-origin",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({pat:$("#zugangscode").value.trim()})});
+    if(!r.ok){ f.textContent = r.status===401 ? "Der Zugangscode stimmt nicht — magst du ihn nochmal prüfen?"
+      : "Damit können wir dich leider nicht anmelden."; f.style.display="block"; return; }
+    const d = await r.json();
+    $("#avatar").textContent = (d.un||"·")[0].toUpperCase();
+    $("#zugangscode").value = "";
+    zeigeApp();
+  }catch{ f.textContent = "Gerade keine Verbindung — gleich nochmal versuchen."; f.style.display = "block"; }
+});
+$("#zugangscode").addEventListener("keydown", e => { if(e.key==="Enter") $("#anmelden-code").click(); });
+
+/* ————— Router ————— */
+const ansichten = { heute: ladeHeute, belege: ladeBelege, fragen: () => {},
+                    aufraeumen: ladeAufraeumen, post: ladePost, ablage: ladeAblage, export: ladeExport, team: ladeTeam,
+                    abschluss: ladeAbschluss,
+                    zahlen: ladeZahlen, bank: ladeBank, saloncheck: ladeSalonCheck,
+                    einrichtung: ladeEinrichtung, verwaltung: ladeVerwaltung,
+                    einstellungen: ladeEinstellungen, detail: null };
+function routen(){
+  const h = location.hash.slice(1) || "heute";
+  const [ziel, arg] = h.split("/");
+  const name = ansichten[ziel] !== undefined ? ziel : "heute";
+  document.querySelectorAll(".ansicht").forEach(a => a.classList.remove("an"));
+  document.querySelectorAll("nav button").forEach(b =>
+    b.classList.toggle("an", b.dataset.ziel === (name==="detail" ? "belege" : name)));
+  $("#a-" + name).classList.add("an");
+  if (name === "detail") ladeDetail(arg);
+  else if (ansichten[name]) ansichten[name]();
+}
+window.addEventListener("hashchange", routen);
+document.querySelectorAll("nav button").forEach(b =>
+  b.addEventListener("click", () => location.hash = "#" + b.dataset.ziel));
+
+/* ————— HEUTE ————— */
+async function ladeHeute(){
+  const monat = jetztMonat();
+  $("#heute-eyebrow").textContent = "DEIN " + monatName(monat).split(" ")[0].toUpperCase();
+  const stunde = new Date().getHours();
+  $("#heute-gruss").textContent = stunde < 11 ? "Guten Morgen ✨" : stunde < 18 ? "Schön, dass du da bist ✨" : "Guten Abend ✨";
+  let d;
+  try{ d = await (await api("/api/monat/" + monat)).json(); }
+  catch{ return; }
+  const ziel = $("#heute-inhalt");
+  const naechster = new Date(); naechster.setMonth(naechster.getMonth()+1);
+  const fristMonat = MONATE[naechster.getMonth()];
+  let html = "";
+
+  // Einrichtung noch offen? Dann freundlich oben erinnern (bis Rechtsform da ist).
+  try{
+    const e = await (await api("/api/einstellungen")).json();
+    if (!e.rechtsform){
+      html += `<button class="karte nachfrage einflug" style="display:block;width:100%;text-align:left"
+        onclick="location.hash='#einrichtung'">
+        <h3>Einmal kurz einrichten</h3>
+        <p>6 Fragen — Salon, Steuernummer &amp; Co. Dauert zwei Minuten.</p>
+        <span class="hin">Los geht's ›</span></button>`;
+    }
+  }catch{}
+
+  const fragen = (d.offene||[]).filter(o => o.status === "nachfrage");
+  if (fragen.length){
+    html += `<div class="sektion lbl" style="display:flex;justify-content:space-between">Braucht dich
+      ${fragen.length > 1 ? '<a href="#aufraeumen" style="letter-spacing:normal;text-transform:none;font-size:12px">Alle nacheinander ›</a>' : ""}</div>`;
+    for (const o of fragen){
+      const bewirtungOffen = o.bewirtung && !o.bewirtung_beantwortet;
+      const frage = bewirtungOffen ? "Mit wem warst du essen?" : offenSatz((o.offen||[])[0]);
+      const klick = bewirtungOffen
+        ? `bewirtungSheet('${o.stamm}','${(o.lieferant||"Beleg")} · ${euro(o.brutto)}')`
+        : `location.hash='#detail/${o.stamm}'`;
+      html += `<button class="karte nachfrage einflug zeile" style="display:block" onclick="${klick}">
+        <h3>${frage}</h3><p>${o.lieferant||"Beleg"} · ${euro(o.brutto)}</p>
+        <span class="hin">Kurz klären ›</span></button>`;
+    }
+  }
+
+  html += `<div class="sektion lbl">Dein Monat in Zahlen</div><div class="karte">`;
+  if (!d.anzahl){
+    html += `<div class="leer"><b>Noch keine Belege in diesem Monat.</b>
+      Der erste dauert keine fünf Sekunden — einfach mit dem Handy fotografieren.</div>`;
+  } else {
+    for (const a of d.belegarten)
+      html += `<div class="mrow"><span class="art">${a.belegart}</span>
+        <span class="wer">${(a.lieferanten||[]).slice(0,3).join(" · ")}</span>
+        <span class="summe">${euro(a.brutto)}</span></div>`;
+    html += `<div class="mrow"><span class="art">Zusammen</span><span class="wer">${d.anzahl} Beleg${d.anzahl===1?"":"e"}</span>
+      <span class="summe">${euro(d.brutto)}</span></div>`;
+  }
+  html += `</div>`;
+
+  html += `<div class="karte" style="background:var(--gc-accent-subtle);border:none">
+    Deine Kanzlei braucht die ${monatName(monat).split(" ")[0]}-Belege bis <b>5. ${fristMonat}</b>.</div>`;
+
+  try{
+    const ab = await (await api("/api/abgleich/" + monat)).json();
+    if (ab.auszug_da && ab.fehlend.length){
+      html += `<div class="sektion lbl">Vom Konto, ohne Beleg</div>
+        <div class="karte nachfrage"><h3>${ab.fehlend.length} Zahlung${ab.fehlend.length===1?"":"en"} ohne Beleg — zusammen ${euro(ab.fehlend_summe)}</h3>` +
+        ab.fehlend.slice(0,4).map(u => `<p style="margin-top:6px">${u.gegenpartei.split(" ").slice(0,4).join(" ")} · ${euro(-u.betrag)} vom ${u.datum.slice(0,5)}</p>`).join("") +
+        (ab.fehlend.length > 4 ? `<p style="margin-top:6px;color:var(--gc-muted)">… und ${ab.fehlend.length-4} weitere</p>` : "") +
+        `<p style="margin-top:8px;color:var(--gc-desc);font-size:12px">Foto oder Datei genügt — einfach hochladen, den Rest übernehme ich.</p></div>`;
+    } else if (ab.auszug_da){
+      html += `<div class="karte" style="border-left:3px solid var(--gc-ok)">
+        Alle Zahlungen vom Konto haben ihren Beleg ✓</div>`;
+    }
+  }catch{}
+
+  const ungelesen = await postPunktAktualisieren();
+  if (ungelesen){
+    html += `<button class="karte zeile einflug" style="display:block;width:100%;text-align:left"
+      onclick="location.hash='#post'">
+      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gc-accent);margin-right:8px"></span>
+      <b>${ungelesen === 1 ? "Ein neues Dokument" : ungelesen + " neue Dokumente"} von deiner Kanzlei</b> — zur Post ›</button>`;
+  }
+
+  try{
+    const l = await (await api("/api/belege?limit=3")).json();
+    if (l.belege.length){
+      html += `<div class="sektion lbl">Zuletzt</div>`;
+      for (const z of l.belege) html += belegZeile(z);
+    }
+  }catch{}
+  ziel.innerHTML = html;
+}
+
+/* ————— BELEGE ————— */
+let aktMonat = jetztMonat(), aktFilter = "", etag = null;
+function belegZeile(z){
+  const [satz, art] = statusSatz(z);
+  const bild = z.datei && /\.(jpg|jpeg|png)$/i.test(z.datei)
+    ? `<img class="thumb" loading="lazy" alt="" src="/api/beleg/${z.stamm}/bild?v=${z.bild_oid}">`
+    : `<div class="thumb doc">▤</div>`;
+  return `<button class="zeile einflug" onclick="location.hash='#detail/${z.stamm}'">
+    ${bild}<div class="zmitte"><div class="zname">${z.lieferant || "Beleg vom " + (z.datum || zeitKurz(z.hochgeladen))}</div>
+    <div class="zstatus ${art}">${satz}</div></div>
+    <div class="zrechts"><div class="zbetrag">${euro(z.brutto)}</div>
+    <div class="zkonto">${z.konto_skr04 ? z.konto_skr04 + (z.ust_satz!=null ? " · " + z.ust_satz + " %" : "") : ""}</div></div>
+  </button>`;
+}
+/* Zeitraum-Gruppen wie im Kanzlei-Standard: Diese Woche / Letzte Woche / Früher */
+function wochenGruppe(iso){
+  if (!iso) return "Früher";
+  const d = new Date(iso), heute = new Date();
+  const tagesanfang = x => { const y = new Date(x); y.setHours(0,0,0,0); return y; };
+  const wochenanfang = x => { const y = tagesanfang(x);
+    y.setDate(y.getDate() - ((y.getDay() + 6) % 7)); return y; };   // Montag
+  const dieseWoche = wochenanfang(heute);
+  const letzteWoche = new Date(dieseWoche); letzteWoche.setDate(letzteWoche.getDate() - 7);
+  if (d >= dieseWoche) return "Diese Woche";
+  if (d >= letzteWoche) return "Letzte Woche";
+  return "Früher";
+}
+async function ladeBelege(){
+  $("#mon-anzeige").textContent = monatName(aktMonat);
+  let d;
+  try{ d = await (await api(`/api/belege?monat=${aktMonat}` + (aktFilter ? `&status=${encodeURIComponent(aktFilter)}` : ""))).json(); }
+  catch{ return; }
+  etag = d.stand;
+  $("#stand").textContent = "Stand " + new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});
+  if (!d.belege.length){
+    $("#belege-liste").innerHTML =
+      `<div class="leer"><b>${aktFilter ? "Hier ist gerade nichts." : "Noch keine Belege in diesem Monat."}</b>
+       ${aktFilter ? "Schau bei „Alle“ nach dem Rest." : "Der erste dauert keine fünf Sekunden."}</div>`;
+    return;
+  }
+  let html = "", gruppe = null;
+  for (const z of d.belege){
+    const g = wochenGruppe(z.hochgeladen);
+    if (g !== gruppe){ gruppe = g; html += `<div class="lbl gruppe-kopf">${g}</div>`; }
+    html += belegZeile(z);
+  }
+  $("#belege-liste").innerHTML = html;
+}
+$("#mon-zurueck").addEventListener("click", () => { aktMonat = monatSchieben(aktMonat,-1); ladeBelege(); });
+$("#mon-vor").addEventListener("click", () => { aktMonat = monatSchieben(aktMonat, 1); ladeBelege(); });
+function monatSchieben(m, dm){ const [j,mm] = m.split("-").map(Number);
+  const d = new Date(j, mm-1+dm, 1); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); }
+document.querySelectorAll("#filter-chips .chip").forEach(c => c.addEventListener("click", () => {
+  document.querySelectorAll("#filter-chips .chip").forEach(x => x.classList.remove("an"));
+  c.classList.add("an"); aktFilter = c.dataset.f; ladeBelege();
+}));
+
+/* ————— DETAIL ————— */
+/* Was babu nicht lesen konnte, trägt die Nutzerin hier direkt nach —
+   sichtbar an der Stelle, an der die Frage steht. */
+function angabenFormular(stamm, f){
+  const fehlt = (was) => (f.offen || []).some(o => (o || "").toLowerCase().includes(was));
+  const brauchtBetrag = !f.brutto || fehlt("betrag") || fehlt("brutto") || fehlt("summe");
+  const brauchtLaden = !f.lieferant || fehlt("lieferant") || fehlt("laden");
+  const brauchtDatum = !f.datum || fehlt("datum");
+  return `<div class="karte nachfrage" style="margin-top:10px" id="ang-${stamm}">
+    <h3>Trag nach, was fehlt</h3>
+    <p style="color:var(--gc-desc);font-size:13px;margin-bottom:10px">
+      babu konnte hier nicht alles lesen. Was du einträgst, gilt.</p>
+    <div style="display:grid;gap:8px">
+      ${brauchtBetrag ? `<label style="font-size:13px">Betrag (mit Cent)
+        <input id="ang-brutto" inputmode="decimal" placeholder="z. B. 4,20"
+          style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-top:3px"></label>` : ""}
+      ${brauchtLaden ? `<label style="font-size:13px">Wo war das?
+        <input id="ang-lieferant" placeholder="z. B. APCOA Parking"
+          style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-top:3px"></label>` : ""}
+      ${brauchtDatum ? `<label style="font-size:13px">Datum
+        <input id="ang-datum" type="date"
+          style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-top:3px"></label>` : ""}
+      <label style="font-size:13px">Notiz (wenn du magst)
+        <input id="ang-notiz" placeholder="z. B. Parken beim Großhandel"
+          style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-top:3px"></label>
+    </div>
+    <button class="hin" style="margin-top:12px" onclick="angabenSenden('${stamm}')">Speichern</button>
+    <span id="ang-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>
+  </div>`;
+}
+async function angabenSenden(stamm){
+  const status = $("#ang-status");
+  const wert = (id) => { const e = document.getElementById(id); return e ? e.value.trim() : ""; };
+  const koerper = {brutto: wert("ang-brutto"), lieferant: wert("ang-lieferant"),
+                   datum: wert("ang-datum"), notiz: wert("ang-notiz")};
+  if (!koerper.brutto && !koerper.lieferant && !koerper.datum && !koerper.notiz){
+    status.textContent = "Bitte mindestens ein Feld ausfüllen."; return;
+  }
+  status.textContent = "wird gespeichert …";
+  try{
+    const r = await api("/api/angaben/" + stamm, {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(koerper)});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok){ status.textContent = d.fehler || "Ging gerade nicht."; return; }
+    status.textContent = "Gespeichert ✓";
+    setTimeout(() => ladeDetail(stamm), 700);
+  }catch{ status.textContent = "Gerade keine Verbindung."; }
+}
+
+async function ladeDetail(stamm){
+  const ziel = $("#detail-inhalt");
+  ziel.innerHTML = `<div class="skelett" style="height:300px"></div>`;
+  let d;
+  try{
+    const r = await api("/api/beleg/" + stamm);
+    if (!r.ok){ ziel.innerHTML = `<div class="leer"><b>Diesen Beleg finden wir gerade nicht.</b></div>`; return; }
+    d = await r.json();
+  }catch{ return; }
+  const f = d.felder || {}, e = d.einschaetzung || {}, v = d.vlm || {}, b = d.buchungssatz;
+  const lieferant = v.lieferant || f.lieferant || "Beleg";
+  const geprueft = d.status === "geprüft";
+  const inArbeit = d.status === "erfasst";
+  const frage = d.status === "nachfrage";
+  const bildTag = /\.(jpg|jpeg|png)$/i.test(d.datei||"")
+    ? `<img id="belegbild" alt="Foto des Belegs" src="${d.bild_url}">`
+    : `<div class="pdfhinweis">▤<br>Dieses Dokument kam als Datei —<br><a href="${d.bild_url}">herunterladen und ansehen</a></div>`;
+
+  /* Beleg-Weg */
+  const aufn = d.audit && d.audit.aufnahme, rev = d.audit && d.audit.review;
+  const weg = [
+    {t:"Foto erhalten", s: aufn ? zeitKurz(aufn.zeit) + " — sicher abgelegt" : "sicher abgelegt", klasse:""},
+    {t:"Gelesen", s: rev ? "Betrag, Datum und mehr erkannt" : "dauert einen Moment …", klasse: rev ? "" : "offen"},
+    frage ? {t:"Zweitprüfung", s:"eine Frage ist offen — siehe unten", klasse:"frage"}
+          : {t:"Zweitprüfung " + (geprueft||b ? "✓" : ""), s: rev ? "alles stimmig" : "kommt gleich", klasse: rev ? "" : "offen"},
+    {t:"Liegt für DATEV bereit", s: b ? "im " + monatName(d.monat||jetztMonat()).split(" ")[0] + "-Stapel deiner Kanzlei" : "sobald alles klar ist", klasse: b ? "" : "offen"},
+    d.status === "exportiert"
+      ? {t:"Bei der Kanzlei ✓", s:"der Stapel wurde abgeholt", klasse:""}
+      : {t:"Bei der Kanzlei", s:"sobald sie den Stapel abholt", klasse:"offen"},
+  ];
+
+  let html = `<div id="detail-grid"><div><div id="buehne">${bildTag}</div></div><div>`;
+  html += `<div class="gruss" style="font-size:22px;margin-bottom:2px">${lieferant}</div>
+    <div style="color:var(--gc-desc);font-size:13px;margin-bottom:18px">${f.datum || ""} ${f.brutto!=null ? "· " + euro(f.brutto) : ""}</div>`;
+
+  html += `<div class="sekt"><span class="lbl">Beleg-Weg</span><ul class="weg">` +
+    weg.map(w => `<li class="${w.klasse}"><span class="punkt"></span><div>
+      <div class="wtitel">${w.t}</div><div class="wsub">${w.s}</div></div></li>`).join("") + `</ul></div>`;
+
+  if (!inArbeit){
+    html += `<div class="sekt"><span class="lbl">Aus dem Foto</span><div class="karte" style="margin:0">`;
+    if (f.lieferant || v.lieferant) html += feld("Wer", lieferant);
+    if (f.datum) html += feld("Wann", f.datum);
+    if (f.netto != null) html += feld("Netto", euro(f.netto));
+    if (f.ust != null) html += feld(`Umsatzsteuer${f.ust_satz!=null ? " ("+f.ust_satz+" %)" : ""}`, euro(f.ust));
+    if (f.brutto != null) html += feld("Gesamt", euro(f.brutto));
+    if (v.trinkgeld) html += feld("Trinkgeld", euro(v.trinkgeld));
+    if (f.beleg_nr) html += feld("Beleg-Nr.", f.beleg_nr);
+    if (v.zahlungsart) html += feld("Bezahlt", v.zahlungsart);
+    html += `</div></div>`;
+
+    const bewirtungOffen = f.bewirtungssignal && !d.bewirtung_beantwortet;
+    html += `<div class="sekt"><span class="lbl">Zweitprüfung</span>
+      <div class="haken ${geprueft||b ? "" : "warte"}">
+        <div class="kreis ${geprueft ? "stempel" : ""}">${frage ? "?" : "✓"}</div>
+        <div class="txt"><b>${frage ? (bewirtungOffen ? "Mit wem warst du essen?" : offenSatz((f.offen||[])[0])) : "Alles stimmig"}</b>
+        <span>${b && b.buchungstext ? b.buchungstext : (e.belegart || "")}</span></div>
+      </div>
+      ${bewirtungOffen ? `<button class="karte nachfrage" style="display:block;width:100%;text-align:left;margin-top:10px"
+        onclick="bewirtungSheet('${d.stamm}','${lieferant} · ${euro(f.brutto)}')">
+        <h3>Mit wem warst du essen?</h3><p>Kurz notiert, und der Beleg zählt voll.</p>
+        <span class="hin">Kurz klären ›</span></button>` : ""}
+      ${(frage && !bewirtungOffen) || !f.brutto ? angabenFormular(d.stamm, f) : ""}
+      ${d.bewirtung ? `<div class="feld" style="margin-top:8px"><span>Anlass</span><b style="font-family:var(--gc-sans)">${d.bewirtung.anlass}</b></div>
+        <div class="feld"><span>Dabei waren</span><b style="font-family:var(--gc-sans)">${(d.bewirtung.teilnehmer||[]).join(", ")}</b></div>` : ""}
+      </div>`;
+
+    if (b){
+      html += `<div class="sekt"><span class="lbl">Das geht an DATEV</span><div class="datev">
+        <div class="box"><i>Betrag</i><b>${b.umsatz} €</b></div>
+        <div class="box"><i>Konto</i><b>${b.konto}</b></div>
+        <div class="box"><i>Gegenkonto</i><b>${b.gegenkonto}</b></div>
+        <div class="box"><i>Steuer</i><b>${b.bu_schluessel || "—"}</b></div>
+        ${b.belegfeld1 ? `<div class="box"><i>Beleg</i><b>${b.belegfeld1}</b></div>` : ""}
+        <div class="box" style="flex:1"><i>Buchungstext</i><b style="font-size:12px">${b.buchungstext || "—"}</b></div>
+      </div></div>`;
+    }
+
+    const siegelZeit = rev ? rev.zeit : (aufn ? aufn.zeit : null);
+    if (aufn){
+      html += `<div class="sekt"><span class="lbl">Unverändert seit</span>
+        <div class="siegel"><span class="rosette">✦</span>
+        <div><span class="code">${aufn.commit}${rev ? " · " + rev.commit : ""}</span>
+        <small>Seit ${zeitKurz(siegelZeit)} unverändert — jederzeit nachweisbar.</small></div>
+        <button onclick="navigator.clipboard.writeText('${aufn.commit}${rev ? " "+rev.commit : ""}');this.textContent='Kopiert ✓'">Kopieren</button>
+        </div></div>`;
+    }
+  } else {
+    html += `<div class="karte">Dieser Beleg wird gerade gelesen — das dauert normalerweise unter einer Minute.
+      Kam er als PDF, dauert es noch etwas länger.</div>`;
+  }
+
+  html += `<button class="chip" onclick="fragenZuBeleg('${d.stamm}','${(lieferant+"").replace(/'/g,"")}')">Frag zu diesem Beleg</button>`;
+  html += `</div></div>`;
+  ziel.innerHTML = html;
+  const bild = $("#belegbild");
+  if (bild) bild.addEventListener("click", () => bild.classList.toggle("zoom"));
+}
+const feld = (k,v) => `<div class="feld"><span>${k}</span><b>${v}</b></div>`;
+
+/* ————— FRAGEN ————— */
+let anker = null;
+function fragenZuBeleg(stamm, name){
+  anker = stamm;
+  $("#chat-anker").style.display = "flex";
+  $("#chat-anker-text").textContent = "Zu diesem Beleg: " + name;
+  location.hash = "#fragen";
+  $("#chatfrage").focus();
+}
+$("#chat-anker-weg").addEventListener("click", () => { anker = null; $("#chat-anker").style.display = "none"; });
+document.querySelectorAll("#chat-beispiele .chip").forEach(c =>
+  c.addEventListener("click", () => { $("#chatfrage").value = c.textContent; $("#chatform").requestSubmit(); }));
+
+$("#chatform").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  let frage = $("#chatfrage").value.trim();
+  if (!frage) return;
+  $("#chatfrage").value = "";
+  const log = $("#chatlog");
+  log.insertAdjacentHTML("beforeend", `<div class="msg ich"></div>`);
+  log.lastElementChild.textContent = frage;
+  const antwort = document.createElement("div");
+  antwort.className = "msg babu tippt";
+  log.appendChild(antwort);
+  antwort.scrollIntoView({block:"end"});
+  if (anker) frage = `Zum Beleg ${anker}: ${frage}`;
+  try{
+    const r = await api("/chat",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({frage, stream:true})});
+    if (!r.ok || !r.body) throw new Error();
+    const leser = r.body.getReader(); const dec = new TextDecoder();
+    let puffer = "";
+    for(;;){
+      const {done, value} = await leser.read();
+      if (done) break;
+      puffer += dec.decode(value, {stream:true});
+      let i;
+      while((i = puffer.indexOf("\n\n")) >= 0){
+        const zeile = puffer.slice(0, i).trim(); puffer = puffer.slice(i+2);
+        if (!zeile.startsWith("data: ")) continue;
+        const roh = zeile.slice(6);
+        if (roh === "[DONE]") continue;
+        try{
+          const j = JSON.parse(roh);
+          if (j.d) antwort.textContent += j.d;
+          if (j.antwort) antwort.textContent = j.antwort;
+          if (j.fehler) antwort.textContent = "Da ist die Antwort abgerissen — magst du nochmal fragen?";
+        }catch{}
+      }
+      antwort.scrollIntoView({block:"end"});
+    }
+  }catch{
+    antwort.textContent = "Da ist die Antwort abgerissen — magst du nochmal fragen?";
+  }
+  antwort.classList.remove("tippt");
+});
+
+/* ————— ZAHLEN (Auswertung mit Vormonats-Vergleich + DATEV-Stapel) ————— */
+let zMonat = jetztMonat();
+function deltaHtml(jetzt, vorher){
+  if (vorher == null || vorher === 0) return `<span class="delta neu">neu</span>`;
+  const p = Math.round((jetzt - vorher) / vorher * 100);
+  if (Math.abs(p) < 1) return `<span class="delta neu">wie im Vormonat</span>`;
+  return p > 0 ? `<span class="delta hoch">▲ ${p} %</span>`
+               : `<span class="delta runter">▼ ${Math.abs(p)} %</span>`;
+}
+async function ladeZahlen(){
+  $("#z-mon-anzeige").textContent = monatName(zMonat);
+  let d;
+  try{ d = await (await api("/api/monat/" + zMonat)).json(); }
+  catch{ return; }
+  const ziel = $("#zahlen-inhalt");
+  if (!d.anzahl){
+    ziel.innerHTML = `<div class="leer"><b>Noch keine Belege in ${monatName(zMonat).split(" ")[0]}.</b>
+      Sobald welche da sind, siehst du hier, wohin dein Geld geht.</div>`;
+    return;
+  }
+  const vor = d.vormonat || {};
+  const vorArten = {};
+  (vor.belegarten || []).forEach(a => { vorArten[a.belegart] = a.brutto; });
+  const max = Math.max(...(d.belegarten || []).map(a => a.brutto || 0), 1);
+
+  let html = `<div class="sektion lbl">Ausgaben nach Art</div><div class="karte">`;
+  for (const a of (d.belegarten || [])){
+    html += `<div class="arow"><div class="kopfz">
+        <span class="art">${a.belegart}</span>
+        ${deltaHtml(a.brutto, vorArten[a.belegart])}
+        <span class="summe num">${euro(a.brutto)}</span></div>
+      <div class="balken"><i style="width:${Math.max(3, Math.round((a.brutto||0)/max*100))}%"></i></div>
+      <div style="font-size:11.5px;color:var(--gc-muted);margin-top:4px">
+        ${a.anzahl} Beleg${a.anzahl===1?"":"e"}${(a.lieferanten||[]).length ? " · " + a.lieferanten.slice(0,3).join(" · ") : ""}</div>
+    </div>`;
+  }
+  html += `<div class="arow"><div class="kopfz"><span class="art">Zusammen</span>
+      ${deltaHtml(d.brutto, vor.brutto)}
+      <span class="summe num">${euro(d.brutto)}</span></div></div></div>`;
+
+  if (d.groesste_position && d.groesste_position.brutto != null){
+    const g = d.groesste_position;
+    html += `<div class="sektion lbl">Größter Posten</div><div class="karte">
+      <div class="mrow"><span class="art">${g.lieferant || g.belegart || "Beleg"}</span>
+      <span class="wer">${g.datum || ""}</span>
+      <span class="summe">${euro(g.brutto)}</span></div></div>`;
+  }
+
+  if ((d.konten || []).length){
+    html += `<div class="sektion lbl">Nach Konto (für deine Kanzlei)</div><div class="karte">`;
+    for (const k of d.konten){
+      const nr = k.konto || k.konto_skr04 || k.nr || "";
+      html += `<div class="mrow"><span class="art num">${nr}</span>
+        <span class="wer">${k.bez || k.label || ""}${k.anzahl ? " · " + k.anzahl + " Beleg" + (k.anzahl===1?"":"e") : ""}</span>
+        <span class="summe">${euro(k.brutto)}</span></div>`;
+    }
+    html += `</div>`;
+  }
+
+  html += `<div class="sektion lbl">Für die Kanzlei</div><div class="karte">
+    <p style="color:var(--gc-desc);font-size:13px">Der fertige Buchungsstapel dieses Monats —
+    im Format, das DATEV versteht.</p>
+    <button class="chip" style="margin-top:10px" id="stapel-knopf">Stapel herunterladen</button>
+    <span id="stapel-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span></div>`;
+
+  ziel.innerHTML = html;
+  $("#stapel-knopf").addEventListener("click", stapelLaden);
+}
+async function stapelLaden(monat, statusWahl){
+  const status = $(statusWahl || "#stapel-status");
+  const welcher = monat || zMonat;
+  status.textContent = "wird geholt …";
+  try{
+    const r = await api("/api/export/" + welcher + ".csv");
+    if (r.status === 403){ status.textContent = "Diesen Stapel lädt deine Kanzlei herunter."; return; }
+    if (!r.ok){ status.textContent = "Gerade nicht möglich."; return; }
+    const blob = await r.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "EXTF_Buchungsstapel_" + welcher + ".csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    status.textContent = "Geladen ✓";
+  }catch{ status.textContent = "Gerade keine Verbindung."; }
+}
+$("#z-mon-zurueck").addEventListener("click", () => { zMonat = monatSchieben(zMonat,-1); ladeZahlen(); });
+$("#z-mon-vor").addEventListener("click", () => { zMonat = monatSchieben(zMonat, 1); ladeZahlen(); });
+
+/* ————— BANK (Zahlungs-Abgleich Konto ↔ Belege) ————— */
+let bMonat = jetztMonat();
+async function ladeBank(){
+  $("#b-mon-anzeige").textContent = monatName(bMonat);
+  let ab;
+  try{ ab = await (await api("/api/abgleich/" + bMonat)).json(); }
+  catch{ return; }
+  const ziel = $("#bank-inhalt");
+  if (!ab.auszug_da){
+    ziel.innerHTML = `<div class="leer"><b>Für ${monatName(bMonat).split(" ")[0]} liegt noch kein Kontoauszug da.</b>
+      Leg ihn oben ab (PDF von deiner Bank) — dann prüfe ich, ob zu jeder Zahlung ein Beleg da ist.</div>`;
+    return;
+  }
+  const gedeckt = Array.isArray(ab.gedeckt) ? ab.gedeckt.length : (ab.gedeckt || 0);
+  const fehlend = ab.fehlend || [];
+  let html = `<div class="karte"><div class="datev">
+    <div class="box"><i>Mit Beleg</i><b style="color:var(--gc-ok)">${gedeckt} ✓</b></div>
+    <div class="box"><i>Ohne Beleg</i><b style="color:${fehlend.length ? "var(--gc-warn)" : "var(--gc-ok)"}">${fehlend.length}</b></div>
+    ${ab.fehlend_summe ? `<div class="box"><i>Fehlt zusammen</i><b>${euro(ab.fehlend_summe)}</b></div>` : ""}
+    ${ab.einnahmen_summe ? `<div class="box"><i>Eingegangen</i><b>${euro(ab.einnahmen_summe)}</b></div>` : ""}
+  </div></div>`;
+
+  if (fehlend.length){
+    html += `<div class="sektion lbl">Diese Zahlungen haben noch keinen Beleg</div>`;
+    for (const u of fehlend){
+      html += `<div class="zeile"><div class="thumb doc">?</div>
+        <div class="zmitte"><div class="zname">${(u.gegenpartei||"Zahlung").split(" ").slice(0,5).join(" ")}</div>
+        <div class="zstatus frage">vom ${u.datum || ""} — Beleg nachreichen: einfach oben rechts hochladen</div></div>
+        <div class="zrechts"><div class="zbetrag">${euro(Math.abs(u.betrag||0))}</div></div></div>`;
+    }
+  } else {
+    html += `<div class="karte" style="border-left:3px solid var(--gc-ok)">
+      Alle Zahlungen vom Konto haben ihren Beleg ✓</div>`;
+  }
+  ziel.innerHTML = html;
+}
+$("#b-mon-zurueck").addEventListener("click", () => { bMonat = monatSchieben(bMonat,-1); ladeBank(); });
+$("#b-mon-vor").addEventListener("click", () => { bMonat = monatSchieben(bMonat, 1); ladeBank(); });
+$("#bank-auszug-knopf").addEventListener("click", () => $("#auszug-datei").click());
+
+/* ————— POST (Kanzlei-Dokumente) ————— */
+let postNurUngelesen = false, postSuche = "";
+function artLabel(art){
+  if (art === "behoerde") return "Vom Amt";
+  if (art === "vollmacht") return "Vollmacht";
+  return "Von deiner Kanzlei";
+}
+const ABLAGE_SYMBOL = {behoerde:"🏛", kanzlei:"📄", abschluss:"📊",
+                       kontoauszug:"🏦", export:"📦", kassenbuch:"💶"};
+
+async function ladeAblage(){
+  const ziel = $("#ablage-inhalt");
+  let d;
+  try{ d = await (await api("/api/ablage")).json(); }
+  catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+  if (!d.gesamt){
+    ziel.innerHTML = `<div class="leer"><b>Noch nichts abgelegt.</b>
+      Sobald Belege, Kontoauszüge oder Post vom Amt da sind, ordnen wir sie hier ein.</div>`;
+    return;
+  }
+  let html = "";
+  d.jahre.forEach((j, i) => {
+    html += `<div class="jahr-kopf">${esc(j.jahr)} <span style="font:400 13px var(--gc-sans);color:var(--gc-muted)">· ${j.anzahl} ${j.anzahl === 1 ? "Unterlage" : "Unterlagen"}</span></div>`;
+    for (const a of j.arten){
+      html += `<details class="ordner"${i === 0 ? " open" : ""}>
+        <summary><span>${ABLAGE_SYMBOL[a.art] || "📁"}</span>
+          <span>${esc(a.name)}</span>
+          <span class="hinweis">${esc(a.hinweis)}</span>
+          <span class="zaehler">${a.anzahl}</span></summary>
+        <div class="ordner-inhalt">` +
+        a.stuecke.map(s => `<div class="ablage-zeile">
+            <a href="/api/dokument/${encodeURI(s.pfad)}" target="_blank" rel="noopener">${esc(s.titel)}</a>
+            ${s.vertrag && s.vertrag.betrag_monat
+              ? `<span class="chip" style="font-size:11px">${euro(s.vertrag.betrag_monat)} im Monat</span>` : ""}
+            ${s.erklaerung ? `<span class="chip" style="font-size:11px">erklärt ✓</span>` : ""}
+            <span class="wann">${s.zeit ? zeitKurz(s.zeit) : ""}</span>
+          </div>`).join("") +
+        `</div></details>`;
+    }
+  });
+  ziel.innerHTML = html;
+}
+$("#ablage-brief").addEventListener("click", () => $("#brief-datei").click());
+$("#ablage-vertrag").addEventListener("click", () => $("#vertrag-datei").click());
+$("#vertrag-datei").addEventListener("change", async ev => {
+  const datei = ev.target.files[0];
+  ev.target.value = "";
+  if (!datei) return;
+  const knopf = $("#ablage-vertrag");
+  knopf.textContent = "Wird gelesen …";
+  try{
+    const r = await api("/api/dokumente?art=vertrag&name=" + encodeURIComponent(datei.name)
+      + "&titel=" + encodeURIComponent("Vertrag · " + datei.name),
+      {method:"POST", body: datei});
+    knopf.textContent = r.ok ? "Abgelegt ✓ — wir lesen ihn gerade"
+                             : "Das hat nicht geklappt — nochmal?";
+    if (r.ok){ setTimeout(ladeAblage, 1500); setTimeout(ladeAblage, 20000); }
+  }catch{ knopf.textContent = "Gerade keine Verbindung — nochmal?"; }
+  setTimeout(() => { knopf.textContent = "Vertrag ablegen"; }, 6000);
+});
+$("#ablage-auszug").addEventListener("click", () => $("#auszug-datei").click());
+
+async function ladePost(){
+  let d;
+  try{ d = await (await api("/api/dokumente")).json(); }
+  catch{ return; }
+  $("#post-punkt").hidden = !d.ungelesen;
+  const ziel = $("#post-liste");
+  if (!d.dokumente.length){
+    ziel.innerHTML = `<div class="leer"><b>Noch keine Post.</b>
+      Dokumente deiner Kanzlei erscheinen hier — Auswertungen, Bescheide, Lohnunterlagen.</div>`;
+    return;
+  }
+  const freigaben = d.dokumente.filter(doc => doc.art === "freigabe_anfrage");
+  let kopfHtml = "";
+  for (const doc of freigaben){
+    kopfHtml += doc.freigabe
+      ? `<div class="karte einflug" style="border-left:3px solid var(--gc-ok)">
+          <b>${doc.titel}</b>
+          <p style="color:var(--gc-desc);font-size:12.5px;margin-top:2px">
+          Freigegeben am ${zeitKurz(doc.freigabe.am)} — für die Kanzlei sichtbar ✓</p></div>`
+      : `<div class="karte nachfrage einflug"><h3>Deine Kanzlei bittet um Freigabe</h3>
+          <p>${doc.titel}</p>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button class="hin" onclick="window.open('/api/dokument/${doc.pfad}','_blank')">Ansehen</button>
+            <button class="hin" style="background:var(--gc-fg);color:#fff"
+              onclick="freigeben('${doc.pfad}', this)">Freigeben ✓</button>
+          </div></div>`;
+  }
+  // Briefe vom Amt: babu erklärt sie in einfachen Worten — als Karte oben.
+  for (const doc of d.dokumente.filter(x => x.art === "behoerde")){
+    const e = doc.erklaerung;
+    kopfHtml += e
+      ? `<div class="karte einflug" style="border-left:3px solid var(--gc-accent)">
+          <b>${esc(doc.titel)}</b>
+          <p style="margin-top:6px">${esc(e.einfach)}</p>
+          ${e.was_tun ? `<p style="margin-top:6px"><b>Was du tun musst:</b> ${esc(e.was_tun)}</p>` : ""}
+          ${e.bis_wann ? `<p style="margin-top:4px;color:var(--gc-accent)"><b>Bis ${esc(e.bis_wann)}</b></p>` : ""}
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button class="chip" onclick="postOeffnen('${doc.pfad}', this)">Brief ansehen</button>
+          </div></div>`
+      : `<div class="karte einflug"><b>${esc(doc.titel)}</b>
+          <p style="color:var(--gc-desc);font-size:13px;margin-top:4px">Wir lesen den Brief gerade —
+          die Erklärung erscheint gleich hier.</p></div>`;
+  }
+  const suchwort = postSuche.trim().toLowerCase();
+  const liste = d.dokumente
+    .filter(doc => doc.art !== "freigabe_anfrage" && doc.art !== "behoerde")
+    .filter(doc => !postNurUngelesen || !doc.gelesen)
+    .filter(doc => !suchwort || (doc.titel||"").toLowerCase().includes(suchwort));
+  ziel.innerHTML = kopfHtml + (liste.length ? liste.map(doc => `
+    <button class="zeile einflug" onclick="postOeffnen('${doc.pfad}', this)">
+      ${doc.gelesen ? "" : `<span style="width:8px;height:8px;border-radius:50%;background:var(--gc-accent);flex:none"></span>`}
+      <div class="thumb doc">▤</div>
+      <div class="zmitte"><div class="zname" ${doc.gelesen ? "" : 'style="font-weight:700"'}>${doc.titel}</div>
+      <div class="zstatus laeuft">${artLabel(doc.art)} · ${zeitKurz(doc.zeit)}</div></div>
+      <div class="zrechts"><span class="chip">Ansehen</span></div>
+    </button>`).join("")
+    : `<div class="leer"><b>${postNurUngelesen ? "Alles gelesen ✓" : "Nichts gefunden."}</b></div>`);
+}
+$("#post-suche").addEventListener("input", ev => { postSuche = ev.target.value; ladePost(); });
+$("#post-f-alle").addEventListener("click", () => {
+  postNurUngelesen = false;
+  $("#post-f-alle").classList.add("an"); $("#post-f-ungelesen").classList.remove("an");
+  ladePost();
+});
+$("#post-f-ungelesen").addEventListener("click", () => {
+  postNurUngelesen = true;
+  $("#post-f-ungelesen").classList.add("an"); $("#post-f-alle").classList.remove("an");
+  ladePost();
+});
+$("#brief-knopf").addEventListener("click", () => $("#brief-datei").click());
+$("#brief-datei").addEventListener("change", async ev => {
+  const datei = ev.target.files[0];
+  ev.target.value = "";
+  if (!datei) return;
+  const knopf = $("#brief-knopf");
+  knopf.textContent = "Wird abgelegt …";
+  try{
+    const r = await api("/api/dokumente?art=behoerde&name=" + encodeURIComponent(datei.name)
+      + "&titel=" + encodeURIComponent("Brief vom Amt · " + datei.name),
+      {method:"POST", body: datei});
+    knopf.textContent = r.ok ? "Abgelegt ✓ — wir erklären ihn dir gleich hier"
+                             : "Das hat nicht geklappt — nochmal?";
+    if (r.ok){ setTimeout(ladePost, 1200); setTimeout(ladePost, 15000); }
+  }catch{ knopf.textContent = "Gerade keine Verbindung — nochmal?"; }
+  setTimeout(() => { knopf.textContent = "Brief vom Amt ablegen"; }, 6000);
+});
+$("#auszug-knopf").addEventListener("click", () => $("#auszug-datei").click());
+$("#auszug-datei").addEventListener("change", async ev => {
+  const datei = ev.target.files[0];
+  ev.target.value = "";
+  if (!datei) return;
+  const knopf = $("#auszug-knopf");
+  knopf.textContent = "Wird gelesen …";
+  try{
+    const r = await api("/api/kontoauszug?name=" + encodeURIComponent(datei.name),
+      {method:"POST", body: datei});
+    const d = await r.json();
+    knopf.textContent = r.ok
+      ? `Gelesen ✓ — ${d.umsaetze} Zahlungen aus ${monatName(d.monat)}`
+      : (d.fehler || "Das hat nicht geklappt — nochmal?");
+    if (r.ok && $("#a-bank").classList.contains("an")){ bMonat = d.monat; ladeBank(); }
+  }catch{ knopf.textContent = "Gerade keine Verbindung — nochmal?"; }
+  setTimeout(() => { knopf.textContent = "Kontoauszug ablegen"; }, 4000);
+});
+
+/* ————— SALON-CHECK: Unterlagen ablegen, zuschauen, Ampel-Karten ————— */
+const esc = s => String(s ?? "").replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const SC_JAHR = new Date().getFullYear() - 1;
+const SC_NAMEN = {umsatz:"Dein Umsatz", wareneinsatz:"Material", personal:"Dein Team",
+  raumkosten:"Miete & Räume", afa:"Abschreibungen", sonstige_kosten:"Sonstige Kosten",
+  gewinn:"Dein Gewinn", ust_zahllast:"Umsatzsteuer",
+  est_vorauszahlungen:"Steuer-Vorauszahlungen", rechtsform:"Rechtsform",
+  steuernummer:"Steuernummer", finanzamt:"Finanzamt",
+  kleinunternehmer:"Kleinunternehmer-Regel"};
+let scTimer = null, scGezeigt = 0, scHochgeladen = 0;
+
+function scStop(){ if (scTimer){ clearInterval(scTimer); scTimer = null; } }
+const scWert = w => typeof w === "number"
+  ? w.toLocaleString("de-DE", {maximumFractionDigits: 0}) + " €" : esc(w);
+
+async function ladeSalonCheck(){
+  scStop();
+  const ziel = $("#saloncheck-inhalt");
+  let status = {stand: "leer"};
+  try{ status = await (await api("/api/abschluss/status")).json(); }catch{ return; }
+  if (status.stand === "wartet" || status.stand === "liest"){
+    scZuschauen(ziel, status); return;
+  }
+  let check = {stand: "leer"};
+  try{ check = await (await api("/api/salon-check?jahr=" + SC_JAHR)).json(); }
+  catch{ return; }
+  if (check.stand === "fertig"){ scReport(ziel, check, status); return; }
+  scStart(ziel, status);
+}
+
+function scStart(ziel, status){
+  scHochgeladen = 0;
+  const hinweis = (status.stand === "unterbrochen" || status.stand === "fehler")
+    ? `<div class="karte nachfrage" style="margin-bottom:12px">${esc(status.hinweis)}</div>` : "";
+  ziel.innerHTML = hinweis + `
+    <div class="karte" style="text-align:center;padding:34px 20px">
+      <div style="font:600 20px var(--gc-serif);margin-bottom:6px">Leg einfach alles vom letzten Jahr hier ab.</div>
+      <p style="color:var(--gc-desc);max-width:46ch;margin:0 auto 16px">Gewinnrechnung, Steuerbescheid, Anlagenliste — als Foto oder PDF,
+        egal in welcher Reihenfolge. Wir lesen das.</p>
+      <button class="chip" id="sc-waehlen">Unterlagen auswählen</button>
+      <div id="sc-liste" style="margin:12px auto 0;max-width:420px;text-align:left"></div>
+      <button class="chip an" id="sc-los" style="margin-top:14px" hidden>Loslesen ›</button>
+    </div>`;
+  $("#sc-waehlen").addEventListener("click", () => $("#sc-datei").click());
+  $("#sc-los").addEventListener("click", scLoslesen);
+}
+
+$("#sc-datei").addEventListener("change", async ev => {
+  const dateien = [...ev.target.files];
+  ev.target.value = "";
+  const liste = $("#sc-liste");
+  if (!dateien.length || !liste) return;
+  for (const datei of dateien){
+    const zeile = document.createElement("div");
+    zeile.className = "sc-zeile einflug";
+    zeile.innerHTML = `<span>${esc(datei.name)}</span><span>lädt …</span>`;
+    liste.appendChild(zeile);
+    try{
+      const r = await api(`/api/abschluss?jahr=${SC_JAHR}&name=` +
+                          encodeURIComponent(datei.name), {method:"POST", body: datei});
+      const d = await r.json();
+      zeile.lastElementChild.innerHTML = r.ok ? '<span style="color:var(--gc-ok)">abgelegt ✓</span>'
+                                              : esc(d.fehler || "hat nicht geklappt");
+      if (r.ok) scHochgeladen++;
+    }catch{ zeile.lastElementChild.textContent = "gerade keine Verbindung"; }
+  }
+  // Wer Unterlagen hochlädt, will sie gelesen haben — also gleich loslegen.
+  // Der Knopf bleibt als Rückfallebene sichtbar, falls der Start scheitert.
+  if (scHochgeladen > 0){
+    if ($("#sc-los")) $("#sc-los").hidden = false;
+    scLoslesen();
+  }
+});
+
+async function scLoslesen(){
+  const knopf = $("#sc-los");
+  if (knopf){ knopf.disabled = true; knopf.textContent = "Einen Moment …"; }
+  try{
+    const r = await api("/api/abschluss/start?jahr=" + SC_JAHR, {method:"POST"});
+    if (r.ok || r.status === 409){ ladeSalonCheck(); return; }
+    const d = await r.json();
+    if (knopf){ knopf.disabled = false; knopf.textContent = d.fehler || "Nochmal versuchen"; }
+  }catch{
+    if (knopf){ knopf.disabled = false; knopf.textContent = "Gerade keine Verbindung — nochmal"; }
+  }
+}
+
+function scZuschauen(ziel, status){
+  scGezeigt = 0;
+  ziel.innerHTML = `
+    <div class="karte" style="padding:18px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="sc-puls"></span>
+        <div id="sc-hinweis" style="color:var(--gc-desc)">${esc(status.hinweis || "Wir schauen uns alles an …")}</div>
+      </div>
+      <p style="color:var(--gc-muted);font-size:13px;margin:8px 0 0">Das kann ein paar Minuten dauern — du kannst zuschauen oder später wiederkommen.</p>
+      <div id="sc-felder" style="margin-top:10px"></div>
+      <div id="sc-vorschlaege"></div>
+    </div>`;
+  scPoll();
+  scTimer = setInterval(scPoll, 1000);
+}
+
+async function scPoll(){
+  let d;
+  try{ d = await (await api("/api/abschluss/status")).json(); }catch{ return; }
+  const hinweis = $("#sc-hinweis");
+  if (hinweis && d.hinweis) hinweis.textContent = d.hinweis;
+  const liste = $("#sc-felder");
+  if (liste && d.felder && d.felder.length > scGezeigt){
+    d.felder.slice(scGezeigt).forEach(f => {
+      liste.insertAdjacentHTML("beforeend",
+        `<div class="sc-zeile einflug"><span>${esc(SC_NAMEN[f.schluessel] || f.schluessel)}</span>` +
+        `<span><b>${scWert(f.wert)}</b> <span class="sc-haken">✓</span></span></div>`);
+    });
+    scGezeigt = d.felder.length;
+  }
+  scVorschlaege(d.vorschlaege);
+  if (d.stand === "fertig"){ scStop(); setTimeout(ladeSalonCheck, 1200); }
+  else if (d.stand === "fehler" || d.stand === "unterbrochen"){
+    scStop(); scStart($("#saloncheck-inhalt"), d);
+  }
+}
+
+function scVorschlaege(vorschlaege){
+  const ziel = $("#sc-vorschlaege");
+  if (!ziel || !vorschlaege) return;
+  vorschlaege.forEach(v => {
+    if (ziel.querySelector(`[data-k="${v.schluessel}"]`)) return;
+    const karte = document.createElement("div");
+    karte.className = "karte nachfrage einflug";
+    karte.dataset.k = v.schluessel;
+    karte.style.marginTop = "10px";
+    karte.innerHTML =
+      `<div style="margin-bottom:8px">In deinen Unterlagen steht bei ` +
+      `${esc(SC_NAMEN[v.schluessel] || v.schluessel)} „${esc(v.neu)}" — bei uns „${esc(v.alt)}". Übernehmen?</div>` +
+      `<button class="chip an">Ja, übernehmen</button> <button class="chip">So lassen</button>`;
+    const [ja, nein] = karte.querySelectorAll("button");
+    ja.addEventListener("click", async () => {
+      ja.disabled = true;
+      try{
+        await api("/api/einstellungen", {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({[v.schluessel]: v.neu})});
+        karte.remove();
+      }catch{ ja.disabled = false; }
+    });
+    nein.addEventListener("click", () => karte.remove());
+    ziel.appendChild(karte);
+  });
+}
+
+function scReport(ziel, check, status){
+  const karten = (check.karten || []).map(k => `
+    <div class="karte einflug" style="display:flex;gap:10px">
+      <span class="ampel ${esc(k.ampel)}"></span>
+      <div style="min-width:0">
+        <b>${esc(k.titel)}</b>
+        <div style="margin-top:3px">${esc(k.satz)}</div>
+        <details style="margin-top:6px">
+          <summary style="cursor:pointer;color:var(--gc-muted);font-size:13px">Mehr dazu</summary>
+          <p style="color:var(--gc-desc);font-size:13px;margin-top:6px">${esc(k.detail)}</p>
+          ${k.wert ? `<p style="font-size:13px;margin-top:4px"><b>${esc(k.wert)}</b>${k.ueblich ? ` · üblich: ${esc(k.ueblich)}` : ""}</p>` : ""}
+        </details>
+      </div>
+    </div>`).join("");
+  ziel.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+      <div class="lbl">DEIN JAHR ${check.jahr}</div>
+      <span style="flex:1"></span>
+      <button class="chip" id="sc-drucken">Für die Kanzlei drucken</button>
+      <button class="chip" id="sc-neu">Neu lesen</button>
+    </div>
+    <div id="sc-vorschlaege" style="margin-bottom:10px"></div>
+    <div class="sc-karten">${karten}</div>`;
+  $("#sc-drucken").addEventListener("click", () => window.print());
+  $("#sc-neu").addEventListener("click", () => scStart(ziel, {stand: "leer"}));
+  scVorschlaege(status.vorschlaege);
+}
+
+async function freigeben(pfad, knopf){
+  knopf.disabled = true; knopf.textContent = "Wird freigegeben …";
+  try{
+    const r = await api("/api/freigabe", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({pfad})});
+    if (r.ok){ knopf.textContent = "Freigegeben ✓"; knopf.classList.add("stempel");
+      setTimeout(ladePost, 700); return; }
+  }catch{}
+  knopf.disabled = false; knopf.textContent = "Gerade nicht möglich — nochmal";
+}
+async function postOeffnen(pfad, knopf){
+  window.open("/api/dokument/" + pfad, "_blank");
+  try{
+    await api("/api/dokument-gelesen", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({pfad})});
+  }catch{}
+  ladePost();
+}
+
+/* ————— EINSTELLUNGEN ————— */
+async function ladeEinstellungen(){
+  try{
+    const ich = await (await api("/api/ich")).json();
+    $("#einst-un").textContent = ich.un;
+    meineRolle = ich.rolle || meineRolle;
+    $("#verwaltung-knopf").hidden = !(meineRolle === "admin" || meineRolle === "kanzlei");
+    const eigenesKonto = (ich.un || "").includes("@");
+    $("#einst-pw-lbl").hidden = !eigenesKonto;
+    $("#einst-pw").hidden = !eigenesKonto;
+    const e = await (await api("/api/einstellungen")).json();
+    document.querySelectorAll("#einst-schalter input").forEach(s =>
+      s.checked = e[s.dataset.s] === "1");
+    $("#einst-kanzlei").value = e.kanzlei_name || "";
+    $("#einst-betrieb").value = e.betrieb_name || "";
+    const p = e.paket_empfehlung;
+    if (p) $("#einst-paket").innerHTML =
+      `<b>${esc(p.name)}</b> — ${p.preis_beispiel} € im Monat <span style="font-size:12px;color:var(--gc-muted)">(Beispielpreis — endgültige Preise folgen)</span>` +
+      (p.hinweise || []).map(h => `<p style="color:var(--gc-desc);font-size:13px;margin-top:6px">${esc(h)}</p>`).join("");
+  }catch{}
+}
+async function einstellungSpeichern(objekt){
+  try{ await api("/api/einstellungen", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify(objekt)}); }catch{}
+}
+document.querySelectorAll("#einst-schalter input").forEach(s =>
+  s.addEventListener("change", () => einstellungSpeichern({[s.dataset.s]: s.checked ? "1" : "0"})));
+$("#einst-kanzlei").addEventListener("change", ev => einstellungSpeichern({kanzlei_name: ev.target.value.trim()}));
+$("#einst-betrieb").addEventListener("change", ev => einstellungSpeichern({betrieb_name: ev.target.value.trim()}));
+$("#pw-speichern").addEventListener("click", async () => {
+  const status = $("#pw-status");
+  status.textContent = "…";
+  try{
+    const r = await api("/api/passwort", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({alt: $("#pw-alt").value, neu: $("#pw-neu").value})});
+    const d = await r.json();
+    status.textContent = r.ok ? "Geändert ✓" : (d.fehler || "Ging gerade nicht.");
+    if (r.ok){ $("#pw-alt").value = ""; $("#pw-neu").value = ""; }
+  }catch{ status.textContent = "Gerade keine Verbindung."; }
+});
+$("#abmelden-knopf").addEventListener("click", async () => {
+  try{ await api("/api/abmelden", {method:"POST"}); }catch{}
+  zeigeLogin();
+});
+/* ————— Konto-Menü rechts oben ————— */
+function menuZu(){ $("#konto-menu").hidden = true;
+  $("#konto-knopf").setAttribute("aria-expanded", "false"); }
+function menuGeh(ziel){ menuZu(); location.hash = ziel; }
+$("#konto-knopf").addEventListener("click", async ev => {
+  ev.stopPropagation();
+  const menu = $("#konto-menu");
+  const auf = menu.hidden;
+  menu.hidden = !auf;
+  $("#konto-knopf").setAttribute("aria-expanded", String(auf));
+  if (auf){
+    try{
+      const d = await (await api("/api/ich")).json();
+      $("#menu-un").textContent = d.un || "";
+      $("#menu-rolle").textContent = d.rolle === "salon" ? "Dein Salon"
+        : d.rolle === "kanzlei" ? "Kanzlei" : "Verwaltung";
+      $("#menu-verwaltung").hidden = !(d.rolle === "admin" || d.rolle === "kanzlei");
+    }catch{}
+  }
+});
+document.addEventListener("click", ev => {
+  if (!$("#konto-menu").hidden && !ev.target.closest("#kopf-recht")) menuZu();
+});
+document.addEventListener("keydown", ev => { if (ev.key === "Escape") menuZu(); });
+$("#menu-abmelden").addEventListener("click", async () => {
+  menuZu();
+  try{ await api("/api/abmelden", {method:"POST"}); }catch{}
+  zeigeLogin();
+});
+
+/* ————— Dein Team ————— */
+async function ladeTeam(){
+  const ziel = $("#team-inhalt");
+  let d;
+  try{ d = await (await api("/api/team")).json(); }
+  catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+
+  let html = "";
+  if (!d.team.length){
+    html += `<div class="leer"><b>Noch niemand eingetragen.</b>
+      Arbeitest du allein? Dann lass es einfach so.</div>`;
+  }
+  for (const p of d.team){
+    const kosten = p.kosten_monat
+      ? (p.lohn_art === "stunden"
+         ? `${euro(p.stundenlohn || 0)} × ${p.stunden || 0} Std = ${euro(p.kosten_monat)}`
+         : `${euro(p.kosten_monat)} im Monat`)
+      : "kein Betrag hinterlegt";
+    html += `<div class="karte" style="${p.aktiv ? "" : "opacity:.55"}">
+      <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+        <b style="color:var(--gc-fg)">${esc(p.name)}</b>
+        ${p.email ? `<span style="font-size:12px;color:var(--gc-muted)">${esc(p.email)}</span>` : ""}
+        <span style="margin-left:auto;font-size:13px">${esc(kosten)}</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="chip" onclick="teamBearbeiten(${p.id})">Ändern</button>
+        <button class="chip" onclick="teamAktion(${p.id},'${p.aktiv ? "beenden" : "zurueck"}')">
+          ${p.aktiv ? "Arbeitet nicht mehr hier" : "Wieder dabei"}</button>
+      </div></div>`;
+  }
+  if (d.anzahl_aktiv){
+    html += `<div class="karte" style="border-color:var(--gc-ok);margin-top:4px">
+      <b>Zusammen ${euro(d.kosten_monat)} im Monat</b>
+      <p style="color:var(--gc-desc);font-size:13px;margin-top:4px">
+        Das rechnen wir in deiner Auswertung mit — auch ohne Lohnbeleg.</p></div>`;
+  }
+  html += `<div class="sektion lbl">Jemanden eintragen</div>
+    <div class="karte" id="team-form">
+      <input type="hidden" id="t-id">
+      <div style="display:grid;gap:8px">
+        <input id="t-name" placeholder="Name" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+        <input id="t-email" placeholder="E-Mail (wenn du magst)" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+        <div class="chips" style="margin:2px 0">
+          <button class="chip an" id="t-fest" onclick="teamArt('fest')">Fester Lohn</button>
+          <button class="chip" id="t-stunden" onclick="teamArt('stunden')">Nach Stunden</button>
+        </div>
+        <div id="t-fest-feld">
+          <input id="t-betrag" inputmode="decimal" placeholder="z. B. 2.400 im Monat"
+            style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+        </div>
+        <div id="t-stunden-feld" hidden style="display:grid;gap:8px;grid-template-columns:1fr 1fr">
+          <input id="t-stundenlohn" inputmode="decimal" placeholder="Stundenlohn, z. B. 14,50"
+            style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+          <input id="t-stunden-zahl" inputmode="decimal" placeholder="Stunden im Monat"
+            style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+        </div>
+      </div>
+      <button class="hin" style="margin-top:12px" onclick="teamSpeichern()">Speichern</button>
+      <span id="t-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>
+    </div>`;
+  ziel.innerHTML = html;
+}
+let teamArtGewaehlt = "fest";
+function teamArt(art){
+  teamArtGewaehlt = art;
+  $("#t-fest").classList.toggle("an", art === "fest");
+  $("#t-stunden").classList.toggle("an", art === "stunden");
+  $("#t-fest-feld").hidden = art !== "fest";
+  $("#t-stunden-feld").hidden = art !== "stunden";
+}
+async function teamBearbeiten(id){
+  const d = await (await api("/api/team")).json();
+  const p = d.team.find(x => x.id === id);
+  if (!p) return;
+  $("#t-id").value = p.id;
+  $("#t-name").value = p.name || "";
+  $("#t-email").value = p.email || "";
+  teamArt(p.lohn_art);
+  $("#t-betrag").value = p.betrag || "";
+  $("#t-stundenlohn").value = p.stundenlohn || "";
+  $("#t-stunden-zahl").value = p.stunden || "";
+  $("#team-form").scrollIntoView({behavior: "smooth", block: "center"});
+}
+async function teamSpeichern(){
+  const status = $("#t-status");
+  const koerper = {name: $("#t-name").value.trim(), email: $("#t-email").value.trim(),
+                   lohn_art: teamArtGewaehlt, betrag: $("#t-betrag").value.trim(),
+                   stundenlohn: $("#t-stundenlohn").value.trim(),
+                   stunden: $("#t-stunden-zahl").value.trim()};
+  const id = $("#t-id").value;
+  if (id) koerper.id = Number(id);
+  if (!koerper.name){ status.textContent = "Wie heißt sie oder er?"; return; }
+  status.textContent = "wird gespeichert …";
+  try{
+    const r = await api("/api/team", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(koerper)});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok){ status.textContent = d.fehler || "Ging gerade nicht."; return; }
+    ladeTeam();
+  }catch{ status.textContent = "Gerade keine Verbindung."; }
+}
+async function teamAktion(id, aktion){
+  try{
+    await api("/api/team-aktion", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({id, aktion})});
+    ladeTeam();
+  }catch{}
+}
+
+/* ————— Monatsabschluss: BWA + Umsatzsteuer-Entwurf ————— */
+let abMonat = jetztMonat();
+async function ladeAbschluss(){
+  $("#ab-mon-anzeige").textContent = monatName(abMonat);
+  const ziel = $("#abschluss-inhalt");
+  let d;
+  try{ d = await (await api("/api/monatsabschluss/" + abMonat)).json(); }
+  catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+
+  const b = d.bwa, u = d.ustva, e = d.erloese;
+  let html = "";
+
+  if (!e.tage){
+    html += `<div class="karte nachfrage"><h3>Für diesen Monat fehlt dein Kassenbuch</h3>
+      <p>Ohne die Tageseinnahmen können wir weder Auswertung noch Umsatzsteuer rechnen.
+      Trag sie in der App im Kassenbuch ein — eine Zahl pro Frage.</p></div>`;
+  }
+
+  // ————— Deine Zahlen (BWA) —————
+  html += `<div class="sektion lbl">Deine Zahlen</div><div class="karte">
+    <div class="mrow"><span class="art">Eingenommen (ohne Steuer)</span>
+      <span class="summe">${euro(b.umsatz_netto)}</span></div>
+    <div class="mrow"><span class="art">Ausgegeben (ohne Steuer)</span>
+      <span class="summe">${euro(b.kosten_netto)}</span></div>
+    <div class="mrow" style="border-top:1px solid var(--gc-border);font-weight:600">
+      <span class="art">Bleibt dir</span>
+      <span class="summe" style="color:${b.ergebnis >= 0 ? "var(--gc-ok)" : "var(--gc-danger)"}">
+        ${euro(b.ergebnis)}</span></div>
+    ${b.ergebnis_anteil !== null ? `<p style="color:var(--gc-desc);font-size:13px;margin-top:8px">
+      Von 100 € Umsatz bleiben dir ${Math.round(b.ergebnis_anteil)} €.
+      ${b.vorjahr_delta !== undefined ? `Im Schnitt des Vorjahres lagst du bei
+        ${euro(b.vorjahr_monat)} Umsatz — das sind
+        ${b.vorjahr_delta >= 0 ? "+" : ""}${euro(b.vorjahr_delta)}.` : ""}</p>` : ""}
+  </div>`;
+
+  if (b.gruppen.length){
+    html += `<div class="sektion lbl">Wohin das Geld ging</div><div class="karte">`;
+    for (const g of b.gruppen){
+      html += `<div class="mrow"><span class="art">${esc(g.name)}</span>
+        <span class="wer">${g.anzahl} ${g.anzahl === 1 ? "Beleg" : "Belege"}${
+          g.anteil !== null ? " · " + Math.round(g.anteil) + " % vom Umsatz" : ""}</span>
+        <span class="summe">${euro(g.netto)}</span></div>`;
+    }
+    html += `</div>`;
+  }
+
+  // ————— Umsatzsteuer —————
+  html += `<div class="sektion lbl">Umsatzsteuer</div>`;
+  if (u.stand === "keine"){
+    html += `<div class="karte"><b>Keine Voranmeldung nötig</b>
+      <p style="color:var(--gc-desc);font-size:13px;margin-top:4px">${esc(u.hinweis)}</p></div>`;
+  } else {
+    html += `<div class="karte">
+      <div style="font:600 26px var(--gc-serif);margin-bottom:2px">${esc(u.satz)}</div>
+      <p style="color:var(--gc-desc);font-size:13px">${esc(u.hinweis)}</p>
+      <div style="margin-top:12px">`;
+    for (const z of u.zeilen){
+      html += `<div class="mrow"><span class="art">${esc(z.name)}</span>
+        <span class="wer">Kennzahl ${z.kz}</span>
+        <span class="summe">${z.netto !== null ? euro(z.netto) : euro(z.steuer)}</span></div>`;
+    }
+    html += `</div></div>`;
+    if ((u.pruefliste || []).length){
+      html += `<div class="karte nachfrage" style="margin-top:10px">
+        <h3>Das fehlt noch</h3>
+        <p style="color:var(--gc-desc);font-size:13px;margin-bottom:8px">
+          Diese Belege haben wir nicht mitgerechnet — sie würden die Zahlen verfälschen.</p>`;
+      for (const pz of u.pruefliste.slice(0, 8)){
+        html += `<button class="zeile" onclick="location.hash='#detail/${pz.stamm}'">
+          <div class="zmitte"><div class="zname">${esc(pz.lieferant || "Beleg")}</div>
+          <div class="zstatus frage">${esc(pz.hinweis)}</div></div>
+          <div class="zrechts"><span class="chip">Ansehen</span></div></button>`;
+      }
+      html += `</div>`;
+    }
+  }
+  ziel.innerHTML = html;
+}
+$("#ab-mon-zurueck").addEventListener("click", () => { abMonat = monatSchieben(abMonat, -1); ladeAbschluss(); });
+$("#ab-mon-vor").addEventListener("click", () => { abMonat = monatSchieben(abMonat, 1); ladeAbschluss(); });
+
+/* ————— Export-Ansicht ————— */
+let eMonat = jetztMonat();
+async function ladeExport(){
+  $("#e-mon-anzeige").textContent = monatName(eMonat);
+  const ziel = $("#export-inhalt");
+  let d;
+  try{ d = await (await api("/api/monat/" + eMonat)).json(); }
+  catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+  if (!d.anzahl){
+    ziel.innerHTML = `<div class="leer"><b>In diesem Monat ist noch nichts zu übergeben.</b>
+      Sobald Belege da sind, entsteht der Stapel von selbst.</div>`;
+    return;
+  }
+  ziel.innerHTML = `<div class="mrow"><span class="art">Belege im Monat</span>
+      <span class="summe">${d.anzahl}</span></div>
+    <div class="mrow"><span class="art">Summe</span>
+      <span class="summe">${euro(d.summe || 0)}</span></div>
+    <button class="chip" style="margin-top:12px" id="export-knopf">Stapel herunterladen</button>
+    <span id="export-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>`;
+  $("#export-knopf").addEventListener("click", () => stapelLaden(eMonat, "#export-status"));
+}
+$("#e-mon-zurueck").addEventListener("click", () => { eMonat = monatSchieben(eMonat, -1); ladeExport(); });
+$("#e-mon-vor").addEventListener("click", () => { eMonat = monatSchieben(eMonat, 1); ladeExport(); });
+$("#avatar").style.cursor = "pointer";
+
+async function postPunktAktualisieren(){
+  try{
+    const d = await (await api("/api/dokumente")).json();
+    $("#post-punkt").hidden = !d.ungelesen;
+    return d.ungelesen;
+  }catch{ return 0; }
+}
+
+/* ————— Bewirtungs-Sheet ————— */
+let sheetStamm = null;
+function bewirtungSheet(stamm, sub){
+  sheetStamm = stamm;
+  $("#sheet-sub").textContent = sub || "";
+  $("#sheet-anlass").value = ""; $("#sheet-leute").value = "";
+  $("#schleier").classList.add("an");
+  $("#sheet-anlass").focus();
+}
+$("#schleier").addEventListener("click", ev => { if (ev.target.id === "schleier") $("#schleier").classList.remove("an"); });
+document.addEventListener("keydown", ev => { if (ev.key === "Escape") $("#schleier").classList.remove("an"); });
+$("#sheet-fertig").addEventListener("click", async () => {
+  const anlass = $("#sheet-anlass").value.trim();
+  const leute = $("#sheet-leute").value.split(/[,;]| und /).map(s => s.trim()).filter(Boolean);
+  if (!anlass || !leute.length){ $("#sheet-anlass").focus(); return; }
+  const knopf = $("#sheet-fertig");
+  knopf.disabled = true; knopf.textContent = "Wird gebucht …";
+  try{
+    const r = await api("/api/bewirtung/" + sheetStamm, {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({anlass, teilnehmer: leute})});
+    if (r.ok){
+      knopf.textContent = "Gebucht ✓"; knopf.classList.add("stempel");
+      setTimeout(() => { $("#schleier").classList.remove("an");
+        knopf.disabled = false; knopf.textContent = "Fertig — buchen"; knopf.classList.remove("stempel");
+        if (sheetNachStapel){ sheetNachStapel = false; stapelWeiter(true); }
+        else routen(); }, 650);
+      return;
+    }
+  }catch{}
+  knopf.disabled = false; knopf.textContent = "Gerade nicht speicherbar — nochmal";
+});
+
+/* ————— Hochladen (Drop überall + Knopf), mit Live-Echo ————— */
+let dropTiefe = 0;
+document.addEventListener("dragenter", ev => { ev.preventDefault(); if (++dropTiefe) $("#drop").classList.add("an"); });
+document.addEventListener("dragover", ev => ev.preventDefault());
+document.addEventListener("dragleave", () => { if (--dropTiefe <= 0){ dropTiefe = 0; $("#drop").classList.remove("an"); } });
+document.addEventListener("drop", ev => {
+  ev.preventDefault(); dropTiefe = 0; $("#drop").classList.remove("an");
+  if (ev.dataTransfer && ev.dataTransfer.files.length) hochladen([...ev.dataTransfer.files]);
+});
+$("#hochladen-knopf").addEventListener("click", () => $("#hochladen-datei").click());
+$("#hochladen-datei").addEventListener("change", ev => { hochladen([...ev.target.files]); ev.target.value = ""; });
+
+/* Fotos vom Notebook sind oft 5-10 MB — zum Lesen reichen 2200 Pixel.
+   Das Verkleinern passiert im Browser, spart ein Vielfaches an Upload-Zeit
+   und kostet keine Erkennungsqualität. PDFs bleiben unangetastet. */
+const UPLOAD_KANTE = 2200;
+const UPLOAD_KLEIN = 900 * 1024;   // darunter lohnt es nicht
+
+async function fuersNetzVerkleinern(datei){
+  if (!datei.type.startsWith("image/") || datei.size < UPLOAD_KLEIN) return datei;
+  try{
+    const bild = await createImageBitmap(datei);
+    const faktor = Math.min(1, UPLOAD_KANTE / Math.max(bild.width, bild.height));
+    if (faktor >= 1){ bild.close?.(); return datei; }
+    const breite = Math.round(bild.width * faktor);
+    const hoehe = Math.round(bild.height * faktor);
+    const flaeche = ("OffscreenCanvas" in window)
+      ? new OffscreenCanvas(breite, hoehe)
+      : Object.assign(document.createElement("canvas"), {width: breite, height: hoehe});
+    const stift = flaeche.getContext("2d");
+    stift.imageSmoothingQuality = "high";
+    stift.drawImage(bild, 0, 0, breite, hoehe);
+    bild.close?.();
+    const klein = flaeche.convertToBlob
+      ? await flaeche.convertToBlob({type: "image/jpeg", quality: 0.86})
+      : await new Promise(f => flaeche.toBlob(f, "image/jpeg", 0.86));
+    // Nur nehmen, wenn es wirklich kleiner ist.
+    return (klein && klein.size < datei.size) ? klein : datei;
+  }catch{
+    return datei;   // HEIC & Co., die der Browser nicht öffnet: unverändert
+  }
+}
+
+async function hochladen(dateien){
+  location.hash = "#belege";
+  for (const datei of dateien){
+    const kennung = "up-" + Math.random().toString(36).slice(2, 8);
+    const zeile = document.createElement("div");
+    zeile.className = "zeile einflug"; zeile.id = kennung;
+    zeile.innerHTML = `<div class="thumb doc">▤</div><div class="zmitte">
+      <div class="zname">${datei.name}</div>
+      <div class="zstatus laeuft">wird sicher abgelegt …</div></div>`;
+    const liste = $("#belege-liste");
+    liste.prepend(zeile);
+    try{
+      const schlank = await fuersNetzVerkleinern(datei);
+      if (schlank !== datei){
+        zeile.querySelector(".zstatus").textContent =
+          `wird gesendet (${Math.round(schlank.size / 1024)} statt ${Math.round(datei.size / 1024)} KB) …`;
+      }
+      const r = await api("/api/hochladen?name=" + encodeURIComponent(datei.name),
+        {method:"POST", body: schlank});
+      const d = await r.json();
+      if (!r.ok){
+        zeile.querySelector(".zstatus").textContent =
+          r.status === 413 ? "zu groß (max. 40 MB)" :
+          r.status === 400 ? "dieses Format kann ich nicht ablegen" :
+          "gerade nicht speicherbar — gleich nochmal";
+        zeile.querySelector(".zstatus").className = "zstatus frage";
+        continue;
+      }
+      zeile.querySelector(".zstatus").textContent = "abgelegt ✓ — wird gelesen …";
+      etag = null;  // nächster Poll holt frisch
+    }catch{
+      zeile.querySelector(".zstatus").textContent = "gerade keine Verbindung";
+      zeile.querySelector(".zstatus").className = "zstatus frage";
+    }
+  }
+  setTimeout(ladeBelege, 800);
+}
+
+/* ————— Frische: ETag-Poll alle 30 s ————— */
+setInterval(async () => {
+  if ($("#app").hidden || document.hidden) return;
+  // Mitten im Aufräumen oder mit offenem Sheet nicht unterm Hintern auffrischen.
+  if ($("#a-aufraeumen").classList.contains("an") || $("#schleier").classList.contains("an")) return;
+  try{
+    const r = await fetch("/api/belege?limit=1", {credentials:"same-origin",
+      headers: etag ? {"If-None-Match": `"${etag}"`} : {}});
+    if (r.status === 200){
+      const d = await r.json();
+      if (etag && d.stand !== etag) routen();   // etwas hat sich getan → Ansicht auffrischen
+      etag = d.stand;
+    }
+  }catch{}
+}, 30000);
+
+/* ————— Aufräumen: die offenen Fragen, eine nach der anderen ————— */
+let stapel = [], stapelSumme = 0, stapelZahl = 0;
+async function ladeAufraeumen(){
+  let d;
+  try{ d = await (await api(`/api/monat/${jetztMonat()}`)).json(); }
+  catch{ return; }
+  stapel = (d.offene||[]).filter(o => o.status === "nachfrage");
+  stapelSumme = 0; stapelZahl = 0;
+  zeigeStapel();
+}
+function zeigeStapel(){
+  const ziel = $("#stapel-inhalt");
+  if (!stapel.length){
+    ziel.innerHTML = `<div class="leer"><div class="fertig-stempel stempel">✓</div>
+      <b>${stapelZahl ? `Fertig für heute — ${stapelZahl} geklärt, ${euro(stapelSumme)}.` : "Nichts zu tun. Schöner Zustand."}</b></div>`;
+    return;
+  }
+  const o = stapel[0];
+  const bewirtungOffen = o.bewirtung && !o.bewirtung_beantwortet;
+  const frage = bewirtungOffen ? "Mit wem warst du essen?" : offenSatz((o.offen||[])[0]);
+  ziel.innerHTML = `
+    <div class="lbl" style="margin-bottom:10px">Noch ${stapel.length} zu klären</div>
+    <div class="bild"><img alt="" src="/api/beleg/${o.stamm}/bild"></div>
+    <div class="karte nachfrage" style="margin:0"><h3>${frage}</h3>
+      <p>${o.lieferant||"Beleg"} · ${euro(o.brutto)}</p></div>
+    <div class="aktionen">
+      <button class="spaeter" onclick="stapelWeiter(false)">Später</button>
+      <button class="klaeren" onclick="stapelKlaeren()">${bewirtungOffen ? "Kurz klären" : "Ansehen"}</button>
+    </div>`;
+}
+function stapelWeiter(geklaert){
+  const o = stapel.shift();
+  if (geklaert && o){ stapelZahl++; stapelSumme += o.brutto || 0; }
+  zeigeStapel();
+}
+function stapelKlaeren(){
+  const o = stapel[0];
+  if (!o) return;
+  if (o.bewirtung && !o.bewirtung_beantwortet){
+    sheetNachStapel = true;
+    bewirtungSheet(o.stamm, `${o.lieferant||"Beleg"} · ${euro(o.brutto)}`);
+  } else {
+    location.hash = "#detail/" + o.stamm;
+  }
+}
+let sheetNachStapel = false;
+document.addEventListener("keydown", ev => {
+  if (!$("#a-aufraeumen").classList.contains("an") || $("#schleier").classList.contains("an")) return;
+  if (ev.key === "ArrowLeft") stapelWeiter(false);
+  if (ev.key === "ArrowRight" || ev.key === "Enter") stapelKlaeren();
+});
+
+/* ————— VERWALTUNG: Anfragen einrichten, Nutzer pflegen ————— */
+async function ladeVerwaltung(){
+  const ziel = $("#verwaltung-inhalt");
+  let regs = [], nutzer = [];
+  try{
+    const r1 = await api("/api/registrierungen");
+    if (r1.status === 403){ ziel.innerHTML = `<div class="leer"><b>Nur für die Verwaltung.</b></div>`; return; }
+    regs = (await r1.json()).registrierungen || [];
+    nutzer = (await (await api("/api/nutzer")).json()).nutzer || [];
+  }catch{ return; }
+
+  let html = "";
+  const offen = regs.filter(r => r.status === "neu");
+  html += `<div class="sektion lbl">Anfragen (${offen.length})</div>`;
+  if (!offen.length){
+    html += `<div class="karte" style="color:var(--gc-desc)">Keine offenen Anfragen.</div>`;
+  }
+  for (const r of offen){
+    html += `<div class="karte nachfrage" id="reg-${r.id}">
+      <h3>${r.salon || "Salon"} — ${r.name || "?"}</h3>
+      <p>${r.email || "keine E-Mail"}${r.telefon ? " · " + r.telefon : ""}</p>
+      <p style="margin-top:4px;font-size:12px;color:var(--gc-muted)">
+        ${[r.rechtsform, r.steuernummer && "St-Nr. " + r.steuernummer, r.finanzamt,
+           r.kleinunternehmer && "§19: " + r.kleinunternehmer,
+           r.steuerberater && "Steuerberater: " + r.steuerberater]
+          .filter(Boolean).join(" · ") || "keine weiteren Angaben"}</p>
+      <button class="hin" style="margin-top:10px" onclick="anfrageEinrichten(${r.id})">Zugang einrichten ›</button>
+    </div>`;
+  }
+
+  html += `<div class="sektion lbl">Zugänge (${nutzer.length})</div>`;
+  if (!nutzer.length){
+    html += `<div class="karte" style="color:var(--gc-desc)">Noch keine eigenen Zugänge —
+      richte den ersten aus einer Anfrage ein oder lege unten einen an.</div>`;
+  }
+  for (const n of nutzer){
+    html += `<div class="karte" style="${n.aktiv ? "" : "opacity:.55"}">
+      <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+        <b style="color:var(--gc-fg)">${n.name || n.email}</b>
+        <span style="font-size:12px;color:var(--gc-muted)">${n.email}${n.salon ? " · " + n.salon : ""}${n.paket ? " · " + n.paket : ""}</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--gc-muted)">
+          ${n.letzter_login ? "zuletzt " + zeitKurz(n.letzter_login) : "noch nie angemeldet"}</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
+        <select onchange="nutzerAktion('${n.email}','rolle',this.value)"
+          style="padding:6px 10px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
+          ${["salon","kanzlei","admin"].map(x =>
+            `<option value="${x}" ${n.rolle===x?"selected":""}>${x === "salon" ? "Salon" : x === "kanzlei" ? "Kanzlei" : "Admin"}</option>`).join("")}
+        </select>
+        <button class="chip" onclick="nutzerAktion('${n.email}','${n.aktiv ? "deaktivieren" : "aktivieren"}')">
+          ${n.aktiv ? "Abschalten" : "Wieder anschalten"}</button>
+        <button class="chip" onclick="nutzerAktion('${n.email}','passwort_neu')">Neues Startpasswort</button>
+      </div>
+      <div id="pw-${n.email.replace(/[^a-z0-9]/g,"_")}"></div>
+    </div>`;
+  }
+
+  html += `<div class="sektion lbl">Zugang anlegen</div><div class="karte">
+    <div style="display:grid;gap:8px;grid-template-columns:1fr 1fr">
+      <input id="nv-email" placeholder="E-Mail" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+      <input id="nv-name" placeholder="Name" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+      <input id="nv-salon" placeholder="Salon" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+      <select id="nv-rolle" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
+        <option value="salon">Salon</option><option value="kanzlei">Kanzlei</option><option value="admin">Admin</option>
+      </select>
+    </div>
+    <button class="hin" style="margin-top:10px" onclick="nutzerAnlegen()">Anlegen</button>
+    <div id="nv-ergebnis"></div>
+  </div>`;
+  ziel.innerHTML = html;
+}
+function startpasswortKarte(email, passwort){
+  return `<div class="siegel" style="margin-top:10px"><span class="rosette">✦</span>
+    <div><span class="code">${email} · ${passwort}</span>
+    <small>Startpasswort — erscheint nur dieses eine Mal. Jetzt notieren und persönlich weitergeben.</small></div>
+    <button onclick="navigator.clipboard.writeText('${email} ${passwort}');this.textContent='Kopiert ✓'">Kopieren</button></div>`;
+}
+async function anfrageEinrichten(id){
+  try{
+    const r = await api("/api/registrierung-einrichten", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({id})});
+    const d = await r.json();
+    const karte = $("#reg-" + id);
+    if (r.ok){
+      karte.classList.remove("nachfrage");
+      karte.insertAdjacentHTML("beforeend", startpasswortKarte(d.email, d.startpasswort));
+      karte.querySelector("button.hin").remove();
+    } else {
+      karte.insertAdjacentHTML("beforeend",
+        `<p style="color:var(--gc-danger);margin-top:8px">${d.fehler || "Ging gerade nicht."}</p>`);
+    }
+  }catch{}
+}
+async function nutzerAktion(email, aktion, rolleNeu){
+  try{
+    const r = await api("/api/nutzer-aktion", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({email, aktion, rolle: rolleNeu})});
+    const d = await r.json();
+    if (aktion === "passwort_neu" && r.ok){
+      $("#pw-" + email.replace(/[^a-z0-9]/g,"_")).innerHTML = startpasswortKarte(email, d.startpasswort);
+      return;
+    }
+    if (!r.ok) alert(d.fehler || "Ging gerade nicht.");
+    ladeVerwaltung();
+  }catch{}
+}
+async function nutzerAnlegen(){
+  try{
+    const r = await api("/api/nutzer", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({email: $("#nv-email").value.trim(),
+        name: $("#nv-name").value.trim(), salon: $("#nv-salon").value.trim(),
+        rolle: $("#nv-rolle").value})});
+    const d = await r.json();
+    $("#nv-ergebnis").innerHTML = r.ok
+      ? startpasswortKarte(d.email, d.startpasswort)
+      : `<p style="color:var(--gc-danger);margin-top:8px">${d.fehler || "Ging gerade nicht."}</p>`;
+  }catch{}
+}
+
+/* ————— Frage-Strecke (eine Frage pro Schritt, große Schrift) —————
+   Wird zweimal benutzt: Registrierung (vor dem Login) und Einrichtung
+   (nach dem ersten Login). */
+function strecke(container, schritte, titel, beiWert, beiFertig){
+  let i = 0;
+  const werte = {};
+  function frageZeigen(){
+    if (i >= schritte.length){ beiFertig(werte); return; }
+    const s = schritte[i];
+    const rest = schritte.length - i;
+    let eingabeHtml;
+    if (s.wahl){
+      eingabeHtml = `<div class="chips" style="margin:16px 0">` + s.wahl.map(w =>
+        `<button type="button" class="chip" data-wahl="${w}" style="font-size:15px;padding:10px 18px">${w}</button>`).join("") + `</div>`;
+    } else {
+      eingabeHtml = `<input id="strecke-feld" type="${s.typ||"text"}" placeholder="${s.platzhalter||""}"
+        autocomplete="off" style="width:100%;padding:14px;border:1px solid var(--gc-border);
+        border-radius:10px;font:18px var(--gc-sans);background:var(--gc-bg);margin:16px 0 10px">`;
+    }
+    container.innerHTML = `
+      <div class="lbl" style="margin-bottom:8px">${titel} · ${rest === 1 ? "Letzte Frage" : "Noch " + rest + " Fragen"}</div>
+      <div style="font:600 21px var(--gc-serif);color:var(--gc-fg);letter-spacing:-.015em">${s.f}</div>
+      ${s.hilfe ? `<p style="color:var(--gc-desc);font-size:13px;margin-top:6px">${s.hilfe}</p>` : ""}
+      ${eingabeHtml}
+      <div style="display:flex;gap:10px">
+        ${s.wahl ? "" : `<button id="strecke-weiter" style="flex:1;background:var(--gc-fg);color:#fff;
+          padding:13px;border-radius:10px;font-weight:600">Weiter</button>`}
+        ${s.optional ? `<button id="strecke-nichts" style="flex:1;border:1px solid var(--gc-border);
+          background:var(--gc-bg);padding:13px;border-radius:10px">Überspringen</button>` : ""}
+      </div>
+      ${i > 0 ? `<button id="strecke-zurueck" style="margin-top:10px;color:var(--gc-muted);font-size:13px">‹ Zurück</button>` : ""}`;
+    const feld = container.querySelector("#strecke-feld");
+    if (feld){
+      feld.value = werte[s.k] || "";
+      feld.focus();
+      feld.addEventListener("keydown", ev => { if (ev.key === "Enter") weiter(); });
+    }
+    container.querySelectorAll("[data-wahl]").forEach(b => b.addEventListener("click", () => {
+      werte[s.k] = b.dataset.wahl;
+      if (beiWert) beiWert(s.k, werte[s.k]);
+      i++; frageZeigen();
+    }));
+    const weiter = () => {
+      const wert = feld ? feld.value.trim() : "";
+      if (!s.optional && !wert){ if (feld) feld.focus(); return; }
+      if (s.typ === "email" && wert && !wert.includes("@")){ feld.focus(); return; }
+      if (s.minlen && wert.length < s.minlen){ feld.focus(); return; }
+      werte[s.k] = wert;
+      if (beiWert && wert) beiWert(s.k, wert);
+      i++; frageZeigen();
+    };
+    const wk = container.querySelector("#strecke-weiter");
+    if (wk) wk.addEventListener("click", weiter);
+    const nk = container.querySelector("#strecke-nichts");
+    if (nk) nk.addEventListener("click", () => { werte[s.k] = werte[s.k] || ""; i++; frageZeigen(); });
+    const zk = container.querySelector("#strecke-zurueck");
+    if (zk) zk.addEventListener("click", () => { i--; frageZeigen(); });
+  }
+  frageZeigen();
+}
+
+/* ————— Registrierung (vor dem Login): alle Daten einsammeln ————— */
+const REG_SCHRITTE = [
+  {f:"Wie heißt dein Salon?", k:"salon", platzhalter:"z. B. CAP² Hairlounge"},
+  {f:"Und wie heißt du?", k:"name", platzhalter:"Vor- und Nachname"},
+  {f:"Deine E-Mail-Adresse?", k:"email", typ:"email", platzhalter:"du@…",
+   hilfe:"Darüber melden wir uns mit deinem Zugang."},
+  {f:"Deine Handynummer?", k:"telefon", optional:true,
+   hilfe:"Nur fürs Einrichten — wir rufen kurz an oder schreiben."},
+  {f:"Welche Rechtsform hat dein Salon?", k:"rechtsform",
+   wahl:["Einzelunternehmen","GbR","GmbH","UG","Weiß nicht"]},
+  {f:"Deine Steuernummer?", k:"steuernummer", optional:true,
+   hilfe:"Steht auf jedem Brief vom Finanzamt. Nicht zur Hand? Überspringen."},
+  {f:"Welches Finanzamt ist für dich zuständig?", k:"finanzamt", optional:true},
+  {f:"Bist du Kleinunternehmerin (§19)?", k:"kleinunternehmer",
+   wahl:["Ja","Nein","Weiß nicht"],
+   hilfe:"Kleinunternehmerin heißt: Du weist auf Rechnungen keine Umsatzsteuer aus."},
+  {f:"Hast du schon einen Steuerberater?", k:"steuerberater", wahl:["Ja","Nein"],
+   hilfe:"Wenn ja: Beim Wechsel helfen wir dir — Kündigungsvorlage und Vollmacht kommen von uns."},
+  {f:"Wähl dein Passwort", k:"passwort", typ:"password", minlen:8,
+   platzhalter:"mindestens 8 Zeichen",
+   hilfe:"Damit meldest du dich ab jetzt an — in App und Portal."},
+];
+$("#reg-start").addEventListener("click", () => {
+  // Die Fragen ERSETZEN das Login — nicht darunterkleben.
+  $("#login-felder").hidden = true;
+  document.querySelector("#login p").textContent =
+    "Ein paar kurze Fragen — dann ist dein Zugang fertig.";
+  const bereich = $("#reg-bereich");
+  bereich.hidden = false;
+  bereich.innerHTML = `
+    <button id="reg-abbruch" style="color:var(--gc-muted);font-size:13px;margin-bottom:14px">‹ Ich habe schon einen Zugang</button>
+    <div id="reg-stepper" class="lkarte"></div>`;
+  $("#reg-abbruch").addEventListener("click", () => location.reload());
+  const ziel = $("#reg-stepper");
+  strecke(ziel, REG_SCHRITTE, "Konto anlegen", null, async werte => {
+    ziel.innerHTML = `<p style="color:var(--gc-desc)">Dein Zugang wird angelegt …</p>`;
+    try{
+      const r = await fetch("/api/signup", {method:"POST", credentials:"same-origin",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify(werte)});
+      const d = await r.json().catch(() => ({}));
+      if (r.ok){
+        // Sofort drin — Konto ist angelegt und angemeldet.
+        meineRolle = d.rolle || "salon";
+        $("#avatar").textContent = (d.un||"·")[0].toUpperCase();
+        // Antworten aus dem Paket-Fragebogen der Startseite übernehmen.
+        try{
+          const q = JSON.parse(sessionStorage.getItem("babu-paket") || "null");
+          if (q){
+            const map = {};
+            if (q.medizinisch) map.ust_befreiung_medizinisch = q.medizinisch;
+            if (q.steuerbuero) map.steuerberater_modus =
+              q.steuerbuero === "Eigenes Steuerbüro" ? "Mein Steuerbüro bleibt" : "Alles über babu";
+            if (q.filialen) map.filialen = q.filialen;
+            if (q.firmen) map.mehrere_unternehmen = q.firmen;
+            if (q.abschluss) map.abschluss_art =
+              q.abschluss === "Einfache Gewinnrechnung" ? "EÜR" : q.abschluss;
+            if (Object.keys(map).length) einstellungSpeichern(map);
+            sessionStorage.removeItem("babu-paket");
+          }
+        }catch{}
+        ziel.innerHTML = `<div class="haken"><div class="kreis stempel">✓</div><div class="txt">
+          <b>Fertig, ${(werte.name||"").split(" ")[0] || "willkommen"}!</b>
+          <span>Dein Zugang ist angelegt — es geht direkt los.</span></div></div>`;
+        setTimeout(() => { location.hash = "#heute"; zeigeApp(); }, 900);
+      } else if (r.status === 409){
+        ziel.innerHTML = `<p style="color:var(--gc-desc)">${d.fehler}</p>
+          <button class="chip" style="margin-top:10px" onclick="location.reload()">Zur Anmeldung ›</button>`;
+      } else {
+        ziel.innerHTML = `<p style="color:var(--gc-danger)">${d.fehler || "Das hat gerade nicht geklappt — bitte später nochmal."}</p>
+          <button class="chip" style="margin-top:10px" onclick="location.reload()">Nochmal</button>`;
+      }
+    }catch{
+      ziel.innerHTML = `<p style="color:var(--gc-danger)">Gerade keine Verbindung — bitte später nochmal.</p>`;
+    }
+  });
+});
+
+/* ————— Einrichtung (nach dem Login): Steuerdaten, sofort gespeichert ————— */
+const EINRICHTUNG_SCHRITTE = [
+  {f:"Wie heißt dein Salon?", k:"betrieb_name", platzhalter:"z. B. CAP² Hairlounge"},
+  {f:"Welche Rechtsform hat dein Salon?", k:"rechtsform",
+   wahl:["Einzelunternehmen","GbR","GmbH","UG","Weiß nicht"]},
+  {f:"Deine Steuernummer?", k:"steuernummer", optional:true,
+   hilfe:"Steht auf jedem Brief vom Finanzamt. Später nachtragen geht auch."},
+  {f:"Welches Finanzamt ist für dich zuständig?", k:"finanzamt", optional:true},
+  {f:"Bist du Kleinunternehmerin (§19)?", k:"kleinunternehmer",
+   wahl:["Ja","Nein","Weiß nicht"]},
+  {f:"Machst du medizinische Behandlungen ohne Umsatzsteuer — zum Beispiel podologische Fußpflege?",
+   k:"ust_befreiung_medizinisch", wahl:["Ja","Nein"]},
+  {f:"Hast du schon einen Steuerberater?", k:"steuerberater_status", wahl:["Ja","Nein"]},
+  {f:"Soll babu alles machen — oder bleibt dein Steuerbüro und wir arbeiten zu?",
+   k:"steuerberater_modus", wahl:["Alles über babu","Mein Steuerbüro bleibt"]},
+  {f:"Hat dein Salon mehr als einen Standort?", k:"filialen", wahl:["Ja","Nein"]},
+  {f:"Hast du mehrere Firmen?", k:"mehrere_unternehmen", wahl:["Ja","Nein"]},
+  {f:"Machst du eine Bilanz — oder die einfache Gewinnrechnung (EÜR)?",
+   k:"abschluss_art", wahl:["Bilanz","EÜR","Weiß nicht"],
+   hilfe:"Nicht sicher? Der Salon-Check liest es aus deinen Unterlagen heraus."},
+];
+function ladeEinrichtung(){
+  const ziel = $("#einrichtung-inhalt");
+  strecke(ziel, EINRICHTUNG_SCHRITTE, "Einrichtung",
+    (k, wert) => einstellungSpeichern({[k]: wert}),
+    async werte => {
+      let paketHtml = "";
+      try{
+        const e = await (await api("/api/einstellungen")).json();
+        const p = e.paket_empfehlung;
+        if (p) paketHtml = `<div class="karte" style="margin-top:16px;border-color:var(--gc-ok)">
+          <b>Dein Paket: ${esc(p.name)}</b> — ${p.preis_beispiel} € im Monat
+          <span style="font-size:12px;color:var(--gc-muted)">(Beispielpreis)</span>
+          ${(p.hinweise || []).map(h => `<p style="color:var(--gc-desc);font-size:13px;margin-top:6px">${esc(h)}</p>`).join("")}</div>`;
+      }catch{}
+      ziel.innerHTML = `<div class="haken"><div class="kreis stempel">✓</div><div class="txt">
+        <b>Alles da — danke!</b><span>Du findest und änderst das jederzeit unter Einstellungen.</span></div></div>
+        ${paketHtml}
+        ${werte.steuerberater_status === "Ja" ? `<div class="karte" style="margin-top:16px">
+          <b>Du bist noch bei einem Steuerberater?</b>
+          <p style="color:var(--gc-desc);font-size:13px;margin-top:4px">Kein Problem — der Wechsel ist
+          leicht: kurz kündigen (Vorlage kommt von uns), eine Vollmacht, den Rest holen wir.
+          Wir melden uns dazu bei dir.</p></div>` : ""}
+        <button class="chip" style="margin-top:16px" onclick="location.hash='#heute'">Zurück zu Heute</button>`;
+    });
+}
+
+/* ————— Start ————— */
+(async () => {
+  try{
+    const r = await fetch("/api/ich",{credentials:"same-origin"});
+    if (r.ok){ const d = await r.json(); meineRolle = d.rolle || "salon";
+      $("#avatar").textContent = (d.un||"·")[0].toUpperCase(); zeigeApp(); }
+    else zeigeLogin();
+  }catch{
+    $("#offline").style.display = "block"; zeigeLogin();
+  }
+  if ("serviceWorker" in navigator && location.protocol === "https:")
+    navigator.serviceWorker.register("/portal/sw.js", {scope:"/portal"}).catch(()=>{});
+})();
+</script>
+</body>
+</html>

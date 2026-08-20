@@ -6,6 +6,26 @@ enum Herkunft: String, Codable {
     case regel = "Regel"
     case ki = "KI"
     case mensch = "Manuell"
+
+    /// Anzeige ohne Technik-Vokabular (Rohwerte bleiben stabil — persistiert).
+    var anzeige: String {
+        switch self {
+        case .historie: return "aus deiner Historie"
+        case .regel: return "nach fester Regel"
+        case .ki: return "Vorschlag"
+        case .mensch: return "von dir festgelegt"
+        }
+    }
+
+    /// Kurzform für Badges.
+    var kurz: String {
+        switch self {
+        case .historie: return "Historie"
+        case .regel: return "Regel"
+        case .ki: return "Vorschlag"
+        case .mensch: return "Manuell"
+        }
+    }
 }
 
 enum BelegStatus: String, Codable {
@@ -51,8 +71,39 @@ enum Kontenplan {
     }
 }
 
-struct Beleg: Identifiable {
-    let id = UUID()
+/// Übertragungsstatus eines Belegs in die GitChain-Belegbox (Ablage auf der H200V).
+enum AblageStatus: String, Codable {
+    case ausstehend, uebertragen, fehlgeschlagen
+}
+
+/// Dateiname für den Ablage-Upload: `beleg_<jjjj-mm-tt>_<lieferant-slug>_<id8>.jpg`.
+/// Der Server prefixt zusätzlich Zeitstempel + Hex — Kollisionen sind unkritisch.
+func ablageDateiname(fuer beleg: Beleg) -> String {
+    let teile = beleg.datumText.split(separator: ".")
+    let datum: String
+    if teile.count == 3, let tag = Int(teile[0]), let monat = Int(teile[1]) {
+        let jahr = teile[2].count == 2 ? "20\(teile[2])" : String(teile[2])
+        datum = String(format: "%@-%02d-%02d", jahr, monat, tag)
+    } else {
+        datum = "0000-00-00"
+    }
+    let id8 = beleg.id.uuidString.replacingOccurrences(of: "-", with: "").prefix(8).lowercased()
+    return "beleg_\(datum)_\(slug(beleg.lieferant))_\(id8).jpg"
+}
+
+/// ASCII-Slug: Umlaute transliteriert, alles außer [a-z0-9] wird zu Bindestrichen.
+private func slug(_ text: String) -> String {
+    var s = text.lowercased()
+    for (u, e) in [("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss")] {
+        s = s.replacingOccurrences(of: u, with: e)
+    }
+    let teile = s.split(whereSeparator: { !($0.isASCII && ($0.isLetter || $0.isNumber)) })
+    let ergebnis = teile.joined(separator: "-").prefix(40)
+    return ergebnis.isEmpty ? "beleg" : String(ergebnis)
+}
+
+struct Beleg: Identifiable, Codable {
+    var id = UUID()
     var lieferant: String
     var belegNr: String
     var datumText: String
@@ -72,6 +123,21 @@ struct Beleg: Identifiable {
     var siegelZeit: Date?
     var bildJpeg: Data?
     var ocrText: String = ""
+    // Belegbox-Übertragung (alle optional — ältere zustand.json lädt weiter)
+    var ablageStatus: AblageStatus?
+    var ablageDateiname: String?
+    var ablageZeit: Date?
+    // Audit-Stempel: GitChain-Commits der vollständigen Kette
+    var auditAufnahme: String?
+    var auditReview: String?
+    // Bewirtungsangaben (§4 Abs. 5 Nr. 2 EStG): Pflicht bei Konto 6640
+    var bewirtungAnlass: String?
+    var bewirtungPersonen: String?
+
+    /// Bewirtungsbeleg ohne erfasste Angaben? Dann fragt die App nach.
+    var brauchtBewirtungsangaben: Bool {
+        konto == "6640" && (bewirtungPersonen ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+    }
 
     var ksLabel: String {
         switch steuerschluessel {

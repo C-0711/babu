@@ -8,8 +8,8 @@ SF Mono für Werte).
 
 | Baustein | Umsetzung |
 |---|---|
-| Capture | `VNDocumentCameraViewController` (VisionKit) — Live-Kantenerkennung, Auto-Auslösung, Zuschnitt, Entzerrung |
-| Instant Reading | On-Device-OCR mit dem Vision-Framework (`VNRecognizeTextRequest`, de-DE) — keine Cloud, Bilder verlassen das Gerät nicht |
+| Capture | Eigener AVFoundation-Sucher im Unlimited-OCR-Design: Vision-Dokument-Segmentierung (`VNDetectDocumentSegmentationRequest`), Eck-Marker + Konturlinie, Auto-Auslösung mit Plausibilitäts-Gates (kein Auto-Fire auf Bildschirme), Live-Felder im Sucher, Perspektiv-Entzerrung |
+| Instant Reading | On-Device-OCR mit dem Vision-Framework (`VNRecognizeTextRequest`, de-DE); mit aktivierter Belegbox werden Belege zusätzlich auf den eigenen Server (H200V) übertragen |
 | Feld-Extraktion | Heuristischer Parser (`FeldParser.swift`): Lieferant, Belegnummer, Datum, Netto/USt/Brutto inkl. Summenprobe auf deutschen Beträgen |
 | Kontierung | Engine deterministisch vor generativ: Kreditor-Historie → Regeln → Fallback, mit Confidence-Routing (≥ 95 automatisch, 80–94 bestätigen, < 80 prüfen) |
 | Siegel | Echte SHA-256-Hashes über CryptoKit, Zeitstempel, kopierbar im Provenance-Panel |
@@ -39,7 +39,16 @@ Beleg/
   Models.swift        Beleg, Kontenplan (SKR04), Siegel (SHA-256), Demo-Archiv
   FeldParser.swift    OCR-Zeilen → Felder + Kontierungs-Engine
   OCRService.swift    Vision-OCR + Simulator-Demo-Beleg
-  ScannerView.swift   VisionKit-Dokumentenscanner (UIKit-Bridge)
+  ScannerView.swift   Eigener Capture-Screen (Sucher + Overlay + Berechtigung)
+  CameraController.swift  AVCaptureSession, Torch, Belichtung, Foto
+  DocumentDetector.swift  Dokument-Segmentierung + Luma-Metriken pro Frame
+  AutoCaptureGate.swift   Auto-Auslöse-Zustandsmaschine mit Plausibilitäts-Gates
+  LiveFieldsReader.swift  Fast-OCR im Sucher (Brutto/Datum/Re-Nr. als Chips)
+  CaptureViewModel.swift  Klebstoff Kamera ↔ UI, Auslöse-Orchestrierung
+  CaptureOverlayView.swift Eck-Marker, Kontur, Statuszeile, Auslöser
+  LiveFieldsView.swift    Chip-Anzeige der live gelesenen Felder
+  CameraPreviewView.swift AVCaptureVideoPreviewLayer-Wrapper
+  Dewarper.swift      Perspektiv-Entzerrung mit Foto-Neu-Detektion
   CaptureTab.swift    Erfassen → Prüfschritte → Ergebnis-Karte mit Routing
   ReviewSheet.swift   Kontierungs-Editor (Fuzzy-Suche, Steuerschlüssel)
   ListeView.swift     Belegliste, Filter, Detail mit Provenance

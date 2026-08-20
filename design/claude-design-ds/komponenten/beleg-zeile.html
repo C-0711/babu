@@ -1,0 +1,38 @@
+<!-- @dsCard group="Komponenten" -->
+<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>Beleg-Zeile (Liste)</title>
+<style>:root{--gc-bg:#ffffff;--gc-canvas:#faf9f5;--gc-desk:#efece6;--gc-chrome:#f4f1ec;--gc-fg:#111111;--gc-body:#333333;--gc-desc:#555555;--gc-muted:#999999;--gc-accent:#857b61;--gc-accent-hover:#736950;--gc-accent-subtle:#f0ebe3;--gc-ok:#6f8a6e;--gc-warn:#b0821f;--gc-danger:#a8433a;--gc-scan:#1f1e1a;--gc-gold:#c9b98d}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;background:var(--gc-desk);padding:24px;color:var(--gc-body)}
+.serif{font-family:Georgia,'Times New Roman',serif}
+.mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace}
+.karte{background:var(--gc-bg);border-radius:14px;padding:16px;box-shadow:0 3px 8px rgba(31,30,26,.08)}
+.label{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--gc-muted);font-family:ui-monospace,'SF Mono',Menlo,monospace;margin:14px 0 8px}
+.zeile{display:flex;align-items:flex-start;gap:12px;padding:12px 4px;border-bottom:1px solid #f0ede7}
+.rosette{color:var(--gc-accent);font-size:18px;line-height:1.2}
+.betrag{text-align:right;margin-left:auto}
+.mini{font-family:ui-monospace,Menlo,monospace;font-size:9px;letter-spacing:.5px}
+</style></head><body>
+<div class="karte">
+<div class="zeile">
+  <div class="rosette">🏵</div>
+  <div>
+    <div style="font-size:14px;font-weight:600;color:var(--gc-fg)">WEINGÄRTY</div>
+    <div class="mono" style="font-size:10px;color:var(--gc-muted)">R-A687-2026-00071 · bestätigt</div>
+    <div class="mini" style="color:var(--gc-accent)">✓ AUDIT 699cbe3 · 8f6798d</div>
+  </div>
+  <div class="betrag"><div class="mono" style="font-size:14px;color:var(--gc-fg)">142,60&nbsp;€</div>
+  <div class="mono" style="font-size:10px;color:var(--gc-muted)">6640 · VSt 7&nbsp;%</div></div>
+</div>
+<div class="zeile" style="border-bottom:none">
+  <div class="rosette" style="color:var(--gc-muted)">◌</div>
+  <div>
+    <div style="font-size:14px;font-weight:600;color:var(--gc-fg)">Gasthaus Beispiel</div>
+    <div class="mono" style="font-size:10px;color:var(--gc-muted)">Bon 4711 · offen</div>
+    <div class="mini" style="color:var(--gc-warn)">⚠ BEWIRTUNGSANGABEN FEHLEN</div>
+  </div>
+  <div class="betrag"><div class="mono" style="font-size:14px;color:var(--gc-fg)">86,50&nbsp;€</div>
+  <div class="mono" style="font-size:10px;color:var(--gc-muted)">6640 · VSt 19&nbsp;%</div></div>
+</div>
+<div class="label">Wischgeste links = Löschen (nur nicht-fixierte). Fixierte Belege sind unantastbar.</div>
+</div>
+</body></html>

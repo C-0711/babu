@@ -1,0 +1,113 @@
+{
+    "aehnlich": null,
+    "audit": {
+        "aufnahme": {
+            "autor": "christoph0711.io",
+            "commit": "699cbe3",
+            "zeit": "2026-08-12T22:52:00+02:00"
+        },
+        "review": {
+            "autor": "belegreview",
+            "commit": "8f6798d",
+            "zeit": "2026-08-12T23:49:53+02:00"
+        }
+    },
+    "buchungssatz": {
+        "belegdatum": "2107",
+        "belegfeld1": "R-A687-2026-00071",
+        "bu_schluessel": "8",
+        "buchungstext": "Bewirtung 21.07. Rotenberger Weing\u00e4rtle",
+        "gegenkonto": "70099",
+        "konto": "6640",
+        "soll_haben": "S",
+        "umsatz": "142,60"
+    },
+    "datei": "docs/2026-08/20260812-225200-c781d6-beleg_2026-07-21_weingaerty_22bf8b36.jpg",
+    "dauer_s": 6.65,
+    "dokumentklasse": "Sonstiges",
+    "einschaetzung": {
+        "belegart": "Bewirtung (semantisch, 30%)",
+        "hinweise": [
+            "Bewirtungsbeleg: 70 % abziehbar (\u00a74 Abs. 5 Nr. 2 EStG), Vorsteuer zu 100 %.",
+            "Bewirtungsangaben erg\u00e4nzen: Anlass, Teilnehmer, Unterschrift.",
+            "Trinkgeld ist ohne Vorsteuer abziehbar \u2014 separat erfassen."
+        ],
+        "konto_skr04": "6640",
+        "steuerschluessel": "8"
+    },
+    "engine": "PaddleOCR PP-OCRv5 (CPU, H200V)",
+    "felder": {
+        "beleg_nr": "R-A687-2026-00071",
+        "bewirtungssignal": true,
+        "brutto": 142.6,
+        "datum": "21.07.2026",
+        "herkunft_vlm": [
+            "beleg_nr"
+        ],
+        "lieferant": "Rotenberger",
+        "netto": 127.88,
+        "offen": [
+            "Differenz Zahlbetrag 160,00 vs. Brutto 142,60 (vermutlich Trinkgeld)"
+        ],
+        "steuertabelle": [
+            {
+                "brutto": 85.4,
+                "netto": 79.81,
+                "satz": 7,
+                "ust": 5.59
+            },
+            {
+                "brutto": 57.2,
+                "netto": 48.07,
+                "satz": 19,
+                "ust": 9.13
+            }
+        ],
+        "summenprobe_ok": true,
+        "ust": 14.72,
+        "ust_satz": 7
+    },
+    "gelesen": "2026-08-12T21:49:53+00:00",
+    "ocr_konfidenz": 0.968,
+    "ocr_text": "Rotenberger\nWeing\u00e4rtle\nW\u00fcrttembergstra\u00dfe 317\n70327 Stuttgart\nDeutschland\nUmsatzsteuer-ID: DE335475048\nSteuernummer: 93303/55551\n+49 711 334015\nwww.rotenberger-weingaertle.de\nRechnung\nRechn.r.R-A687-2026-00071\nisch\nDatum\nZeit\n16/1\n21.07.2026 21:45:30\nEUR\nx Kartoffelsalat\n5,90\n5,90 A\nx Kaiserschmarrn\n11,90\n11,90 A\nIx Hei\u00dfe Liebe\n7,90\n7,90 A\nRahmschnitzel normal\n24,90\nX\n24,90 A\nx Risotto\n22,90\n22,90 A\n\u00d7 + mit Lachs\n6,00\n6,00 A\nX Blattsalat Beilage\n5,90\n5,90 A\nx Ensinger medium 0,51\n4,50\n4,50 B\nx Saftschorlen\n0,00\n0,00 B\nx + Apfelsaftschorle\n4,70\n4,70 B\n0,331\nx Merlot 0,751\n48,00\n48,00 B\nSume\n142,60\nTrinkgeld\n17,40\nMASTERCARD - GASTRONOVI\n160,00\nPAY\nUSt.\nNatto\nBrutto\nJSt.%\n5,59\n85,40\n79,81\nA 7%\n9,13\n57,20\n48,07\n 19%\n14,72\n142,60\n127,88\nTotal\n834\nTransaktionsnummer:\n1838\nSignaturz\u00e4hler:\n21.07.2026, 21:45\nBeginn:\nEnde:\n21.07.2026, 21:45\nSeriennummer des elektronischen\nAufzeichnungssystems:\n2029687\nSeriennummer des Sicherheitsmoduls:\na34504afccb4b886f0c2a49f002cb15accaa534e7ccb1\n83c113e490f2de97c97\nPr\u00fcfwert:\nv3z0jXCEAwNBATkvVR87kjFHUInh09oVgoD/Ca6LjvD/W\n/spo/grYozJAFrKPXSEdpmWomB1JTV4ZrHoyRXa4g=-\n21.07.2026, 20:17\nlorgangs\u00f6ffnung:\nKOPIE KARTENINHABER\n21.07.2026\natum\n21:45:35\nJhrzeit\n****7615\narte\n00\nAN seq.\nDEBIT MASTERCARD\nBev. Name\nmcstandarddebit\n(artentyp\nmC\nahlungsmethode\nmcstandarddebit\nahlungsvariante\nKontaktloser Chip\ningabemo\nA0000000041010\nID\n526567010650859\nMID\nFF9102E7-8F95-4B75-B\nTID\nE15-60655B2BA2D4\nFF9102E7\nTID\nNFKYCG\npIz1001784663135149\nauth. code\nR-A687-2026-00071\nTender\neferenz",
+    "semantik": {
+        "belegart": "Bewirtung",
+        "belegart_code": "bewirtung",
+        "kandidaten": [
+            {
+                "code": "bewirtung",
+                "konto": "6640",
+                "label": "Bewirtung",
+                "score": 0.2989
+            },
+            {
+                "code": "sonstiges",
+                "konto": "6850",
+                "label": "Sonstiger Betriebsbedarf",
+                "score": 0.2306
+            },
+            {
+                "code": "kfz",
+                "konto": "6530",
+                "label": "Kfz/Tanken",
+                "score": 0.2268
+            }
+        ],
+        "konfidenz": 0.2989,
+        "konto_skr04": "6640",
+        "modell": "embeddinggemma"
+    },
+    "vlm": {
+        "beleg_nr": "R-A687-2026-00071",
+        "bewirtung": false,
+        "brutto": 142.6,
+        "datum": "21.07.2026",
+        "lieferant": "Rotenberger Weing\u00e4rtle",
+        "netto": 127.88,
+        "positionen_anzahl": 11,
+        "trinkgeld": 17.4,
+        "ust": 14.72,
+        "zahlungsart": "MASTERCARD"
+    },
+    "zeilen": 128
+}

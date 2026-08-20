@@ -1,0 +1,224 @@
+"""Portal-API-Tests gegen einen Fixture-Bare-Store (aus dem Golden-Review gebaut).
+
+Läuft lokal ohne Server: BABU_STORE zeigt auf ein frisch gebautes Bare-Repo,
+wer_token ist gemockt (kein gitchain.de-Kontakt). Die iOS-Verträge (/review,
+/chat-Fehlerbilder) werden gegen die Golden-Fixtures geprüft.
+
+    scratch-venv/bin/python -m pytest server/belegreview/tests/test_api.py -q
+"""
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+HIER = Path(__file__).resolve().parent
+GOLDEN = HIER / "golden" / "review_weingaertle.json"
+STAMM = "20260812-225200-c781d6-beleg_2026-07-21_weingaerty_22bf8b36"
+LOKALER_NAME = "beleg_2026-07-21_weingaerty_22bf8b36"   # was die App kennt
+
+
+def _git(repo: Path, *args: str, env=None) -> None:
+    subprocess.run(["git", "-C", str(repo), *args], check=True,
+                   capture_output=True, env=env)
+
+
+@pytest.fixture(scope="session")
+def store(tmp_path_factory) -> Path:
+    """Arbeitsrepo mit aufnahme:- und review:-Commits → Bare-Clone wie im Betrieb."""
+    arbeit = tmp_path_factory.mktemp("box")
+    subprocess.run(["git", "init", "-q", "-b", "main", str(arbeit)], check=True)
+    _git(arbeit, "config", "user.name", "test")
+    _git(arbeit, "config", "user.email", "test@local")
+
+    golden = json.loads(GOLDEN.read_text())
+    # audit/buchungssatz sind HTTP-Anreicherung — liegen NICHT im Store.
+    gespeichert = {k: v for k, v in golden.items() if k not in ("audit", "buchungssatz")}
+
+    (arbeit / "docs" / "2026-08").mkdir(parents=True)
+    (arbeit / "docs" / "2026-08" / f"{STAMM}.jpg").write_bytes(b"\xff\xd8\xff\xe0testjpeg")
+    (arbeit / "docs" / "2026-08" / "20260812-211943-99b8fb-beleg-test.pdf").write_bytes(b"%PDF-1.4 test")
+    # Stub-Review wie vom Watcher bei unlesbaren Fotos: semantik/vlm sind null —
+    # der Index darf daran nicht sterben (Regression 13.08.).
+    (arbeit / "docs" / "2026-08" / "20260813-000000-abcdef-kaputt.jpg").write_bytes(b"\xff\xd8kaputt")
+    _git(arbeit, "add", "-A")
+    _git(arbeit, "commit", "-q", "-m", f"aufnahme: {STAMM}.jpg",
+         "--author", "christoph0711.io <aufnahme@gitchain.local>")
+
+    (arbeit / "review").mkdir()
+    (arbeit / "review" / f"{STAMM}.json").write_text(
+        json.dumps(gespeichert, ensure_ascii=False, indent=1))
+    (arbeit / "review" / f"{STAMM}.md").write_text("# BelegReview\n")
+    (arbeit / "review" / f"{STAMM}.embedding.json").write_text(
+        json.dumps({"modell": "embeddinggemma", "dim": 3, "vektor": [0.1, 0.2, 0.3]}))
+    (arbeit / "review" / "20260813-000000-abcdef-kaputt.json").write_text(json.dumps({
+        "datei": "docs/2026-08/20260813-000000-abcdef-kaputt.jpg",
+        "engine": "BelegReview-Stub", "dokumentklasse": "unlesbar",
+        "semantik": None, "vlm": None, "aehnlich": None,
+        "felder": {"lieferant": None, "beleg_nr": None, "datum": None,
+                   "netto": None, "ust": None, "brutto": None, "ust_satz": 19,
+                   "summenprobe_ok": False, "bewirtungssignal": False,
+                   "offen": ["Das Foto war schwer zu lesen."]},
+        "einschaetzung": {"belegart": "unlesbar", "konto_skr04": None,
+                          "steuerschluessel": "9", "hinweise": []},
+        "ocr_text": ""}, ensure_ascii=False))
+    _git(arbeit, "add", "-A")
+    _git(arbeit, "commit", "-q", "-m", f"review: {STAMM}.jpg",
+         "--author", "belegreview <review@gitchain.local>")
+
+    bare = tmp_path_factory.mktemp("store") / "babu.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(arbeit), str(bare)], check=True)
+    return bare
+
+
+@pytest.fixture(scope="session")
+def client(store, tmp_path_factory):
+    os.environ["BABU_STORE"] = str(store)
+    os.environ["BABU_SEITE"] = str(GOLDEN)  # irgendeine existierende Datei
+    os.environ["BABU_SESSION_GEHEIMNIS"] = str(tmp_path_factory.mktemp("s") / ".geheimnis")
+    os.environ["BABU_INDEX_TTL"] = "0"      # Tests: immer frisch prüfen
+    sys.path.insert(0, str(HIER.parent))
+    import babu_web  # noqa: PLC0415
+
+    babu_web.wer_token = lambda token: {"test-pat": "christoph0711.io",
+                                        "fremd-pat": "fremder.example"}.get(token)
+    from fastapi.testclient import TestClient  # noqa: PLC0415
+    return TestClient(babu_web.app, base_url="https://testserver")
+
+
+def _anmelden(client):
+    r = client.post("/api/anmelden", json={"pat": "test-pat"})
+    assert r.status_code == 200 and r.json() == {"un": "christoph0711.io"}
+    assert "babu_sitzung" in client.cookies
+
+
+def test_anmelden_falscher_pat(client):
+    assert client.post("/api/anmelden", json={"pat": "quatsch"}).status_code == 401
+
+
+def test_anmelden_fremder_nutzer(client):
+    assert client.post("/api/anmelden", json={"pat": "fremd-pat"}).status_code == 403
+
+
+def test_api_ohne_anmeldung(client):
+    assert client.get("/api/belege").status_code == 401
+    assert client.get("/api/ich").status_code == 401
+
+
+def test_ich_mit_cookie(client):
+    _anmelden(client)
+    r = client.get("/api/ich")
+    assert r.status_code == 200 and r.json()["un"] == "christoph0711.io"
+
+
+def test_belege_liste_und_etag(client):
+    _anmelden(client)
+    r = client.get("/api/belege")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["gesamt"] == 3                      # JPG (Review) + PDF (erfasst) + Stub
+    assert d["monate"] == ["2026-08"]
+    stati = {z["stamm"]: z["status"] for z in d["belege"]}
+    assert stati[STAMM] == "nachfrage"           # offen: Trinkgeld-Differenz
+    assert stati["20260812-211943-99b8fb-beleg-test"] == "erfasst"
+    assert stati["20260813-000000-abcdef-kaputt"] == "nachfrage"   # Stub → „neu fotografieren"
+    weingaertle = next(z for z in d["belege"] if z["stamm"] == STAMM)
+    assert weingaertle["lieferant"] == "Rotenberger Weingärtle"
+    assert weingaertle["brutto"] == 142.6
+    assert weingaertle["konto_skr04"] == "6640"
+    assert "_review" not in weingaertle
+    etag = r.headers["etag"]
+    assert client.get("/api/belege",
+                      headers={"If-None-Match": etag}).status_code == 304
+
+
+def test_belege_filter(client):
+    _anmelden(client)
+    r = client.get("/api/belege", params={"status": "nachfrage"})
+    assert {z["stamm"] for z in r.json()["belege"]} == {STAMM, "20260813-000000-abcdef-kaputt"}
+    r = client.get("/api/belege", params={"monat": "2026-07"})
+    assert r.json()["gesamt"] == 0
+
+
+def test_beleg_detail_superset_von_review(client):
+    _anmelden(client)
+    review = client.get(f"/review/{STAMM}",
+                        headers={"Authorization": "Bearer test-pat"}).json()
+    detail = client.get(f"/api/beleg/{STAMM}").json()
+    for k in review:
+        assert k in detail, f"Detail verliert Schlüssel {k}"
+    assert detail["status"] == "nachfrage"
+    assert detail["stamm"] == STAMM
+    assert detail["monat"] == "2026-08"
+    assert detail["bild_url"].startswith(f"/api/beleg/{STAMM}/bild?v=")
+    # Buchungssatz identisch mit dem Golden-Fixture (iOS-Vertrag)
+    golden = json.loads(GOLDEN.read_text())
+    assert detail["buchungssatz"] == golden["buchungssatz"]
+    assert review["buchungssatz"] == golden["buchungssatz"]
+
+
+def test_beleg_detail_suffix_match(client):
+    _anmelden(client)
+    r = client.get(f"/api/beleg/{LOKALER_NAME}")
+    assert r.status_code == 200 and r.json()["stamm"] == STAMM
+
+
+def test_beleg_bild(client):
+    _anmelden(client)
+    r = client.get(f"/api/beleg/{STAMM}/bild")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("image/jpeg")
+    assert "immutable" in r.headers["cache-control"]
+    assert r.content.startswith(b"\xff\xd8")
+
+
+def test_monat_aggregation(client):
+    _anmelden(client)
+    d = client.get("/api/monat/2026-08").json()
+    assert d["anzahl"] == 3
+    assert d["brutto"] == 142.6
+    assert d["belegarten"][0]["belegart"] == "Bewirtung"
+    assert d["belegarten"][0]["lieferanten"] == ["Rotenberger Weingärtle"]
+    assert d["konten"][0] == {"konto": "6640", "brutto": 142.6, "anzahl": 1}
+    assert len(d["offene"]) == 3                 # nachfrage + erfasstes PDF + Stub
+    assert d["groesste_position"]["lieferant"] == "Rotenberger Weingärtle"
+    assert d["vormonat"]["anzahl"] == 0
+
+
+def test_review_vertrag_unveraendert(client):
+    """iOS-Vertrag: Felder des Golden-Fixtures byte-gleich (bis auf Audit-Hashes)."""
+    golden = json.loads(GOLDEN.read_text())
+    live = client.get(f"/review/{STAMM}",
+                      headers={"Authorization": "Bearer test-pat"}).json()
+    for k in golden:
+        if k == "audit":
+            assert set(live[k]) == {"aufnahme", "review"}
+            assert live[k]["aufnahme"]["autor"] == "christoph0711.io"
+        else:
+            assert live[k] == golden[k], f"Schlüssel {k} weicht ab"
+
+
+def test_chat_ohne_reviews_ok_mit_cookie(client):
+    _anmelden(client)
+    r = client.post("/chat", json={"frage": ""})
+    assert r.status_code == 400            # Cookie-Auth greift, Validierung meldet sich
+    assert r.json() == {"fehler": "frage fehlt oder zu lang"}
+
+
+def test_chat_route_ist_sync():
+    """chat muss sync bleiben: requests/subprocess würden async den Event-Loop
+    blockieren (workers=1) — GET /review liefe dann in Timeouts."""
+    import inspect
+    sys.path.insert(0, str(HIER.parent))
+    import babu_web
+    assert not inspect.iscoroutinefunction(babu_web.chat)
+
+
+def test_origin_check(client):
+    _anmelden(client)
+    r = client.post("/chat", json={"frage": "x"},
+                    headers={"Origin": "https://boese.example"})
+    assert r.status_code == 401            # Cookie verworfen, kein Bearer da
+

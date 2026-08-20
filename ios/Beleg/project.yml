@@ -14,7 +14,8 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_NSCameraUsageDescription: "Die Kamera erfasst Belege für die automatische Kontierung. Bilder bleiben auf dem Gerät."
+        INFOPLIST_FILE: Support/Info.plist
+        INFOPLIST_KEY_NSCameraUsageDescription: "Die Kamera erfasst deine Belege."
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
