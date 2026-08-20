@@ -357,7 +357,7 @@ INDEX_TTL = float(os.environ.get("BABU_INDEX_TTL", "5"))
 _INDEX_LOCK = threading.Lock()
 _INDEX: dict = {"head": None, "geprueft": 0.0, "belege": {}, "reviews": {},
                 "dokumente": [], "freigaben": {}, "umsaetze": {},
-                "zeiten": {}, "oid_cache": {}}
+                "kassenblaetter": {}, "zeiten": {}, "oid_cache": {}}
 
 
 def _git(args: list[str], timeout: int = 30) -> str | None:
@@ -595,6 +595,23 @@ def _index_bauen(head: str) -> None:
         if isinstance(d_, dict) and d_.get("monat"):
             umsaetze.setdefault(d_["monat"], []).extend(d_.get("umsaetze") or [])
     _INDEX["umsaetze"] = umsaetze
+
+    # Kassenbuch: kassenbuch/<JJJJ-MM>/<JJJJ-MM-TT>.json — die Erlösseite.
+    kassen_pfade = {p_: oid for p_, oid in pfade.items()
+                    if p_.startswith("kassenbuch/") and p_.endswith(".json")}
+    fehlend_ka = [oid for oid in kassen_pfade.values() if oid not in oid_cache]
+    for oid, roh in _blobs_lesen(fehlend_ka).items():
+        try:
+            oid_cache[oid] = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            oid_cache[oid] = None
+    kassenblaetter: dict[str, dict] = {}
+    for p_, oid in kassen_pfade.items():
+        d_ = oid_cache.get(oid)
+        if isinstance(d_, dict) and d_.get("datum"):
+            # Ein Blatt je Tag; ein späteres gewinnt (Korrektur).
+            kassenblaetter[d_["datum"]] = d_
+    _INDEX["kassenblaetter"] = kassenblaetter
 
     # Exportierte Belege: export/<monat>/stapel.json sammeln
     export_pfade = {p_: oid for p_, oid in pfade.items()
@@ -1380,7 +1397,9 @@ EINSTELLUNG_SCHLUESSEL = {"benachrichtigung_frage", "benachrichtigung_post",
                           "telefon", "email",
                           # Paket-Einstufung (Fragebogen/Salon-Check)
                           "ust_befreiung_medizinisch", "steuerberater_modus",
-                          "filialen", "mehrere_unternehmen", "abschluss_art"}
+                          "filialen", "mehrere_unternehmen", "abschluss_art",
+                          # Umsatzprofil: steuert, was das Kassenbuch fragt
+                          "ust_sieben_prozent", "verkauft_gutscheine"}
 
 
 # Registrierung: Interessentinnen hinterlassen alle Daten — der Zugang wird
@@ -2241,7 +2260,8 @@ def _brief_job(pfad: str, daten: bytes, name: str, un: str) -> None:
 # ---------------------------------------------------------------------------
 
 KASSENBUCH_ZAHLEN = ("bestandVortag", "einnahmenBar", "privateinlagen",
-                     "gutscheineEingeloest",
+                     "gutscheineEingeloest", "gutscheinVerkauf",
+                     "umsatzFrei", "umsatz7",
                      "barabhebungBank", "ecZahlungen", "trinkgeldTeamEC",
                      "sonstigeAusgaben", "privatentnahmen", "einzahlungBank",
                      "gezaehltSchluss")
@@ -2388,6 +2408,49 @@ async def api_angaben(stamm: str, request: Request) -> Response:
     with _INDEX_LOCK:
         _INDEX["geprueft"] = 0.0
     return JSONResponse({"ok": True, "commit": commit, "angaben": daten})
+
+
+@app.get("/api/monatsabschluss/{monat}")
+def api_monatsabschluss(monat: str, request: Request) -> Response:
+    """BWA und Umsatzsteuer-Entwurf eines Monats — aus Belegen und Kassenbuch.
+
+    Entwurf, kein fertiger Abschluss: geprüft und übermittelt wird vom
+    steuerlichen Backend. Was babu nicht sicher weiß, steht in der Prüfliste.
+    """
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if not re.fullmatch(r"\d{4}-\d{2}", monat):
+        return JSONResponse({"fehler": "Monat als JJJJ-MM"}, status_code=400)
+    import monatsabschluss as ma  # noqa: PLC0415
+
+    idx = index_aktuell()
+    blaetter = [b for tag, b in idx["kassenblaetter"].items()
+                if tag.startswith(monat)]
+    belege = [z for z in idx["belege"].values() if z["monat"] == monat]
+    einstellungen = db_einstellungen(un)
+
+    profil = ma.umsatz_profil(einstellungen)
+    erloese = ma.erloese_monat(blaetter)
+    vorsteuer = ma.vorsteuer_monat(belege)
+
+    # Vorjahreswerte aus dem Salon-Check, wenn vorhanden.
+    vorjahr = None
+    jahr = int(monat[:4]) - 1
+    roh = git_show(f"abschluss/{jahr}/kennzahlen.json")
+    if roh:
+        try:
+            vorjahr = (json.loads(roh) or {}).get("zahlen")
+        except Exception:  # noqa: BLE001
+            vorjahr = None
+
+    return JSONResponse({
+        "monat": monat,
+        "erloese": erloese,
+        "bwa": ma.bwa(monat, erloese, belege, vorjahr),
+        "ustva": ma.ustva_entwurf(monat, erloese, vorsteuer, profil),
+        "profil": profil,
+    })
 
 
 @app.post("/api/kassenbuch")

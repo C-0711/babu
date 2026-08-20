@@ -241,3 +241,44 @@ def test_ablage_ordnet_nach_jahr_und_art(welt):
     alle = [s["pfad"] for j in d["jahre"] for a in j["arten"] for s in a["stuecke"]]
     assert not any(p.endswith((".meta.json", ".erklaerung.json", ".umsaetze.json"))
                    for p in alle)
+
+
+def test_monatsabschluss_aus_kassenbuch_und_belegen(welt):
+    """Ende-zu-Ende: Kassenblätter rein, BWA und UStVA-Entwurf raus."""
+    client, _, _ = welt
+    for tag, bar, karte in (("2026-08-03", 400, 600), ("2026-08-04", 300, 700)):
+        assert client.post("/api/kassenbuch", json={
+            "datum": tag, "einnahmenBar": bar, "ecZahlungen": karte}).status_code == 200
+
+    d = client.get("/api/monatsabschluss/2026-08").json()
+    assert d["erloese"]["tage"] == 2
+    assert d["erloese"]["brutto_19"] == 2000.0        # alles 19 %, keine Zusatzfrage
+    assert d["profil"]["fragen"] == []
+
+    kz = {z["kz"]: z for z in d["ustva"]["zeilen"]}
+    assert kz["81"]["netto"] == 1680.67                # 2000 / 1,19
+    assert d["ustva"]["stand"] == "entwurf"
+    assert "Steuer-Backend" in d["ustva"]["hinweis"]
+    assert d["bwa"]["umsatz_netto"] == 1680.67
+
+    # Kleinunternehmerin: kein Entwurf, aber die BWA bleibt.
+    client.post("/api/einstellungen", json={"kleinunternehmer": "Ja"})
+    d = client.get("/api/monatsabschluss/2026-08").json()
+    assert d["ustva"]["stand"] == "keine"
+    assert d["bwa"]["umsatz_netto"] > 0
+
+    assert client.get("/api/monatsabschluss/2026").status_code == 400
+
+
+def test_kassenbuch_nimmt_umsatzaufteilung_an(welt):
+    client, bare, _ = welt
+    assert client.post("/api/kassenbuch", json={
+        "datum": "2026-09-01", "einnahmenBar": 1000, "umsatzFrei": 200,
+        "gutscheinVerkauf": 50}).status_code == 200
+    blatt = json.loads(subprocess.run(
+        ["git", "-C", str(bare), "show", "HEAD:kassenbuch/2026-09/2026-09-01.json"],
+        capture_output=True, check=True).stdout)
+    assert blatt["umsatzFrei"] == 200.0 and blatt["gutscheinVerkauf"] == 50.0
+    d = client.get("/api/monatsabschluss/2026-09").json()
+    assert d["erloese"]["brutto_19"] == 850.0    # 1000 - 200 frei + 50 Gutschein
+    assert d["erloese"]["steuerfrei"] == 200.0

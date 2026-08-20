@@ -461,8 +461,31 @@ main{padding:26px 22px 60px;min-height:70dvh}
     <div id="detail-inhalt"><div class="skelett" style="height:300px"></div></div>
   </section>
 
+  <!-- MONATSABSCHLUSS: BWA + Umsatzsteuer-Entwurf aus eigenen Daten -->
+  <section class="ansicht" id="a-abschluss">
+    <div class="unterreiter">
+      <button onclick="location.hash='#zahlen'">Ausgaben</button>
+      <button class="an" onclick="location.hash='#abschluss'">Monatsabschluss</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="gruss" style="font-size:22px">Monatsabschluss</div>
+      <div class="mon-schalter">
+        <button id="ab-mon-zurueck" aria-label="Vormonat">‹</button>
+        <b id="ab-mon-anzeige"></b>
+        <button id="ab-mon-vor" aria-label="Folgemonat">›</button>
+      </div>
+    </div>
+    <p style="color:var(--gc-desc);margin:6px 0 16px">Aus deinen Belegen und
+      deinem Kassenbuch gerechnet — ein Entwurf, den dein Steuer-Backend prüft.</p>
+    <div id="abschluss-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+  </section>
+
   <!-- ZAHLEN (Auswertung wie die BH-Auswertung der Kanzlei, nur lesbar) -->
   <section class="ansicht" id="a-zahlen">
+    <div class="unterreiter">
+      <button class="an" onclick="location.hash='#zahlen'">Ausgaben</button>
+      <button onclick="location.hash='#abschluss'">Monatsabschluss</button>
+    </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div class="gruss" style="font-size:22px">Deine Zahlen</div>
       <div class="mon-schalter">
@@ -755,6 +778,7 @@ $("#zugangscode").addEventListener("keydown", e => { if(e.key==="Enter") $("#anm
 /* ————— Router ————— */
 const ansichten = { heute: ladeHeute, belege: ladeBelege, fragen: () => {},
                     aufraeumen: ladeAufraeumen, post: ladePost, ablage: ladeAblage, export: ladeExport,
+                    abschluss: ladeAbschluss,
                     zahlen: ladeZahlen, bank: ladeBank, saloncheck: ladeSalonCheck,
                     einrichtung: ladeEinrichtung, verwaltung: ladeVerwaltung,
                     einstellungen: ladeEinstellungen, detail: null };
@@ -1677,6 +1701,87 @@ $("#menu-abmelden").addEventListener("click", async () => {
   try{ await api("/api/abmelden", {method:"POST"}); }catch{}
   zeigeLogin();
 });
+
+/* ————— Monatsabschluss: BWA + Umsatzsteuer-Entwurf ————— */
+let abMonat = jetztMonat();
+async function ladeAbschluss(){
+  $("#ab-mon-anzeige").textContent = monatName(abMonat);
+  const ziel = $("#abschluss-inhalt");
+  let d;
+  try{ d = await (await api("/api/monatsabschluss/" + abMonat)).json(); }
+  catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+
+  const b = d.bwa, u = d.ustva, e = d.erloese;
+  let html = "";
+
+  if (!e.tage){
+    html += `<div class="karte nachfrage"><h3>Für diesen Monat fehlt dein Kassenbuch</h3>
+      <p>Ohne die Tageseinnahmen können wir weder Auswertung noch Umsatzsteuer rechnen.
+      Trag sie in der App im Kassenbuch ein — eine Zahl pro Frage.</p></div>`;
+  }
+
+  // ————— Deine Zahlen (BWA) —————
+  html += `<div class="sektion lbl">Deine Zahlen</div><div class="karte">
+    <div class="mrow"><span class="art">Eingenommen (ohne Steuer)</span>
+      <span class="summe">${euro(b.umsatz_netto)}</span></div>
+    <div class="mrow"><span class="art">Ausgegeben (ohne Steuer)</span>
+      <span class="summe">${euro(b.kosten_netto)}</span></div>
+    <div class="mrow" style="border-top:1px solid var(--gc-border);font-weight:600">
+      <span class="art">Bleibt dir</span>
+      <span class="summe" style="color:${b.ergebnis >= 0 ? "var(--gc-ok)" : "var(--gc-danger)"}">
+        ${euro(b.ergebnis)}</span></div>
+    ${b.ergebnis_anteil !== null ? `<p style="color:var(--gc-desc);font-size:13px;margin-top:8px">
+      Von 100 € Umsatz bleiben dir ${Math.round(b.ergebnis_anteil)} €.
+      ${b.vorjahr_delta !== undefined ? `Im Schnitt des Vorjahres lagst du bei
+        ${euro(b.vorjahr_monat)} Umsatz — das sind
+        ${b.vorjahr_delta >= 0 ? "+" : ""}${euro(b.vorjahr_delta)}.` : ""}</p>` : ""}
+  </div>`;
+
+  if (b.gruppen.length){
+    html += `<div class="sektion lbl">Wohin das Geld ging</div><div class="karte">`;
+    for (const g of b.gruppen){
+      html += `<div class="mrow"><span class="art">${esc(g.name)}</span>
+        <span class="wer">${g.anzahl} ${g.anzahl === 1 ? "Beleg" : "Belege"}${
+          g.anteil !== null ? " · " + Math.round(g.anteil) + " % vom Umsatz" : ""}</span>
+        <span class="summe">${euro(g.netto)}</span></div>`;
+    }
+    html += `</div>`;
+  }
+
+  // ————— Umsatzsteuer —————
+  html += `<div class="sektion lbl">Umsatzsteuer</div>`;
+  if (u.stand === "keine"){
+    html += `<div class="karte"><b>Keine Voranmeldung nötig</b>
+      <p style="color:var(--gc-desc);font-size:13px;margin-top:4px">${esc(u.hinweis)}</p></div>`;
+  } else {
+    html += `<div class="karte">
+      <div style="font:600 26px var(--gc-serif);margin-bottom:2px">${esc(u.satz)}</div>
+      <p style="color:var(--gc-desc);font-size:13px">${esc(u.hinweis)}</p>
+      <div style="margin-top:12px">`;
+    for (const z of u.zeilen){
+      html += `<div class="mrow"><span class="art">${esc(z.name)}</span>
+        <span class="wer">Kennzahl ${z.kz}</span>
+        <span class="summe">${z.netto !== null ? euro(z.netto) : euro(z.steuer)}</span></div>`;
+    }
+    html += `</div></div>`;
+    if ((u.pruefliste || []).length){
+      html += `<div class="karte nachfrage" style="margin-top:10px">
+        <h3>Das fehlt noch</h3>
+        <p style="color:var(--gc-desc);font-size:13px;margin-bottom:8px">
+          Diese Belege haben wir nicht mitgerechnet — sie würden die Zahlen verfälschen.</p>`;
+      for (const pz of u.pruefliste.slice(0, 8)){
+        html += `<button class="zeile" onclick="location.hash='#detail/${pz.stamm}'">
+          <div class="zmitte"><div class="zname">${esc(pz.lieferant || "Beleg")}</div>
+          <div class="zstatus frage">${esc(pz.hinweis)}</div></div>
+          <div class="zrechts"><span class="chip">Ansehen</span></div></button>`;
+      }
+      html += `</div>`;
+    }
+  }
+  ziel.innerHTML = html;
+}
+$("#ab-mon-zurueck").addEventListener("click", () => { abMonat = monatSchieben(abMonat, -1); ladeAbschluss(); });
+$("#ab-mon-vor").addEventListener("click", () => { abMonat = monatSchieben(abMonat, 1); ladeAbschluss(); });
 
 /* ————— Export-Ansicht ————— */
 let eMonat = jetztMonat();
