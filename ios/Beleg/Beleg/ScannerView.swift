@@ -20,6 +20,8 @@ struct ScannerView: View {
             case .erteilt:
                 CameraPreviewView(session: model.kamera.session)
                     .ignoresSafeArea()
+                // Das Overlay bleibt INNERHALB der Safe Area: sonst liegt das
+                // Abbrechen-X unter der Dynamic Island und lässt sich nicht tippen.
                 CaptureOverlayView(model: model)
             case .verweigert:
                 BerechtigungHinweis(onCancel: onCancel)

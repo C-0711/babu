@@ -11,7 +11,7 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 18) {
             Spacer()
 
-            Text("Beleg")
+            Text("babu")
                 .font(.system(size: 34, weight: .semibold, design: .serif))
                 .foregroundStyle(GC.fg)
 
@@ -22,7 +22,7 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 14) {
                 punkt("viewfinder", "Beleg in den Rahmen halten — das Foto passiert von selbst.")
                 punkt("checkmark.seal", "Jeder Beleg wird gelesen, eingeordnet und noch einmal gegengeprüft. Grüner Haken = alles gut.")
-                punkt("square.and.arrow.up", "Dein Steuerbüro bekommt am Monatsende einen fertigen Stapel.")
+                punkt("square.and.arrow.up", "Am Monatsende ist deine Buchhaltung fertig — ganz ohne eigenes Steuerbüro.")
             }
             .padding(.top, 8)
 

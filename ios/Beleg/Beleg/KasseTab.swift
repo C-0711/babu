@@ -165,6 +165,9 @@ struct KasseTab: View {
                 }
                 zeile("Bargeld eingenommen", fmtEur(b.einnahmenBar))
                 zeile("Mit Karte bezahlt", fmtEur(b.ecZahlungen))
+                if b.gutscheineEingeloest > 0 {
+                    zeile("Mit Gutschein bezahlt", fmtEur(b.gutscheineEingeloest))
+                }
                 zeile("Tagesumsatz gesamt", fmtEur(b.tagesumsatz))
                 zeile("Abends gezählt", fmtEur(b.gezaehltSchluss))
                 HStack(spacing: 6) {

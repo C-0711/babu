@@ -26,7 +26,20 @@ struct CaptureOverlayView: View {
                         statuszeile
                         ausloeser
                             .padding(.top, 14)
-                            .padding(.bottom, 28)
+                        // Zweiter Ausweg: oben kann je nach Gerät etwas
+                        // verdeckt sein — hier ist der Weg zurück immer da.
+                        Button {
+                            model.abbrechen()
+                        } label: {
+                            Text("Abbrechen")
+                                .font(.body.weight(.medium))
+                                .foregroundStyle(.white.opacity(0.85))
+                                .padding(.horizontal, 26)
+                                .padding(.vertical, 11)
+                                .background(.white.opacity(0.16), in: Capsule())
+                        }
+                        .padding(.top, 14)
+                        .padding(.bottom, 22)
                     }
                 }
             }

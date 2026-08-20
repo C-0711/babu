@@ -127,7 +127,8 @@ enum AblageService {
             "datum": b.datum,
             "bestandVortag": b.bestandVortag, "einnahmenBar": b.einnahmenBar,
             "privateinlagen": b.privateinlagen, "barabhebungBank": b.barabhebungBank,
-            "ecZahlungen": b.ecZahlungen, "trinkgeldTeamEC": b.trinkgeldTeamEC,
+            "ecZahlungen": b.ecZahlungen, "gutscheineEingeloest": b.gutscheineEingeloest,
+            "trinkgeldTeamEC": b.trinkgeldTeamEC,
             "sonstigeAusgaben": b.sonstigeAusgaben, "privatentnahmen": b.privatentnahmen,
             "einzahlungBank": b.einzahlungBank, "gezaehltSchluss": b.gezaehltSchluss,
         ]

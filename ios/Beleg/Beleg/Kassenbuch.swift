@@ -14,6 +14,10 @@ struct Kassenbericht: Codable, Identifiable, Equatable {
     var privateinlagen = 0.0
     var barabhebungBank = 0.0
     var ecZahlungen = 0.0
+    // Eingelöste Gutscheine: KEINE neue Einnahme — das Geld kam schon beim
+    // Verkauf des Gutscheins in die Kasse. Wird nur für den Tagesumsatz
+    // ausgewiesen, nicht in den Kassenbestand gerechnet.
+    var gutscheineEingeloest = 0.0
     var trinkgeldTeamEC = 0.0
     var sonstigeAusgaben = 0.0
     var privatentnahmen = 0.0

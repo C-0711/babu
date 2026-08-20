@@ -56,5 +56,10 @@ struct MainTabs: View {
                 .tabItem { Label("Fragen", systemImage: "questionmark.bubble") }
                 .tag(AppStore.Tab.fragen)
         }
+        // Rechnung aus Mail, WhatsApp oder Dateien: „Teilen → In babu öffnen"
+        .onOpenURL { url in
+            store.tab = .erfassen
+            store.geteilteDatei = url
+        }
     }
 }

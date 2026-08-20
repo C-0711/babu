@@ -33,6 +33,9 @@ struct KassenberichtWorkflow: View {
         Schritt(frage: "Wie viel wurde heute mit Karte bezahlt?",
                 hilfe: "Steht auf dem Tagesabschluss deines Kartenlesers.",
                 optional: false, pfad: \.ecZahlungen),
+        Schritt(frage: "Hat heute jemand mit einem Gutschein bezahlt?",
+                hilfe: "Nur der Wert der eingelösten Gutscheine. Das ist keine neue Einnahme — das Geld kam schon damals rein, als du den Gutschein verkauft hast.",
+                optional: true, pfad: \.gutscheineEingeloest),
         Schritt(frage: "Trinkgeld fürs Team bar aus der Kasse gegeben, das mit Karte bezahlt war?",
                 hilfe: "Nur das Team-Trinkgeld, das Kundinnen mit Karte gegeben haben und du bar auszahlst. Es wird sauber notiert — wie es steuerlich läuft, klärt deine Ansprechperson.",
                 optional: true, pfad: \.trinkgeldTeamEC),
@@ -221,6 +224,12 @@ struct KassenberichtWorkflow: View {
             VStack(spacing: 10) {
                 ergebnisZeile("Bargeld eingenommen", fmtEur(bericht.einnahmenBar))
                 ergebnisZeile("Mit Karte bezahlt", fmtEur(bericht.ecZahlungen))
+                if bericht.gutscheineEingeloest > 0 {
+                    ergebnisZeile("Mit Gutschein bezahlt", fmtEur(bericht.gutscheineEingeloest))
+                    Text("Gutscheine zählen hier nicht mit — das Geld kam schon beim Verkauf rein.")
+                        .font(.caption)
+                        .foregroundStyle(GC.muted)
+                }
                 ergebnisZeile("Tagesumsatz gesamt", fmtEur(bericht.tagesumsatz))
                 Divider()
                 ergebnisZeile("So viel müsste drin sein", fmtEur(bericht.rechnerischerBestand))

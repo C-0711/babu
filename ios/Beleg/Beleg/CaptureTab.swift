@@ -46,13 +46,25 @@ struct CaptureTab: View {
                     },
                     onCancel: { zeigeScanner = false }
                 )
-                .ignoresSafeArea()
             }
             .fileImporter(isPresented: $zeigeDateien,
                           allowedContentTypes: [.pdf, .image]) { ergebnis in
                 switch ergebnis {
                 case .success(let url): ladeFehler = nil; ladeDatei(url)
                 case .failure: ladeFehler = "Die Datei ließ sich nicht öffnen — bitte noch einmal versuchen."
+                }
+            }
+            .onChange(of: store.geteilteDatei) { _, neu in
+                guard let neu else { return }
+                store.geteilteDatei = nil
+                ladeFehler = nil
+                ladeDatei(neu)
+            }
+            .onAppear {
+                // Beim Start geteilt? Dann jetzt einlesen.
+                if let offen = store.geteilteDatei {
+                    store.geteilteDatei = nil
+                    ladeDatei(offen)
                 }
             }
             .onChange(of: fotoAuswahl) { _, neu in

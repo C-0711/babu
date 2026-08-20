@@ -13,6 +13,32 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<!-- „Teilen → In babu öffnen": Rechnungen aus Mail, WhatsApp oder
+	     Dateien landen direkt im Erfassen-Ablauf. -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Beleg</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.adobe.pdf</string>
+				<string>public.image</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<!-- Beleg aus der Mediathek hochladen: nur die Bilder, die die Nutzerin
+	     selbst auswählt (PhotosPicker). Kein Zugriff auf die ganze Mediathek. -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Damit du eine Rechnung, die schon als Foto auf deinem iPhone liegt, als Beleg hochladen kannst. babu sieht nur die Bilder, die du selbst auswählst.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Damit babu ein aufgenommenes Beleg-Foto in deiner Mediathek sichern kann, wenn du das möchtest.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Die App überträgt gesiegelte Belege im lokalen Netz an die GitChain-Belegbox (H200V). Ohne Konfiguration bleibt alles auf dem Gerät.</string>
 </dict>

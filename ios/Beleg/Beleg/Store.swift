@@ -23,6 +23,9 @@ final class AppStore: ObservableObject {
     @Published var geprueft = 0 { didSet { speichern() } }
     @Published var pruefSekunden: [Double] = [] { didSet { speichern() } }
     @Published var tab: Tab = .erfassen   // nicht persistiert
+    /// Von außen geteilte Datei („Teilen → In babu öffnen") — der
+    /// Erfassen-Bereich holt sie ab und verarbeitet sie wie einen Scan.
+    @Published var geteilteDatei: URL?    // nicht persistiert
 
     // Belegbox-Übertragung (GitChain-Ablage) — Opt-in.
     // Öffentliche Route mit TLS via Cloudflare; funktioniert von überall.
