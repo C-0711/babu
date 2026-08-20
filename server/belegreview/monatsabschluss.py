@@ -11,6 +11,8 @@ from __future__ import annotations
 
 # Kostengruppen der BWA nach SKR04 — die Konten, die babu vergibt.
 KOSTENGRUPPEN: list[tuple[str, str, tuple[str, ...]]] = [
+    ("personal", "Löhne und Gehälter", ("6000", "6010", "6020", "6030",
+                                        "6040", "6110", "6120", "6130")),
     ("material", "Material und Ware", ("5400",)),
     ("fremdleistung", "Fremdleistungen", ("5900",)),
     ("raum", "Raum", ("6310", "6325", "6330")),
@@ -174,7 +176,8 @@ def _euro(wert: float) -> str:
 
 
 def bwa(monat: str, erloese: dict, belege: list[dict],
-        vorjahr: dict | None = None) -> dict:
+        vorjahr: dict | None = None,
+        personal_monat: float | None = None) -> dict:
     """Monatliche Auswertung: was reinkam, was rausging, was bleibt."""
     gruppen = []
     kosten_gesamt = 0.0
@@ -204,6 +207,21 @@ def bwa(monat: str, erloese: dict, belege: list[dict],
 
     umsatz = erloese["netto_gesamt"]
     ergebnis = _rund(umsatz - kosten_gesamt)
+
+    # Löhne laufen übers Lohnbüro, nicht über Belege. Fehlen sie, ist das
+    # Ergebnis geschönt — dann muss die Auswertung das selbst sagen.
+    hat_personal = any(g["schluessel"] == "personal" for g in gruppen)
+    fehlt: list[str] = []
+    if not hat_personal and personal_monat is None:
+        fehlt.append("Löhne und Gehälter sind hier noch nicht dabei — "
+                     "dein wirklicher Gewinn liegt darunter.")
+    if personal_monat:
+        gruppen.insert(0, {"schluessel": "personal", "name": "Löhne und Gehälter",
+                           "netto": _rund(personal_monat), "anzahl": 0,
+                           "geschaetzt": True,
+                           "anteil": _rund(100 * personal_monat / umsatz) if umsatz else None})
+        kosten_gesamt += personal_monat
+        ergebnis = _rund(umsatz - kosten_gesamt)
     d: dict = {
         "monat": monat, "stand": "entwurf",
         "umsatz_netto": umsatz,
@@ -212,6 +230,7 @@ def bwa(monat: str, erloese: dict, belege: list[dict],
         "ergebnis_anteil": _rund(100 * ergebnis / umsatz) if umsatz else None,
         "gruppen": gruppen,
         "tage_erfasst": erloese["tage"],
+        "fehlt": fehlt,
         "hinweis": "Vorläufig — aus deinen Belegen und deinem Kassenbuch "
                    "gerechnet, noch nicht von der Buchhaltung geprüft.",
     }

@@ -152,3 +152,28 @@ def test_bwa_ohne_umsatz_teilt_nicht_durch_null():
     assert d["umsatz_netto"] == 0.0
     assert d["ergebnis_anteil"] is None
     assert d["gruppen"][0]["anteil"] is None
+
+
+# ————— Löhne: die größte Position kommt nicht über Belege —————
+
+def test_bwa_sagt_wenn_loehne_fehlen():
+    d = ma.bwa("2026-08", ma.erloese_monat([blatt(einnahmenBar=11900)]), [beleg()])
+    assert any("Löhne" in f for f in d["fehlt"])
+
+
+def test_bwa_rechnet_mit_hinterlegten_loehnen():
+    e = ma.erloese_monat([blatt(einnahmenBar=11900)])
+    d = ma.bwa("2026-08", e, [beleg(netto=1000.0, ust=190.0, brutto=1190.0)],
+               personal_monat=4500.0)
+    personal = d["gruppen"][0]
+    assert personal["schluessel"] == "personal" and personal["geschaetzt"] is True
+    assert personal["netto"] == 4500.0 and personal["anteil"] == 45.0
+    assert d["ergebnis"] == 4500.0           # 10000 - 1000 - 4500
+    assert d["fehlt"] == []
+
+
+def test_lohnbeleg_zaehlt_als_personal():
+    d = ma.bwa("2026-08", ma.erloese_monat([blatt(einnahmenBar=11900)]),
+               [beleg(konto_skr04="6020", netto=3000.0, ust=0.0, brutto=3000.0)])
+    assert d["gruppen"][0]["name"] == "Löhne und Gehälter"
+    assert d["fehlt"] == []                  # dann fehlt der Hinweis zu Recht

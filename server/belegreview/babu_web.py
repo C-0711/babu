@@ -1006,6 +1006,16 @@ def api_beleg_bild(stamm: str, request: Request) -> Response:
                     headers={"Cache-Control": "private, max-age=31536000, immutable"})
 
 
+def _zahl(wert) -> float | None:
+    """Zahl aus einer Einstellung — deutsche Schreibweise erlaubt."""
+    if wert in (None, ""):
+        return None
+    try:
+        return float(str(wert).replace(".", "").replace(",", "."))
+    except ValueError:
+        return None
+
+
 def _monat_summen(monat: str) -> dict:
     zeilen = [z for z in index_aktuell()["belege"].values() if z["monat"] == monat]
     arten: dict[str, dict] = {}
@@ -1399,7 +1409,8 @@ EINSTELLUNG_SCHLUESSEL = {"benachrichtigung_frage", "benachrichtigung_post",
                           "ust_befreiung_medizinisch", "steuerberater_modus",
                           "filialen", "mehrere_unternehmen", "abschluss_art",
                           # Umsatzprofil: steuert, was das Kassenbuch fragt
-                          "ust_sieben_prozent", "verkauft_gutscheine"}
+                          "ust_sieben_prozent", "verkauft_gutscheine",
+                          "personal_monat"}
 
 
 # Registrierung: Interessentinnen hinterlassen alle Daten — der Zugang wird
@@ -2447,7 +2458,8 @@ def api_monatsabschluss(monat: str, request: Request) -> Response:
     return JSONResponse({
         "monat": monat,
         "erloese": erloese,
-        "bwa": ma.bwa(monat, erloese, belege, vorjahr),
+        "bwa": ma.bwa(monat, erloese, belege, vorjahr,
+                      personal_monat=_zahl(einstellungen.get("personal_monat"))),
         "ustva": ma.ustva_entwurf(monat, erloese, vorsteuer, profil),
         "profil": profil,
     })
