@@ -233,3 +233,33 @@ def test_team_verwalten_und_personalkosten(bw, client):
 
     # Die Auswertung rechnet damit
     assert bw.team_personalkosten("christoph0711.io") == 2980.0
+
+
+def test_team_foto_ist_loeschbar(bw, client, tmp_path, monkeypatch):
+    """Personenfotos gehören nicht in die Git-Box — sie müssen weggehen
+    können, wenn jemand geht (Art. 17 DSGVO)."""
+    monkeypatch.setattr(bw, "TEAM_FOTOS", tmp_path / "fotos")
+    _als_kanzlei(client)
+    d = client.post("/api/team", json={"name": "Foto Person", "betrag": "1800"}).json()
+    person = next(p for p in d["team"] if p["name"] == "Foto Person")
+    assert person["foto"] is None
+
+    r = client.post("/api/team-foto", params={"id": person["id"]},
+                    content=b"\xff\xd8\xff-jpeg-daten")
+    assert r.status_code == 200
+    pfad = bw._foto_pfad("christoph0711.io", person["id"])
+    assert pfad.is_file()
+    assert client.get(f"/api/team-foto/{person['id']}").status_code == 200
+    assert next(p for p in client.get("/api/team").json()["team"]
+                if p["id"] == person["id"])["foto"]
+
+    # Fremde ID und zu große Bilder werden abgewiesen.
+    assert client.post("/api/team-foto", params={"id": 99999},
+                       content=b"x").status_code == 404
+    assert client.post("/api/team-foto", params={"id": person["id"]},
+                       content=b"x" * (9 * 1024 * 1024)).status_code == 413
+
+    # Person löschen → Foto ist wirklich weg.
+    client.post("/api/team-aktion", json={"id": person["id"], "aktion": "loeschen"})
+    assert not pfad.is_file()
+    assert client.get(f"/api/team-foto/{person['id']}").status_code == 404
