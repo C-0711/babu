@@ -2552,6 +2552,8 @@ def team_liste(un: str, nur_aktive: bool = False) -> list[dict]:
                   "seit": z[7], "aktiv": bool(z[8])}
         person["kosten_monat"] = round(
             (z[4] or 0.0) if z[3] == "fest" else (z[5] or 0.0) * (z[6] or 0.0), 2)
+        person["foto"] = (f"/api/team-foto/{z[0]}"
+                          if _foto_pfad(un, z[0]).is_file() else None)
         leute.append(person)
     return leute
 
@@ -2639,11 +2641,55 @@ async def api_team_aktion(request: Request) -> Response:
     with _DB_LOCK, _db() as c:
         if aktion == "loeschen":
             c.execute("DELETE FROM team WHERE id=? AND un=?", (int(person_id), un))
+            _foto_pfad(un, int(person_id)).unlink(missing_ok=True)
         else:
             c.execute("UPDATE team SET aktiv=? WHERE id=? AND un=?",
                       (1 if aktion == "zurueck" else 0, int(person_id), un))
     return JSONResponse({"ok": True, "team": team_liste(un),
                          "kosten_monat": team_personalkosten(un) or 0.0})
+
+
+# Mitarbeiterfotos liegen NICHT in der Git-Box: Personenfotos müssen
+# löschbar sein (Art. 17 DSGVO), und in Git bleibt alles für immer stehen.
+TEAM_FOTOS = Path(os.environ.get("BABU_TEAM_FOTOS",
+                                 str(Path.home() / "babu-web" / "team-fotos")))
+FOTO_MAX = 8 * 1024 * 1024
+
+
+def _foto_pfad(un: str, person_id: int) -> Path:
+    ordner = TEAM_FOTOS / hashlib.sha256(un.encode()).hexdigest()[:16]
+    return ordner / f"{person_id}.jpg"
+
+
+@app.post("/api/team-foto")
+async def api_team_foto(request: Request, id: int) -> Response:
+    """Foto einer Mitarbeiterin — aufgenommen in der App, hier abgelegt."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    with _DB_LOCK, _db() as c:
+        if not c.execute("SELECT 1 FROM team WHERE id=? AND un=?",
+                         (id, un)).fetchone():
+            return JSONResponse({"fehler": "unbekannt"}, status_code=404)
+    daten = await request.body()
+    if not daten or len(daten) > FOTO_MAX:
+        return JSONResponse({"fehler": "Das Bild ist zu groß."}, status_code=413)
+    pfad = _foto_pfad(un, id)
+    pfad.parent.mkdir(parents=True, exist_ok=True)
+    pfad.write_bytes(daten)
+    return JSONResponse({"ok": True, "url": f"/api/team-foto/{id}"})
+
+
+@app.get("/api/team-foto/{person_id}")
+def api_team_foto_holen(person_id: int, request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    pfad = _foto_pfad(un, person_id)
+    if not pfad.is_file():
+        return JSONResponse({"fehler": "kein Bild"}, status_code=404)
+    return FileResponse(pfad, media_type="image/jpeg",
+                        headers={"Cache-Control": "private, max-age=300"})
 
 
 @app.get("/api/monatsabschluss/{monat}")
