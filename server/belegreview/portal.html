@@ -1758,17 +1758,37 @@ async function ladeTeam(){
         ${p.email ? `<span style="font-size:12px;color:var(--gc-muted)">${esc(p.email)}</span>` : ""}
         <span style="margin-left:auto;font-size:13px">${esc(kosten)}</span>
       </div>
+      <div style="display:flex;gap:14px;margin-top:8px;flex-wrap:wrap;font-size:13px">
+        <label style="display:flex;gap:6px;align-items:center;cursor:pointer">
+          <input type="checkbox" ${p.darf_belege ? "checked" : ""}
+            onchange="teamRecht(${p.id}, 'darf_belege', this.checked)">
+          Darf Belege fotografieren</label>
+        <label style="display:flex;gap:6px;align-items:center;cursor:pointer">
+          <input type="checkbox" ${p.darf_kasse ? "checked" : ""}
+            onchange="teamRecht(${p.id}, 'darf_kasse', this.checked)">
+          Darf das Kassenbuch führen</label>
+      </div>
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
         <button class="chip" onclick="teamBearbeiten(${p.id})">Ändern</button>
+        ${p.hat_zugang
+          ? `<span class="chip" style="opacity:.7">hat einen Zugang ✓</span>`
+          : `<button class="chip" onclick="teamZugang(${p.id})">Zugang zur App geben</button>`}
         <button class="chip" onclick="teamAktion(${p.id},'${p.aktiv ? "beenden" : "zurueck"}')">
           ${p.aktiv ? "Arbeitet nicht mehr hier" : "Wieder dabei"}</button>
-      </div></div>`;
+      </div>
+      <div id="tz-${p.id}"></div></div>`;
   }
   if (d.anzahl_aktiv){
     html += `<div class="karte" style="border-color:var(--gc-ok);margin-top:4px">
       <b>Zusammen ${euro(d.kosten_monat)} im Monat</b>
       <p style="color:var(--gc-desc);font-size:13px;margin-top:4px">
         Das rechnen wir in deiner Auswertung mit — auch ohne Lohnbeleg.</p></div>`;
+    html += `<div class="karte" style="margin-top:10px">
+      <b>Wer darf was?</b>
+      <p style="color:var(--gc-desc);font-size:13px;margin-top:4px">
+        Du entscheidest pro Person. Wer einen Zugang bekommt, arbeitet in
+        deiner Belegbox mit — deine Zahlen, dein Team und deine Einstellungen
+        sieht niemand außer dir.</p></div>`;
   }
   html += `<div class="sektion lbl">Jemanden eintragen</div>
     <div class="karte" id="team-form">
@@ -1834,6 +1854,36 @@ async function teamSpeichern(){
     if (!r.ok){ status.textContent = d.fehler || "Ging gerade nicht."; return; }
     ladeTeam();
   }catch{ status.textContent = "Gerade keine Verbindung."; }
+}
+async function teamRecht(id, recht, an){
+  const d = await (await api("/api/team")).json();
+  const p = d.team.find(x => x.id === id);
+  if (!p) return;
+  const koerper = {id, name: p.name, email: p.email || "", lohn_art: p.lohn_art,
+                   betrag: p.betrag || "", stundenlohn: p.stundenlohn || "",
+                   stunden: p.stunden || "",
+                   darf_belege: p.darf_belege, darf_kasse: p.darf_kasse};
+  koerper[recht] = an;
+  try{
+    await api("/api/team", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(koerper)});
+    ladeTeam();
+  }catch{}
+}
+async function teamZugang(id){
+  const ziel = document.getElementById("tz-" + id);
+  ziel.innerHTML = `<p style="color:var(--gc-desc);font-size:13px;margin-top:8px">wird eingerichtet …</p>`;
+  try{
+    const r = await api("/api/team-zugang", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({id})});
+    const d = await r.json();
+    if (!r.ok){
+      ziel.innerHTML = `<p style="color:var(--gc-danger);font-size:13px;margin-top:8px">${esc(d.fehler)}</p>`;
+      return;
+    }
+    ziel.innerHTML = startpasswortKarte(d.email, d.startpasswort);
+    setTimeout(ladeTeam, 12000);
+  }catch{ ziel.innerHTML = `<p style="color:var(--gc-danger);font-size:13px">Gerade keine Verbindung.</p>`; }
 }
 async function teamAktion(id, aktion){
   try{

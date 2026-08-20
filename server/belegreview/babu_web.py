@@ -70,6 +70,19 @@ def _db() -> sqlite3.Connection:
          name TEXT NOT NULL, email TEXT, lohn_art TEXT NOT NULL DEFAULT 'fest',
          betrag REAL, stundenlohn REAL, stunden REAL,
          seit TEXT, aktiv INTEGER NOT NULL DEFAULT 1, angelegt TEXT)""")
+    # Nachrüstbare Spalten: Rechte, die die Inhaberin je Person vergibt.
+    for spalte, typ in (("darf_belege", "INTEGER NOT NULL DEFAULT 0"),
+                        ("darf_kasse", "INTEGER NOT NULL DEFAULT 0"),
+                        ("zugang", "TEXT")):
+        try:
+            conn.execute(f"ALTER TABLE team ADD COLUMN {spalte} {typ}")
+        except sqlite3.OperationalError:
+            pass          # Spalte gibt es schon
+    # Mitarbeiterkonten zeigen auf den Salon, dem die Daten gehören.
+    try:
+        conn.execute("ALTER TABLE nutzer ADD COLUMN gehoert_zu TEXT")
+    except sqlite3.OperationalError:
+        pass
     conn.execute("""CREATE TABLE IF NOT EXISTS app_schluessel
         (hash TEXT PRIMARY KEY, un TEXT NOT NULL, geraet TEXT,
          erstellt TEXT NOT NULL, zuletzt TEXT)""")
@@ -262,7 +275,7 @@ def angemeldet(request: Request) -> str | None:
 # Übergabe persönlich) und nie in Logs.
 # ---------------------------------------------------------------------------
 
-NUTZER_ROLLEN = ("admin", "kanzlei", "salon")
+NUTZER_ROLLEN = ("admin", "kanzlei", "salon", "mitarbeit")
 
 
 def pw_hash(passwort: str) -> str:
@@ -296,13 +309,13 @@ def _jetzt_iso() -> str:
 
 def nutzer_holen(email: str) -> dict | None:
     with _DB_LOCK, _db() as c:
-        z = c.execute("""SELECT email, name, salon, rolle, pw, aktiv, angelegt,
+        z = c.execute("""SELECT email, name, salon, rolle, pw, aktiv, gehoert_zu, angelegt,
                          letzter_login FROM nutzer WHERE email=?""",
                       (email.strip().lower(),)).fetchone()
     if not z:
         return None
     return {"email": z[0], "name": z[1], "salon": z[2], "rolle": z[3], "pw": z[4],
-            "aktiv": bool(z[5]), "angelegt": z[6], "letzter_login": z[7]}
+            "aktiv": bool(z[5]), "gehoert_zu": z[6], "angelegt": z[6], "letzter_login": z[7]}
 
 
 def nutzer_anlegen(email: str, name: str, salon: str, rolle_neu: str,
@@ -1157,6 +1170,16 @@ async def ablage(request: Request) -> Response:
                          "commit": commit, "datei": f"docs/{monat}/{dateiname}"})
 
 
+def _mitarbeit_wache(un: str, recht: str, was: str) -> Response | None:
+    """Mitarbeiterinnen dürfen nur, was die Inhaberin freigegeben hat."""
+    if team_recht(un, recht):
+        return None
+    return JSONResponse(
+        {"fehler": f"Dafür fehlt dir die Freigabe. {was} darf im Salon "
+                   "nur, wer dafür freigeschaltet ist — frag kurz nach."},
+        status_code=403)
+
+
 @app.post("/api/hochladen")
 async def api_hochladen(request: Request, name: str = "beleg.jpg") -> Response:
     """Portal-Upload ohne gespeicherten Zugangscode: Cookie-Session + Rohbytes.
@@ -1167,6 +1190,8 @@ async def api_hochladen(request: Request, name: str = "beleg.jpg") -> Response:
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
+    if (sperre := _mitarbeit_wache(un, "darf_belege", "Belege einreichen")):
+        return sperre
     endung = Path(name).suffix.lower()
     if endung not in HOCHLADEN_ENDUNGEN:
         return JSONResponse({"fehler": "kein Beleg-Format"}, status_code=400)
@@ -1558,6 +1583,26 @@ def rolle(un: str) -> str:
     if n:
         return n["rolle"]
     return ROLLEN.get(un, "kanzlei" if not ROLLEN else "salon")
+
+
+def salon_von(un: str) -> str:
+    """Die Belegbox gehört dem Salon — Mitarbeiterinnen arbeiten darin mit."""
+    n = nutzer_holen(un)
+    if n and n.get("gehoert_zu"):
+        return n["gehoert_zu"]
+    return un
+
+
+def team_recht(un: str, recht: str) -> bool:
+    """Darf diese Mitarbeiterin das? Die Inhaberin darf immer alles."""
+    n = nutzer_holen(un)
+    if not n or not n.get("gehoert_zu"):
+        return True                     # Inhaberin oder Kanzlei
+    with _DB_LOCK, _db() as c:
+        zeile = c.execute(
+            f"SELECT {recht} FROM team WHERE zugang=? AND un=? AND aktiv=1",
+            (un, n["gehoert_zu"])).fetchone()
+    return bool(zeile and zeile[0])
 
 
 def darf_verwalten(un: str) -> bool:
@@ -2380,6 +2425,10 @@ KASSENBUCH_ZAHLEN = ("bestandVortag", "einnahmenBar", "privateinlagen",
                      "sonstigeAusgaben", "privatentnahmen", "einzahlungBank",
                      "gezaehltSchluss")
 KASSENBUCH_NOTIZEN = ("differenzGrund", "sonstigeNotiz")
+# Trinkgeld je Person: [{"name": "Jana", "betrag": 12.50}]. Für das Team
+# steuerfrei (§ 3 Nr. 51 EStG) — dokumentiert wird es, damit bei einer
+# Kassenprüfung erklärbar ist, warum Geld die Schublade verlässt.
+TRINKGELD_MAX = 20
 _KASSEN_DATUM_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -2541,7 +2590,8 @@ def vertraege_aktuell() -> list[dict]:
 def team_liste(un: str, nur_aktive: bool = False) -> list[dict]:
     with _DB_LOCK, _db() as c:
         sql = """SELECT id, name, email, lohn_art, betrag, stundenlohn, stunden,
-                        seit, aktiv FROM team WHERE un=?"""
+                        seit, aktiv, darf_belege, darf_kasse, zugang
+                 FROM team WHERE un=?"""
         if nur_aktive:
             sql += " AND aktiv=1"
         zeilen = c.execute(sql + " ORDER BY aktiv DESC, name", (un,)).fetchall()
@@ -2549,7 +2599,9 @@ def team_liste(un: str, nur_aktive: bool = False) -> list[dict]:
     for z in zeilen:
         person = {"id": z[0], "name": z[1], "email": z[2], "lohn_art": z[3],
                   "betrag": z[4], "stundenlohn": z[5], "stunden": z[6],
-                  "seit": z[7], "aktiv": bool(z[8])}
+                  "seit": z[7], "aktiv": bool(z[8]),
+                  "darf_belege": bool(z[9]), "darf_kasse": bool(z[10]),
+                  "hat_zugang": bool(z[11])}
         person["kosten_monat"] = round(
             (z[4] or 0.0) if z[3] == "fest" else (z[5] or 0.0) * (z[6] or 0.0), 2)
         person["foto"] = (f"/api/team-foto/{z[0]}"
@@ -2569,6 +2621,9 @@ def api_team(request: Request) -> Response:
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das Team verwaltet die Inhaberin."},
+                            status_code=403)
     leute = team_liste(un)
     return JSONResponse({
         "team": leute,
@@ -2609,19 +2664,73 @@ async def api_team_speichern(request: Request) -> Response:
     person_id = body.get("id")
 
     with _DB_LOCK, _db() as c:
+        darf_belege = 1 if body.get("darf_belege") else 0
+        darf_kasse = 1 if body.get("darf_kasse") else 0
         if person_id:
             c.execute("""UPDATE team SET name=?, email=?, lohn_art=?, betrag=?,
-                         stundenlohn=?, stunden=?, seit=? WHERE id=? AND un=?""",
+                         stundenlohn=?, stunden=?, seit=?, darf_belege=?,
+                         darf_kasse=? WHERE id=? AND un=?""",
                       (name, email or None, lohn_art, betrag, stundenlohn,
-                       stunden, seit, int(person_id), un))
+                       stunden, seit, darf_belege, darf_kasse,
+                       int(person_id), un))
         else:
             c.execute("""INSERT INTO team (un, name, email, lohn_art, betrag,
-                         stundenlohn, stunden, seit, angelegt)
-                         VALUES (?,?,?,?,?,?,?,?,?)""",
+                         stundenlohn, stunden, seit, angelegt, darf_belege, darf_kasse)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                       (un, name, email or None, lohn_art, betrag, stundenlohn,
-                       stunden, seit, _jetzt_iso()))
+                       stunden, seit, _jetzt_iso(), darf_belege, darf_kasse))
     return JSONResponse({"ok": True, "team": team_liste(un),
                          "kosten_monat": team_personalkosten(un) or 0.0})
+
+
+@app.post("/api/team-zugang")
+async def api_team_zugang(request: Request) -> Response:
+    """Die Inhaberin gibt jemandem einen eigenen Zugang zur App.
+
+    Das Konto zeigt auf ihren Salon: was die Mitarbeiterin einreicht,
+    landet in DER Belegbox — nicht in einer eigenen. Was sie darf,
+    steht in ihren Rechten.
+    """
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Zugänge vergibt die Inhaberin."},
+                            status_code=403)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    person_id = body.get("id")
+    with _DB_LOCK, _db() as c:
+        zeile = c.execute("SELECT name, email, zugang FROM team WHERE id=? AND un=?",
+                          (int(person_id or 0), un)).fetchone()
+    if not zeile:
+        return JSONResponse({"fehler": "unbekannt"}, status_code=404)
+    name, email, vorhanden = zeile
+    if vorhanden:
+        return JSONResponse({"fehler": f"{name} hat schon einen Zugang."},
+                            status_code=409)
+    if not email or "@" not in email:
+        return JSONResponse(
+            {"fehler": f"Für den Zugang braucht {name} eine E-Mail-Adresse."},
+            status_code=400)
+
+    startpasswort = nutzer_anlegen(email.lower(), name,
+                                   db_einstellungen(un).get("betrieb_name") or "",
+                                   "mitarbeit")
+    if startpasswort is None:
+        return JSONResponse({"fehler": "Diese E-Mail hat schon ein Konto."},
+                            status_code=409)
+    with _DB_LOCK, _db() as c:
+        c.execute("UPDATE nutzer SET gehoert_zu=? WHERE email=?", (un, email.lower()))
+        c.execute("UPDATE team SET zugang=? WHERE id=? AND un=?",
+                  (email.lower(), int(person_id), un))
+    print(f"[team] Zugang für {email.lower()} im Salon {un}", flush=True)
+    return JSONResponse({"ok": True, "email": email.lower(),
+                         "startpasswort": startpasswort,
+                         "hinweis": "Startpasswort jetzt notieren und persönlich "
+                                    "weitergeben — es erscheint nur dieses eine Mal."})
 
 
 @app.post("/api/team-aktion")
@@ -2643,8 +2752,14 @@ async def api_team_aktion(request: Request) -> Response:
             c.execute("DELETE FROM team WHERE id=? AND un=?", (int(person_id), un))
             _foto_pfad(un, int(person_id)).unlink(missing_ok=True)
         else:
+            an = 1 if aktion == "zurueck" else 0
             c.execute("UPDATE team SET aktiv=? WHERE id=? AND un=?",
-                      (1 if aktion == "zurueck" else 0, int(person_id), un))
+                      (an, int(person_id), un))
+            # Wer nicht mehr da ist, kommt auch nicht mehr in die App.
+            zugang = c.execute("SELECT zugang FROM team WHERE id=? AND un=?",
+                               (int(person_id), un)).fetchone()
+            if zugang and zugang[0]:
+                c.execute("UPDATE nutzer SET aktiv=? WHERE email=?", (an, zugang[0]))
     return JSONResponse({"ok": True, "team": team_liste(un),
                          "kosten_monat": team_personalkosten(un) or 0.0})
 
@@ -2710,6 +2825,9 @@ def api_monatsabschluss(monat: str, request: Request) -> Response:
     blaetter = [b for tag, b in idx["kassenblaetter"].items()
                 if tag.startswith(monat)]
     belege = [z for z in idx["belege"].values() if z["monat"] == monat]
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Die Zahlen sieht nur die Inhaberin."},
+                            status_code=403)
     einstellungen = db_einstellungen(un)
 
     profil = ma.umsatz_profil(einstellungen)
@@ -2743,6 +2861,8 @@ async def api_kassenbuch(request: Request) -> Response:
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
+    if (sperre := _mitarbeit_wache(un, "darf_kasse", "Das Kassenbuch führen")):
+        return sperre
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001
@@ -2760,6 +2880,17 @@ async def api_kassenbuch(request: Request) -> Response:
         wert = str(body.get(feld) or "").strip()[:300]
         if wert:
             blatt[feld] = wert
+    verteilt = []
+    for eintrag in (body.get("trinkgeldVerteilt") or [])[:TRINKGELD_MAX]:
+        if not isinstance(eintrag, dict):
+            continue
+        name = str(eintrag.get("name") or "").strip()[:80]
+        betrag = _zahl(eintrag.get("betrag"))
+        if name and betrag and betrag > 0:
+            verteilt.append({"name": name, "betrag": round(betrag, 2)})
+    if verteilt:
+        blatt["trinkgeldVerteilt"] = verteilt
+    blatt["von"] = un                     # wer es eingetragen hat
     import boxschreiber  # noqa: PLC0415
     try:
         commit = boxschreiber.schreiben(
