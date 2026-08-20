@@ -12,21 +12,27 @@ private let zustandsDatei: URL = {
 
 @MainActor
 final class AppStore: ObservableObject {
-    enum Tab: Hashable { case erfassen, belege, fragen, export }
+    enum Tab: Hashable { case erfassen, belege, kasse, fragen, export }
 
     @Published var onboarded = false { didSet { speichern() } }
     @Published var skr = "SKR04" { didSet { speichern() } }
     @Published var belege: [Beleg] = [] { didSet { speichern() } }
+    @Published var kassenberichte: [Kassenbericht] = [] { didSet { speichern() } }
+    @Published var chatVerlauf: [ChatUnterhaltung] = [] { didSet { speichern() } }
     @Published var exportiert = false { didSet { speichern() } }
     @Published var geprueft = 0 { didSet { speichern() } }
     @Published var pruefSekunden: [Double] = [] { didSet { speichern() } }
     @Published var tab: Tab = .erfassen   // nicht persistiert
+    /// Von außen geteilte Datei („Teilen → In babu öffnen") — der
+    /// Erfassen-Bereich holt sie ab und verarbeitet sie wie einen Scan.
+    @Published var geteilteDatei: URL?    // nicht persistiert
 
     // Belegbox-Übertragung (GitChain-Ablage) — Opt-in.
     // Öffentliche Route mit TLS via Cloudflare; funktioniert von überall.
     static let ablageStandardURL = "https://babu.0711.io"
     @Published var ablageURL = AppStore.ablageStandardURL { didSet { speichern() } }
     @Published var ablageAktiv = false { didSet { speichern() } }
+    @Published var verbundenAls: String? { didSet { speichern() } }   // E-Mail des Kontos
 
     private var geladen = false
     private var speicherTask: Task<Void, Never>?
@@ -48,8 +54,19 @@ final class AppStore: ObservableObject {
                 ablageURL = AppStore.ablageStandardURL
             }
             ablageAktiv = z.ablageAktiv ?? false
+            kassenberichte = z.kassenberichte ?? []
+            chatVerlauf = z.chatVerlauf ?? []
+            verbundenAls = z.verbundenAls
+            // Ältere Stände: Demo-Belege am festen Demo-Siegel nachträglich
+            // markieren, damit sie nie im echten Stapel landen.
+            let demoSiegel: Set<String> = ["77b2e0c4 9a11 f38d", "0d31f6a8 5be2 c974"]
+            for i in belege.indices where belege[i].istDemo != true && demoSiegel.contains(belege[i].siegel ?? "") {
+                belege[i].istDemo = true
+            }
         } else {
-            belege = Demo.archiv()   // Erststart: Demo-Archiv als Ausgangslage
+            #if targetEnvironment(simulator)
+            belege = Demo.archiv()   // Nur im Simulator: Demo-Archiv als Ausgangslage
+            #endif
         }
         geladen = true
     }
@@ -67,12 +84,17 @@ final class AppStore: ObservableObject {
         var pruefSekunden: [Double]
         var ablageURL: String?
         var ablageAktiv: Bool?
+        var kassenberichte: [Kassenbericht]?
+        var chatVerlauf: [ChatUnterhaltung]?
+        var verbundenAls: String?
     }
 
     private var zustand: Zustand {
         Zustand(onboarded: onboarded, skr: skr, belege: belege,
                 exportiert: exportiert, geprueft: geprueft, pruefSekunden: pruefSekunden,
-                ablageURL: ablageURL, ablageAktiv: ablageAktiv)
+                ablageURL: ablageURL, ablageAktiv: ablageAktiv,
+                kassenberichte: kassenberichte, chatVerlauf: chatVerlauf,
+                verbundenAls: verbundenAls)
     }
 
     /// Entprellt auf ~0,25 s, damit Serien-Änderungen nicht pro Mutation schreiben.
@@ -121,6 +143,8 @@ final class AppStore: ObservableObject {
         )
         beleg.bildJpeg = bildJpeg
         beleg.ocrText = ocrText
+        beleg.steuerPositionen = felder.steuerPositionen.isEmpty ? nil : felder.steuerPositionen
+        beleg.gutschriftSignal = felder.gutschriftSignal ? true : nil
 
         if beleg.confidence >= 95 {
             siegeln(&beleg, status: .automatisch)
@@ -139,6 +163,19 @@ final class AppStore: ObservableObject {
 
     // MARK: - Belegbox-Übertragung
 
+    /// Beim Einschalten der Belegbox: Bestandsbelege ohne Übertragungsstatus
+    /// in die Warteschlange nehmen — sonst würden sie nie zweitgeprüft.
+    func altBelegeNachreichen() {
+        guard ablageAktiv else { return }
+        for i in belege.indices where belege[i].ablageStatus == nil
+            && belege[i].bildJpeg != nil && belege[i].istDemo != true {
+            belege[i].ablageStatus = .ausstehend
+            belege[i].ablageDateiname = belege[i].ablageDateiname
+                ?? ablageDateiname(fuer: belege[i])
+        }
+        ablageRetry()
+    }
+
     /// Alle offenen Übertragungen erneut anstoßen (App-Start, Foreground, manuell).
     func ablageRetry() {
         guard ablageAktiv else { return }
@@ -146,16 +183,24 @@ final class AppStore: ObservableObject {
             let id = b.id
             Task { await self.uebertrage(id) }
         }
+        kassenRetry()
     }
+
+    /// Läuft gerade ein Upload für diese ID? Verhindert doppelte
+    /// `aufnahme:`-Commits, wenn routen() und ablageRetry() zusammenfallen.
+    private var uploadLaeuft: Set<UUID> = []
 
     /// Einzelnen Beleg in die GitChain-Ablage hochladen; Status am Beleg nachführen.
     func uebertrage(_ id: UUID) async {
+        guard !uploadLaeuft.contains(id) else { return }
         guard ablageAktiv,
               let url = URL(string: ablageURL),
               let pat = KeychainHelfer.ladePAT(),
               let i = belege.firstIndex(where: { $0.id == id }),
               belege[i].ablageStatus != .uebertragen,
               let jpeg = belege[i].bildJpeg else { return }
+        uploadLaeuft.insert(id)
+        defer { uploadLaeuft.remove(id) }
 
         let dateiname = belege[i].ablageDateiname ?? ablageDateiname(fuer: belege[i])
         belege[i].ablageDateiname = dateiname
@@ -171,10 +216,14 @@ final class AppStore: ObservableObject {
             // Serverseitiger Name (mit Zeitstempel-Präfix) ist der Schlüssel
             // zum BelegReview-Ergebnis.
             if let serverDatei { belege[j].ablageDateiname = serverDatei }
-            // Audit-Stempel nachladen, sobald der Watcher reviewt hat (~30 s).
+            // Audit-Stempel nachladen — Backoff-Polling statt Einmal-Schuss:
+            // die Prüfung braucht je nach Rückstau Sekunden bis Minuten.
             Task {
-                try? await Task.sleep(nanoseconds: 30_000_000_000)
-                await self.auditLaden(id)
+                for wartezeit: UInt64 in [10, 20, 40, 80, 160] {
+                    try? await Task.sleep(nanoseconds: wartezeit * 1_000_000_000)
+                    await self.auditLaden(id)
+                    if self.belege.first(where: { $0.id == id })?.auditReview != nil { break }
+                }
             }
         default:
             belege[j].ablageStatus = .fehlgeschlagen
@@ -199,22 +248,30 @@ final class AppStore: ObservableObject {
               belege[i].auditReview == nil,
               let dateiname = belege[i].ablageDateiname else { return }
         let stamm = (dateiname as NSString).deletingPathExtension
-        guard let review = await AblageService.reviewAbrufen(stamm: stamm, basis: url, pat: pat),
-              let audit = review.audit else { return }
-        auditSetzen(id: id, aufnahme: audit.aufnahme?.commit, review: audit.review?.commit)
+        guard case .fertig(let review) = await AblageService.reviewAbrufen(
+            stamm: stamm, basis: url, pat: pat), let audit = review.audit else { return }
+        auditSetzen(id: id, aufnahme: audit.aufnahme?.commit, review: audit.review?.commit,
+                    status: review.fehlgeschlagen ? "fehlgeschlagen" : "ok")
     }
 
-    func auditSetzen(id: UUID, aufnahme: String?, review: String?) {
+    func auditSetzen(id: UUID, aufnahme: String?, review: String?, status: String? = nil) {
         guard let i = belege.firstIndex(where: { $0.id == id }) else { return }
         if let aufnahme { belege[i].auditAufnahme = aufnahme }
         if let review { belege[i].auditReview = review }
+        if let status { belege[i].reviewStatus = status }
     }
 
-    /// Bewirtungsangaben (§4 Abs. 5 EStG) am Beleg erfassen.
+    /// Bewirtungsangaben (§4 Abs. 5 EStG) am Beleg erfassen. Fixierte Belege
+    /// sind unantastbar; gesiegelte werden mit den Angaben neu gesiegelt —
+    /// das Siegel deckt die Bewirtungsangaben mit ab.
     func bewirtungSetzen(id: UUID, anlass: String, personen: String) {
-        guard let i = belege.firstIndex(where: { $0.id == id }) else { return }
-        belege[i].bewirtungAnlass = anlass.trimmingCharacters(in: .whitespacesAndNewlines)
-        belege[i].bewirtungPersonen = personen.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let i = belege.firstIndex(where: { $0.id == id }),
+              belege[i].status != .fixiert else { return }
+        var b = belege[i]
+        b.bewirtungAnlass = anlass.trimmingCharacters(in: .whitespacesAndNewlines)
+        b.bewirtungPersonen = personen.trimmingCharacters(in: .whitespacesAndNewlines)
+        if b.siegel != nil { siegeln(&b, status: b.status) }
+        belege[i] = b
     }
 
     func siegeln(_ beleg: inout Beleg, status: BelegStatus) {
@@ -226,7 +283,8 @@ final class AppStore: ObservableObject {
 
     /// Bestätigen/Korrigieren aus Ein-Tap-Karte oder Review.
     func buchen(id: UUID, konto: String?, steuerschluessel: String?, dauer: Double?) {
-        guard let i = belege.firstIndex(where: { $0.id == id }) else { return }
+        guard let i = belege.firstIndex(where: { $0.id == id }),
+              belege[i].status != .fixiert else { return }
         var b = belege[i]
         var korrigiert = false
         if let k = konto, k != b.konto { b.konto = k; korrigiert = true }
@@ -238,37 +296,54 @@ final class AppStore: ObservableObject {
         if let d = dauer { pruefSekunden.append(d) }
     }
 
+    /// Kernfelder von Hand korrigieren — die Lesung kann danebenliegen
+    /// (119 → 19 €), und Löschen + neu fotografieren ist keine Antwort.
+    /// Fixierte Belege sind unantastbar; gesiegelte werden neu gesiegelt.
+    func felderKorrigieren(id: UUID, lieferant: String, belegNr: String,
+                           datumText: String, netto: Double, ust: Double, brutto: Double) {
+        guard let i = belege.firstIndex(where: { $0.id == id }),
+              belege[i].status != .fixiert else { return }
+        var b = belege[i]
+        b.lieferant = lieferant.trimmingCharacters(in: .whitespacesAndNewlines)
+        b.belegNr = belegNr.trimmingCharacters(in: .whitespacesAndNewlines)
+        b.datumText = datumText.trimmingCharacters(in: .whitespaces)
+        b.netto = netto
+        b.ust = ust
+        b.brutto = brutto
+        b.summenprobeOK = abs(netto + ust - brutto) < 0.011
+        b.herkunft = .mensch
+        // Handkorrektur ersetzt die gelesene Tabelle — sie passt nicht mehr.
+        b.steuerPositionen = nil
+        if b.siegel != nil { siegeln(&b, status: b.status) }
+        belege[i] = b
+    }
+
     /// Beleg entfernen — fixierte (exportierte) Belege sind unantastbar.
     func loeschen(id: UUID) {
         belege.removeAll { $0.id == id && $0.status != .fixiert }
     }
 
     var exportierbar: [Beleg] {
-        belege.filter { [.automatisch, .bestaetigt, .korrigiert].contains($0.status) }
+        exportierbareBelege(belege)
     }
 
     var stapelSumme: Double { exportierbar.reduce(0) { $0 + $1.brutto } }
 
     // MARK: - EXTF
 
-    /// Vereinfachte EXTF-Vorschau — der vollständige v13-Writer ist ein
-    /// Backend-Modul (siehe docs/build-plan.md, Phase 5).
+    /// Vorschau des aktuellen Stapels (Logik in ExtfWriter.swift, harness-getestet).
     func extfText() -> String {
-        var zeilen = ["\"EXTF\";700;21;\"Buchungsstapel\";13;;;", ";\"RE\";\"DE\";;\"20260801\";\"20260831\";"]
-        for b in exportierbar {
-            let betrag = fmtBetrag(b.brutto)
-            let dd = String(b.datumText.replacingOccurrences(of: ".", with: "").prefix(4))
-            zeilen.append("\(betrag);\"S\";\"EUR\";;;;\"\(b.kreditor)\";\"\(b.konto ?? "")\";\(b.steuerschluessel);\"\(dd)\";\"\(b.belegNr)\";\"\(b.lieferant)\"")
-        }
-        return zeilen.joined(separator: "\r\n")
+        let monat = extfMonat()
+        return extfStapelText(belege: exportierbar, von: monat.von, bis: monat.bis)
     }
 
-    /// Schreibt den Stapel als CP1252-kodierte Datei (DATEV-Kodierung).
-    func extfDatei() -> URL? {
-        let text = extfText()
+    /// Schreibt eine feste Belegmenge als CP1252-kodierte Datei (DATEV-Kodierung).
+    func extfDatei(fuer stapel: [Beleg]) -> URL? {
+        let monat = extfMonat()
+        let text = extfStapelText(belege: stapel, von: monat.von, bis: monat.bis)
         let data = text.data(using: .windowsCP1252, allowLossyConversion: true) ?? Data(text.utf8)
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("EXTF_Buchungsstapel_2026-08.csv")
+            .appendingPathComponent(monat.dateiname)
         do {
             try data.write(to: url, options: .atomic)
             return url
@@ -277,11 +352,76 @@ final class AppStore: ObservableObject {
         }
     }
 
-    func fixieren() {
-        for i in belege.indices where [.automatisch, .bestaetigt, .korrigiert].contains(belege[i].status) {
+    /// Vorschau-Datei über den aktuell exportierbaren Stapel.
+    func extfDatei() -> URL? { extfDatei(fuer: exportierbar) }
+
+    /// Bereits fixierte Belege — damit die Datei nach einem App-Neustart
+    /// weiter teilbar ist (sie lässt sich jederzeit neu erzeugen).
+    var fixierte: [Beleg] {
+        belege.filter { $0.status == .fixiert && $0.istDemo != true }
+    }
+
+    /// Stapel exportieren: ERST die Datei aus dem Schnappschuss erzeugen,
+    /// DANN genau diese Belege fixieren — andersherum wäre die Datei leer,
+    /// weil `exportierbar` fixierte Belege ausfiltert.
+    func exportieren() -> URL? {
+        let stapel = exportierbar
+        guard !stapel.isEmpty, let url = extfDatei(fuer: stapel) else { return nil }
+        let ids = Set(stapel.map(\.id))
+        for i in belege.indices where ids.contains(belege[i].id) {
             belege[i].status = .fixiert
         }
         exportiert = true
+        return url
+    }
+
+    // MARK: - Kassenbuch (Tagessummen, siehe Kassenbuch.swift)
+
+    func kassenbericht(fuer tag: String) -> Kassenbericht? {
+        kassenberichte.first { $0.datum == tag }
+    }
+
+    /// Speichert oder ersetzt den Bericht des Tages (ein Bericht pro Tag)
+    /// und legt das Tagesblatt in der Belegbox ab (wenn verbunden).
+    func kassenberichtSpeichern(_ bericht: Kassenbericht) {
+        var neu = bericht
+        neu.uebermittelt = nil   // geänderte Zahlen → frisch übermitteln
+        if let i = kassenberichte.firstIndex(where: { $0.datum == bericht.datum }) {
+            kassenberichte[i] = neu
+        } else {
+            kassenberichte.append(neu)
+        }
+        let tag = neu.datum
+        Task { await self.kassenblattSenden(tag) }
+    }
+
+    /// Ein Tagesblatt an die Belegbox senden (POST /api/kassenbuch).
+    func kassenblattSenden(_ tag: String) async {
+        guard ablageAktiv,
+              let url = URL(string: ablageURL),
+              let pat = KeychainHelfer.ladePAT(),
+              let bericht = kassenbericht(fuer: tag),
+              bericht.uebermittelt == nil else { return }
+        let ok = await AblageService.kassenblattSenden(bericht, basis: url, pat: pat)
+        if ok, let i = kassenberichte.firstIndex(where: { $0.datum == tag }) {
+            kassenberichte[i].uebermittelt = Date()
+        }
+    }
+
+    /// Noch nicht übermittelte Tagesblätter nachreichen (App-Start/Foreground).
+    func kassenRetry() {
+        guard ablageAktiv else { return }
+        for b in kassenberichte where b.uebermittelt == nil {
+            let tag = b.datum
+            Task { await self.kassenblattSenden(tag) }
+        }
+    }
+
+    /// Vorschlag für „Bestand am Vortag": der gezählte Schluss des jüngsten
+    /// Berichts VOR dem Tag — so muss die Zahl nicht abgetippt werden.
+    func kassenVortagsbestand(vor tag: String) -> Double? {
+        kassenberichte.filter { $0.datum < tag }
+            .max { $0.datum < $1.datum }?.gezaehltSchluss
     }
 
     var durchsatzText: String? {

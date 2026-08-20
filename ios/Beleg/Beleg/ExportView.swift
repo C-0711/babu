@@ -3,14 +3,13 @@ import SwiftUI
 struct ExportView: View {
     @EnvironmentObject var store: AppStore
     @State private var datei: URL?
-    @State private var zeigeEinstellungen = false
+    @State private var zeigeFixiertInfo = false
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
+        ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Buchungsstapel August 2026")
+                        Text(extfMonat().titel)
                             .font(.headline)
                             .fontDesign(.serif)
                         Text("\(store.exportierbar.count) Buchungen · \(fmtEur(store.stapelSumme)) · bereit für den Import beim Steuerberater.")
@@ -27,34 +26,52 @@ struct ExportView: View {
 
                         if let url = datei {
                             ShareLink(item: url) {
-                                Label("EXTF-Stapel teilen (CP1252)", systemImage: "square.and.arrow.up")
+                                Label("Stapel teilen", systemImage: "square.and.arrow.up")
                                     .frame(maxWidth: .infinity)
                             }
                             .buttonStyle(.borderedProminent)
+                            Text("Die Datei geht nur dorthin, wo du sie teilst — von allein passiert nichts.")
+                                .font(.caption2)
+                                .foregroundStyle(GC.muted)
                         }
 
                         Button {
-                            store.fixieren()
-                            datei = store.extfDatei()
+                            // Erzeugt die Datei aus dem Schnappschuss und fixiert
+                            // danach genau diese Belege (Reihenfolge wichtig).
+                            if let url = store.exportieren() { datei = url }
                         } label: {
-                            Text(store.exportiert ? "Stapel fixiert ✓" : "Stapel erzeugen & fixieren")
+                            Text(store.exportierbar.isEmpty && store.exportiert
+                                 ? "Stapel fixiert ✓" : "Stapel erzeugen & fixieren")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
-                        .disabled(store.exportierbar.isEmpty && !store.exportiert)
+                        .disabled(store.exportierbar.isEmpty)
 
                         if store.exportiert {
-                            HStack(spacing: 8) {
-                                Image(systemName: "checkmark.seal")
-                                Text("Stapel 08/26 gesiegelt · exportierte Buchungen sind fixiert")
-                                    .font(.caption2.monospaced())
+                            Button {
+                                zeigeFixiertInfo = true
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "checkmark.seal")
+                                    Text("Exportierte Buchungen sind fixiert und bleiben unverändert.")
+                                        .font(.caption2.monospaced())
+                                        .multilineTextAlignment(.leading)
+                                    Image(systemName: "info.circle")
+                                        .font(.caption)
+                                }
+                                .foregroundStyle(GC.accent)
                             }
-                            .foregroundStyle(GC.accent)
+                            .accessibilityLabel("Was heißt fixiert?")
                         }
                     }
                     .gcCard()
 
-                    Text("Vereinfachte EXTF-Vorschau — der vollständige DATEV-v13-Writer mit Golden-File-Tests ist Phase 5 des Bauplans. Später: Direct-Push über den DATEV-Buchungsdatenservice.")
+                    Text("Das hier ist die Vorschau für unterwegs. Den fertigen Stapel bekommt dein Steuerbüro automatisch aus der Belegbox am Monatsende — Teilen brauchst du nur, wenn du die Datei selbst irgendwohin schicken willst.")
+                        .font(.caption)
+                        .foregroundStyle(GC.muted)
+                        .padding(.horizontal, 4)
+
+                    Text("Der Stapel enthält nur Belege. Dein Kassenbuch geht Tag für Tag einzeln in die Belegbox.")
                         .font(.caption)
                         .foregroundStyle(GC.muted)
                         .padding(.horizontal, 4)
@@ -64,21 +81,17 @@ struct ExportView: View {
             .background(GC.canvas)
             .navigationTitle("Export")
             .toolbarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        zeigeEinstellungen = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                    .accessibilityLabel("Belegbox-Einstellungen")
-                }
+            .alert("Was heißt „fixiert“?", isPresented: $zeigeFixiertInfo) {
+                Button("Verstanden") {}
+            } message: {
+                Text("Fixiert heißt festgeschrieben: Diese Buchungen ändern sich nicht mehr — so verlangt es das Finanzamt für die Buchhaltung. Neue Belege kommen einfach in den nächsten Stapel.")
             }
-            .sheet(isPresented: $zeigeEinstellungen) {
-                EinstellungenView()
-            }
-            .onAppear {
-                if !store.exportierbar.isEmpty { datei = store.extfDatei() }
+        .onAppear {
+            if !store.exportierbar.isEmpty {
+                datei = store.extfDatei()
+            } else if store.exportiert, !store.fixierte.isEmpty {
+                // Nach App-Neustart bleibt der fixierte Stapel teilbar.
+                datei = store.extfDatei(fuer: store.fixierte)
             }
         }
     }

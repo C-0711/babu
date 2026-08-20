@@ -16,6 +16,7 @@ struct AufraeumenView: View {
     @State private var versatz: CGSize = .zero
     @State private var fliegt = false
     @State private var zeigeBewirtung = false
+    @State private var zeigeKontierung = false
     @State private var startZeit = Date()
 
     private var oberster: Beleg? {
@@ -54,6 +55,11 @@ struct AufraeumenView: View {
                 BewirtungsangabenSheet(belegID: beleg.id) {
                     buchen(beleg)
                 }
+            }
+        }
+        .sheet(isPresented: $zeigeKontierung, onDismiss: kontierungAbgeschlossen) {
+            if let beleg = oberster {
+                ReviewSheet(belegID: beleg.id, startZeit: startZeit)
             }
         }
     }
@@ -151,6 +157,12 @@ struct AufraeumenView: View {
                         .font(.caption.monospaced())
                         .foregroundStyle(GC.muted)
                 }
+                if beleg.konto == nil {
+                    Label("Noch keine Kategorie — beim Buchen wählst du kurz eine aus.",
+                          systemImage: "tray")
+                        .font(.footnote)
+                        .foregroundStyle(GC.warn)
+                }
                 if beleg.brauchtBewirtungsangaben {
                     Label("Beim Buchen wird kurz nachgefragt: Mit wem warst du essen?",
                           systemImage: "person.2")
@@ -218,12 +230,27 @@ struct AufraeumenView: View {
     }
 
     private func buchenAnstossen(_ beleg: Beleg) {
-        if beleg.brauchtBewirtungsangaben {
+        if beleg.konto == nil {
+            // Ohne Kategorie wird nichts gebucht und nichts gesiegelt —
+            // erst kurz eine wählen (sonst leeres Kontofeld im Stapel).
+            withAnimation(.spring(duration: 0.3)) { versatz = .zero }
+            zeigeKontierung = true
+        } else if beleg.brauchtBewirtungsangaben {
             withAnimation(.spring(duration: 0.3)) { versatz = .zero }
             zeigeBewirtung = true
         } else {
             buchen(beleg)
         }
+    }
+
+    /// Nach dem Kontierungs-Sheet: wurde gebucht, fliegt die Karte davon;
+    /// bei Abbruch bleibt der Beleg einfach oben liegen.
+    private func kontierungAbgeschlossen() {
+        guard let beleg = oberster, beleg.status != .offen else { return }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        gebucht += 1
+        gebuchtSumme += beleg.brutto
+        flieg(richtung: 620)
     }
 
     private func buchen(_ beleg: Beleg) {

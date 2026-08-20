@@ -21,7 +21,7 @@ struct BewirtungsangabenSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("z. B. Projektabschluss BelegReview", text: $anlass, axis: .vertical)
+                    TextField("z. B. Essen mit der Produktvertreterin", text: $anlass, axis: .vertical)
                         .lineLimit(1...3)
                 } header: {
                     Text("Anlass der Bewirtung")

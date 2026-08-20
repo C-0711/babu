@@ -10,6 +10,9 @@ struct BelegApp: App {
             RootView()
                 .environmentObject(store)
                 .tint(GC.accent)
+                // Das Design ist bewusst hell (feste Farb-Tokens); ohne diese
+                // Festlegung wären Listen und Editoren im Dunkelmodus unlesbar.
+                .preferredColorScheme(.light)
         }
         .onChange(of: scenePhase) { _, neu in
             switch neu {
@@ -46,12 +49,17 @@ struct MainTabs: View {
             ListeView()
                 .tabItem { Label("Belege", systemImage: "doc.text") }
                 .tag(AppStore.Tab.belege)
+            KasseTab()
+                .tabItem { Label("Kassenbuch", systemImage: "banknote") }
+                .tag(AppStore.Tab.kasse)
             FragenTab()
                 .tabItem { Label("Fragen", systemImage: "questionmark.bubble") }
                 .tag(AppStore.Tab.fragen)
-            ExportView()
-                .tabItem { Label("Export", systemImage: "square.and.arrow.up") }
-                .tag(AppStore.Tab.export)
+        }
+        // Rechnung aus Mail, WhatsApp oder Dateien: „Teilen → In babu öffnen"
+        .onOpenURL { url in
+            store.tab = .erfassen
+            store.geteilteDatei = url
         }
     }
 }

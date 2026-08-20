@@ -9,6 +9,21 @@ enum AblageErgebnis: Equatable {
     case nichtErreichbar      // Netzfehler (kein WLAN, falsches Netz, Timeout)
 }
 
+/// Ergebnis des Review-Abrufs — die Ursachen sind für die Nutzerin
+/// grundverschieden und dürfen nicht alle wie „läuft noch" aussehen.
+enum ReviewAntwort {
+    case fertig(BelegReviewDaten)
+    case nochNicht           // 404: Prüfung existiert (noch) nicht
+    case zugangFehlt         // 401/403: Zugang ungültig oder nicht erlaubt
+    case serverProblem       // 5xx oder unlesbare Antwort
+    case keineVerbindung     // Netzfehler / Timeout
+}
+
+/// Fehlermeldung aus dem Chat-Stream (SSE-Frame `{"fehler": …}`).
+struct ChatFehler: Error {
+    let meldung: String
+}
+
 /// Client für die GitChain-Ablage auf der H200V:
 /// `POST <basis>/ablage`, Multipart-Feld `file`, `Authorization: Bearer <PAT>`.
 /// Jeder erfolgreiche Upload wird serverseitig ein Commit `aufnahme: …` in babu.git.
@@ -36,6 +51,133 @@ enum AblageService {
         return (ergebnis, serverDatei)
     }
 
+    /// Konto-Anmeldung der App: E-Mail + Passwort → Geräteschlüssel.
+    /// Der Schlüssel kommt genau einmal zurück und wandert in die Keychain —
+    /// die Nutzerin sieht ihn nie.
+    static func appAnmelden(email: String, passwort: String, geraet: String,
+                            basis: URL) async -> (schluessel: String?, un: String?,
+                                                  fehler: String?) {
+        var request = URLRequest(url: basis.appendingPathComponent("api/app-anmelden"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject:
+            ["email": email, "passwort": passwort, "geraet": geraet])
+        do {
+            let (daten, antwort) = try await URLSession.shared.data(for: request)
+            let code = (antwort as? HTTPURLResponse)?.statusCode ?? 0
+            let json = (try? JSONSerialization.jsonObject(with: daten)) as? [String: Any]
+            if code == 200, let schluessel = json?["schluessel"] as? String {
+                return (schluessel, json?["un"] as? String, nil)
+            }
+            return (nil, nil, json?["fehler"] as? String
+                    ?? "Das hat gerade nicht geklappt — später noch einmal versuchen.")
+        } catch {
+            return (nil, nil, "Gerade keine Verbindung — Internet prüfen und noch einmal versuchen.")
+        }
+    }
+
+    /// Brief vom Amt ablegen — babu liest ihn und erklärt ihn danach
+    /// in einfachen Worten (Sidecar-Erklärung, siehe `briefErklaerung`).
+    static func briefAblegen(daten: Data, dateiname: String, basis: URL,
+                             pat: String) async -> String? {
+        var teile = URLComponents(url: basis.appendingPathComponent("api/dokumente"),
+                                  resolvingAgainstBaseURL: false)
+        teile?.queryItems = [URLQueryItem(name: "name", value: dateiname),
+                             URLQueryItem(name: "titel", value: "Brief vom Amt · " + dateiname),
+                             URLQueryItem(name: "art", value: "behoerde")]
+        guard let url = teile?.url else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.httpBody = daten
+        let (ergebnis, antwort) = await ausfuehrenMitDaten(request)
+        guard ergebnis == .uebertragen, let antwort,
+              let json = try? JSONSerialization.jsonObject(with: antwort) as? [String: Any]
+        else { return nil }
+        return json["pfad"] as? String
+    }
+
+    /// Vertrag ablegen — babu liest, was er monatlich kostet.
+    static func vertragAblegen(daten: Data, dateiname: String, basis: URL,
+                               pat: String) async -> String? {
+        var teile = URLComponents(url: basis.appendingPathComponent("api/dokumente"),
+                                  resolvingAgainstBaseURL: false)
+        teile?.queryItems = [URLQueryItem(name: "name", value: dateiname),
+                             URLQueryItem(name: "titel", value: "Vertrag · " + dateiname),
+                             URLQueryItem(name: "art", value: "vertrag")]
+        guard let url = teile?.url else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.httpBody = daten
+        let (ergebnis, antwort) = await ausfuehrenMitDaten(request)
+        guard ergebnis == .uebertragen, let antwort,
+              let json = try? JSONSerialization.jsonObject(with: antwort) as? [String: Any]
+        else { return nil }
+        return json["pfad"] as? String
+    }
+
+    /// Eckdaten eines gelesenen Vertrags (entstehen im Hintergrund).
+    static func vertragDaten(pfad: String, basis: URL,
+                             pat: String) async -> (art: String, partner: String?,
+                                                    betrag: Double?, einfach: String)? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/dokumente"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+              let liste = json["dokumente"] as? [[String: Any]],
+              let treffer = liste.first(where: { ($0["pfad"] as? String) == pfad }),
+              let v = treffer["vertrag"] as? [String: Any],
+              let einfach = v["einfach"] as? String, !einfach.isEmpty
+        else { return nil }
+        return (v["art_name"] as? String ?? "Vertrag", v["partner"] as? String,
+                v["betrag_monat"] as? Double, einfach)
+    }
+
+    /// Erklärung zum abgelegten Brief holen (entsteht im Hintergrund).
+    static func briefErklaerung(pfad: String, basis: URL,
+                                pat: String) async -> (einfach: String, wasTun: String?,
+                                                       bisWann: String?)? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/dokumente"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+              let liste = json["dokumente"] as? [[String: Any]],
+              let treffer = liste.first(where: { ($0["pfad"] as? String) == pfad }),
+              let e = treffer["erklaerung"] as? [String: Any],
+              let einfach = e["einfach"] as? String, !einfach.isEmpty
+        else { return nil }
+        return (einfach, e["was_tun"] as? String, e["bis_wann"] as? String)
+    }
+
+    /// Tagesblatt des Kassenbuchs in die Belegbox legen (POST /api/kassenbuch).
+    static func kassenblattSenden(_ b: Kassenbericht, basis: URL, pat: String) async -> Bool {
+        var request = URLRequest(url: basis.appendingPathComponent("api/kassenbuch"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var blatt: [String: Any] = [
+            "datum": b.datum,
+            "bestandVortag": b.bestandVortag, "einnahmenBar": b.einnahmenBar,
+            "privateinlagen": b.privateinlagen, "barabhebungBank": b.barabhebungBank,
+            "ecZahlungen": b.ecZahlungen, "gutscheineEingeloest": b.gutscheineEingeloest,
+            "trinkgeldTeamEC": b.trinkgeldTeamEC,
+            "sonstigeAusgaben": b.sonstigeAusgaben, "privatentnahmen": b.privatentnahmen,
+            "einzahlungBank": b.einzahlungBank, "gezaehltSchluss": b.gezaehltSchluss,
+        ]
+        if let grund = b.differenzGrund, !grund.isEmpty { blatt["differenzGrund"] = grund }
+        if let notiz = b.sonstigeNotiz, !notiz.isEmpty { blatt["sonstigeNotiz"] = notiz }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: blatt)
+        let (ergebnis, _) = await ausfuehrenMitDaten(request)
+        return ergebnis == .uebertragen
+    }
+
     /// Frage an den Belegbox-Assistenten — gestreamt (SSE): liefert Text-Stücke,
     /// sobald Gemma sie erzeugt.
     static func fragenStream(_ frage: String, basis: URL,
@@ -59,9 +201,15 @@ enum AblageService {
                         guard zeile.hasPrefix("data: ") else { continue }
                         let roh = String(zeile.dropFirst(6))
                         if roh == "[DONE]" { break }
-                        if let json = try? JSONSerialization.jsonObject(with: Data(roh.utf8)) as? [String: Any],
-                           let stueck = json["d"] as? String {
-                            continuation.yield(stueck)
+                        if let json = try? JSONSerialization.jsonObject(with: Data(roh.utf8)) as? [String: Any] {
+                            if let stueck = json["d"] as? String {
+                                continuation.yield(stueck)
+                            } else if let fehler = json["fehler"] as? String {
+                                // Fehlerframe nicht verschlucken — sonst wartet die
+                                // Nutzerin auf eine Antwort, die nie kommt.
+                                continuation.finish(throwing: ChatFehler(meldung: fehler))
+                                return
+                            }
                         }
                     }
                     continuation.finish()
@@ -89,16 +237,25 @@ enum AblageService {
     }
 
     /// BelegReview-Ergebnis abrufen (`GET /review/<stamm>`, Bearer-PAT).
-    static func reviewAbrufen(stamm: String, basis: URL, pat: String) async -> BelegReviewDaten? {
+    static func reviewAbrufen(stamm: String, basis: URL, pat: String) async -> ReviewAntwort {
         var request = URLRequest(url: basis.appendingPathComponent("review")
             .appendingPathComponent(stamm))
         request.timeoutInterval = 12
         request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
         guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
-              (antwort as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return try? decoder.decode(BelegReviewDaten.self, from: daten)
+              let http = antwort as? HTTPURLResponse else { return .keineVerbindung }
+        switch http.statusCode {
+        case 200:
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            guard let r = try? decoder.decode(BelegReviewDaten.self, from: daten) else {
+                return .serverProblem
+            }
+            return .fertig(r)
+        case 404: return .nochNicht
+        case 401, 403: return .zugangFehlt
+        default: return .serverProblem
+        }
     }
 
     /// Verbindungs- und Token-Test OHNE Müll-Commit: eine Mini-txt-Datei senden.
@@ -210,11 +367,22 @@ struct BelegReviewDaten: Codable {
     var engine: String?
     var zeilen: Int?
     var ocrKonfidenz: Double?
-    var felder: Felder
-    var einschaetzung: Einschaetzung
+    var dokumentklasse: String?
+    var status: String?
+    var felder: Felder?
+    var einschaetzung: Einschaetzung?
     var vlm: Vlm?
     var audit: Audit?
     var buchungssatz: Buchungssatz?
+
+    /// Lesung gescheitert? Der Watcher schließt so einen Beleg mit einem
+    /// Stub-Review ab (engine "BelegReview-Stub", Dokumentklasse "unlesbar") —
+    /// das ist der Live-Vertrag des Salon-Portals; `status` bleibt als
+    /// zusätzliche, zukunftssichere Kennung verstanden.
+    var fehlgeschlagen: Bool {
+        status == "fehlgeschlagen"
+            || (engine == "BelegReview-Stub" && dokumentklasse?.lowercased() == "unlesbar")
+    }
 }
 
 /// PAT-Ablage ausschließlich in der iOS-Keychain — nie im JSON-Store, nie im Log.

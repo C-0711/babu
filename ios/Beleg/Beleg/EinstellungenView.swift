@@ -1,51 +1,40 @@
 import SwiftUI
+import UIKit
 
-/// Konfiguration der Belegbox-Übertragung (GitChain-Ablage auf der H200V).
-/// Opt-in: ohne aktivierten Toggle + gespeicherten PAT bleibt die App
-/// vollständig on-device.
+/// Verbindung zur Belegbox — genau eine Sache: mit dem babu-Konto anmelden.
+/// Der Geräteschlüssel kommt automatisch vom Server und wandert unsichtbar
+/// in die Keychain. Technik (GitChain, Schlüssel, Adressen) bleibt komplett
+/// hinter den Kulissen — sichtbar ist nur „running on GitChain".
 struct EinstellungenView: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) private var dismiss
 
-    @State private var pat = ""
-    @State private var patGespeichert = KeychainHelfer.ladePAT() != nil
+    @State private var email = ""
+    @State private var passwort = ""
+    @State private var kontoFehler: String?
+    @State private var verbindet = false
+
+    @State private var verbunden = KeychainHelfer.ladePAT() != nil
     @State private var testErgebnis: String?
     @State private var testLaeuft = false
+    @State private var zeigeLoeschDialog = false
 
     var body: some View {
-        NavigationStack {
-            Form {
+        Form {
+                if verbunden {
+                    verbundenBereich
+                } else {
+                    anmeldenBereich
+                }
+
                 Section {
-                    Toggle("Belege automatisch in die Belegbox übertragen",
+                    Toggle("Belege automatisch ablegen und gegenprüfen",
                            isOn: $store.ablageAktiv)
                 } footer: {
-                    Text("Jeder gesiegelte Beleg wird als Commit „aufnahme: …“ im Container babu abgelegt — Grundlage für BelegReview (Server-Verifikation + steuerliche Einschätzung).")
+                    Text("Jeder Beleg wandert nach der Aufnahme in deine Belegbox und wird dort ein zweites Mal geprüft.")
                 }
-
-                Section("Server") {
-                    TextField(AppStore.ablageStandardURL, text: $store.ablageURL)
-                        .keyboardType(.URL)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .font(.callout.monospaced())
-                }
-
-                Section {
-                    SecureField(patGespeichert ? "PAT gespeichert ✓ — zum Ersetzen neu eingeben"
-                                               : "Upload-PAT (aus dem --zeigen-Lauf)",
-                                text: $pat)
-                        .font(.callout.monospaced())
-                    if patGespeichert {
-                        Button("PAT löschen", role: .destructive) {
-                            KeychainHelfer.loeschePAT()
-                            patGespeichert = false
-                            pat = ""
-                        }
-                    }
-                } header: {
-                    Text("Zugriffstoken")
-                } footer: {
-                    Text("Der Token wird ausschließlich in der iOS-Keychain abgelegt — nie in Dateien oder Logs.")
+                .onChange(of: store.ablageAktiv) { _, an in
+                    if an { store.altBelegeNachreichen() }
                 }
 
                 Section {
@@ -57,45 +46,124 @@ struct EinstellungenView: View {
                             if testLaeuft { Spacer(); ProgressView() }
                         }
                     }
-                    .disabled(testLaeuft)
+                    .disabled(testLaeuft || !verbunden)
                     if let ergebnis = testErgebnis {
                         Text(ergebnis)
-                            .font(.footnote.monospaced())
+                            .font(.footnote)
                             .foregroundStyle(ergebnis.hasPrefix("Verbunden") ? GC.ok : GC.warn)
                     }
                 } footer: {
-                    Text("Stufe 1 ist LAN-only ohne TLS: Übertragung funktioniert nur im eigenen Netz (WLAN mit der H200V). Unterwegs bleiben Belege in der Warteschlange und werden nachgereicht.")
+                    Text("Ohne Verbindung bleiben Belege in der Warteschlange und werden nachgereicht, sobald es wieder klappt.")
                 }
-            }
-            .navigationTitle("Belegbox")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Fertig") {
-                        patSpeichernFallsEingegeben()
-                        dismiss()
+
+                Section {
+                } footer: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "seal")
+                        Text("running on GitChain")
                     }
+                    .frame(maxWidth: .infinity)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(GC.muted)
                 }
             }
+        .navigationTitle("Einstellungen")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: - Verbinden mit dem ganz normalen Konto
+
+    private var anmeldenBereich: some View {
+        Section {
+            TextField("E-Mail", text: $email)
+                .keyboardType(.emailAddress)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+            SecureField("Passwort", text: $passwort)
+            Button {
+                verbinden()
+            } label: {
+                HStack {
+                    Text("Verbinden")
+                    if verbindet { Spacer(); ProgressView() }
+                }
+            }
+            .disabled(verbindet || email.trimmingCharacters(in: .whitespaces).isEmpty
+                      || passwort.isEmpty)
+            if let fehler = kontoFehler {
+                Text(fehler)
+                    .font(.footnote)
+                    .foregroundStyle(GC.warn)
+            }
+        } header: {
+            Text("Dein babu-Konto")
+        } footer: {
+            Text("Dieselbe Anmeldung wie im Portal. Mehr braucht es nicht — alles Weitere passiert von selbst.")
         }
     }
 
-    private func patSpeichernFallsEingegeben() {
-        let neu = pat.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !neu.isEmpty else { return }
-        KeychainHelfer.speicherePAT(neu)
-        patGespeichert = true
-        pat = ""
+    private var verbundenBereich: some View {
+        Section {
+            HStack(spacing: 10) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(GC.ok)
+                Text(store.verbundenAls.map { "Verbunden als \($0)" } ?? "Verbunden ✓")
+            }
+            Button("Verbindung trennen", role: .destructive) {
+                zeigeLoeschDialog = true
+            }
+        } header: {
+            Text("Dein babu-Konto")
+        } footer: {
+            Text("Die Verbindung bleibt sicher auf diesem Gerät.")
+        }
+        .confirmationDialog("Verbindung wirklich trennen?",
+                            isPresented: $zeigeLoeschDialog,
+                            titleVisibility: .visible) {
+            Button("Ja, trennen", role: .destructive) {
+                KeychainHelfer.loeschePAT()
+                verbunden = false
+                store.verbundenAls = nil
+                store.ablageAktiv = false   // ehrlich: ohne Verbindung geht nichts mehr
+                testErgebnis = nil
+                kontoFehler = nil
+            }
+            Button("Abbrechen", role: .cancel) {}
+        } message: {
+            Text("Danach kann die App keine Belege und kein Kassenbuch mehr in deine Belegbox legen, und Fragen bleiben unbeantwortet. Zum Wiederverbinden reichen E-Mail und Passwort.")
+        }
+    }
+
+    private func verbinden() {
+        guard let url = URL(string: store.ablageURL) else { return }
+        verbindet = true
+        kontoFehler = nil
+        Task {
+            let ergebnis = await AblageService.appAnmelden(
+                email: email.trimmingCharacters(in: .whitespaces),
+                passwort: passwort,
+                geraet: UIDevice.current.name,
+                basis: url)
+            if let schluessel = ergebnis.schluessel {
+                KeychainHelfer.speicherePAT(schluessel)
+                verbunden = true
+                store.verbundenAls = ergebnis.un
+                store.ablageAktiv = true
+                email = ""
+                passwort = ""
+                testErgebnis = "Verbunden ✓ — alles bereit."
+                store.ablageRetry()
+            } else {
+                kontoFehler = ergebnis.fehler
+            }
+            verbindet = false
+        }
     }
 
     private func teste() {
-        patSpeichernFallsEingegeben()
-        guard let url = URL(string: store.ablageURL) else {
-            testErgebnis = "Ungültige Server-URL"
-            return
-        }
+        guard let url = URL(string: store.ablageURL) else { return }
         guard let gespeichert = KeychainHelfer.ladePAT() else {
-            testErgebnis = "Kein PAT gespeichert"
+            testErgebnis = "Bitte zuerst mit deinem Konto verbinden."
             return
         }
         testLaeuft = true
@@ -103,10 +171,10 @@ struct EinstellungenView: View {
         Task {
             let ergebnis = await AblageService.verbindungstest(basis: url, pat: gespeichert)
             switch ergebnis {
-            case .uebertragen: testErgebnis = "Verbunden ✓ — Server erreichbar, Token gültig"
-            case .tokenFehler: testErgebnis = "Token ungültig (401)"
-            case .abgelehnt(let code): testErgebnis = "Server meldet HTTP \(code)"
-            case .nichtErreichbar: testErgebnis = "Server nicht erreichbar — im WLAN mit der H200V?"
+            case .uebertragen: testErgebnis = "Verbunden ✓ — alles bereit."
+            case .tokenFehler: testErgebnis = "Die Verbindung stimmt nicht mehr — bitte neu mit deinem Konto verbinden."
+            case .abgelehnt: testErgebnis = "Die Belegbox meldet einen Fehler — später noch einmal versuchen."
+            case .nichtErreichbar: testErgebnis = "Keine Verbindung — Internet prüfen und noch einmal versuchen."
             }
             testLaeuft = false
         }

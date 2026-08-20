@@ -1,5 +1,7 @@
 import SwiftUI
 import UIKit
+import PhotosUI
+import PDFKit
 
 /// Erfassen: Scan → On-Device-OCR → Prüfschritte → Confidence-Routing.
 struct CaptureTab: View {
@@ -9,8 +11,18 @@ struct CaptureTab: View {
     @State private var beleg: Beleg?
     @State private var schritte = 0
     @State private var startZeit = Date()
+    @State private var ergebnisBild: UIImage?
+    @State private var markierungen: [CGRect] = []
+    // Abbruch-Marke: ein X während der Verarbeitung entwertet den laufenden
+    // Durchlauf, damit er die Ansicht nicht später doch noch umschaltet.
+    @State private var verarbeitungsLauf = UUID()
+    // Beleg aus der Mediathek oder aus Dateien — nicht jede Rechnung
+    // liegt als Papier auf dem Tresen.
+    @State private var fotoAuswahl: PhotosPickerItem?
+    @State private var zeigeDateien = false
+    @State private var ladeFehler: String?
 
-    enum Phase { case bereit, verarbeitet, ergebnis }
+    enum Phase { case bereit, verarbeitet, ergebnis, nichtsErkannt }
 
     var body: some View {
         NavigationStack {
@@ -20,10 +32,12 @@ struct CaptureTab: View {
                 case .bereit: bereitView
                 case .verarbeitet: verarbeitungView
                 case .ergebnis: ergebnisView
+                case .nichtsErkannt: nichtsErkanntView
                 }
             }
             .navigationTitle("Erfassen")
             .toolbarTitleDisplayMode(.inline)
+            .mitKontoMenu()
             .fullScreenCover(isPresented: $zeigeScanner) {
                 ScannerView(
                     onScan: { bild in
@@ -32,9 +46,72 @@ struct CaptureTab: View {
                     },
                     onCancel: { zeigeScanner = false }
                 )
-                .ignoresSafeArea()
+            }
+            .fileImporter(isPresented: $zeigeDateien,
+                          allowedContentTypes: [.pdf, .image]) { ergebnis in
+                switch ergebnis {
+                case .success(let url): ladeFehler = nil; ladeDatei(url)
+                case .failure: ladeFehler = "Die Datei ließ sich nicht öffnen — bitte noch einmal versuchen."
+                }
+            }
+            .onChange(of: store.geteilteDatei) { _, neu in
+                guard let neu else { return }
+                store.geteilteDatei = nil
+                ladeFehler = nil
+                ladeDatei(neu)
+            }
+            .onAppear {
+                // Beim Start geteilt? Dann jetzt einlesen.
+                if let offen = store.geteilteDatei {
+                    store.geteilteDatei = nil
+                    ladeDatei(offen)
+                }
+            }
+            .onChange(of: fotoAuswahl) { _, neu in
+                guard let neu else { return }
+                ladeFehler = nil
+                Task {
+                    if let daten = try? await neu.loadTransferable(type: Data.self),
+                       let bild = UIImage(data: daten) {
+                        fotoAuswahl = nil
+                        await verarbeite(bild)
+                    } else {
+                        fotoAuswahl = nil
+                        ladeFehler = "Dieses Foto konnten wir nicht laden — bitte ein anderes wählen."
+                    }
+                }
             }
         }
+    }
+
+    /// Datei aus dem Dateien-Bereich: Bild direkt, PDF wird zur Seite 1
+    /// gerendert (mehrseitige Bündel bitte einzeln — wie beim Scannen).
+    private func ladeDatei(_ url: URL) {
+        let zugriff = url.startAccessingSecurityScopedResource()
+        defer { if zugriff { url.stopAccessingSecurityScopedResource() } }
+        guard let daten = try? Data(contentsOf: url) else {
+            ladeFehler = "Die Datei ließ sich nicht lesen — bitte noch einmal versuchen."
+            return
+        }
+        if let bild = UIImage(data: daten) {
+            Task { await verarbeite(bild) }
+            return
+        }
+        guard let doc = PDFDocument(data: daten), let seite = doc.page(at: 0) else {
+            ladeFehler = "Damit können wir nichts anfangen — bitte ein Foto oder ein PDF wählen."
+            return
+        }
+        let feld = seite.bounds(for: .mediaBox)
+        let skala = min(2200 / max(feld.width, feld.height), 3.0)
+        let groesse = CGSize(width: feld.width * skala, height: feld.height * skala)
+        let bild = UIGraphicsImageRenderer(size: groesse).image { ctx in
+            UIColor.white.setFill()
+            ctx.fill(CGRect(origin: .zero, size: groesse))
+            ctx.cgContext.translateBy(x: 0, y: groesse.height)
+            ctx.cgContext.scaleBy(x: skala, y: -skala)
+            seite.draw(with: .mediaBox, to: ctx.cgContext)
+        }
+        Task { await verarbeite(bild) }
     }
 
     // MARK: - Bereit
@@ -56,7 +133,7 @@ struct CaptureTab: View {
                         .foregroundStyle(.white.opacity(0.55))
                 }
             }
-            Text("Der Beleg wird automatisch erkannt, begradigt und gelesen — direkt auf dem iPhone, in unter einer Sekunde.")
+            Text("Der Beleg wird automatisch erkannt, begradigt und gelesen.")
                 .font(.footnote)
                 .foregroundStyle(GC.desc)
                 .multilineTextAlignment(.center)
@@ -74,14 +151,42 @@ struct CaptureTab: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                 }
-                Button {
-                    Task { await verarbeite(DemoBeleg.bild()) }
+                Menu {
+                    PhotosPicker(selection: $fotoAuswahl, matching: .images,
+                                 photoLibrary: .shared()) {
+                        Label("Aus deinen Fotos", systemImage: "photo.on.rectangle")
+                    }
+                    Button {
+                        zeigeDateien = true
+                    } label: {
+                        Label("Aus Dateien (auch PDF)", systemImage: "folder")
+                    }
                 } label: {
-                    Text(ScannerView.verfuegbar ? "Demo-Beleg einlesen" : "Demo-Beleg einlesen (Simulator)")
+                    Label("Beleg aus Datei oder Foto hochladen",
+                          systemImage: "square.and.arrow.up")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
+
+                if let ladeFehler {
+                    Text(ladeFehler)
+                        .font(.footnote)
+                        .foregroundStyle(GC.warn)
+                        .multilineTextAlignment(.center)
+                }
+                #if targetEnvironment(simulator)
+                // Nur im Simulator — auf dem Gerät hat der Beispiel-Beleg
+                // im echten Bestand nichts verloren.
+                Button {
+                    Task { await verarbeite(DemoBeleg.bild()) }
+                } label: {
+                    Text("Demo-Beleg einlesen (Simulator)")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                #endif
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 12)
@@ -92,11 +197,27 @@ struct CaptureTab: View {
 
     private var verarbeitungView: some View {
         VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Button {
+                    verarbeitungsLauf = UUID()
+                    phase = .bereit
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(GC.desc)
+                        .frame(width: 44, height: 44)
+                        .background(GC.chrome, in: Circle())
+                }
+                .accessibilityLabel("Schließen")
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
             VStack(alignment: .leading, spacing: 12) {
                 Text("Verarbeitung")
                     .font(.title3.weight(.semibold))
                     .fontDesign(.serif)
-                schrittZeile(1, "Beleg lesen — direkt auf dem iPhone")
+                schrittZeile(1, "Beleg lesen")
                 schrittZeile(2, "Beträge und Summen prüfen")
                 schrittZeile(3, "Kategorie zuordnen")
                 schrittZeile(4, "Versiegeln und ablegen")
@@ -121,21 +242,89 @@ struct CaptureTab: View {
 
     @ViewBuilder
     private var ergebnisView: some View {
-        if let b = beleg {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    ErgebnisKarte(beleg: b, startZeit: startZeit) {
-                        phase = .bereit
-                    }
-                }
-                .padding(20)
+        // Der Beleg kann inzwischen gelöscht sein (Belegliste) — dann darf
+        // hier keine leere Sackgasse stehen, sondern ein Weg zurück.
+        if let b = beleg, store.belege.contains(where: { $0.id == b.id }) {
+            ErgebnisUebersicht(belegID: b.id, bild: ergebnisBild,
+                               markierungen: markierungen, startZeit: startZeit) {
+                phase = .bereit
             }
+        } else {
+            VStack(spacing: 18) {
+                Spacer()
+                Image(systemName: "tray")
+                    .font(.system(size: 44, weight: .light))
+                    .foregroundStyle(GC.muted)
+                Text("Der Beleg ist nicht mehr da")
+                    .font(.title3.weight(.semibold))
+                    .fontDesign(.serif)
+                Text("Wahrscheinlich wurde er gerade in der Belegliste gelöscht — alles gut.")
+                    .font(.footnote)
+                    .foregroundStyle(GC.desc)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 36)
+                Spacer()
+                Button {
+                    beleg = nil
+                    phase = .bereit
+                } label: {
+                    Text("Weiter erfassen").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 12)
+            }
+        }
+    }
+
+    // MARK: - Nichts erkannt
+
+    /// Kein Betrag und kein Name lesbar → nichts anlegen, ehrlich nachfragen.
+    private var nichtsErkanntView: some View {
+        VStack(spacing: 18) {
+            Spacer()
+            Image(systemName: "doc.text.magnifyingglass")
+                .font(.system(size: 44, weight: .light))
+                .foregroundStyle(GC.muted)
+            Text("Da war nichts zu lesen")
+                .font(.title3.weight(.semibold))
+                .fontDesign(.serif)
+            Text("Auf dem Foto war weder ein Betrag noch ein Name zu erkennen. Am besten noch einmal mit mehr Licht und ruhiger Hand.")
+                .font(.footnote)
+                .foregroundStyle(GC.desc)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 36)
+            Spacer()
+            VStack(spacing: 10) {
+                if ScannerView.verfuegbar {
+                    Button {
+                        phase = .bereit
+                        zeigeScanner = true
+                    } label: {
+                        Label("Noch mal versuchen", systemImage: "doc.viewfinder")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                }
+                Button {
+                    phase = .bereit
+                } label: {
+                    Text("Abbrechen").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 12)
         }
     }
 
     // MARK: - Pipeline
 
     private func verarbeite(_ bild: UIImage) async {
+        let lauf = verarbeitungsLauf
         phase = .verarbeitet
         schritte = 0
         startZeit = Date()
@@ -145,7 +334,17 @@ struct CaptureTab: View {
 
         try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 2
-        let felder = FeldParser.parse(zeilen: ocr.zeilen)
+        let felder = FeldParser.parse(zeilen: ocr.parserZeilen)
+
+        // Komplett unlesbares Foto: keinen 0,00-€-Beleg anlegen.
+        if felder.brutto == nil && felder.lieferant == nil {
+            if lauf == verarbeitungsLauf { phase = .nichtsErkannt }
+            return
+        }
+
+        // Für die Ergebnis-Ansicht: Foto + Positionen der erkannten Felder.
+        ergebnisBild = bild
+        markierungen = FeldMarker.markierungen(zeilen: ocr.zeilen, felder: felder)
 
         try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 3
@@ -156,6 +355,9 @@ struct CaptureTab: View {
         schritte = 4
         try? await Task.sleep(nanoseconds: 300_000_000)
 
+        // Abgebrochen (X während der Verarbeitung)? Der Beleg ist trotzdem
+        // aufgenommen und liegt in der Belegliste — nur nicht mehr aufdrängen.
+        guard lauf == verarbeitungsLauf else { return }
         beleg = store.belege.first { $0.id == neu.id } ?? neu
         phase = .ergebnis
     }
@@ -172,6 +374,17 @@ struct ErgebnisKarte: View {
     @State private var zeigeBewirtung = false
 
     private var aktuell: Beleg { store.belege.first { $0.id == beleg.id } ?? beleg }
+
+    /// Gleicher Betrag, gleicher Tag, gleicher Lieferant oder gleiche Nummer —
+    /// vermutlich derselbe Beleg noch einmal fotografiert.
+    private var moeglichesDuplikat: Beleg? {
+        store.belege.first {
+            $0.id != beleg.id &&
+            abs($0.brutto - aktuell.brutto) < 0.005 &&
+            $0.datumText == aktuell.datumText &&
+            ($0.lieferant == aktuell.lieferant || $0.belegNr == aktuell.belegNr)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -205,6 +418,20 @@ struct ErgebnisKarte: View {
 
             if !aktuell.summenprobeOK {
                 Label("Summenprobe nicht bestanden — Beträge bitte prüfen.", systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(GC.warn)
+            }
+
+            if aktuell.gutschriftSignal == true {
+                Label("Sieht nach Gutschrift oder Erstattung aus — bitte vor dem Buchen prüfen.",
+                      systemImage: "arrow.uturn.left.circle")
+                    .font(.footnote)
+                    .foregroundStyle(GC.warn)
+            }
+
+            if moeglichesDuplikat != nil {
+                Label("Sieht aus wie ein Beleg, den du schon hast — gleicher Betrag, gleicher Tag. Doppelt erfasst? Einen davon in der Belegliste nach links wischen und löschen.",
+                      systemImage: "doc.on.doc")
                     .font(.footnote)
                     .foregroundStyle(GC.warn)
             }
@@ -312,12 +539,13 @@ struct SiegelZeile: View {
     let beleg: Beleg
 
     var body: some View {
-        if let siegel = beleg.siegel, let zeit = beleg.siegelZeit {
+        // Kein Hex-Fingerabdruck in der Oberfläche — Vertrauen ist der Haken.
+        if beleg.siegel != nil, let zeit = beleg.siegelZeit {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.seal")
                     .foregroundStyle(GC.accent)
-                Text("\(siegel) · \(DateFormatter.siegel.string(from: zeit)) · gesiegelt")
-                    .font(.caption2.monospaced())
+                Text("Festgehalten am \(DateFormatter.siegel.string(from: zeit)) — bleibt unverändert")
+                    .font(.caption2)
                     .foregroundStyle(GC.accent)
             }
         }

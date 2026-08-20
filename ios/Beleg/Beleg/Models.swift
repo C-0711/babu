@@ -102,6 +102,15 @@ private func slug(_ text: String) -> String {
     return ergebnis.isEmpty ? "beleg" : String(ergebnis)
 }
 
+/// Eine Zeile der Steuertabelle des Belegs (7 % und 19 % getrennt) — wird
+/// persistiert, damit der Export Mehrsatz-Belege korrekt aufteilen kann.
+struct SteuerPosition: Codable, Equatable {
+    var satz: Int
+    var netto: Double
+    var ust: Double
+    var brutto: Double
+}
+
 struct Beleg: Identifiable, Codable {
     var id = UUID()
     var lieferant: String
@@ -130,13 +139,25 @@ struct Beleg: Identifiable, Codable {
     // Audit-Stempel: GitChain-Commits der vollständigen Kette
     var auditAufnahme: String?
     var auditReview: String?
+    // Ergebnis der Zweitprüfung: "ok" oder "fehlgeschlagen" (nil = unbekannt)
+    var reviewStatus: String?
     // Bewirtungsangaben (§4 Abs. 5 Nr. 2 EStG): Pflicht bei Konto 6640
     var bewirtungAnlass: String?
     var bewirtungPersonen: String?
+    // Beispiel-Beleg (Erststart/Simulator) — niemals exportieren
+    var istDemo: Bool?
+    // Steuertabelle je Satz (Mehrsatz-Belege) und Gutschrift-Signal
+    var steuerPositionen: [SteuerPosition]?
+    var gutschriftSignal: Bool?
 
     /// Bewirtungsbeleg ohne erfasste Angaben? Dann fragt die App nach.
     var brauchtBewirtungsangaben: Bool {
         konto == "6640" && (bewirtungPersonen ?? "").trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// Grüner Haken nur, wenn die Zweitprüfung da ist UND nicht gescheitert.
+    var zweitgeprueft: Bool {
+        auditReview != nil && reviewStatus != "fehlgeschlagen"
     }
 
     var ksLabel: String {
@@ -148,9 +169,21 @@ struct Beleg: Identifiable, Codable {
     }
 }
 
-/// Merkle-Siegel-Kurzform: SHA-256 über Beleginhalt + Zeitstempel.
+/// Merkle-Siegel-Kurzform: SHA-256 über ALLE buchungsrelevanten Felder
+/// inkl. Belegbild — vorher deckte das Siegel nur 4 Felder ab, Netto/USt/
+/// Datum/Bild konnten sich unbemerkt ändern.
 func siegelHash(_ beleg: Beleg, zeit: Date) -> String {
-    let basis = "\(beleg.lieferant)|\(beleg.belegNr)|\(beleg.brutto)|\(beleg.konto ?? "-")|\(zeit.timeIntervalSince1970)"
+    var bildHash = "-"
+    if let bild = beleg.bildJpeg {
+        bildHash = String(SHA256.hash(data: bild)
+            .map { String(format: "%02x", $0) }.joined().prefix(16))
+    }
+    let basis = [beleg.lieferant, beleg.belegNr, beleg.datumText,
+                 String(beleg.netto), String(beleg.ust), String(beleg.brutto),
+                 String(beleg.ustSatz), beleg.konto ?? "-", beleg.steuerschluessel,
+                 beleg.kreditor, beleg.bewirtungAnlass ?? "-",
+                 beleg.bewirtungPersonen ?? "-", bildHash,
+                 String(zeit.timeIntervalSince1970)].joined(separator: "|")
     let digest = SHA256.hash(data: Data(basis.utf8))
     let hex = digest.map { String(format: "%02x", $0) }.joined()
     let a = hex.prefix(8)
@@ -187,6 +220,7 @@ enum Demo {
                       begruendung: "Regel „Stadtwerke → Energie“ griff.", summenprobeOK: true)
         a.siegel = "77b2e0c4 9a11 f38d"
         a.siegelZeit = Date(timeIntervalSinceNow: -3 * 86400)
+        a.istDemo = true
 
         var b = Beleg(lieferant: "Hetzner Online GmbH", belegNr: "R2026-0psd83", datumText: "01.08.2026",
                       netto: 200.00, ust: 38.00, brutto: 238.00, ustSatz: 19,
@@ -195,6 +229,7 @@ enum Demo {
                       begruendung: "Kreditor 9× zuvor auf 6837 gebucht.", summenprobeOK: true)
         b.siegel = "0d31f6a8 5be2 c974"
         b.siegelZeit = Date(timeIntervalSinceNow: -5 * 86400)
+        b.istDemo = true
 
         return [a, b]
     }

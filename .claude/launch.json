@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "landing",
+      "url": "http://localhost:8765",
+      "port": 8765
+    },
+    {
+      "name": "portal-dev",
+      "url": "http://localhost:7898",
+      "port": 7898
+    }
+  ]
+}
