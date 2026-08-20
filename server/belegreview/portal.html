@@ -412,6 +412,8 @@ main{padding:26px 22px 60px;min-height:70dvh}
       <div class="kopf"><b id="menu-un">…</b><span id="menu-rolle"></span></div>
       <button role="menuitem" onclick="menuGeh('#einstellungen')">
         <span class="sym">⚙️</span> Konto &amp; Einstellungen</button>
+      <button role="menuitem" onclick="menuGeh('#team')">
+        <span class="sym">✂️</span> Dein Team</button>
       <button role="menuitem" onclick="menuGeh('#export')">
         <span class="sym">📦</span> Export für die Buchhaltung</button>
       <button role="menuitem" id="menu-verwaltung" hidden onclick="menuGeh('#verwaltung')">
@@ -570,6 +572,15 @@ main{padding:26px 22px 60px;min-height:70dvh}
   </section>
 
   <!-- EINSTELLUNGEN -->
+  <!-- TEAM: wer im Salon arbeitet und was er kostet -->
+  <section class="ansicht" id="a-team">
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Dein Team</div>
+    <p style="color:var(--gc-desc);margin-bottom:16px">Wer bei dir arbeitet und
+      was du zahlst. Mehr braucht babu nicht — Steuerklasse und Sozialversicherung
+      macht das Lohnbüro. Die Summe rechnen wir in deiner Auswertung mit.</p>
+    <div id="team-inhalt"><div class="skelett"></div></div>
+  </section>
+
   <!-- EXPORT: Buchungsstapel für die Buchhaltung -->
   <section class="ansicht" id="a-export">
     <div class="gruss" style="font-size:22px;margin-bottom:4px">Export für die Buchhaltung</div>
@@ -779,7 +790,7 @@ $("#zugangscode").addEventListener("keydown", e => { if(e.key==="Enter") $("#anm
 
 /* ————— Router ————— */
 const ansichten = { heute: ladeHeute, belege: ladeBelege, fragen: () => {},
-                    aufraeumen: ladeAufraeumen, post: ladePost, ablage: ladeAblage, export: ladeExport,
+                    aufraeumen: ladeAufraeumen, post: ladePost, ablage: ladeAblage, export: ladeExport, team: ladeTeam,
                     abschluss: ladeAbschluss,
                     zahlen: ladeZahlen, bank: ladeBank, saloncheck: ladeSalonCheck,
                     einrichtung: ladeEinrichtung, verwaltung: ladeVerwaltung,
@@ -1722,6 +1733,116 @@ $("#menu-abmelden").addEventListener("click", async () => {
   try{ await api("/api/abmelden", {method:"POST"}); }catch{}
   zeigeLogin();
 });
+
+/* ————— Dein Team ————— */
+async function ladeTeam(){
+  const ziel = $("#team-inhalt");
+  let d;
+  try{ d = await (await api("/api/team")).json(); }
+  catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+
+  let html = "";
+  if (!d.team.length){
+    html += `<div class="leer"><b>Noch niemand eingetragen.</b>
+      Arbeitest du allein? Dann lass es einfach so.</div>`;
+  }
+  for (const p of d.team){
+    const kosten = p.kosten_monat
+      ? (p.lohn_art === "stunden"
+         ? `${euro(p.stundenlohn || 0)} × ${p.stunden || 0} Std = ${euro(p.kosten_monat)}`
+         : `${euro(p.kosten_monat)} im Monat`)
+      : "kein Betrag hinterlegt";
+    html += `<div class="karte" style="${p.aktiv ? "" : "opacity:.55"}">
+      <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+        <b style="color:var(--gc-fg)">${esc(p.name)}</b>
+        ${p.email ? `<span style="font-size:12px;color:var(--gc-muted)">${esc(p.email)}</span>` : ""}
+        <span style="margin-left:auto;font-size:13px">${esc(kosten)}</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="chip" onclick="teamBearbeiten(${p.id})">Ändern</button>
+        <button class="chip" onclick="teamAktion(${p.id},'${p.aktiv ? "beenden" : "zurueck"}')">
+          ${p.aktiv ? "Arbeitet nicht mehr hier" : "Wieder dabei"}</button>
+      </div></div>`;
+  }
+  if (d.anzahl_aktiv){
+    html += `<div class="karte" style="border-color:var(--gc-ok);margin-top:4px">
+      <b>Zusammen ${euro(d.kosten_monat)} im Monat</b>
+      <p style="color:var(--gc-desc);font-size:13px;margin-top:4px">
+        Das rechnen wir in deiner Auswertung mit — auch ohne Lohnbeleg.</p></div>`;
+  }
+  html += `<div class="sektion lbl">Jemanden eintragen</div>
+    <div class="karte" id="team-form">
+      <input type="hidden" id="t-id">
+      <div style="display:grid;gap:8px">
+        <input id="t-name" placeholder="Name" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+        <input id="t-email" placeholder="E-Mail (wenn du magst)" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+        <div class="chips" style="margin:2px 0">
+          <button class="chip an" id="t-fest" onclick="teamArt('fest')">Fester Lohn</button>
+          <button class="chip" id="t-stunden" onclick="teamArt('stunden')">Nach Stunden</button>
+        </div>
+        <div id="t-fest-feld">
+          <input id="t-betrag" inputmode="decimal" placeholder="z. B. 2.400 im Monat"
+            style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+        </div>
+        <div id="t-stunden-feld" hidden style="display:grid;gap:8px;grid-template-columns:1fr 1fr">
+          <input id="t-stundenlohn" inputmode="decimal" placeholder="Stundenlohn, z. B. 14,50"
+            style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+          <input id="t-stunden-zahl" inputmode="decimal" placeholder="Stunden im Monat"
+            style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+        </div>
+      </div>
+      <button class="hin" style="margin-top:12px" onclick="teamSpeichern()">Speichern</button>
+      <span id="t-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>
+    </div>`;
+  ziel.innerHTML = html;
+}
+let teamArtGewaehlt = "fest";
+function teamArt(art){
+  teamArtGewaehlt = art;
+  $("#t-fest").classList.toggle("an", art === "fest");
+  $("#t-stunden").classList.toggle("an", art === "stunden");
+  $("#t-fest-feld").hidden = art !== "fest";
+  $("#t-stunden-feld").hidden = art !== "stunden";
+}
+async function teamBearbeiten(id){
+  const d = await (await api("/api/team")).json();
+  const p = d.team.find(x => x.id === id);
+  if (!p) return;
+  $("#t-id").value = p.id;
+  $("#t-name").value = p.name || "";
+  $("#t-email").value = p.email || "";
+  teamArt(p.lohn_art);
+  $("#t-betrag").value = p.betrag || "";
+  $("#t-stundenlohn").value = p.stundenlohn || "";
+  $("#t-stunden-zahl").value = p.stunden || "";
+  $("#team-form").scrollIntoView({behavior: "smooth", block: "center"});
+}
+async function teamSpeichern(){
+  const status = $("#t-status");
+  const koerper = {name: $("#t-name").value.trim(), email: $("#t-email").value.trim(),
+                   lohn_art: teamArtGewaehlt, betrag: $("#t-betrag").value.trim(),
+                   stundenlohn: $("#t-stundenlohn").value.trim(),
+                   stunden: $("#t-stunden-zahl").value.trim()};
+  const id = $("#t-id").value;
+  if (id) koerper.id = Number(id);
+  if (!koerper.name){ status.textContent = "Wie heißt sie oder er?"; return; }
+  status.textContent = "wird gespeichert …";
+  try{
+    const r = await api("/api/team", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(koerper)});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok){ status.textContent = d.fehler || "Ging gerade nicht."; return; }
+    ladeTeam();
+  }catch{ status.textContent = "Gerade keine Verbindung."; }
+}
+async function teamAktion(id, aktion){
+  try{
+    await api("/api/team-aktion", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({id, aktion})});
+    ladeTeam();
+  }catch{}
+}
 
 /* ————— Monatsabschluss: BWA + Umsatzsteuer-Entwurf ————— */
 let abMonat = jetztMonat();

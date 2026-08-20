@@ -65,6 +65,11 @@ def _db() -> sqlite3.Connection:
     conn.execute("""CREATE TABLE IF NOT EXISTS abschluss_status
         (un TEXT PRIMARY KEY, jahr INTEGER, json TEXT NOT NULL,
          zeit TEXT NOT NULL)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS team
+        (id INTEGER PRIMARY KEY AUTOINCREMENT, un TEXT NOT NULL,
+         name TEXT NOT NULL, email TEXT, lohn_art TEXT NOT NULL DEFAULT 'fest',
+         betrag REAL, stundenlohn REAL, stunden REAL,
+         seit TEXT, aktiv INTEGER NOT NULL DEFAULT 1, angelegt TEXT)""")
     conn.execute("""CREATE TABLE IF NOT EXISTS app_schluessel
         (hash TEXT PRIMARY KEY, un TEXT NOT NULL, geraet TEXT,
          erstellt TEXT NOT NULL, zuletzt TEXT)""")
@@ -2527,6 +2532,120 @@ def vertraege_aktuell() -> list[dict]:
             if isinstance(d.get("vertrag"), dict)]
 
 
+# ---------------------------------------------------------------------------
+# Dein Team: wer im Salon arbeitet und was er kostet. Bewusst minimal —
+# Steuerklasse, Sozialversicherung und Lohnsteuer macht das Lohnbüro.
+# babu braucht nur die Summe, damit die Auswertung stimmt.
+# ---------------------------------------------------------------------------
+
+def team_liste(un: str, nur_aktive: bool = False) -> list[dict]:
+    with _DB_LOCK, _db() as c:
+        sql = """SELECT id, name, email, lohn_art, betrag, stundenlohn, stunden,
+                        seit, aktiv FROM team WHERE un=?"""
+        if nur_aktive:
+            sql += " AND aktiv=1"
+        zeilen = c.execute(sql + " ORDER BY aktiv DESC, name", (un,)).fetchall()
+    leute = []
+    for z in zeilen:
+        person = {"id": z[0], "name": z[1], "email": z[2], "lohn_art": z[3],
+                  "betrag": z[4], "stundenlohn": z[5], "stunden": z[6],
+                  "seit": z[7], "aktiv": bool(z[8])}
+        person["kosten_monat"] = round(
+            (z[4] or 0.0) if z[3] == "fest" else (z[5] or 0.0) * (z[6] or 0.0), 2)
+        leute.append(person)
+    return leute
+
+
+def team_personalkosten(un: str) -> float | None:
+    """Was das Team im Monat kostet — Grundlage der Auswertung."""
+    aktive = [p for p in team_liste(un, nur_aktive=True) if p["kosten_monat"]]
+    return round(sum(p["kosten_monat"] for p in aktive), 2) if aktive else None
+
+
+@app.get("/api/team")
+def api_team(request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    leute = team_liste(un)
+    return JSONResponse({
+        "team": leute,
+        "kosten_monat": round(sum(p["kosten_monat"] for p in leute if p["aktiv"]), 2),
+        "anzahl_aktiv": sum(1 for p in leute if p["aktiv"]),
+    })
+
+
+@app.post("/api/team")
+async def api_team_speichern(request: Request) -> Response:
+    """Anlegen oder ändern — vier Angaben reichen."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+
+    name = str(body.get("name", "")).strip()[:80]
+    if not name:
+        return JSONResponse({"fehler": "Wie heißt sie oder er?"}, status_code=400)
+    email = str(body.get("email", "")).strip().lower()[:120]
+    if email and "@" not in email:
+        return JSONResponse({"fehler": "Die E-Mail sieht nicht richtig aus."},
+                            status_code=400)
+    lohn_art = "stunden" if str(body.get("lohn_art")) == "stunden" else "fest"
+    betrag = _zahl(body.get("betrag"))
+    stundenlohn = _zahl(body.get("stundenlohn"))
+    stunden = _zahl(body.get("stunden"))
+    if lohn_art == "fest" and betrag is not None and not 0 <= betrag < 50_000:
+        return JSONResponse({"fehler": "Der Betrag sieht nicht richtig aus."},
+                            status_code=400)
+    if lohn_art == "stunden" and stundenlohn is not None and not 0 <= stundenlohn < 500:
+        return JSONResponse({"fehler": "Der Stundenlohn sieht nicht richtig aus."},
+                            status_code=400)
+    seit = str(body.get("seit", "")).strip()[:10] or None
+    person_id = body.get("id")
+
+    with _DB_LOCK, _db() as c:
+        if person_id:
+            c.execute("""UPDATE team SET name=?, email=?, lohn_art=?, betrag=?,
+                         stundenlohn=?, stunden=?, seit=? WHERE id=? AND un=?""",
+                      (name, email or None, lohn_art, betrag, stundenlohn,
+                       stunden, seit, int(person_id), un))
+        else:
+            c.execute("""INSERT INTO team (un, name, email, lohn_art, betrag,
+                         stundenlohn, stunden, seit, angelegt)
+                         VALUES (?,?,?,?,?,?,?,?,?)""",
+                      (un, name, email or None, lohn_art, betrag, stundenlohn,
+                       stunden, seit, _jetzt_iso()))
+    return JSONResponse({"ok": True, "team": team_liste(un),
+                         "kosten_monat": team_personalkosten(un) or 0.0})
+
+
+@app.post("/api/team-aktion")
+async def api_team_aktion(request: Request) -> Response:
+    """Jemand hört auf oder kommt zurück — Daten bleiben, nur der Haken geht."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    person_id = body.get("id")
+    aktion = str(body.get("aktion", ""))
+    if not person_id or aktion not in ("beenden", "zurueck", "loeschen"):
+        return JSONResponse({"fehler": "unbekannte Aktion"}, status_code=400)
+    with _DB_LOCK, _db() as c:
+        if aktion == "loeschen":
+            c.execute("DELETE FROM team WHERE id=? AND un=?", (int(person_id), un))
+        else:
+            c.execute("UPDATE team SET aktiv=? WHERE id=? AND un=?",
+                      (1 if aktion == "zurueck" else 0, int(person_id), un))
+    return JSONResponse({"ok": True, "team": team_liste(un),
+                         "kosten_monat": team_personalkosten(un) or 0.0})
+
+
 @app.get("/api/monatsabschluss/{monat}")
 def api_monatsabschluss(monat: str, request: Request) -> Response:
     """BWA und Umsatzsteuer-Entwurf eines Monats — aus Belegen und Kassenbuch.
@@ -2565,7 +2684,8 @@ def api_monatsabschluss(monat: str, request: Request) -> Response:
         "monat": monat,
         "erloese": erloese,
         "bwa": ma.bwa(monat, erloese, belege, vorjahr,
-                      personal_monat=_zahl(einstellungen.get("personal_monat")),
+                      personal_monat=(team_personalkosten(un)
+                                      or _zahl(einstellungen.get("personal_monat"))),
                       vertraege=vertraege_aktuell()),
         "ustva": ma.ustva_entwurf(monat, erloese, vorsteuer, profil),
         "profil": profil,

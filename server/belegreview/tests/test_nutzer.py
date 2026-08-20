@@ -197,3 +197,39 @@ def test_selbstschutz_eigenes_konto(bw, client):
         "aktion": "deaktivieren"}).status_code == 400
     assert chefin.post("/api/nutzer-aktion", json={"email": "chefin@salon.de",
         "aktion": "rolle", "rolle": "salon"}).status_code == 400
+
+
+def test_team_verwalten_und_personalkosten(bw, client):
+    """Dein Team: vier Angaben je Person, die Summe trägt die Auswertung."""
+    _als_kanzlei(client)
+
+    # Festlohn und Stundenkraft
+    r = client.post("/api/team", json={"name": "Jana Allgaier",
+                                       "email": "jana@cap2.de",
+                                       "lohn_art": "fest", "betrag": "2.400",
+                                       "seit": "2024-05-01"})
+    assert r.status_code == 200
+    r = client.post("/api/team", json={"name": "Mira Aushilfe",
+                                       "lohn_art": "stunden",
+                                       "stundenlohn": "14,50", "stunden": "40"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["kosten_monat"] == 2980.0          # 2400 + 14,50 × 40
+    assert d["team"][0]["kosten_monat"] in (2400.0, 580.0)
+
+    # Ohne Namen geht nichts, kaputte E-Mail auch nicht
+    assert client.post("/api/team", json={"name": " "}).status_code == 400
+    assert client.post("/api/team", json={"name": "X", "email": "keine"}).status_code == 400
+
+    # Wer aufhört, zählt nicht mehr mit — bleibt aber in der Liste
+    jana = next(p for p in d["team"] if p["name"] == "Jana Allgaier")
+    r = client.post("/api/team-aktion", json={"id": jana["id"], "aktion": "beenden"})
+    assert r.json()["kosten_monat"] == 580.0
+    assert any(not p["aktiv"] for p in r.json()["team"])
+
+    # Und kommt sie zurück, zählt sie wieder
+    r = client.post("/api/team-aktion", json={"id": jana["id"], "aktion": "zurueck"})
+    assert r.json()["kosten_monat"] == 2980.0
+
+    # Die Auswertung rechnet damit
+    assert bw.team_personalkosten("christoph0711.io") == 2980.0
