@@ -47,3 +47,21 @@ Argumente und Sprachregeln: `kostenwahrheit.md`.
 Gelegentlich scheitert ein Take serverseitig („internal server issue") —
 `rendern()` überspringt vorhandene Dateien, ein erneuter Lauf holt nur
 die fehlenden nach.
+
+### Startbilder (`poster.py`)
+
+Jede Folge bekommt ein erklärendes Startbild: ein Frame aus dem Olaf-Take,
+weichgezeichnet und mit Verlauf abgedunkelt, dazu Marke, Play-Ring, Titel,
+ein Erklärsatz und der grüne Haken mit der Adresse. So versteht man das
+Thema auch ohne Klick und ohne Ton.
+
+**Falle:** Halbtransparente Formen (Play-Ring) müssen auf einer eigenen
+RGBA-Ebene gezeichnet und per `alpha_composite` gemischt werden — direkt
+auf das Bild gezeichnet werden sie beim RGB-Export zu deckendem Weiß.
+
+Auf der Landing liegen die Spots in der Sektion `#kostenwahrheit`
+(zwischen Paketen und Telefon-Sektion). Videos und Poster sind
+Datei-Verweise auf `/bilder/`, KEINE data-URIs — sonst wächst die
+Startseite auf über 100 MB. Beim Bauen von `index-deploy.html` deshalb
+nur `src="bilder/*.png"` einbetten, `poster=` und Video-`src` unangetastet
+lassen.

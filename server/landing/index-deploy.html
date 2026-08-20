@@ -65,6 +65,15 @@ a{color:var(--gc-accent-hover)}
 .telefon img{width:100%;display:block;border-radius:20px}
 .telefon p{font-size:13.5px;color:var(--gc-desc);margin-top:12px;padding:0 6px}
 .telefon strong{color:var(--gc-fg)}
+/* Spot-Galerie: Startbild erklärt, Video spielt auf Klick */
+.spots{display:grid;gap:18px;margin-top:28px;
+  grid-template-columns:repeat(auto-fit,minmax(215px,1fr))}
+.spots figure{margin:0}
+.spots video{width:100%;aspect-ratio:9/16;object-fit:cover;display:block;
+  border-radius:16px;background:#15140f;border:1px solid var(--gc-border)}
+.spots figcaption{margin-top:9px;font-size:13.5px;line-height:1.45}
+.spots figcaption strong{display:block;color:var(--gc-fg)}
+.spots figcaption span{color:var(--gc-desc)}
 /* Spar-Tabelle im Kostenvergleich */
 .sparen-tab{width:100%;border-collapse:collapse;font-size:14.5px}
 .sparen-tab th,.sparen-tab td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--gc-border)}
@@ -368,6 +377,69 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
     <div id="quiz-antworten" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"></div>
     <div id="quiz-ergebnis" hidden></div>
     <button class="knopf zart" id="quiz-start" style="margin-top:4px">Los geht's</button>
+  </div>
+</section>
+
+<!-- ── 4b2 · Serie: Kostenwahrheit ──────────────────────────────────── -->
+<section id="kostenwahrheit">
+  <div class="lbl">Kostenwahrheit</div>
+  <h2>Zehn Gründe, warum du nie<br>weißt, was du bezahlst.</h2>
+  <p class="sub">Kein Vorwurf an einzelne Kanzleien — so ist das System gebaut.
+  Jede Folge dauert eine halbe Minute. Ton an lohnt sich.</p>
+  <div class="spots">
+      <figure class="spot">
+        <video controls playsinline preload="none" poster="/bilder/poster-verschlampt.png"
+          src="/bilder/spot-verschlampt.mp4"></video>
+        <figcaption><strong>Beleg weg — zweimal bezahlt</strong><span>Fremder Fehler, deine Rechnung.</span></figcaption>
+      </figure>
+      <figure class="spot">
+        <video controls playsinline preload="none" poster="/bilder/poster-angebot.png"
+          src="/bilder/spot-angebot.mp4"></video>
+        <figcaption><strong>Kein Angebot, nur eine Rechnung</strong><span>Den Preis erfährst du erst hinterher.</span></figcaption>
+      </figure>
+      <figure class="spot">
+        <video controls playsinline preload="none" poster="/bilder/poster-reden.png"
+          src="/bilder/spot-reden.mp4"></video>
+        <figcaption><strong>Reden kostet</strong><span>Jede Rückfrage wird als Zeit berechnet.</span></figcaption>
+      </figure>
+      <figure class="spot">
+        <video controls playsinline preload="none" poster="/bilder/poster-doppelt.png"
+          src="/bilder/spot-doppelt.mp4"></video>
+        <figcaption><strong>Doppelt abgerechnet</strong><span>Ohne eigene Aufzeichnung nicht widerlegbar.</span></figcaption>
+      </figure>
+      <figure class="spot">
+        <video controls playsinline preload="none" poster="/bilder/poster-kleinvieh.png"
+          src="/bilder/spot-kleinvieh.mp4"></video>
+        <figcaption><strong>Porto, Kopien, Pauschale</strong><span>Lauter Kleinposten, keiner vorher genannt.</span></figcaption>
+      </figure>
+      <figure class="spot">
+        <video controls playsinline preload="none" poster="/bilder/poster-leistung.png"
+          src="/bilder/spot-leistung.mp4"></video>
+        <figcaption><strong>Paragraf statt Leistung</strong><span>Was getan wurde, steht da nicht.</span></figcaption>
+      </figure>
+      <figure class="spot">
+        <video controls playsinline preload="none" poster="/bilder/poster-vorarbeit.png"
+          src="/bilder/spot-vorarbeit.mp4"></video>
+        <figcaption><strong>Vorarbeit umsonst</strong><span>Du sortierst — der Preis bleibt gleich.</span></figcaption>
+      </figure>
+      <figure class="spot">
+        <video controls playsinline preload="none" poster="/bilder/poster-frist.png"
+          src="/bilder/spot-frist.mp4"></video>
+        <figcaption><strong>Frist verpasst, Zuschlag zahlst du</strong><span>Das Amt schickt ihn an dich.</span></figcaption>
+      </figure>
+      <figure class="spot">
+        <video controls playsinline preload="none" poster="/bilder/poster-spaet.png"
+          src="/bilder/spot-spaet.mp4"></video>
+        <figcaption><strong>Zahlen kommen zu spät</strong><span>Im August erfahren, wie der März lief.</span></figcaption>
+      </figure>
+      <figure class="spot">
+        <video controls playsinline preload="none" poster="/bilder/poster-wechsel.png"
+          src="/bilder/spot-wechsel.mp4"></video>
+        <figcaption><strong>Der Wechsel wird zäh gemacht</strong><span>Offene Honorare, zurückgehaltene Unterlagen.</span></figcaption>
+      </figure>
+  </div>
+  <div class="cta" style="margin-top:30px">
+    <a class="knopf voll" href="/portal">Konto anlegen</a>
   </div>
 </section>
 
