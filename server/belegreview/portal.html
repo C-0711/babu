@@ -922,6 +922,54 @@ document.querySelectorAll("#filter-chips .chip").forEach(c => c.addEventListener
 }));
 
 /* ————— DETAIL ————— */
+/* Was babu nicht lesen konnte, trägt die Nutzerin hier direkt nach —
+   sichtbar an der Stelle, an der die Frage steht. */
+function angabenFormular(stamm, f){
+  const fehlt = (was) => (f.offen || []).some(o => (o || "").toLowerCase().includes(was));
+  const brauchtBetrag = !f.brutto || fehlt("betrag") || fehlt("brutto") || fehlt("summe");
+  const brauchtLaden = !f.lieferant || fehlt("lieferant") || fehlt("laden");
+  const brauchtDatum = !f.datum || fehlt("datum");
+  return `<div class="karte nachfrage" style="margin-top:10px" id="ang-${stamm}">
+    <h3>Trag nach, was fehlt</h3>
+    <p style="color:var(--gc-desc);font-size:13px;margin-bottom:10px">
+      babu konnte hier nicht alles lesen. Was du einträgst, gilt.</p>
+    <div style="display:grid;gap:8px">
+      ${brauchtBetrag ? `<label style="font-size:13px">Betrag (mit Cent)
+        <input id="ang-brutto" inputmode="decimal" placeholder="z. B. 4,20"
+          style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-top:3px"></label>` : ""}
+      ${brauchtLaden ? `<label style="font-size:13px">Wo war das?
+        <input id="ang-lieferant" placeholder="z. B. APCOA Parking"
+          style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-top:3px"></label>` : ""}
+      ${brauchtDatum ? `<label style="font-size:13px">Datum
+        <input id="ang-datum" type="date"
+          style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-top:3px"></label>` : ""}
+      <label style="font-size:13px">Notiz (wenn du magst)
+        <input id="ang-notiz" placeholder="z. B. Parken beim Großhandel"
+          style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-top:3px"></label>
+    </div>
+    <button class="hin" style="margin-top:12px" onclick="angabenSenden('${stamm}')">Speichern</button>
+    <span id="ang-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>
+  </div>`;
+}
+async function angabenSenden(stamm){
+  const status = $("#ang-status");
+  const wert = (id) => { const e = document.getElementById(id); return e ? e.value.trim() : ""; };
+  const koerper = {brutto: wert("ang-brutto"), lieferant: wert("ang-lieferant"),
+                   datum: wert("ang-datum"), notiz: wert("ang-notiz")};
+  if (!koerper.brutto && !koerper.lieferant && !koerper.datum && !koerper.notiz){
+    status.textContent = "Bitte mindestens ein Feld ausfüllen."; return;
+  }
+  status.textContent = "wird gespeichert …";
+  try{
+    const r = await api("/api/angaben/" + stamm, {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(koerper)});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok){ status.textContent = d.fehler || "Ging gerade nicht."; return; }
+    status.textContent = "Gespeichert ✓";
+    setTimeout(() => ladeDetail(stamm), 700);
+  }catch{ status.textContent = "Gerade keine Verbindung."; }
+}
+
 async function ladeDetail(stamm){
   const ziel = $("#detail-inhalt");
   ziel.innerHTML = `<div class="skelett" style="height:300px"></div>`;
@@ -984,6 +1032,7 @@ async function ladeDetail(stamm){
         onclick="bewirtungSheet('${d.stamm}','${lieferant} · ${euro(f.brutto)}')">
         <h3>Mit wem warst du essen?</h3><p>Kurz notiert, und der Beleg zählt voll.</p>
         <span class="hin">Kurz klären ›</span></button>` : ""}
+      ${(frage && !bewirtungOffen) || !f.brutto ? angabenFormular(d.stamm, f) : ""}
       ${d.bewirtung ? `<div class="feld" style="margin-top:8px"><span>Anlass</span><b style="font-family:var(--gc-sans)">${d.bewirtung.anlass}</b></div>
         <div class="feld"><span>Dabei waren</span><b style="font-family:var(--gc-sans)">${(d.bewirtung.teilnehmer||[]).join(", ")}</b></div>` : ""}
       </div>`;
@@ -1421,7 +1470,12 @@ $("#sc-datei").addEventListener("change", async ev => {
       if (r.ok) scHochgeladen++;
     }catch{ zeile.lastElementChild.textContent = "gerade keine Verbindung"; }
   }
-  if (scHochgeladen > 0 && $("#sc-los")) $("#sc-los").hidden = false;
+  // Wer Unterlagen hochlädt, will sie gelesen haben — also gleich loslegen.
+  // Der Knopf bleibt als Rückfallebene sichtbar, falls der Start scheitert.
+  if (scHochgeladen > 0){
+    if ($("#sc-los")) $("#sc-los").hidden = false;
+    scLoslesen();
+  }
 });
 
 async function scLoslesen(){

@@ -442,9 +442,14 @@ def _index_bauen(head: str) -> None:
                     if p.startswith("review/") and p.endswith(".json")
                     and not p.endswith(".embedding.json")
                     and not p.endswith(".bewirtung.json")
-                    and not p.endswith(".korrektur.json")}
+                    and not p.endswith(".korrektur.json")
+                    and not p.endswith(".angaben.json")}
     korrektur_pfade = {p[len("review/"):-len(".korrektur.json")]: oid
                        for p, oid in pfade.items() if p.endswith(".korrektur.json")}
+    # Ergänzungen der Nutzerin (fehlender Betrag, Datum, Laden) — sie
+    # beantworten genau die Fragen, die babu offen gelassen hat.
+    angaben_pfade = {p[len("review/"):-len(".angaben.json")]: oid
+                     for p, oid in pfade.items() if p.endswith(".angaben.json")}
     bewirtung_staemme = {p[len("review/"):-len(".bewirtung.json")]
                          for p in pfade if p.endswith(".bewirtung.json")}
     beleg_pfade = [p for p in pfade
@@ -452,6 +457,7 @@ def _index_bauen(head: str) -> None:
 
     oid_cache = _INDEX["oid_cache"]
     fehlend = [oid for oid in list(review_pfade.values()) + list(korrektur_pfade.values())
+               + list(angaben_pfade.values())
                if oid not in oid_cache]
     for oid, roh in _blobs_lesen(fehlend).items():
         try:
@@ -498,6 +504,26 @@ def _index_bauen(head: str) -> None:
             "bewirtung": bool(f.get("bewirtungssignal")),
             "bewirtung_beantwortet": bewirtung_da,
         }
+        ergaenzung = oid_cache.get(angaben_pfade.get(stamm, ""))
+        if isinstance(ergaenzung, dict):
+            eintrag["ergaenzt"] = True
+            if ergaenzung.get("brutto") is not None:
+                eintrag["brutto"] = ergaenzung["brutto"]
+            for kk in ("lieferant", "datum"):
+                if ergaenzung.get(kk):
+                    eintrag[kk] = ergaenzung[kk]
+            # Beantwortete Punkte verschwinden aus der Nachfrage-Liste.
+            beantwortet = set(ergaenzung.get("beantwortet") or [])
+            eintrag["offen"] = [o for o in eintrag["offen"] if o not in beantwortet]
+            if not eintrag["offen"] and eintrag.get("status") == "nachfrage":
+                eintrag["status"] = "erfasst"
+            if review is not None:
+                review = json.loads(json.dumps(review))
+                review.setdefault("felder", {})
+                for kk in ("brutto", "lieferant", "datum"):
+                    if ergaenzung.get(kk) is not None:
+                        review["felder"][kk] = ergaenzung[kk]
+                review["felder"]["offen"] = eintrag["offen"]
         korrektur = oid_cache.get(korrektur_pfade.get(stamm, ""))
         if isinstance(korrektur, dict):
             eintrag["korrigiert"] = True
@@ -914,6 +940,24 @@ def api_beleg(stamm: str, request: Request) -> Response:
     d["monat"] = eintrag["monat"]
     d["datei"] = eintrag["datei"]
     d["bild_url"] = f"/api/beleg/{stamm}/bild?v={eintrag['bild_oid']}"
+    # Nachgetragene Angaben gelten — sie beantworten genau die offenen Punkte.
+    roh_ang = git_show(f"review/{stamm}.angaben.json")
+    if roh_ang is not None:
+        try:
+            ang = json.loads(roh_ang)
+        except Exception:  # noqa: BLE001
+            ang = {}
+        if isinstance(ang, dict) and ang:
+            d.setdefault("felder", {})
+            for kk in ("brutto", "lieferant", "datum"):
+                if ang.get(kk) is not None:
+                    d["felder"][kk] = ang[kk]
+            beantwortet = set(ang.get("beantwortet") or [])
+            d["felder"]["offen"] = [o for o in (d["felder"].get("offen") or [])
+                                    if o not in beantwortet]
+            d["ergaenzt"] = True
+            d["angaben"] = ang
+            d["buchungssatz"] = datev_buchungssatz(d) if d else None
     d["bewirtung_beantwortet"] = eintrag["bewirtung_beantwortet"]
     if eintrag["bewirtung_beantwortet"]:
         roh = git_show(f"review/{stamm}.bewirtung.json")
@@ -2197,6 +2241,7 @@ def _brief_job(pfad: str, daten: bytes, name: str, un: str) -> None:
 # ---------------------------------------------------------------------------
 
 KASSENBUCH_ZAHLEN = ("bestandVortag", "einnahmenBar", "privateinlagen",
+                     "gutscheineEingeloest",
                      "barabhebungBank", "ecZahlungen", "trinkgeldTeamEC",
                      "sonstigeAusgaben", "privatentnahmen", "einzahlungBank",
                      "gezaehltSchluss")
@@ -2285,6 +2330,64 @@ def api_ablage(request: Request) -> Response:
                         "arten": arten})
     return JSONResponse({"jahre": ausgabe,
                          "gesamt": sum(j["anzahl"] for j in ausgabe)})
+
+
+@app.post("/api/angaben/{stamm}")
+async def api_angaben(stamm: str, request: Request) -> Response:
+    """Was babu nicht lesen konnte, trägt die Nutzerin selbst nach —
+    Betrag, Datum, Laden. Eigener Commit, das Original bleibt unberührt."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if not NAME_RE.match(stamm):
+        return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
+    if stamm not in index_aktuell()["belege"]:
+        return JSONResponse({"fehler": "unbekannter Beleg"}, status_code=404)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+
+    daten: dict = {"von": un, "am": _jetzt_iso(), "beantwortet": []}
+    roh = str(body.get("brutto", "")).strip().replace(".", "").replace(",", ".")
+    if roh:
+        try:
+            betrag = round(float(roh), 2)
+        except ValueError:
+            return JSONResponse({"fehler": "Den Betrag konnten wir nicht lesen — z. B. 4,20"},
+                                status_code=400)
+        if not 0 < betrag < 1_000_000:
+            return JSONResponse({"fehler": "Der Betrag sieht nicht richtig aus."},
+                                status_code=400)
+        daten["brutto"] = betrag
+        daten["beantwortet"].append("brutto")
+    lieferant = str(body.get("lieferant", "")).strip()[:80]
+    if lieferant:
+        daten["lieferant"] = lieferant
+        daten["beantwortet"].append("lieferant")
+    datum = str(body.get("datum", "")).strip()[:10]
+    if datum:
+        daten["datum"] = datum
+        daten["beantwortet"].append("datum")
+    notiz = str(body.get("notiz", "")).strip()[:200]
+    if notiz:
+        daten["notiz"] = notiz
+    if not daten["beantwortet"] and not notiz:
+        return JSONResponse({"fehler": "Bitte mindestens eine Angabe ausfüllen."},
+                            status_code=400)
+
+    import boxschreiber  # noqa: PLC0415
+    try:
+        commit = boxschreiber.schreiben(
+            f"review/{stamm}.angaben.json",
+            json.dumps(daten, ensure_ascii=False, indent=1).encode(),
+            f"angaben: {stamm}", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit, "angaben": daten})
 
 
 @app.post("/api/kassenbuch")

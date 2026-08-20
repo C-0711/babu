@@ -221,3 +221,4 @@ def test_origin_check(client):
     r = client.post("/chat", json={"frage": "x"},
                     headers={"Origin": "https://boese.example"})
     assert r.status_code == 401            # Cookie verworfen, kein Bearer da
+

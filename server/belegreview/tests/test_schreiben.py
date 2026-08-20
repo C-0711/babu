@@ -182,3 +182,29 @@ def test_hochladen_grenzen(welt):
                        content=b"x").status_code == 400
     assert client.post("/api/hochladen", params={"name": "leer.jpg"},
                        content=b"").status_code == 400
+
+
+def test_angaben_nachtragen(welt):
+    """Was babu nicht lesen konnte, trägt die Nutzerin selbst nach —
+    ohne Verwaltungsrecht, als eigener Commit, sichtbar im Beleg."""
+    client, bare = welt
+    r = client.post(f"/api/angaben/{STAMM}",
+                    json={"brutto": "4,20", "lieferant": "APCOA Parking",
+                          "notiz": "Parken beim Großhandel"})
+    assert r.status_code == 200
+    assert r.json()["angaben"]["brutto"] == 4.20
+    assert set(r.json()["angaben"]["beantwortet"]) == {"brutto", "lieferant"}
+
+    log = subprocess.run(["git", "-C", str(bare), "log", "-1", "--format=%s|%an"],
+                         capture_output=True, text=True).stdout.strip()
+    assert log == f"angaben: {STAMM}|christoph0711.io"
+
+    d = client.get(f"/api/beleg/{STAMM}").json()
+    assert d["felder"]["brutto"] == 4.20
+    assert d["felder"]["lieferant"] == "APCOA Parking"
+    assert d.get("ergaenzt") is True
+    assert client.get("/api/belege").json()["belege"][0].get("stamm")
+
+    # Unlesbarer Betrag und leere Eingabe werden abgewiesen.
+    assert client.post(f"/api/angaben/{STAMM}", json={"brutto": "vier euro"}).status_code == 400
+    assert client.post(f"/api/angaben/{STAMM}", json={}).status_code == 400
