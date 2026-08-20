@@ -282,3 +282,33 @@ def test_kassenbuch_nimmt_umsatzaufteilung_an(welt):
     d = client.get("/api/monatsabschluss/2026-09").json()
     assert d["erloese"]["brutto_19"] == 850.0    # 1000 - 200 frei + 50 Gutschein
     assert d["erloese"]["steuerfrei"] == 200.0
+
+
+def test_vertrag_betrag_wird_selbst_geparst(welt, monkeypatch):
+    """Das Sprachmodell liefert den Betrag als Text — geparst wird hier.
+    Sonst wird aus 1.250,00 EUR schnell 12500 (Tausenderpunkt verschluckt)."""
+    client, _, bw = welt
+    import abschluss_lesen
+    # Textebene vortäuschen — geprüft wird das Parsen, nicht das PDF-Lesen.
+    monkeypatch.setattr(abschluss_lesen, "seiten_text",
+                        lambda pfad, **k: ["Mietvertrag über Gewerberäume. " * 20
+                                           + "Monatliche Miete 1.250,00 EUR."])
+
+    def fake_llm(nachrichten):
+        return {"art": "miete", "partner": "Klaus Weber",
+                "betrag_monat_text": "1.250,00 EUR",
+                "beginn": "2024-03-01",
+                "kuendigungsfrist": "3 Monate zum Quartalsende",
+                "einfach": "Du zahlst monatlich 1.250 Euro."}
+
+    v = bw.vertrag_lesen(b"%PDF-1.4 mietvertrag", "mietvertrag.pdf", llm=fake_llm)
+    assert v["betrag_monat"] == 1250.0          # nicht 12500
+    assert v["art"] == "miete" and v["konto_skr04"] == "6310"
+    assert v["partner"] == "Klaus Weber"
+
+    # Unplausible Beträge fliegen raus, der Rest bleibt nutzbar.
+    v2 = bw.vertrag_lesen(b"%PDF-1.4 x", "x.pdf",
+                          llm=lambda n: {"art": "miete", "partner": "X",
+                                         "betrag_monat_text": "980.000,00 EUR",
+                                         "einfach": "…"})
+    assert v2["betrag_monat"] is None and v2["partner"] == "X"

@@ -552,6 +552,14 @@ def _index_bauen(head: str) -> None:
             oid_cache[oid] = json.loads(roh)
         except Exception:  # noqa: BLE001
             oid_cache[oid] = None
+    vertrag_pfade = {p_: oid for p_, oid in pfade.items()
+                     if p_.startswith("dokumente/") and p_.endswith(".vertrag.json")}
+    for oid, roh in _blobs_lesen([o for o in vertrag_pfade.values()
+                                  if o not in oid_cache]).items():
+        try:
+            oid_cache[oid] = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            oid_cache[oid] = None
     erklaerung_pfade = {p_: oid for p_, oid in pfade.items()
                         if p_.startswith("dokumente/") and p_.endswith(".erklaerung.json")}
     fehlend_erkl = [oid for oid in erklaerung_pfade.values() if oid not in oid_cache]
@@ -563,7 +571,8 @@ def _index_bauen(head: str) -> None:
     dokumente: list[dict] = []
     for pfad, oid in pfade.items():
         if not pfad.startswith("dokumente/") or pfad.endswith(".meta.json") \
-                or pfad.endswith(".erklaerung.json"):
+                or pfad.endswith(".erklaerung.json") \
+                or pfad.endswith(".vertrag.json"):
             continue
         meta = oid_cache.get(meta_pfade.get(pfad + ".meta.json", "")) or {}
         erklaerung = oid_cache.get(erklaerung_pfade.get(pfad + ".erklaerung.json", ""))
@@ -574,6 +583,7 @@ def _index_bauen(head: str) -> None:
             "titel": (meta.get("titel") or name) if isinstance(meta, dict) else name,
             "art": (meta.get("art") or "dokument") if isinstance(meta, dict) else "dokument",
             "erklaerung": erklaerung if isinstance(erklaerung, dict) else None,
+            "vertrag": oid_cache.get(vertrag_pfade.get(pfad + ".vertrag.json", "")),
             "von": (zeiten.get(pfad) or {}).get("autor"),
             "zeit": (zeiten.get(pfad) or {}).get("zeit"),
         })
@@ -1235,6 +1245,10 @@ async def api_dokument_hochladen(request: Request, name: str = "dokument.pdf",
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"}, status_code=503)
     with _INDEX_LOCK:
         _INDEX["geprueft"] = 0.0
+    if art[:40] == "vertrag":
+        threading.Thread(target=_vertrag_job,
+                         args=(f"dokumente/{monat}/{dateiname}", daten, name, un),
+                         daemon=True).start()
     if art[:40] == "behoerde":
         # Brief vom Amt: im Hintergrund lesen und einfach erklären.
         threading.Thread(target=_brief_job,
@@ -2251,6 +2265,90 @@ def brief_erklaerung_bauen(daten: bytes, name: str, llm=None) -> dict:
                          if roh.get("bis_wann") else None)}
 
 
+# Verträge und Dauerkosten: Miete, Versicherung, Leasing, Wartung. Diese
+# Kosten kommen oft NICHT als Beleg — ohne sie fehlt in der Auswertung
+# genau das, was jeden Monat sicher abgeht.
+VERTRAG_ARTEN = {
+    "miete": ("Mietvertrag", "6310"),
+    "versicherung": ("Versicherung", "6400"),
+    "leasing": ("Leasing", "6530"),
+    "strom": ("Strom, Gas, Wasser", "6325"),
+    "telefon": ("Telefon und Internet", "6805"),
+    "wartung": ("Wartung und Technik", "6837"),
+    "arbeitsvertrag": ("Arbeitsvertrag", "6020"),
+    "sonstiges": ("Sonstiger Vertrag", "6850"),
+}
+
+
+def vertrag_lesen(daten: bytes, name: str, llm=None) -> dict:
+    """Vertrag fotografiert → was er monatlich kostet und wann er läuft."""
+    import abschluss_lesen  # noqa: PLC0415
+    if llm is None:
+        llm = abschluss_lesen.llm_json
+    frage = (
+        "Das ist ein Vertrag eines Friseursalons (Miete, Versicherung, "
+        "Leasing, Strom, Telefon, Wartung oder Arbeitsvertrag). Lies die "
+        "Eckdaten. Gib NUR JSON zurück: "
+        '{"art": "miete|versicherung|leasing|strom|telefon|wartung|'
+        'arbeitsvertrag|sonstiges", '
+        '"partner": "Name des Vertragspartners", '
+        '"betrag_monat_text": "der monatliche Gesamtbetrag GENAU so wie er im '
+        'Vertrag steht, z. B. 1.250,00 EUR — nicht umrechnen, nicht runden", '
+        '"beginn": "JJJJ-MM-TT oder null", '
+        '"laufzeit_bis": "JJJJ-MM-TT oder null", '
+        '"kuendigungsfrist": "kurz, z. B. 3 Monate zum Quartalsende, oder null", '
+        '"einfach": "2 Sätze in du-Form: was der Vertrag kostet und was wichtig ist"}. '
+        "Rate nie — was nicht dasteht, ist null.")
+    import tempfile  # noqa: PLC0415
+    endung = Path(name).suffix.lower() or ".pdf"
+    with tempfile.NamedTemporaryFile(suffix=endung) as f:
+        f.write(daten)
+        f.flush()
+        texte = abschluss_lesen.seiten_text(f.name) if endung == ".pdf" else []
+        if texte and len((texte[0] or "").strip()) >= abschluss_lesen.TEXT_SCHWELLE:
+            roh = llm([{"role": "user", "content":
+                        frage + "\n\nVERTRAG:\n" + "\n\n".join(t[:6000] for t in texte[:6])}])
+        else:
+            bilder = abschluss_lesen.seiten_bilder(f.name)
+            roh = llm([abschluss_lesen._bild_nachricht(frage, bilder[0])])
+
+    art = str(roh.get("art") or "sonstiges").strip().lower()
+    if art not in VERTRAG_ARTEN:
+        art = "sonstiges"
+    name_art, konto = VERTRAG_ARTEN[art]
+    # Der Betrag kommt als Text und wird hier geparst — ein Sprachmodell
+    # verschluckt sonst gern den Tausenderpunkt (1.250,00 → 12500).
+    betrag = _zahl(str(roh.get("betrag_monat_text") or "")
+                   .replace("EUR", "").replace("€", "").strip())
+    if betrag is not None and not 0 < betrag < 50_000:
+        print(f"[vertrag] unplausibler Monatsbetrag verworfen: {betrag}", flush=True)
+        betrag = None
+    return {
+        "art": art, "art_name": name_art, "konto_skr04": konto,
+        "partner": str(roh.get("partner") or "").strip()[:80] or None,
+        "betrag_monat": round(betrag, 2) if betrag else None,
+        "beginn": str(roh.get("beginn") or "").strip()[:10] or None,
+        "laufzeit_bis": str(roh.get("laufzeit_bis") or "").strip()[:10] or None,
+        "kuendigungsfrist": str(roh.get("kuendigungsfrist") or "").strip()[:120] or None,
+        "einfach": str(roh.get("einfach") or "").strip()[:400],
+    }
+
+
+def _vertrag_job(pfad: str, daten: bytes, name: str, un: str) -> None:
+    import boxschreiber  # noqa: PLC0415
+    try:
+        with _LLM_SEMAPHORE:
+            vertrag = vertrag_lesen(daten, name)
+        boxschreiber.schreiben(
+            pfad + ".vertrag.json",
+            json.dumps(vertrag, ensure_ascii=False, indent=1).encode(),
+            f"vertrag: {name}", un)
+        with _INDEX_LOCK:
+            _INDEX["geprueft"] = 0.0
+    except Exception as e:  # noqa: BLE001
+        print(f"[vertrag] {pfad} nicht gelesen: {e}", flush=True)
+
+
 def _brief_job(pfad: str, daten: bytes, name: str, un: str) -> None:
     import boxschreiber  # noqa: PLC0415
     try:
@@ -2288,6 +2386,7 @@ _KASSEN_DATUM_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 ABLAGE_ARTEN = {
     "behoerde": ("Post vom Amt", "Bescheide, Schreiben und Fristen"),
     "kanzlei": ("Von deiner Kanzlei", "Auswertungen, Lohnunterlagen, Post"),
+    "vertrag": ("Verträge", "Miete, Versicherung, Leasing — deine Dauerkosten"),
     "abschluss": ("Jahresabschluss", "EÜR, Bilanz, Anlagen, Bescheide"),
     "kontoauszug": ("Kontoauszüge", "Deine Bankunterlagen"),
     "export": ("Buchungsstapel", "Übergaben an die Buchhaltung"),
@@ -2315,10 +2414,11 @@ def api_ablage(request: Request) -> Response:
     for d in index["dokumente"]:
         art = d.get("art") or "kanzlei"
         if art not in ABLAGE_ARTEN:
-            art = "behoerde" if art == "behoerde" else "kanzlei"
+            art = "kanzlei"
         eintraege.append({"pfad": d["pfad"], "titel": d["titel"], "art": art,
                           "zeit": d.get("zeit"), "gelesen": d.get("gelesen"),
-                          "erklaerung": d.get("erklaerung")})
+                          "erklaerung": d.get("erklaerung"),
+                          "vertrag": d.get("vertrag")})
 
     # Kontoauszüge, Abschlüsse, Stapel und Kassenblätter direkt aus dem Baum.
     kopf = _git(["rev-parse", "HEAD"])
@@ -2339,7 +2439,7 @@ def api_ablage(request: Request) -> Response:
             continue
         eintraege.append({"pfad": pfad, "titel": titel, "art": art,
                           "zeit": (zeiten.get(pfad) or {}).get("zeit"),
-                          "gelesen": None, "erklaerung": None})
+                          "gelesen": None, "erklaerung": None, "vertrag": None})
 
     jahre: dict[str, dict] = {}
     for e in eintraege:
@@ -2421,6 +2521,12 @@ async def api_angaben(stamm: str, request: Request) -> Response:
     return JSONResponse({"ok": True, "commit": commit, "angaben": daten})
 
 
+def vertraege_aktuell() -> list[dict]:
+    """Alle gelesenen Verträge — die Dauerkosten des Salons."""
+    return [d["vertrag"] for d in index_aktuell()["dokumente"]
+            if isinstance(d.get("vertrag"), dict)]
+
+
 @app.get("/api/monatsabschluss/{monat}")
 def api_monatsabschluss(monat: str, request: Request) -> Response:
     """BWA und Umsatzsteuer-Entwurf eines Monats — aus Belegen und Kassenbuch.
@@ -2459,7 +2565,8 @@ def api_monatsabschluss(monat: str, request: Request) -> Response:
         "monat": monat,
         "erloese": erloese,
         "bwa": ma.bwa(monat, erloese, belege, vorjahr,
-                      personal_monat=_zahl(einstellungen.get("personal_monat"))),
+                      personal_monat=_zahl(einstellungen.get("personal_monat")),
+                      vertraege=vertraege_aktuell()),
         "ustva": ma.ustva_entwurf(monat, erloese, vorsteuer, profil),
         "profil": profil,
     })

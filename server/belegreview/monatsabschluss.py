@@ -177,7 +177,8 @@ def _euro(wert: float) -> str:
 
 def bwa(monat: str, erloese: dict, belege: list[dict],
         vorjahr: dict | None = None,
-        personal_monat: float | None = None) -> dict:
+        personal_monat: float | None = None,
+        vertraege: list[dict] | None = None) -> dict:
     """Monatliche Auswertung: was reinkam, was rausging, was bleibt."""
     gruppen = []
     kosten_gesamt = 0.0
@@ -197,6 +198,24 @@ def bwa(monat: str, erloese: dict, belege: list[dict],
         e["netto"] += netto
         e["anzahl"] += 1
         kosten_gesamt += netto
+    # Dauerkosten aus Verträgen (Miete, Versicherung, Leasing): Sie gelten
+    # nur, wenn für dasselbe Konto KEIN Beleg im Monat liegt — sonst würde
+    # die Miete doppelt zählen.
+    for v in (vertraege or []):
+        betrag = v.get("betrag_monat")
+        konto = v.get("konto_skr04")
+        if not betrag or not konto:
+            continue
+        schluessel, name = zuordnung.get(konto, ("sonstiges", "Sonstiges"))
+        vorhanden = eimer.get(schluessel)
+        if vorhanden and vorhanden["anzahl"]:
+            continue                      # Beleg schlägt Vertrag
+        e = eimer.setdefault(schluessel, {"schluessel": schluessel, "name": name,
+                                          "netto": 0.0, "anzahl": 0})
+        e["netto"] += betrag
+        e["aus_vertrag"] = v.get("partner") or v.get("art_name")
+        kosten_gesamt += betrag
+
     for schluessel, name, _ in KOSTENGRUPPEN:
         if schluessel in eimer:
             e = eimer[schluessel]

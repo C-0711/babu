@@ -177,3 +177,37 @@ def test_lohnbeleg_zaehlt_als_personal():
                [beleg(konto_skr04="6020", netto=3000.0, ust=0.0, brutto=3000.0)])
     assert d["gruppen"][0]["name"] == "Löhne und Gehälter"
     assert d["fehlt"] == []                  # dann fehlt der Hinweis zu Recht
+
+
+# ————— Verträge: Kosten, die nie als Beleg kommen —————
+
+def vertrag(**werte):
+    grund = {"art": "miete", "art_name": "Mietvertrag", "partner": "Vermieter Weber",
+             "konto_skr04": "6310", "betrag_monat": 1250.0}
+    grund.update(werte)
+    return grund
+
+
+def test_vertrag_liefert_die_monatskosten():
+    e = ma.erloese_monat([blatt(einnahmenBar=11900)])
+    d = ma.bwa("2026-08", e, [], vertraege=[vertrag()])
+    raum = [g for g in d["gruppen"] if g["schluessel"] == "raum"][0]
+    assert raum["netto"] == 1250.0
+    assert raum["aus_vertrag"] == "Vermieter Weber"
+    assert d["kosten_netto"] == 1250.0
+
+
+def test_beleg_schlaegt_vertrag_keine_doppelten_kosten():
+    e = ma.erloese_monat([blatt(einnahmenBar=11900)])
+    mietbeleg = beleg(konto_skr04="6310", netto=1300.0, ust=0.0, brutto=1300.0)
+    d = ma.bwa("2026-08", e, [mietbeleg], vertraege=[vertrag()])
+    raum = [g for g in d["gruppen"] if g["schluessel"] == "raum"][0]
+    assert raum["netto"] == 1300.0          # der echte Beleg gilt
+    assert "aus_vertrag" not in raum
+    assert d["kosten_netto"] == 1300.0      # nicht 2550
+
+
+def test_vertrag_ohne_betrag_wird_ignoriert():
+    d = ma.bwa("2026-08", ma.erloese_monat([blatt(einnahmenBar=1190)]), [],
+               vertraege=[vertrag(betrag_monat=None)])
+    assert d["kosten_netto"] == 0.0

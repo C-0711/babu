@@ -543,7 +543,9 @@ main{padding:26px 22px 60px;min-height:70dvh}
       gehört — geordnet nach Jahr. Aufheben musst du nichts mehr selbst.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
       <button class="chip" id="ablage-brief">Brief vom Amt ablegen</button>
+      <button class="chip" id="ablage-vertrag">Vertrag ablegen</button>
       <button class="chip" id="ablage-auszug">Kontoauszug ablegen</button>
+      <input type="file" id="vertrag-datei" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*" hidden>
     </div>
     <div id="ablage-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
@@ -1311,6 +1313,8 @@ async function ladeAblage(){
         <div class="ordner-inhalt">` +
         a.stuecke.map(s => `<div class="ablage-zeile">
             <a href="/api/dokument/${encodeURI(s.pfad)}" target="_blank" rel="noopener">${esc(s.titel)}</a>
+            ${s.vertrag && s.vertrag.betrag_monat
+              ? `<span class="chip" style="font-size:11px">${euro(s.vertrag.betrag_monat)} im Monat</span>` : ""}
             ${s.erklaerung ? `<span class="chip" style="font-size:11px">erklärt ✓</span>` : ""}
             <span class="wann">${s.zeit ? zeitKurz(s.zeit) : ""}</span>
           </div>`).join("") +
@@ -1320,6 +1324,23 @@ async function ladeAblage(){
   ziel.innerHTML = html;
 }
 $("#ablage-brief").addEventListener("click", () => $("#brief-datei").click());
+$("#ablage-vertrag").addEventListener("click", () => $("#vertrag-datei").click());
+$("#vertrag-datei").addEventListener("change", async ev => {
+  const datei = ev.target.files[0];
+  ev.target.value = "";
+  if (!datei) return;
+  const knopf = $("#ablage-vertrag");
+  knopf.textContent = "Wird gelesen …";
+  try{
+    const r = await api("/api/dokumente?art=vertrag&name=" + encodeURIComponent(datei.name)
+      + "&titel=" + encodeURIComponent("Vertrag · " + datei.name),
+      {method:"POST", body: datei});
+    knopf.textContent = r.ok ? "Abgelegt ✓ — wir lesen ihn gerade"
+                             : "Das hat nicht geklappt — nochmal?";
+    if (r.ok){ setTimeout(ladeAblage, 1500); setTimeout(ladeAblage, 20000); }
+  }catch{ knopf.textContent = "Gerade keine Verbindung — nochmal?"; }
+  setTimeout(() => { knopf.textContent = "Vertrag ablegen"; }, 6000);
+});
 $("#ablage-auszug").addEventListener("click", () => $("#auszug-datei").click());
 
 async function ladePost(){
