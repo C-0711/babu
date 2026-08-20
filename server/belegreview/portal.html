@@ -1756,6 +1756,37 @@ document.addEventListener("drop", ev => {
 $("#hochladen-knopf").addEventListener("click", () => $("#hochladen-datei").click());
 $("#hochladen-datei").addEventListener("change", ev => { hochladen([...ev.target.files]); ev.target.value = ""; });
 
+/* Fotos vom Notebook sind oft 5-10 MB — zum Lesen reichen 2200 Pixel.
+   Das Verkleinern passiert im Browser, spart ein Vielfaches an Upload-Zeit
+   und kostet keine Erkennungsqualität. PDFs bleiben unangetastet. */
+const UPLOAD_KANTE = 2200;
+const UPLOAD_KLEIN = 900 * 1024;   // darunter lohnt es nicht
+
+async function fuersNetzVerkleinern(datei){
+  if (!datei.type.startsWith("image/") || datei.size < UPLOAD_KLEIN) return datei;
+  try{
+    const bild = await createImageBitmap(datei);
+    const faktor = Math.min(1, UPLOAD_KANTE / Math.max(bild.width, bild.height));
+    if (faktor >= 1){ bild.close?.(); return datei; }
+    const breite = Math.round(bild.width * faktor);
+    const hoehe = Math.round(bild.height * faktor);
+    const flaeche = ("OffscreenCanvas" in window)
+      ? new OffscreenCanvas(breite, hoehe)
+      : Object.assign(document.createElement("canvas"), {width: breite, height: hoehe});
+    const stift = flaeche.getContext("2d");
+    stift.imageSmoothingQuality = "high";
+    stift.drawImage(bild, 0, 0, breite, hoehe);
+    bild.close?.();
+    const klein = flaeche.convertToBlob
+      ? await flaeche.convertToBlob({type: "image/jpeg", quality: 0.86})
+      : await new Promise(f => flaeche.toBlob(f, "image/jpeg", 0.86));
+    // Nur nehmen, wenn es wirklich kleiner ist.
+    return (klein && klein.size < datei.size) ? klein : datei;
+  }catch{
+    return datei;   // HEIC & Co., die der Browser nicht öffnet: unverändert
+  }
+}
+
 async function hochladen(dateien){
   location.hash = "#belege";
   for (const datei of dateien){
@@ -1768,8 +1799,13 @@ async function hochladen(dateien){
     const liste = $("#belege-liste");
     liste.prepend(zeile);
     try{
+      const schlank = await fuersNetzVerkleinern(datei);
+      if (schlank !== datei){
+        zeile.querySelector(".zstatus").textContent =
+          `wird gesendet (${Math.round(schlank.size / 1024)} statt ${Math.round(datei.size / 1024)} KB) …`;
+      }
       const r = await api("/api/hochladen?name=" + encodeURIComponent(datei.name),
-        {method:"POST", body: datei});
+        {method:"POST", body: schlank});
       const d = await r.json();
       if (!r.ok){
         zeile.querySelector(".zstatus").textContent =
