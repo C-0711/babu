@@ -155,6 +155,91 @@ enum AblageService {
         return (einfach, e["was_tun"] as? String, e["bis_wann"] as? String)
     }
 
+    // MARK: - Dein Team
+
+    static func teamLaden(basis: URL, pat: String) async -> (leute: [TeamPerson],
+                                                             kosten: Double)? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/team"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+              let liste = json["team"] as? [[String: Any]] else { return nil }
+        let leute = liste.compactMap(TeamPerson.init(json:))
+        return (leute, json["kosten_monat"] as? Double ?? 0)
+    }
+
+    static func teamSpeichern(_ person: TeamPerson, basis: URL,
+                              pat: String) async -> String? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/team"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var koerper: [String: Any] = ["name": person.name, "lohn_art": person.lohnArt]
+        if person.id > 0 { koerper["id"] = person.id }
+        if let e = person.email, !e.isEmpty { koerper["email"] = e }
+        if let b = person.betrag { koerper["betrag"] = b }
+        if let s = person.stundenlohn { koerper["stundenlohn"] = s }
+        if let h = person.stunden { koerper["stunden"] = h }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: koerper)
+        let (ergebnis, daten) = await ausfuehrenMitDaten(request)
+        if ergebnis == .uebertragen { return nil }
+        if let daten, let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+           let fehler = json["fehler"] as? String { return fehler }
+        return "Das hat gerade nicht geklappt."
+    }
+
+    static func teamAktion(id: Int, aktion: String, basis: URL, pat: String) async -> Bool {
+        var request = URLRequest(url: basis.appendingPathComponent("api/team-aktion"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject:
+            ["id": id, "aktion": aktion])
+        let (ergebnis, _) = await ausfuehrenMitDaten(request)
+        return ergebnis == .uebertragen
+    }
+
+    /// Foto einer Mitarbeiterin — in der App aufgenommen, hier abgelegt.
+    static func teamFotoSenden(_ jpeg: Data, id: Int, basis: URL,
+                               pat: String) async -> Bool {
+        var teile = URLComponents(url: basis.appendingPathComponent("api/team-foto"),
+                                  resolvingAgainstBaseURL: false)
+        teile?.queryItems = [URLQueryItem(name: "id", value: String(id))]
+        guard let url = teile?.url else { return false }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.httpBody = jpeg
+        let (ergebnis, _) = await ausfuehrenMitDaten(request)
+        return ergebnis == .uebertragen
+    }
+
+    static func teamFotoLaden(id: Int, basis: URL, pat: String) async -> Data? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/team-foto/\(id)"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              (antwort as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return daten
+    }
+
+    // MARK: - Monatsabschluss
+
+    static func monatsabschluss(monat: String, basis: URL,
+                                pat: String) async -> Monatsabschluss? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/monatsabschluss/\(monat)"))
+        request.timeoutInterval = 60
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any]
+        else { return nil }
+        return Monatsabschluss(json: json)
+    }
+
     /// Tagesblatt des Kassenbuchs in die Belegbox legen (POST /api/kassenbuch).
     static func kassenblattSenden(_ b: Kassenbericht, basis: URL, pat: String) async -> Bool {
         var request = URLRequest(url: basis.appendingPathComponent("api/kassenbuch"))

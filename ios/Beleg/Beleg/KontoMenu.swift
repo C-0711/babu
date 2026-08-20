@@ -32,6 +32,16 @@ struct KontoMenuView: View {
 
                 Section {
                     NavigationLink {
+                        AbschlussView()
+                    } label: {
+                        Label("Monatsabschluss", systemImage: "chart.bar.doc.horizontal")
+                    }
+                    NavigationLink {
+                        TeamView()
+                    } label: {
+                        Label("Dein Team", systemImage: "person.2")
+                    }
+                    NavigationLink {
                         ExportView()
                     } label: {
                         Label("Export für die Buchhaltung", systemImage: "square.and.arrow.up")
