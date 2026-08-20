@@ -263,3 +263,59 @@ def test_team_foto_ist_loeschbar(bw, client, tmp_path, monkeypatch):
     client.post("/api/team-aktion", json={"id": person["id"], "aktion": "loeschen"})
     assert not pfad.is_file()
     assert client.get(f"/api/team-foto/{person['id']}").status_code == 404
+
+
+def test_mitarbeiterin_darf_nur_was_freigegeben_ist(bw, client):
+    """Nina entscheidet pro Person. Ohne Freigabe geht nichts — und die
+    Zahlen des Salons sieht das Team nie."""
+    from fastapi.testclient import TestClient  # noqa: PLC0415
+    bw._REG_ZULETZT.clear()
+    r = client.post("/api/signup", json={"salon": "Salon Nina",
+                                         "email": "nina-chefin@salon.de",
+                                         "passwort": "chefin-passwort"})
+    assert r.status_code == 200
+
+    # Person anlegen: erst nur Belege erlaubt, Kasse nicht.
+    d = client.post("/api/team", json={"name": "Jana", "email": "jana@salon.de",
+                                       "betrag": "2400", "darf_belege": True,
+                                       "darf_kasse": False}).json()
+    jana = next(p for p in d["team"] if p["name"] == "Jana")
+    assert jana["darf_belege"] is True and jana["hat_zugang"] is False
+
+    # Zugang einrichten — Startpasswort genau einmal.
+    r = client.post("/api/team-zugang", json={"id": jana["id"]})
+    assert r.status_code == 200
+    start = r.json()["startpasswort"]
+    assert client.post("/api/team-zugang", json={"id": jana["id"]}).status_code == 409
+
+    # Jana meldet sich an: eigenes Konto, aber es zeigt auf Ninas Salon.
+    jana_client = TestClient(bw.app, base_url="https://testserver")
+    bw._LOGIN_VERSUCHE.clear()
+    r = jana_client.post("/api/login", json={"email": "jana@salon.de",
+                                             "passwort": start})
+    assert r.status_code == 200 and r.json()["rolle"] == "mitarbeit"
+    assert bw.salon_von("jana@salon.de") == "nina-chefin@salon.de"
+
+    # Was sie darf und was nicht:
+    assert bw.team_recht("jana@salon.de", "darf_belege") is True
+    assert bw.team_recht("jana@salon.de", "darf_kasse") is False
+    assert jana_client.post("/api/kassenbuch",
+                            json={"datum": "2026-08-20", "einnahmenBar": 100}
+                            ).status_code == 403
+    # Zahlen und Team bleiben der Inhaberin vorbehalten.
+    assert jana_client.get("/api/monatsabschluss/2026-08").status_code == 403
+    assert jana_client.get("/api/team").status_code == 403
+    assert jana_client.post("/api/team-zugang", json={"id": jana["id"]}).status_code == 403
+
+    # Nina gibt die Kasse frei → Jana darf.
+    client.post("/api/team", json={"id": jana["id"], "name": "Jana",
+                                   "email": "jana@salon.de", "betrag": "2400",
+                                   "darf_belege": True, "darf_kasse": True})
+    assert bw.team_recht("jana@salon.de", "darf_kasse") is True
+
+    # Jana hört auf → ihr Zugang ist zu.
+    client.post("/api/team-aktion", json={"id": jana["id"], "aktion": "beenden"})
+    assert bw.team_recht("jana@salon.de", "darf_kasse") is False
+    bw._LOGIN_VERSUCHE.clear()
+    assert jana_client.post("/api/login", json={"email": "jana@salon.de",
+                                                "passwort": start}).status_code == 401
