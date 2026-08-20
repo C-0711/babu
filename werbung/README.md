@@ -20,3 +20,30 @@ Preise immer als Beispielpreise kennzeichnen. Videos nicht ins Repo (Größe).
 Backlog: „Brauchst du eine TSE?", Mythen-Serie „Hast du gewusst …?",
 Testimonial (nachgespielt, gekennzeichnet), Salon-Check-Demo mit echtem
 Portal-Insert.
+
+## Serie „Kostenwahrheit" (10 Folgen)
+
+`serie.py` rendert alle Takes, `serie_schnitt.py` schneidet die Folgen.
+Aufbau je Folge (~27 s, 9:16): Olaf zeigt das Problem — Babs kontert —
+gemeinsamer Abbinder „Mein grüner Haken ist grüner als deiner." — Endcard.
+
+Der Claim-Take (`claim-haken.mp4`) wird EINMAL gerendert und in alle
+Folgen geschnitten — spart 9 Renders und hält den Abbinder identisch.
+
+| Datei | Thema | Olaf | Babs |
+|---|---|---|---|
+| spot-angebot | Kein Angebot, nur eine Rechnung | „Was das kostet? Sehen Sie dann auf der Rechnung." | „Bei mir steht der Preis vorher dran." |
+| spot-reden | Reden kostet | „Sie haben eine Frage? Die Zeit berechne ich." | „Fragen kostet bei mir nichts." |
+| spot-kleinvieh | Die Kleinigkeiten | „Porto. Kopien. Fahrtkosten. Pauschale." | „Ein Preis. Keine Überraschungen." |
+| spot-leistung | Keine Leistungsübersicht | „Paragraf 33. Zwölf Zehntel." | „Ich seh jeden Beleg. Und was damit passiert ist." |
+| spot-verschlampt | Beleg verschlampt | „Ihr Beleg? Weg. Das Suchen berechne ich." | „Meine Belege liegen bei mir." |
+| spot-doppelt | Doppelt abgerechnet | „Einmal. Und sicherheitshalber nochmal." | „Bei mir steht, was wann rausging." |
+| spot-vorarbeit | Vorarbeit umsonst | „Schön sortiert. Der Preis bleibt gleich." | „Ich sortier nichts mehr. Foto — fertig." |
+| spot-frist | Frist verpasst | „Zu spät? Den Zuschlag zahlen Sie." | „Meine Fristen stehen in meinem Kalender." |
+| spot-spaet | Zahlen zu spät | „Ihre März-Zahlen? Kommen im August." | „Ich seh meine Zahlen heute Abend." |
+| spot-wechsel | Wechsel zäh gemacht | „Kündigen? Da wären noch offene Honorare." | „Meine Unterlagen gehören mir. Ich geh einfach." |
+
+Argumente und Sprachregeln: `kostenwahrheit.md`.
+Gelegentlich scheitert ein Take serverseitig („internal server issue") —
+`rendern()` überspringt vorhandene Dateien, ein erneuter Lauf holt nur
+die fehlenden nach.
