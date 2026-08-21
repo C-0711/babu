@@ -1395,6 +1395,94 @@ async def api_beleg_loeschen(stamm: str, request: Request) -> Response:
     return JSONResponse({"ok": True, "commit": commit, "stamm": stamm})
 
 
+@app.post("/api/aufnahme")
+async def api_aufnahme(request: Request, name: str = "foto.jpg",
+                       text: str = "") -> Response:
+    """Ein Foto — egal wovon. babu entscheidet, wohin es gehört.
+
+    Die Kamera fragt nicht mehr „was ist das?". Die App liest den Text schon
+    auf dem Gerät und schickt ihn mit; hier fällt daraus die Entscheidung:
+    Kassenbon in die Belege, Vertrag und Behördenpost in die Ablage,
+    Kontoauszug zu den Auszügen. Im Zweifel Beleg — der häufigste Fall und
+    der harmloseste Irrtum.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if (sperre := _mitarbeit_wache(un, "darf_belege", "Belege einreichen")):
+        return sperre
+    endung = Path(name).suffix.lower()
+    if endung not in HOCHLADEN_ENDUNGEN:
+        return JSONResponse({"fehler": "kein Beleg-Format"}, status_code=400)
+    daten = await request.body()
+    if not daten:
+        return JSONResponse({"fehler": "leer"}, status_code=400)
+    if len(daten) > HOCHLADEN_MAX:
+        return JSONResponse({"fehler": "zu groß"}, status_code=413)
+
+    import einsortieren  # noqa: PLC0415
+    # Bei PDFs liest der Server selbst nach — die App hat dort keinen Text.
+    gelesen = text
+    if not gelesen.strip() and endung == ".pdf":
+        try:
+            import tempfile  # noqa: PLC0415
+            import abschluss_lesen  # noqa: PLC0415
+            with tempfile.NamedTemporaryFile(suffix=".pdf") as tf:
+                tf.write(daten)
+                tf.flush()
+                gelesen = "\n".join(abschluss_lesen.seiten_text(tf.name)[:3])
+        except Exception:  # noqa: BLE001
+            gelesen = ""
+    entscheidung = einsortieren.entscheiden(gelesen)
+
+    import boxschreiber  # noqa: PLC0415
+    dateiname = boxschreiber.beleg_dateiname(name)
+    monat = time.strftime("%Y-%m")
+    pfad = einsortieren.pfad_fuer(entscheidung["art"], dateiname, monat)
+
+    dateien: dict[str, bytes] = {pfad: daten}
+    art = entscheidung["art"]
+    if art in ("vertrag", "behoerde"):
+        # Dokumente tragen ihren Zettel mit: sonst weiß die Ablage nicht,
+        # in welchen Ordner die Datei gehört.
+        titel = {"vertrag": "Vertrag", "behoerde": "Post vom Amt"}[art]
+        dateien[pfad + ".meta.json"] = json.dumps(
+            {"titel": f"{titel} · {name}"[:120], "art": art, "von": un,
+             "erkannt": entscheidung["grund"]},
+            ensure_ascii=False, indent=1).encode()
+
+    try:
+        commit = await run_in_threadpool(boxschreiber.schreiben, dateien, None,
+                                         f"aufnahme: {dateiname}", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+
+    # Verträge und Briefe liest babu im Hintergrund weiter — wie bisher.
+    if art == "vertrag":
+        threading.Thread(target=_vertrag_job, args=(pfad, daten, name, un),
+                         daemon=True).start()
+    elif art == "behoerde":
+        threading.Thread(target=_brief_job, args=(pfad, daten, name, un),
+                         daemon=True).start()
+
+    return JSONResponse({"ok": True, "commit": commit, "datei": pfad,
+                         "art": art, "sicher": entscheidung["sicher"],
+                         "grund": entscheidung["grund"],
+                         "wohin": WOHIN_TEXT.get(art, WOHIN_TEXT["beleg"])})
+
+
+# Was die App der Nutzerin sagt — ohne Ordnernamen und ohne Technik.
+WOHIN_TEXT = {
+    "beleg": "Bei deinen Belegen",
+    "vertrag": "Bei deinen Verträgen",
+    "behoerde": "Bei deiner Post vom Amt",
+    "kontoauszug": "Bei deinen Kontoauszügen",
+}
+
+
 DOKUMENT_ENDUNGEN = {".pdf", ".jpg", ".jpeg", ".png"}
 DOKUMENT_PFAD_RE = re.compile(r"^dokumente/[A-Za-z0-9._/ -]{1,200}$")
 # Alles, was in der Ablage steht, muss sich auch öffnen lassen — sonst führt

@@ -7,6 +7,9 @@ import PDFKit
 struct CaptureTab: View {
     @EnvironmentObject var store: AppStore
     @State private var zeigeScanner = false
+    /// Nur beim ersten Öffnen von selbst aufmachen — wer die Kamera schließt,
+    /// will sie nicht sofort wieder im Gesicht haben.
+    @State private var kameraGezeigt = false
     @State private var phase: Phase = .bereit
     @State private var beleg: Beleg?
     @State private var schritte = 0
@@ -38,6 +41,16 @@ struct CaptureTab: View {
             .navigationTitle("Erfassen")
             .toolbarTitleDisplayMode(.inline)
             .mitKontoMenu()
+            // Kamera an, sobald der Reiter offen ist. Ein Platzhalter, den
+            // man erst wegtippen muss, kostet bei jedem Beleg eine Sekunde —
+            // und der Sinn dieses Reiters ist genau eine Sache.
+            .onAppear {
+                if phase == .bereit && !zeigeScanner && ScannerView.verfuegbar
+                    && !kameraGezeigt {
+                    kameraGezeigt = true
+                    zeigeScanner = true
+                }
+            }
             .fullScreenCover(isPresented: $zeigeScanner) {
                 ScannerView(
                     onScan: { bild in
@@ -119,21 +132,12 @@ struct CaptureTab: View {
     private var bereitView: some View {
         VStack(spacing: 22) {
             Spacer()
-            ZStack {
-                RoundedRectangle(cornerRadius: 24)
-                    .fill(GC.scan)
-                    .frame(width: 240, height: 300)
-                VStack(spacing: 12) {
-                    Image(systemName: "viewfinder")
-                        .font(.system(size: 52, weight: .light))
-                        .foregroundStyle(GC.gold)
-                    Text("Beleg in den Rahmen halten —\nAuslösung erfolgt automatisch")
-                        .font(.footnote)
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.white.opacity(0.55))
-                }
-            }
-            Text("Der Beleg wird automatisch erkannt, begradigt und gelesen.")
+            // Kein schwarzer Kasten mehr: die Kamera geht beim Öffnen von
+            // selbst auf. Was hier steht, sieht nur, wer sie geschlossen hat.
+            Image(systemName: "viewfinder")
+                .font(.system(size: 44, weight: .light))
+                .foregroundStyle(GC.gold)
+            Text("Halt drauf — egal ob Kassenbon, Vertrag oder Brief vom Amt.\nbabu legt es an die richtige Stelle.")
                 .font(.footnote)
                 .foregroundStyle(GC.desc)
                 .multilineTextAlignment(.center)
@@ -213,30 +217,20 @@ struct CaptureTab: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Verarbeitung")
-                    .font(.title3.weight(.semibold))
-                    .fontDesign(.serif)
-                schrittZeile(1, "Beleg lesen")
-                schrittZeile(2, "Beträge und Summen prüfen")
-                schrittZeile(3, "Kategorie zuordnen")
-                schrittZeile(4, "Versiegeln und ablegen")
+            // Kein Schritt-für-Schritt-Theater: das Lesen dauert Sekunden,
+            // und eine Liste, die vier Haken setzt, macht es nicht schneller.
+            VStack(spacing: 14) {
+                ProgressView()
+                Text("Einen Moment …")
+                    .font(.footnote)
+                    .foregroundStyle(GC.desc)
             }
-            .gcCard()
-            .padding(20)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 60)
             Spacer()
         }
     }
 
-    private func schrittZeile(_ n: Int, _ text: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: schritte >= n ? "checkmark.circle" : "circle.dotted")
-                .foregroundStyle(schritte >= n ? GC.ok : GC.muted)
-            Text(text)
-                .font(.subheadline)
-                .foregroundStyle(schritte >= n ? GC.body : GC.muted)
-        }
-    }
 
     // MARK: - Ergebnis
 

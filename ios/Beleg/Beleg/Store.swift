@@ -215,14 +215,20 @@ final class AppStore: ObservableObject {
         belege[i].ablageDateiname = dateiname
         belege[i].ablageStatus = .ausstehend
 
-        let (ergebnis, serverDatei) = await AblageService.lade(bildJpeg: jpeg, dateiname: dateiname,
-                                                               basis: url, pat: pat)
+        // Der auf dem Gerät gelesene Text geht mit: daraus entscheidet der
+        // Server, ob das ein Bon, ein Vertrag, ein Brief vom Amt oder ein
+        // Kontoauszug ist — die Nutzerin muss nichts auswählen.
+        let (ergebnis, serverDatei, art, wohin, _) = await AblageService.aufnahme(
+            daten: jpeg, dateiname: dateiname, gelesenerText: belege[i].ocrText,
+            basis: url, pat: pat)
         pruefeZugang(ergebnis)
         guard let j = belege.firstIndex(where: { $0.id == id }) else { return }
         switch ergebnis {
         case .uebertragen:
             belege[j].ablageStatus = .uebertragen
             belege[j].ablageZeit = Date()
+            belege[j].abgelegtAls = art
+            belege[j].abgelegtWohin = wohin
             // Serverseitiger Name (mit Zeitstempel-Präfix) ist der Schlüssel
             // zum BelegReview-Ergebnis.
             if let serverDatei { belege[j].ablageDateiname = serverDatei }

@@ -51,6 +51,41 @@ enum AblageService {
         return (ergebnis, serverDatei)
     }
 
+    /// Aufnahme mit Einsortierung: egal was fotografiert wurde — der Server
+    /// entscheidet aus dem gelesenen Text, wohin es gehört, und sagt es zurück.
+    /// Der alte Weg (`lade`) bleibt für den Fall, dass kein Text vorliegt.
+    static func aufnahme(daten: Data, dateiname: String, gelesenerText: String,
+                         basis: URL, pat: String) async
+            -> (ergebnis: AblageErgebnis, serverDatei: String?,
+                art: String?, wohin: String?, sicher: Bool) {
+        var teile = URLComponents(
+            url: basis.appendingPathComponent("api/aufnahme"),
+            resolvingAgainstBaseURL: false)
+        teile?.queryItems = [URLQueryItem(name: "name", value: dateiname),
+                             URLQueryItem(name: "text",
+                                          value: String(gelesenerText.prefix(4000)))]
+        guard let url = teile?.url else {
+            return (.nichtErreichbar, nil, nil, nil, false)
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 45
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue(dateiname.hasSuffix(".pdf") ? "application/pdf" : "image/jpeg",
+                         forHTTPHeaderField: "Content-Type")
+        request.httpBody = daten
+        let (ergebnis, antwort) = await ausfuehrenMitDaten(request)
+        guard ergebnis == .uebertragen, let antwort,
+              let json = try? JSONSerialization.jsonObject(with: antwort) as? [String: Any]
+        else { return (ergebnis, nil, nil, nil, false) }
+        let pfad = json["datei"] as? String
+        return (ergebnis,
+                pfad.map { ($0 as NSString).lastPathComponent },
+                json["art"] as? String,
+                json["wohin"] as? String,
+                json["sicher"] as? Bool ?? false)
+    }
+
     /// Konto-Anmeldung der App: E-Mail + Passwort → Geräteschlüssel.
     /// Der Schlüssel kommt genau einmal zurück und wandert in die Keychain —
     /// die Nutzerin sieht ihn nie.
