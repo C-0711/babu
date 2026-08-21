@@ -319,3 +319,74 @@ def test_mitarbeiterin_darf_nur_was_freigegeben_ist(bw, client):
     bw._LOGIN_VERSUCHE.clear()
     assert jana_client.post("/api/login", json={"email": "jana@salon.de",
                                                 "passwort": start}).status_code == 401
+
+
+# ————— Vertrag lesen: Umsatzsteuer und Zahlweise —————
+
+def _vertrag_llm(**felder):
+    """Simuliert das Sprachmodell — geprüft wird, was babu daraus macht."""
+    grund = {"art": "miete", "partner": "Vermieter Weber",
+             "betrag_text": "1.250,00 EUR", "zahlweise": "monatlich",
+             "umsatzsteuer": "zzgl", "beginn": None, "laufzeit_bis": None,
+             "kuendigungsfrist": None, "einfach": "Du zahlst 1.250 € im Monat."}
+    grund.update(felder)
+    return lambda _nachrichten: grund
+
+
+def _winziges_jpeg() -> bytes:
+    """Ein echtes, minimales Bild — vertrag_lesen öffnet die Datei wirklich."""
+    import io
+
+    from PIL import Image
+    puffer = io.BytesIO()
+    Image.new("RGB", (8, 8), (255, 255, 255)).save(puffer, format="JPEG")
+    return puffer.getvalue()
+
+
+def _lesen(**felder):
+    import babu_web
+    return babu_web.vertrag_lesen(_winziges_jpeg(), "vertrag.jpg",
+                                  llm=_vertrag_llm(**felder))
+
+
+def test_tausenderpunkt_wird_nicht_verschluckt():
+    # Ein Sprachmodell macht aus „1.250,00" gern 12500.
+    assert _lesen()["betrag_monat"] == 1250.0
+
+
+def test_betrag_inklusive_umsatzsteuer_wird_herausgerechnet():
+    # Die Auswertung rechnet netto — sonst wären die Raumkosten 19 % zu hoch.
+    d = _lesen(betrag_text="1.487,50 EUR", umsatzsteuer="inkl")
+    assert d["betrag_monat"] == 1250.0
+
+
+def test_betrag_zuzueglich_umsatzsteuer_bleibt_stehen():
+    assert _lesen(umsatzsteuer="zzgl")["betrag_monat"] == 1250.0
+
+
+def test_wohnraummiete_ohne_umsatzsteuer_bleibt_stehen():
+    assert _lesen(umsatzsteuer="keine")["betrag_monat"] == 1250.0
+
+
+def test_jahresbeitrag_wird_auf_den_monat_gerechnet():
+    d = _lesen(art="versicherung", betrag_text="1.440,00 EUR", zahlweise="jaehrlich")
+    assert d["betrag_monat"] == 120.0
+    assert d["konto_skr04"] == "6400"
+
+
+def test_vierteljahresbeitrag_wird_auf_den_monat_gerechnet():
+    assert _lesen(betrag_text="360,00 EUR", zahlweise="vierteljaehrlich")["betrag_monat"] == 120.0
+
+
+def test_einmalige_zahlung_ist_keine_dauerkost():
+    # Eine Kaution darf die monatliche Auswertung nicht belasten.
+    assert _lesen(betrag_text="3.750,00 EUR", zahlweise="einmalig")["betrag_monat"] is None
+
+
+def test_unplausibler_betrag_wird_verworfen():
+    assert _lesen(betrag_text="125000,00 EUR")["betrag_monat"] is None
+
+
+def test_unbekannte_art_landet_bei_sonstiges():
+    d = _lesen(art="fantasievertrag")
+    assert d["art"] == "sonstiges" and d["konto_skr04"] == "6850"
