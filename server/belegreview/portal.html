@@ -316,6 +316,23 @@ main{padding:26px 22px 60px;min-height:70dvh}
   padding:13px;border-radius:10px;font-weight:600}
 #sheet .aktion:disabled{opacity:.4}
 
+/* Lösch-Rückfrage — gleiche Bühne wie das Bewirtungs-Sheet */
+#loeschsheet{background:var(--gc-bg);border-radius:18px 18px 0 0;padding:22px 22px 30px;
+  width:min(560px,100%);animation:einflug .32s cubic-bezier(.2,.9,.3,1)}
+#loeschsheet h3{font:600 19px var(--gc-serif);color:var(--gc-fg);margin-bottom:4px}
+#loeschsheet p{color:var(--gc-desc);font-size:13px;margin-bottom:14px}
+#loeschsheet .fuss{font-size:10.5px;color:var(--gc-muted);margin-top:12px}
+#loeschsheet .aktion{width:100%;margin-top:10px;padding:13px;border-radius:10px;font-weight:600}
+#loeschsheet .aktion.weg{background:var(--gc-weg,#a3271f);color:#fff}
+#loeschsheet .aktion.leise{background:transparent;color:var(--gc-desc);
+  border:1px solid var(--gc-border)}
+#loeschsheet .aktion:disabled{opacity:.4}
+/* Der Lösch-Knopf bleibt leise: er steht unter dem Beleg, nicht neben ihm. */
+.loeschknopf{background:transparent;color:var(--gc-muted);border:1px solid var(--gc-border);
+  border-radius:999px;padding:5px 11px;font:600 11.5px var(--gc-sans)}
+.loeschknopf:hover{color:var(--gc-weg,#a3271f);border-color:var(--gc-weg,#a3271f)}
+.ablage-zeile .loeschknopf{padding:3px 9px;font-size:11px}
+
 /* Drop-Overlay */
 #drop{position:fixed;inset:0;z-index:50;display:none;place-items:center;
   background:rgba(250,249,245,.92);border:3px dashed var(--gc-accent);border-radius:18px}
@@ -426,6 +443,24 @@ main{padding:26px 22px 60px;min-height:70dvh}
 </header>
 
 <main>
+  <!-- NOCH KEINE BELEGBOX: ehrlich sagen, statt leere Kacheln zeigen -->
+  <section class="ansicht" id="a-gesperrt">
+    <div class="lbl">DEIN ZUGANG</div>
+    <div class="gruss">Fast fertig ✨</div>
+    <div class="karte" style="margin-top:18px">
+      <h3>Deine Belegbox richten wir noch ein</h3>
+      <p>Dein Konto steht. Damit deine Belege, dein Kassenbuch und deine Zahlen
+         an einem sicheren Ort landen, legen wir für deinen Salon noch eine
+         eigene Belegbox an — das machen wir von Hand, damit nichts vermischt
+         wird.</p>
+      <p>Schreib uns kurz an <a href="mailto:hallo@0711.io">hallo@0711.io</a>,
+         dann ist sie meist am selben Tag da.</p>
+      <p style="margin-top:14px">
+        <button class="chip" onclick="location.hash='#einrichtung'">Solange schon einrichten ›</button>
+      </p>
+    </div>
+  </section>
+
   <!-- HEUTE -->
   <section class="ansicht" id="a-heute">
     <div class="lbl" id="heute-eyebrow">DEIN MONAT</div>
@@ -545,9 +580,7 @@ main{padding:26px 22px 60px;min-height:70dvh}
     <p style="color:var(--gc-desc);margin-bottom:14px">Alles, was zu deinem Salon
       gehört — geordnet nach Jahr. Aufheben musst du nichts mehr selbst.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
-      <button class="chip" id="ablage-brief">Brief vom Amt ablegen</button>
       <button class="chip" id="ablage-vertrag">Vertrag ablegen</button>
-      <button class="chip" id="ablage-auszug">Kontoauszug ablegen</button>
       <input type="file" id="vertrag-datei" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*" hidden>
     </div>
     <div id="ablage-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
@@ -691,6 +724,14 @@ main{padding:26px 22px 60px;min-height:70dvh}
     <button class="aktion" id="sheet-fertig">Fertig — buchen</button>
     <div class="fuss">§4 Abs. 5 Nr. 2 EStG · die Unterschrift gehört aufs Papier</div>
   </div>
+  <div id="loeschsheet" role="dialog" aria-modal="true" hidden>
+    <h3 id="loesch-titel">Diesen Beleg löschen?</h3>
+    <p id="loesch-sub"></p>
+    <button class="aktion weg" id="loesch-ja">Ja, löschen</button>
+    <button class="aktion leise" id="loesch-nein">Behalten</button>
+    <div class="fuss">Er verschwindet aus deiner Ablage — nachvollziehbar
+      bleibt, dass es ihn gab.</div>
+  </div>
 </div>
 
 <script>
@@ -728,9 +769,23 @@ function offenSatz(o){
 
 /* ————— Anmeldung ————— */
 function zeigeLogin(){ $("#app").hidden = true; $("#login").hidden = false; $("#zugangscode").focus(); }
-function zeigeApp(){ $("#login").hidden = true; $("#app").hidden = false; routen(); postPunktAktualisieren(); }
+function zeigeApp(){
+  $("#login").hidden = true; $("#app").hidden = false;
+  boxZustandZeigen();
+  routen();
+  if (meineBox) postPunktAktualisieren();
+}
+
+/* Ohne eigene Belegbox gibt es nichts zu zeigen — dann bleiben die Wege
+   dorthin zu, statt Ansichten zu öffnen, die nur 403 zurückbekommen. */
+const OHNE_BOX_ERLAUBT = ["gesperrt", "einrichtung", "einstellungen"];
+function boxZustandZeigen(){
+  document.querySelectorAll("nav button").forEach(b => b.hidden = !meineBox);
+  $("#hochladen-knopf").hidden = !meineBox;
+}
 
 let meineRolle = "salon";
+let meineBox = true;
 $("#login-form").addEventListener("submit", async ev => {
   ev.preventDefault();
   const f = $("#login-fehler"); f.style.display = "none";
@@ -759,6 +814,7 @@ $("#login-form").addEventListener("submit", async ev => {
       return;
     }
     meineRolle = d.rolle || "salon";
+    meineBox = d.box !== false;
     $("#avatar").textContent = (d.un||"·")[0].toUpperCase();
     $("#login-passwort").value = "";
     zeigeApp();
@@ -790,7 +846,7 @@ $("#anmelden-code").addEventListener("click", async () => {
 $("#zugangscode").addEventListener("keydown", e => { if(e.key==="Enter") $("#anmelden-code").click(); });
 
 /* ————— Router ————— */
-const ansichten = { heute: ladeHeute, belege: ladeBelege, fragen: () => {},
+const ansichten = { gesperrt: () => {}, heute: ladeHeute, belege: ladeBelege, fragen: () => {},
                     aufraeumen: ladeAufraeumen, post: ladePost, ablage: ladeAblage, export: ladeExport, team: ladeTeam,
                     abschluss: ladeAbschluss,
                     zahlen: ladeZahlen, bank: ladeBank, saloncheck: ladeSalonCheck,
@@ -799,7 +855,8 @@ const ansichten = { heute: ladeHeute, belege: ladeBelege, fragen: () => {},
 function routen(){
   const h = location.hash.slice(1) || "heute";
   const [ziel, arg] = h.split("/");
-  const name = ansichten[ziel] !== undefined ? ziel : "heute";
+  let name = ansichten[ziel] !== undefined ? ziel : "heute";
+  if (!meineBox && !OHNE_BOX_ERLAUBT.includes(name)) name = "gesperrt";
   document.querySelectorAll(".ansicht").forEach(a => a.classList.remove("an"));
   document.querySelectorAll("nav button").forEach(b =>
     b.classList.toggle("an", b.dataset.ziel === (name==="detail" ? "belege" : name)));
@@ -1100,8 +1157,15 @@ async function ladeDetail(stamm){
       Kam er als PDF, dauert es noch etwas länger.</div>`;
   }
 
-  html += `<button class="chip" onclick="fragenZuBeleg('${d.stamm}','${(lieferant+"").replace(/'/g,"")}')">Frag zu diesem Beleg</button>`;
-  html += `</div></div>`;
+  html += `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <button class="chip" onclick="fragenZuBeleg('${d.stamm}','${(lieferant+"").replace(/'/g,"")}')">Frag zu diesem Beleg</button>`;
+  // Was schon bei der Kanzlei liegt, holt man nicht mehr zurück — dann steht
+  // hier gar kein Knopf, statt einer Absage beim Drücken.
+  if (d.status !== "exportiert" && meineRolle !== "mitarbeit"){
+    const was = `${(lieferant+"").replace(/'/g,"")}${f.brutto!=null ? " · " + euro(f.brutto) : ""}`;
+    html += `<button class="loeschknopf" onclick="belegLoeschen('${d.stamm}','${was}')">Beleg löschen</button>`;
+  }
+  html += `</div></div></div>`;
   ziel.innerHTML = html;
   const bild = $("#belegbild");
   if (bild) bild.addEventListener("click", () => bild.classList.toggle("zoom"));
@@ -1329,13 +1393,14 @@ async function ladeAblage(){
               ? `<span class="chip" style="font-size:11px">${euro(s.vertrag.betrag_monat)} im Monat</span>` : ""}
             ${s.erklaerung ? `<span class="chip" style="font-size:11px">erklärt ✓</span>` : ""}
             <span class="wann">${s.zeit ? zeitKurz(s.zeit) : ""}</span>
+            ${s.loeschbar && meineRolle !== "mitarbeit"
+              ? `<button class="loeschknopf" onclick="dokumentLoeschen('${s.pfad}','${esc(s.titel).replace(/'/g,"")}')">Löschen</button>` : ""}
           </div>`).join("") +
         `</div></details>`;
     }
   });
   ziel.innerHTML = html;
 }
-$("#ablage-brief").addEventListener("click", () => $("#brief-datei").click());
 $("#ablage-vertrag").addEventListener("click", () => $("#vertrag-datei").click());
 $("#vertrag-datei").addEventListener("change", async ev => {
   const datei = ev.target.files[0];
@@ -1353,7 +1418,6 @@ $("#vertrag-datei").addEventListener("change", async ev => {
   }catch{ knopf.textContent = "Gerade keine Verbindung — nochmal?"; }
   setTimeout(() => { knopf.textContent = "Vertrag ablegen"; }, 6000);
 });
-$("#ablage-auszug").addEventListener("click", () => $("#auszug-datei").click());
 
 async function ladePost(){
   let d;
@@ -1666,6 +1730,7 @@ async function ladeEinstellungen(){
     const ich = await (await api("/api/ich")).json();
     $("#einst-un").textContent = ich.un;
     meineRolle = ich.rolle || meineRolle;
+    meineBox = ich.box !== false;
     $("#verwaltung-knopf").hidden = !(meineRolle === "admin" || meineRolle === "kanzlei");
     const eigenesKonto = (ich.un || "").includes("@");
     $("#einst-pw-lbl").hidden = !eigenesKonto;
@@ -2075,15 +2140,82 @@ async function postPunktAktualisieren(){
 
 /* ————— Bewirtungs-Sheet ————— */
 let sheetStamm = null;
+/* ————— Löschen: eine Rückfrage, dann ist es weg ————— */
+let loeschAuftrag = null;      // {titel, sub, pfad, danach}
+
+function loeschFragen(auftrag){
+  loeschAuftrag = auftrag;
+  $("#loesch-titel").textContent = auftrag.titel;
+  $("#loesch-sub").textContent = auftrag.sub || "";
+  $("#sheet").hidden = true;
+  $("#loeschsheet").hidden = false;
+  $("#schleier").classList.add("an");
+  $("#loesch-nein").focus();
+}
+
+function loeschSheetZu(){
+  $("#schleier").classList.remove("an");
+  $("#loeschsheet").hidden = true;
+  $("#sheet").hidden = false;
+  const ja = $("#loesch-ja");
+  ja.disabled = false; ja.textContent = "Ja, löschen";
+  loeschAuftrag = null;
+}
+
+$("#loesch-nein").addEventListener("click", loeschSheetZu);
+$("#loesch-ja").addEventListener("click", async () => {
+  if (!loeschAuftrag) return;
+  const {pfad, koerper, danach} = loeschAuftrag;
+  const ja = $("#loesch-ja");
+  ja.disabled = true; ja.textContent = "Wird gelöscht …";
+  try{
+    const r = await api(pfad, {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(koerper || {})});
+    if (r.ok){
+      const weiter = danach;
+      loeschSheetZu();
+      if (weiter) weiter();
+      return;
+    }
+    const d = await r.json().catch(() => ({}));
+    $("#loesch-sub").textContent = d.fehler || "Das hat gerade nicht geklappt.";
+  }catch{
+    $("#loesch-sub").textContent = "Gerade keine Verbindung.";
+  }
+  ja.disabled = false; ja.textContent = "Ja, löschen";
+});
+
+function belegLoeschen(stamm, was){
+  loeschFragen({
+    titel: "Diesen Beleg löschen?",
+    sub: was || "",
+    pfad: "/api/beleg/" + stamm + "/loeschen",
+    danach: () => { location.hash = "#belege"; },
+  });
+}
+
+function dokumentLoeschen(pfad, titel){
+  loeschFragen({
+    titel: "Diese Unterlage löschen?",
+    sub: titel || "",
+    pfad: "/api/dokument-loeschen",
+    koerper: {pfad},
+    danach: () => { ladeAblage(); postPunktAktualisieren(); },
+  });
+}
+
 function bewirtungSheet(stamm, sub){
   sheetStamm = stamm;
   $("#sheet-sub").textContent = sub || "";
   $("#sheet-anlass").value = ""; $("#sheet-leute").value = "";
+  $("#loeschsheet").hidden = true;
+  $("#sheet").hidden = false;
   $("#schleier").classList.add("an");
   $("#sheet-anlass").focus();
 }
-$("#schleier").addEventListener("click", ev => { if (ev.target.id === "schleier") $("#schleier").classList.remove("an"); });
-document.addEventListener("keydown", ev => { if (ev.key === "Escape") $("#schleier").classList.remove("an"); });
+$("#schleier").addEventListener("click", ev => { if (ev.target.id === "schleier") loeschSheetZu(); });
+document.addEventListener("keydown", ev => { if (ev.key === "Escape") loeschSheetZu(); });
 $("#sheet-fertig").addEventListener("click", async () => {
   const anlass = $("#sheet-anlass").value.trim();
   const leute = $("#sheet-leute").value.split(/[,;]| und /).map(s => s.trim()).filter(Boolean);
@@ -2480,6 +2612,7 @@ $("#reg-start").addEventListener("click", () => {
       if (r.ok){
         // Sofort drin — Konto ist angelegt und angemeldet.
         meineRolle = d.rolle || "salon";
+        meineBox = d.box !== false;
         $("#avatar").textContent = (d.un||"·")[0].toUpperCase();
         // Antworten aus dem Paket-Fragebogen der Startseite übernehmen.
         try{
@@ -2566,6 +2699,7 @@ function ladeEinrichtung(){
   try{
     const r = await fetch("/api/ich",{credentials:"same-origin"});
     if (r.ok){ const d = await r.json(); meineRolle = d.rolle || "salon";
+      meineBox = d.box !== false;
       $("#avatar").textContent = (d.un||"·")[0].toUpperCase(); zeigeApp(); }
     else zeigeLogin();
   }catch{

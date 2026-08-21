@@ -10,6 +10,7 @@ Abnahme laut Spec: fehlerfreier Import in einer echten DATEV-Instanz —
 die Golden-File-Tests frieren das Format ein, der Import-Test beim
 Steuerberater bleibt der letzte Schritt vor dem Produktivgang.
 """
+import calendar
 import re
 import time
 
@@ -61,8 +62,17 @@ def _belegfeld1(beleg_nr: str | None) -> str | None:
     return re.sub(r"[^A-Za-z0-9$%&*+\-/]", "", beleg_nr)[:36] or None
 
 
-def _bu(satz: int | None) -> str:
-    return {7: "8", 0: ""}.get(satz, "9") if satz is not None else "9"
+# Vorsteuer-Schlüssel je Steuersatz. Die Corona-Sätze 5 %/16 % erkennt der
+# Watcher (GUELTIGE_SAETZE) — ohne eigenen Schlüssel wären sie im Stapel als
+# 19 % gebucht, und der Import zöge stillschweigend zu viel Vorsteuer.
+BU_SCHLUESSEL = {0: "", 5: "7", 7: "8", 16: "5", 19: "9"}
+
+
+def _bu(satz: int | None) -> str | None:
+    """None heißt: unbekannter Satz — diese Zeile gehört nicht in den Stapel."""
+    if satz is None:
+        return "9"
+    return BU_SCHLUESSEL.get(int(satz))
 
 
 def buchungszeilen(review: dict) -> list[dict]:
@@ -88,10 +98,19 @@ def buchungszeilen(review: dict) -> list[dict]:
     tabelle = f.get("steuertabelle") or []
     if len(tabelle) > 1:
         # Mehrsatz-Split: der 19%+7%-Bon wird zwei Buchungen.
-        return [dict(basis, umsatz=_de(z["brutto"]), bu=_bu(int(z["satz"])),
-                     satz=int(z["satz"])) for z in tabelle]
-    satz = f.get("ust_satz")
-    return [dict(basis, umsatz=_de(f["brutto"]), bu=_bu(satz), satz=satz)]
+        zeilen = [dict(basis, umsatz=_de(z["brutto"]), bu=_bu(int(z["satz"])),
+                       satz=int(z["satz"])) for z in tabelle]
+    else:
+        satz = f.get("ust_satz")
+        zeilen = [dict(basis, umsatz=_de(f["brutto"]), bu=_bu(satz), satz=satz)]
+    # Lieber eine Zeile weniger als eine mit dem falschen Steuerschlüssel:
+    # was hier fehlt, fällt beim Abstimmen auf. Ein falscher Schlüssel nicht.
+    brauchbar = [z for z in zeilen if z["bu"] is not None]
+    for z in zeilen:
+        if z["bu"] is None:
+            print(f"[extf] Steuersatz {z['satz']} % unbekannt — Zeile "
+                  f"'{z['text'][:40]}' bleibt aus dem Stapel", flush=True)
+    return brauchbar
 
 
 def _zeile(b: dict) -> str:
@@ -115,9 +134,7 @@ def stapel(reviews: list[dict], monat: str, erzeugt: time.struct_time | None = N
     erzeugt = erzeugt or time.localtime()
     jahr, mm = int(monat[:4]), int(monat[5:7])
     von = f"{jahr}{mm:02d}01"
-    letzter = {1: 31, 2: 29 if jahr % 4 == 0 else 28, 3: 31, 4: 30, 5: 31, 6: 30,
-               7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31}[mm]
-    bis = f"{jahr}{mm:02d}{letzter}"
+    bis = f"{jahr}{mm:02d}{calendar.monthrange(jahr, mm)[1]}"
     stempel = time.strftime("%Y%m%d%H%M%S", erzeugt) + "000"
     kopf = [
         '"EXTF"', "700", "21", '"Buchungsstapel"', "13", stempel, "",

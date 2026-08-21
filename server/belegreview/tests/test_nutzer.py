@@ -93,7 +93,7 @@ def test_anfrage_einrichten_und_login(bw, client):
     bw._LOGIN_VERSUCHE.clear()
     r = nina.post("/api/login", json={"email": "nina@locke.de", "passwort": start})
     assert r.status_code == 200
-    assert r.json() == {"un": "nina@locke.de", "rolle": "salon"}
+    assert r.json() == {"un": "nina@locke.de", "rolle": "salon", "box": True}
 
     # Ihre Steuerdaten aus der Anfrage sind vorbefüllt; Verwaltung bleibt zu.
     e = nina.get("/api/einstellungen").json()
@@ -131,7 +131,8 @@ def test_signup_direkt(bw, client):
                                          "email": "selbst@salon.de",
                                          "passwort": "selbst-gewaehlt", "rechtsform": "GbR"})
     assert r.status_code == 200
-    assert r.json() == {"un": "selbst@salon.de", "rolle": "salon"}
+    # Selbst registriert: Konto ja, fremde Belegbox nein.
+    assert r.json() == {"un": "selbst@salon.de", "rolle": "salon", "box": False}
     assert client.get("/api/ich").json()["un"] == "selbst@salon.de"
     e = client.get("/api/einstellungen").json()
     assert e["rechtsform"] == "GbR" and e["betrieb_name"] == "Signup Salon"
@@ -390,3 +391,46 @@ def test_unplausibler_betrag_wird_verworfen():
 def test_unbekannte_art_landet_bei_sonstiges():
     d = _lesen(art="fantasievertrag")
     assert d["art"] == "sonstiges" and d["konto_skr04"] == "6850"
+
+
+def test_rate_limit_trifft_nicht_den_ganzen_salon(bw, client, monkeypatch):
+    """Hinter dem Tunnel kommt jeder Request von 127.0.0.1 — ohne die echte
+    Besucher-IP sperrten fünf Fehlversuche irgendwo alle anderen aus."""
+    monkeypatch.setattr(bw, "TUNNEL_PEERS", bw.TUNNEL_PEERS | {"testclient"})
+    bw._LOGIN_VERSUCHE.clear()
+    fremd = {"cf-connecting-ip": "203.0.113.9"}
+    for _ in range(5):
+        client.post("/api/login", json={"email": "a@b.de", "passwort": "x"},
+                    headers=fremd)
+    # Diese eine IP ist jetzt dran …
+    assert client.post("/api/login", json={"email": "a@b.de", "passwort": "x"},
+                       headers=fremd).status_code == 429
+    # … alle anderen aber nicht.
+    assert client.post("/api/login", json={"email": "a@b.de", "passwort": "x"},
+                       headers={"cf-connecting-ip": "198.51.100.7"}).status_code == 401
+
+
+def test_kopfzeile_nur_vom_tunnel_geglaubt(bw):
+    """Sonst erfände sich jeder mit einem Header ein frisches Kontingent."""
+    class Anfrage:
+        def __init__(self, peer, kopf):
+            self.client = type("C", (), {"host": peer})()
+            self.headers = kopf
+
+    assert bw._client_ip(Anfrage("127.0.0.1", {"cf-connecting-ip": "203.0.113.9"})) == "203.0.113.9"
+    # Direkter Absender ist nicht der lokale Tunnel → Kopfzeile zählt nicht.
+    assert bw._client_ip(Anfrage("198.51.100.7", {"cf-connecting-ip": "1.2.3.4"})) == "198.51.100.7"
+
+
+def test_erfolgreiche_anmeldungen_verbrauchen_kein_kontingent(bw, client):
+    """Ein voller Salon meldet sich morgens nacheinander an — das darf
+    niemanden aussperren."""
+    bw._LOGIN_VERSUCHE.clear()
+    bw._REG_ZULETZT.clear()
+    assert client.post("/api/signup", json={"salon": "Voller Salon",
+                                            "email": "voll@salon.de",
+                                            "passwort": "gutes-passwort"}).status_code == 200
+    for _ in range(8):
+        r = client.post("/api/login", json={"email": "voll@salon.de",
+                                            "passwort": "gutes-passwort"})
+        assert r.status_code == 200

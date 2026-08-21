@@ -82,3 +82,43 @@ def test_cp1252_crlf():
 def test_ohne_konto_keine_zeile():
     assert extf.buchungszeilen({"felder": {"brutto": 5.0},
                                 "einschaetzung": {"konto_skr04": None}}) == []
+
+
+def _zeilen(review):
+    return extf.buchungszeilen(review)
+
+
+def _mit_satz(satz, brutto=119.0):
+    return {"felder": {"brutto": brutto, "ust_satz": satz, "datum": "12.08.2026",
+                       "beleg_nr": "R-1"},
+            "einschaetzung": {"konto_skr04": "5900"},
+            "semantik": {"belegart": "Wareneinkauf"},
+            "vlm": {"lieferant": "Großhandel"}}
+
+
+def test_steuerschluessel_je_satz():
+    """Der Schlüssel sagt dem Import, wie viel Vorsteuer gezogen wird —
+    ein falscher zieht stillschweigend den falschen Betrag."""
+    assert _zeilen(_mit_satz(19))[0]["bu"] == "9"
+    assert _zeilen(_mit_satz(7))[0]["bu"] == "8"
+    assert _zeilen(_mit_satz(0))[0]["bu"] == ""
+
+
+def test_corona_saetze_werden_nicht_als_neunzehn_gebucht():
+    """5 % und 16 % gab es wirklich (2020) — der Watcher liest sie."""
+    assert _zeilen(_mit_satz(5))[0]["bu"] == "7"
+    assert _zeilen(_mit_satz(16))[0]["bu"] == "5"
+
+
+def test_unbekannter_satz_kommt_nicht_in_den_stapel():
+    """Lieber eine Zeile weniger als eine falsch besteuerte."""
+    assert _zeilen(_mit_satz(12)) == []
+    text = extf.stapel([_mit_satz(12)], "2026-08", erzeugt=ERZEUGT)
+    assert len(text.rstrip("\r\n").split("\r\n")) == 2      # nur Kopf + Spalten
+
+
+def test_letzter_tag_im_februar():
+    """Schaltjahr-Regel, nicht die Vierer-Faustregel: 2100 hat keinen 29.02."""
+    assert extf.stapel([], "2024-02", erzeugt=ERZEUGT).split(";")[15] == "20240229"
+    assert extf.stapel([], "2026-02", erzeugt=ERZEUGT).split(";")[15] == "20260228"
+    assert extf.stapel([], "2100-02", erzeugt=ERZEUGT).split(";")[15] == "21000228"
