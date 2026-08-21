@@ -33,6 +33,9 @@ final class AppStore: ObservableObject {
     @Published var ablageURL = AppStore.ablageStandardURL { didSet { speichern() } }
     @Published var ablageAktiv = false { didSet { speichern() } }
     @Published var verbundenAls: String? { didSet { speichern() } }   // E-Mail des Kontos
+    /// Der Server hat den Zugang abgelehnt (Konto abgeschaltet oder Schlüssel
+    /// zurückgezogen). Dann darf die App nicht weiter „Verbunden ✓" behaupten.
+    @Published var zugangAbgelaufen = false
 
     private var geladen = false
     private var speicherTask: Task<Void, Never>?
@@ -208,6 +211,7 @@ final class AppStore: ObservableObject {
 
         let (ergebnis, serverDatei) = await AblageService.lade(bildJpeg: jpeg, dateiname: dateiname,
                                                                basis: url, pat: pat)
+        pruefeZugang(ergebnis)
         guard let j = belege.firstIndex(where: { $0.id == id }) else { return }
         switch ergebnis {
         case .uebertragen:
@@ -405,6 +409,33 @@ final class AppStore: ObservableObject {
         let ok = await AblageService.kassenblattSenden(bericht, basis: url, pat: pat)
         if ok, let i = kassenberichte.firstIndex(where: { $0.datum == tag }) {
             kassenberichte[i].uebermittelt = Date()
+        }
+    }
+
+    /// Beim App-Start still nachsehen, ob der Zugang noch gilt. Sonst
+    /// stünde bis zum nächsten Beleg „Verbunden ✓" da, obwohl nichts
+    /// mehr ankommt.
+    func zugangNachsehen() {
+        guard verbundenAls != nil, ablageAktiv,
+              let url = URL(string: ablageURL),
+              let pat = KeychainHelfer.ladePAT() else { return }
+        Task {
+            let ergebnis = await AblageService.verbindungstest(basis: url, pat: pat)
+            switch ergebnis {
+            case .tokenFehler: self.zugangAbgelaufen = true
+            case .uebertragen: self.zugangAbgelaufen = false
+            default: break   // offline sagt nichts über den Zugang aus
+            }
+        }
+    }
+
+    /// Sagt der Server „dein Zugang gilt nicht", hört die App auf, das
+    /// Gegenteil zu behaupten — sonst wandern Belege still ins Leere.
+    func pruefeZugang(_ ergebnis: AblageErgebnis) {
+        if ergebnis == .tokenFehler {
+            zugangAbgelaufen = true
+        } else if ergebnis == .uebertragen {
+            zugangAbgelaufen = false
         }
     }
 

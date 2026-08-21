@@ -7,24 +7,40 @@ struct KontoMenuView: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) private var zurueck
 
+    /// Drei ehrliche Zustände: nicht verbunden, verbunden, oder verbunden
+    /// gewesen — der Server nimmt den Zugang nicht mehr an.
+    private var zeichen: String {
+        if store.verbundenAls == nil { return "person.crop.circle" }
+        return store.zugangAbgelaufen ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"
+    }
+
+    private var farbe: Color {
+        if store.verbundenAls == nil { return GC.muted }
+        return store.zugangAbgelaufen ? GC.warn : GC.ok
+    }
+
+    private var unterzeile: String {
+        if store.verbundenAls == nil { return "Mit E-Mail und Passwort verbinden" }
+        return store.zugangAbgelaufen
+            ? "Der Zugang gilt nicht mehr — bitte neu verbinden"
+            : "Dein babu-Konto"
+    }
+
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     HStack(spacing: 11) {
-                        Image(systemName: store.verbundenAls == nil
-                              ? "person.crop.circle" : "checkmark.circle.fill")
+                        Image(systemName: zeichen)
                             .font(.system(size: 26))
-                            .foregroundStyle(store.verbundenAls == nil ? GC.muted : GC.ok)
+                            .foregroundStyle(farbe)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(store.verbundenAls ?? "Noch nicht verbunden")
                                 .font(.subheadline.weight(.medium))
                                 .foregroundStyle(GC.fg)
-                            Text(store.verbundenAls == nil
-                                 ? "Mit E-Mail und Passwort verbinden"
-                                 : "Dein babu-Konto")
+                            Text(unterzeile)
                                 .font(.caption)
-                                .foregroundStyle(GC.muted)
+                                .foregroundStyle(store.zugangAbgelaufen ? GC.warn : GC.muted)
                         }
                     }
                     .padding(.vertical, 4)
