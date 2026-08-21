@@ -53,6 +53,9 @@ struct MainTabs: View {
             KasseTab()
                 .tabItem { Label("Kassenbuch", systemImage: "banknote") }
                 .tag(AppStore.Tab.kasse)
+            RechnungenTab()
+                .tabItem { Label("Rechnungen", systemImage: "eurosign.circle") }
+                .tag(AppStore.Tab.rechnungen)
             FragenTab()
                 .tabItem { Label("Fragen", systemImage: "questionmark.bubble") }
                 .tag(AppStore.Tab.fragen)

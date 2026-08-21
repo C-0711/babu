@@ -12,13 +12,16 @@ private let zustandsDatei: URL = {
 
 @MainActor
 final class AppStore: ObservableObject {
-    enum Tab: Hashable { case erfassen, belege, kasse, fragen, export }
+    enum Tab: Hashable { case erfassen, belege, kasse, rechnungen, fragen, export }
 
     @Published var onboarded = false { didSet { speichern() } }
     @Published var skr = "SKR04" { didSet { speichern() } }
     @Published var belege: [Beleg] = [] { didSet { speichern() } }
     @Published var kassenberichte: [Kassenbericht] = [] { didSet { speichern() } }
     @Published var chatVerlauf: [ChatUnterhaltung] = [] { didSet { speichern() } }
+    /// Rechnungsvorlagen — Empfängerin plus die Positionen, die sich
+    /// wiederholen. Bleiben auf dem Gerät; gestellt wird über den Server.
+    @Published var vorlagen: [Rechnungsvorlage] = [] { didSet { speichern() } }
     @Published var exportiert = false { didSet { speichern() } }
     @Published var geprueft = 0 { didSet { speichern() } }
     @Published var pruefSekunden: [Double] = [] { didSet { speichern() } }
@@ -59,6 +62,7 @@ final class AppStore: ObservableObject {
             ablageAktiv = z.ablageAktiv ?? false
             kassenberichte = z.kassenberichte ?? []
             chatVerlauf = z.chatVerlauf ?? []
+        vorlagen = z.vorlagen ?? []
             verbundenAls = z.verbundenAls
             // Ältere Stände: Demo-Belege am festen Demo-Siegel nachträglich
             // markieren, damit sie nie im echten Stapel landen.
@@ -90,6 +94,8 @@ final class AppStore: ObservableObject {
         var kassenberichte: [Kassenbericht]?
         var chatVerlauf: [ChatUnterhaltung]?
         var verbundenAls: String?
+        // Neu ab 22.08.2026 — optional, damit ältere Stände weiter laden.
+        var vorlagen: [Rechnungsvorlage]?
     }
 
     private var zustand: Zustand {
@@ -97,7 +103,7 @@ final class AppStore: ObservableObject {
                 exportiert: exportiert, geprueft: geprueft, pruefSekunden: pruefSekunden,
                 ablageURL: ablageURL, ablageAktiv: ablageAktiv,
                 kassenberichte: kassenberichte, chatVerlauf: chatVerlauf,
-                verbundenAls: verbundenAls)
+                verbundenAls: verbundenAls, vorlagen: vorlagen)
     }
 
     /// Entprellt auf ~0,25 s, damit Serien-Änderungen nicht pro Mutation schreiben.

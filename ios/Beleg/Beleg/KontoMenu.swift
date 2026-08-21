@@ -58,6 +58,11 @@ struct KontoMenuView: View {
                         Label("Dein Team", systemImage: "person.2")
                     }
                     NavigationLink {
+                        VertragskisteView()
+                    } label: {
+                        Label("Deine Verträge", systemImage: "shippingbox")
+                    }
+                    NavigationLink {
                         ExportView()
                     } label: {
                         Label("Export für die Buchhaltung", systemImage: "square.and.arrow.up")

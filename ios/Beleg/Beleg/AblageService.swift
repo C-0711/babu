@@ -157,6 +157,119 @@ enum AblageService {
         return (einfach, e["was_tun"] as? String, e["bis_wann"] as? String)
     }
 
+    // MARK: - Rechnungen stellen
+
+    /// Alle gestellten Rechnungen samt Stand (offen/bezahlt/storniert).
+    static func rechnungenLaden(basis: URL, pat: String) async
+            -> (rechnungen: [Rechnung], offenSumme: Double, versteuerung: String)? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/rechnungen"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+              let liste = json["rechnungen"] as? [[String: Any]] else { return nil }
+        return (liste.compactMap(Rechnung.init(json:)),
+                json["offen_summe"] as? Double ?? 0,
+                json["versteuerung"] as? String ?? "ist")
+    }
+
+    /// Stammdaten des Salons — sie gehören auf jede Rechnung (§ 14 UStG).
+    static func stammdatenLaden(basis: URL, pat: String) async -> [String: String]? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/einstellungen"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any]
+        else { return nil }
+        return json.compactMapValues { $0 as? String }
+    }
+
+    /// Rechnung festschreiben. Der Server vergibt die Nummer — erst danach
+    /// baut die App das PDF. Liefert die Nummer oder einen Klartext-Fehler.
+    static func rechnungStellen(datum: String, empfaenger: Empfaenger,
+                                positionen: [RechnungPosition],
+                                leistungszeitpunkt: String?, hinweis: String,
+                                basis: URL, pat: String) async
+            -> (nummer: String?, fehler: String?) {
+        var request = URLRequest(url: basis.appendingPathComponent("api/rechnungen"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 45
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let zeilen = positionen.map { p -> [String: Any] in
+            ["text": p.text, "menge": p.menge, "einzelpreis": p.einzelpreis,
+             "ust_satz": p.ustSatz]
+        }
+        var koerper: [String: Any] = [
+            "datum": datum, "positionen": zeilen,
+            "empfaenger": ["name": empfaenger.name, "anschrift": empfaenger.anschrift,
+                           "ust_id": empfaenger.ustId],
+        ]
+        if let l = leistungszeitpunkt, !l.isEmpty { koerper["leistungszeitpunkt"] = l }
+        if !hinweis.isEmpty { koerper["hinweis"] = hinweis }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: koerper)
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              let http = antwort as? HTTPURLResponse else {
+            return (nil, "Gerade keine Verbindung — die Rechnung bleibt ein Entwurf.")
+        }
+        let json = (try? JSONSerialization.jsonObject(with: daten)) as? [String: Any]
+        if http.statusCode == 200, let nummer = json?["nummer"] as? String {
+            return (nummer, nil)
+        }
+        return (nil, json?["fehler"] as? String ?? "Das hat gerade nicht geklappt.")
+    }
+
+    /// Das fertige PDF nachreichen — mit der Nummer, die der Server vergab.
+    static func rechnungPdfSenden(_ pdf: Data, nummer: String, basis: URL,
+                                  pat: String) async -> Bool {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/rechnung/\(nummer)/pdf"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/pdf", forHTTPHeaderField: "Content-Type")
+        request.httpBody = pdf
+        return await ausfuehren(request, erfolg2xx: true) == .uebertragen
+    }
+
+    static func rechnungBezahlt(nummer: String, am: String, basis: URL,
+                                pat: String) async -> Bool {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/rechnung/\(nummer)/bezahlt"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["am": am])
+        return await ausfuehren(request, erfolg2xx: true) == .uebertragen
+    }
+
+    static func rechnungStornieren(nummer: String, basis: URL,
+                                   pat: String) async -> Bool {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/rechnung/\(nummer)/storno"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 45
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        return await ausfuehren(request, erfolg2xx: true) == .uebertragen
+    }
+
+    // MARK: - Die Vertragskiste
+
+    static func vertraegeLaden(basis: URL, pat: String) async
+            -> (vertraege: [Vertrag], monatlich: Double, anstehend: [Vertrag])? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/vertraege"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+              let liste = json["vertraege"] as? [[String: Any]] else { return nil }
+        let anstehend = (json["anstehend"] as? [[String: Any]] ?? [])
+            .compactMap(Vertrag.init(json:))
+        return (liste.compactMap(Vertrag.init(json:)),
+                json["monatlich"] as? Double ?? 0, anstehend)
+    }
+
     // MARK: - Dein Team
 
     static func teamLaden(basis: URL, pat: String) async -> (leute: [TeamPerson],
