@@ -37,6 +37,7 @@ struct ListeView: View {
             List {
                 // Was ansteht, steht oben — dort schaut sie ohnehin hin.
                 MeldungenAbschnitt()
+                BelegjagdAbschnitt()
                 if offeneAnzahl > 0 {
                     Button {
                         zeigeAufraeumen = true
