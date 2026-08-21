@@ -91,6 +91,14 @@ def _db() -> sqlite3.Connection:
         conn.execute("ALTER TABLE nutzer ADD COLUMN box INTEGER NOT NULL DEFAULT 1")
     except sqlite3.OperationalError:
         pass
+    conn.execute("""CREATE TABLE IF NOT EXISTS gespraech
+        (id INTEGER PRIMARY KEY AUTOINCREMENT, un TEXT NOT NULL,
+         titel TEXT, begonnen TEXT NOT NULL, zuletzt TEXT NOT NULL)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS nachricht
+        (id INTEGER PRIMARY KEY AUTOINCREMENT, gespraech INTEGER NOT NULL,
+         rolle TEXT NOT NULL, text TEXT NOT NULL, zeit TEXT NOT NULL)""")
+    conn.execute("""CREATE INDEX IF NOT EXISTS nachricht_gespraech
+        ON nachricht (gespraech, id)""")
     conn.execute("""CREATE TABLE IF NOT EXISTS app_schluessel
         (hash TEXT PRIMARY KEY, un TEXT NOT NULL, geraet TEXT,
          erstellt TEXT NOT NULL, zuletzt TEXT)""")
@@ -2212,9 +2220,21 @@ def chat(body: dict, request: Request) -> Response:
     if not frage or len(frage) > 2000:
         return JSONResponse({"fehler": "frage fehlt oder zu lang"}, status_code=400)
 
-    kontext = belegdaten_kontext()
-    if not kontext:
-        return JSONResponse({"antwort": "Die Belegbox enthält noch keine Reviews."})
+    # Das Gespräch: entweder ein bestehendes fortsetzen oder eines beginnen.
+    gespraech_id = body.get("gespraech")
+    try:
+        gespraech_id = int(gespraech_id) if gespraech_id else None
+    except (TypeError, ValueError):
+        gespraech_id = None
+    if gespraech_id is not None and not gespraech_gehoert(un, gespraech_id):
+        return JSONResponse({"fehler": "unbekanntes Gespräch"}, status_code=404)
+    if gespraech_id is None:
+        gespraech_id = gespraech_anlegen(un, frage)
+
+    import wissen  # noqa: PLC0415
+    kontext = wissen.kontext(frage, _welt_fuer(un))
+    verlauf = verlauf_lesen(gespraech_id)
+    nachricht_anhaengen(gespraech_id, "user", frage)
     payload = {
         "model": GEMMA_MODELL,
         "temperature": 0.2,
@@ -2222,31 +2242,43 @@ def chat(body: dict, request: Request) -> Response:
         "messages": [
             {"role": "system", "content":
                 "Du bist der Assistent von babu (0711 Intelligence) für "
-                "Friseursalons. Antworte auf Deutsch, knapp und präzise. Keine "
-                "Sie-Anrede — neutrale Formen oder Du. Zwei Arten von Fragen: "
-                "(1) Fragen zu den eigenen Belegen beantwortest du AUSSCHLIESSLICH "
-                "aus den mitgelieferten Belegdaten und nennst den Beleg (Lieferant "
-                "oder Dateiname); steht etwas nicht in den Daten, sage das offen. "
-                "(2) Allgemeine Steuer-Grundfragen (Kleinunternehmer-Regel, "
-                "Kassenbuch-Pflicht, TSE, was man absetzen kann) erklärst du in "
-                "einfachen Worten für den Salon-Alltag — und sagst dazu, dass das "
-                "eine erste Einordnung ist. "
-                "(3) Fragen zur Bedienung von babu beantwortest du aus diesem "
-                "Wissen: Belege erfasst man im Reiter Erfassen (scannen oder aus "
-                "Fotos/Dateien hochladen); jeder Beleg wird gelesen, geprüft und "
-                "in der Belegbox abgelegt — grüner Haken heißt erledigt. Im "
-                "Reiter Belege sieht man alle Belege, kann Angaben korrigieren "
-                "und falsche Belege löschen. Im Kassenbuch trägt man abends die "
-                "Tagessummen ein, eine Zahl pro Frage; ein Unterschied wird "
-                "notiert, nicht versteckt. Unter Fragen kann man auch einen "
-                "Brief vom Amt fotografieren — babu erklärt ihn. Im Reiter "
-                "Export liegt der fertige Buchungsstapel; fixiert heißt "
-                "festgeschrieben. Verbunden wird die App mit E-Mail und "
-                "Passwort des babu-Kontos. "
-                "Beträge deutsch formatieren (1.234,56 €). Keine "
-                "Steuerberatung — Hinweise sind Ersteinschätzungen, im Zweifel "
-                "an die Ansprechperson verweisen."},
-            {"role": "user", "content": f"BELEGDATEN:\n{kontext}\n\nFRAGE: {frage}"},
+                "Friseursalons. Du sprichst mit der Inhaberin. Antworte auf "
+                "Deutsch, knapp, konkret und in ganzen Sätzen. Keine "
+                "Sie-Anrede — neutrale Formen oder Du. Kein Technik-Vokabular, "
+                "keine Systemnamen.\n\n"
+                "DU BIST FÜR ALLES DA, was ihren Betrieb angeht — nicht nur "
+                "für Steuern:\n"
+                "· Ihre eigenen Zahlen und Unterlagen: Belege, Kasse, "
+                "Verträge, gestellte Rechnungen, Termine, Team, Post vom Amt. "
+                "Das beantwortest du AUSSCHLIESSLICH aus den mitgelieferten "
+                "Daten und nennst, worauf du dich stützt. Steht etwas nicht "
+                "darin, sagst du das offen und rätst nicht.\n"
+                "· Steuer und Recht im Salon-Alltag: Kleinunternehmer-Regel, "
+                "Kassenpflicht, was absetzbar ist, Aufbewahrung, Fristen. "
+                "Einfach erklärt, mit dem Hinweis, dass es eine erste "
+                "Einordnung ist.\n"
+                "· Führen und Organisieren: Preise und Kalkulation, "
+                "Terminplanung, Auslastung, Personal und Ausbildung, "
+                "Einkauf und Lieferanten, Kundinnenbindung, Reklamationen, "
+                "schwierige Gespräche, Werbung, Hygiene und Arbeitsschutz.\n"
+                "· Und wenn ihr der Kopf raucht: hör zu, ordne, und mach "
+                "einen ersten Schritt daraus. Sie führt einen Betrieb allein "
+                "— oft ist die Frage hinter der Frage die wichtigere.\n\n"
+                "SO ANTWORTEST DU: Erst die Antwort, dann die Begründung. "
+                "Beträge deutsch (1.234,56 €). Wenn du rechnest, zeig die "
+                "Rechnung. Bei mehreren Möglichkeiten nenne eine Empfehlung, "
+                "keine Liste von Optionen.\n\n"
+                "DEINE GRENZEN, und du benennst sie: Du bist keine "
+                "Steuerberatung, keine Rechtsberatung und keine ärztliche "
+                "Auskunft. Bei Kündigungen, Verträgen mit Folgen, "
+                "Betriebsprüfungen, Streit mit dem Finanzamt und allem, wo "
+                "Fristen laufen, verweist du auf ihre Ansprechperson — und "
+                "sagst trotzdem, was du zur Sache weißt, damit sie "
+                "vorbereitet ins Gespräch geht. Erfinde nie Zahlen, Paragrafen "
+                "oder Fristen. Was du nicht weißt, sagst du."},
+            *verlauf,
+            {"role": "user", "content":
+                f"WAS BABU ÜBER DIESEN SALON WEISS:\n{kontext}\n\nFRAGE: {frage}"},
         ],
     }
 
@@ -2255,6 +2287,7 @@ def chat(body: dict, request: Request) -> Response:
         payload["stream"] = True
 
         def sse():
+            gesammelt: list[str] = []
             try:
                 with requests.post(GEMMA_API, json=payload, stream=True, timeout=180) as r:
                     r.raise_for_status()
@@ -2269,21 +2302,27 @@ def chat(body: dict, request: Request) -> Response:
                         except Exception:  # noqa: BLE001
                             continue
                         if delta:
+                            gesammelt.append(delta)
                             yield "data: " + json.dumps({"d": delta}, ensure_ascii=False) + "\n\n"
             except Exception:  # noqa: BLE001
                 yield "data: " + json.dumps({"fehler": "Gemma nicht erreichbar"}) + "\n\n"
+            if gesammelt:
+                nachricht_anhaengen(gespraech_id, "assistant", "".join(gesammelt))
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(sse(), media_type="text/event-stream",
-                                 headers={"Cache-Control": "no-cache"})
+                                 headers={"Cache-Control": "no-cache",
+                                          "X-Gespraech": str(gespraech_id)})
 
     try:
         r = requests.post(GEMMA_API, json=payload, timeout=120)
         r.raise_for_status()
         antwort = r.json()["choices"][0]["message"]["content"].strip()
     except Exception:  # noqa: BLE001
-        return JSONResponse({"fehler": "Gemma nicht erreichbar"}, status_code=502)
-    return JSONResponse({"antwort": antwort})
+        return JSONResponse({"fehler": "Gemma nicht erreichbar",
+                             "gespraech": gespraech_id}, status_code=502)
+    nachricht_anhaengen(gespraech_id, "assistant", antwort)
+    return JSONResponse({"antwort": antwort, "gespraech": gespraech_id})
 
 
 # ---------------------------------------------------------------------------
@@ -3486,3 +3525,138 @@ async def api_kassenbuch(request: Request) -> Response:
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=7844, workers=1)
+
+
+# ---------------------------------------------------------------------------
+# Gespräche: der Chat merkt sich, worüber gesprochen wurde. Bisher stand jede
+# Frage für sich — eine Rückfrage („und wie viel war das nochmal?") lief ins
+# Leere. Gespeichert wird in SQLite: ein Chatverlauf ist kein Auditmaterial,
+# er enthält Persönliches und muss löschbar bleiben (Art. 17 DSGVO).
+# ---------------------------------------------------------------------------
+
+# So viele Züge gehen als Verlauf ans Modell. Mehr hilft selten und kostet
+# Platz, den das Fallwissen besser gebrauchen kann.
+VERLAUF_ZUEGE = 6
+
+
+def gespraech_anlegen(un: str, titel: str) -> int:
+    with _DB_LOCK, _db() as c:
+        cur = c.execute(
+            "INSERT INTO gespraech (un, titel, begonnen, zuletzt) VALUES (?,?,?,?)",
+            (un, titel[:120], _jetzt_iso(), _jetzt_iso()))
+        return int(cur.lastrowid)
+
+
+def gespraech_gehoert(un: str, gespraech_id: int) -> bool:
+    with _DB_LOCK, _db() as c:
+        return c.execute("SELECT 1 FROM gespraech WHERE id=? AND un=?",
+                         (gespraech_id, un)).fetchone() is not None
+
+
+def nachricht_anhaengen(gespraech_id: int, rolle: str, text: str) -> None:
+    with _DB_LOCK, _db() as c:
+        c.execute("INSERT INTO nachricht (gespraech, rolle, text, zeit) VALUES (?,?,?,?)",
+                  (gespraech_id, rolle, text, _jetzt_iso()))
+        c.execute("UPDATE gespraech SET zuletzt=? WHERE id=?",
+                  (_jetzt_iso(), gespraech_id))
+
+
+def verlauf_lesen(gespraech_id: int, zuege: int = VERLAUF_ZUEGE) -> list[dict]:
+    """Die letzten Züge, älteste zuerst — so erwartet es das Modell."""
+    with _DB_LOCK, _db() as c:
+        zeilen = c.execute(
+            "SELECT rolle, text FROM nachricht WHERE gespraech=? ORDER BY id DESC LIMIT ?",
+            (gespraech_id, zuege * 2)).fetchall()
+    return [{"role": z[0], "content": z[1]} for z in reversed(zeilen)]
+
+
+def _welt_fuer(un: str) -> dict:
+    """Alles, was babu über diesen Salon weiß — für das Fallwissen des Chats."""
+    inhaber = salon_von(un)
+    idx = index_aktuell()
+    monat = time.strftime("%Y-%m")
+    einstellungen = db_einstellungen(inhaber)
+
+    fristen: list[dict] = []
+    try:
+        import datetime as _dt  # noqa: PLC0415
+        import fristen as fr  # noqa: PLC0415
+        profil = fr.termin_profil(einstellungen,
+                                  hat_team=bool(team_liste(inhaber, nur_aktive=True)))
+        termine = fr.fristen_jahr(int(monat[:4]), profil)
+        fristen = fr.naechste(termine, _dt.date.today(), anzahl=6)
+    except Exception:  # noqa: BLE001
+        fristen = []
+
+    zahlen: dict = {}
+    try:
+        import monatsabschluss as ma  # noqa: PLC0415
+        blaetter = [b for tag, b in idx["kassenblaetter"].items() if tag.startswith(monat)]
+        belege_monat = [z for z in idx["belege"].values() if z["monat"] == monat]
+        erloese = ma.erloese_monat(blaetter, monat=monat,
+                                   rechnungen=list(idx.get("rechnungen", {}).values()),
+                                   versteuerung=_versteuerung(un))
+        bwa = ma.bwa(monat, erloese, belege_monat, None,
+                     personal_monat=team_personalkosten(inhaber),
+                     vertraege=vertraege_aktuell())
+        zahlen = {"einnahmen": erloese.get("netto_gesamt"),
+                  "ausgaben": (bwa or {}).get("ausgaben"),
+                  "ergebnis": (bwa or {}).get("ergebnis")}
+    except Exception:  # noqa: BLE001
+        zahlen = {}
+
+    return {
+        "einstellungen": einstellungen,
+        "belege": list(idx["belege"].values()),
+        "kassenblaetter": list(idx["kassenblaetter"].values()),
+        "vertraege": vertraege_aktuell(),
+        "rechnungen": list(idx.get("rechnungen", {}).values()),
+        "team": team_liste(inhaber, nur_aktive=True),
+        "fristen": fristen,
+        "zahlen": zahlen,
+        "dokumente": idx["dokumente"],
+    }
+
+
+@app.get("/api/gespraeche")
+def api_gespraeche(request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    with _DB_LOCK, _db() as c:
+        zeilen = [{"id": z[0], "titel": z[1], "begonnen": z[2], "zuletzt": z[3],
+                   "nachrichten": z[4]}
+                  for z in c.execute("""
+                      SELECT g.id, g.titel, g.begonnen, g.zuletzt,
+                             (SELECT COUNT(*) FROM nachricht n WHERE n.gespraech = g.id)
+                      FROM gespraech g WHERE g.un=? ORDER BY g.zuletzt DESC""", (un,))]
+    return JSONResponse({"gespraeche": zeilen})
+
+
+@app.get("/api/gespraech/{gespraech_id}")
+def api_gespraech(gespraech_id: int, request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if not gespraech_gehoert(un, gespraech_id):
+        return JSONResponse({"fehler": "unbekanntes Gespräch"}, status_code=404)
+    with _DB_LOCK, _db() as c:
+        nachrichten = [{"rolle": z[0], "text": z[1], "zeit": z[2]}
+                       for z in c.execute(
+                           "SELECT rolle, text, zeit FROM nachricht WHERE gespraech=? ORDER BY id",
+                           (gespraech_id,))]
+    return JSONResponse({"id": gespraech_id, "nachrichten": nachrichten})
+
+
+@app.post("/api/gespraech/{gespraech_id}/loeschen")
+def api_gespraech_loeschen(gespraech_id: int, request: Request) -> Response:
+    """Ein Gespräch wegwerfen — es gehört der Nutzerin, nicht dem Archiv."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if not gespraech_gehoert(un, gespraech_id):
+        return JSONResponse({"fehler": "unbekanntes Gespräch"}, status_code=404)
+    with _DB_LOCK, _db() as c:
+        c.execute("DELETE FROM nachricht WHERE gespraech=?", (gespraech_id,))
+        c.execute("DELETE FROM gespraech WHERE id=?", (gespraech_id,))
+    return JSONResponse({"ok": True})
