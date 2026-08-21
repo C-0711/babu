@@ -123,7 +123,8 @@ enum AblageService {
     /// Eckdaten eines gelesenen Vertrags (entstehen im Hintergrund).
     static func vertragDaten(pfad: String, basis: URL,
                              pat: String) async -> (art: String, partner: String?,
-                                                    betrag: Double?, einfach: String)? {
+                                                    betrag: Double?, zahlweise: String,
+                                                    einfach: String)? {
         var request = URLRequest(url: basis.appendingPathComponent("api/dokumente"))
         request.timeoutInterval = 30
         request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
@@ -135,7 +136,8 @@ enum AblageService {
               let einfach = v["einfach"] as? String, !einfach.isEmpty
         else { return nil }
         return (v["art_name"] as? String ?? "Vertrag", v["partner"] as? String,
-                v["betrag_monat"] as? Double, einfach)
+                v["betrag_monat"] as? Double,
+                v["zahlweise"] as? String ?? "monatlich", einfach)
     }
 
     /// Erklärung zum abgelegten Brief holen (entsteht im Hintergrund).
