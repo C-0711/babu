@@ -253,3 +253,22 @@ def test_kein_async_handler_blockiert_den_event_loop():
                     suender.append(f"{f.name}: {name_von(k.func)}")
     assert not suender, ("blockierende Aufrufe direkt in async-Routen: "
                          + ", ".join(sorted(set(suender))))
+
+
+def test_nichts_steht_hinter_dem_startaufruf():
+    """Produktiv läuft `python babu_web.py` — dann blockiert `uvicorn.run`
+    für immer, und alles darunter wird NIE ausgeführt.
+
+    Am 22.08.2026 standen 137 Zeilen dahinter: die Gespräche-Routen gab es
+    im Betrieb nicht (404), und /chat starb mit `NameError`. In den Tests
+    fiel es nicht auf, weil die importieren — da läuft die ganze Datei.
+    """
+    quelle = (Path(__file__).resolve().parent.parent / "babu_web.py").read_text()
+    zeilen = quelle.splitlines()
+    start = next(i for i, z in enumerate(zeilen) if z.startswith('if __name__'))
+    dahinter = [z for z in zeilen[start:]
+                if z.startswith("@app.") or z.startswith("def ")
+                or z.startswith("class ")]
+    assert dahinter == [], (
+        "Hinter dem Startaufruf definiert und damit im Betrieb tot: "
+        + ", ".join(dahinter))

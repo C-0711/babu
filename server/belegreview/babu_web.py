@@ -4322,11 +4322,6 @@ async def api_kassenbuch(request: Request) -> Response:
     return JSONResponse({"ok": True, "commit": commit, "datum": datum})
 
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=7844, workers=1)
-
-
 # ---------------------------------------------------------------------------
 # Gespräche: der Chat merkt sich, worüber gesprochen wurde. Bisher stand jede
 # Frage für sich — eine Rückfrage („und wie viel war das nochmal?") lief ins
@@ -4460,3 +4455,8 @@ def api_gespraech_loeschen(gespraech_id: int, request: Request) -> Response:
         c.execute("DELETE FROM nachricht WHERE gespraech=?", (gespraech_id,))
         c.execute("DELETE FROM gespraech WHERE id=?", (gespraech_id,))
     return JSONResponse({"ok": True})
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=7844, workers=1)
