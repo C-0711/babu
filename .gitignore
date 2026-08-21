@@ -1,0 +1,20 @@
+# Echte Salon- und Bankdaten — bleiben lokal, nie ins Repo.
+# 1 GB Testkorpus mit echten Belegen einer Mandantin.
+Steuer App/
+*.ipa
+
+# macOS
+.DS_Store
+
+# Xcode: Benutzer- und Arbeitsplatzdaten, gehören niemandem außer dem Rechner
+xcuserdata/
+*.xcworkspace/
+!*.xcworkspace/contents.xcworkspacedata
+*.xcuserstate
+DerivedData/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
