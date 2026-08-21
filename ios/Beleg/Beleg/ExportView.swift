@@ -79,6 +79,7 @@ struct ExportView: View {
                 .padding(20)
             }
             .background(GC.canvas)
+            .warmerGrund()
             .navigationTitle("Export")
             .toolbarTitleDisplayMode(.inline)
             .alert("Was heißt „fixiert“?", isPresented: $zeigeFixiertInfo) {

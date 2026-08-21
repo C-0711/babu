@@ -76,6 +76,7 @@ struct TeamView: View {
                      : "Die Summe rechnen wir in deiner Auswertung mit — auch ohne Lohnbeleg. Steuerklasse und Sozialversicherung bleiben beim Lohnbüro.")
             }
         }
+        .warmerGrund()
         .navigationTitle("Dein Team")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $bearbeite) { person in

@@ -38,6 +38,7 @@ struct CaptureTab: View {
                 case .nichtsErkannt: nichtsErkanntView
                 }
             }
+            .warmerGrund()
             .navigationTitle("Erfassen")
             .toolbarTitleDisplayMode(.inline)
             .mitKontoMenu()
@@ -525,7 +526,7 @@ struct BuchsatzView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(11)
         .background(GC.canvas, in: RoundedRectangle(cornerRadius: 9))
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color(hex: 0xEFEFEF)))
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(GC.linie))
     }
 }
 

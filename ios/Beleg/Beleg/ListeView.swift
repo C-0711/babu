@@ -88,6 +88,7 @@ struct ListeView: View {
                         .foregroundStyle(GC.muted)
                 }
             }
+            .warmerGrund()
             .navigationTitle("Belege")
             .mitKontoMenu()
             .navigationDestination(for: UUID.self) { id in
@@ -606,7 +607,7 @@ struct DetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
         .background(GC.canvas, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(hex: 0xE8E4DC), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(GC.linie, lineWidth: 1))
     }
 
     /// Abgleich Gerät ↔ Server: ✓ bei Übereinstimmung, sonst beide Werte.

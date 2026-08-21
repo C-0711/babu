@@ -88,6 +88,7 @@ struct MarketingView: View {
                 }
             }
         }
+        .warmerGrund()
         .navigationTitle("Marketing")
         .navigationBarTitleDisplayMode(.inline)
         .task { await laden() }

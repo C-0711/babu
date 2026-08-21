@@ -46,12 +46,22 @@ struct KontoMenuView: View {
                     .padding(.vertical, 4)
                 }
 
-                Section {
+                // Was zusammengehört, steht zusammen: was die Zahlen angeht,
+                // dann was den Salon angeht, dann das Konto selbst.
+                Section("Buchhaltung") {
                     NavigationLink {
                         AbschlussView()
                     } label: {
                         Label("Monatsabschluss", systemImage: "chart.bar.doc.horizontal")
                     }
+                    NavigationLink {
+                        ExportView()
+                    } label: {
+                        Label("Export für die Buchhaltung", systemImage: "square.and.arrow.up")
+                    }
+                }
+
+                Section("Dein Salon") {
                     NavigationLink {
                         TeamView()
                     } label: {
@@ -67,11 +77,9 @@ struct KontoMenuView: View {
                     } label: {
                         Label("Marketing", systemImage: "megaphone")
                     }
-                    NavigationLink {
-                        ExportView()
-                    } label: {
-                        Label("Export für die Buchhaltung", systemImage: "square.and.arrow.up")
-                    }
+                }
+
+                Section {
                     NavigationLink {
                         EinstellungenView()
                     } label: {
@@ -81,6 +89,7 @@ struct KontoMenuView: View {
                     Text("Den fertigen Stapel bekommt dein Steuerbüro am Monatsende automatisch aus der Belegbox.")
                 }
             }
+            .warmerGrund()
             .navigationTitle("Dein Konto")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

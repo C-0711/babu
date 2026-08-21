@@ -50,6 +50,7 @@ struct VorlagenView: View {
                     }
                 }
             }
+            .warmerGrund()
             .navigationTitle("Vorlagen")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

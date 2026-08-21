@@ -38,6 +38,7 @@ struct AbschlussView: View {
             .padding(18)
         }
         .background(GC.canvas)
+        .warmerGrund()
         .navigationTitle("Monatsabschluss")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: monat) { await laden() }

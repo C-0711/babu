@@ -76,6 +76,7 @@ struct FragenTab: View {
                 eingabeleiste
             }
             .background(GC.canvas)
+            .warmerGrund()
             .navigationTitle("Fragen")
             .mitKontoMenu()
             .toolbarTitleDisplayMode(.inline)

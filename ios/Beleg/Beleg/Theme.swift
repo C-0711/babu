@@ -12,22 +12,38 @@ extension Color {
 
 /// Unlimited-OCR-Designsprache — identisch zu den --gc-*-Tokens der Web-App.
 enum GC {
+    // Hell und warm — kein neutrales Grau. Jeder dunkle Ton hat einen
+    // Braunstich, damit die App nach Papier aussieht und nicht nach Formular.
+    // Die Kontraste sind nachgerechnet (auf canvas): fg 13,9:1 · body 9,7:1 ·
+    // desc 5,9:1 — alle über AA. `muted` liegt bei 3,5:1 und ist damit
+    // besser lesbar als das frühere Grau (2,7:1), das AA schon riss.
     static let bg = Color(hex: 0xFFFFFF)
-    static let canvas = Color(hex: 0xFAF9F5)
-    static let desk = Color(hex: 0xEFECE6)
-    static let chrome = Color(hex: 0xF4F1EC)
-    static let fg = Color(hex: 0x111111)
-    static let body = Color(hex: 0x333333)
-    static let desc = Color(hex: 0x555555)
-    static let muted = Color(hex: 0x999999)
-    static let accent = Color(hex: 0x857B61)
+    static let canvas = Color(hex: 0xFDFCF9)
+    static let desk = Color(hex: 0xF7F3EB)
+    static let chrome = Color(hex: 0xFBF8F2)
+    static let fg = Color(hex: 0x2E2A22)
+    static let body = Color(hex: 0x4A4234)
+    static let desc = Color(hex: 0x6B6151)
+    static let muted = Color(hex: 0x8F8574)
+    static let accent = Color(hex: 0x8A7C5C)
     static let accentHover = Color(hex: 0x736950)
-    static let accentSubtle = Color(hex: 0xF0EBE3)
+    static let accentSubtle = Color(hex: 0xF7F1E6)
     static let ok = Color(hex: 0x6F8A6E)
-    static let warn = Color(hex: 0xB0821F)
+    static let warn = Color(hex: 0xA8791C)
     static let danger = Color(hex: 0xA8433A)
-    static let scan = Color(hex: 0x1F1E1A)
-    static let gold = Color(hex: 0xC9B98D)
+    static let scan = Color(hex: 0x2A2620)
+    static let gold = Color(hex: 0xB9A574)
+    /// Feine Linien und Ränder — warm, nie grau.
+    static let linie = Color(hex: 0xEBE4D8)
+}
+
+extension View {
+    /// Listen und Formulare auf unsere warme Fläche stellen. iOS legt sonst
+    /// sein eigenes Grau (#F2F2F7) darunter — das ist genau das Grau, das
+    /// die App kühl aussehen lässt, egal wie warm die Schrift ist.
+    func warmerGrund(_ farbe: Color = GC.canvas) -> some View {
+        scrollContentBackground(.hidden).background(farbe.ignoresSafeArea())
+    }
 }
 
 /// Confidence-Farbe wie im Web: ≥95 Bronze, ≥80 Grün, darunter Amber.

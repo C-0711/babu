@@ -5,6 +5,10 @@ import UIKit
 /// Rechnung muss lesbar und vollständig sein, nicht hübsch.
 enum RechnungPDF {
 
+    // Warme Töne statt Systemgrau — die Rechnung soll nach Papier aussehen.
+    private static let leise = UIColor(red: 0.42, green: 0.38, blue: 0.32, alpha: 1)
+    private static let linieFarbe = UIColor(red: 0.85, green: 0.82, blue: 0.76, alpha: 1)
+
     private static let rand: CGFloat = 56
     private static let seite = CGRect(x: 0, y: 0, width: 595, height: 842)  // A4
 
@@ -31,7 +35,7 @@ enum RechnungPDF {
             // Absender klein über der Anschrift — wie im Fensterumschlag.
             let absender = [kopf["betrieb_name"], kopf["anschrift"]]
                 .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-            y = zeichne(absender, at: y, groesse: 8, farbe: .darkGray)
+            y = zeichne(absender, at: y, groesse: 8, farbe: leise)
             y += 14
 
             // Empfängerin
@@ -41,7 +45,7 @@ enum RechnungPDF {
             }
             if !empfaenger.ustId.isEmpty {
                 y = zeichne("USt-IdNr.: " + empfaenger.ustId, at: y, groesse: 9,
-                            farbe: .darkGray)
+                            farbe: leise)
             }
             y += 40
 
@@ -94,7 +98,7 @@ enum RechnungPDF {
             if let bank = kopf["bank"], !bank.isEmpty { fuss.append(bank) }
             var fy = seite.height - rand - CGFloat(fuss.count) * 12
             for zeile in fuss {
-                fy = zeichne(zeile, at: fy, groesse: 8, farbe: .darkGray)
+                fy = zeichne(zeile, at: fy, groesse: 8, farbe: leise)
             }
         }
     }
@@ -141,7 +145,7 @@ enum RechnungPDF {
     }
 
     private static func linie(at y: CGFloat, ctx: UIGraphicsPDFRendererContext,
-                              farbe: UIColor = .lightGray,
+                              farbe: UIColor = linieFarbe,
                               staerke: CGFloat = 0.5) -> CGFloat {
         ctx.cgContext.setStrokeColor(farbe.cgColor)
         ctx.cgContext.setLineWidth(staerke)

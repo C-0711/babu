@@ -26,6 +26,7 @@ struct KasseTab: View {
                 .padding(16)
             }
             .background(GC.canvas)
+            .warmerGrund()
             .navigationTitle("Kassenbuch")
             .toolbarTitleDisplayMode(.inline)
             .mitKontoMenu()

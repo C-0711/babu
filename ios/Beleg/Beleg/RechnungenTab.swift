@@ -72,6 +72,7 @@ struct RechnungenTab: View {
                     }
                 }
             }
+            .warmerGrund()
             .navigationTitle("Rechnungen")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {

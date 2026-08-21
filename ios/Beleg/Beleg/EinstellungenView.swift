@@ -67,6 +67,7 @@ struct EinstellungenView: View {
                     .foregroundStyle(GC.muted)
                 }
             }
+        .warmerGrund()
         .navigationTitle("Einstellungen")
         .navigationBarTitleDisplayMode(.inline)
     }

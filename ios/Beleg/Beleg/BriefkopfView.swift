@@ -43,6 +43,7 @@ struct BriefkopfView: View {
                 }
                 fussleiste
             }
+            .warmerGrund()
             .navigationTitle("Dein Briefkopf")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

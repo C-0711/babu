@@ -236,6 +236,7 @@ struct ErgebnisUebersicht: View {
                 .padding(16)
             }
             .background(GC.canvas)
+            .warmerGrund()
             .navigationTitle("Alle Angaben")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
