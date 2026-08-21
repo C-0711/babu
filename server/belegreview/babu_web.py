@@ -25,6 +25,7 @@ from pathlib import Path
 
 import requests
 from fastapi import FastAPI, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 WURZEL = Path(__file__).resolve().parent
@@ -81,6 +82,13 @@ def _db() -> sqlite3.Connection:
     # Mitarbeiterkonten zeigen auf den Salon, dem die Daten gehören.
     try:
         conn.execute("ALTER TABLE nutzer ADD COLUMN gehoert_zu TEXT")
+    except sqlite3.OperationalError:
+        pass
+    # Hat dieses Konto eine eigene Belegbox? Bestehende Zugänge sind von Hand
+    # eingerichtet — sie behalten ihre (DEFAULT 1). Wer sich künftig selbst
+    # registriert, bekommt sie erst, wenn wir sie angelegt haben.
+    try:
+        conn.execute("ALTER TABLE nutzer ADD COLUMN box INTEGER NOT NULL DEFAULT 1")
     except sqlite3.OperationalError:
         pass
     conn.execute("""CREATE TABLE IF NOT EXISTS app_schluessel
@@ -310,28 +318,34 @@ def _jetzt_iso() -> str:
 def nutzer_holen(email: str) -> dict | None:
     with _DB_LOCK, _db() as c:
         z = c.execute("""SELECT email, name, salon, rolle, pw, aktiv, gehoert_zu, angelegt,
-                         letzter_login FROM nutzer WHERE email=?""",
+                         letzter_login, box FROM nutzer WHERE email=?""",
                       (email.strip().lower(),)).fetchone()
     if not z:
         return None
     return {"email": z[0], "name": z[1], "salon": z[2], "rolle": z[3], "pw": z[4],
-            "aktiv": bool(z[5]), "gehoert_zu": z[6], "angelegt": z[6], "letzter_login": z[7]}
+            "aktiv": bool(z[5]), "gehoert_zu": z[6], "angelegt": z[7],
+            "letzter_login": z[8], "box": bool(z[9])}
 
 
 def nutzer_anlegen(email: str, name: str, salon: str, rolle_neu: str,
-                   passwort: str | None = None) -> str | None:
+                   passwort: str | None = None, box: bool = True) -> str | None:
     """Legt ein Konto an und gibt das Passwort zurück (None = existiert schon).
-    Ohne `passwort` wird ein Startpasswort generiert (Verwaltungs-Weg)."""
+
+    Ohne `passwort` wird ein Startpasswort generiert (Verwaltungs-Weg).
+    `box=False` ist der Selbstregistrierungs-Weg: das Konto steht, die
+    Belegbox richten wir von Hand ein — sonst läse der Nächste, der sich
+    anmeldet, die Buchhaltung eines fremden Salons.
+    """
     email = email.strip().lower()
     if nutzer_holen(email):
         return None
     passwort = passwort or startpasswort()
     with _DB_LOCK, _db() as c:
-        c.execute("""INSERT INTO nutzer (email, name, salon, rolle, pw, aktiv, angelegt)
-                     VALUES (?,?,?,?,?,1,?)""",
+        c.execute("""INSERT INTO nutzer (email, name, salon, rolle, pw, aktiv,
+                     angelegt, box) VALUES (?,?,?,?,?,1,?,?)""",
                   (email, name.strip()[:120], salon.strip()[:120],
                    rolle_neu if rolle_neu in NUTZER_ROLLEN else "salon",
-                   pw_hash(passwort), _jetzt_iso()))
+                   pw_hash(passwort), _jetzt_iso(), 1 if box else 0))
     return passwort
 
 
@@ -341,6 +355,24 @@ def zugelassen(un: str) -> bool:
         return True
     n = nutzer_holen(un)
     return bool(n and n["aktiv"])
+
+
+def box_mitglied(un: str) -> bool:
+    """Gehört dieser Zugang zu der Belegbox, die dieser Server bedient?
+
+    Es gibt genau EINE Box je Betrieb. Ein Konto ist deshalb noch kein
+    Zugang zu ihren Belegen: darin arbeiten der Betrieb selbst, sein Team —
+    und die Kanzlei, die ihn betreut. Wer sich selbst registriert hat,
+    behält sein Konto, sieht aber keine fremden Belege.
+    """
+    inhaber = salon_von(un)          # Mitarbeiterinnen erben den Salon
+    if inhaber in ERLAUBT:
+        return True
+    n = nutzer_holen(un)
+    if n and n["rolle"] in ("admin", "kanzlei"):
+        return True
+    besitzer = nutzer_holen(inhaber)
+    return bool(besitzer and besitzer["box"])
 
 
 def git_show(pfad: str) -> bytes | None:
@@ -797,12 +829,33 @@ def app_datei(name: str) -> Response:
 # ---------------------------------------------------------------------------
 
 def _api_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]:
+    """Angemeldet und aktiv — reicht für die eigenen Daten (Konto, Team, Fristen)."""
     un = angemeldet(request)
     if un is None:
         return None, JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
     if not zugelassen(un):
         print(f"[wache] 403: '{un}' weder Allowlist noch aktives Konto", flush=True)
         return None, JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    return un, None
+
+
+BOX_GESPERRT = ("Dein Zugang ist noch nicht für eine Belegbox freigeschaltet. "
+                "Schreib uns kurz — dann richten wir sie für deinen Salon ein.")
+
+
+def _box_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]:
+    """Zusätzlich zur Anmeldung: Diese Belegbox muss ihm auch gehören.
+
+    Jede Route, die Belege, Kassenbuch, Ablage oder Zahlen anfasst, geht
+    hier durch — sonst läse ein frisch registriertes Konto die Buchhaltung
+    eines fremden Salons.
+    """
+    un, fehler = _api_wache(request)
+    if fehler:
+        return None, fehler
+    if not box_mitglied(un):
+        print(f"[wache] 403: '{un}' gehört nicht zu dieser Belegbox", flush=True)
+        return None, JSONResponse({"fehler": BOX_GESPERRT}, status_code=403)
     return un, None
 
 
@@ -829,13 +882,46 @@ async def api_anmelden(request: Request) -> Response:
 # Login mit eigenem Konto (E-Mail + Passwort) — gleiche Session wie der
 # Zugangscode-Weg. Fehlermeldung immer generisch, Rate-Limit je IP.
 _LOGIN_VERSUCHE: dict[str, list[float]] = {}
+# Ab hier wird aufgeräumt, damit die Zähler-Tabellen nicht ewig wachsen.
+_IP_TABELLE_MAX = 5000
+
+
+# Nur diesen direkten Absendern glauben wir eine Weiterleitungs-Kopfzeile:
+# das ist der Cloudflare-Tunnel auf demselben Rechner.
+TUNNEL_PEERS = {"127.0.0.1", "::1", "localhost"}
+
+
+def _client_ip(request: Request) -> str:
+    """Die IP der Besucherin — nicht die des Tunnels.
+
+    Hinter cloudflared kommt jeder Request von 127.0.0.1: ein einziger
+    Fehlversuch würde sonst den ganzen Salon für eine Minute aussperren.
+    Den Kopfzeilen wird nur geglaubt, wenn der direkte Absender wirklich der
+    lokale Tunnel ist — sonst erfände sich jeder ein frisches Kontingent.
+    """
+    peer = request.client.host if request.client else "?"
+    if peer in TUNNEL_PEERS:
+        kopf = (request.headers.get("cf-connecting-ip")
+                or request.headers.get("x-forwarded-for", "").split(",")[0])
+        if kopf.strip():
+            return kopf.strip()[:64]
+    return peer
+
+
+def _zaehler_aufraeumen(tabelle: dict, jetzt: float, alter: float) -> None:
+    if len(tabelle) <= _IP_TABELLE_MAX:
+        return
+    for schluessel, wert in list(tabelle.items()):
+        letzte = max(wert) if isinstance(wert, list) else wert
+        if jetzt - letzte > alter:
+            tabelle.pop(schluessel, None)
 
 
 @app.post("/api/login")
 def api_login(body: dict, request: Request) -> Response:
     if not _origin_ok(request):
         return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
-    ip = request.client.host if request.client else "?"
+    ip = _client_ip(request)
     jetzt = time.time()
     versuche = [t for t in _LOGIN_VERSUCHE.get(ip, []) if jetzt - t < 60]
     if len(versuche) >= 5:
@@ -844,17 +930,21 @@ def api_login(body: dict, request: Request) -> Response:
                             status_code=429)
     versuche.append(jetzt)
     _LOGIN_VERSUCHE[ip] = versuche
+    _zaehler_aufraeumen(_LOGIN_VERSUCHE, jetzt, 60)
     email = str(body.get("email", "")).strip().lower()
     passwort = str(body.get("passwort", ""))
     n = nutzer_holen(email) if email else None
     if not n or not n["aktiv"] or not pw_pruefen(passwort, n["pw"]):
         return JSONResponse({"fehler": "E-Mail oder Passwort stimmt nicht."},
                             status_code=401)
+    # Geglückt: das Kontingent gehört den Fehlversuchen, nicht den Erfolgen.
+    _LOGIN_VERSUCHE.pop(ip, None)
     with _DB_LOCK, _db() as c:
         c.execute("UPDATE nutzer SET letzter_login=? WHERE email=?",
                   (_jetzt_iso(), email))
     exp = int(time.time()) + SESSION_DAUER
-    antwort = JSONResponse({"un": email, "rolle": n["rolle"]})
+    antwort = JSONResponse({"un": email, "rolle": n["rolle"],
+                            "box": box_mitglied(email)})
     antwort.set_cookie(SESSION_COOKIE, _signieren(email, exp), max_age=SESSION_DAUER,
                        httponly=True, secure=SESSION_SECURE, samesite="lax", path="/")
     return antwort
@@ -866,7 +956,7 @@ def api_app_anmelden(body: dict, request: Request) -> Response:
     Dabei entsteht unsichtbar ein Geräteschlüssel — er erscheint GENAU EINMAL
     in der Antwort, gespeichert wird nur sein Hash. Kein Schlüssel-Gefrickel
     mehr für die Nutzerin."""
-    ip = request.client.host if request.client else "?"
+    ip = _client_ip(request)
     jetzt = time.time()
     versuche = [t for t in _LOGIN_VERSUCHE.get(ip, []) if jetzt - t < 60]
     if len(versuche) >= 5:
@@ -875,6 +965,7 @@ def api_app_anmelden(body: dict, request: Request) -> Response:
                             status_code=429)
     versuche.append(jetzt)
     _LOGIN_VERSUCHE[ip] = versuche
+    _zaehler_aufraeumen(_LOGIN_VERSUCHE, jetzt, 60)
     email = str(body.get("email", "")).strip().lower()
     passwort = str(body.get("passwort", ""))
     geraet = str(body.get("geraet", "") or "")[:80]
@@ -882,6 +973,7 @@ def api_app_anmelden(body: dict, request: Request) -> Response:
     if not n or not n["aktiv"] or not pw_pruefen(passwort, n["pw"]):
         return JSONResponse({"fehler": "E-Mail oder Passwort stimmt nicht."},
                             status_code=401)
+    _LOGIN_VERSUCHE.pop(ip, None)     # geglückt — siehe /api/login
     token = secrets.token_urlsafe(32)
     with _DB_LOCK, _db() as c:
         c.execute("INSERT INTO app_schluessel VALUES (?,?,?,?,?)",
@@ -930,7 +1022,9 @@ def api_ich(request: Request) -> Response:
         return fehler
     # Gleitende Verlängerung: bei jedem Besuch frisch gesetzt.
     exp = int(time.time()) + SESSION_DAUER
-    antwort = JSONResponse({"un": un, "rolle": rolle(un)})
+    # `box` sagt der Oberfläche, ob es überhaupt Belege zu zeigen gibt —
+    # ohne das würde ein frisches Konto auf leere Kacheln starren.
+    antwort = JSONResponse({"un": un, "rolle": rolle(un), "box": box_mitglied(un)})
     if request.cookies.get(SESSION_COOKIE):
         antwort.set_cookie(SESSION_COOKIE, _signieren(un, exp), max_age=SESSION_DAUER,
                            httponly=True, secure=SESSION_SECURE, samesite="lax", path="/")
@@ -940,7 +1034,7 @@ def api_ich(request: Request) -> Response:
 @app.get("/api/belege")
 def api_belege(request: Request, monat: str | None = None, status: str | None = None,
                limit: int = 200, seite_nr: int = 1) -> Response:
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     idx = index_aktuell()
@@ -960,7 +1054,7 @@ def api_belege(request: Request, monat: str | None = None, status: str | None = 
 
 @app.get("/api/beleg/{stamm}")
 def api_beleg(stamm: str, request: Request) -> Response:
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     if not NAME_RE.match(stamm):
@@ -1025,7 +1119,7 @@ def api_beleg(stamm: str, request: Request) -> Response:
 
 @app.get("/api/beleg/{stamm}/bild")
 def api_beleg_bild(stamm: str, request: Request) -> Response:
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     if not NAME_RE.match(stamm):
@@ -1093,12 +1187,12 @@ def _monat_summen(monat: str) -> dict:
 
 @app.post("/api/bewirtung/{stamm}")
 async def api_bewirtung(stamm: str, request: Request) -> Response:
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     if not NAME_RE.match(stamm):
         return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
-    eintrag = index_aktuell()["belege"].get(stamm)
+    eintrag = (await run_in_threadpool(index_aktuell))["belege"].get(stamm)
     if eintrag is None:
         return JSONResponse({"fehler": "unbekannter Beleg"}, status_code=404)
     try:
@@ -1117,7 +1211,7 @@ async def api_bewirtung(stamm: str, request: Request) -> Response:
     }, ensure_ascii=False, indent=1).encode()
     import boxschreiber  # noqa: PLC0415 — erst beim ersten Schreiben laden
     try:
-        commit = boxschreiber.schreiben(f"review/{stamm}.bewirtung.json", inhalt,
+        commit = await run_in_threadpool(boxschreiber.schreiben, f"review/{stamm}.bewirtung.json", inhalt,
                                         f"bewirtung: {stamm}", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"}, status_code=503)
@@ -1167,7 +1261,7 @@ async def ablage(request: Request) -> Response:
     monat = time.strftime("%Y-%m")
     nachricht = f"aufnahme: {dateiname}" + (f"\n\n{notiz}" if notiz else "")
     try:
-        commit = boxschreiber.schreiben(f"docs/{monat}/{dateiname}", daten,
+        commit = await run_in_threadpool(boxschreiber.schreiben, f"docs/{monat}/{dateiname}", daten,
                                         nachricht, un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "Push fehlgeschlagen"}, status_code=502)
@@ -1196,7 +1290,7 @@ async def api_hochladen(request: Request, name: str = "beleg.jpg") -> Response:
     Schreibt den aufnahme:-Commit selbst über das Gateway — :7843 bleibt
     unangetastet, der Watcher findet die Datei wie jede andere.
     """
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     if (sperre := _mitarbeit_wache(un, "darf_belege", "Belege einreichen")):
@@ -1213,7 +1307,7 @@ async def api_hochladen(request: Request, name: str = "beleg.jpg") -> Response:
     dateiname = boxschreiber.beleg_dateiname(name)
     monat = time.strftime("%Y-%m")
     try:
-        commit = boxschreiber.schreiben(f"docs/{monat}/{dateiname}", daten,
+        commit = await run_in_threadpool(boxschreiber.schreiben, f"docs/{monat}/{dateiname}", daten,
                                         f"aufnahme: {dateiname}", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"}, status_code=503)
@@ -1228,7 +1322,7 @@ DOKUMENT_PFAD_RE = re.compile(r"^dokumente/[A-Za-z0-9._/ -]{1,200}$")
 
 @app.get("/api/dokumente")
 def api_dokumente(request: Request) -> Response:
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     gelesen = db_gelesen(un)
@@ -1240,7 +1334,7 @@ def api_dokumente(request: Request) -> Response:
 
 @app.get("/api/dokument/{pfad:path}")
 def api_dokument(pfad: str, request: Request) -> Response:
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     if not DOKUMENT_PFAD_RE.match(pfad) or ".." in pfad:
@@ -1259,7 +1353,7 @@ def api_dokument(pfad: str, request: Request) -> Response:
 @app.post("/api/dokumente")
 async def api_dokument_hochladen(request: Request, name: str = "dokument.pdf",
                                  titel: str = "", art: str = "dokument") -> Response:
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     endung = Path(name).suffix.lower()
@@ -1276,7 +1370,7 @@ async def api_dokument_hochladen(request: Request, name: str = "dokument.pdf",
     meta = json.dumps({"titel": (titel or name)[:120], "art": art[:40], "von": un},
                       ensure_ascii=False, indent=1).encode()
     try:
-        commit = boxschreiber.schreiben(
+        commit = await run_in_threadpool(boxschreiber.schreiben,
             {f"dokumente/{monat}/{dateiname}": daten,
              f"dokumente/{monat}/{dateiname}.meta.json": meta},
             None, f"dokument: {dateiname}", un)
@@ -1299,7 +1393,7 @@ async def api_dokument_hochladen(request: Request, name: str = "dokument.pdf",
 
 @app.post("/api/dokument-gelesen")
 async def api_dokument_gelesen(request: Request) -> Response:
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     try:
@@ -1322,14 +1416,14 @@ def workbench_seite() -> FileResponse:
 async def api_korrektur(stamm: str, request: Request) -> Response:
     """Kanzlei-Korrektur (Konto/BU/Buchungstext) — als eigener Commit, damit
     Autorenschaft und Historie sauber bleiben; fließt in Liste + EXTF ein."""
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     if not darf_verwalten(un):
         return JSONResponse({"fehler": "nur für die Kanzlei"}, status_code=403)
     if not NAME_RE.match(stamm):
         return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
-    if stamm not in index_aktuell()["belege"]:
+    if stamm not in (await run_in_threadpool(index_aktuell))["belege"]:
         return JSONResponse({"fehler": "unbekannter Beleg"}, status_code=404)
     try:
         body = await request.json()
@@ -1344,7 +1438,7 @@ async def api_korrektur(stamm: str, request: Request) -> Response:
              "von": un, "am": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
     import boxschreiber  # noqa: PLC0415
     try:
-        commit = boxschreiber.schreiben(
+        commit = await run_in_threadpool(boxschreiber.schreiben,
             f"review/{stamm}.korrektur.json",
             json.dumps(daten, ensure_ascii=False, indent=1).encode(),
             f"korrektur: {stamm}", un)
@@ -1360,7 +1454,7 @@ async def api_korrektur(stamm: str, request: Request) -> Response:
 async def api_kontoauszug(request: Request, name: str = "auszug.pdf") -> Response:
     """Kontoauszug (Text-PDF) ablegen: Umsätze werden sofort gelesen und für
     den Zahlungsabgleich gespeichert."""
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     if Path(name).suffix.lower() != ".pdf":
@@ -1376,7 +1470,7 @@ async def api_kontoauszug(request: Request, name: str = "auszug.pdf") -> Respons
         tf.write(daten)
         tf.flush()
         try:
-            geparst = ka.parse_pdf(tf.name)
+            geparst = await run_in_threadpool(ka.parse_pdf, tf.name)
         except Exception:  # noqa: BLE001
             geparst = {"umsaetze": [], "monat": None, "konto": None}
     if not geparst["umsaetze"] or not geparst["monat"]:
@@ -1386,7 +1480,7 @@ async def api_kontoauszug(request: Request, name: str = "auszug.pdf") -> Respons
     dateiname = boxschreiber.beleg_dateiname(name)
     monat = geparst["monat"]
     try:
-        commit = boxschreiber.schreiben(
+        commit = await run_in_threadpool(boxschreiber.schreiben,
             {f"auszuege/{monat}/{dateiname}": daten,
              f"auszuege/{monat}/{dateiname}.umsaetze.json": json.dumps(
                  geparst, ensure_ascii=False, indent=1).encode()},
@@ -1402,7 +1496,7 @@ async def api_kontoauszug(request: Request, name: str = "auszug.pdf") -> Respons
 
 @app.get("/api/abgleich/{monat}")
 def api_abgleich(monat: str, request: Request) -> Response:
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     if not re.match(r"^\d{4}-\d{2}$", monat):
@@ -1422,7 +1516,7 @@ def api_abgleich(monat: str, request: Request) -> Response:
 async def api_freigabe(request: Request) -> Response:
     """Freigabe einer Kanzlei-Anfrage — protokollierte Portal-Handlung
     (auditpflichtig, daher Commit in der Box, nicht SQLite)."""
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     try:
@@ -1430,7 +1524,7 @@ async def api_freigabe(request: Request) -> Response:
     except Exception:  # noqa: BLE001
         return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
     pfad = str(body.get("pfad", ""))
-    idx = index_aktuell()
+    idx = await run_in_threadpool(index_aktuell)
     dok = next((d_ for d_ in idx["dokumente"] if d_["pfad"] == pfad), None)
     if dok is None or dok["art"] != "freigabe_anfrage":
         return JSONResponse({"fehler": "keine Freigabe-Anfrage"}, status_code=400)
@@ -1442,7 +1536,7 @@ async def api_freigabe(request: Request) -> Response:
                         ensure_ascii=False, indent=1).encode()
     import boxschreiber  # noqa: PLC0415
     try:
-        commit = boxschreiber.schreiben(f"freigaben/{name}.json", inhalt,
+        commit = await run_in_threadpool(boxschreiber.schreiben, f"freigaben/{name}.json", inhalt,
                                         f"freigabe: {name}", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
@@ -1478,7 +1572,7 @@ _REG_ZULETZT: dict[str, float] = {}
 def api_registrierung(daten: dict, request: Request) -> Response:
     if not _origin_ok(request):
         return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
-    ip = request.client.host if request.client else "?"
+    ip = _client_ip(request)
     jetzt = time.time()
     if jetzt - _REG_ZULETZT.get(ip, 0.0) < 30:
         return JSONResponse({"fehler": "kurz warten, dann nochmal"}, status_code=429)
@@ -1487,6 +1581,7 @@ def api_registrierung(daten: dict, request: Request) -> Response:
         return JSONResponse({"fehler": "Salon-Name und E-Mail brauchen wir mindestens"},
                             status_code=400)
     _REG_ZULETZT[ip] = jetzt
+    _zaehler_aufraeumen(_REG_ZULETZT, jetzt, 3600)
     with _DB_LOCK, _db() as c:
         c.execute("INSERT INTO registrierungen (zeit, daten) VALUES (?, ?)",
                   (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -1502,7 +1597,7 @@ def api_signup(daten: dict, request: Request) -> Response:
     Verwaltung sieht den Neuzugang in der Anfragen-Historie."""
     if not _origin_ok(request):
         return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
-    ip = request.client.host if request.client else "?"
+    ip = _client_ip(request)
     jetzt = time.time()
     if jetzt - _REG_ZULETZT.get(ip, 0.0) < 30:
         return JSONResponse({"fehler": "kurz warten, dann nochmal"}, status_code=429)
@@ -1516,10 +1611,11 @@ def api_signup(daten: dict, request: Request) -> Response:
                             status_code=400)
     email = sauber["email"].lower()
     if nutzer_anlegen(email, sauber["name"], sauber["salon"], "salon",
-                      passwort=passwort) is None:
+                      passwort=passwort, box=False) is None:
         return JSONResponse({"fehler": "Für diese E-Mail gibt es schon einen Zugang — melde dich einfach an."},
                             status_code=409)
     _REG_ZULETZT[ip] = jetzt
+    _zaehler_aufraeumen(_REG_ZULETZT, jetzt, 3600)
     vorbelegung = {"betrieb_name": sauber["salon"], "rechtsform": sauber["rechtsform"],
                    "steuernummer": sauber["steuernummer"], "finanzamt": sauber["finanzamt"],
                    "kleinunternehmer": sauber["kleinunternehmer"],
@@ -1533,7 +1629,8 @@ def api_signup(daten: dict, request: Request) -> Response:
                   (_jetzt_iso(), json.dumps(sauber, ensure_ascii=False)))
     print(f"[signup] {sauber['salon']} <{email}>", flush=True)
     exp = int(time.time()) + SESSION_DAUER
-    antwort = JSONResponse({"un": email, "rolle": "salon"})
+    antwort = JSONResponse({"un": email, "rolle": "salon",
+                            "box": box_mitglied(email)})
     antwort.set_cookie(SESSION_COOKIE, _signieren(email, exp), max_age=SESSION_DAUER,
                        httponly=True, secure=SESSION_SECURE, samesite="lax", path="/")
     return antwort
@@ -1638,9 +1735,11 @@ def api_nutzer_liste(request: Request) -> Response:
         return fehler
     with _DB_LOCK, _db() as c:
         zeilen = [{"email": z[0], "name": z[1], "salon": z[2], "rolle": z[3],
-                   "aktiv": bool(z[4]), "angelegt": z[5], "letzter_login": z[6]}
+                   "aktiv": bool(z[4]), "angelegt": z[5], "letzter_login": z[6],
+                   "box": bool(z[7])}
                   for z in c.execute("""SELECT email, name, salon, rolle, aktiv,
-                      angelegt, letzter_login FROM nutzer ORDER BY angelegt DESC""")]
+                      angelegt, letzter_login, box FROM nutzer
+                      ORDER BY angelegt DESC""")]
     import saloncheck  # noqa: PLC0415
     for z in zeilen:
         z["paket"] = saloncheck.paket_empfehlung(db_einstellungen(z["email"]))["name"]
@@ -1696,6 +1795,11 @@ async def api_nutzer_aktion(request: Request) -> Response:
             return JSONResponse({"fehler": "unbekannte Rolle"}, status_code=400)
         with _DB_LOCK, _db() as c:
             c.execute("UPDATE nutzer SET rolle=? WHERE email=?", (neu, email))
+    elif aktion in ("box_freigeben", "box_sperren"):
+        # Der Schalter, mit dem aus einer Registrierung ein echter Zugang wird.
+        with _DB_LOCK, _db() as c:
+            c.execute("UPDATE nutzer SET box=? WHERE email=?",
+                      (1 if aktion == "box_freigeben" else 0, email))
     elif aktion == "passwort_neu":
         passwort = startpasswort()
         with _DB_LOCK, _db() as c:
@@ -1752,7 +1856,7 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
     """DATEV-Buchungsstapel (EXTF v13, CP1252/CRLF). festschreiben=1 legt den
     Stapel zusätzlich in der Belegbox ab — die Belege gelten dann als
     exportiert (Beleg-Weg: „Bei der Kanzlei")."""
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     if not darf_verwalten(un):
@@ -1799,7 +1903,7 @@ def _median(werte: list[float]) -> float | None:
 @app.get("/api/kpi/{monat}")
 def api_kpi(monat: str, request: Request) -> Response:
     """Kennzahlen des Monats gegen die Spec-Ziele (docs/…/2026-08-13-salon-portal.md)."""
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     if not re.match(r"^\d{4}-\d{2}$", monat):
@@ -1848,7 +1952,7 @@ def api_kpi(monat: str, request: Request) -> Response:
 
 @app.get("/api/monat/{monat}")
 def api_monat(monat: str, request: Request) -> Response:
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     if not re.match(r"^\d{4}-\d{2}$", monat):
@@ -1979,7 +2083,8 @@ def chat(body: dict, request: Request) -> Response:
     un = angemeldet(request)   # Cookie (Portal) ODER Bearer (App) — Wire-Format unverändert
     if un is None:
         return JSONResponse({"fehler": "Token fehlt oder ungültig"}, status_code=401)
-    if not zugelassen(un):
+    # Der Chat antwortet aus den Belegen — also gilt hier dieselbe Grenze.
+    if not zugelassen(un) or not box_mitglied(un):
         return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
     frage = str(body.get("frage", "")).strip()
     if not frage or len(frage) > 2000:
@@ -2180,7 +2285,7 @@ def _abschluss_jahr(jahr: int) -> int | None:
 @app.post("/api/abschluss")
 async def api_abschluss_hochladen(request: Request, jahr: int = 0,
                                   name: str = "unterlage.pdf") -> Response:
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     jahr = _abschluss_jahr(jahr or int(time.strftime("%Y")) - 1)
@@ -2199,7 +2304,7 @@ async def api_abschluss_hochladen(request: Request, jahr: int = 0,
     meta = json.dumps({"titel": name[:120], "art": "abschluss", "jahr": jahr,
                        "von": un}, ensure_ascii=False, indent=1).encode()
     try:
-        commit = boxschreiber.schreiben(
+        commit = await run_in_threadpool(boxschreiber.schreiben,
             {f"abschluss/{jahr}/{dateiname}": daten,
              f"abschluss/{jahr}/{dateiname}.meta.json": meta},
             None, f"abschluss: {dateiname}", un)
@@ -2220,7 +2325,7 @@ def _un_ordner(un: str) -> str:
 
 @app.post("/api/abschluss/start")
 def api_abschluss_start(request: Request, jahr: int = 0) -> Response:
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     jahr = _abschluss_jahr(jahr or int(time.strftime("%Y")) - 1)
@@ -2270,7 +2375,7 @@ def api_abschluss_status(request: Request) -> Response:
 
 @app.get("/api/salon-check")
 def api_salon_check(request: Request, jahr: int = 0) -> Response:
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     jahr = _abschluss_jahr(jahr or int(time.strftime("%Y")) - 1)
@@ -2495,7 +2600,7 @@ def _jahr_aus(pfad: str, zeit: str | None) -> str:
 @app.get("/api/ablage")
 def api_ablage(request: Request) -> Response:
     """Alles Abgelegte als Ordnerbaum: Jahr → Art → Dokumente."""
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     index = index_aktuell()
@@ -2558,12 +2663,12 @@ def api_ablage(request: Request) -> Response:
 async def api_angaben(stamm: str, request: Request) -> Response:
     """Was babu nicht lesen konnte, trägt die Nutzerin selbst nach —
     Betrag, Datum, Laden. Eigener Commit, das Original bleibt unberührt."""
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     if not NAME_RE.match(stamm):
         return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
-    if stamm not in index_aktuell()["belege"]:
+    if stamm not in (await run_in_threadpool(index_aktuell))["belege"]:
         return JSONResponse({"fehler": "unbekannter Beleg"}, status_code=404)
     try:
         body = await request.json()
@@ -2600,7 +2705,7 @@ async def api_angaben(stamm: str, request: Request) -> Response:
 
     import boxschreiber  # noqa: PLC0415
     try:
-        commit = boxschreiber.schreiben(
+        commit = await run_in_threadpool(boxschreiber.schreiben,
             f"review/{stamm}.angaben.json",
             json.dumps(daten, ensure_ascii=False, indent=1).encode(),
             f"angaben: {stamm}", un)
@@ -2851,7 +2956,7 @@ def api_monatsabschluss(monat: str, request: Request) -> Response:
     Entwurf, kein fertiger Abschluss: geprüft und übermittelt wird vom
     steuerlichen Backend. Was babu nicht sicher weiß, steht in der Prüfliste.
     """
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     if not re.fullmatch(r"\d{4}-\d{2}", monat):
@@ -2901,7 +3006,7 @@ def api_monatsabschluss_freigeben(monat: str, request: Request) -> Response:
     dort. Die Ablage ist der Nachweis: Zahlen, Prüfliste und Zeitpunkt
     liegen unveränderlich in der Belegbox.
     """
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     if not re.fullmatch(r"\d{4}-\d{2}", monat):
@@ -2966,7 +3071,7 @@ def api_fristen(jahr: str, request: Request) -> Response:
 
 @app.post("/api/kassenbuch")
 async def api_kassenbuch(request: Request) -> Response:
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     if (sperre := _mitarbeit_wache(un, "darf_kasse", "Das Kassenbuch führen")):
@@ -3001,7 +3106,7 @@ async def api_kassenbuch(request: Request) -> Response:
     blatt["von"] = un                     # wer es eingetragen hat
     import boxschreiber  # noqa: PLC0415
     try:
-        commit = boxschreiber.schreiben(
+        commit = await run_in_threadpool(boxschreiber.schreiben,
             f"kassenbuch/{datum[:7]}/{datum}.json",
             json.dumps(blatt, ensure_ascii=False, indent=1).encode(),
             f"kassenbuch: {datum}", un)

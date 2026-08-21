@@ -33,3 +33,31 @@ Upload-Seite `~/babu-web/index.html`. Deploy = Dateien kopieren,
 `/review/<stamm>` muss byte-gleich bleiben, `/chat`-SSE die Form
 `data: {"d": …}` + `data: [DONE]` behalten. Session-Geheimnis liegt in
 `~/babu-web/.session_geheimnis` (wird beim ersten Start erzeugt, 0600).
+
+## Wer in die Belegbox darf
+
+Auf diesem Server liegt EINE Belegbox. Ein Konto allein ist deshalb noch kein
+Zugang zu ihren Belegen — sonst läse jede Selbstregistrierung die Buchhaltung
+des Salons mit. In die Box kommt (`box_mitglied` in `babu_web.py`):
+
+- wer in `BABU_ERLAUBT` steht (der PAT-Weg: App-Upload, `/review`, `/ablage`),
+- wer ein Konto mit gesetztem `box`-Merker hat,
+- das Team dieses Kontos (`gehoert_zu`) — mit den Rechten, die die Inhaberin
+  vergeben hat (`darf_belege`, `darf_kasse`),
+- die Kanzlei (Rolle `kanzlei`/`admin`).
+
+Alles andere — Konto, Einstellungen, Team, Fristen — bleibt jedem eigenen
+Zugang offen; das sind seine eigenen Daten.
+
+**Beim Deploy wichtig:** die Spalte `nutzer.box` wird beim Start angelegt und
+steht für bestehende Zeilen auf 1 — vorhandene Zugänge arbeiten unverändert
+weiter. Neu ist nur, dass `POST /api/signup` ein Konto **ohne** Box anlegt.
+Freischalten geht über `POST /api/nutzer-aktion`
+(`{"email": …, "aktion": "box_freigeben"}`, Rolle kanzlei/admin) — oder direkt:
+
+```bash
+sqlite3 ~/babu-web/portal.db "UPDATE nutzer SET box=1 WHERE email='…';"
+```
+
+Nach dem Deploy einmal prüfen, dass die echten Zugänge noch hineinkommen:
+`GET /api/ich` muss `"box": true` liefern.

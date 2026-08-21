@@ -6,11 +6,18 @@ der Bare-Store direkt. Muster wie review_watcher.py: fetch + reset --hard →
 Datei schreiben → Commit mit Autor = angemeldete Nutzerin → Push via Gateway
 mit Service-PAT im Header (Wert ohne Newline — bekannte Falle Nr. 2).
 Push-Rennen mit dem Watcher (15-s-Takt): genau ein Retry, sonst Fehler.
+
+Der Klon ist EINE Arbeitskopie mit EINEM Git-Index — Portal-Requests und
+Hintergrund-Jobs (Vertrag lesen, Brief erklären, Salon-Check) schreiben aber
+nebenläufig. Deshalb läuft `schreiben()` komplett unter einem Schloss: sonst
+räumt der `reset --hard` des einen Threads dem anderen die Datei aus dem
+Index, und der Commit trägt am Ende den falschen Inhalt unter fremdem Namen.
 """
 import os
 import re
 import secrets
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -23,6 +30,10 @@ REMOTE = os.environ.get("BABU_BOX_REMOTE", f"{GATEWAY}/git/{REF}.git")
 
 class SchreibFehler(RuntimeError):
     pass
+
+
+# Ein Schreiber zur Zeit — siehe Modul-Kopf.
+_SCHLOSS = threading.Lock()
 
 
 def _pat_umgebung() -> dict[str, str]:
@@ -58,7 +69,9 @@ def _bereit() -> None:
     r = _git("fetch", "origin", timeout=30)
     if r.returncode != 0:
         raise SchreibFehler(f"Fetch fehlgeschlagen: {r.stderr.strip()[:200]}")
-    _git("reset", "--hard", "origin/main")
+    r = _git("reset", "--hard", "origin/main")
+    if r.returncode != 0:
+        raise SchreibFehler(f"Reset fehlgeschlagen: {r.stderr.strip()[:200]}")
 
 
 def schreiben(rel_pfad: str | dict[str, bytes], inhalt: bytes | None,
@@ -70,26 +83,32 @@ def schreiben(rel_pfad: str | dict[str, bytes], inhalt: bytes | None,
     """
     dateien = rel_pfad if isinstance(rel_pfad, dict) else {rel_pfad: inhalt}
     for pfad in dateien:
-        if not re.match(r"^[A-Za-z0-9._/ -]{1,200}$", pfad) or ".." in pfad:
+        # Ein führender Schrägstrich wäre der gefährlichste Fall: `KLON / "/etc/x"`
+        # ist in pathlib schlicht "/etc/x" — der Klon fällt weg.
+        if (not re.match(r"^[A-Za-z0-9._/ -]{1,200}$", pfad) or ".." in pfad
+                or Path(pfad).is_absolute()):
             raise SchreibFehler("ungültiger Pfad")
     autor = f"{autor_un} <portal@gitchain.local>"
     letzter_fehler = ""
-    for versuch in (1, 2):
-        _bereit()
-        for pfad, daten in dateien.items():
-            ziel = KLON / pfad
-            ziel.parent.mkdir(parents=True, exist_ok=True)
-            ziel.write_bytes(daten)
-            _git("add", pfad)
-        r = _git("commit", "-m", nachricht, "--author", autor)
-        if r.returncode != 0:
-            raise SchreibFehler(f"Commit fehlgeschlagen: {r.stderr.strip()[:200]}")
-        p = _git("push", "origin", "main", timeout=30)
-        if p.returncode == 0:
-            h = _git("rev-parse", "--short", "HEAD")
-            return h.stdout.strip()
-        letzter_fehler = p.stderr.strip()[:200]
-        time.sleep(0.7)  # Watcher-Push abklingen lassen, dann frisch aufsetzen
+    with _SCHLOSS:
+        for versuch in (1, 2):
+            _bereit()
+            for pfad, daten in dateien.items():
+                ziel = KLON / pfad
+                ziel.parent.mkdir(parents=True, exist_ok=True)
+                ziel.write_bytes(daten)
+                a = _git("add", pfad)
+                if a.returncode != 0:
+                    raise SchreibFehler(f"Vormerken fehlgeschlagen: {a.stderr.strip()[:200]}")
+            r = _git("commit", "-m", nachricht, "--author", autor)
+            if r.returncode != 0:
+                raise SchreibFehler(f"Commit fehlgeschlagen: {r.stderr.strip()[:200]}")
+            p = _git("push", "origin", "main", timeout=30)
+            if p.returncode == 0:
+                h = _git("rev-parse", "--short", "HEAD")
+                return h.stdout.strip()
+            letzter_fehler = p.stderr.strip()[:200]
+            time.sleep(0.7)  # Watcher-Push abklingen lassen, dann frisch aufsetzen
     raise SchreibFehler(f"Push fehlgeschlagen (auch nach Retry): {letzter_fehler}")
 
 

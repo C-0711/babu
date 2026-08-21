@@ -426,6 +426,24 @@ main{padding:26px 22px 60px;min-height:70dvh}
 </header>
 
 <main>
+  <!-- NOCH KEINE BELEGBOX: ehrlich sagen, statt leere Kacheln zeigen -->
+  <section class="ansicht" id="a-gesperrt">
+    <div class="lbl">DEIN ZUGANG</div>
+    <div class="gruss">Fast fertig ✨</div>
+    <div class="karte" style="margin-top:18px">
+      <h3>Deine Belegbox richten wir noch ein</h3>
+      <p>Dein Konto steht. Damit deine Belege, dein Kassenbuch und deine Zahlen
+         an einem sicheren Ort landen, legen wir für deinen Salon noch eine
+         eigene Belegbox an — das machen wir von Hand, damit nichts vermischt
+         wird.</p>
+      <p>Schreib uns kurz an <a href="mailto:hallo@0711.io">hallo@0711.io</a>,
+         dann ist sie meist am selben Tag da.</p>
+      <p style="margin-top:14px">
+        <button class="chip" onclick="location.hash='#einrichtung'">Solange schon einrichten ›</button>
+      </p>
+    </div>
+  </section>
+
   <!-- HEUTE -->
   <section class="ansicht" id="a-heute">
     <div class="lbl" id="heute-eyebrow">DEIN MONAT</div>
@@ -728,9 +746,23 @@ function offenSatz(o){
 
 /* ————— Anmeldung ————— */
 function zeigeLogin(){ $("#app").hidden = true; $("#login").hidden = false; $("#zugangscode").focus(); }
-function zeigeApp(){ $("#login").hidden = true; $("#app").hidden = false; routen(); postPunktAktualisieren(); }
+function zeigeApp(){
+  $("#login").hidden = true; $("#app").hidden = false;
+  boxZustandZeigen();
+  routen();
+  if (meineBox) postPunktAktualisieren();
+}
+
+/* Ohne eigene Belegbox gibt es nichts zu zeigen — dann bleiben die Wege
+   dorthin zu, statt Ansichten zu öffnen, die nur 403 zurückbekommen. */
+const OHNE_BOX_ERLAUBT = ["gesperrt", "einrichtung", "einstellungen"];
+function boxZustandZeigen(){
+  document.querySelectorAll("nav button").forEach(b => b.hidden = !meineBox);
+  $("#hochladen-knopf").hidden = !meineBox;
+}
 
 let meineRolle = "salon";
+let meineBox = true;
 $("#login-form").addEventListener("submit", async ev => {
   ev.preventDefault();
   const f = $("#login-fehler"); f.style.display = "none";
@@ -759,6 +791,7 @@ $("#login-form").addEventListener("submit", async ev => {
       return;
     }
     meineRolle = d.rolle || "salon";
+    meineBox = d.box !== false;
     $("#avatar").textContent = (d.un||"·")[0].toUpperCase();
     $("#login-passwort").value = "";
     zeigeApp();
@@ -790,7 +823,7 @@ $("#anmelden-code").addEventListener("click", async () => {
 $("#zugangscode").addEventListener("keydown", e => { if(e.key==="Enter") $("#anmelden-code").click(); });
 
 /* ————— Router ————— */
-const ansichten = { heute: ladeHeute, belege: ladeBelege, fragen: () => {},
+const ansichten = { gesperrt: () => {}, heute: ladeHeute, belege: ladeBelege, fragen: () => {},
                     aufraeumen: ladeAufraeumen, post: ladePost, ablage: ladeAblage, export: ladeExport, team: ladeTeam,
                     abschluss: ladeAbschluss,
                     zahlen: ladeZahlen, bank: ladeBank, saloncheck: ladeSalonCheck,
@@ -799,7 +832,8 @@ const ansichten = { heute: ladeHeute, belege: ladeBelege, fragen: () => {},
 function routen(){
   const h = location.hash.slice(1) || "heute";
   const [ziel, arg] = h.split("/");
-  const name = ansichten[ziel] !== undefined ? ziel : "heute";
+  let name = ansichten[ziel] !== undefined ? ziel : "heute";
+  if (!meineBox && !OHNE_BOX_ERLAUBT.includes(name)) name = "gesperrt";
   document.querySelectorAll(".ansicht").forEach(a => a.classList.remove("an"));
   document.querySelectorAll("nav button").forEach(b =>
     b.classList.toggle("an", b.dataset.ziel === (name==="detail" ? "belege" : name)));
@@ -1666,6 +1700,7 @@ async function ladeEinstellungen(){
     const ich = await (await api("/api/ich")).json();
     $("#einst-un").textContent = ich.un;
     meineRolle = ich.rolle || meineRolle;
+    meineBox = ich.box !== false;
     $("#verwaltung-knopf").hidden = !(meineRolle === "admin" || meineRolle === "kanzlei");
     const eigenesKonto = (ich.un || "").includes("@");
     $("#einst-pw-lbl").hidden = !eigenesKonto;
@@ -2480,6 +2515,7 @@ $("#reg-start").addEventListener("click", () => {
       if (r.ok){
         // Sofort drin — Konto ist angelegt und angemeldet.
         meineRolle = d.rolle || "salon";
+        meineBox = d.box !== false;
         $("#avatar").textContent = (d.un||"·")[0].toUpperCase();
         // Antworten aus dem Paket-Fragebogen der Startseite übernehmen.
         try{
@@ -2566,6 +2602,7 @@ function ladeEinrichtung(){
   try{
     const r = await fetch("/api/ich",{credentials:"same-origin"});
     if (r.ok){ const d = await r.json(); meineRolle = d.rolle || "salon";
+      meineBox = d.box !== false;
       $("#avatar").textContent = (d.un||"·")[0].toUpperCase(); zeigeApp(); }
     else zeigeLogin();
   }catch{

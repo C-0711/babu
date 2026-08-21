@@ -222,3 +222,34 @@ def test_origin_check(client):
                     headers={"Origin": "https://boese.example"})
     assert r.status_code == 401            # Cookie verworfen, kein Bearer da
 
+
+
+def test_kein_async_handler_blockiert_den_event_loop():
+    """Ein Git-Push dauert Sekunden. Läuft er direkt in einer async-Route,
+    steht der ganze Server still — auch für alle anderen (workers=1).
+
+    In async-Routen gehören diese Aufrufe deshalb in den Threadpool; dort
+    stehen sie als Referenz (`run_in_threadpool(f, …)`), nicht als Aufruf.
+    """
+    import ast
+    baum = ast.parse((HIER.parent / "babu_web.py").read_text())
+    BLOCKIEREND = {"boxschreiber.schreiben", "index_aktuell", "ka.parse_pdf",
+                   "requests.post", "requests.get", "subprocess.run"}
+
+    def name_von(knoten):
+        if isinstance(knoten, ast.Name):
+            return knoten.id
+        if isinstance(knoten, ast.Attribute) and isinstance(knoten.value, ast.Name):
+            return f"{knoten.value.id}.{knoten.attr}"
+        return None
+
+    suender = []
+    for f in ast.walk(baum):
+        if not isinstance(f, ast.AsyncFunctionDef):
+            continue
+        for anweisung in f.body:                       # ohne decorator_list
+            for k in ast.walk(anweisung):
+                if isinstance(k, ast.Call) and name_von(k.func) in BLOCKIEREND:
+                    suender.append(f"{f.name}: {name_von(k.func)}")
+    assert not suender, ("blockierende Aufrufe direkt in async-Routen: "
+                         + ", ".join(sorted(set(suender))))
