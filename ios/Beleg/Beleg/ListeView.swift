@@ -35,6 +35,8 @@ struct ListeView: View {
     var body: some View {
         NavigationStack {
             List {
+                // Was ansteht, steht oben — dort schaut sie ohnehin hin.
+                MeldungenAbschnitt()
                 if offeneAnzahl > 0 {
                     Button {
                         zeigeAufraeumen = true

@@ -236,6 +236,17 @@ enum AblageService {
         return daten
     }
 
+    /// Was babu von sich aus sagen würde — höchstens drei Meldungen.
+    static func meldungenLaden(basis: URL, pat: String) async -> [Meldung] {
+        var request = URLRequest(url: basis.appendingPathComponent("api/meldungen"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+              let liste = json["meldungen"] as? [[String: Any]] else { return [] }
+        return liste.compactMap(Meldung.init(json:))
+    }
+
     /// Konto-Anmeldung der App: E-Mail + Passwort → Geräteschlüssel.
     /// Der Schlüssel kommt genau einmal zurück und wandert in die Keychain —
     /// die Nutzerin sieht ihn nie.

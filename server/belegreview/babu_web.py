@@ -3150,6 +3150,47 @@ async def api_rechnung_storno(nummer: str, request: Request) -> Response:
 # Die Vertragskiste: was jeden Monat sicher abgeht — und wann zu handeln ist.
 # ---------------------------------------------------------------------------
 
+@app.get("/api/meldungen")
+def api_meldungen(request: Request) -> Response:
+    """Was babu heute von sich aus sagen würde.
+
+    Die App holt das ab und legt daraus Erinnerungen an. Höchstens drei —
+    wer dreimal umsonst aufs Telefon schaut, schaltet beim vierten Mal ab.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        # Fristen und offene Rechnungen gehen die Inhaberin an, nicht das Team.
+        return JSONResponse({"meldungen": []})
+    import datetime as dt  # noqa: PLC0415
+    import melden  # noqa: PLC0415
+    import vertraege as vt  # noqa: PLC0415
+
+    inhaber = salon_von(un)
+    idx = index_aktuell()
+    heute = dt.date.today()
+    einstellungen = db_einstellungen(inhaber)
+
+    termine: list[dict] = []
+    try:
+        import fristen as fr  # noqa: PLC0415
+        profil = fr.termin_profil(einstellungen,
+                                  hat_team=bool(team_liste(inhaber, nur_aktive=True)))
+        termine = fr.naechste(fr.fristen_jahr(heute.year, profil), heute, anzahl=8)
+    except Exception:  # noqa: BLE001
+        termine = []
+
+    welt = {
+        "fristen": termine,
+        "vertraege": vt.uebersicht(vertraege_aktuell(), heute)["vertraege"],
+        "rechnungen": list(idx.get("rechnungen", {}).values()),
+        "belege": list(idx["belege"].values()),
+    }
+    return JSONResponse({"meldungen": melden.meldungen(welt, heute),
+                         "stand": heute.isoformat()})
+
+
 @app.get("/api/vertraege")
 def api_vertraege(request: Request) -> Response:
     un, fehler = _box_wache(request)
