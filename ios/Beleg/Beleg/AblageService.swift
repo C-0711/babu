@@ -196,6 +196,46 @@ enum AblageService {
         return json["in_worten"] as? String
     }
 
+    // MARK: - Marketing
+
+    static func marketingStuecke(basis: URL, pat: String) async -> [[String: Any]] {
+        var request = URLRequest(url: basis.appendingPathComponent("api/marketing"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any]
+        else { return [] }
+        return json["stuecke"] as? [[String: Any]] ?? []
+    }
+
+    static func marketingEntwerfen(stueck: String, text: String, basis: URL,
+                                   pat: String) async -> String? {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/marketing/entwerfen"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 240
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(
+            withJSONObject: ["stueck": stueck, "text": text])
+        let (ergebnis, daten) = await ausfuehrenMitDaten(request)
+        if ergebnis == .uebertragen { return nil }
+        if let daten, let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+           let fehler = json["fehler"] as? String { return fehler }
+        return "Das hat gerade nicht geklappt."
+    }
+
+    static func marketingBild(_ schluessel: String, basis: URL,
+                              pat: String) async -> Data? {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/marketing/\(schluessel)"))
+        request.timeoutInterval = 45
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              (antwort as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return daten
+    }
+
     /// Konto-Anmeldung der App: E-Mail + Passwort → Geräteschlüssel.
     /// Der Schlüssel kommt genau einmal zurück und wandert in die Keychain —
     /// die Nutzerin sieht ihn nie.
