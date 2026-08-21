@@ -105,9 +105,17 @@ struct EinstellungenView: View {
     private var verbundenBereich: some View {
         Section {
             HStack(spacing: 10) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(GC.ok)
-                Text(store.verbundenAls.map { "Verbunden als \($0)" } ?? "Verbunden ✓")
+                Image(systemName: store.zugangAbgelaufen
+                      ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                    .foregroundStyle(store.zugangAbgelaufen ? GC.warn : GC.ok)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(store.verbundenAls.map { "Verbunden als \($0)" } ?? "Verbunden ✓")
+                    if store.zugangAbgelaufen {
+                        Text("Der Zugang gilt nicht mehr — bitte neu verbinden.")
+                            .font(.caption)
+                            .foregroundStyle(GC.warn)
+                    }
+                }
             }
             Button("Verbindung trennen", role: .destructive) {
                 zeigeLoeschDialog = true
@@ -149,6 +157,7 @@ struct EinstellungenView: View {
                 verbunden = true
                 store.verbundenAls = ergebnis.un
                 store.ablageAktiv = true
+                store.zugangAbgelaufen = false
                 email = ""
                 passwort = ""
                 testErgebnis = "Verbunden ✓ — alles bereit."
@@ -171,8 +180,12 @@ struct EinstellungenView: View {
         Task {
             let ergebnis = await AblageService.verbindungstest(basis: url, pat: gespeichert)
             switch ergebnis {
-            case .uebertragen: testErgebnis = "Verbunden ✓ — alles bereit."
-            case .tokenFehler: testErgebnis = "Die Verbindung stimmt nicht mehr — bitte neu mit deinem Konto verbinden."
+            case .uebertragen:
+                testErgebnis = "Verbunden ✓ — alles bereit."
+                store.zugangAbgelaufen = false
+            case .tokenFehler:
+                testErgebnis = "Die Verbindung stimmt nicht mehr — bitte neu mit deinem Konto verbinden."
+                store.zugangAbgelaufen = true
             case .abgelehnt: testErgebnis = "Die Belegbox meldet einen Fehler — später noch einmal versuchen."
             case .nichtErreichbar: testErgebnis = "Keine Verbindung — Internet prüfen und noch einmal versuchen."
             }

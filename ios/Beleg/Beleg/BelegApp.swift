@@ -20,6 +20,7 @@ struct BelegApp: App {
             case .active:
                 store.ablageRetry()      // offene Belegbox-Uploads nachholen
                 store.auditNachladen()   // Audit-Stempel für Übertragene holen
+                store.zugangNachsehen()  // gilt der Zugang überhaupt noch?
             default: break
             }
         }
