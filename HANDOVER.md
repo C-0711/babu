@@ -98,7 +98,10 @@ Tests: `ios/Tests/run.sh` — EXTF-Golden + Parser-Fixtures (39 Prüfungen).
    (Achtung Altlast: `ocrText` ist nicht-optional mit Default — Swift-Decodable
    nutzt Defaults NICHT; sehr alte Stände vor `ocrText` würden komplett auf
    Demo-Daten zurückfallen. Bei Migrationsarbeit zuerst hier ansetzen.)
-6. `pm2 save` fehlt weiter (Parallel-Session-Regel) — nach Reboot ist alles weg.
+6. pm2 ist gesichert (Dump + systemd-Unit enabled, geprüft 22.08.2026) — die
+   frühere Warnung „nach Reboot ist alles weg" stimmt nicht mehr. Neu:
+   `~/babu-sichern.sh` spiegelt die Belegbox täglich (cron 3:17), aber auf
+   dieselbe Maschine — ein Ziel außerhalb fehlt noch.
 7. Nie in der Arbeitskopie des laufenden Watchers committen.
 
 ## 6. Offene Punkte (Reihenfolge = Empfehlung)
