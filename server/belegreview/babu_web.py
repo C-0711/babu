@@ -1784,8 +1784,12 @@ EINSTELLUNG_SCHLUESSEL = {"benachrichtigung_frage", "benachrichtigung_post",
 # Registrierung: Interessentinnen hinterlassen alle Daten — der Zugang wird
 # danach persönlich eingerichtet (Allowlist bleibt der Schalter). Ohne Auth,
 # aber Origin-Check, einfaches Rate-Limit je IP und strikte Feld-Whitelist.
-REG_FELDER = ("salon", "name", "email", "telefon", "rechtsform", "steuernummer",
-              "finanzamt", "kleinunternehmer", "steuerberater", "nachricht")
+# Was beim Einrichten erfragt wird. „anschrift" und „iban" stehen hier, weil
+# eine Rechnung ohne Anschrift nach § 14 UStG keine ist — wer das erst beim
+# Rechnungschreiben merkt, sitzt im falschen Moment vor einem leeren Feld.
+REG_FELDER = ("salon", "name", "email", "telefon", "anschrift", "rechtsform",
+              "steuernummer", "finanzamt", "kleinunternehmer", "iban",
+              "steuerberater", "nachricht")
 _REG_ZULETZT: dict[str, float] = {}
 
 
@@ -1841,7 +1845,9 @@ def api_signup(daten: dict, request: Request) -> Response:
                    "steuernummer": sauber["steuernummer"], "finanzamt": sauber["finanzamt"],
                    "kleinunternehmer": sauber["kleinunternehmer"],
                    "steuerberater_status": sauber["steuerberater"],
-                   "telefon": sauber["telefon"], "email": email}
+                   "telefon": sauber["telefon"], "email": email,
+                   # Alles, was später auf der Rechnung stehen muss.
+                   "anschrift": sauber["anschrift"], "iban": sauber["iban"]}
     for schluessel, wert in vorbelegung.items():
         if wert:
             db_einstellung_setzen(email, schluessel, str(wert)[:200])
@@ -2063,6 +2069,8 @@ async def api_registrierung_einrichten(request: Request) -> Response:
                    "kleinunternehmer": daten.get("kleinunternehmer", ""),
                    "steuerberater_status": daten.get("steuerberater", ""),
                    "telefon": daten.get("telefon", ""),
+                   "anschrift": daten.get("anschrift", ""),
+                   "iban": daten.get("iban", ""),
                    "email": email}
     for schluessel, wert in vorbelegung.items():
         if wert:
@@ -3316,22 +3324,8 @@ def api_marke_logo_entwerfen(request: Request, stil: str = "schlicht") -> Respon
     einstellungen = db_einstellungen(inhaber)
     auftrag = marke.logo_auftrag(einstellungen, stil,
                                  einstellungen.get("marke_farbe"))
-    try:
-        r = requests.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{GEMINI_MODELL}:generateContent",
-            headers={"x-goog-api-key": schluessel},
-            json={"contents": [{"parts": [{"text": auftrag}]}],
-                  "generationConfig": {"responseModalities": ["IMAGE"],
-                                       "imageConfig": {"aspectRatio": "1:1"}}},
-            timeout=120)
-        r.raise_for_status()
-        teile = r.json()["candidates"][0]["content"]["parts"]
-        roh = next(t["inlineData"]["data"] for t in teile if "inlineData" in t)
-        bild = base64.b64decode(roh)
-    except Exception as e:  # noqa: BLE001
-        # Nie den Schlüssel mitloggen — nur den Typ des Fehlers.
-        print(f"[logo] Entwurf gescheitert: {type(e).__name__}", flush=True)
+    bild = _logo_erzeugen(auftrag, schluessel)
+    if bild is None:
         return JSONResponse(
             {"fehler": "Der Entwurf kam gerade nicht durch — versuch es "
                        "gleich nochmal."}, status_code=503)
@@ -3346,9 +3340,13 @@ def api_marke_logo_entwerfen(request: Request, stil: str = "schlicht") -> Respon
     return JSONResponse({"ok": True, "stil": stil, "bytes": len(bild)})
 
 
-def _logo_erzeugen(auftrag: str, schluessel: str) -> bytes | None:
-    """Ein Bild von Nano Banana holen. Gibt None zurück, statt zu werfen —
-    bei zehn gleichzeitigen Versuchen darf einer danebengehen."""
+def _bild_erzeugen(auftrag: str, schluessel: str, format_: str = "1:1",
+                   was: str = "bild") -> bytes | None:
+    """Ein Bild von Nano Banana holen — blockierend, gehört in den Threadpool.
+
+    Gibt None zurück, statt zu werfen: bei zehn gleichzeitigen Versuchen darf
+    einer danebengehen, ohne die anderen mitzureißen.
+    """
     try:
         r = requests.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/"
@@ -3356,15 +3354,20 @@ def _logo_erzeugen(auftrag: str, schluessel: str) -> bytes | None:
             headers={"x-goog-api-key": schluessel},
             json={"contents": [{"parts": [{"text": auftrag}]}],
                   "generationConfig": {"responseModalities": ["IMAGE"],
-                                       "imageConfig": {"aspectRatio": "1:1"}}},
-            timeout=150)
+                                       "imageConfig": {"aspectRatio": format_}}},
+            timeout=180)
         r.raise_for_status()
         teile = r.json()["candidates"][0]["content"]["parts"]
         roh = next(t["inlineData"]["data"] for t in teile if "inlineData" in t)
         return base64.b64decode(roh)
     except Exception as e:  # noqa: BLE001
-        print(f"[logo] ein Vorschlag fiel aus: {type(e).__name__}", flush=True)
+        # Nie den Schlüssel mitloggen — nur den Typ des Fehlers.
+        print(f"[{was}] gescheitert: {type(e).__name__}", flush=True)
         return None
+
+
+def _logo_erzeugen(auftrag: str, schluessel: str) -> bytes | None:
+    return _bild_erzeugen(auftrag, schluessel, "1:1", "logo")
 
 
 def _vorschlag_pfad(un: str, nummer: int) -> Path:
@@ -3476,6 +3479,93 @@ async def api_marke_waehlen(request: Request) -> Response:
             _vorschlag_pfad(inhaber, n).unlink(missing_ok=True)
     return JSONResponse({"ok": True, **auftritt,
                          "in_worten": marke.als_text(auftritt)})
+
+
+# ---------------------------------------------------------------------------
+# Marketing: was der Salon nach außen zeigt. babu kennt Name, Farbe und
+# Zeichen — damit macht es das, wofür sonst niemand Zeit hat.
+# ---------------------------------------------------------------------------
+
+MARKETING = LOGOS.parent / "marketing" if LOGOS.name == "logos" else LOGOS / "marketing"
+
+
+def _stueck_pfad(un: str, schluessel: str) -> Path:
+    return (MARKETING / hashlib.sha256(un.encode()).hexdigest()[:16]
+            / f"{re.sub(r'[^a-z]', '', schluessel)}.bin")
+
+
+@app.get("/api/marketing")
+def api_marketing(request: Request) -> Response:
+    """Was babu gestalten kann — und was schon da ist."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    import marketing as mk  # noqa: PLC0415
+    inhaber = salon_von(un)
+    stuecke = [dict(s, fertig=_stueck_pfad(inhaber, s["schluessel"]).is_file())
+               for s in mk.stuecke_liste()]
+    return JSONResponse({"stuecke": stuecke,
+                         "farbe": db_einstellungen(inhaber).get("marke_farbe")
+                                  or "#1F1D1B"})
+
+
+@app.post("/api/marketing/entwerfen")
+async def api_marketing_entwerfen(request: Request) -> Response:
+    """Ein Aushang, ein Beitrag, ein Gutschein — in den Farben des Salons.
+
+    Was drauf steht, schreibt die Inhaberin. babu gestaltet es nur: ein
+    Rabatt, den niemand beschlossen hat, hat auf keinem Aushang etwas
+    verloren.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das macht die Inhaberin."}, status_code=403)
+    schluessel = _gemini_schluessel()
+    if not schluessel:
+        return JSONResponse({"fehler": "Dafür fehlt gerade der Zugang."},
+                            status_code=501)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+
+    import marketing as mk  # noqa: PLC0415
+    inhaber = salon_von(un)
+    einstellungen = db_einstellungen(inhaber)
+    try:
+        stueck = mk.stueck(str((body or {}).get("stueck") or ""))
+        auftrag = mk.auftrag(stueck["schluessel"], (body or {}).get("text"),
+                             einstellungen)
+    except mk.MarketingFehler as e:
+        return JSONResponse({"fehler": str(e)}, status_code=400)
+
+    bild = await run_in_threadpool(_bild_erzeugen, auftrag, schluessel,
+                                   stueck["format"], "marketing")
+    if not bild:
+        return JSONResponse({"fehler": "Das kam gerade nicht durch — versuch es "
+                                       "gleich nochmal."}, status_code=503)
+    pfad = _stueck_pfad(inhaber, stueck["schluessel"])
+    pfad.parent.mkdir(parents=True, exist_ok=True)
+    pfad.write_bytes(bild)
+    return JSONResponse({"ok": True, "stueck": stueck["schluessel"],
+                         "name": stueck["name"], "bytes": len(bild)})
+
+
+@app.get("/api/marketing/{schluessel}")
+def api_marketing_bild(schluessel: str, request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    pfad = _stueck_pfad(salon_von(un), schluessel)
+    if not pfad.is_file():
+        return JSONResponse({"fehler": "noch nichts gestaltet"}, status_code=404)
+    daten = pfad.read_bytes()
+    typ = next((t for k, t in LOGO_TYPEN.items() if daten.startswith(k)),
+               "application/octet-stream")
+    return Response(content=daten, media_type=typ,
+                    headers={"Cache-Control": "private, max-age=300"})
 
 
 @app.post("/api/marke/entwerfen")

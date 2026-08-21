@@ -182,6 +182,23 @@ struct NeueRechnungView: View {
     private var summe: RechnungsSumme {
         Rechnungsrechnung.summe(positionen, kleinunternehmer: kleinunternehmer)
     }
+    /// Was oben auf der Rechnung noch fehlt — § 14 verlangt es, und es kommt
+    /// aus dem Einrichten, nicht aus diesem Formular.
+    private var kopfMaengel: [String] {
+        var fehlt: [String] = []
+        if (stammdaten["betrieb_name"] ?? "").isEmpty {
+            fehlt.append("Dein Betriebsname fehlt noch.")
+        }
+        if (stammdaten["anschrift"] ?? "").isEmpty {
+            fehlt.append("Deine Anschrift fehlt noch — sie gehört auf jede Rechnung.")
+        }
+        if (stammdaten["steuernummer"] ?? "").isEmpty
+            && (stammdaten["ust_id"] ?? "").isEmpty {
+            fehlt.append("Deine Steuernummer fehlt noch.")
+        }
+        return fehlt
+    }
+
     private var maengel: [String] {
         Rechnungsrechnung.fehlt(empfaenger: empfaenger, positionen: positionen,
                                 brutto: summe.brutto)
@@ -198,6 +215,41 @@ struct NeueRechnungView: View {
                             Label("Aus Vorlage übernehmen", systemImage: "doc.on.doc")
                         }
                     }
+                }
+
+                // Was schon feststeht, wird gezeigt, nicht erfragt: es kam
+                // beim Einrichten und steht in den Einstellungen.
+                Section {
+                    if stammdaten.isEmpty {
+                        HStack { ProgressView(); Text("Einen Moment …")
+                            .font(.footnote).foregroundStyle(GC.muted) }
+                    } else {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(stammdaten["betrieb_name"] ?? "—")
+                                .font(.body.weight(.medium))
+                            if let a = stammdaten["anschrift"], !a.isEmpty {
+                                Text(a).font(.caption).foregroundStyle(GC.desc)
+                            }
+                            if let st = stammdaten["steuernummer"], !st.isEmpty {
+                                Text("Steuernummer \(st)").font(.caption2)
+                                    .foregroundStyle(GC.muted)
+                            }
+                            if kleinunternehmer {
+                                Text("Ohne Umsatzsteuer nach § 19 UStG")
+                                    .font(.caption2).foregroundStyle(GC.muted)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                        ForEach(kopfMaengel, id: \.self) { m in
+                            Label(m, systemImage: "exclamationmark.circle")
+                                .font(.caption).foregroundStyle(GC.warn)
+                        }
+                    }
+                } header: {
+                    Text("Das steht oben auf der Rechnung")
+                } footer: {
+                    Text("Kommt aus deinen Angaben beim Einrichten — ändern "
+                         + "kannst du es in den Einstellungen.")
                 }
 
                 Section("Wer bekommt die Rechnung?") {

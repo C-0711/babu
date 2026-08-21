@@ -254,3 +254,29 @@ def test_vertragskiste_zeigt_dauerkosten(welt):
     assert d["jaehrlich"] == 15000.0
     assert d["vertraege"][0]["partner"] == "Sonnenberg"
     assert d["vertraege"][0]["kuendigen_bis"]["datum"] == "2026-09-30"
+
+
+def test_was_beim_einrichten_erfragt_wird_reicht_fuer_eine_rechnung(welt):
+    """Wer sich registriert, soll nicht beim ersten Rechnungschreiben vor
+    einem leeren Pflichtfeld sitzen."""
+    client, _, bw = welt
+    from fastapi.testclient import TestClient
+    neu = TestClient(bw.app, base_url="https://testserver")
+    bw._REG_ZULETZT.clear()
+    r = neu.post("/api/signup", json={
+        "salon": "Salon Frisch", "name": "Frieda", "email": "frisch@salon.de",
+        "passwort": "passwort-lang", "rechtsform": "Einzelunternehmen",
+        "steuernummer": "12345/67890", "anschrift": "Marktplatz 1, 70173 Stuttgart",
+        "iban": "DE02 1203 0000 0000 2020 51", "telefon": "0711 1234"})
+    assert r.status_code == 200
+
+    e = neu.get("/api/einstellungen").json()
+    assert e["anschrift"] == "Marktplatz 1, 70173 Stuttgart"
+    assert e["steuernummer"] == "12345/67890"
+    assert e["iban"].startswith("DE02")
+
+    # Und damit trägt die Rechnung alle Pflichtangaben — ohne Nachfragen.
+    import rechnungen as re_
+    rechnung = re_.aufbauen(nummer="2026-0001", datum="2026-08-22",
+                            empfaenger=EMPF, positionen=[pos()], stammdaten=e)
+    assert re_.fehlende_pflichtangaben(rechnung) == []
