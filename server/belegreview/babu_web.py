@@ -91,6 +91,15 @@ def _db() -> sqlite3.Connection:
         conn.execute("ALTER TABLE nutzer ADD COLUMN box INTEGER NOT NULL DEFAULT 1")
     except sqlite3.OperationalError:
         pass
+    # Termine enthalten Kundennamen — personenbezogen, also löschbar und
+    # damit NICHT in der Belegbox (dort bleibt jede Fassung für immer).
+    conn.execute("""CREATE TABLE IF NOT EXISTS termin
+        (id INTEGER PRIMARY KEY AUTOINCREMENT, un TEXT NOT NULL,
+         start TEXT NOT NULL, minuten INTEGER NOT NULL, wer TEXT,
+         kundin TEXT, leistung TEXT, notiz TEXT,
+         abgesagt INTEGER NOT NULL DEFAULT 0, angelegt TEXT)""")
+    conn.execute("""CREATE INDEX IF NOT EXISTS termin_un_start
+        ON termin (un, start)""")
     conn.execute("""CREATE TABLE IF NOT EXISTS gespraech
         (id INTEGER PRIMARY KEY AUTOINCREMENT, un TEXT NOT NULL,
          titel TEXT, begonnen TEXT NOT NULL, zuletzt TEXT NOT NULL)""")
@@ -3359,6 +3368,190 @@ async def api_zahlungen_uebernehmen(request: Request) -> Response:
         _INDEX["geprueft"] = 0.0
     return JSONResponse({"ok": True, "commit": commit, "nummer": nummer,
                          "bezahlt_am": am})
+
+
+def _termine_lesen(un: str, von: str, bis: str) -> list[dict]:
+    with _DB_LOCK, _db() as c:
+        zeilen = c.execute(
+            """SELECT id, start, minuten, wer, kundin, leistung, notiz, abgesagt
+               FROM termin WHERE un=? AND start>=? AND start<=? ORDER BY start""",
+            (un, von, bis + "T23:59")).fetchall()
+    return [{"id": z[0], "start": z[1], "minuten": z[2], "wer": z[3],
+             "kundin": z[4], "leistung": z[5], "notiz": z[6],
+             "abgesagt": bool(z[7])} for z in zeilen]
+
+
+@app.get("/api/termine")
+def api_termine(request: Request, von: str = "", bis: str = "") -> Response:
+    """Die Termine eines Zeitraums — und was der Tag eingebracht hat."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    import datetime as dt  # noqa: PLC0415
+    import kalender as ka  # noqa: PLC0415
+
+    heute = dt.date.today().isoformat()
+    von = von if re.fullmatch(r"\d{4}-\d{2}-\d{2}", von or "") else heute
+    bis = bis if re.fullmatch(r"\d{4}-\d{2}-\d{2}", bis or "") else von
+    inhaber = salon_von(un)
+    termine = _termine_lesen(inhaber, von, bis)
+
+    # Termin trifft Geld: der Tagesumsatz kommt aus dem Kassenbuch.
+    idx = index_aktuell()
+    tage = []
+    tag = dt.date.fromisoformat(von)
+    letzter = dt.date.fromisoformat(bis)
+    while tag <= letzter:
+        datum = tag.isoformat()
+        blatt = idx["kassenblaetter"].get(datum) or {}
+        umsatz = (float(blatt.get("einnahmenBar") or 0)
+                  + float(blatt.get("ecZahlungen") or 0)) or None
+        tage.append(ka.tag(datum, termine, umsatz))
+        tag += dt.timedelta(days=1)
+    return JSONResponse({"von": von, "bis": bis, "tage": tage})
+
+
+@app.post("/api/termine")
+async def api_termin_anlegen(request: Request) -> Response:
+    """Einen Termin eintragen — oder einen bestehenden verschieben.
+
+    Geprüft wird vor allem eines: dass nicht zwei Kundinnen zur selben Zeit
+    bei derselben Person stehen. Das ist der Fehler, der einen Tag ruiniert.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if (sperre := _mitarbeit_wache(un, "darf_kasse", "Termine eintragen")):
+        return sperre
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+
+    import kalender as ka  # noqa: PLC0415
+    try:
+        termin = ka.pruefen(body or {})
+    except ka.KalenderFehler as e:
+        return JSONResponse({"fehler": str(e)}, status_code=400)
+
+    inhaber = salon_von(un)
+    tag = termin["start"][:10]
+    bestehende = _termine_lesen(inhaber, tag, tag)
+    termin["id"] = (body or {}).get("id")
+    if (stoerung := ka.stoert(termin, bestehende)):
+        return JSONResponse({"fehler": stoerung}, status_code=409)
+
+    with _DB_LOCK, _db() as c:
+        if termin.get("id"):
+            c.execute("""UPDATE termin SET start=?, minuten=?, wer=?, kundin=?,
+                         leistung=?, notiz=? WHERE id=? AND un=?""",
+                      (termin["start"], termin["minuten"], termin["wer"],
+                       termin["kundin"], termin["leistung"],
+                       str((body or {}).get("notiz") or "")[:300],
+                       int(termin["id"]), inhaber))
+            neue_id = int(termin["id"])
+        else:
+            cur = c.execute("""INSERT INTO termin (un, start, minuten, wer,
+                               kundin, leistung, notiz, angelegt)
+                               VALUES (?,?,?,?,?,?,?,?)""",
+                            (inhaber, termin["start"], termin["minuten"],
+                             termin["wer"], termin["kundin"], termin["leistung"],
+                             str((body or {}).get("notiz") or "")[:300],
+                             _jetzt_iso()))
+            neue_id = int(cur.lastrowid)
+    # `**termin` zuerst: sonst überschreibt sein leeres „id" die frische —
+    # und der Termin blockiert sich beim nächsten Verschieben selbst.
+    return JSONResponse({**termin, "ok": True, "id": neue_id})
+
+
+@app.post("/api/termine/vorschlag")
+def api_termin_vorschlag(body: dict, request: Request) -> Response:
+    """Aus einem Satz ein Terminvorschlag: „Frau Holder Donnerstag Farbe".
+
+    Das Sprachmodell darf VERSTEHEN, nicht rechnen. Es liest heraus, wer,
+    was und ungefähr wann — welche Lücke tatsächlich frei ist, rechnet babu
+    selbst. Ein Modell, das Uhrzeiten „ungefähr" ausrechnet, verplant den Tag.
+
+    Und es bucht nichts: es schlägt vor, bestätigt wird mit einem Tipp.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if (sperre := _mitarbeit_wache(un, "darf_kasse", "Termine eintragen")):
+        return sperre
+    text = str((body or {}).get("text") or "").strip()[:400]
+    if len(text) < 3:
+        return JSONResponse({"fehler": "Sag kurz, wer wann kommen möchte."},
+                            status_code=400)
+
+    import datetime as dt  # noqa: PLC0415
+    import kalender as ka  # noqa: PLC0415
+    heute = dt.date.today()
+    roh: dict = {}
+    try:
+        r = requests.post(GEMMA_API, json={
+            "model": GEMMA_MODELL, "temperature": 0.1, "max_tokens": 300,
+            "messages": [{"role": "user", "content": ka.frage_bauen(text, heute)}],
+        }, timeout=90)
+        r.raise_for_status()
+        antwort = r.json()["choices"][0]["message"]["content"]
+        treffer = re.search(r"\{.*\}", antwort, re.S)
+        roh = json.loads(treffer.group(0)) if treffer else {}
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "Das habe ich gerade nicht verstanden — "
+                                       "trag den Termin von Hand ein."},
+                            status_code=503)
+
+    wunsch = ka.wunsch_pruefen(roh, heute)
+    if not wunsch["datum"]:
+        return JSONResponse({"wunsch": wunsch, "vorschlaege": [],
+                             "hinweis": "An welchem Tag soll der Termin sein?"})
+
+    inhaber = salon_von(un)
+    tag = wunsch["datum"]
+    termine = _termine_lesen(inhaber, tag, tag)
+    frei = ka.freie_luecken(tag, termine, wunsch["minuten"], wunsch["wer"])
+
+    # Der Wunschzeitpunkt zuerst, wenn er wirklich frei ist. Geprüft wird am
+    # Kalender, nicht an der Vorschlagsliste: die ist nur eine Auswahl fürs
+    # Auge, und 14:00 kann frei sein, ohne darin vorzukommen.
+    wunsch_geht = bool(wunsch["uhrzeit"]) and ka.ist_frei(
+        tag, termine, wunsch["uhrzeit"], wunsch["minuten"], wunsch["wer"])
+    if wunsch_geht:
+        frei = [wunsch["uhrzeit"]] + [z for z in frei if z != wunsch["uhrzeit"]]
+    hinweis = ("An dem Tag ist nichts mehr frei." if not frei else
+               "" if not wunsch["uhrzeit"] or wunsch_geht else
+               f"Um {wunsch['uhrzeit']} ist schon etwas — das hier ginge:")
+    return JSONResponse({"wunsch": wunsch, "vorschlaege": frei[:4],
+                         "hinweis": hinweis})
+
+
+@app.post("/api/termin/{termin_id}/absagen")
+def api_termin_absagen(termin_id: int, request: Request) -> Response:
+    """Abgesagt, nicht gelöscht: die Lücke im Tag bleibt sichtbar."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        if not c.execute("SELECT 1 FROM termin WHERE id=? AND un=?",
+                         (termin_id, inhaber)).fetchone():
+            return JSONResponse({"fehler": "unbekannter Termin"}, status_code=404)
+        c.execute("UPDATE termin SET abgesagt=1 WHERE id=? AND un=?",
+                  (termin_id, inhaber))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/termin/{termin_id}/loeschen")
+def api_termin_loeschen(termin_id: int, request: Request) -> Response:
+    """Ganz weg — Kundendaten müssen sich löschen lassen (Art. 17 DSGVO)."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        c.execute("DELETE FROM termin WHERE id=? AND un=?", (termin_id, inhaber))
+    return JSONResponse({"ok": True})
 
 
 @app.get("/api/meldungen")
