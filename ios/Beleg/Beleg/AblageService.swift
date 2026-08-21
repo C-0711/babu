@@ -236,6 +236,57 @@ enum AblageService {
         return daten
     }
 
+    /// Wozu vom Konto Geld abging, ohne dass ein Beleg da ist.
+    static func fehlendeBelege(basis: URL, pat: String) async
+            -> (fragen: [[String: Any]], summe: Double, gruende: [[String: Any]]) {
+        var request = URLRequest(url: basis.appendingPathComponent("api/fehlende-belege"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any]
+        else { return ([], 0, []) }
+        return (json["fragen"] as? [[String: Any]] ?? [],
+                json["summe"] as? Double ?? 0,
+                json["gruende"] as? [[String: Any]] ?? [])
+    }
+
+    static func belegFrageKlaeren(schluessel: String, grund: String, basis: URL,
+                                  pat: String) async -> Bool {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/fehlende-belege/klaeren"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 45
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(
+            withJSONObject: ["schluessel": schluessel, "grund": grund])
+        return await ausfuehren(request, erfolg2xx: true) == .uebertragen
+    }
+
+    /// Wer hat bezahlt? Vorschläge aus dem Kontoauszug.
+    static func zahlungsvorschlaege(basis: URL, pat: String) async -> [[String: Any]] {
+        var request = URLRequest(url: basis.appendingPathComponent("api/zahlungen"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any]
+        else { return [] }
+        return json["vorschlaege"] as? [[String: Any]] ?? []
+    }
+
+    static func zahlungUebernehmen(nummer: String, am: String, basis: URL,
+                                   pat: String) async -> Bool {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/zahlungen/uebernehmen"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 45
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(
+            withJSONObject: ["nummer": nummer, "am": am])
+        return await ausfuehren(request, erfolg2xx: true) == .uebertragen
+    }
+
     /// Was babu von sich aus sagen würde — höchstens drei Meldungen.
     static func meldungenLaden(basis: URL, pat: String) async -> [Meldung] {
         var request = URLRequest(url: basis.appendingPathComponent("api/meldungen"))

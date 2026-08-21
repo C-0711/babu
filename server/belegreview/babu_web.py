@@ -3150,6 +3150,163 @@ async def api_rechnung_storno(nummer: str, request: Request) -> Response:
 # Die Vertragskiste: was jeden Monat sicher abgeht — und wann zu handeln ist.
 # ---------------------------------------------------------------------------
 
+def _geklaert_lesen() -> dict:
+    """Was zu fehlenden Belegen schon geklärt wurde. Liegt in der Belegbox:
+    „war privat" ist eine buchhalterische Aussage und gehört zum Prüfpfad."""
+    roh = git_show("auszuege/geklaert.json")
+    if roh is None:
+        return {}
+    try:
+        d = json.loads(roh)
+        return d if isinstance(d, dict) else {}
+    except ValueError:
+        return {}
+
+
+@app.get("/api/fehlende-belege")
+def api_fehlende_belege(request: Request) -> Response:
+    """Wozu vom Konto Geld abging, ohne dass ein Beleg da ist.
+
+    Das ist die Frage, die am Jahresende Geld kostet — und die sich nur
+    beantworten lässt, solange die Erinnerung frisch ist.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Die Zahlen sieht nur die Inhaberin."},
+                            status_code=403)
+    import belegjagd as bj  # noqa: PLC0415
+    import kontoauszug as ka  # noqa: PLC0415
+
+    idx = index_aktuell()
+    umsaetze = [u for liste in idx["umsaetze"].values() for u in liste]
+    if not umsaetze:
+        return JSONResponse({"auszug_da": False, "fragen": [], "summe": 0.0})
+    ergebnis = ka.abgleich(umsaetze, list(idx["belege"].values()))
+    geklaert = _geklaert_lesen()
+    fragen = bj.offene_fragen(ergebnis["fehlend"], vertraege_aktuell(),
+                              set(geklaert))
+    return JSONResponse({
+        "auszug_da": True,
+        "fragen": fragen,
+        "summe": round(sum(f["betrag"] for f in fragen), 2),
+        "gruende": [{"schluessel": k, "name": v} for k, v in bj.GRUENDE.items()],
+    })
+
+
+@app.post("/api/fehlende-belege/klaeren")
+async def api_fehlende_belege_klaeren(request: Request) -> Response:
+    """„War privat" oder „dafür gibt es keinen Beleg" — einmal gesagt, nie
+    wieder gefragt. Und nachvollziehbar, weil es in der Box steht."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das macht die Inhaberin."}, status_code=403)
+    try:
+        body = await request.json()
+        schluessel = str((body or {}).get("schluessel") or "")
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    if not re.fullmatch(r"[0-9a-f]{16}", schluessel):
+        return JSONResponse({"fehler": "unbekannter Eintrag"}, status_code=400)
+
+    import belegjagd as bj  # noqa: PLC0415
+    try:
+        grund = bj.grund_pruefen(str((body or {}).get("grund") or ""))
+    except bj.JagdFehler as e:
+        return JSONResponse({"fehler": str(e)}, status_code=400)
+
+    geklaert = _geklaert_lesen()
+    geklaert[schluessel] = {"grund": grund, "von": un, "am": _jetzt_iso(),
+                            "notiz": str((body or {}).get("notiz") or "")[:200]}
+    import boxschreiber  # noqa: PLC0415
+    try:
+        commit = await run_in_threadpool(
+            boxschreiber.schreiben, "auszuege/geklaert.json",
+            json.dumps(geklaert, ensure_ascii=False, indent=1).encode(),
+            f"geklaert: {bj.GRUENDE[grund]}", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit, "grund": grund})
+
+
+@app.get("/api/zahlungen")
+def api_zahlungen(request: Request, monat: str = "") -> Response:
+    """Wer hat bezahlt? Kontoauszug ↔ offene Rechnungen.
+
+    Vorgeschlagen, nicht entschieden: ein „bezahlt" verschiebt Umsatz in die
+    Voranmeldung. Bestätigt wird mit einem Tipp.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Die Zahlen sieht nur die Inhaberin."},
+                            status_code=403)
+    if monat and not re.fullmatch(r"\d{4}-\d{2}", monat):
+        return JSONResponse({"fehler": "Monat als JJJJ-MM"}, status_code=400)
+    import kontoauszug as ka  # noqa: PLC0415
+
+    idx = index_aktuell()
+    umsaetze: list[dict] = []
+    for m, liste in idx["umsaetze"].items():
+        if not monat or m == monat:
+            umsaetze.extend(liste)
+    if not umsaetze:
+        return JSONResponse({"auszug_da": False, "vorschlaege": [],
+                             "ohne_zuordnung": [], "mehrdeutig": []})
+    ergebnis = ka.rechnungen_abgleich(umsaetze,
+                                      list(idx.get("rechnungen", {}).values()))
+    ergebnis["auszug_da"] = True
+    return JSONResponse(ergebnis)
+
+
+@app.post("/api/zahlungen/uebernehmen")
+async def api_zahlungen_uebernehmen(request: Request) -> Response:
+    """Einen Vorschlag bestätigen — die Rechnung gilt dann als bezahlt."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das macht die Inhaberin."}, status_code=403)
+    try:
+        body = await request.json()
+        nummer = str((body or {}).get("nummer") or "")
+        am = str((body or {}).get("am") or "")[:10]
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    if not RECHNUNG_NUMMER_RE.match(nummer):
+        return JSONResponse({"fehler": "ungültige Nummer"}, status_code=400)
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", am):
+        return JSONResponse({"fehler": "Datum als JJJJ-MM-TT"}, status_code=400)
+
+    rechnung, pfad = _rechnung_holen(nummer)
+    if rechnung is None:
+        return JSONResponse({"fehler": "unbekannte Rechnung"}, status_code=404)
+    if rechnung.get("bezahlt_am"):
+        return JSONResponse({"ok": True, "schon": True})
+
+    import boxschreiber  # noqa: PLC0415
+    try:
+        commit = await run_in_threadpool(
+            boxschreiber.schreiben, pfad,
+            json.dumps(dict(rechnung, bezahlt_am=am), ensure_ascii=False,
+                       indent=1).encode(),
+            f"rechnung: {nummer} bezahlt am {am}", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit, "nummer": nummer,
+                         "bezahlt_am": am})
+
+
 @app.get("/api/meldungen")
 def api_meldungen(request: Request) -> Response:
     """Was babu heute von sich aus sagen würde.

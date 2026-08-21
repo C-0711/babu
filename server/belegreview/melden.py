@@ -141,8 +141,27 @@ def abschluss_meldung(belege: list[dict], heute: dt.date) -> list[dict]:
     }]
 
 
+def belegjagd_meldung(fragen: list[dict], heute: dt.date) -> list[dict]:
+    """Am 3.: wozu fehlt noch ein Beleg? Das ist der Posten, der am
+    Jahresende wirklich Geld kostet."""
+    if heute.day != ABSCHLUSS_TAG or not fragen:
+        return []
+    summe = sum(float(f.get("betrag") or 0) for f in fragen)
+    anzahl = len(fragen)
+    return [{
+        "schluessel": f"belegjagd:{heute.isoformat()}",
+        "art": "beleg",
+        "titel": f"{anzahl} Abbuchung{'en' if anzahl > 1 else ''} ohne Beleg",
+        "text": (f"Zusammen {summe:.2f} €".replace(".", ",")
+                 + " — ohne Beleg zählt das steuerlich nicht. "
+                   "Weißt du noch, was das war?"),
+        "am": heute.isoformat(),
+        "dringend": False,
+    }]
+
+
 # Reihenfolge, wenn mehreres zugleich ansteht: was Geld kostet zuerst.
-RANG = {"frist": 0, "vertrag": 1, "abschluss": 2, "rechnung": 3}
+RANG = {"frist": 0, "vertrag": 1, "beleg": 2, "abschluss": 3, "rechnung": 4}
 # Mehr als das schaut sich niemand an.
 HOECHSTENS = 3
 
@@ -153,7 +172,8 @@ def meldungen(welt: dict, heute: dt.date | None = None) -> list[dict]:
     alle = (fristen_meldungen(welt.get("fristen"), heute)
             + vertrag_meldungen(welt.get("vertraege"), heute)
             + rechnung_meldungen(welt.get("rechnungen"), heute)
-            + abschluss_meldung(welt.get("belege"), heute))
+            + abschluss_meldung(welt.get("belege"), heute)
+            + belegjagd_meldung(welt.get("fehlende_belege"), heute))
     alle.sort(key=lambda m: (not m["dringend"], RANG.get(m["art"], 9),
                              m["titel"]))
     return alle[:HOECHSTENS]

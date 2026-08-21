@@ -210,3 +210,21 @@ def test_ohne_anmeldung_keine_meldungen():
     from fastapi.testclient import TestClient
     fremd = TestClient(babu_web.app, base_url="https://testserver")
     assert fremd.get("/api/meldungen").status_code == 401
+
+
+# ————— Belegjagd als Meldung —————
+
+def test_fehlende_belege_werden_am_dritten_gemeldet():
+    fragen = [{"betrag": 141.0}, {"betrag": 89.0}]
+    m = melden.belegjagd_meldung(fragen, HEUTE)
+    assert len(m) == 1
+    assert "2 Abbuchungen" in m[0]["titel"]
+    assert "230,00" in m[0]["text"]
+
+
+def test_ohne_fehlende_belege_keine_meldung():
+    assert melden.belegjagd_meldung([], HEUTE) == []
+
+
+def test_belegjagd_nur_am_dritten():
+    assert melden.belegjagd_meldung([{"betrag": 141.0}], dt.date(2026, 9, 7)) == []
