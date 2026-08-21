@@ -32,6 +32,10 @@ class SchreibFehler(RuntimeError):
     pass
 
 
+class NichtsZuLoeschen(SchreibFehler):
+    """Die Datei war schon weg — kein Grund für einen leeren Commit."""
+
+
 # Ein Schreiber zur Zeit — siehe Modul-Kopf.
 _SCHLOSS = threading.Lock()
 
@@ -74,32 +78,27 @@ def _bereit() -> None:
         raise SchreibFehler(f"Reset fehlgeschlagen: {r.stderr.strip()[:200]}")
 
 
-def schreiben(rel_pfad: str | dict[str, bytes], inhalt: bytes | None,
-              nachricht: str, autor_un: str) -> str:
-    """Datei(en) committen + pushen; gibt den Kurz-Hash zurück. Ein Push-Retry.
+def _pfad_pruefen(pfad: str) -> None:
+    # Ein führender Schrägstrich wäre der gefährlichste Fall: `KLON / "/etc/x"`
+    # ist in pathlib schlicht "/etc/x" — der Klon fällt weg.
+    if (not re.match(r"^[A-Za-z0-9._/ -]{1,200}$", pfad) or ".." in pfad
+            or Path(pfad).is_absolute()):
+        raise SchreibFehler("ungültiger Pfad")
 
-    Entweder (pfad, inhalt) für eine Datei oder ein dict {pfad: bytes} für
-    mehrere Dateien in EINEM Commit (z. B. Dokument + Meta-Sidecar).
+
+def _commit_und_push(vormerken, nachricht: str, autor_un: str) -> str:
+    """Der gemeinsame Ablauf von Schreiben und Löschen.
+
+    `vormerken()` läuft im frisch zurückgesetzten Klon und legt an oder
+    entfernt; alles Weitere — Schloss, Commit, Push, der eine Retry — ist für
+    beide gleich, damit es nicht zwei Wahrheiten über den Schreibpfad gibt.
     """
-    dateien = rel_pfad if isinstance(rel_pfad, dict) else {rel_pfad: inhalt}
-    for pfad in dateien:
-        # Ein führender Schrägstrich wäre der gefährlichste Fall: `KLON / "/etc/x"`
-        # ist in pathlib schlicht "/etc/x" — der Klon fällt weg.
-        if (not re.match(r"^[A-Za-z0-9._/ -]{1,200}$", pfad) or ".." in pfad
-                or Path(pfad).is_absolute()):
-            raise SchreibFehler("ungültiger Pfad")
     autor = f"{autor_un} <portal@gitchain.local>"
     letzter_fehler = ""
     with _SCHLOSS:
         for versuch in (1, 2):
             _bereit()
-            for pfad, daten in dateien.items():
-                ziel = KLON / pfad
-                ziel.parent.mkdir(parents=True, exist_ok=True)
-                ziel.write_bytes(daten)
-                a = _git("add", pfad)
-                if a.returncode != 0:
-                    raise SchreibFehler(f"Vormerken fehlgeschlagen: {a.stderr.strip()[:200]}")
+            vormerken()
             r = _git("commit", "-m", nachricht, "--author", autor)
             if r.returncode != 0:
                 raise SchreibFehler(f"Commit fehlgeschlagen: {r.stderr.strip()[:200]}")
@@ -110,6 +109,54 @@ def schreiben(rel_pfad: str | dict[str, bytes], inhalt: bytes | None,
             letzter_fehler = p.stderr.strip()[:200]
             time.sleep(0.7)  # Watcher-Push abklingen lassen, dann frisch aufsetzen
     raise SchreibFehler(f"Push fehlgeschlagen (auch nach Retry): {letzter_fehler}")
+
+
+def schreiben(rel_pfad: str | dict[str, bytes], inhalt: bytes | None,
+              nachricht: str, autor_un: str) -> str:
+    """Datei(en) committen + pushen; gibt den Kurz-Hash zurück. Ein Push-Retry.
+
+    Entweder (pfad, inhalt) für eine Datei oder ein dict {pfad: bytes} für
+    mehrere Dateien in EINEM Commit (z. B. Dokument + Meta-Sidecar).
+    """
+    dateien = rel_pfad if isinstance(rel_pfad, dict) else {rel_pfad: inhalt}
+    for pfad in dateien:
+        _pfad_pruefen(pfad)
+
+    def anlegen() -> None:
+        for pfad, daten in dateien.items():
+            ziel = KLON / pfad
+            ziel.parent.mkdir(parents=True, exist_ok=True)
+            ziel.write_bytes(daten)
+            a = _git("add", pfad)
+            if a.returncode != 0:
+                raise SchreibFehler(f"Vormerken fehlgeschlagen: {a.stderr.strip()[:200]}")
+
+    return _commit_und_push(anlegen, nachricht, autor_un)
+
+
+def loeschen(pfade: list[str], nachricht: str, autor_un: str) -> str:
+    """Datei(en) entfernen — als eigener Commit, der die Historie behält.
+
+    Der aktuelle Stand zeigt sie danach nicht mehr; nachvollziehbar bleibt,
+    dass es sie gab. Pfade, die es nicht (mehr) gibt, werden übergangen —
+    zweimal Löschen ist harmlos. Ist am Ende gar nichts dabei, meldet sich
+    `NichtsZuLoeschen`, statt einen leeren Commit zu bauen.
+    """
+    for pfad in pfade:
+        _pfad_pruefen(pfad)
+
+    def entfernen() -> None:
+        entfernt = 0
+        for pfad in pfade:
+            r = _git("rm", "-q", "--ignore-unmatch", "--", pfad)
+            if r.returncode != 0:
+                raise SchreibFehler(f"Entfernen fehlgeschlagen: {r.stderr.strip()[:200]}")
+            entfernt += 1
+        stand = _git("diff", "--cached", "--name-only")
+        if not (stand.stdout or "").strip():
+            raise NichtsZuLoeschen("nichts zu löschen")
+
+    return _commit_und_push(entfernen, nachricht, autor_un)
 
 
 def beleg_dateiname(original: str) -> str:

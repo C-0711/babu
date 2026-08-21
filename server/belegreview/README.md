@@ -61,3 +61,22 @@ sqlite3 ~/babu-web/portal.db "UPDATE nutzer SET box=1 WHERE email='…';"
 
 Nach dem Deploy einmal prüfen, dass die echten Zugänge noch hineinkommen:
 `GET /api/ich` muss `"box": true` liefern.
+
+## Löschen
+
+`POST /api/beleg/{stamm}/loeschen` und `POST /api/dokument-loeschen` entfernen
+über `boxschreiber.loeschen()` — ein eigener Commit, der die Datei wegnimmt.
+Der aktuelle Stand zeigt sie nicht mehr, die Historie behält sie. Ein Beleg
+geht immer mit seinen Beiakten (`review/<stamm>.*`), ein Dokument mit seinen
+Sidecars.
+
+Nicht löschbar, und zwar bewusst:
+
+- Belege im Status `exportiert` — sie liegen im Stapel bei der Kanzlei (409).
+- Alles außerhalb von `dokumente/`: Kassenbuch, Kontoauszüge, Buchungsstapel,
+  Jahresabschluss sind aufbewahrungspflichtig (400).
+
+Löschen darf die Inhaberin und die Kanzlei, nicht die Rolle `mitarbeit` —
+einreichen ist etwas anderes als wegwerfen. `GET /api/ablage` liefert je
+Eintrag `loeschbar`, damit die Oberfläche gar nicht erst einen Knopf zeigt,
+der beim Drücken absagt.

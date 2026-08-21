@@ -1316,8 +1316,63 @@ async def api_hochladen(request: Request, name: str = "beleg.jpg") -> Response:
     return JSONResponse({"ok": True, "commit": commit, "datei": f"docs/{monat}/{dateiname}"})
 
 
+# Beiakten eines Belegs: die Zweitprüfung und alles, was später dazukam.
+# Beim Löschen gehen sie mit — sonst bliebe eine Prüfung ohne Beleg zurück.
+BELEG_BEIAKTEN = (".json", ".md", ".embedding.json", ".angaben.json",
+                  ".bewirtung.json", ".korrektur.json")
+
+
+@app.post("/api/beleg/{stamm}/loeschen")
+async def api_beleg_loeschen(stamm: str, request: Request) -> Response:
+    """Einen falschen Beleg wegnehmen — doppelt fotografiert, unlesbar, privat.
+
+    Gelöscht wird mit einem eigenen Commit: der aktuelle Stand zeigt den Beleg
+    nicht mehr, nachvollziehbar bleibt, dass es ihn gab. Was schon im Stapel
+    bei der Kanzlei liegt, bleibt.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Belege löschen darf die Inhaberin."},
+                            status_code=403)
+    if not NAME_RE.match(stamm):
+        return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
+    eintrag = (await run_in_threadpool(index_aktuell))["belege"].get(stamm)
+    if eintrag is None:
+        return JSONResponse({"fehler": "unbekannter Beleg"}, status_code=404)
+    if eintrag["status"] == "exportiert":
+        return JSONResponse(
+            {"fehler": "Dieser Beleg liegt schon im Stapel bei deiner Kanzlei. "
+                       "Zum Löschen sprich kurz mit ihr."}, status_code=409)
+
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    grund = str((body or {}).get("grund", "")).strip()[:200]
+    nachricht = f"geloescht: {stamm}" + (f"\n\n{grund}" if grund else "")
+    pfade = [eintrag["datei"]] + [f"review/{stamm}{a}" for a in BELEG_BEIAKTEN]
+
+    import boxschreiber  # noqa: PLC0415
+    try:
+        commit = await run_in_threadpool(boxschreiber.loeschen, pfade, nachricht, un)
+    except boxschreiber.NichtsZuLoeschen:
+        return JSONResponse({"fehler": "unbekannter Beleg"}, status_code=404)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit, "stamm": stamm})
+
+
 DOKUMENT_ENDUNGEN = {".pdf", ".jpg", ".jpeg", ".png"}
 DOKUMENT_PFAD_RE = re.compile(r"^dokumente/[A-Za-z0-9._/ -]{1,200}$")
+# Alles, was in der Ablage steht, muss sich auch öffnen lassen — sonst führt
+# ein Eintrag ins Leere. Gelöscht werden darf davon nur `dokumente/`.
+ABLAGE_PFAD_RE = re.compile(
+    r"^(dokumente|auszuege|abschluss|export|kassenbuch)/[A-Za-z0-9._/ -]{1,200}$")
 
 
 @app.get("/api/dokumente")
@@ -1337,17 +1392,60 @@ def api_dokument(pfad: str, request: Request) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    if not DOKUMENT_PFAD_RE.match(pfad) or ".." in pfad:
+    if not ABLAGE_PFAD_RE.match(pfad) or ".." in pfad:
         return JSONResponse({"fehler": "ungültiger Pfad"}, status_code=400)
     daten = git_show(pfad)
     if daten is None:
         return JSONResponse({"fehler": "unbekanntes Dokument"}, status_code=404)
     endung = Path(pfad).suffix.lower()
     typ = {".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-           ".png": "image/png"}.get(endung, "application/octet-stream")
+           ".png": "image/png", ".json": "application/json",
+           ".csv": "text/csv; charset=windows-1252"}.get(endung, "application/octet-stream")
     return Response(content=daten, media_type=typ,
                     headers={"Cache-Control": "private, max-age=3600",
                              "Content-Disposition": f'inline; filename="{Path(pfad).name}"'})
+
+
+# Sidecars eines Dokuments — beim Löschen gehen sie mit.
+DOKUMENT_BEIAKTEN = (".meta.json", ".erklaerung.json", ".vertrag.json")
+
+
+@app.post("/api/dokument-loeschen")
+async def api_dokument_loeschen(request: Request) -> Response:
+    """Ein Dokument wegnehmen — Post vom Amt, Kanzlei-Post, ein Vertrag.
+
+    Nur was unter `dokumente/` liegt: Kassenbuch, Kontoauszüge, Stapel und
+    Jahresabschluss musst du aufbewahren, die bleiben.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Unterlagen löschen darf die Inhaberin."},
+                            status_code=403)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    pfad = str((body or {}).get("pfad", ""))
+    if not DOKUMENT_PFAD_RE.match(pfad) or ".." in pfad:
+        return JSONResponse(
+            {"fehler": "Kassenbuch, Kontoauszüge und Stapel musst du aufbewahren "
+                       "— die bleiben."}, status_code=400)
+    pfade = [pfad] + [pfad + a for a in DOKUMENT_BEIAKTEN]
+
+    import boxschreiber  # noqa: PLC0415
+    try:
+        commit = await run_in_threadpool(boxschreiber.loeschen, pfade,
+                                         f"geloescht: {Path(pfad).name}", un)
+    except boxschreiber.NichtsZuLoeschen:
+        return JSONResponse({"fehler": "unbekanntes Dokument"}, status_code=404)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit, "pfad": pfad})
 
 
 @app.post("/api/dokumente")
@@ -2614,7 +2712,8 @@ def api_ablage(request: Request) -> Response:
         eintraege.append({"pfad": d["pfad"], "titel": d["titel"], "art": art,
                           "zeit": d.get("zeit"), "gelesen": d.get("gelesen"),
                           "erklaerung": d.get("erklaerung"),
-                          "vertrag": d.get("vertrag")})
+                          "vertrag": d.get("vertrag"),
+                          "loeschbar": True})
 
     # Kontoauszüge, Abschlüsse, Stapel und Kassenblätter direkt aus dem Baum.
     kopf = _git(["rev-parse", "HEAD"])
@@ -2633,9 +2732,12 @@ def api_ablage(request: Request) -> Response:
             art, titel = "kassenbuch", "Kassenbuch " + name.removesuffix(".json")
         else:
             continue
+        # Aufbewahrungspflichtig: die Oberfläche zeigt hier keinen Knopf, und
+        # die Lösch-Route nimmt diese Pfade ohnehin nicht an.
         eintraege.append({"pfad": pfad, "titel": titel, "art": art,
                           "zeit": (zeiten.get(pfad) or {}).get("zeit"),
-                          "gelesen": None, "erklaerung": None, "vertrag": None})
+                          "gelesen": None, "erklaerung": None, "vertrag": None,
+                          "loeschbar": False})
 
     jahre: dict[str, dict] = {}
     for e in eintraege:
