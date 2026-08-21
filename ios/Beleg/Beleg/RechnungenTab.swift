@@ -14,6 +14,7 @@ struct RechnungenTab: View {
     @State private var neueRechnung = false
     @State private var zeigeVorlagen = false
     @State private var zeigeBriefkopf = false
+    @State private var zahlungen: [[String: Any]] = []
 
     private var offene: [Rechnung] { rechnungen.filter(\.istOffen) }
     private var erledigte: [Rechnung] { rechnungen.filter { !$0.istOffen } }
@@ -26,6 +27,40 @@ struct RechnungenTab: View {
                 }
                 if let fehler {
                     Text(fehler).font(.footnote).foregroundStyle(GC.warn)
+                }
+
+                // Was der Kontoauszug schon weiß: babu schlägt vor, die
+                // Inhaberin bestätigt. Ein „bezahlt" verschiebt Umsatz in die
+                // Voranmeldung — das entscheidet niemand automatisch.
+                if !zahlungen.isEmpty {
+                    Section {
+                        ForEach(zahlungen.indices, id: \.self) { i in
+                            let z = zahlungen[i]
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(z["text"] as? String ?? "")
+                                    .font(.body.weight(.medium)).foregroundStyle(GC.fg)
+                                HStack(spacing: 6) {
+                                    Text("Nr. \(z["nummer"] as? String ?? "")")
+                                        .font(.caption2).foregroundStyle(GC.muted)
+                                    if z["sicher"] as? Bool != true {
+                                        Text("· bitte kurz prüfen")
+                                            .font(.caption2).foregroundStyle(GC.warn)
+                                    }
+                                }
+                                Button("Stimmt — als bezahlt eintragen") {
+                                    Task { await zahlungUebernehmen(z) }
+                                }
+                                .font(.footnote.weight(.medium))
+                                .foregroundStyle(GC.accent)
+                            }
+                            .padding(.vertical, 3)
+                        }
+                    } header: {
+                        Text("Vom Konto")
+                    } footer: {
+                        Text("Aus deinem Kontoauszug. babu trägt nichts von "
+                             + "allein ein — bezahlt heißt, es zählt als Umsatz.")
+                    }
                 }
 
                 if !offene.isEmpty {
@@ -127,6 +162,7 @@ struct RechnungenTab: View {
             fehler = "Erst verbinden — dann kannst du Rechnungen stellen."
             return
         }
+        zahlungen = await AblageService.zahlungsvorschlaege(basis: url, pat: pat)
         if let d = await AblageService.rechnungenLaden(basis: url, pat: pat) {
             rechnungen = d.rechnungen
             offenSumme = d.offenSumme
@@ -136,6 +172,19 @@ struct RechnungenTab: View {
             fehler = "Die Rechnungen konnten wir gerade nicht laden."
         }
         laedt = false
+    }
+
+    private func zahlungUebernehmen(_ z: [String: Any]) async {
+        guard let nummer = z["nummer"] as? String,
+              let am = z["bezahlt_am"] as? String,
+              let url = URL(string: store.ablageURL),
+              let pat = KeychainHelfer.ladePAT() else { return }
+        if await AblageService.zahlungUebernehmen(nummer: nummer, am: am,
+                                                   basis: url, pat: pat) {
+            await laden()
+        } else {
+            fehler = "Das konnten wir gerade nicht eintragen."
+        }
     }
 
     private func bezahlt(_ r: Rechnung) async {

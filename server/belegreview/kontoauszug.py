@@ -117,3 +117,118 @@ def abgleich(umsaetze: list[dict], belege: list[dict],
         "einnahmen_summe": round(sum(u["betrag"] for u in einnahmen), 2),
         "fehlend_summe": round(sum(-u["betrag"] for u in fehlend), 2),
     }
+
+
+# ---------------------------------------------------------------------------
+# Die andere Richtung: Geldeingang ↔ gestellte Rechnung.
+#
+# babu kennt beide Seiten — den Eingang auf dem Auszug und die offene
+# Forderung. Verbunden hat sie bisher niemand, also setzte die Inhaberin
+# Haken, obwohl die Antwort zweimal im Haus lag.
+#
+# Vorgeschlagen wird, nicht entschieden: ein „bezahlt" verschiebt Umsatz in
+# die Umsatzsteuer-Voranmeldung. Ein falscher Treffer wäre kein
+# Schönheitsfehler, sondern eine falsche Anmeldung.
+# ---------------------------------------------------------------------------
+
+# So lange nach dem Rechnungsdatum wird ein Eingang noch zugeordnet.
+ZAHLUNG_FRIST_TAGE = 120
+
+
+def _iso(datum: str) -> str | None:
+    """„02.09.2026" → „2026-09-02"."""
+    teile = str(datum or "").split(".")
+    if len(teile) != 3:
+        return None
+    try:
+        return f"{int(teile[2]):04d}-{int(teile[1]):02d}-{int(teile[0]):02d}"
+    except ValueError:
+        return None
+
+
+def _tage_zwischen(von: str, bis: str) -> int | None:
+    import datetime as dt
+    try:
+        return (dt.date.fromisoformat(bis) - dt.date.fromisoformat(von)).days
+    except (TypeError, ValueError):
+        return None
+
+
+def _name_passt(text: str, name: str) -> bool:
+    """Steht die Empfängerin im Verwendungszweck? Ein Wort genügt — Banken
+    kürzen Namen, und „Allgaier" allein ist schon ein starkes Zeichen."""
+    haystack = " " + (text or "").lower() + " "
+    teile = [t for t in (name or "").lower().split() if len(t) >= 4]
+    return any(t in haystack for t in teile)
+
+
+def rechnungen_abgleich(umsaetze: list[dict], rechnungen: list[dict]) -> dict:
+    """Welcher Geldeingang gehört zu welcher offenen Rechnung?
+
+    Zugeordnet wird über den Betrag (±2 ct) und das Zeitfenster; der Name im
+    Verwendungszweck macht aus einem Vorschlag einen sicheren. Passen zwei
+    offene Rechnungen gleich gut, wird NICHTS vorgeschlagen — dann steht die
+    Mehrdeutigkeit da, statt einer geratenen Zuordnung.
+    """
+    offen = [r for r in (rechnungen or [])
+             if isinstance(r, dict) and not r.get("bezahlt_am")
+             and not r.get("storniert_durch") and r.get("brutto")]
+    vergeben: set[str] = set()
+    vorschlaege: list[dict] = []
+    mehrdeutig: list[dict] = []
+    ohne: list[dict] = []
+
+    for u in umsaetze or []:
+        betrag = float(u.get("betrag") or 0)
+        if betrag <= 0:                       # Abbuchungen laufen woanders
+            continue
+        eingang = _iso(u.get("datum", ""))
+        text = u.get("text") or ""
+
+        passend = []
+        for r in offen:
+            if r["nummer"] in vergeben:
+                continue
+            if abs(float(r["brutto"]) - betrag) > 0.02:
+                continue
+            tage = _tage_zwischen(str(r.get("datum") or "")[:10], eingang or "")
+            if tage is None or tage < 0 or tage > ZAHLUNG_FRIST_TAGE:
+                continue
+            passend.append(r)
+
+        if not passend:
+            ohne.append({"datum": eingang, "betrag": round(betrag, 2), "text": text})
+            continue
+
+        # Der Name entscheidet, wenn mehrere in Frage kommen.
+        mit_namen = [r for r in passend
+                     if _name_passt(text, (r.get("empfaenger") or {}).get("name", ""))]
+        if len(mit_namen) == 1:
+            treffer, sicher = mit_namen[0], True
+        elif len(passend) == 1:
+            treffer, sicher = passend[0], False
+        else:
+            mehrdeutig.append({
+                "datum": eingang, "betrag": round(betrag, 2), "text": text,
+                "nummern": [r["nummer"] for r in passend],
+                "hinweis": "Mehrere offene Rechnungen über diesen Betrag — "
+                           "welche ist es?"})
+            continue
+
+        empf = (treffer.get("empfaenger") or {}).get("name") or "Jemand"
+        vergeben.add(treffer["nummer"])
+        vorschlaege.append({
+            "nummer": treffer["nummer"],
+            "empfaenger": empf,
+            "brutto": round(float(treffer["brutto"]), 2),
+            "bezahlt_am": eingang,
+            "sicher": sicher,
+            "text": (f"{empf} hat am {u.get('datum')} bezahlt"
+                     if sicher else
+                     f"Ein Eingang über {betrag:.2f} € passt zu {empf}"
+                     .replace(".", ",")),
+            "verwendungszweck": text[:120],
+        })
+
+    return {"vorschlaege": vorschlaege, "ohne_zuordnung": ohne,
+            "mehrdeutig": mehrdeutig}

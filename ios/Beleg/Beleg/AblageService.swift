@@ -236,6 +236,30 @@ enum AblageService {
         return daten
     }
 
+    /// Wer hat bezahlt? Vorschläge aus dem Kontoauszug.
+    static func zahlungsvorschlaege(basis: URL, pat: String) async -> [[String: Any]] {
+        var request = URLRequest(url: basis.appendingPathComponent("api/zahlungen"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any]
+        else { return [] }
+        return json["vorschlaege"] as? [[String: Any]] ?? []
+    }
+
+    static func zahlungUebernehmen(nummer: String, am: String, basis: URL,
+                                   pat: String) async -> Bool {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/zahlungen/uebernehmen"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 45
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(
+            withJSONObject: ["nummer": nummer, "am": am])
+        return await ausfuehren(request, erfolg2xx: true) == .uebertragen
+    }
+
     /// Was babu von sich aus sagen würde — höchstens drei Meldungen.
     static func meldungenLaden(basis: URL, pat: String) async -> [Meldung] {
         var request = URLRequest(url: basis.appendingPathComponent("api/meldungen"))
