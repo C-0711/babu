@@ -36,6 +36,7 @@ struct ListeView: View {
         NavigationStack {
             List {
                 // Was ansteht, steht oben — dort schaut sie ohnehin hin.
+                MonatslaufKarte()
                 MeldungenAbschnitt()
                 BelegjagdAbschnitt()
                 if offeneAnzahl > 0 {
