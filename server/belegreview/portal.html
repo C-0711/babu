@@ -479,6 +479,7 @@ main{padding:26px 22px 60px;min-height:70dvh}
     </div>
     <p style="color:var(--gc-desc);margin:6px 0 16px">Aus deinen Belegen und
       deinem Kassenbuch gerechnet — ein Entwurf, den dein Steuer-Backend prüft.</p>
+    <div id="fristen-karte"></div>
     <div id="abschluss-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
 
@@ -1970,8 +1971,72 @@ async function ladeAbschluss(){
       html += `</div>`;
     }
   }
+  if (u.stand === "entwurf"){
+    html += `<div class="karte" style="margin-top:10px">
+      <b>Fertig für die Prüfung?</b>
+      <p style="color:var(--gc-desc);font-size:13px;margin:4px 0 10px">
+        Dein Steuer-Backend bekommt die Zahlen zur Prüfung und übermittelt sie
+        ans Finanzamt. Was hier steht, bleibt als Nachweis in deiner Belegbox.</p>
+      <button class="chip" id="freigabe-knopf">Zahlen zur Prüfung geben</button>
+      <span id="freigabe-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>
+    </div>`;
+  }
+
+  ziel.innerHTML = html;
+  const fk = $("#freigabe-knopf");
+  if (fk) fk.addEventListener("click", () => abschlussFreigeben(fk));
+  ladeFristen();
+}
+
+async function abschlussFreigeben(knopf){
+  const status = $("#freigabe-status");
+  knopf.disabled = true;
+  status.textContent = "Wird übergeben …";
+  try{
+    const r = await api("/api/monatsabschluss/" + abMonat + "/freigeben", {method:"POST"});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.fehler || "");
+    status.textContent = d.offene_punkte
+      ? `Übergeben — ${d.offene_punkte} offene ${d.offene_punkte === 1 ? "Frage" : "Fragen"} sind vermerkt.`
+      : "Übergeben ✓";
+  }catch(e){
+    knopf.disabled = false;
+    status.textContent = "Hat nicht geklappt — gleich noch einmal.";
+  }
+}
+
+/* ————— Fristen: was als Nächstes ansteht ————— */
+async function ladeFristen(){
+  const ziel = $("#fristen-karte");
+  if (!ziel) return;
+  let d;
+  try{ d = await (await api("/api/fristen/" + abMonat.slice(0,4))).json(); }
+  catch{ ziel.innerHTML = ""; return; }
+  const naechste = d.naechste || [];
+  if (!naechste.length){ ziel.innerHTML = ""; return; }
+
+  let html = `<div class="karte" style="margin-bottom:16px">
+    <div class="sektion lbl" style="margin:0 0 8px">Als Nächstes fällig</div>`;
+  for (const t of naechste){
+    const eilig = t.in_tagen <= 7;
+    const wann = t.in_tagen === 0 ? "heute"
+               : t.in_tagen === 1 ? "morgen"
+               : `in ${t.in_tagen} Tagen`;
+    html += `<div class="mrow"><span class="art">${esc(t.titel)}</span>
+      <span class="wer">${esc(t.was)}</span>
+      <span class="summe" style="font-size:14px;color:${eilig ? "var(--gc-danger)" : "var(--gc-fg)"}">
+        ${wann}<br><span style="font-size:12px;color:var(--gc-muted);font-weight:400">
+        ${datumKurz(t.datum)}</span></span></div>`;
+  }
+  html += `</div>`;
   ziel.innerHTML = html;
 }
+
+function datumKurz(iso){
+  const [j, m, tg] = iso.split("-");
+  return `${tg}.${m}.${j}`;
+}
+
 $("#ab-mon-zurueck").addEventListener("click", () => { abMonat = monatSchieben(abMonat, -1); ladeAbschluss(); });
 $("#ab-mon-vor").addEventListener("click", () => { abMonat = monatSchieben(abMonat, 1); ladeAbschluss(); });
 
