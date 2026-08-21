@@ -13,6 +13,7 @@ struct RechnungenTab: View {
     @State private var fehler: String?
     @State private var neueRechnung = false
     @State private var zeigeVorlagen = false
+    @State private var zeigeBriefkopf = false
 
     private var offene: [Rechnung] { rechnungen.filter(\.istOffen) }
     private var erledigte: [Rechnung] { rechnungen.filter { !$0.istOffen } }
@@ -64,6 +65,11 @@ struct RechnungenTab: View {
                     } label: {
                         Label("Vorlagen", systemImage: "doc.on.doc")
                     }
+                    Button {
+                        zeigeBriefkopf = true
+                    } label: {
+                        Label("Dein Briefkopf", systemImage: "paintpalette")
+                    }
                 }
             }
             .navigationTitle("Rechnungen")
@@ -82,6 +88,9 @@ struct RechnungenTab: View {
             }
             .sheet(isPresented: $zeigeVorlagen) {
                 VorlagenView().environmentObject(store)
+            }
+            .sheet(isPresented: $zeigeBriefkopf) {
+                BriefkopfView().environmentObject(store)
             }
         }
     }
@@ -351,10 +360,15 @@ struct NeueRechnungView: View {
             fehler = ergebnis.fehler
             return
         }
+        // Briefkopf: Farbe und Logo, so wie in vier Schritten eingerichtet.
+        let akzent = UIColor(Color(hexText: stammdaten["marke_farbe"] ?? "#1F1D1B"))
+        let logo = await AblageService.logoLaden(basis: url, pat: pat)
+            .flatMap(UIImage.init(data:))
         let pdf = RechnungPDF.bauen(
             nummer: nummer, datum: heute, leistungszeitpunkt: heute,
             kopf: stammdaten, empfaenger: empfaenger, positionen: positionen,
-            summe: summe, kleinunternehmer: kleinunternehmer, hinweis: hinweis)
+            summe: summe, kleinunternehmer: kleinunternehmer, hinweis: hinweis,
+            akzent: akzent, logo: logo)
         _ = await AblageService.rechnungPdfSenden(pdf, nummer: nummer,
                                                   basis: url, pat: pat)
         let ziel = FileManager.default.temporaryDirectory

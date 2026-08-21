@@ -86,6 +86,116 @@ enum AblageService {
                 json["sicher"] as? Bool ?? false)
     }
 
+    // MARK: - Briefkopf und Logo
+
+    static func markeKatalog(basis: URL, pat: String) async
+            -> (farben: [[String: Any]], stile: [[String: Any]])? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/marke/katalog"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any]
+        else { return nil }
+        return (json["farben"] as? [[String: Any]] ?? [],
+                json["stile"] as? [[String: Any]] ?? [])
+    }
+
+    static func markeFarbeWaehlen(_ schluessel: String, basis: URL,
+                                  pat: String) async -> Bool {
+        var request = URLRequest(url: basis.appendingPathComponent("api/marke/farbe"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["farbe": schluessel])
+        return await ausfuehren(request, erfolg2xx: true) == .uebertragen
+    }
+
+    /// Logo entwerfen lassen. Dauert; der Name des Salons geht dafür an einen
+    /// Dienst außerhalb des Hauses — die Ansicht sagt das.
+    static func logoEntwerfen(stil: String, basis: URL, pat: String) async -> String? {
+        var teile = URLComponents(url: basis.appendingPathComponent("api/marke/logo/entwerfen"),
+                                  resolvingAgainstBaseURL: false)
+        teile?.queryItems = [URLQueryItem(name: "stil", value: stil)]
+        guard let url = teile?.url else { return "Das hat nicht geklappt." }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 180
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        let (ergebnis, daten) = await ausfuehrenMitDaten(request)
+        if ergebnis == .uebertragen { return nil }
+        if let daten, let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+           let fehler = json["fehler"] as? String { return fehler }
+        return "Das hat gerade nicht geklappt."
+    }
+
+    static func logoSenden(_ bild: Data, basis: URL, pat: String) async -> Bool {
+        var request = URLRequest(url: basis.appendingPathComponent("api/marke/logo"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("image/png", forHTTPHeaderField: "Content-Type")
+        request.httpBody = bild
+        return await ausfuehren(request, erfolg2xx: true) == .uebertragen
+    }
+
+    static func logoLaden(basis: URL, pat: String) async -> Data? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/marke/logo"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              (antwort as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return daten
+    }
+
+    /// Ein Knopf, zehn Zeichen. Dauert; die zehn entstehen gleichzeitig.
+    static func logoVorschlaege(saat: Int, basis: URL, pat: String) async
+            -> (vorschlaege: [[String: Any]], fehler: String?) {
+        var teile = URLComponents(url: basis.appendingPathComponent("api/marke/vorschlaege"),
+                                  resolvingAgainstBaseURL: false)
+        teile?.queryItems = [URLQueryItem(name: "saat", value: String(saat))]
+        guard let url = teile?.url else { return ([], "Das hat nicht geklappt.") }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 240
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        let (ergebnis, daten) = await ausfuehrenMitDaten(request)
+        let json = daten.flatMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+        }
+        if ergebnis == .uebertragen, let liste = json?["vorschlaege"] as? [[String: Any]] {
+            return (liste, nil)
+        }
+        return ([], json?["fehler"] as? String ?? "Das hat gerade nicht geklappt.")
+    }
+
+    static func logoVorschlagBild(_ nummer: Int, basis: URL, pat: String) async -> Data? {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/marke/vorschlag/\(nummer)"))
+        request.timeoutInterval = 45
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              (antwort as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return daten
+    }
+
+    /// Einen Vorschlag annehmen — Logo, Farbe, Schrift und Briefkopf in einem.
+    static func logoWaehlen(nummer: Int, saat: Int, basis: URL,
+                            pat: String) async -> String? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/marke/waehlen"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 45
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(
+            withJSONObject: ["nummer": nummer, "saat": saat])
+        let (ergebnis, daten) = await ausfuehrenMitDaten(request)
+        guard ergebnis == .uebertragen, let daten,
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any]
+        else { return nil }
+        return json["in_worten"] as? String
+    }
+
     /// Konto-Anmeldung der App: E-Mail + Passwort → Geräteschlüssel.
     /// Der Schlüssel kommt genau einmal zurück und wandert in die Keychain —
     /// die Nutzerin sieht ihn nie.

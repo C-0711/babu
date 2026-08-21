@@ -12,11 +12,21 @@ enum RechnungPDF {
     static func bauen(nummer: String, datum: String, leistungszeitpunkt: String,
                       kopf: [String: String], empfaenger: Empfaenger,
                       positionen: [RechnungPosition], summe: RechnungsSumme,
-                      kleinunternehmer: Bool, hinweis: String = "") -> Data {
+                      kleinunternehmer: Bool, hinweis: String = "",
+                      akzent: UIColor = .black, logo: UIImage? = nil) -> Data {
         let renderer = UIGraphicsPDFRenderer(bounds: seite)
         return renderer.pdfData { ctx in
             ctx.beginPage()
             var y: CGFloat = rand
+
+            // Das Logo oben rechts — so groß, dass man es erkennt, so klein,
+            // dass es die Rechnung nicht zur Werbung macht.
+            if let logo {
+                let breite: CGFloat = 96
+                let hoehe = min(breite, breite * logo.size.height / max(logo.size.width, 1))
+                logo.draw(in: CGRect(x: seite.width - rand - breite, y: rand,
+                                     width: breite, height: hoehe))
+            }
 
             // Absender klein über der Anschrift — wie im Fensterumschlag.
             let absender = [kopf["betrieb_name"], kopf["anschrift"]]
@@ -36,7 +46,8 @@ enum RechnungPDF {
             y += 40
 
             // Überschrift und Eckdaten
-            y = zeichne("Rechnung \(nummer)", at: y, groesse: 18, fett: true)
+            y = zeichne("Rechnung \(nummer)", at: y, groesse: 18, fett: true,
+                        farbe: akzent)
             y += 6
             y = zeichne("Rechnungsdatum: " + tagKurz(datum), at: y, groesse: 10)
             y = zeichne("Leistungszeitpunkt: " + tagKurz(leistungszeitpunkt),
@@ -45,7 +56,7 @@ enum RechnungPDF {
 
             // Positionen
             y = zeile(links: "Beschreibung", rechts: "Betrag", at: y, fett: true)
-            y = linie(at: y + 4, ctx: ctx)
+            y = linie(at: y + 4, ctx: ctx, farbe: akzent, staerke: 1.2)
             for p in positionen {
                 let text = p.menge == 1 ? p.text
                                         : "\(mengeText(p.menge)) × \(p.text)"
@@ -129,9 +140,11 @@ enum RechnungPDF {
         return y + max(hoehe, 14)
     }
 
-    private static func linie(at y: CGFloat, ctx: UIGraphicsPDFRendererContext) -> CGFloat {
-        ctx.cgContext.setStrokeColor(UIColor.lightGray.cgColor)
-        ctx.cgContext.setLineWidth(0.5)
+    private static func linie(at y: CGFloat, ctx: UIGraphicsPDFRendererContext,
+                              farbe: UIColor = .lightGray,
+                              staerke: CGFloat = 0.5) -> CGFloat {
+        ctx.cgContext.setStrokeColor(farbe.cgColor)
+        ctx.cgContext.setLineWidth(staerke)
         ctx.cgContext.move(to: CGPoint(x: rand, y: y))
         ctx.cgContext.addLine(to: CGPoint(x: seite.width - rand, y: y))
         ctx.cgContext.strokePath()

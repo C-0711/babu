@@ -1775,7 +1775,10 @@ EINSTELLUNG_SCHLUESSEL = {"benachrichtigung_frage", "benachrichtigung_post",
                           "personal_monat",
                           # Rechnungen: was auf den Kopf gehört, und wann eine
                           # Rechnung als Erlös zählt (ist = wenn bezahlt wird).
-                          "anschrift", "ust_id", "iban", "bank", "versteuerung"}
+                          "anschrift", "ust_id", "iban", "bank", "versteuerung",
+                          # Briefkopf der Rechnung
+                          "marke_farbe", "marke_schrift", "marke_ausrichtung",
+                          "marke_linie", "marke_begruendung"}
 
 
 # Registrierung: Interessentinnen hinterlassen alle Daten — der Zugang wird
@@ -3149,6 +3152,373 @@ def api_vertraege(request: Request) -> Response:
                             status_code=403)
     import vertraege as vt  # noqa: PLC0415
     return JSONResponse(vt.uebersicht(vertraege_aktuell()))
+
+
+# ---------------------------------------------------------------------------
+# Der Briefkopf: eine Rechnung ist oft das Einzige, was eine Kundin
+# schriftlich vom Salon in die Hand bekommt. Logo und ein Stil, den babu aus
+# den Firmendaten vorschlägt — das Zeichnen macht die App.
+# ---------------------------------------------------------------------------
+
+LOGOS = Path(os.environ.get("BABU_LOGOS", str(Path.home() / "babu-web" / "logos")))
+LOGO_MAX = 4 * 1024 * 1024
+LOGO_TYPEN = {b"\x89PNG": "image/png", b"\xff\xd8\xff": "image/jpeg"}
+
+
+def _logo_pfad(un: str) -> Path:
+    return LOGOS / (hashlib.sha256(un.encode()).hexdigest()[:16] + ".bin")
+
+
+def _stil_aus_einstellungen(e: dict) -> dict:
+    import marke  # noqa: PLC0415
+    return marke.stil_pruefen({
+        "farbe": e.get("marke_farbe"), "schrift": e.get("marke_schrift"),
+        "ausrichtung": e.get("marke_ausrichtung"),
+        "linie": (e.get("marke_linie") or "1") != "0",
+        "begruendung": e.get("marke_begruendung"),
+    })
+
+
+@app.get("/api/marke")
+def api_marke(request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    import marke  # noqa: PLC0415
+    inhaber = salon_von(un)
+    stil = _stil_aus_einstellungen(db_einstellungen(inhaber))
+    return JSONResponse({**stil, "in_worten": marke.als_text(stil),
+                         "logo": _logo_pfad(inhaber).is_file()})
+
+
+@app.get("/api/marke/katalog")
+def api_marke_katalog(request: Request) -> Response:
+    """Die vier Schritte und die Farben, aus denen gewählt wird."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    import marke  # noqa: PLC0415
+    return JSONResponse({"schritte": list(marke.SCHRITTE),
+                         "farben": list(marke.KATALOG),
+                         "stile": [{"schluessel": k, "name": k.capitalize(),
+                                    "dazu": v.split(",")[0]}
+                                   for k, v in marke.LOGO_STILE.items()]})
+
+
+@app.post("/api/marke/farbe")
+async def api_marke_farbe(request: Request) -> Response:
+    """Schritt 1: eine Farbe aus dem Katalog wählen."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    import marke  # noqa: PLC0415
+    eintrag = marke.farbe_aus_katalog((body or {}).get("farbe"))
+    if eintrag is None:
+        return JSONResponse({"fehler": "Diese Farbe kennen wir nicht."},
+                            status_code=400)
+    db_einstellung_setzen(salon_von(un), "marke_farbe", eintrag["hex"])
+    return JSONResponse({"ok": True, **eintrag})
+
+
+@app.post("/api/marke/logo")
+async def api_marke_logo(request: Request) -> Response:
+    """Das Logo des Salons — es liegt NICHT in der Belegbox: ein Logo wird
+    ausgetauscht, und in Git bleibt jede Fassung für immer stehen."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das macht die Inhaberin."}, status_code=403)
+    daten = await request.body()
+    if not daten:
+        return JSONResponse({"fehler": "leer"}, status_code=400)
+    if len(daten) > LOGO_MAX:
+        return JSONResponse({"fehler": "Das Bild ist zu groß — bis 4 MB."},
+                            status_code=413)
+    if not any(daten.startswith(k) for k in LOGO_TYPEN):
+        return JSONResponse({"fehler": "Bitte als PNG oder JPG."}, status_code=400)
+    pfad = _logo_pfad(salon_von(un))
+    pfad.parent.mkdir(parents=True, exist_ok=True)
+    pfad.write_bytes(daten)
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/marke/logo")
+def api_marke_logo_holen(request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    pfad = _logo_pfad(salon_von(un))
+    if not pfad.is_file():
+        return JSONResponse({"fehler": "kein Logo"}, status_code=404)
+    daten = pfad.read_bytes()
+    typ = next((t for k, t in LOGO_TYPEN.items() if daten.startswith(k)),
+               "application/octet-stream")
+    return Response(content=daten, media_type=typ,
+                    headers={"Cache-Control": "private, max-age=300"})
+
+
+@app.post("/api/marke/logo/loeschen")
+def api_marke_logo_loeschen(request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    _logo_pfad(salon_von(un)).unlink(missing_ok=True)
+    return JSONResponse({"ok": True})
+
+
+# Nano Banana (gemini-3-pro-image). Der Schlüssel steht in einer .env-Zeile
+# und wird NIE geloggt. Ohne Schlüssel gibt es die Funktion schlicht nicht.
+GEMINI_MODELL = os.environ.get("BABU_BILD_MODELL", "gemini-3-pro-image")
+GEMINI_ENV = Path(os.environ.get("BABU_GEMINI_ENV", str(Path.home() / "Youtube" / ".env")))
+
+
+def _gemini_schluessel() -> str | None:
+    """Die eine Zeile parsen — die Datei enthält kaputte Zeilen, `source`
+    würde daran scheitern."""
+    schluessel = os.environ.get("GEMINI_API_KEY")
+    if schluessel:
+        return schluessel.strip()
+    try:
+        for zeile in GEMINI_ENV.read_text(errors="replace").splitlines():
+            if zeile.strip().startswith("GEMINI_API_KEY"):
+                return zeile.split("=", 1)[1].strip().strip("\"'")
+    except OSError:
+        return None
+    return None
+
+
+@app.post("/api/marke/logo/entwerfen")
+def api_marke_logo_entwerfen(request: Request, stil: str = "schlicht") -> Response:
+    """babu entwirft ein Logo aus den Firmendaten.
+
+    Der Name des Salons geht dafür an einen Dienst außerhalb des Hauses
+    (Google). Das steht so in der Oberfläche — es ist die einzige Stelle in
+    babu, an der Betriebsdaten das Haus verlassen.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das macht die Inhaberin."}, status_code=403)
+    schluessel = _gemini_schluessel()
+    if not schluessel:
+        return JSONResponse(
+            {"fehler": "Für entworfene Logos fehlt der Zugang — lade solange "
+                       "dein eigenes Bild hoch."}, status_code=501)
+
+    import marke  # noqa: PLC0415
+    inhaber = salon_von(un)
+    einstellungen = db_einstellungen(inhaber)
+    auftrag = marke.logo_auftrag(einstellungen, stil,
+                                 einstellungen.get("marke_farbe"))
+    try:
+        r = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{GEMINI_MODELL}:generateContent",
+            headers={"x-goog-api-key": schluessel},
+            json={"contents": [{"parts": [{"text": auftrag}]}],
+                  "generationConfig": {"responseModalities": ["IMAGE"],
+                                       "imageConfig": {"aspectRatio": "1:1"}}},
+            timeout=120)
+        r.raise_for_status()
+        teile = r.json()["candidates"][0]["content"]["parts"]
+        roh = next(t["inlineData"]["data"] for t in teile if "inlineData" in t)
+        bild = base64.b64decode(roh)
+    except Exception as e:  # noqa: BLE001
+        # Nie den Schlüssel mitloggen — nur den Typ des Fehlers.
+        print(f"[logo] Entwurf gescheitert: {type(e).__name__}", flush=True)
+        return JSONResponse(
+            {"fehler": "Der Entwurf kam gerade nicht durch — versuch es "
+                       "gleich nochmal."}, status_code=503)
+
+    if not bild or len(bild) > LOGO_MAX * 4:
+        return JSONResponse({"fehler": "Das Bild kam unbrauchbar zurück."},
+                            status_code=503)
+    pfad = _logo_pfad(inhaber)
+    pfad.parent.mkdir(parents=True, exist_ok=True)
+    pfad.write_bytes(bild)
+    print(f"[logo] entworfen für {inhaber} ({len(bild)} Bytes, Stil {stil})", flush=True)
+    return JSONResponse({"ok": True, "stil": stil, "bytes": len(bild)})
+
+
+def _logo_erzeugen(auftrag: str, schluessel: str) -> bytes | None:
+    """Ein Bild von Nano Banana holen. Gibt None zurück, statt zu werfen —
+    bei zehn gleichzeitigen Versuchen darf einer danebengehen."""
+    try:
+        r = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{GEMINI_MODELL}:generateContent",
+            headers={"x-goog-api-key": schluessel},
+            json={"contents": [{"parts": [{"text": auftrag}]}],
+                  "generationConfig": {"responseModalities": ["IMAGE"],
+                                       "imageConfig": {"aspectRatio": "1:1"}}},
+            timeout=150)
+        r.raise_for_status()
+        teile = r.json()["candidates"][0]["content"]["parts"]
+        roh = next(t["inlineData"]["data"] for t in teile if "inlineData" in t)
+        return base64.b64decode(roh)
+    except Exception as e:  # noqa: BLE001
+        print(f"[logo] ein Vorschlag fiel aus: {type(e).__name__}", flush=True)
+        return None
+
+
+def _vorschlag_pfad(un: str, nummer: int) -> Path:
+    return LOGOS / hashlib.sha256(un.encode()).hexdigest()[:16] / f"v{nummer}.bin"
+
+
+@app.post("/api/marke/vorschlaege")
+async def api_marke_vorschlaege(request: Request, saat: int = 0) -> Response:
+    """Ein Knopf, zehn Zeichen.
+
+    Statt sich durch Farbe und Stil zu tasten: babu entwirft zehn auf einmal,
+    eines antippen — und der ganze Auftritt steht. Die zehn entstehen
+    gleichzeitig, sonst dauert es zehnmal so lang.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das macht die Inhaberin."}, status_code=403)
+    schluessel = _gemini_schluessel()
+    if not schluessel:
+        return JSONResponse(
+            {"fehler": "Für entworfene Zeichen fehlt der Zugang — lade solange "
+                       "dein eigenes Bild hoch."}, status_code=501)
+
+    import concurrent.futures as futures  # noqa: PLC0415
+    import marke  # noqa: PLC0415
+    inhaber = salon_von(un)
+    saetze = marke.vorschlag_saetze(db_einstellungen(inhaber), saat=saat)
+
+    def hole(satz: dict) -> tuple[dict, bytes | None]:
+        return satz, _logo_erzeugen(satz["auftrag"], schluessel)
+
+    def alle() -> list[tuple[dict, bytes | None]]:
+        with futures.ThreadPoolExecutor(max_workers=len(saetze)) as pool:
+            return list(pool.map(hole, saetze))
+
+    ergebnisse = await run_in_threadpool(alle)
+
+    ordner = _vorschlag_pfad(inhaber, 0).parent
+    ordner.mkdir(parents=True, exist_ok=True)
+    fertig = []
+    for satz, bild in ergebnisse:
+        if not bild:
+            continue
+        _vorschlag_pfad(inhaber, satz["nummer"]).write_bytes(bild)
+        fertig.append({"nummer": satz["nummer"], "stil": satz["stil"],
+                       "farbe": satz["farbe"], "farbe_name": satz["farbe_name"]})
+    if not fertig:
+        return JSONResponse({"fehler": "Die Entwürfe kamen gerade nicht durch — "
+                                       "versuch es gleich nochmal."}, status_code=503)
+    print(f"[logo] {len(fertig)} von {len(saetze)} Vorschlägen für {inhaber}",
+          flush=True)
+    return JSONResponse({"vorschlaege": fertig, "saat": saat})
+
+
+@app.get("/api/marke/vorschlag/{nummer}")
+def api_marke_vorschlag_bild(nummer: int, request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    pfad = _vorschlag_pfad(salon_von(un), nummer)
+    if not (0 <= nummer < 12) or not pfad.is_file():
+        return JSONResponse({"fehler": "kein Vorschlag"}, status_code=404)
+    daten = pfad.read_bytes()
+    typ = next((t for k, t in LOGO_TYPEN.items() if daten.startswith(k)),
+               "application/octet-stream")
+    return Response(content=daten, media_type=typ,
+                    headers={"Cache-Control": "private, max-age=300"})
+
+
+@app.post("/api/marke/waehlen")
+async def api_marke_waehlen(request: Request) -> Response:
+    """Ein Vorschlag angetippt — und der ganze Auftritt steht."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das macht die Inhaberin."}, status_code=403)
+    try:
+        body = await request.json()
+        nummer = int((body or {}).get("nummer"))
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON mit nummer erwartet"}, status_code=400)
+
+    import marke  # noqa: PLC0415
+    inhaber = salon_von(un)
+    quelle = _vorschlag_pfad(inhaber, nummer)
+    if not (0 <= nummer < 12) or not quelle.is_file():
+        return JSONResponse({"fehler": "Diesen Vorschlag gibt es nicht mehr."},
+                            status_code=404)
+
+    ziel = _logo_pfad(inhaber)
+    ziel.parent.mkdir(parents=True, exist_ok=True)
+    ziel.write_bytes(quelle.read_bytes())
+
+    saetze = {s["nummer"]: s for s in marke.vorschlag_saetze(
+        db_einstellungen(inhaber), saat=int((body or {}).get("saat") or 0))}
+    auftritt = marke.auftritt_aus(saetze.get(nummer, {}))
+    for schluessel, wert in (("marke_farbe", auftritt["farbe"]),
+                             ("marke_schrift", auftritt["schrift"]),
+                             ("marke_ausrichtung", auftritt["ausrichtung"]),
+                             ("marke_linie", "1" if auftritt["linie"] else "0"),
+                             ("marke_begruendung", auftritt.get("begruendung", ""))):
+        db_einstellung_setzen(inhaber, schluessel, str(wert))
+    # Die übrigen Entwürfe braucht niemand mehr.
+    for n in range(12):
+        if n != nummer:
+            _vorschlag_pfad(inhaber, n).unlink(missing_ok=True)
+    return JSONResponse({"ok": True, **auftritt,
+                         "in_worten": marke.als_text(auftritt)})
+
+
+@app.post("/api/marke/entwerfen")
+def api_marke_entwerfen(request: Request) -> Response:
+    """babu schlägt einen Briefkopf vor — aus dem, was es über den Salon weiß.
+
+    Was das Modell antwortet, wird geprüft, nicht geglaubt: unbrauchbare
+    Farben oder erfundene Schriften fallen auf die Vorgabe zurück. Eine
+    Rechnung wird gedruckt und muss lesbar bleiben.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das macht die Inhaberin."}, status_code=403)
+    import marke  # noqa: PLC0415
+    inhaber = salon_von(un)
+    einstellungen = db_einstellungen(inhaber)
+    frage = marke.frage_bauen(einstellungen)
+    roh: dict = {}
+    try:
+        with _LLM_SEMAPHORE:
+            r = requests.post(GEMMA_API, json={
+                "model": GEMMA_MODELL, "temperature": 0.6, "max_tokens": 300,
+                "messages": [{"role": "user", "content": frage}],
+            }, timeout=90)
+        r.raise_for_status()
+        text = r.json()["choices"][0]["message"]["content"]
+        treffer = re.search(r"\{.*\}", text, re.S)
+        roh = json.loads(treffer.group(0)) if treffer else {}
+    except Exception:  # noqa: BLE001
+        return JSONResponse(
+            {"fehler": "Der Vorschlag kam gerade nicht durch — versuch es "
+                       "gleich nochmal, oder wähle selbst."}, status_code=503)
+
+    stil = marke.stil_pruefen(roh)
+    for schluessel, wert in (("marke_farbe", stil["farbe"]),
+                             ("marke_schrift", stil["schrift"]),
+                             ("marke_ausrichtung", stil["ausrichtung"]),
+                             ("marke_linie", "1" if stil["linie"] else "0"),
+                             ("marke_begruendung", stil.get("begruendung", ""))):
+        db_einstellung_setzen(inhaber, schluessel, str(wert))
+    return JSONResponse({**stil, "in_worten": marke.als_text(stil)})
 
 
 @app.post("/api/angaben/{stamm}")
