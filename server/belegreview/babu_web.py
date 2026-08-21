@@ -405,9 +405,13 @@ BELEG_ENDUNGEN = BILD_ENDUNGEN | {".pdf", ".heic", ".xml"}
 INDEX_TTL = float(os.environ.get("BABU_INDEX_TTL", "5"))
 
 _INDEX_LOCK = threading.Lock()
+# Die Rechnungsnummer wird gelesen UND vergeben — dazwischen darf
+# niemand dieselbe Nummer bekommen.
+_RECHNUNG_SCHLOSS = threading.Lock()
 _INDEX: dict = {"head": None, "geprueft": 0.0, "belege": {}, "reviews": {},
                 "dokumente": [], "freigaben": {}, "umsaetze": {},
-                "kassenblaetter": {}, "zeiten": {}, "oid_cache": {}}
+                "kassenblaetter": {}, "zeiten": {}, "oid_cache": {},
+                "rechnungen": {}}
 
 
 def _git(args: list[str], timeout: int = 30) -> str | None:
@@ -672,6 +676,22 @@ def _index_bauen(head: str) -> None:
             # Ein Blatt je Tag; ein späteres gewinnt (Korrektur).
             kassenblaetter[d_["datum"]] = d_
     _INDEX["kassenblaetter"] = kassenblaetter
+
+    # Gestellte Rechnungen: rechnungen/<JJJJ-MM>/<nummer>.json
+    rechnung_pfade = {p_: oid for p_, oid in pfade.items()
+                      if p_.startswith("rechnungen/") and p_.endswith(".json")}
+    for oid, roh in _blobs_lesen([o for o in rechnung_pfade.values()
+                                  if o not in oid_cache]).items():
+        try:
+            oid_cache[oid] = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            oid_cache[oid] = None
+    rechnungen_: dict[str, dict] = {}
+    for p_, oid in rechnung_pfade.items():
+        d_ = oid_cache.get(oid)
+        if isinstance(d_, dict) and d_.get("nummer"):
+            rechnungen_[d_["nummer"]] = d_
+    _INDEX["rechnungen"] = rechnungen_
 
     # Exportierte Belege: export/<monat>/stapel.json sammeln
     export_pfade = {p_: oid for p_, oid in pfade.items()
@@ -1372,7 +1392,8 @@ DOKUMENT_PFAD_RE = re.compile(r"^dokumente/[A-Za-z0-9._/ -]{1,200}$")
 # Alles, was in der Ablage steht, muss sich auch öffnen lassen — sonst führt
 # ein Eintrag ins Leere. Gelöscht werden darf davon nur `dokumente/`.
 ABLAGE_PFAD_RE = re.compile(
-    r"^(dokumente|auszuege|abschluss|export|kassenbuch)/[A-Za-z0-9._/ -]{1,200}$")
+    r"^(dokumente|auszuege|abschluss|export|kassenbuch|rechnungen)/"
+    r"[A-Za-z0-9._/ -]{1,200}$")
 
 
 @app.get("/api/dokumente")
@@ -1655,7 +1676,10 @@ EINSTELLUNG_SCHLUESSEL = {"benachrichtigung_frage", "benachrichtigung_post",
                           "filialen", "mehrere_unternehmen", "abschluss_art",
                           # Umsatzprofil: steuert, was das Kassenbuch fragt
                           "ust_sieben_prozent", "verkauft_gutscheine",
-                          "personal_monat"}
+                          "personal_monat",
+                          # Rechnungen: was auf den Kopf gehört, und wann eine
+                          # Rechnung als Erlös zählt (ist = wenn bezahlt wird).
+                          "anschrift", "ust_id", "iban", "bank", "versteuerung"}
 
 
 # Registrierung: Interessentinnen hinterlassen alle Daten — der Zugang wird
@@ -2685,6 +2709,7 @@ ABLAGE_ARTEN = {
     "kontoauszug": ("Kontoauszüge", "Deine Bankunterlagen"),
     "export": ("Buchungsstapel", "Übergaben an die Buchhaltung"),
     "kassenbuch": ("Kassenbuch", "Deine Tagesblätter"),
+    "rechnung": ("Rechnungen", "Was du anderen in Rechnung gestellt hast"),
 }
 
 
@@ -2730,6 +2755,8 @@ def api_ablage(request: Request) -> Response:
             art, titel = "export", name
         elif pfad.startswith("kassenbuch/"):
             art, titel = "kassenbuch", "Kassenbuch " + name.removesuffix(".json")
+        elif pfad.startswith("rechnungen/") and pfad.endswith(".pdf"):
+            art, titel = "rechnung", "Rechnung " + name.removesuffix(".pdf")
         else:
             continue
         # Aufbewahrungspflichtig: die Oberfläche zeigt hier keinen Knopf, und
@@ -2759,6 +2786,242 @@ def api_ablage(request: Request) -> Response:
                         "arten": arten})
     return JSONResponse({"jahre": ausgabe,
                          "gesamt": sum(j["anzahl"] for j in ausgabe)})
+
+
+# ---------------------------------------------------------------------------
+# Rechnungen stellen: die dritte Geldsorte. Belege gehen raus, das Kassenbuch
+# nimmt ein — hier stellt der Salon selbst etwas in Rechnung (Stuhlmiete,
+# Firmenkunden). Die Nummer vergibt der Server, damit die Folge lückenlos
+# bleibt; das PDF baut die App und reicht es nach.
+# ---------------------------------------------------------------------------
+
+RECHNUNG_NUMMER_RE = re.compile(r"^\d{4}-\d{4}$")
+
+
+def _rechnungen_lesen() -> list[dict]:
+    """Alle festgeschriebenen Rechnungen aus dem Index."""
+    idx = index_aktuell()
+    return list(idx.get("rechnungen", {}).values())
+
+
+def _versteuerung(un: str) -> str:
+    wert = (db_einstellungen(salon_von(un)).get("versteuerung") or "ist").lower()
+    return "soll" if wert == "soll" else "ist"
+
+
+@app.get("/api/rechnungen")
+def api_rechnungen(request: Request, jahr: int = 0) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    import rechnungen as re_  # noqa: PLC0415
+    alle = _rechnungen_lesen()
+    if jahr:
+        alle = [r for r in alle if str(r.get("nummer", "")).startswith(f"{jahr}-")]
+    alle.sort(key=lambda r: r.get("nummer") or "", reverse=True)
+    zeilen = [dict(r, stand=re_.stand(r)) for r in alle]
+    offen = [z for z in zeilen if z["stand"] == "offen"]
+    return JSONResponse({
+        "rechnungen": zeilen,
+        "offen_anzahl": len(offen),
+        "offen_summe": round(sum(float(z.get("brutto") or 0) for z in offen), 2),
+        "versteuerung": _versteuerung(un),
+    })
+
+
+@app.post("/api/rechnungen")
+async def api_rechnung_stellen(request: Request) -> Response:
+    """Rechnung festschreiben — der Server vergibt die nächste Nummer.
+
+    Erst danach baut die App das PDF (mit genau dieser Nummer) und reicht es
+    nach. Reißt es dazwischen ab, existiert die Rechnung mit ihrer Nummer
+    und das PDF lässt sich nachreichen — keine Lücke in der Folge.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Rechnungen stellt die Inhaberin."},
+                            status_code=403)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+
+    import rechnungen as re_  # noqa: PLC0415
+    datum = str((body or {}).get("datum") or time.strftime("%Y-%m-%d"))[:10]
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", datum):
+        return JSONResponse({"fehler": "Datum als JJJJ-MM-TT"}, status_code=400)
+
+    einstellungen = db_einstellungen(salon_von(un))
+    with _RECHNUNG_SCHLOSS:
+        vorhandene = [r.get("nummer") for r in _rechnungen_lesen()]
+        nummer = re_.naechste_nummer(vorhandene, int(datum[:4]))
+        try:
+            rechnung = re_.aufbauen(
+                nummer=nummer, datum=datum,
+                empfaenger=(body or {}).get("empfaenger") or {},
+                positionen=(body or {}).get("positionen") or [],
+                stammdaten=einstellungen,
+                leistungszeitpunkt=(body or {}).get("leistungszeitpunkt"),
+                hinweis_frei=str((body or {}).get("hinweis") or ""))
+        except re_.RechnungFehler as e:
+            return JSONResponse({"fehler": str(e)}, status_code=400)
+
+        maengel = re_.fehlende_pflichtangaben(rechnung)
+        if maengel:
+            return JSONResponse({"fehler": maengel[0], "fehlt": maengel},
+                                status_code=400)
+        rechnung["gestellt_von"] = un
+        rechnung["gestellt_am"] = _jetzt_iso()
+
+        import boxschreiber  # noqa: PLC0415
+        pfad = f"rechnungen/{datum[:7]}/{nummer}.json"
+        try:
+            commit = await run_in_threadpool(
+                boxschreiber.schreiben, pfad,
+                json.dumps(rechnung, ensure_ascii=False, indent=1).encode(),
+                f"rechnung: {nummer}", un)
+        except boxschreiber.SchreibFehler:
+            return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                                status_code=503)
+        with _INDEX_LOCK:
+            _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit, "nummer": nummer,
+                         "pfad": pfad, "rechnung": rechnung})
+
+
+def _rechnung_holen(nummer: str) -> tuple[dict | None, str | None]:
+    for r in _rechnungen_lesen():
+        if r.get("nummer") == nummer:
+            return r, f"rechnungen/{(r.get('datum') or '')[:7]}/{nummer}.json"
+    return None, None
+
+
+@app.post("/api/rechnung/{nummer}/pdf")
+async def api_rechnung_pdf(nummer: str, request: Request) -> Response:
+    """Das PDF nachreichen — gebaut hat es die App, aufbewahrt wird es hier."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if not RECHNUNG_NUMMER_RE.match(nummer):
+        return JSONResponse({"fehler": "ungültige Nummer"}, status_code=400)
+    rechnung, _ = _rechnung_holen(nummer)
+    if rechnung is None:
+        return JSONResponse({"fehler": "unbekannte Rechnung"}, status_code=404)
+    daten = await request.body()
+    if not daten or not daten.startswith(b"%PDF"):
+        return JSONResponse({"fehler": "bitte als PDF"}, status_code=400)
+    if len(daten) > HOCHLADEN_MAX:
+        return JSONResponse({"fehler": "zu groß"}, status_code=413)
+    import boxschreiber  # noqa: PLC0415
+    pfad = f"rechnungen/{(rechnung.get('datum') or '')[:7]}/{nummer}.pdf"
+    try:
+        commit = await run_in_threadpool(boxschreiber.schreiben, pfad, daten,
+                                         f"rechnung: {nummer} (PDF)", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit, "pfad": pfad})
+
+
+@app.post("/api/rechnung/{nummer}/bezahlt")
+async def api_rechnung_bezahlt(nummer: str, request: Request) -> Response:
+    """„Bezahlt am" setzen — bei Ist-Versteuerung zählt erst das als Umsatz."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if not RECHNUNG_NUMMER_RE.match(nummer):
+        return JSONResponse({"fehler": "ungültige Nummer"}, status_code=400)
+    rechnung, pfad = _rechnung_holen(nummer)
+    if rechnung is None:
+        return JSONResponse({"fehler": "unbekannte Rechnung"}, status_code=404)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    am = str((body or {}).get("am") or time.strftime("%Y-%m-%d"))[:10]
+    if am and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", am):
+        return JSONResponse({"fehler": "Datum als JJJJ-MM-TT"}, status_code=400)
+    rechnung = dict(rechnung, bezahlt_am=am or None)
+
+    import boxschreiber  # noqa: PLC0415
+    try:
+        commit = await run_in_threadpool(
+            boxschreiber.schreiben, pfad,
+            json.dumps(rechnung, ensure_ascii=False, indent=1).encode(),
+            f"rechnung: {nummer} bezahlt", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit, "bezahlt_am": am or None})
+
+
+@app.post("/api/rechnung/{nummer}/storno")
+async def api_rechnung_storno(nummer: str, request: Request) -> Response:
+    """Eine falsche Rechnung wird nicht gelöscht, sondern storniert."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Rechnungen stellt die Inhaberin."},
+                            status_code=403)
+    if not RECHNUNG_NUMMER_RE.match(nummer):
+        return JSONResponse({"fehler": "ungültige Nummer"}, status_code=400)
+    original, pfad_alt = _rechnung_holen(nummer)
+    if original is None:
+        return JSONResponse({"fehler": "unbekannte Rechnung"}, status_code=404)
+    if original.get("storniert_durch"):
+        return JSONResponse({"fehler": "Diese Rechnung ist schon storniert."},
+                            status_code=409)
+
+    import rechnungen as re_  # noqa: PLC0415
+    import boxschreiber  # noqa: PLC0415
+    datum = time.strftime("%Y-%m-%d")
+    with _RECHNUNG_SCHLOSS:
+        vorhandene = [r.get("nummer") for r in _rechnungen_lesen()]
+        neue_nummer = re_.naechste_nummer(vorhandene, int(datum[:4]))
+        try:
+            gegen = re_.storno(original, nummer=neue_nummer, datum=datum)
+        except re_.RechnungFehler as e:
+            return JSONResponse({"fehler": str(e)}, status_code=400)
+        gegen["gestellt_von"] = un
+        gegen["gestellt_am"] = _jetzt_iso()
+        markiert = dict(original, storniert_durch=neue_nummer)
+        try:
+            commit = await run_in_threadpool(
+                boxschreiber.schreiben,
+                {f"rechnungen/{datum[:7]}/{neue_nummer}.json":
+                    json.dumps(gegen, ensure_ascii=False, indent=1).encode(),
+                 pfad_alt: json.dumps(markiert, ensure_ascii=False, indent=1).encode()},
+                None, f"storno: {nummer} durch {neue_nummer}", un)
+        except boxschreiber.SchreibFehler:
+            return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                                status_code=503)
+        with _INDEX_LOCK:
+            _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit, "nummer": neue_nummer,
+                         "rechnung": gegen})
+
+
+# ---------------------------------------------------------------------------
+# Die Vertragskiste: was jeden Monat sicher abgeht — und wann zu handeln ist.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/vertraege")
+def api_vertraege(request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Die Zahlen sieht nur die Inhaberin."},
+                            status_code=403)
+    import vertraege as vt  # noqa: PLC0415
+    return JSONResponse(vt.uebersicht(vertraege_aktuell()))
 
 
 @app.post("/api/angaben/{stamm}")
@@ -3075,7 +3338,9 @@ def api_monatsabschluss(monat: str, request: Request) -> Response:
     einstellungen = db_einstellungen(un)
 
     profil = ma.umsatz_profil(einstellungen)
-    erloese = ma.erloese_monat(blaetter)
+    erloese = ma.erloese_monat(blaetter, monat=monat,
+                               rechnungen=list(idx.get("rechnungen", {}).values()),
+                               versteuerung=_versteuerung(un))
     vorsteuer = ma.vorsteuer_monat(belege)
 
     # Vorjahreswerte aus dem Salon-Check, wenn vorhanden.

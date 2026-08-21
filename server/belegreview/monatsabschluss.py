@@ -68,12 +68,20 @@ def umsatz_profil(einstellungen: dict) -> dict:
             "braucht_ustva": not klein}
 
 
-def erloese_monat(kassenblaetter: list[dict]) -> dict:
-    """Erlöse eines Monats aus den Tagesblättern des Kassenbuchs.
+def erloese_monat(kassenblaetter: list[dict], monat: str | None = None,
+                  rechnungen: list[dict] | None = None,
+                  versteuerung: str = "ist") -> dict:
+    """Erlöse eines Monats — aus der Ladenkasse UND aus gestellten Rechnungen.
 
     Was nicht gefragt wurde, ist 19 % — der Normalfall. Eingelöste
     Gutscheine sind KEIN Umsatz (versteuert wurde beim Verkauf),
     verkaufte Gutscheine dagegen schon (Einzweck-Gutschein).
+
+    Rechnungen zählen je nach Versteuerungsart in einem anderen Monat:
+    bei `ist` (§ 20 UStG, Normalfall, und was die EÜR verlangt), wenn das
+    Geld ankommt — bei `soll` mit dem Rechnungsdatum. Beide Quellen bleiben
+    getrennt ausgewiesen (`aus_kasse` / `aus_rechnungen`), damit sichtbar
+    ist, woher der Umsatz kam.
     """
     bar = ec = frei = sieben = gutschein_verkauf = gutschein_eingeloest = 0.0
     for b in kassenblaetter:
@@ -85,6 +93,32 @@ def erloese_monat(kassenblaetter: list[dict]) -> dict:
         gutschein_eingeloest += float(b.get("gutscheineEingeloest") or 0)
     tagesumsaetze = bar + ec
     neunzehn = max(0.0, tagesumsaetze - frei - sieben) + gutschein_verkauf
+    aus_kasse = _rund(neunzehn + sieben + frei)
+
+    # Rechnungen dazu — nur die, die in DIESEM Monat zählen.
+    import rechnungen as _re  # noqa: PLC0415 — reine Rechnung, kein I/O
+    r_neunzehn = r_sieben = r_frei = r_gesamt = offen = 0.0
+    for r in (rechnungen or []):
+        if not isinstance(r, dict):
+            continue
+        if _re.stand(r) == "offen":
+            offen += float(r.get("brutto") or 0)
+        if monat is None or _re.zaehlt_im_monat(r, versteuerung) != monat:
+            continue
+        for s_ in (r.get("saetze") or []):
+            brutto_satz = float(s_["netto"]) + float(s_["ust"])
+            if int(s_["satz"]) == 7:
+                r_sieben += brutto_satz
+            else:
+                r_neunzehn += brutto_satz
+        if not (r.get("saetze") or []):
+            # Kleinunternehmerin: kein Steuerausweis, aber Umsatz.
+            r_frei += float(r.get("brutto") or 0)
+        r_gesamt += float(r.get("brutto") or 0)
+
+    neunzehn += r_neunzehn
+    sieben += r_sieben
+    frei += r_frei
     return {
         "tage": len(kassenblaetter),
         "bar": _rund(bar), "karte": _rund(ec),
@@ -92,6 +126,9 @@ def erloese_monat(kassenblaetter: list[dict]) -> dict:
         "steuerfrei": _rund(frei),
         "gutschein_verkauft": _rund(gutschein_verkauf),
         "gutschein_eingeloest": _rund(gutschein_eingeloest),
+        "aus_kasse": aus_kasse,
+        "aus_rechnungen": _rund(r_gesamt),
+        "offen": _rund(offen),
         "brutto_gesamt": _rund(neunzehn + sieben + frei),
         "netto_gesamt": _rund(_netto(neunzehn, 19) + _netto(sieben, 7) + frei),
     }
