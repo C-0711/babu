@@ -178,6 +178,18 @@ struct FragenTab: View {
         }
     }
 
+    /// Wird nicht monatlich gezahlt, nennen wir auch den Betrag, der im
+    /// Vertrag steht — sonst sieht die Umrechnung wie ein Lesefehler aus.
+    private func vertragsbetrag(_ monatlich: Double,
+                                _ zahlweise: String) -> (Double, String)? {
+        switch zahlweise {
+        case "jaehrlich":        return (monatlich * 12, "im Jahr")
+        case "halbjaehrlich":    return (monatlich * 6, "im halben Jahr")
+        case "vierteljaehrlich": return (monatlich * 3, "im Vierteljahr")
+        default:                 return nil
+        }
+    }
+
     /// Vertrag fotografiert: ablegen, lesen lassen, Eckdaten zeigen.
     private func vertragSchicken(_ daten: Data, name: String) {
         guard let url = URL(string: store.ablageURL), let pat = KeychainHelfer.ladePAT() else {
@@ -203,6 +215,11 @@ struct FragenTab: View {
                     if let betrag = v.betrag {
                         text += "\n\nIch rechne ab jetzt mit \(fmtEur(betrag)) im Monat — "
                              + "auch wenn dafür mal keine Rechnung kommt."
+                        // Bei Jahresbeiträgen sonst Verwirrung: im Vertrag steht
+                        // 1.440 €, in der Auswertung 120 € — das muss dastehen.
+                        if let (summe, wort) = vertragsbetrag(betrag, v.zahlweise) {
+                            text += " Im Vertrag steht \(fmtEur(summe)) \(wort)."
+                        }
                     }
                     textSetzen(index, text)
                     briefLaeuft = false
