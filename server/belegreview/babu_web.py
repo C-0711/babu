@@ -2856,6 +2856,77 @@ def api_monatsabschluss(monat: str, request: Request) -> Response:
     })
 
 
+@app.post("/api/monatsabschluss/{monat}/freigeben")
+def api_monatsabschluss_freigeben(monat: str, request: Request) -> Response:
+    """Den Entwurf zur Prüfung übergeben — an das steuerliche Backend.
+
+    babu rechnet und legt ab; geprüft und ans Finanzamt übermittelt wird
+    dort. Die Ablage ist der Nachweis: Zahlen, Prüfliste und Zeitpunkt
+    liegen unveränderlich in der Belegbox.
+    """
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if not re.fullmatch(r"\d{4}-\d{2}", monat):
+        return JSONResponse({"fehler": "Monat als JJJJ-MM"}, status_code=400)
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Freigeben darf nur die Inhaberin."},
+                            status_code=403)
+
+    antwort = api_monatsabschluss(monat, request)
+    if antwort.status_code != 200:
+        return antwort
+    zahlen = json.loads(antwort.body)
+
+    offen = (zahlen.get("ustva") or {}).get("pruefliste") or []
+    inhalt = json.dumps({
+        "monat": monat, "von": un,
+        "am": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "ustva": zahlen.get("ustva"), "bwa": zahlen.get("bwa"),
+        "erloese": zahlen.get("erloese"),
+        "hinweis": "Entwurf aus babu — Prüfung und Übermittlung durch das Steuer-Backend.",
+    }, ensure_ascii=False, indent=1).encode()
+
+    import boxschreiber  # noqa: PLC0415
+    try:
+        commit = boxschreiber.schreiben(f"abschluss/{monat}/ustva.json", inhalt,
+                                        f"monatsabschluss {monat} freigegeben", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit, "monat": monat,
+                         "offene_punkte": len(offen)})
+
+
+@app.get("/api/fristen/{jahr}")
+def api_fristen(jahr: str, request: Request) -> Response:
+    """Die steuerlichen Termine eines Jahres — und was als Nächstes ansteht.
+
+    Gerechnet aus den Stammdaten: Kleinunternehmerin bekommt keine
+    Voranmeldungen, wer ein Team hat zusätzlich Lohnsteuer und die
+    Sozialversicherung (der Termin, der am schnellsten Geld kostet).
+    """
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if not re.fullmatch(r"\d{4}", jahr):
+        return JSONResponse({"fehler": "Jahr als JJJJ"}, status_code=400)
+    import datetime as dt  # noqa: PLC0415
+    import fristen as fr  # noqa: PLC0415
+
+    inhaber = salon_von(un)
+    profil = fr.termin_profil(db_einstellungen(inhaber),
+                             hat_team=bool(team_liste(inhaber, nur_aktive=True)))
+    termine = fr.fristen_jahr(int(jahr), profil)
+    heute = dt.date.today()
+    return JSONResponse({
+        "jahr": int(jahr), "profil": profil, "termine": termine,
+        "naechste": fr.naechste(termine, heute, anzahl=3),
+    })
+
+
 @app.post("/api/kassenbuch")
 async def api_kassenbuch(request: Request) -> Response:
     un, fehler = _api_wache(request)
