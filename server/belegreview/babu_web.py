@@ -91,6 +91,14 @@ def _db() -> sqlite3.Connection:
         conn.execute("ALTER TABLE nutzer ADD COLUMN box INTEGER NOT NULL DEFAULT 1")
     except sqlite3.OperationalError:
         pass
+    conn.execute("""CREATE TABLE IF NOT EXISTS gespraech
+        (id INTEGER PRIMARY KEY AUTOINCREMENT, un TEXT NOT NULL,
+         titel TEXT, begonnen TEXT NOT NULL, zuletzt TEXT NOT NULL)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS nachricht
+        (id INTEGER PRIMARY KEY AUTOINCREMENT, gespraech INTEGER NOT NULL,
+         rolle TEXT NOT NULL, text TEXT NOT NULL, zeit TEXT NOT NULL)""")
+    conn.execute("""CREATE INDEX IF NOT EXISTS nachricht_gespraech
+        ON nachricht (gespraech, id)""")
     conn.execute("""CREATE TABLE IF NOT EXISTS app_schluessel
         (hash TEXT PRIMARY KEY, un TEXT NOT NULL, geraet TEXT,
          erstellt TEXT NOT NULL, zuletzt TEXT)""")
@@ -405,9 +413,13 @@ BELEG_ENDUNGEN = BILD_ENDUNGEN | {".pdf", ".heic", ".xml"}
 INDEX_TTL = float(os.environ.get("BABU_INDEX_TTL", "5"))
 
 _INDEX_LOCK = threading.Lock()
+# Die Rechnungsnummer wird gelesen UND vergeben — dazwischen darf
+# niemand dieselbe Nummer bekommen.
+_RECHNUNG_SCHLOSS = threading.Lock()
 _INDEX: dict = {"head": None, "geprueft": 0.0, "belege": {}, "reviews": {},
                 "dokumente": [], "freigaben": {}, "umsaetze": {},
-                "kassenblaetter": {}, "zeiten": {}, "oid_cache": {}}
+                "kassenblaetter": {}, "zeiten": {}, "oid_cache": {},
+                "rechnungen": {}}
 
 
 def _git(args: list[str], timeout: int = 30) -> str | None:
@@ -672,6 +684,22 @@ def _index_bauen(head: str) -> None:
             # Ein Blatt je Tag; ein späteres gewinnt (Korrektur).
             kassenblaetter[d_["datum"]] = d_
     _INDEX["kassenblaetter"] = kassenblaetter
+
+    # Gestellte Rechnungen: rechnungen/<JJJJ-MM>/<nummer>.json
+    rechnung_pfade = {p_: oid for p_, oid in pfade.items()
+                      if p_.startswith("rechnungen/") and p_.endswith(".json")}
+    for oid, roh in _blobs_lesen([o for o in rechnung_pfade.values()
+                                  if o not in oid_cache]).items():
+        try:
+            oid_cache[oid] = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            oid_cache[oid] = None
+    rechnungen_: dict[str, dict] = {}
+    for p_, oid in rechnung_pfade.items():
+        d_ = oid_cache.get(oid)
+        if isinstance(d_, dict) and d_.get("nummer"):
+            rechnungen_[d_["nummer"]] = d_
+    _INDEX["rechnungen"] = rechnungen_
 
     # Exportierte Belege: export/<monat>/stapel.json sammeln
     export_pfade = {p_: oid for p_, oid in pfade.items()
@@ -1367,12 +1395,101 @@ async def api_beleg_loeschen(stamm: str, request: Request) -> Response:
     return JSONResponse({"ok": True, "commit": commit, "stamm": stamm})
 
 
+@app.post("/api/aufnahme")
+async def api_aufnahme(request: Request, name: str = "foto.jpg",
+                       text: str = "") -> Response:
+    """Ein Foto — egal wovon. babu entscheidet, wohin es gehört.
+
+    Die Kamera fragt nicht mehr „was ist das?". Die App liest den Text schon
+    auf dem Gerät und schickt ihn mit; hier fällt daraus die Entscheidung:
+    Kassenbon in die Belege, Vertrag und Behördenpost in die Ablage,
+    Kontoauszug zu den Auszügen. Im Zweifel Beleg — der häufigste Fall und
+    der harmloseste Irrtum.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if (sperre := _mitarbeit_wache(un, "darf_belege", "Belege einreichen")):
+        return sperre
+    endung = Path(name).suffix.lower()
+    if endung not in HOCHLADEN_ENDUNGEN:
+        return JSONResponse({"fehler": "kein Beleg-Format"}, status_code=400)
+    daten = await request.body()
+    if not daten:
+        return JSONResponse({"fehler": "leer"}, status_code=400)
+    if len(daten) > HOCHLADEN_MAX:
+        return JSONResponse({"fehler": "zu groß"}, status_code=413)
+
+    import einsortieren  # noqa: PLC0415
+    # Bei PDFs liest der Server selbst nach — die App hat dort keinen Text.
+    gelesen = text
+    if not gelesen.strip() and endung == ".pdf":
+        try:
+            import tempfile  # noqa: PLC0415
+            import abschluss_lesen  # noqa: PLC0415
+            with tempfile.NamedTemporaryFile(suffix=".pdf") as tf:
+                tf.write(daten)
+                tf.flush()
+                gelesen = "\n".join(abschluss_lesen.seiten_text(tf.name)[:3])
+        except Exception:  # noqa: BLE001
+            gelesen = ""
+    entscheidung = einsortieren.entscheiden(gelesen)
+
+    import boxschreiber  # noqa: PLC0415
+    dateiname = boxschreiber.beleg_dateiname(name)
+    monat = time.strftime("%Y-%m")
+    pfad = einsortieren.pfad_fuer(entscheidung["art"], dateiname, monat)
+
+    dateien: dict[str, bytes] = {pfad: daten}
+    art = entscheidung["art"]
+    if art in ("vertrag", "behoerde"):
+        # Dokumente tragen ihren Zettel mit: sonst weiß die Ablage nicht,
+        # in welchen Ordner die Datei gehört.
+        titel = {"vertrag": "Vertrag", "behoerde": "Post vom Amt"}[art]
+        dateien[pfad + ".meta.json"] = json.dumps(
+            {"titel": f"{titel} · {name}"[:120], "art": art, "von": un,
+             "erkannt": entscheidung["grund"]},
+            ensure_ascii=False, indent=1).encode()
+
+    try:
+        commit = await run_in_threadpool(boxschreiber.schreiben, dateien, None,
+                                         f"aufnahme: {dateiname}", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+
+    # Verträge und Briefe liest babu im Hintergrund weiter — wie bisher.
+    if art == "vertrag":
+        threading.Thread(target=_vertrag_job, args=(pfad, daten, name, un),
+                         daemon=True).start()
+    elif art == "behoerde":
+        threading.Thread(target=_brief_job, args=(pfad, daten, name, un),
+                         daemon=True).start()
+
+    return JSONResponse({"ok": True, "commit": commit, "datei": pfad,
+                         "art": art, "sicher": entscheidung["sicher"],
+                         "grund": entscheidung["grund"],
+                         "wohin": WOHIN_TEXT.get(art, WOHIN_TEXT["beleg"])})
+
+
+# Was die App der Nutzerin sagt — ohne Ordnernamen und ohne Technik.
+WOHIN_TEXT = {
+    "beleg": "Bei deinen Belegen",
+    "vertrag": "Bei deinen Verträgen",
+    "behoerde": "Bei deiner Post vom Amt",
+    "kontoauszug": "Bei deinen Kontoauszügen",
+}
+
+
 DOKUMENT_ENDUNGEN = {".pdf", ".jpg", ".jpeg", ".png"}
 DOKUMENT_PFAD_RE = re.compile(r"^dokumente/[A-Za-z0-9._/ -]{1,200}$")
 # Alles, was in der Ablage steht, muss sich auch öffnen lassen — sonst führt
 # ein Eintrag ins Leere. Gelöscht werden darf davon nur `dokumente/`.
 ABLAGE_PFAD_RE = re.compile(
-    r"^(dokumente|auszuege|abschluss|export|kassenbuch)/[A-Za-z0-9._/ -]{1,200}$")
+    r"^(dokumente|auszuege|abschluss|export|kassenbuch|rechnungen)/"
+    r"[A-Za-z0-9._/ -]{1,200}$")
 
 
 @app.get("/api/dokumente")
@@ -1655,14 +1772,24 @@ EINSTELLUNG_SCHLUESSEL = {"benachrichtigung_frage", "benachrichtigung_post",
                           "filialen", "mehrere_unternehmen", "abschluss_art",
                           # Umsatzprofil: steuert, was das Kassenbuch fragt
                           "ust_sieben_prozent", "verkauft_gutscheine",
-                          "personal_monat"}
+                          "personal_monat",
+                          # Rechnungen: was auf den Kopf gehört, und wann eine
+                          # Rechnung als Erlös zählt (ist = wenn bezahlt wird).
+                          "anschrift", "ust_id", "iban", "bank", "versteuerung",
+                          # Briefkopf der Rechnung
+                          "marke_farbe", "marke_schrift", "marke_ausrichtung",
+                          "marke_linie", "marke_begruendung"}
 
 
 # Registrierung: Interessentinnen hinterlassen alle Daten — der Zugang wird
 # danach persönlich eingerichtet (Allowlist bleibt der Schalter). Ohne Auth,
 # aber Origin-Check, einfaches Rate-Limit je IP und strikte Feld-Whitelist.
-REG_FELDER = ("salon", "name", "email", "telefon", "rechtsform", "steuernummer",
-              "finanzamt", "kleinunternehmer", "steuerberater", "nachricht")
+# Was beim Einrichten erfragt wird. „anschrift" und „iban" stehen hier, weil
+# eine Rechnung ohne Anschrift nach § 14 UStG keine ist — wer das erst beim
+# Rechnungschreiben merkt, sitzt im falschen Moment vor einem leeren Feld.
+REG_FELDER = ("salon", "name", "email", "telefon", "anschrift", "rechtsform",
+              "steuernummer", "finanzamt", "kleinunternehmer", "iban",
+              "steuerberater", "nachricht")
 _REG_ZULETZT: dict[str, float] = {}
 
 
@@ -1718,7 +1845,9 @@ def api_signup(daten: dict, request: Request) -> Response:
                    "steuernummer": sauber["steuernummer"], "finanzamt": sauber["finanzamt"],
                    "kleinunternehmer": sauber["kleinunternehmer"],
                    "steuerberater_status": sauber["steuerberater"],
-                   "telefon": sauber["telefon"], "email": email}
+                   "telefon": sauber["telefon"], "email": email,
+                   # Alles, was später auf der Rechnung stehen muss.
+                   "anschrift": sauber["anschrift"], "iban": sauber["iban"]}
     for schluessel, wert in vorbelegung.items():
         if wert:
             db_einstellung_setzen(email, schluessel, str(wert)[:200])
@@ -1940,6 +2069,8 @@ async def api_registrierung_einrichten(request: Request) -> Response:
                    "kleinunternehmer": daten.get("kleinunternehmer", ""),
                    "steuerberater_status": daten.get("steuerberater", ""),
                    "telefon": daten.get("telefon", ""),
+                   "anschrift": daten.get("anschrift", ""),
+                   "iban": daten.get("iban", ""),
                    "email": email}
     for schluessel, wert in vorbelegung.items():
         if wert:
@@ -2188,9 +2319,21 @@ def chat(body: dict, request: Request) -> Response:
     if not frage or len(frage) > 2000:
         return JSONResponse({"fehler": "frage fehlt oder zu lang"}, status_code=400)
 
-    kontext = belegdaten_kontext()
-    if not kontext:
-        return JSONResponse({"antwort": "Die Belegbox enthält noch keine Reviews."})
+    # Das Gespräch: entweder ein bestehendes fortsetzen oder eines beginnen.
+    gespraech_id = body.get("gespraech")
+    try:
+        gespraech_id = int(gespraech_id) if gespraech_id else None
+    except (TypeError, ValueError):
+        gespraech_id = None
+    if gespraech_id is not None and not gespraech_gehoert(un, gespraech_id):
+        return JSONResponse({"fehler": "unbekanntes Gespräch"}, status_code=404)
+    if gespraech_id is None:
+        gespraech_id = gespraech_anlegen(un, frage)
+
+    import wissen  # noqa: PLC0415
+    kontext = wissen.kontext(frage, _welt_fuer(un))
+    verlauf = verlauf_lesen(gespraech_id)
+    nachricht_anhaengen(gespraech_id, "user", frage)
     payload = {
         "model": GEMMA_MODELL,
         "temperature": 0.2,
@@ -2198,31 +2341,43 @@ def chat(body: dict, request: Request) -> Response:
         "messages": [
             {"role": "system", "content":
                 "Du bist der Assistent von babu (0711 Intelligence) für "
-                "Friseursalons. Antworte auf Deutsch, knapp und präzise. Keine "
-                "Sie-Anrede — neutrale Formen oder Du. Zwei Arten von Fragen: "
-                "(1) Fragen zu den eigenen Belegen beantwortest du AUSSCHLIESSLICH "
-                "aus den mitgelieferten Belegdaten und nennst den Beleg (Lieferant "
-                "oder Dateiname); steht etwas nicht in den Daten, sage das offen. "
-                "(2) Allgemeine Steuer-Grundfragen (Kleinunternehmer-Regel, "
-                "Kassenbuch-Pflicht, TSE, was man absetzen kann) erklärst du in "
-                "einfachen Worten für den Salon-Alltag — und sagst dazu, dass das "
-                "eine erste Einordnung ist. "
-                "(3) Fragen zur Bedienung von babu beantwortest du aus diesem "
-                "Wissen: Belege erfasst man im Reiter Erfassen (scannen oder aus "
-                "Fotos/Dateien hochladen); jeder Beleg wird gelesen, geprüft und "
-                "in der Belegbox abgelegt — grüner Haken heißt erledigt. Im "
-                "Reiter Belege sieht man alle Belege, kann Angaben korrigieren "
-                "und falsche Belege löschen. Im Kassenbuch trägt man abends die "
-                "Tagessummen ein, eine Zahl pro Frage; ein Unterschied wird "
-                "notiert, nicht versteckt. Unter Fragen kann man auch einen "
-                "Brief vom Amt fotografieren — babu erklärt ihn. Im Reiter "
-                "Export liegt der fertige Buchungsstapel; fixiert heißt "
-                "festgeschrieben. Verbunden wird die App mit E-Mail und "
-                "Passwort des babu-Kontos. "
-                "Beträge deutsch formatieren (1.234,56 €). Keine "
-                "Steuerberatung — Hinweise sind Ersteinschätzungen, im Zweifel "
-                "an die Ansprechperson verweisen."},
-            {"role": "user", "content": f"BELEGDATEN:\n{kontext}\n\nFRAGE: {frage}"},
+                "Friseursalons. Du sprichst mit der Inhaberin. Antworte auf "
+                "Deutsch, knapp, konkret und in ganzen Sätzen. Keine "
+                "Sie-Anrede — neutrale Formen oder Du. Kein Technik-Vokabular, "
+                "keine Systemnamen.\n\n"
+                "DU BIST FÜR ALLES DA, was ihren Betrieb angeht — nicht nur "
+                "für Steuern:\n"
+                "· Ihre eigenen Zahlen und Unterlagen: Belege, Kasse, "
+                "Verträge, gestellte Rechnungen, Termine, Team, Post vom Amt. "
+                "Das beantwortest du AUSSCHLIESSLICH aus den mitgelieferten "
+                "Daten und nennst, worauf du dich stützt. Steht etwas nicht "
+                "darin, sagst du das offen und rätst nicht.\n"
+                "· Steuer und Recht im Salon-Alltag: Kleinunternehmer-Regel, "
+                "Kassenpflicht, was absetzbar ist, Aufbewahrung, Fristen. "
+                "Einfach erklärt, mit dem Hinweis, dass es eine erste "
+                "Einordnung ist.\n"
+                "· Führen und Organisieren: Preise und Kalkulation, "
+                "Terminplanung, Auslastung, Personal und Ausbildung, "
+                "Einkauf und Lieferanten, Kundinnenbindung, Reklamationen, "
+                "schwierige Gespräche, Werbung, Hygiene und Arbeitsschutz.\n"
+                "· Und wenn ihr der Kopf raucht: hör zu, ordne, und mach "
+                "einen ersten Schritt daraus. Sie führt einen Betrieb allein "
+                "— oft ist die Frage hinter der Frage die wichtigere.\n\n"
+                "SO ANTWORTEST DU: Erst die Antwort, dann die Begründung. "
+                "Beträge deutsch (1.234,56 €). Wenn du rechnest, zeig die "
+                "Rechnung. Bei mehreren Möglichkeiten nenne eine Empfehlung, "
+                "keine Liste von Optionen.\n\n"
+                "DEINE GRENZEN, und du benennst sie: Du bist keine "
+                "Steuerberatung, keine Rechtsberatung und keine ärztliche "
+                "Auskunft. Bei Kündigungen, Verträgen mit Folgen, "
+                "Betriebsprüfungen, Streit mit dem Finanzamt und allem, wo "
+                "Fristen laufen, verweist du auf ihre Ansprechperson — und "
+                "sagst trotzdem, was du zur Sache weißt, damit sie "
+                "vorbereitet ins Gespräch geht. Erfinde nie Zahlen, Paragrafen "
+                "oder Fristen. Was du nicht weißt, sagst du."},
+            *verlauf,
+            {"role": "user", "content":
+                f"WAS BABU ÜBER DIESEN SALON WEISS:\n{kontext}\n\nFRAGE: {frage}"},
         ],
     }
 
@@ -2231,6 +2386,7 @@ def chat(body: dict, request: Request) -> Response:
         payload["stream"] = True
 
         def sse():
+            gesammelt: list[str] = []
             try:
                 with requests.post(GEMMA_API, json=payload, stream=True, timeout=180) as r:
                     r.raise_for_status()
@@ -2245,21 +2401,27 @@ def chat(body: dict, request: Request) -> Response:
                         except Exception:  # noqa: BLE001
                             continue
                         if delta:
+                            gesammelt.append(delta)
                             yield "data: " + json.dumps({"d": delta}, ensure_ascii=False) + "\n\n"
             except Exception:  # noqa: BLE001
                 yield "data: " + json.dumps({"fehler": "Gemma nicht erreichbar"}) + "\n\n"
+            if gesammelt:
+                nachricht_anhaengen(gespraech_id, "assistant", "".join(gesammelt))
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(sse(), media_type="text/event-stream",
-                                 headers={"Cache-Control": "no-cache"})
+                                 headers={"Cache-Control": "no-cache",
+                                          "X-Gespraech": str(gespraech_id)})
 
     try:
         r = requests.post(GEMMA_API, json=payload, timeout=120)
         r.raise_for_status()
         antwort = r.json()["choices"][0]["message"]["content"].strip()
     except Exception:  # noqa: BLE001
-        return JSONResponse({"fehler": "Gemma nicht erreichbar"}, status_code=502)
-    return JSONResponse({"antwort": antwort})
+        return JSONResponse({"fehler": "Gemma nicht erreichbar",
+                             "gespraech": gespraech_id}, status_code=502)
+    nachricht_anhaengen(gespraech_id, "assistant", antwort)
+    return JSONResponse({"antwort": antwort, "gespraech": gespraech_id})
 
 
 # ---------------------------------------------------------------------------
@@ -2685,6 +2847,7 @@ ABLAGE_ARTEN = {
     "kontoauszug": ("Kontoauszüge", "Deine Bankunterlagen"),
     "export": ("Buchungsstapel", "Übergaben an die Buchhaltung"),
     "kassenbuch": ("Kassenbuch", "Deine Tagesblätter"),
+    "rechnung": ("Rechnungen", "Was du anderen in Rechnung gestellt hast"),
 }
 
 
@@ -2730,6 +2893,8 @@ def api_ablage(request: Request) -> Response:
             art, titel = "export", name
         elif pfad.startswith("kassenbuch/"):
             art, titel = "kassenbuch", "Kassenbuch " + name.removesuffix(".json")
+        elif pfad.startswith("rechnungen/") and pfad.endswith(".pdf"):
+            art, titel = "rechnung", "Rechnung " + name.removesuffix(".pdf")
         else:
             continue
         # Aufbewahrungspflichtig: die Oberfläche zeigt hier keinen Knopf, und
@@ -2759,6 +2924,691 @@ def api_ablage(request: Request) -> Response:
                         "arten": arten})
     return JSONResponse({"jahre": ausgabe,
                          "gesamt": sum(j["anzahl"] for j in ausgabe)})
+
+
+# ---------------------------------------------------------------------------
+# Rechnungen stellen: die dritte Geldsorte. Belege gehen raus, das Kassenbuch
+# nimmt ein — hier stellt der Salon selbst etwas in Rechnung (Stuhlmiete,
+# Firmenkunden). Die Nummer vergibt der Server, damit die Folge lückenlos
+# bleibt; das PDF baut die App und reicht es nach.
+# ---------------------------------------------------------------------------
+
+RECHNUNG_NUMMER_RE = re.compile(r"^\d{4}-\d{4}$")
+
+
+def _rechnungen_lesen() -> list[dict]:
+    """Alle festgeschriebenen Rechnungen aus dem Index."""
+    idx = index_aktuell()
+    return list(idx.get("rechnungen", {}).values())
+
+
+def _versteuerung(un: str) -> str:
+    wert = (db_einstellungen(salon_von(un)).get("versteuerung") or "ist").lower()
+    return "soll" if wert == "soll" else "ist"
+
+
+@app.get("/api/rechnungen")
+def api_rechnungen(request: Request, jahr: int = 0) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    import rechnungen as re_  # noqa: PLC0415
+    alle = _rechnungen_lesen()
+    if jahr:
+        alle = [r for r in alle if str(r.get("nummer", "")).startswith(f"{jahr}-")]
+    alle.sort(key=lambda r: r.get("nummer") or "", reverse=True)
+    zeilen = [dict(r, stand=re_.stand(r)) for r in alle]
+    offen = [z for z in zeilen if z["stand"] == "offen"]
+    return JSONResponse({
+        "rechnungen": zeilen,
+        "offen_anzahl": len(offen),
+        "offen_summe": round(sum(float(z.get("brutto") or 0) for z in offen), 2),
+        "versteuerung": _versteuerung(un),
+    })
+
+
+@app.post("/api/rechnungen")
+async def api_rechnung_stellen(request: Request) -> Response:
+    """Rechnung festschreiben — der Server vergibt die nächste Nummer.
+
+    Erst danach baut die App das PDF (mit genau dieser Nummer) und reicht es
+    nach. Reißt es dazwischen ab, existiert die Rechnung mit ihrer Nummer
+    und das PDF lässt sich nachreichen — keine Lücke in der Folge.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Rechnungen stellt die Inhaberin."},
+                            status_code=403)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+
+    import rechnungen as re_  # noqa: PLC0415
+    datum = str((body or {}).get("datum") or time.strftime("%Y-%m-%d"))[:10]
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", datum):
+        return JSONResponse({"fehler": "Datum als JJJJ-MM-TT"}, status_code=400)
+
+    einstellungen = db_einstellungen(salon_von(un))
+    with _RECHNUNG_SCHLOSS:
+        vorhandene = [r.get("nummer") for r in _rechnungen_lesen()]
+        nummer = re_.naechste_nummer(vorhandene, int(datum[:4]))
+        try:
+            rechnung = re_.aufbauen(
+                nummer=nummer, datum=datum,
+                empfaenger=(body or {}).get("empfaenger") or {},
+                positionen=(body or {}).get("positionen") or [],
+                stammdaten=einstellungen,
+                leistungszeitpunkt=(body or {}).get("leistungszeitpunkt"),
+                hinweis_frei=str((body or {}).get("hinweis") or ""))
+        except re_.RechnungFehler as e:
+            return JSONResponse({"fehler": str(e)}, status_code=400)
+
+        maengel = re_.fehlende_pflichtangaben(rechnung)
+        if maengel:
+            return JSONResponse({"fehler": maengel[0], "fehlt": maengel},
+                                status_code=400)
+        rechnung["gestellt_von"] = un
+        rechnung["gestellt_am"] = _jetzt_iso()
+
+        import boxschreiber  # noqa: PLC0415
+        pfad = f"rechnungen/{datum[:7]}/{nummer}.json"
+        try:
+            commit = await run_in_threadpool(
+                boxschreiber.schreiben, pfad,
+                json.dumps(rechnung, ensure_ascii=False, indent=1).encode(),
+                f"rechnung: {nummer}", un)
+        except boxschreiber.SchreibFehler:
+            return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                                status_code=503)
+        with _INDEX_LOCK:
+            _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit, "nummer": nummer,
+                         "pfad": pfad, "rechnung": rechnung})
+
+
+def _rechnung_holen(nummer: str) -> tuple[dict | None, str | None]:
+    for r in _rechnungen_lesen():
+        if r.get("nummer") == nummer:
+            return r, f"rechnungen/{(r.get('datum') or '')[:7]}/{nummer}.json"
+    return None, None
+
+
+@app.post("/api/rechnung/{nummer}/pdf")
+async def api_rechnung_pdf(nummer: str, request: Request) -> Response:
+    """Das PDF nachreichen — gebaut hat es die App, aufbewahrt wird es hier."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if not RECHNUNG_NUMMER_RE.match(nummer):
+        return JSONResponse({"fehler": "ungültige Nummer"}, status_code=400)
+    rechnung, _ = _rechnung_holen(nummer)
+    if rechnung is None:
+        return JSONResponse({"fehler": "unbekannte Rechnung"}, status_code=404)
+    daten = await request.body()
+    if not daten or not daten.startswith(b"%PDF"):
+        return JSONResponse({"fehler": "bitte als PDF"}, status_code=400)
+    if len(daten) > HOCHLADEN_MAX:
+        return JSONResponse({"fehler": "zu groß"}, status_code=413)
+    import boxschreiber  # noqa: PLC0415
+    pfad = f"rechnungen/{(rechnung.get('datum') or '')[:7]}/{nummer}.pdf"
+    try:
+        commit = await run_in_threadpool(boxschreiber.schreiben, pfad, daten,
+                                         f"rechnung: {nummer} (PDF)", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit, "pfad": pfad})
+
+
+@app.post("/api/rechnung/{nummer}/bezahlt")
+async def api_rechnung_bezahlt(nummer: str, request: Request) -> Response:
+    """„Bezahlt am" setzen — bei Ist-Versteuerung zählt erst das als Umsatz."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if not RECHNUNG_NUMMER_RE.match(nummer):
+        return JSONResponse({"fehler": "ungültige Nummer"}, status_code=400)
+    rechnung, pfad = _rechnung_holen(nummer)
+    if rechnung is None:
+        return JSONResponse({"fehler": "unbekannte Rechnung"}, status_code=404)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    am = str((body or {}).get("am") or time.strftime("%Y-%m-%d"))[:10]
+    if am and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", am):
+        return JSONResponse({"fehler": "Datum als JJJJ-MM-TT"}, status_code=400)
+    rechnung = dict(rechnung, bezahlt_am=am or None)
+
+    import boxschreiber  # noqa: PLC0415
+    try:
+        commit = await run_in_threadpool(
+            boxschreiber.schreiben, pfad,
+            json.dumps(rechnung, ensure_ascii=False, indent=1).encode(),
+            f"rechnung: {nummer} bezahlt", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit, "bezahlt_am": am or None})
+
+
+@app.post("/api/rechnung/{nummer}/storno")
+async def api_rechnung_storno(nummer: str, request: Request) -> Response:
+    """Eine falsche Rechnung wird nicht gelöscht, sondern storniert."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Rechnungen stellt die Inhaberin."},
+                            status_code=403)
+    if not RECHNUNG_NUMMER_RE.match(nummer):
+        return JSONResponse({"fehler": "ungültige Nummer"}, status_code=400)
+    original, pfad_alt = _rechnung_holen(nummer)
+    if original is None:
+        return JSONResponse({"fehler": "unbekannte Rechnung"}, status_code=404)
+    if original.get("storniert_durch"):
+        return JSONResponse({"fehler": "Diese Rechnung ist schon storniert."},
+                            status_code=409)
+
+    import rechnungen as re_  # noqa: PLC0415
+    import boxschreiber  # noqa: PLC0415
+    datum = time.strftime("%Y-%m-%d")
+    with _RECHNUNG_SCHLOSS:
+        vorhandene = [r.get("nummer") for r in _rechnungen_lesen()]
+        neue_nummer = re_.naechste_nummer(vorhandene, int(datum[:4]))
+        try:
+            gegen = re_.storno(original, nummer=neue_nummer, datum=datum)
+        except re_.RechnungFehler as e:
+            return JSONResponse({"fehler": str(e)}, status_code=400)
+        gegen["gestellt_von"] = un
+        gegen["gestellt_am"] = _jetzt_iso()
+        markiert = dict(original, storniert_durch=neue_nummer)
+        try:
+            commit = await run_in_threadpool(
+                boxschreiber.schreiben,
+                {f"rechnungen/{datum[:7]}/{neue_nummer}.json":
+                    json.dumps(gegen, ensure_ascii=False, indent=1).encode(),
+                 pfad_alt: json.dumps(markiert, ensure_ascii=False, indent=1).encode()},
+                None, f"storno: {nummer} durch {neue_nummer}", un)
+        except boxschreiber.SchreibFehler:
+            return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                                status_code=503)
+        with _INDEX_LOCK:
+            _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit, "nummer": neue_nummer,
+                         "rechnung": gegen})
+
+
+# ---------------------------------------------------------------------------
+# Die Vertragskiste: was jeden Monat sicher abgeht — und wann zu handeln ist.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/vertraege")
+def api_vertraege(request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Die Zahlen sieht nur die Inhaberin."},
+                            status_code=403)
+    import vertraege as vt  # noqa: PLC0415
+    return JSONResponse(vt.uebersicht(vertraege_aktuell()))
+
+
+# ---------------------------------------------------------------------------
+# Der Briefkopf: eine Rechnung ist oft das Einzige, was eine Kundin
+# schriftlich vom Salon in die Hand bekommt. Logo und ein Stil, den babu aus
+# den Firmendaten vorschlägt — das Zeichnen macht die App.
+# ---------------------------------------------------------------------------
+
+LOGOS = Path(os.environ.get("BABU_LOGOS", str(Path.home() / "babu-web" / "logos")))
+LOGO_MAX = 4 * 1024 * 1024
+LOGO_TYPEN = {b"\x89PNG": "image/png", b"\xff\xd8\xff": "image/jpeg"}
+
+
+def _logo_pfad(un: str) -> Path:
+    return LOGOS / (hashlib.sha256(un.encode()).hexdigest()[:16] + ".bin")
+
+
+def _stil_aus_einstellungen(e: dict) -> dict:
+    import marke  # noqa: PLC0415
+    return marke.stil_pruefen({
+        "farbe": e.get("marke_farbe"), "schrift": e.get("marke_schrift"),
+        "ausrichtung": e.get("marke_ausrichtung"),
+        "linie": (e.get("marke_linie") or "1") != "0",
+        "begruendung": e.get("marke_begruendung"),
+    })
+
+
+@app.get("/api/marke")
+def api_marke(request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    import marke  # noqa: PLC0415
+    inhaber = salon_von(un)
+    stil = _stil_aus_einstellungen(db_einstellungen(inhaber))
+    return JSONResponse({**stil, "in_worten": marke.als_text(stil),
+                         "logo": _logo_pfad(inhaber).is_file()})
+
+
+@app.get("/api/marke/katalog")
+def api_marke_katalog(request: Request) -> Response:
+    """Die vier Schritte und die Farben, aus denen gewählt wird."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    import marke  # noqa: PLC0415
+    return JSONResponse({"schritte": list(marke.SCHRITTE),
+                         "farben": list(marke.KATALOG),
+                         "stile": [{"schluessel": k, "name": k.capitalize(),
+                                    "dazu": v.split(",")[0]}
+                                   for k, v in marke.LOGO_STILE.items()]})
+
+
+@app.post("/api/marke/farbe")
+async def api_marke_farbe(request: Request) -> Response:
+    """Schritt 1: eine Farbe aus dem Katalog wählen."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    import marke  # noqa: PLC0415
+    eintrag = marke.farbe_aus_katalog((body or {}).get("farbe"))
+    if eintrag is None:
+        return JSONResponse({"fehler": "Diese Farbe kennen wir nicht."},
+                            status_code=400)
+    db_einstellung_setzen(salon_von(un), "marke_farbe", eintrag["hex"])
+    return JSONResponse({"ok": True, **eintrag})
+
+
+@app.post("/api/marke/logo")
+async def api_marke_logo(request: Request) -> Response:
+    """Das Logo des Salons — es liegt NICHT in der Belegbox: ein Logo wird
+    ausgetauscht, und in Git bleibt jede Fassung für immer stehen."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das macht die Inhaberin."}, status_code=403)
+    daten = await request.body()
+    if not daten:
+        return JSONResponse({"fehler": "leer"}, status_code=400)
+    if len(daten) > LOGO_MAX:
+        return JSONResponse({"fehler": "Das Bild ist zu groß — bis 4 MB."},
+                            status_code=413)
+    if not any(daten.startswith(k) for k in LOGO_TYPEN):
+        return JSONResponse({"fehler": "Bitte als PNG oder JPG."}, status_code=400)
+    pfad = _logo_pfad(salon_von(un))
+    pfad.parent.mkdir(parents=True, exist_ok=True)
+    pfad.write_bytes(daten)
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/marke/logo")
+def api_marke_logo_holen(request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    pfad = _logo_pfad(salon_von(un))
+    if not pfad.is_file():
+        return JSONResponse({"fehler": "kein Logo"}, status_code=404)
+    daten = pfad.read_bytes()
+    typ = next((t for k, t in LOGO_TYPEN.items() if daten.startswith(k)),
+               "application/octet-stream")
+    return Response(content=daten, media_type=typ,
+                    headers={"Cache-Control": "private, max-age=300"})
+
+
+@app.post("/api/marke/logo/loeschen")
+def api_marke_logo_loeschen(request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    _logo_pfad(salon_von(un)).unlink(missing_ok=True)
+    return JSONResponse({"ok": True})
+
+
+# Nano Banana (gemini-3-pro-image). Der Schlüssel steht in einer .env-Zeile
+# und wird NIE geloggt. Ohne Schlüssel gibt es die Funktion schlicht nicht.
+GEMINI_MODELL = os.environ.get("BABU_BILD_MODELL", "gemini-3-pro-image")
+GEMINI_ENV = Path(os.environ.get("BABU_GEMINI_ENV", str(Path.home() / "Youtube" / ".env")))
+
+
+def _gemini_schluessel() -> str | None:
+    """Die eine Zeile parsen — die Datei enthält kaputte Zeilen, `source`
+    würde daran scheitern."""
+    schluessel = os.environ.get("GEMINI_API_KEY")
+    if schluessel:
+        return schluessel.strip()
+    try:
+        for zeile in GEMINI_ENV.read_text(errors="replace").splitlines():
+            if zeile.strip().startswith("GEMINI_API_KEY"):
+                return zeile.split("=", 1)[1].strip().strip("\"'")
+    except OSError:
+        return None
+    return None
+
+
+@app.post("/api/marke/logo/entwerfen")
+def api_marke_logo_entwerfen(request: Request, stil: str = "schlicht") -> Response:
+    """babu entwirft ein Logo aus den Firmendaten.
+
+    Der Name des Salons geht dafür an einen Dienst außerhalb des Hauses
+    (Google). Das steht so in der Oberfläche — es ist die einzige Stelle in
+    babu, an der Betriebsdaten das Haus verlassen.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das macht die Inhaberin."}, status_code=403)
+    schluessel = _gemini_schluessel()
+    if not schluessel:
+        return JSONResponse(
+            {"fehler": "Für entworfene Logos fehlt der Zugang — lade solange "
+                       "dein eigenes Bild hoch."}, status_code=501)
+
+    import marke  # noqa: PLC0415
+    inhaber = salon_von(un)
+    einstellungen = db_einstellungen(inhaber)
+    auftrag = marke.logo_auftrag(einstellungen, stil,
+                                 einstellungen.get("marke_farbe"))
+    bild = _logo_erzeugen(auftrag, schluessel)
+    if bild is None:
+        return JSONResponse(
+            {"fehler": "Der Entwurf kam gerade nicht durch — versuch es "
+                       "gleich nochmal."}, status_code=503)
+
+    if not bild or len(bild) > LOGO_MAX * 4:
+        return JSONResponse({"fehler": "Das Bild kam unbrauchbar zurück."},
+                            status_code=503)
+    pfad = _logo_pfad(inhaber)
+    pfad.parent.mkdir(parents=True, exist_ok=True)
+    pfad.write_bytes(bild)
+    print(f"[logo] entworfen für {inhaber} ({len(bild)} Bytes, Stil {stil})", flush=True)
+    return JSONResponse({"ok": True, "stil": stil, "bytes": len(bild)})
+
+
+def _bild_erzeugen(auftrag: str, schluessel: str, format_: str = "1:1",
+                   was: str = "bild") -> bytes | None:
+    """Ein Bild von Nano Banana holen — blockierend, gehört in den Threadpool.
+
+    Gibt None zurück, statt zu werfen: bei zehn gleichzeitigen Versuchen darf
+    einer danebengehen, ohne die anderen mitzureißen.
+    """
+    try:
+        r = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{GEMINI_MODELL}:generateContent",
+            headers={"x-goog-api-key": schluessel},
+            json={"contents": [{"parts": [{"text": auftrag}]}],
+                  "generationConfig": {"responseModalities": ["IMAGE"],
+                                       "imageConfig": {"aspectRatio": format_}}},
+            timeout=180)
+        r.raise_for_status()
+        teile = r.json()["candidates"][0]["content"]["parts"]
+        roh = next(t["inlineData"]["data"] for t in teile if "inlineData" in t)
+        return base64.b64decode(roh)
+    except Exception as e:  # noqa: BLE001
+        # Nie den Schlüssel mitloggen — nur den Typ des Fehlers.
+        print(f"[{was}] gescheitert: {type(e).__name__}", flush=True)
+        return None
+
+
+def _logo_erzeugen(auftrag: str, schluessel: str) -> bytes | None:
+    return _bild_erzeugen(auftrag, schluessel, "1:1", "logo")
+
+
+def _vorschlag_pfad(un: str, nummer: int) -> Path:
+    return LOGOS / hashlib.sha256(un.encode()).hexdigest()[:16] / f"v{nummer}.bin"
+
+
+@app.post("/api/marke/vorschlaege")
+async def api_marke_vorschlaege(request: Request, saat: int = 0) -> Response:
+    """Ein Knopf, zehn Zeichen.
+
+    Statt sich durch Farbe und Stil zu tasten: babu entwirft zehn auf einmal,
+    eines antippen — und der ganze Auftritt steht. Die zehn entstehen
+    gleichzeitig, sonst dauert es zehnmal so lang.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das macht die Inhaberin."}, status_code=403)
+    schluessel = _gemini_schluessel()
+    if not schluessel:
+        return JSONResponse(
+            {"fehler": "Für entworfene Zeichen fehlt der Zugang — lade solange "
+                       "dein eigenes Bild hoch."}, status_code=501)
+
+    import concurrent.futures as futures  # noqa: PLC0415
+    import marke  # noqa: PLC0415
+    inhaber = salon_von(un)
+    saetze = marke.vorschlag_saetze(db_einstellungen(inhaber), saat=saat)
+
+    def hole(satz: dict) -> tuple[dict, bytes | None]:
+        return satz, _logo_erzeugen(satz["auftrag"], schluessel)
+
+    def alle() -> list[tuple[dict, bytes | None]]:
+        with futures.ThreadPoolExecutor(max_workers=len(saetze)) as pool:
+            return list(pool.map(hole, saetze))
+
+    ergebnisse = await run_in_threadpool(alle)
+
+    ordner = _vorschlag_pfad(inhaber, 0).parent
+    ordner.mkdir(parents=True, exist_ok=True)
+    fertig = []
+    for satz, bild in ergebnisse:
+        if not bild:
+            continue
+        _vorschlag_pfad(inhaber, satz["nummer"]).write_bytes(bild)
+        fertig.append({"nummer": satz["nummer"], "stil": satz["stil"],
+                       "farbe": satz["farbe"], "farbe_name": satz["farbe_name"]})
+    if not fertig:
+        return JSONResponse({"fehler": "Die Entwürfe kamen gerade nicht durch — "
+                                       "versuch es gleich nochmal."}, status_code=503)
+    print(f"[logo] {len(fertig)} von {len(saetze)} Vorschlägen für {inhaber}",
+          flush=True)
+    return JSONResponse({"vorschlaege": fertig, "saat": saat})
+
+
+@app.get("/api/marke/vorschlag/{nummer}")
+def api_marke_vorschlag_bild(nummer: int, request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    pfad = _vorschlag_pfad(salon_von(un), nummer)
+    if not (0 <= nummer < 12) or not pfad.is_file():
+        return JSONResponse({"fehler": "kein Vorschlag"}, status_code=404)
+    daten = pfad.read_bytes()
+    typ = next((t for k, t in LOGO_TYPEN.items() if daten.startswith(k)),
+               "application/octet-stream")
+    return Response(content=daten, media_type=typ,
+                    headers={"Cache-Control": "private, max-age=300"})
+
+
+@app.post("/api/marke/waehlen")
+async def api_marke_waehlen(request: Request) -> Response:
+    """Ein Vorschlag angetippt — und der ganze Auftritt steht."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das macht die Inhaberin."}, status_code=403)
+    try:
+        body = await request.json()
+        nummer = int((body or {}).get("nummer"))
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON mit nummer erwartet"}, status_code=400)
+
+    import marke  # noqa: PLC0415
+    inhaber = salon_von(un)
+    quelle = _vorschlag_pfad(inhaber, nummer)
+    if not (0 <= nummer < 12) or not quelle.is_file():
+        return JSONResponse({"fehler": "Diesen Vorschlag gibt es nicht mehr."},
+                            status_code=404)
+
+    ziel = _logo_pfad(inhaber)
+    ziel.parent.mkdir(parents=True, exist_ok=True)
+    ziel.write_bytes(quelle.read_bytes())
+
+    saetze = {s["nummer"]: s for s in marke.vorschlag_saetze(
+        db_einstellungen(inhaber), saat=int((body or {}).get("saat") or 0))}
+    auftritt = marke.auftritt_aus(saetze.get(nummer, {}))
+    for schluessel, wert in (("marke_farbe", auftritt["farbe"]),
+                             ("marke_schrift", auftritt["schrift"]),
+                             ("marke_ausrichtung", auftritt["ausrichtung"]),
+                             ("marke_linie", "1" if auftritt["linie"] else "0"),
+                             ("marke_begruendung", auftritt.get("begruendung", ""))):
+        db_einstellung_setzen(inhaber, schluessel, str(wert))
+    # Die übrigen Entwürfe braucht niemand mehr.
+    for n in range(12):
+        if n != nummer:
+            _vorschlag_pfad(inhaber, n).unlink(missing_ok=True)
+    return JSONResponse({"ok": True, **auftritt,
+                         "in_worten": marke.als_text(auftritt)})
+
+
+# ---------------------------------------------------------------------------
+# Marketing: was der Salon nach außen zeigt. babu kennt Name, Farbe und
+# Zeichen — damit macht es das, wofür sonst niemand Zeit hat.
+# ---------------------------------------------------------------------------
+
+MARKETING = LOGOS.parent / "marketing" if LOGOS.name == "logos" else LOGOS / "marketing"
+
+
+def _stueck_pfad(un: str, schluessel: str) -> Path:
+    return (MARKETING / hashlib.sha256(un.encode()).hexdigest()[:16]
+            / f"{re.sub(r'[^a-z]', '', schluessel)}.bin")
+
+
+@app.get("/api/marketing")
+def api_marketing(request: Request) -> Response:
+    """Was babu gestalten kann — und was schon da ist."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    import marketing as mk  # noqa: PLC0415
+    inhaber = salon_von(un)
+    stuecke = [dict(s, fertig=_stueck_pfad(inhaber, s["schluessel"]).is_file())
+               for s in mk.stuecke_liste()]
+    return JSONResponse({"stuecke": stuecke,
+                         "farbe": db_einstellungen(inhaber).get("marke_farbe")
+                                  or "#1F1D1B"})
+
+
+@app.post("/api/marketing/entwerfen")
+async def api_marketing_entwerfen(request: Request) -> Response:
+    """Ein Aushang, ein Beitrag, ein Gutschein — in den Farben des Salons.
+
+    Was drauf steht, schreibt die Inhaberin. babu gestaltet es nur: ein
+    Rabatt, den niemand beschlossen hat, hat auf keinem Aushang etwas
+    verloren.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das macht die Inhaberin."}, status_code=403)
+    schluessel = _gemini_schluessel()
+    if not schluessel:
+        return JSONResponse({"fehler": "Dafür fehlt gerade der Zugang."},
+                            status_code=501)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+
+    import marketing as mk  # noqa: PLC0415
+    inhaber = salon_von(un)
+    einstellungen = db_einstellungen(inhaber)
+    try:
+        stueck = mk.stueck(str((body or {}).get("stueck") or ""))
+        auftrag = mk.auftrag(stueck["schluessel"], (body or {}).get("text"),
+                             einstellungen)
+    except mk.MarketingFehler as e:
+        return JSONResponse({"fehler": str(e)}, status_code=400)
+
+    bild = await run_in_threadpool(_bild_erzeugen, auftrag, schluessel,
+                                   stueck["format"], "marketing")
+    if not bild:
+        return JSONResponse({"fehler": "Das kam gerade nicht durch — versuch es "
+                                       "gleich nochmal."}, status_code=503)
+    pfad = _stueck_pfad(inhaber, stueck["schluessel"])
+    pfad.parent.mkdir(parents=True, exist_ok=True)
+    pfad.write_bytes(bild)
+    return JSONResponse({"ok": True, "stueck": stueck["schluessel"],
+                         "name": stueck["name"], "bytes": len(bild)})
+
+
+@app.get("/api/marketing/{schluessel}")
+def api_marketing_bild(schluessel: str, request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    pfad = _stueck_pfad(salon_von(un), schluessel)
+    if not pfad.is_file():
+        return JSONResponse({"fehler": "noch nichts gestaltet"}, status_code=404)
+    daten = pfad.read_bytes()
+    typ = next((t for k, t in LOGO_TYPEN.items() if daten.startswith(k)),
+               "application/octet-stream")
+    return Response(content=daten, media_type=typ,
+                    headers={"Cache-Control": "private, max-age=300"})
+
+
+@app.post("/api/marke/entwerfen")
+def api_marke_entwerfen(request: Request) -> Response:
+    """babu schlägt einen Briefkopf vor — aus dem, was es über den Salon weiß.
+
+    Was das Modell antwortet, wird geprüft, nicht geglaubt: unbrauchbare
+    Farben oder erfundene Schriften fallen auf die Vorgabe zurück. Eine
+    Rechnung wird gedruckt und muss lesbar bleiben.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das macht die Inhaberin."}, status_code=403)
+    import marke  # noqa: PLC0415
+    inhaber = salon_von(un)
+    einstellungen = db_einstellungen(inhaber)
+    frage = marke.frage_bauen(einstellungen)
+    roh: dict = {}
+    try:
+        with _LLM_SEMAPHORE:
+            r = requests.post(GEMMA_API, json={
+                "model": GEMMA_MODELL, "temperature": 0.6, "max_tokens": 300,
+                "messages": [{"role": "user", "content": frage}],
+            }, timeout=90)
+        r.raise_for_status()
+        text = r.json()["choices"][0]["message"]["content"]
+        treffer = re.search(r"\{.*\}", text, re.S)
+        roh = json.loads(treffer.group(0)) if treffer else {}
+    except Exception:  # noqa: BLE001
+        return JSONResponse(
+            {"fehler": "Der Vorschlag kam gerade nicht durch — versuch es "
+                       "gleich nochmal, oder wähle selbst."}, status_code=503)
+
+    stil = marke.stil_pruefen(roh)
+    for schluessel, wert in (("marke_farbe", stil["farbe"]),
+                             ("marke_schrift", stil["schrift"]),
+                             ("marke_ausrichtung", stil["ausrichtung"]),
+                             ("marke_linie", "1" if stil["linie"] else "0"),
+                             ("marke_begruendung", stil.get("begruendung", ""))):
+        db_einstellung_setzen(inhaber, schluessel, str(wert))
+    return JSONResponse({**stil, "in_worten": marke.als_text(stil)})
 
 
 @app.post("/api/angaben/{stamm}")
@@ -3075,7 +3925,9 @@ def api_monatsabschluss(monat: str, request: Request) -> Response:
     einstellungen = db_einstellungen(un)
 
     profil = ma.umsatz_profil(einstellungen)
-    erloese = ma.erloese_monat(blaetter)
+    erloese = ma.erloese_monat(blaetter, monat=monat,
+                               rechnungen=list(idx.get("rechnungen", {}).values()),
+                               versteuerung=_versteuerung(un))
     vorsteuer = ma.vorsteuer_monat(belege)
 
     # Vorjahreswerte aus dem Salon-Check, wenn vorhanden.
@@ -3221,3 +4073,138 @@ async def api_kassenbuch(request: Request) -> Response:
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=7844, workers=1)
+
+
+# ---------------------------------------------------------------------------
+# Gespräche: der Chat merkt sich, worüber gesprochen wurde. Bisher stand jede
+# Frage für sich — eine Rückfrage („und wie viel war das nochmal?") lief ins
+# Leere. Gespeichert wird in SQLite: ein Chatverlauf ist kein Auditmaterial,
+# er enthält Persönliches und muss löschbar bleiben (Art. 17 DSGVO).
+# ---------------------------------------------------------------------------
+
+# So viele Züge gehen als Verlauf ans Modell. Mehr hilft selten und kostet
+# Platz, den das Fallwissen besser gebrauchen kann.
+VERLAUF_ZUEGE = 6
+
+
+def gespraech_anlegen(un: str, titel: str) -> int:
+    with _DB_LOCK, _db() as c:
+        cur = c.execute(
+            "INSERT INTO gespraech (un, titel, begonnen, zuletzt) VALUES (?,?,?,?)",
+            (un, titel[:120], _jetzt_iso(), _jetzt_iso()))
+        return int(cur.lastrowid)
+
+
+def gespraech_gehoert(un: str, gespraech_id: int) -> bool:
+    with _DB_LOCK, _db() as c:
+        return c.execute("SELECT 1 FROM gespraech WHERE id=? AND un=?",
+                         (gespraech_id, un)).fetchone() is not None
+
+
+def nachricht_anhaengen(gespraech_id: int, rolle: str, text: str) -> None:
+    with _DB_LOCK, _db() as c:
+        c.execute("INSERT INTO nachricht (gespraech, rolle, text, zeit) VALUES (?,?,?,?)",
+                  (gespraech_id, rolle, text, _jetzt_iso()))
+        c.execute("UPDATE gespraech SET zuletzt=? WHERE id=?",
+                  (_jetzt_iso(), gespraech_id))
+
+
+def verlauf_lesen(gespraech_id: int, zuege: int = VERLAUF_ZUEGE) -> list[dict]:
+    """Die letzten Züge, älteste zuerst — so erwartet es das Modell."""
+    with _DB_LOCK, _db() as c:
+        zeilen = c.execute(
+            "SELECT rolle, text FROM nachricht WHERE gespraech=? ORDER BY id DESC LIMIT ?",
+            (gespraech_id, zuege * 2)).fetchall()
+    return [{"role": z[0], "content": z[1]} for z in reversed(zeilen)]
+
+
+def _welt_fuer(un: str) -> dict:
+    """Alles, was babu über diesen Salon weiß — für das Fallwissen des Chats."""
+    inhaber = salon_von(un)
+    idx = index_aktuell()
+    monat = time.strftime("%Y-%m")
+    einstellungen = db_einstellungen(inhaber)
+
+    fristen: list[dict] = []
+    try:
+        import datetime as _dt  # noqa: PLC0415
+        import fristen as fr  # noqa: PLC0415
+        profil = fr.termin_profil(einstellungen,
+                                  hat_team=bool(team_liste(inhaber, nur_aktive=True)))
+        termine = fr.fristen_jahr(int(monat[:4]), profil)
+        fristen = fr.naechste(termine, _dt.date.today(), anzahl=6)
+    except Exception:  # noqa: BLE001
+        fristen = []
+
+    zahlen: dict = {}
+    try:
+        import monatsabschluss as ma  # noqa: PLC0415
+        blaetter = [b for tag, b in idx["kassenblaetter"].items() if tag.startswith(monat)]
+        belege_monat = [z for z in idx["belege"].values() if z["monat"] == monat]
+        erloese = ma.erloese_monat(blaetter, monat=monat,
+                                   rechnungen=list(idx.get("rechnungen", {}).values()),
+                                   versteuerung=_versteuerung(un))
+        bwa = ma.bwa(monat, erloese, belege_monat, None,
+                     personal_monat=team_personalkosten(inhaber),
+                     vertraege=vertraege_aktuell())
+        zahlen = {"einnahmen": erloese.get("netto_gesamt"),
+                  "ausgaben": (bwa or {}).get("ausgaben"),
+                  "ergebnis": (bwa or {}).get("ergebnis")}
+    except Exception:  # noqa: BLE001
+        zahlen = {}
+
+    return {
+        "einstellungen": einstellungen,
+        "belege": list(idx["belege"].values()),
+        "kassenblaetter": list(idx["kassenblaetter"].values()),
+        "vertraege": vertraege_aktuell(),
+        "rechnungen": list(idx.get("rechnungen", {}).values()),
+        "team": team_liste(inhaber, nur_aktive=True),
+        "fristen": fristen,
+        "zahlen": zahlen,
+        "dokumente": idx["dokumente"],
+    }
+
+
+@app.get("/api/gespraeche")
+def api_gespraeche(request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    with _DB_LOCK, _db() as c:
+        zeilen = [{"id": z[0], "titel": z[1], "begonnen": z[2], "zuletzt": z[3],
+                   "nachrichten": z[4]}
+                  for z in c.execute("""
+                      SELECT g.id, g.titel, g.begonnen, g.zuletzt,
+                             (SELECT COUNT(*) FROM nachricht n WHERE n.gespraech = g.id)
+                      FROM gespraech g WHERE g.un=? ORDER BY g.zuletzt DESC""", (un,))]
+    return JSONResponse({"gespraeche": zeilen})
+
+
+@app.get("/api/gespraech/{gespraech_id}")
+def api_gespraech(gespraech_id: int, request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if not gespraech_gehoert(un, gespraech_id):
+        return JSONResponse({"fehler": "unbekanntes Gespräch"}, status_code=404)
+    with _DB_LOCK, _db() as c:
+        nachrichten = [{"rolle": z[0], "text": z[1], "zeit": z[2]}
+                       for z in c.execute(
+                           "SELECT rolle, text, zeit FROM nachricht WHERE gespraech=? ORDER BY id",
+                           (gespraech_id,))]
+    return JSONResponse({"id": gespraech_id, "nachrichten": nachrichten})
+
+
+@app.post("/api/gespraech/{gespraech_id}/loeschen")
+def api_gespraech_loeschen(gespraech_id: int, request: Request) -> Response:
+    """Ein Gespräch wegwerfen — es gehört der Nutzerin, nicht dem Archiv."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if not gespraech_gehoert(un, gespraech_id):
+        return JSONResponse({"fehler": "unbekanntes Gespräch"}, status_code=404)
+    with _DB_LOCK, _db() as c:
+        c.execute("DELETE FROM nachricht WHERE gespraech=?", (gespraech_id,))
+        c.execute("DELETE FROM gespraech WHERE id=?", (gespraech_id,))
+    return JSONResponse({"ok": True})

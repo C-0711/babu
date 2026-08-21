@@ -74,6 +74,7 @@ struct ReviewSheet: View {
                     }
                 }
             }
+            .warmerGrund()
             .navigationTitle("Kontierung prüfen")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

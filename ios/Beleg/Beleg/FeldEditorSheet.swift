@@ -69,6 +69,7 @@ struct FeldEditorSheet: View {
                     }
                 }
             }
+            .warmerGrund()
             .navigationTitle("Angaben korrigieren")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

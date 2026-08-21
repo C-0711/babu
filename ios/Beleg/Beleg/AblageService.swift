@@ -51,6 +51,191 @@ enum AblageService {
         return (ergebnis, serverDatei)
     }
 
+    /// Aufnahme mit Einsortierung: egal was fotografiert wurde — der Server
+    /// entscheidet aus dem gelesenen Text, wohin es gehört, und sagt es zurück.
+    /// Der alte Weg (`lade`) bleibt für den Fall, dass kein Text vorliegt.
+    static func aufnahme(daten: Data, dateiname: String, gelesenerText: String,
+                         basis: URL, pat: String) async
+            -> (ergebnis: AblageErgebnis, serverDatei: String?,
+                art: String?, wohin: String?, sicher: Bool) {
+        var teile = URLComponents(
+            url: basis.appendingPathComponent("api/aufnahme"),
+            resolvingAgainstBaseURL: false)
+        teile?.queryItems = [URLQueryItem(name: "name", value: dateiname),
+                             URLQueryItem(name: "text",
+                                          value: String(gelesenerText.prefix(4000)))]
+        guard let url = teile?.url else {
+            return (.nichtErreichbar, nil, nil, nil, false)
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 45
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue(dateiname.hasSuffix(".pdf") ? "application/pdf" : "image/jpeg",
+                         forHTTPHeaderField: "Content-Type")
+        request.httpBody = daten
+        let (ergebnis, antwort) = await ausfuehrenMitDaten(request)
+        guard ergebnis == .uebertragen, let antwort,
+              let json = try? JSONSerialization.jsonObject(with: antwort) as? [String: Any]
+        else { return (ergebnis, nil, nil, nil, false) }
+        let pfad = json["datei"] as? String
+        return (ergebnis,
+                pfad.map { ($0 as NSString).lastPathComponent },
+                json["art"] as? String,
+                json["wohin"] as? String,
+                json["sicher"] as? Bool ?? false)
+    }
+
+    // MARK: - Briefkopf und Logo
+
+    static func markeKatalog(basis: URL, pat: String) async
+            -> (farben: [[String: Any]], stile: [[String: Any]])? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/marke/katalog"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any]
+        else { return nil }
+        return (json["farben"] as? [[String: Any]] ?? [],
+                json["stile"] as? [[String: Any]] ?? [])
+    }
+
+    static func markeFarbeWaehlen(_ schluessel: String, basis: URL,
+                                  pat: String) async -> Bool {
+        var request = URLRequest(url: basis.appendingPathComponent("api/marke/farbe"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["farbe": schluessel])
+        return await ausfuehren(request, erfolg2xx: true) == .uebertragen
+    }
+
+    /// Logo entwerfen lassen. Dauert; der Name des Salons geht dafür an einen
+    /// Dienst außerhalb des Hauses — die Ansicht sagt das.
+    static func logoEntwerfen(stil: String, basis: URL, pat: String) async -> String? {
+        var teile = URLComponents(url: basis.appendingPathComponent("api/marke/logo/entwerfen"),
+                                  resolvingAgainstBaseURL: false)
+        teile?.queryItems = [URLQueryItem(name: "stil", value: stil)]
+        guard let url = teile?.url else { return "Das hat nicht geklappt." }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 180
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        let (ergebnis, daten) = await ausfuehrenMitDaten(request)
+        if ergebnis == .uebertragen { return nil }
+        if let daten, let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+           let fehler = json["fehler"] as? String { return fehler }
+        return "Das hat gerade nicht geklappt."
+    }
+
+    static func logoSenden(_ bild: Data, basis: URL, pat: String) async -> Bool {
+        var request = URLRequest(url: basis.appendingPathComponent("api/marke/logo"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("image/png", forHTTPHeaderField: "Content-Type")
+        request.httpBody = bild
+        return await ausfuehren(request, erfolg2xx: true) == .uebertragen
+    }
+
+    static func logoLaden(basis: URL, pat: String) async -> Data? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/marke/logo"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              (antwort as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return daten
+    }
+
+    /// Ein Knopf, zehn Zeichen. Dauert; die zehn entstehen gleichzeitig.
+    static func logoVorschlaege(saat: Int, basis: URL, pat: String) async
+            -> (vorschlaege: [[String: Any]], fehler: String?) {
+        var teile = URLComponents(url: basis.appendingPathComponent("api/marke/vorschlaege"),
+                                  resolvingAgainstBaseURL: false)
+        teile?.queryItems = [URLQueryItem(name: "saat", value: String(saat))]
+        guard let url = teile?.url else { return ([], "Das hat nicht geklappt.") }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 240
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        let (ergebnis, daten) = await ausfuehrenMitDaten(request)
+        let json = daten.flatMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+        }
+        if ergebnis == .uebertragen, let liste = json?["vorschlaege"] as? [[String: Any]] {
+            return (liste, nil)
+        }
+        return ([], json?["fehler"] as? String ?? "Das hat gerade nicht geklappt.")
+    }
+
+    static func logoVorschlagBild(_ nummer: Int, basis: URL, pat: String) async -> Data? {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/marke/vorschlag/\(nummer)"))
+        request.timeoutInterval = 45
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              (antwort as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return daten
+    }
+
+    /// Einen Vorschlag annehmen — Logo, Farbe, Schrift und Briefkopf in einem.
+    static func logoWaehlen(nummer: Int, saat: Int, basis: URL,
+                            pat: String) async -> String? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/marke/waehlen"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 45
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(
+            withJSONObject: ["nummer": nummer, "saat": saat])
+        let (ergebnis, daten) = await ausfuehrenMitDaten(request)
+        guard ergebnis == .uebertragen, let daten,
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any]
+        else { return nil }
+        return json["in_worten"] as? String
+    }
+
+    // MARK: - Marketing
+
+    static func marketingStuecke(basis: URL, pat: String) async -> [[String: Any]] {
+        var request = URLRequest(url: basis.appendingPathComponent("api/marketing"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any]
+        else { return [] }
+        return json["stuecke"] as? [[String: Any]] ?? []
+    }
+
+    static func marketingEntwerfen(stueck: String, text: String, basis: URL,
+                                   pat: String) async -> String? {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/marketing/entwerfen"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 240
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(
+            withJSONObject: ["stueck": stueck, "text": text])
+        let (ergebnis, daten) = await ausfuehrenMitDaten(request)
+        if ergebnis == .uebertragen { return nil }
+        if let daten, let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+           let fehler = json["fehler"] as? String { return fehler }
+        return "Das hat gerade nicht geklappt."
+    }
+
+    static func marketingBild(_ schluessel: String, basis: URL,
+                              pat: String) async -> Data? {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/marketing/\(schluessel)"))
+        request.timeoutInterval = 45
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              (antwort as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return daten
+    }
+
     /// Konto-Anmeldung der App: E-Mail + Passwort → Geräteschlüssel.
     /// Der Schlüssel kommt genau einmal zurück und wandert in die Keychain —
     /// die Nutzerin sieht ihn nie.
@@ -155,6 +340,119 @@ enum AblageService {
               let einfach = e["einfach"] as? String, !einfach.isEmpty
         else { return nil }
         return (einfach, e["was_tun"] as? String, e["bis_wann"] as? String)
+    }
+
+    // MARK: - Rechnungen stellen
+
+    /// Alle gestellten Rechnungen samt Stand (offen/bezahlt/storniert).
+    static func rechnungenLaden(basis: URL, pat: String) async
+            -> (rechnungen: [Rechnung], offenSumme: Double, versteuerung: String)? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/rechnungen"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+              let liste = json["rechnungen"] as? [[String: Any]] else { return nil }
+        return (liste.compactMap(Rechnung.init(json:)),
+                json["offen_summe"] as? Double ?? 0,
+                json["versteuerung"] as? String ?? "ist")
+    }
+
+    /// Stammdaten des Salons — sie gehören auf jede Rechnung (§ 14 UStG).
+    static func stammdatenLaden(basis: URL, pat: String) async -> [String: String]? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/einstellungen"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any]
+        else { return nil }
+        return json.compactMapValues { $0 as? String }
+    }
+
+    /// Rechnung festschreiben. Der Server vergibt die Nummer — erst danach
+    /// baut die App das PDF. Liefert die Nummer oder einen Klartext-Fehler.
+    static func rechnungStellen(datum: String, empfaenger: Empfaenger,
+                                positionen: [RechnungPosition],
+                                leistungszeitpunkt: String?, hinweis: String,
+                                basis: URL, pat: String) async
+            -> (nummer: String?, fehler: String?) {
+        var request = URLRequest(url: basis.appendingPathComponent("api/rechnungen"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 45
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let zeilen = positionen.map { p -> [String: Any] in
+            ["text": p.text, "menge": p.menge, "einzelpreis": p.einzelpreis,
+             "ust_satz": p.ustSatz]
+        }
+        var koerper: [String: Any] = [
+            "datum": datum, "positionen": zeilen,
+            "empfaenger": ["name": empfaenger.name, "anschrift": empfaenger.anschrift,
+                           "ust_id": empfaenger.ustId],
+        ]
+        if let l = leistungszeitpunkt, !l.isEmpty { koerper["leistungszeitpunkt"] = l }
+        if !hinweis.isEmpty { koerper["hinweis"] = hinweis }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: koerper)
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              let http = antwort as? HTTPURLResponse else {
+            return (nil, "Gerade keine Verbindung — die Rechnung bleibt ein Entwurf.")
+        }
+        let json = (try? JSONSerialization.jsonObject(with: daten)) as? [String: Any]
+        if http.statusCode == 200, let nummer = json?["nummer"] as? String {
+            return (nummer, nil)
+        }
+        return (nil, json?["fehler"] as? String ?? "Das hat gerade nicht geklappt.")
+    }
+
+    /// Das fertige PDF nachreichen — mit der Nummer, die der Server vergab.
+    static func rechnungPdfSenden(_ pdf: Data, nummer: String, basis: URL,
+                                  pat: String) async -> Bool {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/rechnung/\(nummer)/pdf"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 60
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/pdf", forHTTPHeaderField: "Content-Type")
+        request.httpBody = pdf
+        return await ausfuehren(request, erfolg2xx: true) == .uebertragen
+    }
+
+    static func rechnungBezahlt(nummer: String, am: String, basis: URL,
+                                pat: String) async -> Bool {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/rechnung/\(nummer)/bezahlt"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["am": am])
+        return await ausfuehren(request, erfolg2xx: true) == .uebertragen
+    }
+
+    static func rechnungStornieren(nummer: String, basis: URL,
+                                   pat: String) async -> Bool {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/rechnung/\(nummer)/storno"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 45
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        return await ausfuehren(request, erfolg2xx: true) == .uebertragen
+    }
+
+    // MARK: - Die Vertragskiste
+
+    static func vertraegeLaden(basis: URL, pat: String) async
+            -> (vertraege: [Vertrag], monatlich: Double, anstehend: [Vertrag])? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/vertraege"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+              let liste = json["vertraege"] as? [[String: Any]] else { return nil }
+        let anstehend = (json["anstehend"] as? [[String: Any]] ?? [])
+            .compactMap(Vertrag.init(json:))
+        return (liste.compactMap(Vertrag.init(json:)),
+                json["monatlich"] as? Double ?? 0, anstehend)
     }
 
     // MARK: - Dein Team

@@ -132,6 +132,11 @@ struct Beleg: Identifiable, Codable {
     var siegelZeit: Date?
     var bildJpeg: Data?
     var ocrText: String = ""
+    /// Wohin babu es einsortiert hat — „vertrag", „behoerde", „kontoauszug"
+    /// oder „beleg". Optional: alte Stände kennen das Feld nicht.
+    var abgelegtAls: String?
+    /// Derselbe Ort in Worten, wie ihn die App zeigt („Bei deinen Verträgen").
+    var abgelegtWohin: String?
     // Belegbox-Übertragung (alle optional — ältere zustand.json lädt weiter)
     var ablageStatus: AblageStatus?
     var ablageDateiname: String?

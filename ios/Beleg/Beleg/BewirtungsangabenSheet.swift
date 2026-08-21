@@ -55,6 +55,7 @@ struct BewirtungsangabenSheet: View {
                     }
                 }
             }
+            .warmerGrund()
             .navigationTitle("Bewirtungsangaben")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
