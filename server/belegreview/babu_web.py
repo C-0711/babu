@@ -765,6 +765,15 @@ def landing_bild(name: str) -> Response:
                         headers={"Cache-Control": "public, max-age=86400"})
 
 
+@app.get("/einkauf")
+def einkauf_seite() -> Response:
+    """Was babu aus den Einkaufsrechnungen macht — vom Fuß der Startseite aus."""
+    pfad = SEITE.parent / "einkauf.html"
+    if not pfad.is_file():
+        return JSONResponse({"fehler": "kommt bald"}, status_code=404)
+    return FileResponse(pfad, media_type="text/html", headers=HTML_FRISCH)
+
+
 @app.get("/app")
 def app_seite() -> Response:
     pfad = APP_ORDNER / "index.html"

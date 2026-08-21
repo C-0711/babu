@@ -130,3 +130,21 @@ def test_freigabe_braucht_einen_gueltigen_monat(welt):
     client, _, _ = welt
     assert client.post("/api/monatsabschluss/2026-7/freigeben").status_code == 400
     assert client.post("/api/monatsabschluss/juli/freigeben").status_code == 400
+
+
+# ————— Die öffentliche Einkaufsseite —————
+
+def test_einkaufsseite_ist_ohne_anmeldung_erreichbar(welt, tmp_path, monkeypatch):
+    client, _, bw = welt
+    monkeypatch.setattr(bw, "SEITE", tmp_path / "index.html")
+    (tmp_path / "einkauf.html").write_text("<h1>Dein Beleg weiß, was du zahlst.</h1>")
+    r = client.get("/einkauf")
+    assert r.status_code == 200
+    assert "Dein Beleg" in r.text
+    assert r.headers["content-type"].startswith("text/html")
+
+
+def test_einkaufsseite_ohne_datei_sagt_kommt_bald(welt, tmp_path, monkeypatch):
+    client, _, bw = welt
+    monkeypatch.setattr(bw, "SEITE", tmp_path / "index.html")
+    assert client.get("/einkauf").status_code == 404

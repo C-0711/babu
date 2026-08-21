@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>babu Einkauf — was deine Farbe wirklich kostet</title>
+<meta name="description" content="babu liest ohnehin jede Rechnung, die in deinen Salon kommt. Daraus rechnen wir aus, was du wirklich zahlst — und wo es günstiger geht. In Arbeit.">
+<style>
+/* ── babu Einkauf — dieselbe Papier-Palette wie Landing, App und Portal ── */
+:root{
+  --gc-desk:#efece6; --gc-canvas:#faf9f5; --gc-chrome:#f4f1ec; --gc-bg:#ffffff;
+  --gc-fg:#111111; --gc-body:#333333; --gc-desc:#555555; --gc-muted:#999999;
+  --gc-accent:#857b61; --gc-accent-hover:#736950; --gc-accent-subtle:#f0ebe3;
+  --gc-ok:#6f8a6e; --gc-warn:#b0821f; --gc-danger:#a8433a;
+  --gc-border:#e5e7eb; --gc-gold:#c9b98d;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--gc-desk);color:var(--gc-body);
+  font:15px/1.6 Inter,-apple-system,"Segoe UI",Roboto,sans-serif}
+.blatt{max-width:1060px;margin:0 auto;background:var(--gc-canvas);
+  box-shadow:0 18px 60px rgba(31,30,26,.12)}
+section{padding:64px 24px}
+@media(min-width:720px){section{padding:88px 56px}}
+h1,h2,h3,.serif{font-family:"Playfair Display",Georgia,"Times New Roman",serif;
+  color:var(--gc-fg);letter-spacing:-.015em}
+h2{font-size:clamp(26px,4vw,38px);margin-bottom:14px}
+.lbl{font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--gc-accent);font-weight:600;margin-bottom:10px;
+  font-family:ui-monospace,"SF Mono",Menlo,monospace}
+.sub{font-size:17px;color:var(--gc-desc);max-width:620px}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-variant-numeric:tabular-nums}
+a{color:var(--gc-accent-hover)}
+.knopf{display:inline-block;padding:14px 26px;border-radius:12px;border:0;
+  font:600 15px Inter,-apple-system,sans-serif;text-decoration:none;cursor:pointer}
+.knopf:active{transform:scale(.98)}
+.knopf.voll{background:var(--gc-fg);color:#fff}
+.knopf.zart{background:var(--gc-accent-subtle);color:var(--gc-fg)}
+.karte{background:var(--gc-bg);border:1px solid var(--gc-border);border-radius:12px;padding:22px}
+.gruen{color:var(--gc-ok)}
+
+/* Kopf */
+.kopfleiste{display:flex;justify-content:space-between;align-items:center;
+  padding:20px 24px;border-bottom:1px solid var(--gc-border);background:var(--gc-chrome)}
+@media(min-width:720px){.kopfleiste{padding:20px 56px}}
+.kopfleiste .serif{font-size:22px}
+.zurueck{font-size:13.5px;color:var(--gc-desc);text-decoration:none}
+
+.hero{padding-top:74px}
+.hero h1{font-size:clamp(36px,6.4vw,64px);line-height:1.06;margin-bottom:18px}
+.hero .sub{margin-bottom:30px}
+.bald{display:inline-flex;align-items:center;gap:9px;margin-bottom:22px;
+  font-size:13px;font-weight:600;color:var(--gc-warn);
+  background:rgba(176,130,31,.11);padding:6px 13px;border-radius:20px}
+
+/* Die Gegenrechnung */
+.gegen{border:1px solid var(--gc-border);border-radius:14px;overflow:hidden;
+  background:var(--gc-bg);margin-top:8px}
+.gegen-kopf{display:grid;grid-template-columns:1fr}
+@media(min-width:600px){.gegen-kopf{grid-template-columns:1fr 1px 1fr}}
+.gegen-seite{padding:24px}
+.gegen-strich{background:var(--gc-border)}
+.gegen-preis{font-family:"Playfair Display",Georgia,serif;font-size:36px;line-height:1;
+  margin:8px 0 7px}
+.gegen-preis.alt{color:var(--gc-danger)}
+.gegen-preis.neu{color:var(--gc-ok)}
+.gegen-quelle{font-size:12.5px;color:var(--gc-muted);line-height:1.45}
+.gegen-fuss{padding:16px 24px;background:var(--gc-accent-subtle);
+  display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
+  font-size:14.5px;color:var(--gc-desc)}
+.gegen-fuss b{font-family:ui-monospace,"SF Mono",Menlo,monospace;
+  font-variant-numeric:tabular-nums;font-size:16px;color:var(--gc-fg)}
+.beispielhinweis{font-size:12.5px;color:var(--gc-muted);margin-top:14px}
+
+/* Schritte */
+.dreier{display:grid;gap:18px;margin-top:34px}
+@media(min-width:720px){.dreier{grid-template-columns:repeat(3,1fr)}}
+.schritt .nr{font-family:Georgia,serif;font-size:44px;color:var(--gc-gold);line-height:1}
+.schritt h3{font-size:19px;margin:10px 0 6px}
+.schritt p{font-size:14.5px;color:var(--gc-desc)}
+
+/* Einordnungs-Band */
+.spiegelkarte{margin-top:30px;display:grid;gap:22px}
+@media(min-width:760px){.spiegelkarte{grid-template-columns:1fr 1fr;align-items:center}}
+.spiegelsatz{font-family:"Playfair Display",Georgia,serif;font-size:clamp(20px,2.6vw,25px);
+  line-height:1.4;color:var(--gc-fg)}
+.band{position:relative;height:40px;border-radius:9px;background:var(--gc-chrome);
+  border:1px solid var(--gc-border)}
+.band-meiste{position:absolute;top:0;bottom:0;left:26%;right:38%;
+  background:var(--gc-accent-subtle);border-radius:8px}
+.band-ich{position:absolute;top:-6px;bottom:-6px;left:72%;width:3px;
+  background:var(--gc-danger);border-radius:2px}
+.band-marken{display:flex;justify-content:space-between;margin-top:8px;
+  font-size:12px;color:var(--gc-muted)}
+.band-legende{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;
+  font-size:13px;color:var(--gc-desc)}
+.band-legende span{display:flex;align-items:center;gap:7px}
+.klecks{width:11px;height:11px;border-radius:3px;flex:0 0 auto}
+.klecks.meiste{background:var(--gc-accent-subtle);border:1px solid var(--gc-border)}
+.klecks.ich{background:var(--gc-danger)}
+
+/* Versprechen */
+.versprechen{border-left:3px solid var(--gc-ok);background:var(--gc-bg);
+  border-radius:0 12px 12px 0;padding:24px 26px;max-width:640px}
+.versprechen .satz{font-family:"Playfair Display",Georgia,serif;
+  font-size:clamp(19px,2.4vw,24px);line-height:1.4;color:var(--gc-fg);margin-bottom:10px}
+.versprechen p{font-size:14.5px;color:var(--gc-desc)}
+
+/* Abschluss */
+.abschluss{background:var(--gc-chrome);text-align:center}
+.abschluss .cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:26px}
+
+footer{padding:34px 24px 46px;border-top:1px solid var(--gc-border);
+  background:var(--gc-canvas)}
+@media(min-width:720px){footer{padding:34px 56px 46px}}
+footer .zeile{display:flex;justify-content:space-between;align-items:flex-end;
+  gap:18px;flex-wrap:wrap}
+footer .klein{font-size:12px;color:var(--gc-muted);margin-top:26px}
+:focus-visible{outline:2px solid var(--gc-accent);outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="blatt">
+
+  <div class="kopfleiste">
+    <a class="serif" href="/" style="text-decoration:none">babu</a>
+    <a class="zurueck" href="/">← Zur Startseite</a>
+  </div>
+
+  <section class="hero">
+    <div class="lbl">babu Einkauf</div>
+    <div class="bald">In Arbeit — noch nicht in der App</div>
+    <h1>Dein Beleg weiß,<br>was du zahlst.</h1>
+    <p class="sub">babu liest ohnehin jede Rechnung, die in deinen Salon kommt.
+      Daraus rechnen wir aus, was deine Farbe wirklich kostet — und sagen dir,
+      wo es günstiger geht. Kein Katalog zum Durchklicken. Eine Gegenrechnung.</p>
+
+    <div class="gegen">
+      <div class="gegen-kopf">
+        <div class="gegen-seite">
+          <div class="lbl" style="margin-bottom:4px">Was du zahlst</div>
+          <div class="gegen-preis alt mono">6,40 €</div>
+          <div class="gegen-quelle">Deine Farbtube, 60 ml<br>
+            Rechnung vom 14. März, Position 7</div>
+        </div>
+        <div class="gegen-strich"></div>
+        <div class="gegen-seite">
+          <div class="lbl" style="margin-bottom:4px">Was sie kosten könnte</div>
+          <div class="gegen-preis neu mono">4,90 €</div>
+          <div class="gegen-quelle">Gleiche Tube, gleiche Größe<br>
+            Gleiche Marke, gleicher Farbton</div>
+        </div>
+      </div>
+      <div class="gegen-fuss">
+        <span>Davon kaufst du rund 40 Stück im Quartal.</span>
+        <span>Im Jahr: <b>240 €</b></span>
+      </div>
+    </div>
+    <p class="beispielhinweis">Beispiel zur Veranschaulichung. Deine Zahlen kommen
+      aus deinen eigenen Rechnungen.</p>
+  </section>
+
+  <section style="background:var(--gc-bg)">
+    <div class="lbl">So läuft das</div>
+    <h2>Du machst nichts anders als bisher</h2>
+    <p class="sub">Du fotografierst deine Rechnungen sowieso schon. Der Rest passiert
+      im Hintergrund.</p>
+
+    <div class="dreier">
+      <div class="karte schritt">
+        <div class="nr">1</div>
+        <h3>babu liest mit</h3>
+        <p>Nicht nur die Summe unten, sondern jede Zeile: welcher Artikel, wie viele,
+          zu welchem Preis.</p>
+      </div>
+      <div class="karte schritt">
+        <div class="nr">2</div>
+        <h3>Wir rechnen nach</h3>
+        <p>Nach Rabatt, nach Jahresbonus, nach „10 plus 1 gratis" — was hat die Tube
+          am Ende wirklich gekostet? Das weiß sonst niemand.</p>
+      </div>
+      <div class="karte schritt">
+        <div class="nr">3</div>
+        <h3>Du siehst, wo du stehst</h3>
+        <p>Und wenn es woanders günstiger ist, sagen wir dir das — mit deiner eigenen
+          Rechnung daneben.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="lbl">Was du zu sehen bekommst</div>
+    <h2>Keine Prozente. Zahlen aus deinem Arbeitstag.</h2>
+    <p class="sub">Du weißt nicht, was 800 Gramm Blondierpulver kosten sollten — und
+      das musst du auch nicht. Du weißt, was eine Blondierung kostet. Also rechnen
+      wir es dahin um.</p>
+
+    <div class="spiegelkarte">
+      <div class="spiegelsatz">Für eine Blondierung zahlst du 9,20 € Material.
+        Die meisten Salons zahlen 6 bis 7 €.</div>
+      <div>
+        <div class="band">
+          <div class="band-meiste"></div>
+          <div class="band-ich"></div>
+        </div>
+        <div class="band-marken"><span>4 €</span><span>7 €</span><span>11 €</span></div>
+        <div class="band-legende">
+          <span><i class="klecks meiste"></i>Hier liegen die meisten</span>
+          <span><i class="klecks ich"></i>Hier liegst du</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="karte" style="margin-top:30px;max-width:640px">
+      <p style="font-size:14.5px;color:var(--gc-desc)">Keine Note, kein Ranking, kein
+        Fachwort. Und keine Liste mit vierzig Artikeln — <strong style="color:var(--gc-fg)">höchstens
+        drei Dinge</strong>, bei denen es sich wirklich lohnt. Der Rest bekommt seinen
+        grünen Haken und du hast Feierabend.</p>
+    </div>
+  </section>
+
+  <section style="background:var(--gc-bg)">
+    <div class="lbl">Warum das überhaupt geht</div>
+    <h2>Weil viele Salons zusammen anders einkaufen als einer</h2>
+    <p class="sub">Der Großhandel rechnet in Staffeln: Wer mehr abnimmt, zahlt weniger
+      pro Stück. Ein Salon allein kommt nie in die guten Stufen. Viele Salons zusammen
+      schon — und genau das bündeln wir.</p>
+    <p class="sub" style="margin-top:16px">Der zweite Grund ist unspektakulärer und
+      trifft fast jeden: Preislisten im Friseurbedarf sind ein Dickicht aus
+      persönlichen Konditionen, Boni und Aktionen, die keine sind. Oft ist der erste
+      Gewinn nicht der neue Preis — sondern endlich zu wissen, was der alte war.</p>
+  </section>
+
+  <section>
+    <div class="lbl">Unser Versprechen</div>
+    <div class="versprechen">
+      <div class="satz">„Bei deinem Händler zahlst du weniger. Bleib dabei."</div>
+      <p>Diesen Satz wirst du von uns lesen, wenn er stimmt. babu ist dafür da,
+        dir zu zeigen, wo du zu viel zahlst — auch wenn wir selbst die Teureren sind.
+        Alles andere wäre genau das, was wir eigentlich abschaffen wollen.</p>
+    </div>
+  </section>
+
+  <section class="abschluss">
+    <div class="lbl">Wann?</div>
+    <h2>Wir bauen gerade daran</h2>
+    <p class="sub" style="margin:0 auto">Zuerst lernt babu, jede Zeile deiner
+      Rechnungen zu lesen. Danach zeigen wir dir, was dein Einkauf wirklich kostet.
+      Und erst dann kommen Preise dazu. Wenn du schon ein babu-Konto hast,
+      bekommst du es automatisch.</p>
+    <div class="cta">
+      <a class="knopf voll" href="/portal">Konto anlegen</a>
+      <a class="knopf zart" href="/">Was babu sonst macht</a>
+    </div>
+  </section>
+
+  <footer>
+    <div class="zeile">
+      <div>
+        <div class="serif" style="font-size:26px">babu</div>
+        <div style="font-size:12.5px;color:var(--gc-muted)">0711 Intelligence · Stuttgart</div>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <a class="knopf voll" href="/portal">Anmelden</a>
+        <a class="knopf zart" href="/app">App laden</a>
+      </div>
+    </div>
+    <div class="klein">Impressum &amp; Datenschutz folgen · babu ersetzt keine
+      individuelle Steuerberatung.</div>
+  </footer>
+
+</div>
+</body>
+</html>
