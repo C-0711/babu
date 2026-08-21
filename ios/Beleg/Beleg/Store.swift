@@ -412,6 +412,20 @@ final class AppStore: ObservableObject {
         }
     }
 
+    /// Alles, was beim Sichtbarwerden der App zu erledigen ist.
+    ///
+    /// Muss von ZWEI Stellen kommen: `scenePhase` meldet nur Wechsel, beim
+    /// Kaltstart ist die Szene schon aktiv und es feuert nichts. Ohne den
+    /// zweiten Aufruf bliebe ein Beleg, der ohne Netz aufgenommen wurde,
+    /// liegen, bis man die App zufällig verlässt und zurückkehrt.
+    /// Doppelt aufgerufen zu werden schadet nicht — alle drei prüfen selbst,
+    /// ob es etwas zu tun gibt.
+    func beimSichtbarwerden() {
+        ablageRetry()        // offene Belegbox-Uploads nachholen
+        auditNachladen()     // Prüfstempel für Übertragene holen
+        zugangNachsehen()    // gilt der Zugang überhaupt noch?
+    }
+
     /// Beim App-Start still nachsehen, ob der Zugang noch gilt. Sonst
     /// stünde bis zum nächsten Beleg „Verbunden ✓" da, obwohl nichts
     /// mehr ankommt.

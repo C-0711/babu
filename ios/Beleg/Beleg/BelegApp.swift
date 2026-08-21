@@ -13,14 +13,14 @@ struct BelegApp: App {
                 // Das Design ist bewusst hell (feste Farb-Tokens); ohne diese
                 // Festlegung wären Listen und Editoren im Dunkelmodus unlesbar.
                 .preferredColorScheme(.light)
+                // Kaltstart: scenePhase meldet keinen Wechsel, wenn die App
+                // frisch startet — dieser Aufruf ist der einzige, der dann greift.
+                .task { store.beimSichtbarwerden() }
         }
         .onChange(of: scenePhase) { _, neu in
             switch neu {
             case .background: store.sichern()
-            case .active:
-                store.ablageRetry()      // offene Belegbox-Uploads nachholen
-                store.auditNachladen()   // Audit-Stempel für Übertragene holen
-                store.zugangNachsehen()  // gilt der Zugang überhaupt noch?
+            case .active: store.beimSichtbarwerden()
             default: break
             }
         }
