@@ -175,6 +175,59 @@ def _euro(wert: float) -> str:
     return f"{wert:,.2f} €".replace(",", "@").replace(".", ",").replace("@", ".")
 
 
+def _monatsgrenzen(monat: str) -> tuple[str, str]:
+    """Erster und letzter Tag eines Monats als JJJJ-MM-TT."""
+    jahr, mon = int(monat[:4]), int(monat[5:7])
+    if mon == 12:
+        naechster = f"{jahr + 1}-01-01"
+    else:
+        naechster = f"{jahr}-{mon + 1:02d}-01"
+    import datetime as dt  # noqa: PLC0415
+    letzter = (dt.date.fromisoformat(naechster) - dt.timedelta(days=1)).isoformat()
+    return f"{monat}-01", letzter
+
+
+def vertraege_fuer_monat(vertraege: list[dict], monat: str) -> tuple[list[dict], list[str]]:
+    """Welche Verträge gelten in diesem Monat — und was daran unklar ist.
+
+    Drei Dinge würden die Auswertung sonst verfälschen:
+
+    * Ein Vertrag, der erst später beginnt, kostet heute noch nichts.
+    * Ein abgelaufener Vertrag kostet vielleicht nichts mehr — vielleicht
+      läuft er aber stillschweigend weiter. Er wird nicht mitgerechnet,
+      aber die Auswertung sagt es, statt still zu entscheiden.
+    * Von zwei Verträgen fürs selbe Konto (alter und neuer Mietvertrag)
+      gilt nur der jüngere, sonst zählt die Miete doppelt.
+    """
+    erster, letzter = _monatsgrenzen(monat)
+    gueltig: dict[str, dict] = {}
+    hinweise: list[str] = []
+
+    for v in (vertraege or []):
+        konto = v.get("konto_skr04")
+        if not konto or not v.get("betrag_monat"):
+            continue
+        beginn = (v.get("beginn") or "")[:10]
+        bis = (v.get("laufzeit_bis") or "")[:10]
+        if beginn and beginn > letzter:
+            continue                       # fängt erst später an
+        if bis and bis < erster:
+            wer = v.get("partner") or v.get("art_name") or "Ein Vertrag"
+            hinweise.append(
+                f"{wer}: Der Vertrag lief bis {_datum_deutsch(bis)} und ist hier "
+                f"nicht mitgerechnet. Läuft er weiter, sag kurz Bescheid.")
+            continue
+        vorher = gueltig.get(konto)
+        if vorher is None or beginn >= (vorher.get("beginn") or ""):
+            gueltig[konto] = v             # der jüngere gewinnt
+    return list(gueltig.values()), hinweise
+
+
+def _datum_deutsch(iso: str) -> str:
+    teile = iso.split("-")
+    return f"{teile[2]}.{teile[1]}.{teile[0]}" if len(teile) == 3 else iso
+
+
 def bwa(monat: str, erloese: dict, belege: list[dict],
         vorjahr: dict | None = None,
         personal_monat: float | None = None,
@@ -201,11 +254,15 @@ def bwa(monat: str, erloese: dict, belege: list[dict],
     # Dauerkosten aus Verträgen (Miete, Versicherung, Leasing): Sie gelten
     # nur, wenn für dasselbe Konto KEIN Beleg im Monat liegt — sonst würde
     # die Miete doppelt zählen.
-    for v in (vertraege or []):
+    dauer, vertragshinweise = vertraege_fuer_monat(vertraege or [], monat)
+    if personal_monat:
+        # Die Löhne kommen schon aus „Dein Team" — ein zusätzlich abgelegter
+        # Arbeitsvertrag würde sie ein zweites Mal aufschlagen.
+        dauer = [v for v in dauer
+                 if zuordnung.get(v.get("konto_skr04") or "", ("", ""))[0] != "personal"]
+    for v in dauer:
         betrag = v.get("betrag_monat")
         konto = v.get("konto_skr04")
-        if not betrag or not konto:
-            continue
         schluessel, name = zuordnung.get(konto, ("sonstiges", "Sonstiges"))
         vorhanden = eimer.get(schluessel)
         if vorhanden and vorhanden["anzahl"]:
@@ -230,7 +287,7 @@ def bwa(monat: str, erloese: dict, belege: list[dict],
     # Löhne laufen übers Lohnbüro, nicht über Belege. Fehlen sie, ist das
     # Ergebnis geschönt — dann muss die Auswertung das selbst sagen.
     hat_personal = any(g["schluessel"] == "personal" for g in gruppen)
-    fehlt: list[str] = []
+    fehlt: list[str] = list(vertragshinweise)
     if not hat_personal and personal_monat is None:
         fehlt.append("Löhne und Gehälter sind hier noch nicht dabei — "
                      "dein wirklicher Gewinn liegt darunter.")

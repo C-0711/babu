@@ -2330,6 +2330,11 @@ VERTRAG_ARTEN = {
 }
 
 
+# Wiederkehrende Beträge auf den Monat umrechnen.
+VERTRAG_TAKT = {"monatlich": 1, "vierteljaehrlich": 3, "halbjaehrlich": 6,
+                "jaehrlich": 12}
+
+
 def vertrag_lesen(daten: bytes, name: str, llm=None) -> dict:
     """Vertrag fotografiert → was er monatlich kostet und wann er läuft."""
     import abschluss_lesen  # noqa: PLC0415
@@ -2342,8 +2347,11 @@ def vertrag_lesen(daten: bytes, name: str, llm=None) -> dict:
         '{"art": "miete|versicherung|leasing|strom|telefon|wartung|'
         'arbeitsvertrag|sonstiges", '
         '"partner": "Name des Vertragspartners", '
-        '"betrag_monat_text": "der monatliche Gesamtbetrag GENAU so wie er im '
+        '"betrag_text": "der wiederkehrende Gesamtbetrag GENAU so wie er im '
         'Vertrag steht, z. B. 1.250,00 EUR — nicht umrechnen, nicht runden", '
+        '"zahlweise": "monatlich|vierteljaehrlich|halbjaehrlich|jaehrlich|einmalig", '
+        '"umsatzsteuer": "zzgl|inkl|keine — steht der Betrag zuzüglich '
+        'Umsatzsteuer, ist sie schon enthalten, oder fällt keine an?", '
         '"beginn": "JJJJ-MM-TT oder null", '
         '"laufzeit_bis": "JJJJ-MM-TT oder null", '
         '"kuendigungsfrist": "kurz, z. B. 3 Monate zum Quartalsende, oder null", '
@@ -2368,8 +2376,26 @@ def vertrag_lesen(daten: bytes, name: str, llm=None) -> dict:
     name_art, konto = VERTRAG_ARTEN[art]
     # Der Betrag kommt als Text und wird hier geparst — ein Sprachmodell
     # verschluckt sonst gern den Tausenderpunkt (1.250,00 → 12500).
-    betrag = _zahl(str(roh.get("betrag_monat_text") or "")
+    betrag = _zahl(str(roh.get("betrag_text") or "")
                    .replace("EUR", "").replace("€", "").strip())
+    if betrag is not None and not 0 < betrag < 200_000:
+        print(f"[vertrag] unplausibler Betrag verworfen: {betrag}", flush=True)
+        betrag = None
+
+    # Auf den Monat umrechnen: eine Jahresversicherung ist nicht der
+    # Monatsbeitrag, und einmalige Beträge (Kaution) sind gar keine Dauerkosten.
+    zahlweise = str(roh.get("zahlweise") or "monatlich").strip().lower()
+    if betrag is not None:
+        if zahlweise == "einmalig":
+            betrag = None
+        else:
+            betrag = betrag / VERTRAG_TAKT.get(zahlweise, 1)
+
+    # Die Auswertung rechnet netto. „1.487,50 € inkl. USt" wären sonst
+    # 19 % zu hohe Raumkosten.
+    umsatzsteuer = str(roh.get("umsatzsteuer") or "").strip().lower()
+    if betrag is not None and umsatzsteuer.startswith("inkl"):
+        betrag = betrag / 1.19
     if betrag is not None and not 0 < betrag < 50_000:
         print(f"[vertrag] unplausibler Monatsbetrag verworfen: {betrag}", flush=True)
         betrag = None
@@ -2380,6 +2406,8 @@ def vertrag_lesen(daten: bytes, name: str, llm=None) -> dict:
         "beginn": str(roh.get("beginn") or "").strip()[:10] or None,
         "laufzeit_bis": str(roh.get("laufzeit_bis") or "").strip()[:10] or None,
         "kuendigungsfrist": str(roh.get("kuendigungsfrist") or "").strip()[:120] or None,
+        "zahlweise": zahlweise if zahlweise in VERTRAG_TAKT else "monatlich",
+        "umsatzsteuer": umsatzsteuer[:6] or None,
         "einfach": str(roh.get("einfach") or "").strip()[:400],
     }
 

@@ -296,7 +296,7 @@ def test_vertrag_betrag_wird_selbst_geparst(welt, monkeypatch):
 
     def fake_llm(nachrichten):
         return {"art": "miete", "partner": "Klaus Weber",
-                "betrag_monat_text": "1.250,00 EUR",
+                "betrag_text": "1.250,00 EUR",
                 "beginn": "2024-03-01",
                 "kuendigungsfrist": "3 Monate zum Quartalsende",
                 "einfach": "Du zahlst monatlich 1.250 Euro."}
@@ -309,6 +309,6 @@ def test_vertrag_betrag_wird_selbst_geparst(welt, monkeypatch):
     # Unplausible Beträge fliegen raus, der Rest bleibt nutzbar.
     v2 = bw.vertrag_lesen(b"%PDF-1.4 x", "x.pdf",
                           llm=lambda n: {"art": "miete", "partner": "X",
-                                         "betrag_monat_text": "980.000,00 EUR",
+                                         "betrag_text": "980.000,00 EUR",
                                          "einfach": "…"})
     assert v2["betrag_monat"] is None and v2["partner"] == "X"

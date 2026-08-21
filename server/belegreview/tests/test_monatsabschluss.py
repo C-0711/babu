@@ -211,3 +211,64 @@ def test_vertrag_ohne_betrag_wird_ignoriert():
     d = ma.bwa("2026-08", ma.erloese_monat([blatt(einnahmenBar=1190)]), [],
                vertraege=[vertrag(betrag_monat=None)])
     assert d["kosten_netto"] == 0.0
+
+
+# ————— Welche Verträge in einem Monat überhaupt gelten —————
+
+def test_vertrag_der_erst_spaeter_beginnt_zaehlt_noch_nicht():
+    kuenftig = vertrag(beginn="2026-10-01")
+    gueltig, hinweise = ma.vertraege_fuer_monat([kuenftig], "2026-08")
+    assert gueltig == []
+    assert hinweise == []          # kein Hinweis nötig, er kommt ja erst
+
+
+def test_abgelaufener_vertrag_zaehlt_nicht_mehr_und_sagt_es():
+    alt = vertrag(art="leasing", art_name="Leasing", partner="Autohaus Renz",
+                  konto_skr04="6530", beginn="2019-01-01", laufzeit_bis="2023-12-31")
+    gueltig, hinweise = ma.vertraege_fuer_monat([alt], "2026-08")
+    assert gueltig == []
+    assert len(hinweise) == 1
+    assert "31.12.2023" in hinweise[0]
+    assert "Autohaus Renz" in hinweise[0]
+
+
+def test_von_zwei_mietvertraegen_gilt_der_juengere():
+    alt = vertrag(betrag_monat=1250.0, beginn="2019-05-01")
+    neu = vertrag(betrag_monat=1400.0, beginn="2025-07-01")
+    gueltig, _ = ma.vertraege_fuer_monat([alt, neu], "2026-08")
+    assert len(gueltig) == 1
+    assert gueltig[0]["betrag_monat"] == 1400.0
+
+
+def test_miete_zaehlt_nach_mieterhoehung_nicht_doppelt():
+    e = ma.erloese_monat([blatt(einnahmenBar=5000.0, ecZahlungen=5000.0)])
+    alt = vertrag(betrag_monat=1250.0, beginn="2019-05-01")
+    neu = vertrag(betrag_monat=1400.0, beginn="2025-07-01")
+    d = ma.bwa("2026-08", e, [], vertraege=[alt, neu])
+    raum = next(g for g in d["gruppen"] if g["schluessel"] == "raum")
+    assert raum["netto"] == 1400.0
+
+
+def test_arbeitsvertrag_und_team_ergeben_die_loehne_nur_einmal():
+    e = ma.erloese_monat([blatt(einnahmenBar=5000.0, ecZahlungen=5000.0)])
+    av = vertrag(art="arbeitsvertrag", art_name="Arbeitsvertrag", partner="Lena",
+                 konto_skr04="6020", betrag_monat=2400.0)
+    d = ma.bwa("2026-08", e, [], vertraege=[av], personal_monat=2400.0)
+    personal = [g for g in d["gruppen"] if g["schluessel"] == "personal"]
+    assert len(personal) == 1
+    assert personal[0]["netto"] == 2400.0
+    assert d["kosten_netto"] == 2400.0
+
+
+def test_hinweis_zum_abgelaufenen_vertrag_steht_in_der_auswertung():
+    e = ma.erloese_monat([blatt(einnahmenBar=5000.0, ecZahlungen=5000.0)])
+    alt = vertrag(art="leasing", art_name="Leasing", partner="Autohaus Renz",
+                  konto_skr04="6530", laufzeit_bis="2023-12-31")
+    d = ma.bwa("2026-08", e, [], vertraege=[alt], personal_monat=1000.0)
+    assert any("Autohaus Renz" in z for z in d["fehlt"])
+
+
+def test_vertrag_ohne_daten_stoert_nicht():
+    ohne = vertrag(betrag_monat=None)
+    gueltig, hinweise = ma.vertraege_fuer_monat([ohne, {}], "2026-08")
+    assert gueltig == [] and hinweise == []
