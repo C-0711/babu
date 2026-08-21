@@ -3163,6 +3163,60 @@ def _geklaert_lesen() -> dict:
         return {}
 
 
+@app.get("/api/monatslauf")
+def api_monatslauf(request: Request) -> Response:
+    """Welcher Monat wartet — und was fehlt ihm noch?
+
+    Der Abschluss war eine Aufgabe, die man sich merken musste. Jetzt liegt
+    er ab dem 3. von selbst da, samt Zahlen, und braucht nur noch einen
+    Blick.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Die Zahlen sieht nur die Inhaberin."},
+                            status_code=403)
+    import datetime as dt  # noqa: PLC0415
+    import monatslauf as ml  # noqa: PLC0415
+
+    heute = dt.date.today()
+    monat = ml.faelliger_monat(heute)
+    if monat is None:
+        return JSONResponse({"faellig": False,
+                             "satz": "Gerade wartet nichts auf dich."})
+
+    idx = index_aktuell()
+    freigegeben = git_show(f"abschluss/{monat}/ustva.json") is not None
+    fehlende = _fehlende_belege_fuer(monat)
+    stand = ml.stand(monat, list(idx["belege"].values()), fehlende,
+                     freigegeben, heute)
+
+    # Die Zahlen gleich mitliefern — sonst ist es wieder eine Aufgabe.
+    zahlen = None
+    if not freigegeben:
+        antwort = api_monatsabschluss(monat, request)
+        if antwort.status_code == 200:
+            d = json.loads(antwort.body)
+            zahlen = {"erloese": (d.get("erloese") or {}).get("brutto_gesamt"),
+                      "zahllast": (d.get("ustva") or {}).get("zahllast"),
+                      "ergebnis": (d.get("bwa") or {}).get("ergebnis")}
+    return JSONResponse({"faellig": True, **stand, "zahlen": zahlen})
+
+
+def _fehlende_belege_fuer(monat: str) -> list[dict]:
+    """Abbuchungen dieses Monats ohne Beleg — für den Monatslauf."""
+    import belegjagd as bj  # noqa: PLC0415
+    import kontoauszug as ka  # noqa: PLC0415
+    idx = index_aktuell()
+    umsaetze = idx["umsaetze"].get(monat) or []
+    if not umsaetze:
+        return []
+    ergebnis = ka.abgleich(umsaetze, list(idx["belege"].values()))
+    return bj.offene_fragen(ergebnis["fehlend"], vertraege_aktuell(),
+                            set(_geklaert_lesen()))
+
+
 @app.get("/api/fehlende-belege")
 def api_fehlende_belege(request: Request) -> Response:
     """Wozu vom Konto Geld abging, ohne dass ein Beleg da ist.

@@ -263,6 +263,17 @@ enum AblageService {
         return await ausfuehren(request, erfolg2xx: true) == .uebertragen
     }
 
+    /// Welcher Monat wartet — und was fehlt ihm noch?
+    static func monatslauf(basis: URL, pat: String) async -> [String: Any]? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/monatslauf"))
+        request.timeoutInterval = 45
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any]
+        else { return nil }
+        return json
+    }
+
     /// Wer hat bezahlt? Vorschläge aus dem Kontoauszug.
     static func zahlungsvorschlaege(basis: URL, pat: String) async -> [[String: Any]] {
         var request = URLRequest(url: basis.appendingPathComponent("api/zahlungen"))
