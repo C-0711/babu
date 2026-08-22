@@ -3,13 +3,10 @@
   "configurations": [
     {
       "name": "landing",
-      "url": "http://localhost:8765",
-      "port": 8765
-    },
-    {
-      "name": "portal-dev",
-      "url": "http://localhost:7898",
-      "port": 7898
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8731", "--directory",
+                      "server/babu-web"],
+      "port": 8731
     }
   ]
 }
