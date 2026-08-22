@@ -25,6 +25,10 @@ xcrun simctl spawn --standalone "$(xcrun simctl list devices available -j \
 d=json.load(sys.stdin)['devices']
 print([g[0]['udid'] for k,g in d.items() if g and 'iOS' in k][0])")" "$ZIEL/karte"
 
+echo "— Protokoll-Harness —"
+swiftc -o "$ZIEL/protokoll" ../Beleg/Beleg/Protokollsatz.swift protokoll/main.swift
+"$ZIEL/protokoll"
+
 echo "— Parser-Harness —"
 swiftc -o "$ZIEL/parser" ../Beleg/Beleg/Models.swift ../Beleg/Beleg/FeldParser.swift parser/main.swift
 "$ZIEL/parser"

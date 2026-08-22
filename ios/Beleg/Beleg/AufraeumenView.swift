@@ -5,6 +5,12 @@ import SwiftUI
 /// davon), links = später (sanft — nichts ist „falsch"). Bewirtungsbelege
 /// ohne Angaben fragen beim Buchen freundlich nach. Am Ende: Abschluss-
 /// Moment mit Tagessumme.
+/// Welcher Beleg gerade groß offen ist — nur ein Träger, damit `sheet(item:)`
+/// etwas Identifizierbares bekommt.
+struct Grossansicht: Identifiable {
+    let id: UUID
+}
+
 struct AufraeumenView: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) private var dismiss
@@ -18,6 +24,10 @@ struct AufraeumenView: View {
     @State private var zeigeBewirtung = false
     @State private var zeigeKontierung = false
     @State private var startZeit = Date()
+    /// Welcher Beleg gerade groß angesehen wird. Im Wischstapel geht Zoomen
+    /// nicht an Ort und Stelle — zwei Finger auf der Karte wären dieselbe
+    /// Geste wie das Wischen. Also aufs Bild tippen und in Ruhe hineinsehen.
+    @State private var grossAnsehen: Grossansicht?
 
     private var oberster: Beleg? {
         guard let id = stapel.first else { return nil }
@@ -60,6 +70,11 @@ struct AufraeumenView: View {
         .sheet(isPresented: $zeigeKontierung, onDismiss: kontierungAbgeschlossen) {
             if let beleg = oberster {
                 ReviewSheet(belegID: beleg.id, startZeit: startZeit)
+            }
+        }
+        .sheet(item: $grossAnsehen) { auswahl in
+            if let beleg = store.belege.first(where: { $0.id == auswahl.id }) {
+                BelegGrossView(beleg: beleg).environmentObject(store)
             }
         }
     }
@@ -132,6 +147,18 @@ struct AufraeumenView: View {
                     .scaledToFill()
                     .frame(height: 220)
                     .clipped()
+                    .overlay(alignment: .topTrailing) {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(GC.fg)
+                            .frame(width: 32, height: 32)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .padding(10)
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture { grossAnsehen = Grossansicht(id: beleg.id) }
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel("Beleg groß ansehen")
             } else {
                 GC.accentSubtle.frame(height: 120)
                     .overlay(Image(systemName: "doc.text")
