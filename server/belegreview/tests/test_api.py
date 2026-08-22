@@ -282,3 +282,36 @@ def test_nichts_steht_hinter_dem_startaufruf():
     assert dahinter == [], (
         "Hinter dem Startaufruf definiert und damit im Betrieb tot: "
         + ", ".join(dahinter))
+
+
+# ————— Der CSRF-Schutz —————
+#
+# Am 22.08.2026 ließ sich am Entwicklungsserver niemand anmelden: die
+# Erlaubnisliste kannte nur Port 7844, der Entwicklungsserver läuft aber auf
+# 8791. Jeder Cookie-POST kam als „nicht erlaubt" zurück.
+
+def test_produktiv_bleibt_streng(monkeypatch):
+    import babu_web as bw
+    monkeypatch.setattr(bw, "PORTAL_ORIGIN", "https://babu.0711.io")
+
+    class R:
+        def __init__(self, o): self.headers = {"origin": o} if o else {}
+
+    assert bw._origin_ok(R("https://babu.0711.io")) is True
+    assert bw._origin_ok(R(None)) is True
+    assert bw._origin_ok(R("https://boese.example")) is False
+    assert bw._origin_ok(R("http://localhost:8791")) is False
+
+
+def test_am_entwicklungsserver_gilt_beide_schleifennamen(monkeypatch):
+    import babu_web as bw
+    monkeypatch.setattr(bw, "PORTAL_ORIGIN", "http://127.0.0.1:8791")
+
+    class R:
+        def __init__(self, o): self.headers = {"origin": o}
+
+    assert bw._origin_ok(R("http://127.0.0.1:8791")) is True
+    assert bw._origin_ok(R("http://localhost:8791")) is True
+    # Ein anderer Port bleibt draußen, auch auf der Schleife.
+    assert bw._origin_ok(R("http://localhost:9999")) is False
+    assert bw._origin_ok(R("https://boese.example")) is False

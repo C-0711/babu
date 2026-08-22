@@ -341,13 +341,31 @@ def _pruefen(wert: str) -> str | None:
         return None
 
 
+_SCHLEIFE = re.compile(r"^http://(?:127\.0\.0\.1|localhost):(\d+)$")
+
+
 def _origin_ok(request: Request) -> bool:
-    """CSRF-Schutz für Cookie-POSTs: Origin (falls gesendet) muss passen."""
+    """CSRF-Schutz für Cookie-POSTs: Origin (falls gesendet) muss passen.
+
+    Zeigt BABU_ORIGIN auf die Schleifenadresse, läuft ein Entwicklungsserver
+    — dann gilt derselbe Port auch unter dem anderen Schleifennamen. Der
+    Vorschau-Tab öffnet `localhost`, eingestellt ist oft `127.0.0.1`, und
+    ohne diese Gleichsetzung ließ sich am Entwicklungsserver niemand
+    anmelden: jeder Cookie-POST kam als „nicht erlaubt" zurück.
+
+    Produktiv ändert das nichts — dort ist BABU_ORIGIN ein https-Name, und
+    der Ausdruck greift nicht.
+    """
     origin = request.headers.get("origin")
     if not origin:
         return True
-    return origin.rstrip("/") in {PORTAL_ORIGIN.rstrip("/"),
-                                  "http://127.0.0.1:7844", "http://localhost:7844"}
+    erlaubt = {PORTAL_ORIGIN.rstrip("/"),
+               "http://127.0.0.1:7844", "http://localhost:7844"}
+    m = _SCHLEIFE.match(PORTAL_ORIGIN.rstrip("/"))
+    if m:
+        erlaubt |= {f"http://127.0.0.1:{m.group(1)}",
+                    f"http://localhost:{m.group(1)}"}
+    return origin.rstrip("/") in erlaubt
 
 
 def angemeldet(request: Request) -> str | None:
@@ -2914,6 +2932,48 @@ def api_abschluss_status(request: Request) -> Response:
         status["hinweis"] = ("Das Lesen wurde unterbrochen — "
                              "starte es einfach nochmal.")
     return JSONResponse(status, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/abschluss/{jahr}/{datei}/vorschau")
+def api_abschluss_vorschau(jahr: int, datei: str, request: Request) -> Response:
+    """Ein kleines Vorschaubild der ersten Seite einer Unterlage.
+
+    Damit die Salonprüfung zeigen kann, WAS sie gerade liest. Ein Stapel
+    Dateinamen sagt niemandem etwas; ein Blatt Papier mit einem Haken
+    darauf schon — man erkennt seinen eigenen Bescheid wieder.
+
+    Klein gerendert (Breite 320) und ohne Zwischenspeicher: Das läuft
+    einmal beim Onboarding, nicht im Dauerbetrieb.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if _abschluss_jahr(jahr) is None or not NAME_RE.match(datei):
+        return JSONResponse({"fehler": "ungültig"}, status_code=400)
+    roh = git_show(f"abschluss/{jahr}/{datei}")
+    if roh is None:
+        return JSONResponse({"fehler": "unbekannte Unterlage"}, status_code=404)
+    endung = Path(datei).suffix.lower()
+    if endung in {".jpg", ".jpeg", ".png"}:
+        return Response(content=roh, media_type="image/jpeg" if endung != ".png"
+                        else "image/png",
+                        headers={"Cache-Control": "private, max-age=86400"})
+    if endung != ".pdf":
+        return JSONResponse({"fehler": "kein Bildformat"}, status_code=415)
+    try:
+        import io  # noqa: PLC0415
+        import pypdfium2 as pdfium  # noqa: PLC0415
+        d = pdfium.PdfDocument(io.BytesIO(roh))
+        seite = d[0]
+        bild = seite.render(scale=320 / max(seite.get_width(), 1)).to_pil()
+        d.close()
+        puffer = io.BytesIO()
+        bild.convert("RGB").save(puffer, "JPEG", quality=72)
+    except Exception as ex:  # noqa: BLE001
+        print(f"[vorschau] {datei}: {ex!r}", flush=True)
+        return JSONResponse({"fehler": "nicht darstellbar"}, status_code=422)
+    return Response(content=puffer.getvalue(), media_type="image/jpeg",
+                    headers={"Cache-Control": "private, max-age=86400"})
 
 
 @app.get("/api/salon-check/bericht")
