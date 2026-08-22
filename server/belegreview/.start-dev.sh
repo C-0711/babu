@@ -30,6 +30,15 @@ export BABU_STORE="$D/babu.git" BABU_PORTAL_DB="$D/portal.db" \
        BABU_SESSION_GEHEIMNIS="$D/.geheimnis" BABU_INDEX_TTL=0 \
        BABU_SEITE="$(cd .. && pwd)/babu-web/index.html" \
        BABU_ABSCHLUSS_TMP="$D/abschluss-tmp"
+# Nicht nur „ist PYTHON gesetzt", sondern „gibt es das auch": ein toter
+# Pfad aus einer alten Sitzungs-Umgebung hat den Start zweimal gekippt, und
+# beim zweiten Mal stand er gar nicht mehr in der Datei, die ich geändert
+# hatte, sondern in der des Haupt-Checkouts. Gegen so etwas hilft nur, den
+# Interpreter zu prüfen statt ihm zu glauben.
+if [ -n "$PYTHON" ] && [ ! -x "$PYTHON" ]; then
+  echo "Hinweis: PYTHON=$PYTHON gibt es nicht — nehme etwas anderes." >&2
+  PYTHON=""
+fi
 if [ -z "$PYTHON" ] && [ -x "./.venv/bin/python" ]; then
   PYTHON="./.venv/bin/python"
 fi
