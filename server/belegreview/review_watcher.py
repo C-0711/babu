@@ -139,8 +139,78 @@ def heic_zu_bild(quelle: Path, ziel: Path) -> None:
     Image.open(quelle).convert("RGB").save(ziel, "JPEG", quality=92)
 
 
+# ── OCR-Dienst: PP-OCRv6 auf der GPU ────────────────────────────────────────
+#
+# Die eingebaute Lane lädt PP-OCRv5 in den eigenen Prozess und rechnet auf
+# der CPU — gemessen 2,75 s je Beleg. Derselbe Zettel durch den Dienst:
+# 0,03 s. Das ist nicht Feinschliff, das ist der Unterschied zwischen „das
+# Foto ist gleich fertig" und „warte mal".
+#
+# `doc_ori` erkennt und korrigiert die Seitendrehung und kostet laut /caps
+# nichts — bei Handyfotos ist das der häufigste Grund für unlesbare Belege.
+#
+# `unwarp` wird NICHT benutzt: der Dienst meldet es selbst als gemessen
+# schädlich (91,3 % / 71,6 % / 48,7 % Zeichengleichheit). Wer es einschaltet,
+# macht die Erkennung schlechter, nicht besser.
+#
+# Die eingebaute Lane bleibt als Rückfall. Ein Beleg, der nicht gelesen
+# wird, weil ein Dienst gerade weg ist, wäre der schlechtere Tausch.
+
+OCR_DIENST = os.environ.get("OCR_DIENST", "http://10.42.0.101:7833")
+OCR_DIENST_FRIST = float(os.environ.get("OCR_DIENST_FRIST", "60"))
+_OCR_QUELLE = "—"
+
+
+def ocr_dienst_zeilen(bildpfad: Path) -> list[tuple[float, str, float]]:
+    """(y, Text, Konfidenz) vom Dienst — oder ein Fehler, den der Aufrufer fängt."""
+    grenze = "----babu-ocr"
+    kopf = (f"--{grenze}\r\n"
+            f'Content-Disposition: form-data; name="file"; '
+            f'filename="{bildpfad.name}"\r\n'
+            f"Content-Type: application/octet-stream\r\n\r\n").encode()
+    koerper = kopf + bildpfad.read_bytes() + f"\r\n--{grenze}--\r\n".encode()
+    r = requests.post(f"{OCR_DIENST}/ocr?doc_ori=1", data=koerper,
+                      headers={"Content-Type":
+                               f"multipart/form-data; boundary={grenze}"},
+                      timeout=OCR_DIENST_FRIST)
+    r.raise_for_status()
+    antwort = r.json()
+    if antwort.get("errorCode"):
+        raise RuntimeError(f"OCR-Dienst: {antwort.get('errorMsg')}")
+    ergebnisse = (antwort.get("result") or {}).get("ocrResults") or []
+    if not ergebnisse:
+        raise RuntimeError("OCR-Dienst lieferte keine Seite")
+
+    # Nur die erste Seite: mehrseitige Bündel behandelt der Watcher schon
+    # weiter oben als eigenen Fall.
+    d = ergebnisse[0].get("prunedResult") or {}
+    texte = d.get("rec_texts") or []
+    scores = d.get("rec_scores") or []
+    polys = d.get("rec_polys") or d.get("dt_polys") or []
+    zeilen = []
+    for i, text in enumerate(texte):
+        conf = float(scores[i]) if i < len(scores) else 0.0
+        try:
+            y = float(min(punkt[1] for punkt in polys[i]))
+        except Exception:  # noqa: BLE001
+            y = float(i)
+        zeilen.append((y, str(text), conf))
+    return zeilen
+
+
 def ocr_zeilen(bildpfad: Path) -> list[tuple[str, float]]:
     """Erkannte Zeilen (Text, Konfidenz), von oben nach unten."""
+    global _OCR_QUELLE
+    if OCR_DIENST:
+        try:
+            zeilen = ocr_dienst_zeilen(bildpfad)
+            _OCR_QUELLE = "PP-OCRv6 (GPU-Dienst)"
+            zeilen.sort(key=lambda z: z[0])
+            return [(t, c) for _, t, c in zeilen]
+        except Exception as ex:  # noqa: BLE001
+            log(f"OCR-Dienst nicht verfügbar ({ex!r}) — die eingebaute Lane springt ein")
+
+    _OCR_QUELLE = "PP-OCRv5 (CPU, eingebaut)"
     eng = ocr_engine()
     zeilen: list[tuple[float, str, float]] = []   # (y, text, conf)
     if hasattr(eng, "predict"):                    # PaddleOCR 3.x
@@ -734,7 +804,7 @@ def verarbeite(pfad: str) -> None:
 
     review = {
         "datei": pfad,
-        "engine": "PaddleOCR PP-OCRv5 (CPU, H200V)",
+        "engine": f"PaddleOCR {_OCR_QUELLE}",
         "gelesen": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "dauer_s": round(dauer, 2),
         "zeilen": len(zeilen),
