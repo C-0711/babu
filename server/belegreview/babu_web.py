@@ -2338,6 +2338,76 @@ def review(stamm: str, request: Request) -> Response:
         return Response(content=daten, media_type="application/json")
 
 
+@app.get("/review/{stamm}/protokoll")
+def review_protokoll(stamm: str, request: Request) -> Response:
+    """Das Leseprotokoll als Markdown — was hinter dem ⓘ steht.
+
+    Es zeigt jede erkannte Zeile und zu jedem Wert die Zeile, aus der er
+    stammt. Wer die Zahlen verantwortet, muss nachsehen können, woher sie
+    kommen; deshalb liegt das Protokoll auf demselben Weg bereit wie die
+    Zahlen selbst.
+    """
+    # Cookie oder Bearer: das Protokoll gehört ins Portal genauso wie in die
+    # App — es ist dieselbe Frage („was hat babu da gelesen?“), nur an einem
+    # anderen Bildschirm gestellt.
+    un = angemeldet(request)
+    if un is None:
+        return JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
+    if not (box_mitglied(un) or un in ERLAUBT):
+        return JSONResponse({"fehler": BOX_GESPERRT}, status_code=403)
+    if not NAME_RE.match(stamm):
+        return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
+    stamm = re.sub(r"\.(jpg|jpeg|png|pdf)$", "", stamm, flags=re.I)
+    pfad = review_pfad(stamm)
+    if pfad is None:
+        return JSONResponse({"fehler": "kein Review (noch in Arbeit?)"}, status_code=404)
+    daten = git_show(pfad[:-len(".json")] + ".md")
+    if daten is None:
+        return JSONResponse({"fehler": "Für diesen Beleg gibt es noch kein "
+                             "Leseprotokoll. Einmal neu lesen lassen legt eines an."},
+                            status_code=404)
+    return Response(content=daten, media_type="text/markdown; charset=utf-8")
+
+
+@app.post("/review/{stamm}/neu-lesen")
+def review_neu_lesen(stamm: str, request: Request) -> Response:
+    """Den Beleg noch einmal durch die Lesung schicken.
+
+    Gelöscht wird nur das Ergebnis, nie der Beleg. Der Watcher sucht Belege
+    ohne Review und nimmt ihn beim nächsten Takt von selbst wieder auf — so
+    bekommt ein Beleg, der vor einer Verbesserung gelesen wurde, die neue
+    Lesung, ohne dass jemand ihn noch einmal fotografieren muss.
+    """
+    # Cookie oder Bearer: das Protokoll gehört ins Portal genauso wie in die
+    # App — es ist dieselbe Frage („was hat babu da gelesen?“), nur an einem
+    # anderen Bildschirm gestellt.
+    un = angemeldet(request)
+    if un is None:
+        return JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
+    if not (box_mitglied(un) or un in ERLAUBT):
+        return JSONResponse({"fehler": BOX_GESPERRT}, status_code=403)
+    if not NAME_RE.match(stamm):
+        return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
+    stamm = re.sub(r"\.(jpg|jpeg|png|pdf)$", "", stamm, flags=re.I)
+    pfad = review_pfad(stamm)
+    if pfad is None:
+        return JSONResponse({"fehler": "Zu diesem Beleg gibt es noch keine Lesung — "
+                             "er ist vermutlich gerade in Arbeit."}, status_code=404)
+    rumpf = pfad[:-len(".json")]
+    weg = [p for p in (f"{rumpf}.json", f"{rumpf}.md", f"{rumpf}.embedding.json",
+                       f"{rumpf}.bewirtung.json")
+           if git_show(p) is not None]
+    import boxschreiber  # noqa: PLC0415 — erst beim ersten Schreiben laden
+    try:
+        commit = boxschreiber.loeschen(weg, f"neu lesen: {Path(rumpf).name}", un)
+    except Exception as ex:  # noqa: BLE001
+        return JSONResponse({"fehler": f"Konnte nicht neu angestoßen werden: {ex}"},
+                            status_code=500)
+    return JSONResponse({"ok": True, "commit": commit, "geloescht": weg,
+                         "hinweis": "Der Beleg wird in den nächsten Sekunden neu "
+                                    "gelesen."})
+
+
 def commit_info(pfad: str) -> dict | None:
     if not pfad:
         return None
