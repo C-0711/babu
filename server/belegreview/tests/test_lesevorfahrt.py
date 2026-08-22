@@ -149,3 +149,32 @@ def test_ohne_modell_bleibt_alles_beim_alten(rw):
     f = _lesen(rw, {"lieferant": "Bäckerei", "brutto": 12.5}, None)
     assert f["lieferant"] == "Bäckerei" and f["brutto"] == 12.5
     assert f["widerspruch"] == []
+
+
+# ————— Der Steuersatz wird gerechnet, nicht gesucht —————
+
+@pytest.mark.parametrize("netto, ust, satz", [
+    (1.21, 0.09, 7),      # Bäckerbon: „7,00 %" fand die Heuristik nie
+    (2.94, 0.56, 19),
+    (100.0, 0.0, 0),      # Kleinunternehmer
+    (100.0, 5.0, 5),
+    (100.0, 16.0, 16),
+])
+def test_der_satz_folgt_aus_netto_und_steuer(rw, netto, ust, satz):
+    f = _lesen(rw, {"brutto": 99.0, "ust_satz": 19},
+               {"brutto": round(netto + ust, 2), "netto": netto, "ust": ust})
+    assert f["ust_satz"] == satz
+
+
+def test_ein_krummer_satz_wird_nicht_uebernommen(rw):
+    """Kommt etwas heraus, das es im Gesetz nicht gibt, hat das Modell
+    geraten — dann bleibt der alte Satz stehen."""
+    f = _lesen(rw, {"brutto": 99.0, "ust_satz": 19},
+               {"brutto": 113.0, "netto": 100.0, "ust": 13.0})   # 13 %
+    assert f["ust_satz"] == 19
+
+
+def test_ohne_stimmige_aufteilung_bleibt_der_satz(rw):
+    f = _lesen(rw, {"brutto": 99.0, "ust_satz": 7},
+               {"brutto": 50.0, "netto": 30.0, "ust": 5.0})
+    assert f["ust_satz"] == 7
