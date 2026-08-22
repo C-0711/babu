@@ -94,6 +94,10 @@ statt zwanzigmal am Tag.
       Am Termin abrechnen, bar oder Karte; daraus wird abends ein Vorschlag
       fürs Kassenbuch. Ausdrücklich ein Vorschlag: wer Umsätze selbst
       festschreibt, ist eine Kasse nach § 146a AO und braucht eine TSE.
+- [x] **Kartenzahlung mit dem Telefon** · groß — 22.08.
+      Code vollständig, Prüfstand läuft. Offen ist nur, was von außen
+      kommt: Apples Berechtigung und ein Zahlungsdienstleister. Ohne den
+      gibt es auch keinen Sandkasten — siehe `docs/kartenzahlung.md`.
 - [ ] **Auslastung und Umsatzprognose** · mittel
       „Dieser Dienstag trägt sich nicht." Die Zahlen liegen jetzt vor.
 - [x] **WhatsApp-Agent für die Terminplanung** · groß — 22.08.
