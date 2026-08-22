@@ -27,6 +27,16 @@ def _geld(x) -> str:
     return f"{x:,.2f} €".replace(",", "␣").replace(".", ",").replace("␣", ".")
 
 
+def _zelle(wert) -> str:
+    """Ein Wert, wie er in einer Markdown-Tabelle stehen darf.
+
+    Ein senkrechter Strich im Text zerlegt sonst die Tabelle. Das ist kein
+    Randfall: die Texterkennung liest senkrechte Linien auf Belegen gern als
+    `|`, und dann steht der Lieferant plötzlich in zwei Spalten.
+    """
+    return str("—" if wert is None else wert).replace("|", "\\|").replace("\n", " ")
+
+
 def _konf(c: float) -> str:
     """Konfidenz als Wort — Prozentzahlen liest niemand gern."""
     if c >= 0.95:
@@ -89,13 +99,15 @@ def protokoll(lesung: Lesung, *, datei: str, engine: str, dauer_s: float,
     ]
     for name, d, zeig in zeilen_def:
         wert = zeig(d) if d and d.wert is not None else "—"
-        t.append(f"| {name} | {wert} | {_herkunft(d)} |")
+        t.append(f"| {name} | {_zelle(wert)} | {_zelle(_herkunft(d))} |")
     if belegart:
-        t.append(f"| Belegart | {belegart} | Bedeutungsvergleich mit dem babu-Katalog |")
+        t.append(f"| Belegart | {_zelle(belegart)} | Bedeutungsvergleich mit dem "
+                 "babu-Katalog |")
     if konto:
-        t.append(f"| Konto (SKR04) | {konto} | folgt aus der Belegart |")
+        t.append(f"| Konto (SKR04) | {_zelle(konto)} | folgt aus der Belegart |")
     if steuerschluessel:
-        t.append(f"| Steuerschlüssel | {steuerschluessel} | folgt aus dem Steuersatz |")
+        t.append(f"| Steuerschlüssel | {_zelle(steuerschluessel)} | folgt aus dem "
+                 "Steuersatz |")
     t.append("")
 
     # ── Die Rechnung, nachgerechnet ──
@@ -160,7 +172,7 @@ def protokoll(lesung: Lesung, *, datei: str, engine: str, dauer_s: float,
                                      ("netto", "netto"), ("ust", "Umsatzsteuer")):
                 wert = gegenprobe.get(schluessel)
                 if wert not in (None, ""):
-                    t.append(f"| {name} | {wert} |")
+                    t.append(f"| {name} | {_zelle(wert)} |")
             t.append("")
         if widerspruch:
             t.append("**Abweichungen:**")
@@ -194,9 +206,8 @@ def protokoll(lesung: Lesung, *, datei: str, engine: str, dauer_s: float,
     t.append("|---:|---|---|---|")
     for zl in z:
         marke = "›" if zl.nr in benutzt else ""
-        text = zl.text.replace("|", "\\|") or "&nbsp;"
-        t.append(f"| {zl.nr + 1} | {marke} | {text} | {_konf(zl.konf)} "
-                 f"({zl.konf:.0%}) |")
+        t.append(f"| {zl.nr + 1} | {marke} | {_zelle(zl.text) or '&nbsp;'} | "
+                 f"{_konf(zl.konf)} ({zl.konf:.0%}) |")
     t.append("")
 
     # ── Technik ──

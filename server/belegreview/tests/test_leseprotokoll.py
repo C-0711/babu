@@ -194,3 +194,30 @@ def test_offene_punkte_stehen_drin():
     lesung = deuten([k("Rechnung", 40, 20, hoehe=22)], heute=date(2026, 8, 22))
     text = protokoll(lesung, datei="x.jpg", engine="x", dauer_s=0.1)
     assert "Was offen ist" in text
+
+
+def test_ein_strich_im_lieferantennamen_zerlegt_die_ergebnistabelle_nicht():
+    """Die Texterkennung liest senkrechte Linien auf Belegen gern als „|".
+    Steht so ein Name ungeschützt in der Tabelle, rutscht die Herkunft in
+    eine eigene Spalte und das Protokoll wird unlesbar."""
+    lesung = deuten([k("Laden | Partner GmbH", 40, 20, hoehe=22),
+                     k("Gesamtbetrag", 40, 100), rechts("40,00", 300, 100)],
+                    heute=date(2026, 8, 22))
+    text = protokoll(lesung, datei="x.jpg", engine="x", dauer_s=0.1)
+    zeile = [z for z in text.splitlines() if z.startswith("| Lieferant |")][0]
+    assert r"Laden \| Partner GmbH" in zeile
+    assert len(re.split(r"(?<!\\)\|", zeile)) == 5      # | a | b | c |
+
+
+def test_jede_zeile_der_ergebnistabelle_hat_drei_spalten():
+    lesung = deuten([k("A | B GmbH", 40, 20, hoehe=22),
+                     k("Rechnungsnummer 4|7", 40, 60),
+                     k("Gesamtbetrag", 40, 100), rechts("40,00", 300, 100)],
+                    heute=date(2026, 8, 22))
+    text = protokoll(lesung, datei="x.jpg", engine="x", dauer_s=0.1,
+                     belegart="Bewirtung | Test", konto="6640")
+    abschnitt = text.split("## Das Ergebnis")[1].split("##")[0]
+    inhalt = [z for z in abschnitt.splitlines()
+              if z.startswith("| ") and "---" not in z]
+    for z in inhalt:
+        assert len(re.split(r"(?<!\\)\|", z)) == 5, z
