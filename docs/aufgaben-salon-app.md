@@ -34,7 +34,8 @@ gelaufen.
 
 Gibt es nirgends, wird aber an drei Stellen gebraucht, die schon stehen.
 
-- [ ] **Leistungskatalog** (Name, Dauer, Preis, Steuersatz) · klein
+- [x] **Leistungskatalog** (Name, Dauer, Preis, Steuersatz) · klein — 22.08.
+      Im Hamburger unter „Deine Preise", auch aus dem Kalender erreichbar.
 - [ ] **Rechnungspositionen aus dem Katalog wählen** statt tippen · klein
 - [ ] **Preisaushang im Marketing aus echten Preisen** bauen · klein
       Heute tippt man den Text von Hand — die Preise liegen dann vor.
@@ -48,14 +49,16 @@ Gibt es nirgends, wird aber an drei Stellen gebraucht, die schon stehen.
 Farbformel, Länge, was letztes Mal schiefging, Allergiehinweise. Steht heute
 im Karteikasten oder in Ninas Kopf.
 
-- [ ] **Kundinnen-Kartei** (Name, Kontakt, Notiz) · mittel
-- [ ] **Behandlungsverlauf** je Kundin, mit Farbformel · mittel
-- [ ] **Allergie- und Verträglichkeitshinweise** dokumentieren · mittel
-- [ ] **Datenschutz bewusst entwerfen, nicht nebenbei** · mittel
+- [x] **Kundinnen-Kartei** (Name, Kontakt, Notiz) · mittel — 22.08.
+- [x] **Behandlungsverlauf** je Kundin, mit Farbformel · mittel — 22.08.
+- [x] **Allergie- und Verträglichkeitshinweise** dokumentieren · mittel — 22.08.
+      Stehen rot ganz oben, vor allem anderen.
+- [x] **Datenschutz bewusst entwerfen, nicht nebenbei** · mittel — 22.08.
       Farbformeln und Allergiehinweise sind Gesundheitsdaten — andere
-      DSGVO-Klasse als Belege. Löschbarkeit von Anfang an: Kundendaten
-      gehören NICHT in die Git-Box (dort bleibt alles für immer), sondern
-      dahin, wo Team-Fotos und Logos schon liegen.
+      DSGVO-Klasse als Belege. Sie liegen in SQLite, nicht in der Git-Box;
+      Löschen nimmt den ganzen Verlauf mit. Zwei Tests wachen darüber:
+      dass nach dem Löschen nichts übrig bleibt, und dass nie eine
+      Farbformel in der Ablage auftaucht.
 
 ---
 
@@ -74,18 +77,29 @@ babu kennt das Team und was es kostet, aber nicht, wann jemand da war.
 
 ---
 
-## 4. Der Kalender · groß — anbinden, nicht nachbauen
+## 4. Der Kalender · gebaut, nicht angebunden
 
 Ein Salontag besteht aus Terminen. Ohne sie öffnet Nina babu einmal abends
 statt zwanzigmal am Tag.
 
-- [ ] **Entscheiden: anbinden oder bauen** · klein
-      Empfehlung: anbinden. Terminbuchung ist gelöst, und ein halbgarer
-      Eigenbau kostet echte Termine.
-- [ ] **An einen bestehenden Kalender andocken** · groß
-- [ ] **Termin ↔ Geld verbinden** · mittel
-      Das kann babu besser als jeder Buchungsanbieter: Auslastung,
-      Umsatzprognose, „dieser Dienstag trägt sich nicht".
+- [x] **Entscheiden: anbinden oder bauen** · klein — 22.08.
+      Entschieden wurde gegen die Empfehlung, die hier stand: souverän,
+      ohne fremdes Buchungssystem. Der Grund ist der Punkt darunter — wer
+      den Kalender anbindet, gibt genau die Verbindung aus der Hand, die
+      babu von jedem Buchungsanbieter unterscheidet.
+- [x] **Eigener Kalender** · groß — 22.08.
+      Öffnungszeiten, Überschneidungsprüfung, Lücken über den Tag verteilt,
+      ein Satz genügt („Frau Holder Donnerstag Farbe").
+- [x] **Termin ↔ Geld verbinden** · mittel — 22.08.
+      Am Termin abrechnen, bar oder Karte; daraus wird abends ein Vorschlag
+      fürs Kassenbuch. Ausdrücklich ein Vorschlag: wer Umsätze selbst
+      festschreibt, ist eine Kasse nach § 146a AO und braucht eine TSE.
+- [ ] **Auslastung und Umsatzprognose** · mittel
+      „Dieser Dienstag trägt sich nicht." Die Zahlen liegen jetzt vor.
+- [ ] **WhatsApp-Agent für die Terminplanung** · groß
+      Von Christoph gewünscht. Hürde ist nicht die Technik, sondern Meta:
+      verifiziertes Business-Konto, genehmigte Vorlagen, ein zugelassener
+      Anbieter. Der Kalender darunter steht bereits.
 
 ---
 
