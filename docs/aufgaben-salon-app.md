@@ -96,10 +96,15 @@ statt zwanzigmal am Tag.
       festschreibt, ist eine Kasse nach § 146a AO und braucht eine TSE.
 - [ ] **Auslastung und Umsatzprognose** · mittel
       „Dieser Dienstag trägt sich nicht." Die Zahlen liegen jetzt vor.
-- [ ] **WhatsApp-Agent für die Terminplanung** · groß
-      Von Christoph gewünscht. Hürde ist nicht die Technik, sondern Meta:
-      verifiziertes Business-Konto, genehmigte Vorlagen, ein zugelassener
-      Anbieter. Der Kalender darunter steht bereits.
+- [x] **WhatsApp-Agent für die Terminplanung** · groß — 22.08.
+      Gebaut und deployed. Die Kundin schreibt, babu schlägt drei Zeiten
+      vor, sie antwortet mit einer Nummer, der Termin steht — als Anfrage,
+      die im Salon bestätigt wird. Höchstens zwei offene Anfragen je
+      Nummer, damit niemand den Tag zuschreibt.
+- [ ] **Meta freischalten lassen** · klein, aber Papierkram
+      Das Einzige, was noch fehlt: verifiziertes Business-Konto, geprüfte
+      Nummer, Zugangstoken. Bis dahin läuft der Prüfstand im Portal — er
+      spielt dasselbe Gespräch durch, schickt aber nichts nach draußen.
 
 ---
 
