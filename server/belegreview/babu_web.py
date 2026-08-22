@@ -3866,7 +3866,7 @@ def _wa_antworten(un: str, faden: dict, telefon: str, text: str) -> str:
             termin_id = _wa_termin_eintragen(un, faden, datum, gewaehlt,
                                              wunsch, telefon)
             if termin_id is None:
-                frei = _wa_luecken(un, datum, wunsch)
+                frei, _ = _wa_luecken(un, datum, wunsch)
                 _wa_faden_setzen(faden["id"], vorschlaege=frei,
                                  stand="wartet_wahl" if frei else "neu")
                 return wam.zeit_ist_weg(frei)
@@ -3893,25 +3893,43 @@ def _wa_antworten(un: str, faden: dict, telefon: str, text: str) -> str:
         return wam.nach_tag_fragen()
 
     wunsch = {**(faden["wunsch"] or {}), **{k: v for k, v in neuer.items() if v}}
-    frei = _wa_luecken(un, wunsch["datum"], wunsch)
+    wunsch["tageszeit"] = wam.tageszeit_lesen(neuer.get("tageszeit")
+                                              or wunsch.get("tageszeit"), text)
+    frei, abweichend = _wa_luecken(un, wunsch["datum"], wunsch)
     _wa_faden_setzen(faden["id"], stand="wartet_wahl" if frei else "wartet_wunsch",
                      wunsch=wunsch, vorschlaege=frei)
-    return wam.vorschlagen(wunsch["datum"], frei, wunsch.get("leistung") or "")
+    return wam.vorschlagen(wunsch["datum"], frei, wunsch.get("leistung") or "",
+                           abweichend)
 
 
-def _wa_luecken(un: str, datum: str, wunsch: dict) -> list[str]:
+def _wa_luecken(un: str, datum: str, wunsch: dict) -> tuple[list[str], bool]:
+    """Die freien Zeiten — und ob dabei ein Zeitwunsch übergangen wurde.
+
+    Zweiteres gehört dazugesagt: wer „nachmittags" schreibt und 9 Uhr
+    angeboten bekommt, denkt, babu habe nicht zugehört.
+    """
     import kalender as ka  # noqa: PLC0415
     import whatsapp as wam  # noqa: PLC0415
     termine = _termine_lesen(un, datum, datum)
     oeffnung = ka.oeffnung_aus(db_einstellungen(un))
-    frei = ka.freie_luecken(datum, termine, int(wunsch.get("minuten") or 60),
-                            wunsch.get("wer") or "", oeffnung=oeffnung)
+    minuten = int(wunsch.get("minuten") or 60)
+    alle = ka.freie_luecken(datum, termine, minuten, wunsch.get("wer") or "",
+                            oeffnung=oeffnung)
+    hoechstens = wam.HOECHSTENS_VORSCHLAEGE
+
+    # Die genannte Uhrzeit zuerst, wenn sie wirklich frei ist.
     gewuenscht = wunsch.get("uhrzeit")
-    if gewuenscht and ka.ist_frei(datum, termine, gewuenscht,
-                                  int(wunsch.get("minuten") or 60),
+    if gewuenscht and ka.ist_frei(datum, termine, gewuenscht, minuten,
                                   wunsch.get("wer") or "", oeffnung=oeffnung):
-        frei = [gewuenscht] + [z for z in frei if z != gewuenscht]
-    return frei[:wam.HOECHSTENS_VORSCHLAEGE]
+        return ([gewuenscht]
+                + [z for z in alle if z != gewuenscht])[:hoechstens], False
+
+    tageszeit = wunsch.get("tageszeit")
+    passend = [z for z in alle if wam.passt_zur_tageszeit(z, tageszeit)]
+    if passend:
+        return passend[:hoechstens], False
+    # Nichts zur Wunschzeit: trotzdem etwas anbieten, aber es dazusagen.
+    return alle[:hoechstens], bool(alle) and bool(gewuenscht or tageszeit)
 
 
 def _wa_zug(un: str, telefon: str, name: str, text: str,

@@ -162,6 +162,53 @@ def wahl_lesen(text: str, vorschlaege: list[str]) -> str | None:
     return None
 
 
+# Wer „nachmittags" schreibt, meint nicht 9 Uhr. Ohne diese Filterung
+# schlägt babu die frühesten Lücken vor und wirkt, als hätte es nicht
+# zugehört — im ersten Live-Versuch genau so passiert.
+TAGESZEITEN = {
+    "vormittag": (0, 12 * 60),
+    "mittag": (11 * 60, 14 * 60),
+    "nachmittag": (12 * 60, 18 * 60),
+    "abend": (16 * 60, 24 * 60),
+}
+
+
+def tageszeit_lesen(roh, text: str = "") -> str | None:
+    """Was das Modell gesagt hat — und sonst, was im Text steht."""
+    wert = str(roh or "").strip().lower().rstrip("s")
+    if wert in TAGESZEITEN:
+        return wert
+    t = _klein(text)
+    for name in ("nachmittag", "vormittag", "abend", "mittag"):
+        if name in t:           # „nachmittags" enthält „nachmittag"
+            return name
+    if "früh" in t or "morgens" in t:
+        return "vormittag"
+    return None
+
+
+def passt_zur_tageszeit(zeit: str, tageszeit: str | None) -> bool:
+    """Liegt 14:30 im „Nachmittag"? Ohne Wunsch passt alles."""
+    grenzen = TAGESZEITEN.get(tageszeit or "")
+    if not grenzen:
+        return True
+    try:
+        minute = int(zeit[:2]) * 60 + int(zeit[3:5])
+    except (ValueError, IndexError):
+        return False
+    return grenzen[0] <= minute < grenzen[1]
+
+
+def nach_tageszeit(zeiten: list[str], tageszeit: str | None) -> list[str]:
+    """Nur die Lücken im gewünschten Teil des Tages.
+
+    Passt keine, kommen alle zurück: eine leere Liste hieße „nichts frei",
+    und das wäre gelogen — es ist nur nicht zur Wunschzeit.
+    """
+    passend = [z for z in zeiten if passt_zur_tageszeit(z, tageszeit)]
+    return passend or zeiten
+
+
 def frage_bauen(text: str, heute, kundin: str = "") -> str:
     """Der Auftrag ans Sprachmodell — bewusst eng.
 
@@ -180,6 +227,7 @@ def frage_bauen(text: str, heute, kundin: str = "") -> str:
         '"wer": "gewünschte Mitarbeiterin, oder leer", '
         '"datum": "JJJJ-MM-TT oder null", '
         '"uhrzeit": "HH:MM oder null", '
+        '"tageszeit": "vormittag, nachmittag, abend — oder null", '
         '"minuten": Zahl (Schnitt 45, Farbe 120, Strähnen 150, sonst 60)}. '
         'Rechne „morgen" oder „nächsten Donnerstag" in ein Datum um. '
         "Rate nie: was nicht dasteht, ist null.\n\n"
@@ -221,16 +269,24 @@ def nach_namen_fragen() -> str:
     return "Sehr gern — auf welchen Namen darf ich den Termin schreiben?"
 
 
-def vorschlagen(datum: str, zeiten: list[str], leistung: str = "") -> str:
-    """Die freien Lücken als Liste. Nummeriert, damit „2" genügt."""
+def vorschlagen(datum: str, zeiten: list[str], leistung: str = "",
+                abweichend: bool = False) -> str:
+    """Die freien Lücken als Liste. Nummeriert, damit „2" genügt.
+
+    `abweichend` heißt: zur gewünschten Tageszeit war nichts frei. Das
+    gehört dazugesagt — sonst wirkt es, als hätte babu nicht zugehört.
+    """
     if not zeiten:
         return (f"Am {_wochentag(datum)} habe ich leider nichts mehr frei. "
                 "Magst du einen anderen Tag nennen?")
     was = f" für {leistung}" if leistung else ""
     zeilen = "\n".join(f"{i}) {z} Uhr"
                        for i, z in enumerate(zeiten[:HOECHSTENS_VORSCHLAEGE], 1))
-    return (f"Am {_wochentag(datum)}{was} hätte ich frei:\n{zeilen}\n\n"
-            "Antworte einfach mit der Nummer.")
+    kopf = (f"Zu deiner Wunschzeit ist am {_wochentag(datum)} leider nichts "
+            f"mehr frei{was}. Das ginge noch:"
+            if abweichend else
+            f"Am {_wochentag(datum)}{was} hätte ich frei:")
+    return f"{kopf}\n{zeilen}\n\nAntworte einfach mit der Nummer."
 
 
 def nicht_verstanden(zeiten: list[str]) -> str:

@@ -227,3 +227,66 @@ def test_jede_antwort_ist_deutsch_und_kurz(bauer, args):
 def test_wochentag_wird_ausgeschrieben():
     """„27.08." allein sagt niemandem, ob das ein Donnerstag ist."""
     assert "Donnerstag" in wa._wochentag("2026-08-27")
+
+
+# ————— „nachmittags" ist eine Angabe, keine Verzierung —————
+#
+# Im ersten Versuch gegen das echte Modell schrieb die Kundin „Donnerstag
+# nachmittags" und bekam 09:00, 10:30 und 11:45 angeboten. Technisch
+# richtig, menschlich falsch: es wirkte, als hätte babu nicht zugehört.
+
+@pytest.mark.parametrize("text, erwartet", [
+    ("Donnerstag nachmittags", "nachmittag"),
+    ("am Vormittag bitte", "vormittag"),
+    ("geht auch abends?", "abend"),
+    ("morgens früh", "vormittag"),
+    ("Donnerstag", None),
+])
+def test_tageszeit_aus_dem_text(text, erwartet):
+    assert wa.tageszeit_lesen(None, text) == erwartet
+
+
+def test_das_modell_darf_die_tageszeit_sagen():
+    assert wa.tageszeit_lesen("nachmittags", "") == "nachmittag"
+    assert wa.tageszeit_lesen("Nachmittag", "") == "nachmittag"
+
+
+def test_unsinn_vom_modell_wird_verworfen():
+    assert wa.tageszeit_lesen("irgendwann", "Donnerstag") is None
+
+
+@pytest.mark.parametrize("zeit, tageszeit, passt", [
+    ("14:30", "nachmittag", True),
+    ("09:00", "nachmittag", False),
+    ("09:00", "vormittag", True),
+    ("18:30", "abend", True),
+    ("09:00", None, True),
+])
+def test_liegt_die_zeit_im_fenster(zeit, tageszeit, passt):
+    assert wa.passt_zur_tageszeit(zeit, tageszeit) is passt
+
+
+def test_nachmittag_filtert_den_vormittag_weg():
+    alle = ["09:00", "10:30", "11:45", "14:00", "16:30"]
+    assert wa.nach_tageszeit(alle, "nachmittag") == ["14:00", "16:30"]
+
+
+def test_wenn_nichts_passt_lieber_alles_als_nichts():
+    """Eine leere Liste hieße „nichts frei" — das wäre gelogen."""
+    alle = ["09:00", "10:30"]
+    assert wa.nach_tageszeit(alle, "abend") == alle
+
+
+def test_die_abweichung_wird_gesagt():
+    text = wa.vorschlagen("2026-08-27", ["09:00", "10:30"], "Farbe",
+                          abweichend=True)
+    assert "Wunschzeit" in text and "09:00" in text
+
+
+def test_ohne_abweichung_kein_bedauern():
+    text = wa.vorschlagen("2026-08-27", ["14:00"], "Farbe")
+    assert "Wunschzeit" not in text
+
+
+def test_die_tageszeit_steht_im_auftrag():
+    assert '"tageszeit"' in wa.frage_bauen("Donnerstag nachmittags", HEUTE)
