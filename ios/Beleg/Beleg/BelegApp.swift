@@ -50,6 +50,9 @@ struct MainTabs: View {
             ListeView()
                 .tabItem { Label("Belege", systemImage: "doc.text") }
                 .tag(AppStore.Tab.belege)
+            TermineTab()
+                .tabItem { Label("Termine", systemImage: "calendar") }
+                .tag(AppStore.Tab.termine)
             KasseTab()
                 .tabItem { Label("Kassenbuch", systemImage: "banknote") }
                 .tag(AppStore.Tab.kasse)
