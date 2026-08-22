@@ -53,6 +53,12 @@ def pruefen(termin: dict) -> dict:
     }
 
 
+def _name(wert) -> str:
+    """Namen zum Vergleichen: „Jana", „ Jana " und „jana" sind dieselbe
+    Person. Angezeigt wird weiter, was getippt wurde."""
+    return str(wert or "").strip().casefold()
+
+
 def stoert(neu: dict, bestehende: list[dict]) -> str | None:
     """Kollidiert der Termin mit einem anderen derselben Person?
 
@@ -62,19 +68,20 @@ def stoert(neu: dict, bestehende: list[dict]) -> str | None:
     """
     a1 = _zeit(neu.get("start"))
     a2 = a1 + dt.timedelta(minutes=int(neu.get("minuten") or 0))
-    wer = str(neu.get("wer") or "").strip()
+    wer = _name(neu.get("wer"))
     for alt in bestehende or []:
         if alt.get("abgesagt"):
             continue
         if neu.get("id") is not None and alt.get("id") == neu.get("id"):
             continue
-        if str(alt.get("wer") or "").strip() != wer:
+        if _name(alt.get("wer")) != wer:
             continue
         b1 = _zeit(alt.get("start"))
         b2 = b1 + dt.timedelta(minutes=int(alt.get("minuten") or 0))
         if a1 < b2 and b1 < a2:      # Berührung am Rand ist keine Überschneidung
             kundin = alt.get("kundin") or "jemand"
-            return (f"{wer or 'Da'} hat um {b1.strftime('%H:%M')} schon "
+            angezeigt = str(neu.get("wer") or "").strip() or "Da"
+            return (f"{angezeigt} hat um {b1.strftime('%H:%M')} schon "
                     f"{kundin} — das überschneidet sich.")
     return None
 
@@ -201,6 +208,17 @@ def ist_frei(datum: str, termine: list[dict], uhrzeit: str, dauer: int,
         if beginn < b2 and b1 < ende:
             return False
     return True
+
+
+def innerhalb_oeffnung(start: str, minuten: int,
+                       oeffnung: tuple[str, str] = OEFFNUNG) -> bool:
+    """Liegt der Termin ganz innerhalb der Öffnungszeiten?"""
+    try:
+        beginn = _minuten_seit_mitternacht(str(start)[11:16])
+    except (ValueError, IndexError):
+        return False
+    return (beginn >= _minuten_seit_mitternacht(oeffnung[0])
+            and beginn + max(0, minuten) <= _minuten_seit_mitternacht(oeffnung[1]))
 
 
 def _gestreut(zeiten: list[str], hoechstens: int) -> list[str]:

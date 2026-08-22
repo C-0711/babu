@@ -68,6 +68,16 @@ struct KontoMenuView: View {
 
                 Section("Dein Salon") {
                     NavigationLink {
+                        KundinnenView()
+                    } label: {
+                        Label("Kundinnen", systemImage: "person.crop.circle")
+                    }
+                    NavigationLink {
+                        PreiseView()
+                    } label: {
+                        Label("Deine Preise", systemImage: "tag")
+                    }
+                    NavigationLink {
                         TeamView()
                     } label: {
                         Label("Dein Team", systemImage: "person.2")

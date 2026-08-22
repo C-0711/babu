@@ -439,6 +439,8 @@ main{padding:26px 22px 60px;min-height:70dvh}
       <div class="menu-gruppe">Dein Salon</div>
       <button role="menuitem" onclick="menuGeh('#termine')">
         <span class="sym">🗓️</span> Termine</button>
+      <button role="menuitem" onclick="menuGeh('#kundinnen')">
+        <span class="sym">💇</span> Kundinnen</button>
       <button role="menuitem" onclick="menuGeh('#team')">
         <span class="sym">✂️</span> Dein Team</button>
       <button role="menuitem" onclick="menuGeh('#vertraege')">
@@ -743,6 +745,7 @@ main{padding:26px 22px 60px;min-height:70dvh}
     </div>
     <p id="t-satz" style="color:var(--gc-desc);margin-bottom:14px"></p>
     <div id="t-liste"><div class="skelett"></div></div>
+    <div id="t-kasse"></div>
     <div class="karte" style="margin-top:16px">
       <h3 style="font:600 15px var(--gc-serif);margin-bottom:8px">Neuer Termin</h3>
       <input class="suchfeld" id="t-satz-feld" style="margin:0 0 8px"
@@ -752,6 +755,41 @@ main{padding:26px 22px 60px;min-height:70dvh}
       <div style="font-size:11px;color:var(--gc-muted);margin-top:10px">
         babu versteht den Satz und sucht die freie Zeit. Eingetragen wird
         erst, wenn du eine antippst.</div>
+      <a class="chip" style="margin-top:10px;display:inline-block" href="#preise">Deine Preise</a>
+    </div>
+  </section>
+
+  <!-- KUNDINNEN: der Karteikasten hinterm Spiegel, nur eben auffindbar -->
+  <section class="ansicht" id="a-kundinnen">
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Kundinnen</div>
+    <p style="color:var(--gc-desc);margin-bottom:14px">Wer sie ist, was sie verträgt,
+      welche Farbe beim letzten Mal stimmte.</p>
+    <input class="suchfeld" id="k-suche" placeholder="Name suchen …" autocomplete="off">
+    <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">
+      <div style="flex:1 1 260px;min-width:240px">
+        <div id="k-liste"><div class="skelett"></div></div>
+        <button class="chip" style="margin-top:10px" onclick="kNeu()">+ Neue Kundin</button>
+      </div>
+      <div style="flex:2 1 340px;min-width:300px" id="k-detail"></div>
+    </div>
+  </section>
+
+  <!-- PREISE: was der Salon anbietet. Ohne Preis kann ein Termin nichts wert sein. -->
+  <section class="ansicht" id="a-preise">
+    <a class="zurueck" href="#termine">‹ Termine</a>
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Deine Preise</div>
+    <p style="color:var(--gc-desc);margin-bottom:14px">Was du anbietest, was es kostet,
+      wie lange es dauert. Danach genügt am Termin ein Tippen.</p>
+    <div id="p-liste"><div class="skelett"></div></div>
+    <div class="karte" style="margin-top:14px">
+      <h3 style="font:600 15px var(--gc-serif);margin-bottom:8px">Neue Leistung</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input class="suchfeld" id="p-name" style="margin:0;flex:2 1 180px" placeholder="Waschen, Schneiden, Föhnen">
+        <input class="suchfeld" id="p-preis" style="margin:0;flex:1 1 90px" placeholder="49,00" inputmode="decimal">
+        <input class="suchfeld" id="p-min" style="margin:0;flex:1 1 80px" placeholder="60 min" inputmode="numeric">
+        <button class="chip" onclick="preisSpeichern()">Aufnehmen</button>
+      </div>
+      <div id="p-fehler" style="font-size:12px;color:var(--gc-accent);margin-top:8px"></div>
     </div>
   </section>
 
@@ -935,7 +973,9 @@ const ansichten = { gesperrt: () => {}, heute: ladeHeute, belege: ladeBelege, fr
                     aufraeumen: ladeAufraeumen, post: ladePost, ablage: ladeAblage, export: ladeExport, team: ladeTeam,
                     abschluss: ladeAbschluss,
                     zahlen: ladeZahlen, bank: ladeBank, saloncheck: ladeSalonCheck,
-                    termine: ladeTermine, rechnungen: ladeRechnungen,
+                    termine: ladeTermine, kundinnen: ladeKundinnen,
+                    preise: ladePreise,
+                    rechnungen: ladeRechnungen,
                     vertraege: ladeVertraege, marketing: ladeMarketing,
                     briefkopf: ladeBriefkopf,
                     einrichtung: ladeEinrichtung, verwaltung: ladeVerwaltung,
@@ -2720,8 +2760,187 @@ async function ladeTermine(){
       ${t.leistung ? `<span class="chip" style="font-size:11px">${esc(t.leistung)}</span>` : ""}
       ${t.wer ? `<span class="wann">bei ${esc(t.wer)}</span>` : ""}
       <span class="wann">${t.minuten} min</span>
+      ${t.abgerechnet
+        ? `<span class="chip" style="font-size:11px">✓ ${euro(t.preis || 0)} ${t.zahlart === "karte" ? "Karte" : "bar"}</span>`
+        : `<button class="chip" style="font-size:11px" onclick="abrechnenFragen(${t.id}, ${t.preis || 0})">Abrechnen</button>`}
       <button class="loeschknopf" onclick="terminAbsagen(${t.id})">Abgesagt</button>
     </div>`).join("");
+  ladeKassenvorschlag();
+}
+
+/* Was der Tag eingebracht hat — ein Vorschlag, keine Buchung. babu rechnet
+   zusammen, festgeschrieben wird im Kassenbuch von ihr. */
+async function ladeKassenvorschlag(){
+  const ziel = $("#t-kasse");
+  try{
+    const v = await (await api("/api/kasse/vorschlag?datum=" + tTag)).json();
+    if (!v.termine){ ziel.innerHTML = ""; return; }
+    ziel.innerHTML = `<div class="karte" style="margin-top:14px">
+      <b>${esc(v.satz)}</b>
+      <div style="font-size:12px;color:var(--gc-muted);margin-top:6px">
+        Vorschlag fürs Kassenbuch — eingetragen wird er erst, wenn du ihn
+        im Kassenblatt bestätigst.</div>
+      <a class="chip" style="margin-top:8px;display:inline-block" href="#belege">Zum Kassenbuch</a>
+    </div>`;
+  }catch{ ziel.innerHTML = ""; }
+}
+
+/* Abrechnen: bar oder Karte, Preis vorbelegt aus der Leistung. */
+async function abrechnenFragen(id, preis){
+  const eingabe = prompt("Was hat die Behandlung gekostet? (€)",
+                         preis ? String(preis).replace(".", ",") : "");
+  if (eingabe === null) return;
+  const karte = confirm("Mit Karte bezahlt?\n\nOK = Karte, Abbrechen = bar");
+  const r = await api("/api/termin/" + id + "/abrechnen", {method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({preis: eingabe, zahlart: karte ? "karte" : "bar"})});
+  if (!r.ok){
+    const d = await r.json().catch(() => ({}));
+    alert(d.fehler || "Das ging nicht.");
+    return;
+  }
+  ladeTermine();
+}
+
+/* ————— Preise ————— */
+async function ladePreise(){
+  const ziel = $("#p-liste");
+  let d;
+  try{ d = await (await api("/api/leistungen")).json(); }
+  catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+  const liste = d.leistungen || [];
+  ziel.innerHTML = !liste.length
+    ? `<div class="leer"><b>Noch keine Preise hinterlegt.</b>
+        Trag unten ein, was du anbietest.</div>`
+    : liste.map(l => `<div class="ablage-zeile">
+        <b>${esc(l.name)}</b>
+        <span class="wann">${l.minuten} min</span>
+        <span style="margin-left:auto;font-variant-numeric:tabular-nums">${euro(l.preis)}</span>
+        <button class="loeschknopf" onclick="preisWeg(${l.id})">Weg</button>
+      </div>`).join("");
+}
+
+async function preisSpeichern(){
+  const body = {name: $("#p-name").value, preis: $("#p-preis").value,
+                minuten: $("#p-min").value};
+  const r = await api("/api/leistungen", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok){ $("#p-fehler").textContent = d.fehler || "Das ging nicht."; return; }
+  $("#p-fehler").textContent = "";
+  $("#p-name").value = ""; $("#p-preis").value = ""; $("#p-min").value = "";
+  ladePreise();
+}
+
+async function preisWeg(id){
+  await api("/api/leistung/" + id + "/loeschen", {method:"POST"});
+  ladePreise();
+}
+
+/* ————— Kundinnen ————— */
+let kOffen = null;
+
+async function ladeKundinnen(){
+  const ziel = $("#k-liste");
+  const suche = ($("#k-suche").value || "").trim();
+  let d;
+  try{
+    d = await (await api("/api/kundinnen?suche=" + encodeURIComponent(suche))).json();
+  }catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+  const liste = d.kundinnen || [];
+  ziel.innerHTML = !liste.length
+    ? `<div class="leer"><b>${suche ? "Niemanden gefunden." : "Noch keine Kundin angelegt."}</b></div>`
+    : liste.map(k => `<div class="ablage-zeile" style="cursor:pointer"
+        onclick="kZeigen(${k.id})">
+        <b>${esc(k.name)}</b>
+        ${k.allergie ? `<span class="chip" style="font-size:11px">⚠ Allergie</span>` : ""}
+        ${k.zuletzt ? `<span class="wann">${esc(k.zuletzt)}</span>` : ""}
+      </div>`).join("");
+}
+$("#k-suche").addEventListener("input", () => {
+  clearTimeout(window._kTimer);
+  window._kTimer = setTimeout(ladeKundinnen, 250);
+});
+
+async function kZeigen(id){
+  kOffen = id;
+  const ziel = $("#k-detail");
+  ziel.innerHTML = `<div class="skelett"></div>`;
+  let k;
+  try{ k = await (await api("/api/kundin/" + id)).json(); }
+  catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+  ziel.innerHTML = `<div class="karte">
+    <h3 style="font:600 17px var(--gc-serif)">${esc(k.name)}</h3>
+    ${k.allergie ? `<div class="karte nachfrage" style="margin:8px 0">
+        <b>⚠ Vorsicht</b>
+        <div style="font-size:13px">${esc(k.allergie)}</div></div>` : ""}
+    <div style="font-size:13px;color:var(--gc-desc)">
+      ${k.telefon ? esc(k.telefon) + "<br>" : ""}${k.email ? esc(k.email) : ""}</div>
+    ${k.notiz ? `<p style="font-size:13px;margin-top:8px">${esc(k.notiz)}</p>` : ""}
+    <div class="lbl" style="margin-top:14px">Was gemacht wurde</div>
+    ${(k.verlauf || []).length
+      ? (k.verlauf || []).map(b => `<div class="ablage-zeile">
+          <b style="font-variant-numeric:tabular-nums">${esc(b.datum)}</b>
+          <span>${esc(b.leistung || "—")}</span>
+          ${b.formel ? `<span class="chip" style="font-size:11px">${esc(b.formel)}</span>` : ""}
+          ${b.notiz ? `<span class="wann">${esc(b.notiz)}</span>` : ""}
+        </div>`).join("")
+      : `<div class="leer">Noch nichts eingetragen.</div>`}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      <input class="suchfeld" id="k-b-leistung" style="margin:0;flex:1 1 130px" placeholder="Farbe">
+      <input class="suchfeld" id="k-b-formel" style="margin:0;flex:1 1 150px" placeholder="7/0 + 8/3, 30 min">
+      <button class="chip" onclick="kBehandlung()">Eintragen</button>
+    </div>
+    <div style="margin-top:14px;display:flex;gap:8px">
+      <button class="chip" onclick="kBearbeiten(${k.id})">Angaben ändern</button>
+      <button class="loeschknopf" onclick="kWeg(${k.id}, '${esc(k.name).replace(/'/g, "")}')">Ganz löschen</button>
+    </div>
+  </div>`;
+}
+
+async function kBehandlung(){
+  if (!kOffen) return;
+  await api("/api/kundin/" + kOffen + "/behandlung", {method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({leistung: $("#k-b-leistung").value,
+                          formel: $("#k-b-formel").value})});
+  kZeigen(kOffen);
+  ladeKundinnen();
+}
+
+async function kSpeichern(body){
+  const r = await api("/api/kundinnen", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok){ alert(d.fehler || "Das ging nicht."); return null; }
+  ladeKundinnen();
+  return d.id;
+}
+
+async function kNeu(){
+  const name = prompt("Wie heißt sie?");
+  if (!name) return;
+  const id = await kSpeichern({name, telefon: prompt("Telefon (kann leer bleiben)") || "",
+                               allergie: prompt("Unverträglichkeiten? (kann leer bleiben)") || ""});
+  if (id) kZeigen(id);
+}
+
+async function kBearbeiten(id){
+  const k = await (await api("/api/kundin/" + id)).json();
+  const name = prompt("Name", k.name); if (!name) return;
+  await kSpeichern({id, name, telefon: prompt("Telefon", k.telefon || "") || "",
+                    email: prompt("E-Mail", k.email || "") || "",
+                    allergie: prompt("Unverträglichkeiten", k.allergie || "") || "",
+                    notiz: prompt("Notiz", k.notiz || "") || ""});
+  kZeigen(id);
+}
+
+async function kWeg(id, name){
+  if (!confirm(`${name} mit allem Verlauf löschen?\n\nFarbformeln und Notizen sind danach weg.`)) return;
+  await api("/api/kundin/" + id + "/loeschen", {method:"POST"});
+  kOffen = null;
+  $("#k-detail").innerHTML = "";
+  ladeKundinnen();
 }
 
 function tBlaettern(tage){

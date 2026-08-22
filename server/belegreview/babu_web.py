@@ -100,6 +100,36 @@ def _db() -> sqlite3.Connection:
          abgesagt INTEGER NOT NULL DEFAULT 0, angelegt TEXT)""")
     conn.execute("""CREATE INDEX IF NOT EXISTS termin_un_start
         ON termin (un, start)""")
+    # Kundenkartei: Namen, Notizen, Farbformeln, Allergiehinweise. Das sind
+    # personenbezogene und teils gesundheitsnahe Daten — sie gehören NICHT
+    # in die Belegbox, wo jede Fassung für immer bliebe, sondern hierher,
+    # wo sich löschen lässt (Art. 17 DSGVO).
+    conn.execute("""CREATE TABLE IF NOT EXISTS kundin
+        (id INTEGER PRIMARY KEY AUTOINCREMENT, un TEXT NOT NULL,
+         name TEXT NOT NULL, telefon TEXT, email TEXT, notiz TEXT,
+         allergie TEXT, angelegt TEXT, zuletzt TEXT)""")
+    conn.execute("""CREATE INDEX IF NOT EXISTS kundin_un ON kundin (un, name)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS behandlung
+        (id INTEGER PRIMARY KEY AUTOINCREMENT, un TEXT NOT NULL,
+         kundin INTEGER NOT NULL, datum TEXT NOT NULL, leistung TEXT,
+         formel TEXT, notiz TEXT, termin INTEGER, angelegt TEXT)""")
+    conn.execute("""CREATE INDEX IF NOT EXISTS behandlung_kundin
+        ON behandlung (un, kundin, datum)""")
+    # Leistungskatalog: was der Salon anbietet, wie lange es dauert, was es
+    # kostet. Stammdaten des Betriebs.
+    conn.execute("""CREATE TABLE IF NOT EXISTS leistung
+        (id INTEGER PRIMARY KEY AUTOINCREMENT, un TEXT NOT NULL,
+         name TEXT NOT NULL, preis REAL NOT NULL, minuten INTEGER NOT NULL,
+         ust_satz INTEGER NOT NULL DEFAULT 19, aktiv INTEGER NOT NULL DEFAULT 1,
+         angelegt TEXT)""")
+    # Termine bekommen Preis und Abrechnung nachgerüstet.
+    for spalte, typ in (("preis", "REAL"), ("ust_satz", "INTEGER"),
+                        ("abgerechnet", "TEXT"), ("zahlart", "TEXT"),
+                        ("kundin_id", "INTEGER")):
+        try:
+            conn.execute(f"ALTER TABLE termin ADD COLUMN {spalte} {typ}")
+        except sqlite3.OperationalError:
+            pass          # Spalte gibt es schon
     conn.execute("""CREATE TABLE IF NOT EXISTS gespraech
         (id INTEGER PRIMARY KEY AUTOINCREMENT, un TEXT NOT NULL,
          titel TEXT, begonnen TEXT NOT NULL, zuletzt TEXT NOT NULL)""")
@@ -425,6 +455,8 @@ _INDEX_LOCK = threading.Lock()
 # Die Rechnungsnummer wird gelesen UND vergeben — dazwischen darf
 # niemand dieselbe Nummer bekommen.
 _RECHNUNG_SCHLOSS = threading.Lock()
+# Termine: Überschneidung prüfen und eintragen gehören zusammen.
+_TERMIN_SCHLOSS = threading.Lock()
 _INDEX: dict = {"head": None, "geprueft": 0.0, "belege": {}, "reviews": {},
                 "dokumente": [], "freigaben": {}, "umsaetze": {},
                 "kassenblaetter": {}, "zeiten": {}, "oid_cache": {},
@@ -1175,11 +1207,29 @@ def api_beleg_bild(stamm: str, request: Request) -> Response:
 
 
 def _zahl(wert) -> float | None:
-    """Zahl aus einer Einstellung — deutsche Schreibweise erlaubt."""
+    """Zahl aus einer Eingabe — deutsche Schreibweise erlaubt.
+
+    Echte Zahlen gehen NICHT durch den Text-Parser. Vorher wurde bei jedem
+    Wert der Punkt als Tausendertrenner entfernt — aus einem Trinkgeld von
+    12.50 (JSON-Zahl) wurden so 1250, aus 2400.50 Gehalt 24005. Nur
+    getippter Text wird deutsch gelesen, und auch dort trennt der Punkt nur
+    dann Tausender, wenn ein Komma dabei ist.
+    """
     if wert in (None, ""):
         return None
+    if isinstance(wert, (int, float)) and not isinstance(wert, bool):
+        return float(wert)
+    text = str(wert).strip()
+    if "," in text:                       # „2.400,50" — Punkt trennt Tausender
+        text = text.replace(".", "").replace(",", ".")
+    else:
+        # Ohne Komma ist der Punkt zweideutig: „2.400" meint
+        # zweitausendvierhundert, „89.50" meint Komma. Entschieden wird an
+        # den Nachkommastellen — genau wie im Betragsfeld der App.
+        teile = text.split(".")
+        text = text if len(teile) == 2 and len(teile[1]) == 2 else "".join(teile)
     try:
-        return float(str(wert).replace(".", "").replace(",", "."))
+        return float(text)
     except ValueError:
         return None
 
@@ -3375,12 +3425,15 @@ async def api_zahlungen_uebernehmen(request: Request) -> Response:
 def _termine_lesen(un: str, von: str, bis: str) -> list[dict]:
     with _DB_LOCK, _db() as c:
         zeilen = c.execute(
-            """SELECT id, start, minuten, wer, kundin, leistung, notiz, abgesagt
+            """SELECT id, start, minuten, wer, kundin, leistung, notiz, abgesagt,
+                      preis, ust_satz, abgerechnet, zahlart, kundin_id
                FROM termin WHERE un=? AND start>=? AND start<=? ORDER BY start""",
             (un, von, bis + "T23:59")).fetchall()
     return [{"id": z[0], "start": z[1], "minuten": z[2], "wer": z[3],
              "kundin": z[4], "leistung": z[5], "notiz": z[6],
-             "abgesagt": bool(z[7])} for z in zeilen]
+             "abgesagt": bool(z[7]), "preis": z[8], "ust_satz": z[9],
+             "abgerechnet": z[10], "zahlart": z[11], "kundin_id": z[12]}
+            for z in zeilen]
 
 
 @app.get("/api/termine")
@@ -3430,6 +3483,7 @@ async def api_termin_anlegen(request: Request) -> Response:
     except Exception:  # noqa: BLE001
         return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
 
+    import datetime as dt  # noqa: PLC0415
     import kalender as ka  # noqa: PLC0415
     try:
         termin = ka.pruefen(body or {})
@@ -3438,29 +3492,50 @@ async def api_termin_anlegen(request: Request) -> Response:
 
     inhaber = salon_von(un)
     tag = termin["start"][:10]
-    bestehende = _termine_lesen(inhaber, tag, tag)
-    termin["id"] = (body or {}).get("id")
-    if (stoerung := ka.stoert(termin, bestehende)):
-        return JSONResponse({"fehler": stoerung}, status_code=409)
 
-    with _DB_LOCK, _db() as c:
-        if termin.get("id"):
-            c.execute("""UPDATE termin SET start=?, minuten=?, wer=?, kundin=?,
-                         leistung=?, notiz=? WHERE id=? AND un=?""",
-                      (termin["start"], termin["minuten"], termin["wer"],
-                       termin["kundin"], termin["leistung"],
-                       str((body or {}).get("notiz") or "")[:300],
-                       int(termin["id"]), inhaber))
-            neue_id = int(termin["id"])
-        else:
-            cur = c.execute("""INSERT INTO termin (un, start, minuten, wer,
-                               kundin, leistung, notiz, angelegt)
-                               VALUES (?,?,?,?,?,?,?,?)""",
-                            (inhaber, termin["start"], termin["minuten"],
-                             termin["wer"], termin["kundin"], termin["leistung"],
-                             str((body or {}).get("notiz") or "")[:300],
-                             _jetzt_iso()))
-            neue_id = int(cur.lastrowid)
+    # Nicht versehentlich in die Vergangenheit buchen. Nachtragen bleibt
+    # möglich — aber ausdrücklich, nicht durch einen Tippfehler im Datum.
+    if tag < dt.date.today().isoformat() and not (body or {}).get("nachtragen"):
+        return JSONResponse(
+            {"fehler": "Das liegt in der Vergangenheit. Wenn du nachtragen "
+                       "willst, sag es ausdrücklich."}, status_code=400)
+
+    # Und nicht außerhalb der Öffnungszeiten — ein Termin um drei Uhr nachts
+    # ist immer ein Vertipper.
+    oeffnung = ka.oeffnung_aus(db_einstellungen(inhaber))
+    if not ka.innerhalb_oeffnung(termin["start"], termin["minuten"], oeffnung):
+        return JSONResponse(
+            {"fehler": f"Da habt ihr nicht geöffnet — {oeffnung[0]} bis "
+                       f"{oeffnung[1]}."}, status_code=400)
+
+    # Prüfen und Schreiben unter EINEM Schloss: sonst passt zwischen die
+    # Überschneidungsprüfung und den Eintrag eine zweite Anfrage, und zwei
+    # Kundinnen stehen zur selben Zeit im Laden.
+    with _TERMIN_SCHLOSS:
+        bestehende = _termine_lesen(inhaber, tag, tag)
+        termin["id"] = (body or {}).get("id")
+        if (stoerung := ka.stoert(termin, bestehende)):
+            return JSONResponse({"fehler": stoerung}, status_code=409)
+
+        with _DB_LOCK, _db() as c:
+            if termin.get("id"):
+                c.execute("""UPDATE termin SET start=?, minuten=?, wer=?,
+                             kundin=?, leistung=?, notiz=? WHERE id=? AND un=?""",
+                          (termin["start"], termin["minuten"], termin["wer"],
+                           termin["kundin"], termin["leistung"],
+                           str((body or {}).get("notiz") or "")[:300],
+                           int(termin["id"]), inhaber))
+                neue_id = int(termin["id"])
+            else:
+                cur = c.execute("""INSERT INTO termin (un, start, minuten, wer,
+                                   kundin, leistung, notiz, angelegt)
+                                   VALUES (?,?,?,?,?,?,?,?)""",
+                                (inhaber, termin["start"], termin["minuten"],
+                                 termin["wer"], termin["kundin"],
+                                 termin["leistung"],
+                                 str((body or {}).get("notiz") or "")[:300],
+                                 _jetzt_iso()))
+                neue_id = int(cur.lastrowid)
     # `**termin` zuerst: sonst überschreibt sein leeres „id" die frische —
     # und der Termin blockiert sich beim nächsten Verschieben selbst.
     return JSONResponse({**termin, "ok": True, "id": neue_id})
@@ -3556,6 +3631,261 @@ def api_termin_loeschen(termin_id: int, request: Request) -> Response:
     inhaber = salon_von(un)
     with _DB_LOCK, _db() as c:
         c.execute("DELETE FROM termin WHERE id=? AND un=?", (termin_id, inhaber))
+    return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Leistungskatalog: was der Salon anbietet, was es kostet, wie lang es dauert.
+# Damit weiß ein Termin, was er wert ist — und die Rechnung, was draufsteht.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/leistungen")
+def api_leistungen(request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    inhaber = salon_von(un)         # geht selbst an die DB — vor das Schloss
+    with _DB_LOCK, _db() as c:
+        zeilen = c.execute("""SELECT id, name, preis, minuten, ust_satz, aktiv
+                              FROM leistung WHERE un=? ORDER BY aktiv DESC, name""",
+                           (inhaber,)).fetchall()
+    return JSONResponse({"leistungen": [
+        {"id": z[0], "name": z[1], "preis": z[2], "minuten": z[3],
+         "ust_satz": z[4], "aktiv": bool(z[5])} for z in zeilen]})
+
+
+@app.post("/api/leistungen")
+async def api_leistung_speichern(request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Preise macht die Inhaberin."},
+                            status_code=403)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    import abrechnung as ab  # noqa: PLC0415
+    try:
+        l = ab.leistung_pruefen(body or {})
+    except ab.AbrechnungFehler as e:
+        return JSONResponse({"fehler": str(e)}, status_code=400)
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        if (body or {}).get("id"):
+            c.execute("""UPDATE leistung SET name=?, preis=?, minuten=?,
+                         ust_satz=? WHERE id=? AND un=?""",
+                      (l["name"], l["preis"], l["minuten"], l["ust_satz"],
+                       int(body["id"]), inhaber))
+            neue = int(body["id"])
+        else:
+            cur = c.execute("""INSERT INTO leistung (un, name, preis, minuten,
+                               ust_satz, angelegt) VALUES (?,?,?,?,?,?)""",
+                            (inhaber, l["name"], l["preis"], l["minuten"],
+                             l["ust_satz"], _jetzt_iso()))
+            neue = int(cur.lastrowid)
+    return JSONResponse({"ok": True, "id": neue, **l})
+
+
+@app.post("/api/leistung/{leistung_id}/loeschen")
+def api_leistung_loeschen(leistung_id: int, request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        c.execute("DELETE FROM leistung WHERE id=? AND un=?",
+                  (leistung_id, inhaber))
+    return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Abrechnen: nach der Behandlung ein Tipp — bar oder Karte. Daraus wird ein
+# VORSCHLAG fürs Kassenbuch, keine Buchung (siehe abrechnung.py).
+# ---------------------------------------------------------------------------
+
+@app.post("/api/termin/{termin_id}/abrechnen")
+async def api_termin_abrechnen(termin_id: int, request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if (sperre := _mitarbeit_wache(un, "darf_kasse", "Abrechnen")):
+        return sperre
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    import abrechnung as ab  # noqa: PLC0415
+    import datetime as dt  # noqa: PLC0415
+    try:
+        zahlart = ab.zahlart_pruefen((body or {}).get("zahlart"))
+    except ab.AbrechnungFehler as e:
+        return JSONResponse({"fehler": str(e)}, status_code=400)
+
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        zeile = c.execute("SELECT preis, start FROM termin WHERE id=? AND un=?",
+                          (termin_id, inhaber)).fetchone()
+        if not zeile:
+            return JSONResponse({"fehler": "unbekannter Termin"}, status_code=404)
+        preis = _zahl((body or {}).get("preis")) or zeile[0]
+        if not preis or preis <= 0:
+            return JSONResponse(
+                {"fehler": "Was hat die Behandlung gekostet?"}, status_code=400)
+        c.execute("""UPDATE termin SET abgerechnet=?, zahlart=?, preis=?
+                     WHERE id=? AND un=?""",
+                  (str((body or {}).get("am") or dt.date.today().isoformat())[:10],
+                   zahlart, round(float(preis), 2), termin_id, inhaber))
+    return JSONResponse({"ok": True, "zahlart": zahlart,
+                         "preis": round(float(preis), 2)})
+
+
+@app.get("/api/kasse/vorschlag")
+def api_kasse_vorschlag(request: Request, datum: str = "") -> Response:
+    """Was aus den abgerechneten Terminen für das Kassenbuch folgt.
+
+    Ausdrücklich ein Vorschlag: bestätigt wird abends von der Inhaberin.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if (sperre := _mitarbeit_wache(un, "darf_kasse", "Das Kassenbuch führen")):
+        return sperre
+    import abrechnung as ab  # noqa: PLC0415
+    import datetime as dt  # noqa: PLC0415
+    datum = datum if re.fullmatch(r"\d{4}-\d{2}-\d{2}", datum or "") \
+        else dt.date.today().isoformat()
+    return JSONResponse(ab.tagesvorschlag(
+        datum, _termine_lesen(salon_von(un), datum, datum)))
+
+
+# ---------------------------------------------------------------------------
+# Kundenkartei. Personenbezogen und teils gesundheitsnah (Allergien,
+# Farbformeln) — deshalb in SQLite und löschbar, nicht in der Belegbox.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/kundinnen")
+def api_kundinnen(request: Request, suche: str = "") -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        if suche.strip():
+            zeilen = c.execute(
+                """SELECT id, name, telefon, email, allergie, zuletzt FROM kundin
+                   WHERE un=? AND name LIKE ? ORDER BY name LIMIT 50""",
+                (inhaber, f"%{suche.strip()[:40]}%")).fetchall()
+        else:
+            zeilen = c.execute(
+                """SELECT id, name, telefon, email, allergie, zuletzt FROM kundin
+                   WHERE un=? ORDER BY zuletzt DESC, name LIMIT 100""",
+                (inhaber,)).fetchall()
+    return JSONResponse({"kundinnen": [
+        {"id": z[0], "name": z[1], "telefon": z[2], "email": z[3],
+         "allergie": z[4], "zuletzt": z[5]} for z in zeilen]})
+
+
+@app.post("/api/kundinnen")
+async def api_kundin_speichern(request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    name = str((body or {}).get("name") or "").strip()[:80]
+    if not name:
+        return JSONResponse({"fehler": "Wie heißt sie?"}, status_code=400)
+    felder = {k: str((body or {}).get(k) or "").strip()[:200]
+              for k in ("telefon", "email", "notiz", "allergie")}
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        if (body or {}).get("id"):
+            c.execute("""UPDATE kundin SET name=?, telefon=?, email=?, notiz=?,
+                         allergie=? WHERE id=? AND un=?""",
+                      (name, felder["telefon"], felder["email"], felder["notiz"],
+                       felder["allergie"], int(body["id"]), inhaber))
+            neue = int(body["id"])
+        else:
+            cur = c.execute("""INSERT INTO kundin (un, name, telefon, email,
+                               notiz, allergie, angelegt) VALUES (?,?,?,?,?,?,?)""",
+                            (inhaber, name, felder["telefon"], felder["email"],
+                             felder["notiz"], felder["allergie"], _jetzt_iso()))
+            neue = int(cur.lastrowid)
+    return JSONResponse({"ok": True, "id": neue, "name": name, **felder})
+
+
+@app.get("/api/kundin/{kundin_id}")
+def api_kundin(kundin_id: int, request: Request) -> Response:
+    """Eine Kundin mit ihrem Verlauf — was wann gemacht wurde, mit welcher
+    Formel. Das ist das Wissen, das sonst im Karteikasten steckt."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        z = c.execute("""SELECT id, name, telefon, email, notiz, allergie, angelegt
+                         FROM kundin WHERE id=? AND un=?""",
+                      (kundin_id, inhaber)).fetchone()
+        if not z:
+            return JSONResponse({"fehler": "unbekannt"}, status_code=404)
+        verlauf = [{"id": b[0], "datum": b[1], "leistung": b[2], "formel": b[3],
+                    "notiz": b[4]}
+                   for b in c.execute(
+                       """SELECT id, datum, leistung, formel, notiz FROM behandlung
+                          WHERE un=? AND kundin=? ORDER BY datum DESC LIMIT 60""",
+                       (inhaber, kundin_id))]
+    return JSONResponse({"id": z[0], "name": z[1], "telefon": z[2], "email": z[3],
+                         "notiz": z[4], "allergie": z[5], "angelegt": z[6],
+                         "verlauf": verlauf})
+
+
+@app.post("/api/kundin/{kundin_id}/behandlung")
+async def api_behandlung(kundin_id: int, request: Request) -> Response:
+    """Was gemacht wurde — samt Farbformel. Beim nächsten Mal steht es da."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    import datetime as dt  # noqa: PLC0415
+    datum = str((body or {}).get("datum") or dt.date.today().isoformat())[:10]
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", datum):
+        return JSONResponse({"fehler": "Datum als JJJJ-MM-TT"}, status_code=400)
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        if not c.execute("SELECT 1 FROM kundin WHERE id=? AND un=?",
+                         (kundin_id, inhaber)).fetchone():
+            return JSONResponse({"fehler": "unbekannt"}, status_code=404)
+        c.execute("""INSERT INTO behandlung (un, kundin, datum, leistung, formel,
+                     notiz, termin, angelegt) VALUES (?,?,?,?,?,?,?,?)""",
+                  (inhaber, kundin_id, datum,
+                   str((body or {}).get("leistung") or "").strip()[:80],
+                   str((body or {}).get("formel") or "").strip()[:200],
+                   str((body or {}).get("notiz") or "").strip()[:400],
+                   (body or {}).get("termin"), _jetzt_iso()))
+        c.execute("UPDATE kundin SET zuletzt=? WHERE id=? AND un=?",
+                  (datum, kundin_id, inhaber))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/kundin/{kundin_id}/loeschen")
+def api_kundin_loeschen(kundin_id: int, request: Request) -> Response:
+    """Ganz weg, mit allem Verlauf. Personenbezogenes muss sich löschen
+    lassen — und Farbformeln und Allergiehinweise ganz besonders."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        c.execute("DELETE FROM behandlung WHERE kundin=? AND un=?",
+                  (kundin_id, inhaber))
+        c.execute("DELETE FROM kundin WHERE id=? AND un=?", (kundin_id, inhaber))
     return JSONResponse({"ok": True})
 
 

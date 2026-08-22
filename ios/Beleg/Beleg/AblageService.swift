@@ -330,6 +330,102 @@ enum AblageService {
         return await ausfuehren(request, erfolg2xx: true) == .uebertragen
     }
 
+    // MARK: - Abrechnen und Kartei
+
+    /// Nach der Behandlung: bar oder Karte. Daraus wird ein Vorschlag fürs
+    /// Kassenbuch — gebucht wird nichts, das bestätigt sie abends selbst.
+    static func terminAbrechnen(id: Int, preis: String, zahlart: String,
+                                basis: URL, pat: String) async -> String? {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/termin/\(id)/abrechnen"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(
+            withJSONObject: ["preis": preis, "zahlart": zahlart])
+        let (ergebnis, daten) = await ausfuehrenMitDaten(request)
+        if ergebnis == .uebertragen { return nil }
+        if let daten, let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+           let fehler = json["fehler"] as? String { return fehler }
+        return "Das hat gerade nicht geklappt."
+    }
+
+    static func kassenvorschlag(tag: String, basis: URL, pat: String) async
+            -> [String: Any]? {
+        await holen("api/kasse/vorschlag?datum=\(tag)", basis: basis, pat: pat)
+    }
+
+    static func leistungen(basis: URL, pat: String) async -> [[String: Any]] {
+        let json = await holen("api/leistungen", basis: basis, pat: pat)
+        return json?["leistungen"] as? [[String: Any]] ?? []
+    }
+
+    static func leistungSpeichern(_ felder: [String: Any], basis: URL,
+                                  pat: String) async -> String? {
+        await schicken("api/leistungen", felder, basis: basis, pat: pat)
+    }
+
+    static func kundinnen(suche: String, basis: URL, pat: String) async
+            -> [[String: Any]] {
+        let frage = suche.addingPercentEncoding(
+            withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let json = await holen("api/kundinnen?suche=\(frage)", basis: basis, pat: pat)
+        return json?["kundinnen"] as? [[String: Any]] ?? []
+    }
+
+    static func kundin(id: Int, basis: URL, pat: String) async -> [String: Any]? {
+        await holen("api/kundin/\(id)", basis: basis, pat: pat)
+    }
+
+    static func kundinSpeichern(_ felder: [String: Any], basis: URL,
+                                pat: String) async -> String? {
+        await schicken("api/kundinnen", felder, basis: basis, pat: pat)
+    }
+
+    static func behandlungSpeichern(kundin: Int, _ felder: [String: Any],
+                                    basis: URL, pat: String) async -> String? {
+        await schicken("api/kundin/\(kundin)/behandlung", felder,
+                       basis: basis, pat: pat)
+    }
+
+    static func kundinLoeschen(id: Int, basis: URL, pat: String) async -> Bool {
+        await schicken("api/kundin/\(id)/loeschen", [:], basis: basis,
+                       pat: pat) == nil
+    }
+
+    // MARK: - Zwei kleine Helfer, damit sich das oben nicht zehnmal wiederholt
+
+    private static func holen(_ pfad: String, basis: URL, pat: String) async
+            -> [String: Any]? {
+        guard let url = URL(string: pfad, relativeTo: basis) else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              (antwort as? HTTPURLResponse)?.statusCode ?? 500 < 300 else { return nil }
+        return try? JSONSerialization.jsonObject(with: daten) as? [String: Any]
+    }
+
+    /// Gibt nil zurück, wenn es geklappt hat — sonst den Klartext für sie.
+    private static func schicken(_ pfad: String, _ felder: [String: Any],
+                                 basis: URL, pat: String) async -> String? {
+        guard let url = URL(string: pfad, relativeTo: basis) else {
+            return "Die Adresse stimmt nicht."
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: felder)
+        let (ergebnis, daten) = await ausfuehrenMitDaten(request)
+        if ergebnis == .uebertragen { return nil }
+        if let daten, let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+           let fehler = json["fehler"] as? String { return fehler }
+        return "Das hat gerade nicht geklappt."
+    }
+
     /// Welcher Monat wartet — und was fehlt ihm noch?
     static func monatslauf(basis: URL, pat: String) async -> [String: Any]? {
         var request = URLRequest(url: basis.appendingPathComponent("api/monatslauf"))
