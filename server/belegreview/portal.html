@@ -183,6 +183,24 @@ main{padding:26px 22px 60px;min-height:70dvh}
 #buehne img.zoom{max-height:none;cursor:zoom-out}
 #buehne .pdfhinweis{align-self:center;color:var(--gc-muted);text-align:center;font-size:13px}
 .sekt{margin-bottom:20px}
+/* Leseprotokoll: was babu auf dem Beleg gelesen hat, vollständig. */
+.prot{font-size:13px;line-height:1.5;color:var(--gc-desc)}
+.prot h4{font:600 13px var(--gc-sans);color:var(--gc-fg);margin:16px 0 6px}
+.prot h4:first-child{margin-top:0}
+.prot .psatz{font-weight:600;color:var(--gc-fg);background:var(--gc-accent-subtle);
+  padding:10px 12px;border-radius:8px;margin:0 0 10px}
+.prot ul{margin:6px 0;padding-left:18px}
+.prot blockquote{margin:8px 0;padding-left:10px;border-left:2px solid var(--gc-warn);
+  color:var(--gc-warn)}
+.prot pre{background:var(--gc-desk);border-radius:8px;padding:10px;overflow-x:auto;
+  font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--gc-body)}
+.prot table{border-collapse:collapse;width:100%;margin:6px 0;font-size:12px}
+.prot th{text-align:left;font:600 9.5px var(--gc-sans);letter-spacing:.09em;
+  text-transform:uppercase;color:var(--gc-muted);padding:5px 8px;
+  border-bottom:1px solid var(--gc-border)}
+.prot td{padding:5px 8px;border-bottom:1px solid var(--gc-border);vertical-align:top}
+.prot tr:nth-child(even) td{background:var(--gc-desk)}
+.prot td:first-child{white-space:nowrap;color:var(--gc-fg)}
 .sekt .lbl{display:block;margin-bottom:8px}
 .feld{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--gc-border-l);font-size:13.5px}
 .feld:last-child{border-bottom:none}
@@ -1365,7 +1383,10 @@ async function ladeDetail(stamm){
 
   let html = `<div id="detail-grid"><div><div id="buehne">${bildTag}</div></div><div>`;
   html += `<div class="gruss" style="font-size:22px;margin-bottom:2px">${lieferant}</div>
-    <div style="color:var(--gc-desc);font-size:13px;margin-bottom:18px">${f.datum || ""} ${f.brutto!=null ? "· " + euro(f.brutto) : ""}</div>`;
+    <div style="color:var(--gc-desc);font-size:13px;margin-bottom:${d.zusammenfassung ? "6px" : "18px"}">${f.datum || ""} ${f.brutto!=null ? "· " + euro(f.brutto) : ""}</div>`;
+  if (d.zusammenfassung){
+    html += `<div style="color:var(--gc-body);font-size:13px;margin-bottom:18px">${esc(d.zusammenfassung)}</div>`;
+  }
 
   html += `<div class="sekt"><span class="lbl">Beleg-Weg</span><ul class="weg">` +
     weg.map(w => `<li class="${w.klasse}"><span class="punkt"></span><div>
@@ -1424,6 +1445,30 @@ async function ladeDetail(stamm){
       Kam er als PDF, dauert es noch etwas länger.</div>`;
   }
 
+  if (!inArbeit){
+    // Wo die Gegenprobe etwas anderes gelesen hat, wird das gezeigt statt
+    // still entschieden — gültig ist die Lesung mit Zeilenangabe.
+    const abweichungen = f.widerspruch || [];
+    if (abweichungen.length){
+      html += `<div class="sekt"><span class="lbl">Zwei Lesungen weichen ab</span>
+        <div class="karte" style="margin:0">` +
+        abweichungen.map(w => `<div style="font-size:13px;color:var(--gc-desc);margin-bottom:4px">${esc(w)}</div>`).join("") +
+        `<div style="font-size:12px;color:var(--gc-muted);margin-top:6px">Gültig ist die
+        Lesung vom Beleg selbst — im Protokoll steht, aus welcher Zeile sie
+        stammt.</div></div></div>`;
+    }
+    html += `<div class="sekt"><span class="lbl">Was babu gelesen hat</span>
+      <div class="karte" style="margin:0">
+        <div style="font-size:13px;color:var(--gc-desc);margin-bottom:8px">Jede
+        erkannte Zeile, und zu jedem Wert die Stelle auf dem Beleg.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="chip" onclick="protokollZeigen('${d.stamm}')">Protokoll ansehen</button>
+          <button class="chip" onclick="neuLesen('${d.stamm}')">Noch einmal lesen</button>
+        </div>
+        <div id="prot-${d.stamm}" class="prot" style="margin-top:12px"></div>
+      </div></div>`;
+  }
+
   html += `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
     <button class="chip" onclick="fragenZuBeleg('${d.stamm}','${(lieferant+"").replace(/'/g,"")}')">Frag zu diesem Beleg</button>`;
   // Was schon bei der Kanzlei liegt, holt man nicht mehr zurück — dann steht
@@ -1438,6 +1483,106 @@ async function ladeDetail(stamm){
   if (bild) bild.addEventListener("click", () => bild.classList.toggle("zoom"));
 }
 const feld = (k,v) => `<div class="feld"><span>${k}</span><b>${v}</b></div>`;
+
+/* ————— LESEPROTOKOLL —————
+   Der Server schreibt zu jedem Beleg ein Markdown: jede erkannte Zeile mit
+   ihrer Güte, zu jedem Wert die Zeile, aus der er stammt. Hier wird es
+   gesetzt — bewusst nur so viel Markdown, wie das Protokoll benutzt.
+
+   Der Text stammt aus fremden Belegen, also wird konsequent escapt (`esc`
+   weiter unten): eine Rechnung mit einem <script> im Fußtext darf im Portal
+   nichts anrichten. */
+
+function zellen(zeile){
+  const felder = []; let aktuell = "", maskiert = false;
+  for (const z of zeile.slice(1)){
+    if (maskiert){ aktuell += z; maskiert = false; }
+    else if (z === "\\"){ maskiert = true; }
+    else if (z === "|"){ felder.push(aktuell.trim()); aktuell = ""; }
+    else aktuell += z;
+  }
+  if (aktuell.trim()) felder.push(aktuell.trim());
+  return felder.map(x => x.replace(/\*\*/g, "").replace(/&nbsp;/g, "").trim());
+}
+
+function protokollHtml(text){
+  const raus = []; let absatz = [], rechnung = [], tabelle = [];
+  const ohne = (t) => esc(t.replace(/\*\*/g, "").replace(/`/g, "").trim());
+  function absatzZu(){
+    if (!absatz.length) return;
+    const t = absatz.join(" "); absatz = [];
+    raus.push(/^\*\*.*\*\*$/.test(t) ? `<p class="psatz">${ohne(t)}</p>`
+                                    : `<p>${ohne(t)}</p>`);
+  }
+  function rechnungZu(){
+    if (!rechnung.length) return;
+    raus.push(`<pre>${rechnung.map(esc).join("\n")}</pre>`); rechnung = [];
+  }
+  function tabelleZu(){
+    if (!tabelle.length) return;
+    const kopf = tabelle[0], zeilen = tabelle.slice(1); tabelle = [];
+    if (!zeilen.length) return;
+    raus.push(`<table><thead><tr>` +
+      kopf.map(k => `<th>${esc(k)}</th>`).join("") + `</tr></thead><tbody>` +
+      zeilen.map(z => `<tr>` + z.map(w => `<td>${esc(w)}</td>`).join("") + `</tr>`).join("") +
+      `</tbody></table>`);
+  }
+  for (const roh of text.split(/\r?\n/)){
+    const zeile = roh.trim();
+    if (/^\s\s/.test(roh) && zeile){ absatzZu(); tabelleZu(); rechnung.push(roh.slice(2)); continue; }
+    rechnungZu();
+    if (!zeile){ absatzZu(); tabelleZu(); continue; }
+    if (zeile.startsWith("|")){
+      absatzZu();
+      const f = zellen(zeile);
+      if (f.every(x => /^[-: ]*$/.test(x))) continue;
+      tabelle.push(f); continue;
+    }
+    tabelleZu();
+    if (zeile.startsWith("## ")) { absatzZu(); raus.push(`<h4>${ohne(zeile.slice(3))}</h4>`); }
+    else if (zeile.startsWith("# ")) { absatzZu(); }        /* Dateiname steht schon oben */
+    else if (zeile.startsWith("- ")) { absatzZu(); raus.push(`<ul><li>${ohne(zeile.slice(2))}</li></ul>`); }
+    else if (zeile.startsWith("> ")) { absatzZu(); raus.push(`<blockquote>${ohne(zeile.slice(2))}</blockquote>`); }
+    else absatz.push(zeile);
+  }
+  absatzZu(); rechnungZu(); tabelleZu();
+  return raus.join("").replace(/<\/ul><ul>/g, "");
+}
+
+async function protokollZeigen(stamm){
+  const ziel = document.getElementById("prot-" + stamm);
+  if (!ziel) return;
+  if (ziel.innerHTML.trim()){ ziel.innerHTML = ""; return; }   /* zweiter Klick schließt */
+  ziel.innerHTML = `<div class="skelett" style="height:120px"></div>`;
+  try{
+    const r = await api("/review/" + stamm + "/protokoll");
+    if (r.status === 404){
+      ziel.innerHTML = `<p>Zu diesem Beleg gibt es noch kein Protokoll — er wurde
+        gelesen, bevor es das gab. „Noch einmal lesen" legt eines an.</p>`;
+      return;
+    }
+    if (!r.ok){ ziel.innerHTML = `<p>Das Protokoll ließ sich gerade nicht holen.</p>`; return; }
+    ziel.innerHTML = protokollHtml(await r.text());
+  }catch{ ziel.innerHTML = `<p>Gerade keine Verbindung.</p>`; }
+}
+
+async function neuLesen(stamm){
+  const ziel = document.getElementById("prot-" + stamm);
+  if (ziel) ziel.innerHTML = `<p>babu liest den Beleg noch einmal …</p>`;
+  try{
+    const r = await api("/review/" + stamm + "/neu-lesen", {method: "POST"});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok){
+      if (ziel) ziel.innerHTML = `<p>${esc(d.fehler || "Das ging gerade nicht.")}</p>`;
+      return;
+    }
+    if (ziel) ziel.innerHTML = `<p>babu liest den Beleg noch einmal. In etwa einer
+      halben Minute steht das neue Ergebnis hier — die Seite lädt sich dann selbst neu.</p>`;
+    setTimeout(() => ladeDetail(stamm), 35000);
+  }catch{
+    if (ziel) ziel.innerHTML = `<p>Gerade keine Verbindung.</p>`;
+  }
+}
 
 /* ————— FRAGEN ————— */
 let anker = null;
