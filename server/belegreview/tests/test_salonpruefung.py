@@ -51,8 +51,8 @@ def test_finanzamt_wird_geerntet():
 
 def test_plz_und_ort_werden_geerntet():
     f = felder_aus_text(BESCHEID, quelle="bescheid.pdf", art="bescheid")
-    assert feld(f, "plz").wert == "70173"
-    assert feld(f, "ort").wert == "Stuttgart"
+    assert feld(f, "betrieb_plz").wert == "70173"
+    assert feld(f, "betrieb_ort").wert == "Stuttgart"
 
 
 def test_jedes_feld_nennt_seine_quelle():
@@ -62,11 +62,11 @@ def test_jedes_feld_nennt_seine_quelle():
 
 
 @pytest.mark.parametrize("text, schluessel, wert", [
-    ("USt-IdNr. DE123456789", "ust_idnr", "DE123456789"),
+    ("USt-IdNr. DE123456789", "ust_id", "DE123456789"),
     ("IBAN DE02 1203 0000 0000 2020 51", "iban", "DE02120300000000202051"),
     ("BIC GENODEF1S02", "bic", "GENODEF1S02"),
-    ("Tel.: 0711 1234567", "telefon", "0711 1234567"),
-    ("hallo@supremebeauty.de", "email", "hallo@supremebeauty.de"),
+    ("Tel.: 0711 1234567", "betrieb_telefon", "0711 1234567"),
+    ("hallo@supremebeauty.de", "betrieb_email", "hallo@supremebeauty.de"),
     ("Salon SupremeBeauty GmbH", "rechtsform", "GmbH"),
     ("Friseur Weingärtle e.K.", "rechtsform", "e.K."),
 ])
@@ -103,7 +103,7 @@ def test_felder_landen_im_richtigen_bereich():
                         quelle="b.pdf")
     assert feld(f, "steuernummer").bereich == "einstellungen"
     assert feld(f, "iban").bereich == "briefkopf"
-    assert feld(f, "ort").bereich == "briefkopf"
+    assert feld(f, "betrieb_ort").bereich == "briefkopf"
 
 
 # ————— Ernte über mehrere Unterlagen —————
@@ -346,15 +346,15 @@ def test_ein_unsicheres_feld_ist_im_bericht_markiert():
         {"datei": "b.pdf", "art": "sonstiges", "text": "Steuernummer 11/111/11111"},
     ])
     text = bericht(salon=None, dokumente=[], felder=felder, befunde=[])
-    zeile = [z for z in text.splitlines() if "steuernummer" in z][0]
+    zeile = [z for z in text.splitlines() if "Steuernummer" in z][0]
     assert "⚠" in zeile
 
 
 def test_ein_strich_im_wert_zerlegt_die_tabelle_nicht():
     from salonpruefung import Feld
     text = bericht(salon=None, dokumente=[], befunde=[], felder=[
-        Feld("firma", "Salon | Nina", "x.pdf", "gelesen", True, "briefkopf")])
-    zeile = [z for z in text.splitlines() if "firma" in z][0]
+        Feld("betrieb_name", "Salon | Nina", "x.pdf", "gelesen", True, "briefkopf")])
+    zeile = [z for z in text.splitlines() if "Name des Salons" in z][0]
     assert r"Salon \| Nina" in zeile
 
 

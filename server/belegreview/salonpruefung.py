@@ -74,30 +74,45 @@ def _flach(s: str) -> str:
 # und im Portal ein Eingabefeld hat, gehört hierher — sonst tippt es die
 # Nutzerin doch wieder ab.
 
+# Die Schlüssel sind GENAU die des Portals (EINRICHTUNGSFELDER in
+# babu_web.py). Eigene, schönere Namen zu erfinden und beim Speichern zu
+# übersetzen wäre eine Fehlerquelle, die niemand bemerkt: die Ernte schriebe
+# in Felder, die keine Ansicht liest, und alles sähe trotzdem grün aus.
 BEREICH = {
     # Einstellungen → Stammdaten
     "rechtsform": "einstellungen",
     "steuernummer": "einstellungen",
-    "ust_idnr": "einstellungen",
+    "ust_id": "einstellungen",
     "finanzamt": "einstellungen",
     "kleinunternehmer": "einstellungen",
     "abschluss_art": "einstellungen",
     "versteuerung": "einstellungen",
-    "wirtschaftsjahr": "einstellungen",
+    "gruendung": "einstellungen",
     # Briefkopf → was auf Rechnungen der Kundin steht
-    "firma": "briefkopf",
-    "inhaberin": "briefkopf",
-    "strasse": "briefkopf",
-    "plz": "briefkopf",
-    "ort": "briefkopf",
-    "telefon": "briefkopf",
-    "email": "briefkopf",
+    "betrieb_name": "briefkopf",
+    "betrieb_inhaberin": "briefkopf",
+    "betrieb_strasse": "briefkopf",
+    "betrieb_plz": "briefkopf",
+    "betrieb_ort": "briefkopf",
+    "betrieb_telefon": "briefkopf",
+    "betrieb_email": "briefkopf",
+    "betrieb_web": "briefkopf",
     "iban": "briefkopf",
     "bic": "briefkopf",
     "bank": "briefkopf",
-    # Berater → wer die Zahlen macht
-    "steuerberater": "berater",
-    "steuerberater_nr": "berater",
+}
+
+# Klartext für den Bericht — „betrieb_plz" liest niemand gern.
+FELD_NAME = {
+    "rechtsform": "Rechtsform", "steuernummer": "Steuernummer",
+    "ust_id": "Umsatzsteuer-ID", "finanzamt": "Finanzamt",
+    "kleinunternehmer": "Kleinunternehmerregelung",
+    "abschluss_art": "Art des Abschlusses", "versteuerung": "Versteuerung",
+    "gruendung": "Gegründet", "betrieb_name": "Name des Salons",
+    "betrieb_inhaberin": "Inhaberin", "betrieb_strasse": "Straße",
+    "betrieb_plz": "Postleitzahl", "betrieb_ort": "Ort",
+    "betrieb_telefon": "Telefon", "betrieb_email": "E-Mail",
+    "betrieb_web": "Web", "iban": "IBAN", "bic": "BIC", "bank": "Bank",
 }
 
 # Welche Unterlage bei einem Feld das letzte Wort hat. Ein Bescheid vom
@@ -162,7 +177,7 @@ def felder_aus_text(text: str, *, quelle: str, art: str = "sonstiges"
             nimm("steuernummer", roh, "Steuernummer im Text gefunden")
             break
     ust = _erst(UST_IDNR, text, 1)
-    nimm("ust_idnr", f"DE{ust}" if ust else None,
+    nimm("ust_id", f"DE{ust}" if ust else None,
          "Umsatzsteuer-Identifikationsnummer im Text gefunden")
     nimm("finanzamt", _erst(FINANZAMT, text, 1), "Zeile nennt das Finanzamt")
 
@@ -173,13 +188,13 @@ def felder_aus_text(text: str, *, quelle: str, art: str = "sonstiges"
 
     m = PLZ_ORT.search(text)
     if m:
-        nimm("plz", m.group(1), "Postleitzahl mit Ort gefunden")
-        nimm("ort", m.group(2).strip(" .,"), "Ort hinter der Postleitzahl")
+        nimm("betrieb_plz", m.group(1), "Postleitzahl mit Ort gefunden")
+        nimm("betrieb_ort", m.group(2).strip(" .,"), "Ort hinter der Postleitzahl")
 
     tel = _erst(TELEFON, text, 1)
-    nimm("telefon", re.sub(r"\s{2,}", " ", tel).strip() if tel else None,
+    nimm("betrieb_telefon", re.sub(r"\s{2,}", " ", tel).strip() if tel else None,
          "Zeile nennt eine Telefonnummer")
-    nimm("email", _erst(EMAIL, text), "E-Mail-Adresse im Text gefunden")
+    nimm("betrieb_email", _erst(EMAIL, text), "E-Mail-Adresse im Text gefunden")
 
     for rf in RECHTSFORMEN:                       # längste zuerst, s. Liste
         if re.search(rf"\b{re.escape(rf)}", text):
@@ -455,7 +470,8 @@ def bericht(*, salon: str | None, dokumente: list[dict], felder: list[Feld],
             for f in teil:
                 wert = "Ja" if f.wert is True else "Nein" if f.wert is False else f.wert
                 marke = "" if f.sicher else " ⚠"
-                t.append(f"| {f.schluessel}{marke} | {_zelle(wert)} | "
+                name = FELD_NAME.get(f.schluessel, f.schluessel)
+                t.append(f"| {name}{marke} | {_zelle(wert)} | "
                          f"{_zelle(f.quelle)} · {_zelle(f.regel)} |")
             t.append("")
 

@@ -2665,6 +2665,91 @@ def _abschluss_feld_uebernehmen(un: str, status: dict, feld: dict,
         status["vorschlaege"].append({"schluessel": k, "alt": alt, "neu": neu})
 
 
+def _stammdaten_ernten(un: str, status: dict, dokumente: list[dict],
+                       jahr: int, einstellungen: dict) -> None:
+    """Aus den Unterlagen die Stammdaten des Salons übernehmen.
+
+    Bisher füllte der Abschluss-Job vier Felder. Auf denselben Unterlagen
+    steht aber alles, was babu für den Briefkopf und die Einstellungen
+    braucht — Anschrift, Telefon, IBAN, Umsatzsteuer-ID. Wer das nicht
+    erntet, lässt es die Nutzerin abtippen, obwohl es schon gelesen ist.
+
+    Dieselbe Konfliktregel wie zuvor: leeres Feld wird gesetzt, belegtes nie
+    überschrieben, sondern vorgeschlagen. Unsichere Funde — wo zwei
+    Unterlagen sich widersprechen — werden nur vorgeschlagen.
+    """
+    import salonpruefung  # noqa: PLC0415
+    if not dokumente:
+        return
+    try:
+        felder = salonpruefung.felder_ernten(dokumente)
+    except Exception as ex:  # noqa: BLE001 — eine Ernte darf den Lauf nie kippen
+        print(f"[salonpruefung] Ernte fehlgeschlagen: {ex!r}", flush=True)
+        return
+    for f in felder:
+        wert = ("Ja" if f.wert is True else "Nein" if f.wert is False
+                else str(f.wert).strip()[:200])
+        alt = (einstellungen.get(f.schluessel) or "").strip()
+        eintrag = {"schluessel": f.schluessel, "wert": wert,
+                   "quelle": f.quelle, "regel": f.regel, "sicher": f.sicher,
+                   "bereich": f.bereich, "zeit": time.strftime("%Y-%m-%dT%H:%M:%S")}
+        with _ABSCHLUSS_LOCK:
+            if not alt and f.sicher:
+                db_einstellung_setzen(un, f.schluessel, wert)
+                einstellungen[f.schluessel] = wert
+                eintrag["uebernommen"] = True
+            elif alt != wert:
+                status["vorschlaege"].append(
+                    {"schluessel": f.schluessel, "alt": alt, "neu": wert,
+                     "quelle": f.quelle})
+            status["felder"].append(eintrag)
+    status["geerntet"] = len([f for f in felder if f.sicher])
+
+
+def _bericht_schreiben(un: str, jahr: int, status: dict, geerntet: list[dict],
+                       ergebnisse: list[dict], kennzahlen: dict) -> None:
+    """Den Stand des Salons als Markdown in die Belegbox legen.
+
+    Dasselbe Muster wie beim Leseprotokoll eines Belegs: was babu behauptet,
+    muss man nachlesen können — mit der Unterlage daneben, aus der es stammt.
+    Der Bericht liegt in der Box, ist damit versioniert und geht nicht
+    verloren, wenn der Dienst neu startet.
+    """
+    import boxschreiber  # noqa: PLC0415
+    import salonpruefung  # noqa: PLC0415
+    try:
+        felder = salonpruefung.felder_ernten(geerntet)
+        dokumente = [{"datei": d["datei"],
+                      "art": d.get("art"),
+                      "art_label": _ABSCHLUSS_ART_LABEL.get(d.get("art"),
+                                                            d.get("art")),
+                      "ablage": f"abschluss/{jahr}"}
+                     for d in ergebnisse]
+        zahlen = {k: v for k, v in (kennzahlen.get("zahlen") or {}).items()
+                  if isinstance(v, (int, float))}
+        offen = [f"{k}: nicht sicher gelesen"
+                 for k in (kennzahlen.get("unsicher") or [])]
+        if status.get("vorschlaege"):
+            offen.append(f"{len(status['vorschlaege'])} Angaben weichen von dem "
+                         "ab, was schon eingetragen war — bitte einmal ansehen.")
+        text = salonpruefung.bericht(
+            salon=(db_einstellungen(un).get("betrieb_name") or "").strip() or None,
+            dokumente=dokumente, felder=felder, befunde=[],
+            kennzahlen=zahlen, offen=offen)
+        boxschreiber.schreiben(f"abschluss/{jahr}/bericht.md", text.encode(),
+                               f"abschluss: Bericht {jahr}", un)
+        status["bericht"] = True
+    except Exception as ex:  # noqa: BLE001 — ohne Bericht ist der Lauf trotzdem gut
+        print(f"[salonpruefung] Bericht fehlgeschlagen: {ex!r}", flush=True)
+
+
+_ABSCHLUSS_ART_LABEL = {
+    "euer": "Gewinnrechnung", "bwa": "Monatsauswertung",
+    "bescheid": "Steuerbescheid", "anlagen": "Anlagenliste",
+    "susa": "Kontenliste", "sonstiges": "Unterlage",
+}
+
+
 def _abschluss_job(un: str, jahr: int, pfade: list[Path]) -> None:
     import abschluss_lesen  # noqa: PLC0415
     import boxschreiber  # noqa: PLC0415
@@ -2684,7 +2769,7 @@ def _abschluss_job(un: str, jahr: int, pfade: list[Path]) -> None:
 
     try:
         status["stand"] = "liest"
-        ergebnisse = []
+        ergebnisse, geerntet = [], []
         for pfad in pfade:
             eintrag = {"datei": pfad.name, "art": None, "seiten": None,
                        "stand": "liest"}
@@ -2694,9 +2779,19 @@ def _abschluss_job(un: str, jahr: int, pfade: list[Path]) -> None:
                 d = abschluss_lesen.dokument_lesen(
                     pfad, jahr=jahr, melden=melden, fortschritt=fortschritt)
             ergebnisse.append(d)
+            # Für die Stammdaten-Ernte zählt der Klartext, nicht die
+            # Zahlenauswertung. Die ersten Seiten genügen: Steuernummer,
+            # Finanzamt und Anschrift stehen im Kopf, nicht im Anhang.
+            try:
+                geerntet.append({"datei": pfad.name, "art": d["art"],
+                                 "text": "\n".join(
+                                     abschluss_lesen.seiten_text(pfad)[:8])})
+            except Exception as ex:  # noqa: BLE001
+                print(f"[salonpruefung] {pfad.name} ohne Klartext: {ex!r}", flush=True)
             with _ABSCHLUSS_LOCK:
                 eintrag.update(art=d["art"], seiten=d["seiten"], stand="gelesen")
         kennzahlen = abschluss_lesen.zusammenfuehren(ergebnisse, jahr=jahr)
+        _stammdaten_ernten(un, status, geerntet, jahr, einstellungen)
         with _ABSCHLUSS_LOCK:
             # Was die Summenprobe anzweifelt, verliert seinen Haken.
             for feld in status["felder"]:
@@ -2710,6 +2805,7 @@ def _abschluss_job(un: str, jahr: int, pfade: list[Path]) -> None:
             f"abschluss/{jahr}/kennzahlen.json",
             json.dumps(kennzahlen, ensure_ascii=False, indent=1).encode(),
             f"abschluss: kennzahlen {jahr}", un)
+        _bericht_schreiben(un, jahr, status, geerntet, ergebnisse, kennzahlen)
         with _ABSCHLUSS_LOCK:
             status["stand"] = "fertig"
             status["hinweis"] = "Fertig — dein Salon-Check steht."
@@ -2818,6 +2914,23 @@ def api_abschluss_status(request: Request) -> Response:
         status["hinweis"] = ("Das Lesen wurde unterbrochen — "
                              "starte es einfach nochmal.")
     return JSONResponse(status, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/salon-check/bericht")
+def api_salon_check_bericht(request: Request, jahr: int = 0) -> Response:
+    """Der Bericht zur Salonprüfung als Markdown — was babu über den Salon weiß."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    jahr = _abschluss_jahr(jahr or int(time.strftime("%Y")) - 1)
+    if jahr is None:
+        return JSONResponse({"fehler": "ungültiges Jahr"}, status_code=400)
+    daten = git_show(f"abschluss/{jahr}/bericht.md")
+    if daten is None:
+        return JSONResponse(
+            {"fehler": "Für dieses Jahr gibt es noch keinen Bericht. Lade deine "
+                       "Unterlagen hoch und starte die Prüfung."}, status_code=404)
+    return Response(content=daten, media_type="text/markdown; charset=utf-8")
 
 
 @app.get("/api/salon-check")
