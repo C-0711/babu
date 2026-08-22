@@ -123,6 +123,28 @@ def _db() -> sqlite3.Connection:
          ust_satz INTEGER NOT NULL DEFAULT 19, aktiv INTEGER NOT NULL DEFAULT 1,
          angelegt TEXT)""")
     # Termine bekommen Preis und Abrechnung nachgerüstet.
+    # Personalakte. Personenbezogen bis auf die Knochen — Geburtsdatum,
+    # Anschrift, Bankverbindung, Steuernummer. Gehört deshalb hierher und
+    # nicht in die Belegbox: was hier steht, muss sich löschen lassen. Die
+    # gescannten Dokumente gehen dagegen in die Box, sie sind
+    # aufbewahrungspflichtig.
+    conn.execute("""CREATE TABLE IF NOT EXISTS mitarbeiter
+        (id INTEGER PRIMARY KEY AUTOINCREMENT, un TEXT NOT NULL,
+         vorname TEXT, name TEXT, geburtsdatum TEXT, geburtsname TEXT,
+         geburtsort TEXT, staatsangehoerigkeit TEXT,
+         strasse TEXT, plz TEXT, ort TEXT, telefon TEXT, email TEXT,
+         steuer_idnr TEXT, rentenvers_nr TEXT, krankenkasse TEXT,
+         kinderlos INTEGER, kinder_abschlaege INTEGER,
+         iban TEXT, bic TEXT, titel_bis TEXT,
+         art TEXT, eintritt TEXT, austritt TEXT, befristet_bis TEXT,
+         taetigkeit TEXT, stunden_woche REAL, tage_woche REAL,
+         entgelt INTEGER, urlaubstage INTEGER,
+         vertrag_pfad TEXT, vertrag_fassung TEXT, vertrag_angenommen TEXT,
+         belehrungen TEXT, erledigt TEXT, stand TEXT NOT NULL DEFAULT 'eingeladen',
+         einladung TEXT, eingeladen_am TEXT, angelegt TEXT)""")
+    conn.execute("""CREATE INDEX IF NOT EXISTS mitarbeiter_einladung
+        ON mitarbeiter (einladung)""")
+
     # WhatsApp: ein Gesprächsfaden je Telefonnummer, damit „2" als Antwort
     # weiß, worauf es sich bezieht. Auch das sind personenbezogene Daten —
     # deshalb hier und nicht in der Belegbox.
@@ -3654,6 +3676,278 @@ def api_termin_loeschen(termin_id: int, request: Request) -> Response:
     inhaber = salon_von(un)
     with _DB_LOCK, _db() as c:
         c.execute("DELETE FROM termin WHERE id=? AND un=?", (termin_id, inhaber))
+    return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Personalakte und Onboarding.
+#
+# Nina legt jemanden an und bekommt einen Link. Die neue Mitarbeiterin
+# öffnet ihn auf dem Telefon und füllt den Rest selbst aus — ohne Konto,
+# ohne Passwort, ohne dass Nina etwas druckt. Der Link ist der Schlüssel,
+# deshalb ist er lang und läuft ab.
+# ---------------------------------------------------------------------------
+
+EINLADUNG_GILT_TAGE = 14
+
+
+def _mitarbeiter_zeile(z) -> dict:
+    felder = ("id", "vorname", "name", "geburtsdatum", "geburtsname",
+              "geburtsort", "staatsangehoerigkeit", "strasse", "plz", "ort",
+              "telefon", "email", "steuer_idnr", "rentenvers_nr",
+              "krankenkasse", "kinderlos", "kinder_abschlaege", "iban", "bic",
+              "titel_bis", "art", "eintritt", "austritt", "befristet_bis",
+              "taetigkeit", "stunden_woche", "tage_woche", "entgelt",
+              "urlaubstage", "vertrag_fassung", "vertrag_angenommen",
+              "belehrungen", "erledigt", "stand", "eingeladen_am")
+    d = dict(zip(felder, z))
+    d["belehrungen"] = json.loads(d["belehrungen"] or "[]")
+    d["erledigt"] = json.loads(d["erledigt"] or "[]")
+    return d
+
+
+_MITARBEITER_SPALTEN = """id, vorname, name, geburtsdatum, geburtsname,
+    geburtsort, staatsangehoerigkeit, strasse, plz, ort, telefon, email,
+    steuer_idnr, rentenvers_nr, krankenkasse, kinderlos, kinder_abschlaege,
+    iban, bic, titel_bis, art, eintritt, austritt, befristet_bis, taetigkeit,
+    stunden_woche, tage_woche, entgelt, urlaubstage, vertrag_fassung,
+    vertrag_angenommen, belehrungen, erledigt, stand, eingeladen_am"""
+
+
+@app.get("/start/{marke}")
+def start_seite(marke: str) -> FileResponse:
+    """Die Seite, die die Mitarbeiterin öffnet. Eine eigene, kleine Seite —
+    das Portal wäre für jemanden, der kein Konto hat, das falsche Haus."""
+    return FileResponse(WURZEL / "start.html", media_type="text/html",
+                        headers=HTML_FRISCH)
+
+
+@app.get("/api/mitarbeiter")
+def api_mitarbeiter(request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das sieht die Inhaberin."},
+                            status_code=403)
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        zeilen = [_mitarbeiter_zeile(z) for z in c.execute(
+            f"SELECT {_MITARBEITER_SPALTEN} FROM mitarbeiter WHERE un=? "
+            "ORDER BY stand, name", (inhaber,))]
+    import onboarding as ob  # noqa: PLC0415
+    for m in zeilen:
+        m["fortschritt"] = ob.fortschritt(m)
+    return JSONResponse({"mitarbeiter": zeilen})
+
+
+@app.post("/api/mitarbeiter")
+async def api_mitarbeiter_anlegen(request: Request) -> Response:
+    """Nina legt an: Name, Handynummer, Beschäftigung. Mehr nicht."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Einstellen macht die Inhaberin."},
+                            status_code=403)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+
+    import arbeitsvertrag as av  # noqa: PLC0415
+    # Die Eckdaten müssen tragfähig sein, bevor jemand eingeladen wird —
+    # sonst füllt sie zwanzig Minuten aus und der Vertrag geht dann nicht.
+    try:
+        eck = av.pruefen({**(body or {}),
+                          "taetigkeit": (body or {}).get("taetigkeit") or "Friseurin"})
+    except av.VertragFehler as f:
+        return JSONResponse({"fehler": str(f)}, status_code=400)
+
+    name = str((body or {}).get("name") or "").strip()[:80]
+    if not name:
+        return JSONResponse({"fehler": "Wie heißt sie?"}, status_code=400)
+
+    import datetime as dt  # noqa: PLC0415
+    einladung = secrets.token_urlsafe(24)
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        cur = c.execute(
+            """INSERT INTO mitarbeiter (un, vorname, name, telefon, art,
+               eintritt, befristet_bis, taetigkeit, stunden_woche, tage_woche,
+               entgelt, urlaubstage, stand, einladung, eingeladen_am, angelegt)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'eingeladen',?,?,?)""",
+            (inhaber, str((body or {}).get("vorname") or "").strip()[:80], name,
+             str((body or {}).get("telefon") or "").strip()[:40],
+             eck["art"], eck["eintritt"].isoformat(),
+             eck["befristet_bis"].isoformat() if eck["befristet_bis"] else None,
+             eck["taetigkeit"], eck["stunden_woche"], eck["tage_woche"],
+             int(round(eck["entgelt"] * 100)), eck["urlaubstage"],
+             einladung, _jetzt_iso(), _jetzt_iso()))
+        neue = int(cur.lastrowid)
+
+    return JSONResponse({
+        "ok": True, "id": neue,
+        "einladung": f"/start/{einladung}",
+        "gilt_bis": (dt.date.today()
+                     + dt.timedelta(days=EINLADUNG_GILT_TAGE)).isoformat(),
+        "befunde": eck["befunde"],
+        "satz": f"Schick {name} diesen Link — den Rest macht sie selbst."})
+
+
+def _einladung_finden(marke: str) -> tuple[str, dict] | None:
+    """Wer steckt hinter diesem Link — und gilt er noch?"""
+    import datetime as dt  # noqa: PLC0415
+    if not marke or len(marke) < 20:
+        return None
+    with _DB_LOCK, _db() as c:
+        z = c.execute(
+            f"SELECT un, {_MITARBEITER_SPALTEN} FROM mitarbeiter "
+            "WHERE einladung=?", (marke,)).fetchone()
+    if not z:
+        return None
+    person = _mitarbeiter_zeile(z[1:])
+    try:
+        seit = dt.datetime.fromisoformat(
+            (person["eingeladen_am"] or "").replace("Z", "+00:00"))
+        alt = (dt.datetime.now(dt.timezone.utc) - seit).days
+    except ValueError:
+        alt = 0
+    if alt > EINLADUNG_GILT_TAGE:
+        return None
+    return z[0], person
+
+
+@app.get("/api/onboarding/{marke}")
+def api_onboarding(marke: str) -> Response:
+    """Was die Mitarbeiterin sieht, wenn sie den Link öffnet.
+
+    Ohne Anmeldung — der Link ist der Schlüssel. Deshalb kommt hier auch
+    nur heraus, was sie ohnehin über sich selbst weiß.
+    """
+    import onboarding as ob  # noqa: PLC0415
+    gefunden = _einladung_finden(marke)
+    if not gefunden:
+        return JSONResponse(
+            {"fehler": "Dieser Link gilt nicht mehr. Bitte den Salon um "
+                       "einen neuen."}, status_code=404)
+    un, person = gefunden
+    schritt = ob.naechster_schritt(person)
+    return JSONResponse({
+        "salon": db_einstellungen(un).get("betrieb_name", ""),
+        "vorname": person["vorname"], "name": person["name"],
+        "eintritt": person["eintritt"],
+        "fortschritt": ob.fortschritt(person),
+        "schritt": schritt,
+        "schritte": [{"id": s["id"], "titel": s["titel"]} for s in ob.SCHRITTE],
+        "erledigt": person["erledigt"],
+    })
+
+
+@app.post("/api/onboarding/{marke}/{schritt_id}")
+async def api_onboarding_schritt(marke: str, schritt_id: str,
+                                 request: Request) -> Response:
+    """Eine Antwort speichern und zum nächsten Schritt weitergehen."""
+    import onboarding as ob  # noqa: PLC0415
+    gefunden = _einladung_finden(marke)
+    if not gefunden:
+        return JSONResponse({"fehler": "Dieser Link gilt nicht mehr."},
+                            status_code=404)
+    un, person = gefunden
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+
+    try:
+        if schritt_id == "belehrungen":
+            sauber = {"belehrungen": ob.belehrungen_pruefen(
+                (body or {}).get("belehrungen"))}
+        else:
+            sauber = ob.schritt_pruefen(schritt_id, body or {})
+    except ob.OnboardingFehler as f:
+        return JSONResponse({"fehler": str(f)}, status_code=400)
+
+    erledigt = sorted(set(person["erledigt"]) | {schritt_id},
+                      key=lambda x: [s["id"] for s in ob.SCHRITTE].index(x)
+                      if x in ob.SCHRITT_NACH_ID else 99)
+    spalten, werte = [], []
+    for feld, wert in sauber.items():
+        if feld in ("belehrungen",):
+            spalten.append(feld); werte.append(json.dumps(wert))
+        elif feld in ("vertrag_angenommen",):
+            spalten.append(feld); werte.append(_jetzt_iso() if wert else None)
+        elif feld == "ausweis_dokument":
+            continue                      # das Bild geht über /api/aufnahme
+        elif feld in ("kinderlos",):
+            spalten.append(feld); werte.append(1 if wert else 0)
+        else:
+            spalten.append(feld); werte.append(wert)
+
+    fertig = len(erledigt) >= len(ob.SCHRITTE)
+    spalten += ["erledigt", "stand"]
+    werte += [json.dumps(erledigt), "vollstaendig" if fertig else "im_wizard"]
+
+    with _DB_LOCK, _db() as c:
+        c.execute(f"UPDATE mitarbeiter SET {', '.join(f'{s}=?' for s in spalten)} "
+                  "WHERE einladung=?", (*werte, marke))
+
+    person = {**person, "erledigt": erledigt}
+    naechster = ob.naechster_schritt(person)
+    return JSONResponse({"ok": True, "fortschritt": ob.fortschritt(person),
+                         "schritt": naechster})
+
+
+@app.get("/api/onboarding/{marke}/vertrag/text")
+def api_onboarding_vertrag(marke: str) -> Response:
+    """Der Vertrag zum Lesen — erzeugt aus den Eckdaten, die Nina angelegt hat.
+
+    Sie soll ihn ganz sehen, bevor sie zustimmt. Ein Vertrag, den man erst
+    nach der Zusage bekommt, ist keiner.
+    """
+    import arbeitsvertrag as av  # noqa: PLC0415
+    gefunden = _einladung_finden(marke)
+    if not gefunden:
+        return JSONResponse({"fehler": "Dieser Link gilt nicht mehr."},
+                            status_code=404)
+    un, person = gefunden
+    e = db_einstellungen(un)
+    try:
+        vertrag = av.vertrag_bauen({
+            "art": person["art"], "eintritt": person["eintritt"],
+            "befristet_bis": person["befristet_bis"],
+            "taetigkeit": person["taetigkeit"],
+            "stunden_woche": person["stunden_woche"],
+            "tage_woche": person["tage_woche"],
+            "urlaubstage": person["urlaubstage"],
+            "entgelt": (person["entgelt"] or 0) / 100,
+            "geburtsdatum": person["geburtsdatum"],
+        }, {"name": e.get("betrieb_name", ""),
+            "strasse": e.get("betrieb_strasse", ""),
+            "ort": " ".join(x for x in (e.get("betrieb_plz"),
+                                        e.get("betrieb_ort")) if x),
+            "arbeitnehmerin": f"{person['vorname'] or ''} "
+                              f"{person['name'] or ''}".strip()})
+    except av.VertragFehler as f:
+        return JSONResponse({"fehler": str(f)}, status_code=400)
+    return JSONResponse({"text": av.als_text(vertrag),
+                         "fassung": vertrag["fassung"],
+                         "form": vertrag["form"]["form"]})
+
+
+@app.post("/api/mitarbeiter/{mitarbeiter_id}/loeschen")
+def api_mitarbeiter_loeschen(mitarbeiter_id: int, request: Request) -> Response:
+    """Ganz weg. Eine Personalakte muss sich löschen lassen."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das macht die Inhaberin."},
+                            status_code=403)
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        c.execute("DELETE FROM mitarbeiter WHERE id=? AND un=?",
+                  (mitarbeiter_id, inhaber))
     return JSONResponse({"ok": True})
 
 

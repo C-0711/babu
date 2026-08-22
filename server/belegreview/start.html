@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Willkommen — babu</title>
+<!--
+  Die Seite, die eine neue Mitarbeiterin öffnet.
+
+  Bewusst eine eigene, kleine Seite und nicht das Portal: sie hat kein
+  Konto, kein Passwort und keinen Grund, sich in einer Buchhaltung
+  zurechtzufinden. Der Link ist der Schlüssel, eine Frage pro Bildschirm,
+  fertig.
+
+  Kein Framework, keine Abhängigkeiten — wie überall in babu.
+-->
+<style>
+:root{
+  --grund:#faf9f5; --karte:#ffffff; --schrift:#111111; --text:#333333;
+  --leise:#555555; --still:#999999; --rand:#e5e7eb;
+  --akzent:#857b61; --akzent-hell:#f0ebe3; --gut:#6f8a6e; --warn:#b0821f;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--grund);color:var(--schrift);
+  font:16px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
+main{max-width:520px;margin:0 auto;padding:28px 22px 64px}
+h1{font:600 27px/1.25 var(--serif);margin:0 0 6px}
+h2{font:600 21px/1.3 var(--serif);margin:0 0 4px}
+p{margin:0 0 14px;color:var(--text)}
+.leise{color:var(--leise);font-size:14.5px}
+.still{color:var(--still);font-size:12.5px}
+
+.kopf{display:flex;align-items:center;gap:10px;margin-bottom:22px}
+.zeichen{width:34px;height:34px;border-radius:50%;background:var(--akzent);
+  color:#fff;display:grid;place-items:center;font:600 18px var(--serif)}
+
+.balken{display:flex;gap:5px;margin:18px 0 26px}
+.balken i{flex:1;height:4px;border-radius:2px;background:var(--rand)}
+.balken i.fertig{background:var(--akzent)}
+.balken i.jetzt{background:var(--akzent);opacity:.45}
+
+.karte{background:var(--karte);border:1px solid var(--rand);border-radius:14px;
+  padding:20px}
+label{display:block;font-size:13.5px;color:var(--leise);margin:14px 0 5px}
+label:first-of-type{margin-top:4px}
+input[type=text],input[type=tel],input[type=email],input[type=date],select{
+  width:100%;padding:12px 13px;border:1px solid var(--rand);border-radius:9px;
+  font:16px var(--sans);background:#fff;color:var(--schrift)}
+input:focus,select:focus{outline:2px solid var(--akzent);outline-offset:1px}
+.pflicht::after{content:" *";color:var(--akzent)}
+
+button{font:600 16px var(--sans);border-radius:10px;border:none;cursor:pointer}
+.weiter{width:100%;padding:15px;background:var(--akzent);color:#fff;
+  margin-top:22px}
+.weiter:disabled{opacity:.45;cursor:default}
+.zurueck{background:none;color:var(--leise);font-weight:400;font-size:14px;
+  padding:10px 0;margin-top:6px}
+
+.haken{display:flex;gap:11px;align-items:flex-start;padding:13px 0;
+  border-bottom:1px solid var(--rand);cursor:pointer}
+.haken:last-child{border-bottom:none}
+.haken input{width:22px;height:22px;margin:1px 0 0;flex:none;
+  accent-color:var(--akzent)}
+.haken b{display:block;font-size:15px}
+.haken span{font-size:13.5px;color:var(--leise)}
+
+.fehler{background:#fdf3f2;border:1px solid #f0c8c4;color:#8a2c22;
+  border-radius:9px;padding:12px 14px;margin-top:16px;font-size:14.5px}
+.hinweis{background:var(--akzent-hell);border-radius:9px;padding:12px 14px;
+  font-size:13.5px;color:var(--text);margin-top:12px}
+
+.vertrag{max-height:46vh;overflow-y:auto;border:1px solid var(--rand);
+  border-radius:10px;padding:16px;background:#fdfcfa;font-size:14px;
+  line-height:1.6;white-space:pre-wrap}
+.geschafft{text-align:center;padding:34px 0}
+.geschafft .zeichen{width:62px;height:62px;font-size:31px;margin:0 auto 18px}
+</style>
+</head>
+<body>
+<main id="haus">
+  <div class="kopf"><span class="zeichen">b</span>
+    <div><b id="salon">…</b><div class="still">richtet dich ein</div></div></div>
+  <div id="inhalt"><p class="leise">Einen Moment …</p></div>
+</main>
+
+<script>
+const MARKE = location.pathname.split("/").filter(Boolean).pop();
+const $ = s => document.querySelector(s);
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+let stand = null;
+
+async function holen(){
+  const r = await fetch(`/api/onboarding/${MARKE}`);
+  if (!r.ok){ verloren(); return; }
+  stand = await r.json();
+  $("#salon").textContent = stand.salon || "Dein Salon";
+  zeichnen();
+}
+
+function verloren(){
+  $("#inhalt").innerHTML = `<div class="karte"><h2>Dieser Link gilt nicht mehr.</h2>
+    <p class="leise">Links laufen nach zwei Wochen ab. Bitte deinen Salon
+    einfach um einen neuen — das dauert dort einen Klick.</p></div>`;
+}
+
+function balken(){
+  const ids = stand.schritte.map(s => s.id);
+  const jetzt = stand.schritt ? stand.schritt.id : null;
+  return `<div class="balken">` + ids.map(id =>
+    `<i class="${stand.erledigt.includes(id) ? "fertig"
+      : id === jetzt ? "jetzt" : ""}"></i>`).join("") + `</div>`;
+}
+
+/* Ein Feld je Zeile. Die Beschriftungen stehen hier und nicht auf dem
+   Server: sie gehören zur Oberfläche, nicht zur Prüfung. */
+const FELDER = {
+  vorname: ["Vorname", "text", true], name: ["Nachname", "text", true],
+  geburtsdatum: ["Geburtsdatum", "text", true, "TT.MM.JJJJ"],
+  geburtsname: ["Geburtsname, falls abweichend", "text"],
+  geburtsort: ["Geburtsort", "text"],
+  staatsangehoerigkeit: ["Staatsangehörigkeit", "text"],
+  strasse: ["Straße und Hausnummer", "text", true],
+  plz: ["PLZ", "text", true], ort: ["Ort", "text", true],
+  telefon: ["Telefon", "tel"], email: ["E-Mail", "email"],
+  steuer_idnr: ["Steuer-Identifikationsnummer", "text", true, "11 Ziffern"],
+  krankenkasse: ["Krankenkasse", "text", true],
+  rentenvers_nr: ["Sozialversicherungsnummer", "text", false, "z. B. 65 170839 J 003"],
+  iban: ["IBAN", "text", true, "DE.. .... .... .... .... .."],
+  bic: ["BIC, falls du sie hast", "text"],
+  titel_bis: ["Aufenthaltstitel gültig bis", "text", false, "TT.MM.JJJJ"],
+};
+
+function zeichnen(fehler){
+  if (!stand.schritt) return fertig();
+  const s = stand.schritt;
+  let körper = "";
+
+  if (s.id === "vertrag") {
+    körper = `<div class="vertrag" id="vertragstext">Wird geladen …</div>
+      <label class="haken" style="margin-top:16px">
+        <input type="checkbox" id="f_vertrag_angenommen">
+        <span><b>Ich habe den Vertrag gelesen und bin einverstanden.</b>
+        <span>Du bekommst ihn danach auch als Datei.</span></span></label>`;
+  } else if (s.id === "belehrungen") {
+    körper = [["arbeitsschutz","Arbeitsschutz",
+               "Ich wurde über die Sicherheitsregeln im Salon unterwiesen."],
+              ["hautschutz","Hautschutz",
+               "Handschuhe, Hautschutzplan und Feuchtarbeit — ich weiß Bescheid."],
+              ["datenschutz","Datenschutz",
+               "Kundendaten bleiben im Salon. Keine eigenen Listen, keine Fotos."]]
+      .map(([id,titel,text]) => `<label class="haken">
+        <input type="checkbox" name="belehrung" value="${id}">
+        <span><b>${titel}</b><span>${text}</span></span></label>`).join("");
+  } else if (s.id === "ausweis") {
+    körper = `<p class="leise">Fotografiere die Vorderseite. Achte darauf,
+      dass alle vier Ecken zu sehen sind.</p>
+      <input type="file" accept="image/*" capture="environment" id="f_ausweis"
+        style="width:100%;padding:14px;border:1px dashed var(--rand);
+               border-radius:10px;background:#fff">
+      <div class="hinweis">Das Bild geht direkt in die Ablage deines Salons.
+        Niemand sonst sieht es.</div>`;
+  } else {
+    körper = s.felder.map(f => {
+      const [titel, typ, pflicht, hilfe] = FELDER[f] || [f, "text"];
+      if (f === "kinderlos") return `<label class="haken" style="margin-top:14px">
+        <input type="checkbox" id="f_kinderlos">
+        <span><b>Ich habe keine Kinder</b><span>Dann fällt in der
+        Pflegeversicherung ein Zuschlag an.</span></span></label>`;
+      if (f === "kinder_abschlaege") return `<label>Zahl deiner Kinder unter 25</label>
+        <select id="f_kinder_abschlaege">${[0,1,2,3,4].map(n =>
+          `<option value="${n}">${n === 4 ? "5 oder mehr" : n + 1}</option>`).join("")}</select>`;
+      return `<label class="${pflicht ? "pflicht" : ""}">${titel}</label>
+        <input type="${typ}" id="f_${f}" ${hilfe ? `placeholder="${hilfe}"` : ""}
+          autocomplete="off">`;
+    }).join("");
+  }
+
+  $("#inhalt").innerHTML = `${balken()}
+    <p class="still">${stand.fortschritt.satz}</p>
+    <div class="karte">
+      <h2>${esc(s.titel)}</h2>
+      <p class="leise">${esc(s.hilfe)}</p>
+      ${körper}
+      ${fehler ? `<div class="fehler">${esc(fehler)}</div>` : ""}
+      <button class="weiter" id="weiter">Weiter</button>
+    </div>`;
+  $("#weiter").onclick = senden;
+  if (s.id === "vertrag") vertragLaden();
+}
+
+async function vertragLaden(){
+  try{
+    const r = await fetch(`/api/onboarding/${MARKE}/vertrag/text`);
+    $("#vertragstext").textContent = r.ok ? (await r.json()).text
+      : "Der Vertrag wird dir vom Salon zugeschickt.";
+  }catch{ $("#vertragstext").textContent = "Gerade keine Verbindung."; }
+}
+
+function einsammeln(){
+  const s = stand.schritt, daten = {};
+  if (s.id === "belehrungen"){
+    daten.belehrungen = [...document.querySelectorAll('input[name=belehrung]:checked')]
+      .map(e => e.value);
+    return daten;
+  }
+  if (s.id === "ausweis"){
+    daten.ausweis_dokument = $("#f_ausweis")?.files?.length ? "erfasst" : "";
+    return daten;
+  }
+  for (const f of s.felder){
+    const e = $(`#f_${f}`);
+    if (!e) continue;
+    daten[f] = e.type === "checkbox" ? e.checked : e.value;
+  }
+  return daten;
+}
+
+async function senden(){
+  const knopf = $("#weiter");
+  knopf.disabled = true; knopf.textContent = "Einen Moment …";
+  try{
+    const r = await fetch(`/api/onboarding/${MARKE}/${stand.schritt.id}`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(einsammeln())});
+    const d = await r.json();
+    if (!r.ok){ zeichnen(d.fehler || "Das hat nicht geklappt."); return; }
+    stand.erledigt = [...stand.erledigt, stand.schritt.id];
+    stand.schritt = d.schritt;
+    stand.fortschritt = d.fortschritt;
+    window.scrollTo(0, 0);
+    zeichnen();
+  }catch{
+    zeichnen("Gerade keine Verbindung. Versuch es gleich noch einmal — "
+           + "deine bisherigen Angaben sind gespeichert.");
+  }finally{ knopf.disabled = false; knopf.textContent = "Weiter"; }
+}
+
+function fertig(){
+  $("#inhalt").innerHTML = `<div class="karte geschafft">
+    <div class="zeichen">✓</div>
+    <h2>Das war's.</h2>
+    <p class="leise">Alles angekommen. Dein erster Tag ist der
+      ${esc(datumText(stand.eintritt))} — bis dahin musst du nichts mehr tun.</p>
+    <p class="still">Deinen Vertrag und die Bestätigungen findest du später
+      in der babu-App.</p></div>`;
+}
+
+function datumText(iso){
+  if (!iso) return "vereinbarte Tag";
+  const d = new Date(iso + "T12:00");
+  return d.toLocaleDateString("de-DE",
+    {weekday:"long", day:"numeric", month:"long"});
+}
+
+holen();
+</script>
+</body>
+</html>

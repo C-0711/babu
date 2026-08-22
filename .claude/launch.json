@@ -4,9 +4,23 @@
     {
       "name": "landing",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8731", "--directory",
-                      "server/babu-web"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8731",
+        "--directory",
+        "server/babu-web"
+      ],
       "port": 8731
+    },
+    {
+      "name": "babu",
+      "runtimeExecutable": "server/belegreview/.start-dev.sh",
+      "runtimeArgs": [],
+      "port": 8791,
+      "env": {
+        "PYTHON": "/private/tmp/claude-501/-Users-christophbertsch-babu--claude-worktrees-project-handover-context-7bfaa2/7ab4b145-873b-4801-b05c-3ab45c3f27e6/scratchpad/venv/bin/python"
+      }
     }
   ]
 }
