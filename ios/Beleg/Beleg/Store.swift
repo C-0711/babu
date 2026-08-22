@@ -12,7 +12,10 @@ private let zustandsDatei: URL = {
 
 @MainActor
 final class AppStore: ObservableObject {
-    enum Tab: Hashable { case erfassen, belege, kasse, rechnungen, fragen, export }
+    // `rechnungen` ist kein Tab mehr — Rechnungen liegen im Konto-Menü
+    // unter Buchhaltung. Der Fall bleibt, damit alte gespeicherte
+    // Stände nicht beim Laden stolpern.
+    enum Tab: Hashable { case erfassen, belege, termine, kasse, rechnungen, fragen, export }
 
     @Published var onboarded = false { didSet { speichern() } }
     @Published var skr = "SKR04" { didSet { speichern() } }

@@ -263,6 +263,73 @@ enum AblageService {
         return await ausfuehren(request, erfolg2xx: true) == .uebertragen
     }
 
+    // MARK: - Termine
+
+    static func termineLaden(tag: String, basis: URL, pat: String) async
+            -> [String: Any]? {
+        var teile = URLComponents(url: basis.appendingPathComponent("api/termine"),
+                                  resolvingAgainstBaseURL: false)
+        teile?.queryItems = [URLQueryItem(name: "von", value: tag),
+                             URLQueryItem(name: "bis", value: tag)]
+        guard let url = teile?.url else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+              let tage = json["tage"] as? [[String: Any]] else { return nil }
+        return tage.first
+    }
+
+    /// Termin eintragen oder verschieben. Gibt einen Klartext-Fehler zurück,
+    /// wenn sich etwas überschneidet — den soll die Nutzerin lesen.
+    static func terminSpeichern(_ felder: [String: Any], basis: URL,
+                                pat: String) async -> String? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/termine"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: felder)
+        let (ergebnis, daten) = await ausfuehrenMitDaten(request)
+        if ergebnis == .uebertragen { return nil }
+        if let daten, let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+           let fehler = json["fehler"] as? String { return fehler }
+        return "Das hat gerade nicht geklappt."
+    }
+
+    /// Aus einem Satz Terminvorschläge. Gebucht wird dabei nichts.
+    static func terminVorschlag(text: String, basis: URL, pat: String) async
+            -> (wunsch: [String: Any]?, zeiten: [String], hinweis: String,
+                fehler: String?) {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/termine/vorschlag"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 120
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text])
+        let (ergebnis, daten) = await ausfuehrenMitDaten(request)
+        let json = daten.flatMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+        }
+        if ergebnis == .uebertragen {
+            return (json?["wunsch"] as? [String: Any],
+                    json?["vorschlaege"] as? [String] ?? [],
+                    json?["hinweis"] as? String ?? "", nil)
+        }
+        return (nil, [], "", json?["fehler"] as? String ?? "Das hat nicht geklappt.")
+    }
+
+    static func terminAbsagen(id: Int, basis: URL, pat: String) async -> Bool {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/termin/\(id)/absagen"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        return await ausfuehren(request, erfolg2xx: true) == .uebertragen
+    }
+
     /// Welcher Monat wartet — und was fehlt ihm noch?
     static func monatslauf(basis: URL, pat: String) async -> [String: Any]? {
         var request = URLRequest(url: basis.appendingPathComponent("api/monatslauf"))
