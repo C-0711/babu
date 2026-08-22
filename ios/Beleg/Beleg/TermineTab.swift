@@ -16,6 +16,8 @@ struct TermineTab: View {
     @State private var wunsch: [String: Any]?
     @State private var hinweis = ""
     @State private var vonHand = false
+    @State private var abzurechnen: [String: Any]?
+    @State private var kasse: [String: Any]?
 
     private var datumText: String {
         let f = DateFormatter()
@@ -86,6 +88,18 @@ struct TermineTab: View {
                             zeile(termine[i])
                         }
                     }
+
+                    if let kasse, (kasse["termine"] as? Int ?? 0) > 0 {
+                        Section {
+                            Text(kasse["satz"] as? String ?? "")
+                                .font(.callout.weight(.medium))
+                        } header: {
+                            Text("Was der Tag eingebracht hat")
+                        } footer: {
+                            Text("Ein Vorschlag fürs Kassenbuch — eingetragen "
+                                 + "wird er, wenn du ihn im Kassenblatt bestätigst.")
+                        }
+                    }
                 }
 
                 Section {
@@ -117,6 +131,11 @@ struct TermineTab: View {
 
                     Button("Lieber von Hand eintragen") { vonHand = true }
                         .font(.footnote).foregroundStyle(GC.desc)
+
+                    NavigationLink("Deine Preise") {
+                        PreiseView().environmentObject(store)
+                    }
+                    .font(.footnote)
                 } header: {
                     Text("Neuer Termin")
                 } footer: {
@@ -132,6 +151,12 @@ struct TermineTab: View {
             .refreshable { await laden() }
             .sheet(isPresented: $vonHand) {
                 TerminVonHandView(tag: iso) { Task { await laden() } }
+                    .environmentObject(store)
+            }
+            .sheet(item: Binding(
+                get: { abzurechnen.map(TerminKasten.init) },
+                set: { abzurechnen = $0?.felder })) { kasten in
+                AbrechnenSheet(termin: kasten.felder) { Task { await laden() } }
                     .environmentObject(store)
             }
         }
@@ -154,6 +179,11 @@ struct TermineTab: View {
                 if let w = t["wer"] as? String, !w.isEmpty {
                     Text("· bei \(w)").font(.caption).foregroundStyle(GC.muted)
                 }
+                if t["abgerechnet"] != nil, let p = t["preis"] as? Double {
+                    Text("· \(String(format: "%.2f", p).replacingOccurrences(of: ".", with: ",")) € "
+                         + ((t["zahlart"] as? String) == "karte" ? "Karte" : "bar"))
+                        .font(.caption).foregroundStyle(GC.accent)
+                }
             }
         }
         .padding(.vertical, 2)
@@ -162,6 +192,12 @@ struct TermineTab: View {
                 Task { await absagen(t["id"] as? Int) }
             }
             .tint(GC.warn)
+        }
+        .swipeActions(edge: .leading) {
+            if t["abgerechnet"] == nil {
+                Button("Abrechnen") { abzurechnen = t }
+                    .tint(GC.accent)
+            }
         }
     }
 
@@ -184,6 +220,7 @@ struct TermineTab: View {
             return
         }
         daten = await AblageService.termineLaden(tag: iso, basis: url, pat: pat)
+        kasse = await AblageService.kassenvorschlag(tag: iso, basis: url, pat: pat)
         fehler = daten == nil ? "Die Termine konnten wir gerade nicht laden." : nil
         laedt = false
     }
@@ -294,4 +331,12 @@ struct TerminVonHandView: View {
         fertig()
         dismiss()
     }
+}
+
+
+/// `.sheet(item:)` will etwas Identifizierbares — ein Wörterbuch ist das
+/// nicht. Diese Hülle macht aus dem Termin einen Gegenstand mit Nummer.
+struct TerminKasten: Identifiable {
+    let felder: [String: Any]
+    var id: Int { felder["id"] as? Int ?? 0 }
 }
