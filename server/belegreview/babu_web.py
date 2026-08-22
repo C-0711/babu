@@ -4014,7 +4014,12 @@ async def _vertrag_ablegen(un: str, marke: str, person: dict) -> None:
     kennung = re.sub(r"[^a-z0-9-]", "-", kennung)[:60]
     angenommen = _jetzt_iso()
     zettel = {
-        "art": "arbeitsvertrag", "fassung": vertrag["fassung"],
+        # `art` muss eine der Ablage-Arten sein, sonst landet der Vertrag
+        # unter „Von deiner Kanzlei". Die genauere Sorte steht daneben.
+        "art": "vertrag", "unterart": "arbeitsvertrag",
+        "titel": f"Arbeitsvertrag {person['vorname'] or ''} "
+                 f"{person['name'] or ''}".strip(),
+        "fassung": vertrag["fassung"],
         "angenommen": angenommen, "form": vertrag["form"]["form"],
         "arbeitnehmerin": f"{person['vorname'] or ''} "
                           f"{person['name'] or ''}".strip(),
@@ -4026,8 +4031,10 @@ async def _vertrag_ablegen(un: str, marke: str, person: dict) -> None:
     try:
         await run_in_threadpool(
             boxschreiber.schreiben,
+            # Der Zettel heißt <datei>.meta.json — der Index sucht ihn
+            # genau so. Ohne die Endung bleibt das Dokument unerkannt.
             {f"dokumente/vertraege/{kennung}.txt": text.encode(),
-             f"dokumente/vertraege/{kennung}.meta.json":
+             f"dokumente/vertraege/{kennung}.txt.meta.json":
                  json.dumps(zettel, ensure_ascii=False, indent=1).encode()},
             None, f"vertrag: {kennung}", un)
     except boxschreiber.SchreibFehler:

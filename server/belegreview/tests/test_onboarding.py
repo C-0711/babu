@@ -502,11 +502,15 @@ def test_der_zettel_haelt_fest_wem_wann_zugestimmt_wurde(welt, monkeypatch, tmp_
     dateien = subprocess.run(["git", "-C", str(bw.STORE), "ls-tree", "-r",
                               "--name-only", "HEAD"],
                              capture_output=True, text=True).stdout.split()
-    [zettel] = [d for d in dateien if d.endswith(".meta.json")]
+    [zettel] = [d for d in dateien if d.endswith(".txt.meta.json")]
     inhalt = js.loads(subprocess.run(
         ["git", "-C", str(bw.STORE), "show", f"HEAD:{zettel}"],
         capture_output=True, text=True).stdout)
-    assert inhalt["art"] == "arbeitsvertrag" and inhalt["fassung"]
+    # `art` muss eine Ablage-Art sein, sonst findet Nina den Vertrag nicht
+    # unter „Verträge", sondern unter „Von deiner Kanzlei".
+    assert inhalt["art"] == "vertrag"
+    assert inhalt["unterart"] == "arbeitsvertrag" and inhalt["fassung"]
+    assert "Jana Holder" in inhalt["titel"]
     assert inhalt["angenommen"] and inhalt["arbeitnehmerin"] == "Jana Holder"
 
 
@@ -560,3 +564,18 @@ def test_die_liste_zeigt_wer_wie_weit_ist(welt):
     assert m["stand"] == "im_wizard"
     assert m["fortschritt"]["erledigt"] == 1
     assert m["fortschritt"]["gesamt"] == 8
+
+
+def test_der_vertrag_landet_unter_vertraegen(welt, monkeypatch, tmp_path):
+    """Nicht unter „Von deiner Kanzlei" — dort sucht ihn niemand."""
+    client, bw = welt
+    import boxschreiber
+    monkeypatch.setattr(boxschreiber, "KLON", tmp_path / "klon")
+    monkeypatch.setattr(boxschreiber, "REMOTE", str(bw.STORE))
+    monkeypatch.setattr(boxschreiber, "PAT_PFAD", tmp_path / "kein-pat")
+    marke = client.post("/api/mitarbeiter", json=ECKDATEN).json()["einladung"].split("/")[-1]
+    client.post(f"/api/onboarding/{marke}/vertrag", json={"vertrag_angenommen": True})
+
+    arten = {a["art"] for j in client.get("/api/ablage").json()["jahre"]
+             for a in j["arten"]}
+    assert "vertrag" in arten
