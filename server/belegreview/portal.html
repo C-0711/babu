@@ -63,7 +63,18 @@ nav::-webkit-scrollbar{display:none}
 nav button{padding:7px 13px;border-radius:999px;font-weight:550;color:var(--gc-desc);flex:none}
 nav button.an{background:var(--gc-accent-subtle);color:var(--gc-fg)}
 #kopf-recht{margin-left:auto;display:flex;align-items:center;gap:12px;flex:none}
-#stand{font-size:11px;color:var(--gc-muted)}
+#stand{font:11px var(--gc-mono);color:var(--gc-muted)}
+/* Auf schmalen Fenstern verdrängt die Standanzeige sonst die Navigation,
+   und „Ablage" steht als „Abla" da. Die Uhrzeit ist das Entbehrlichere. */
+@media (max-width:900px){#stand{display:none}}
+/* Enger noch: der Knopf trägt nur noch sein Zeichen. In der App ist das
+   Aufnehmen ein Reiter mit Symbol, keine beschriftete Schaltfläche — hier
+   wird sie es auch, sobald die Navigation sonst abgeschnitten würde. */
+@media (max-width:820px){
+  #hochladen-knopf{font-size:0;padding:8px 12px}
+  #hochladen-knopf::before{content:"+";font:600 17px var(--gc-sans);line-height:1}
+  header{gap:10px;padding:10px 14px}
+}
 #avatar{width:30px;height:30px;border-radius:50%;background:var(--gc-accent);
   color:#fff;font:600 12px var(--gc-sans);display:grid;place-items:center}
 
@@ -99,7 +110,7 @@ main{padding:26px 22px 60px;min-height:70dvh}
 #konto-menu .trenner{height:1px;background:var(--gc-border);margin:5px 0}
 #konto-menu .weg{color:var(--gc-danger)}
 /* Unterreiter innerhalb eines Bereichs — das Schema sichtbar machen */
-.menu-gruppe{font:600 9.5px var(--gc-sans);letter-spacing:.11em;
+.menu-gruppe{font:9.5px var(--gc-mono);letter-spacing:.11em;
   text-transform:uppercase;color:var(--gc-muted);padding:10px 14px 4px}
 .unterreiter{display:flex;gap:4px;flex-wrap:wrap;margin:2px 0 18px;
   border-bottom:1px solid var(--gc-border);padding-bottom:0}
@@ -120,11 +131,15 @@ main{padding:26px 22px 60px;min-height:70dvh}
 .ordner .zaehler{margin-left:auto;font:400 12.5px var(--gc-sans);color:var(--gc-muted)}
 .ordner .hinweis{font:400 12.5px var(--gc-sans);color:var(--gc-desc)}
 .ordner-inhalt{padding:0 15px 12px 37px}
-.ablage-zeile{display:flex;align-items:center;gap:10px;padding:9px 0;
+.ablage-zeile{display:flex;align-items:center;gap:10px;padding:10px 0;
   border-top:1px solid var(--gc-border);font-size:14px}
 .ablage-zeile a{color:var(--gc-fg);text-decoration:none;flex:1}
 .ablage-zeile a:hover{text-decoration:underline}
-.ablage-zeile .wann{font-size:12px;color:var(--gc-muted);flex:none}
+/* Ein Name ist ein Name — in der App steht er in der Serifenschrift,
+   in den Verwaltungslisten stand er bisher in serifenloser Fettschrift. */
+.ablage-zeile > b{font:600 15px var(--gc-serif);letter-spacing:-.01em;
+  color:var(--gc-fg)}
+.ablage-zeile .wann{font:11.5px var(--gc-mono);color:var(--gc-muted);flex:none}
 .jahr-kopf{font:600 20px var(--gc-serif);margin:22px 0 10px}
 /* Salon-Check: Zuschauen-Zeilen + Ampel-Karten */
 .sc-zeile{display:flex;justify-content:space-between;align-items:center;gap:10px;
@@ -197,8 +212,16 @@ main{padding:26px 22px 60px;min-height:70dvh}
 .balken{height:6px;background:var(--gc-accent-subtle);border-radius:3px;margin-top:7px;overflow:hidden}
 .balken i{display:block;height:100%;background:var(--gc-accent);border-radius:3px}
 .gruppe-kopf{margin:20px 0 8px}
-.suchfeld{width:100%;padding:10px 14px;border:1px solid var(--gc-border);border-radius:999px;
-  font:inherit;background:var(--gc-bg);margin:4px 0 10px}
+.suchfeld{width:100%;min-width:0;padding:10px 14px;border:1px solid var(--gc-border);
+  border-radius:999px;font:inherit;background:var(--gc-bg);margin:4px 0 10px}
+
+/* Lange, unumbrechbare Zeichenketten — Webhook-Adressen, IBANs, Dateinamen —
+   drücken sonst ihre Spalte auf und schieben die ganze Seite über den Rand.
+   Auf einem Telefon ist das der Unterschied zwischen benutzbar und kaputt.
+   Gefunden im WhatsApp-Bereich: die Webhook-Adresse ragte 34 px hinaus. */
+code, .num, .zname, .zstatus{min-width:0}
+code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
+.karte, .ablage-zeile, .zeile, .feld{min-width:0}
 
 /* Detail */
 #detail-grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:22px}
@@ -222,7 +245,7 @@ main{padding:26px 22px 60px;min-height:70dvh}
 .prot pre{background:var(--gc-desk);border-radius:8px;padding:10px;overflow-x:auto;
   font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--gc-body)}
 .prot table{border-collapse:collapse;width:100%;margin:6px 0;font-size:12px}
-.prot th{text-align:left;font:600 9.5px var(--gc-sans);letter-spacing:.09em;
+.prot th{text-align:left;font:9.5px var(--gc-mono);letter-spacing:.09em;
   text-transform:uppercase;color:var(--gc-muted);padding:5px 8px;
   border-bottom:1px solid var(--gc-border)}
 .prot td{padding:5px 8px;border-bottom:1px solid var(--gc-border);vertical-align:top}
@@ -357,7 +380,7 @@ main{padding:26px 22px 60px;min-height:70dvh}
   width:min(560px,100%);animation:einflug .32s cubic-bezier(.2,.9,.3,1)}
 #sheet h3{font:600 19px var(--gc-serif);color:var(--gc-fg);margin-bottom:4px}
 #sheet p{color:var(--gc-desc);font-size:13px;margin-bottom:14px}
-#sheet label{display:block;font:600 9.5px var(--gc-sans);letter-spacing:.11em;
+#sheet label{display:block;font:9.5px var(--gc-mono);letter-spacing:.11em;
   text-transform:uppercase;color:var(--gc-muted);margin:12px 0 5px}
 #sheet input{width:100%;padding:11px 13px;border:1px solid var(--gc-border);
   border-radius:8px;font:inherit;background:var(--gc-bg)}
@@ -379,7 +402,8 @@ main{padding:26px 22px 60px;min-height:70dvh}
 #loeschsheet .aktion:disabled{opacity:.4}
 /* Der Lösch-Knopf bleibt leise: er steht unter dem Beleg, nicht neben ihm. */
 .loeschknopf{background:transparent;color:var(--gc-muted);border:1px solid var(--gc-border);
-  border-radius:999px;padding:5px 11px;font:600 11.5px var(--gc-sans)}
+  border-radius:999px;padding:5px 11px;font:11px var(--gc-mono);
+  letter-spacing:.03em}
 .loeschknopf:hover{color:var(--gc-weg,#a3271f);border-color:var(--gc-weg,#a3271f)}
 .ablage-zeile .loeschknopf{padding:3px 9px;font-size:11px}
 
@@ -788,7 +812,7 @@ main{padding:26px 22px 60px;min-height:70dvh}
       was drauf steht, schreibst du.</p>
     <div id="m-stuecke"></div>
     <div class="karte" id="m-form" style="margin-top:14px;display:none">
-      <label for="m-text" style="font:600 9.5px var(--gc-sans);letter-spacing:.11em;
+      <label for="m-text" style="font:9.5px var(--gc-mono);letter-spacing:.11em;
         text-transform:uppercase;color:var(--gc-muted)">Was soll drauf stehen?</label>
       <input class="suchfeld" id="m-text" style="margin:6px 0 8px"
              placeholder="z. B. Vom 1. bis 14. September haben wir Urlaub."
@@ -2877,7 +2901,7 @@ async function ladeRechnungen(){
   // Was der Kontoauszug schon weiß — vorgeschlagen, nicht entschieden.
   const v = z.vorschlaege || [];
   konto.innerHTML = !v.length ? "" : `<div class="karte" style="margin-bottom:14px">
-    <div style="font:600 9.5px var(--gc-sans);letter-spacing:.11em;
+    <div style="font:9.5px var(--gc-mono);letter-spacing:.11em;
       text-transform:uppercase;color:var(--gc-muted);margin-bottom:8px">Vom Konto</div>
     ${v.map(x => `<div class="ablage-zeile">
       <span>${esc(x.text)}</span>
@@ -2901,7 +2925,7 @@ async function ladeRechnungen(){
         <b>${esc(r.empfaenger?.name || r.empfaengerName || "—")}</b>
         <span class="wann">Nr. ${esc(r.nummer)}</span>
         <span class="chip" style="font-size:11px">${esc(r.stand)}</span>
-        <span class="wann">${euro(r.brutto)}</span>
+        <span class="wann num">${euro(r.brutto)}</span>
       </div>`).join("");
 }
 
@@ -3132,7 +3156,7 @@ async function ladePreise(){
     : liste.map(l => `<div class="ablage-zeile">
         <b>${esc(l.name)}</b>
         <span class="wann">${l.minuten} min</span>
-        <span style="margin-left:auto;font-variant-numeric:tabular-nums">${euro(l.preis)}</span>
+        <span class="num" style="margin-left:auto">${euro(l.preis)}</span>
         <button class="loeschknopf" onclick="preisWeg(${l.id})">Weg</button>
       </div>`).join("");
 }
@@ -3275,7 +3299,9 @@ async function ladePersonal(){
         const f = m.fortschritt || {};
         return `<div class="ablage-zeile" style="flex-wrap:wrap">
           <b>${name}</b>
-          <span class="pille" style="font-size:11px">${esc(STAND_TEXT[m.stand] || m.stand)}</span>
+          <span class="marke ${m.stand === "vollstaendig" ? "ok"
+            : m.stand === "onboarding" ? "warn" : "akzent"}">${
+            esc(STAND_TEXT[m.stand] || m.stand)}</span>
           <span class="wann">${f.erledigt || 0}/${f.gesamt || 8} Schritte</span>
           ${m.stand !== "vollstaendig"
             ? `<button class="chip" style="font-size:11px"
@@ -3375,8 +3401,8 @@ async function ladeKundinnen(){
     : liste.map(k => `<div class="ablage-zeile" style="cursor:pointer"
         onclick="kZeigen(${k.id})">
         <b>${esc(k.name)}</b>
-        ${k.allergie ? `<span class="chip" style="font-size:11px">⚠ Allergie</span>` : ""}
-        ${k.zuletzt ? `<span class="wann">${esc(k.zuletzt)}</span>` : ""}
+        ${k.allergie ? `<span class="marke warn">Allergie</span>` : ""}
+        ${k.zuletzt ? `<span class="wann">${esc(datumDeutsch(k.zuletzt))}</span>` : ""}
       </div>`).join("");
 }
 $("#k-suche").addEventListener("input", () => {
