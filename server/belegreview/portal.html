@@ -23,10 +23,13 @@
   --r:12px;
 }
 *{margin:0;padding:0;box-sizing:border-box}
-html{background:var(--gc-desk)}
+html{background:var(--gc-canvas)}
+/* Volle Breite. Das Portal war als 1060 px breites Blatt mit Schlagschatten
+   auf einer Tischfläche gesetzt — schön, aber es ist eine Webanwendung, und
+   auf einem Bildschirm bleibt daneben die Hälfte leer. Jetzt füllt es das
+   Fenster; die Ränder wachsen mit, damit es nicht am Rahmen klebt. */
 body{font:14px/1.5 var(--gc-sans);color:var(--gc-body);background:var(--gc-canvas);
-  min-height:100dvh;max-width:1060px;margin:0 auto;
-  box-shadow:0 0 0 1px var(--gc-border-l),0 18px 60px rgba(0,0,0,.07)}
+  min-height:100dvh;margin:0}
 .num{font-family:var(--gc-mono);font-variant-numeric:tabular-nums}
 
 /* Labels und Marken — dieselbe Sprache wie in der App.
@@ -54,7 +57,7 @@ a{color:var(--gc-accent)}
 
 /* Kopf */
 header{position:sticky;top:0;z-index:20;background:var(--gc-chrome);
-  border-bottom:1px solid var(--gc-border);padding:10px 22px;
+  border-bottom:1px solid var(--gc-border);padding:10px clamp(14px,3.2vw,64px);
   display:flex;align-items:center;gap:18px}
 header h1{font:600 17px var(--gc-serif);letter-spacing:-.015em;color:var(--gc-fg)}
 nav{display:flex;gap:2px;margin-left:6px;min-width:0;overflow-x:auto;
@@ -78,7 +81,12 @@ nav button.an{background:var(--gc-accent-subtle);color:var(--gc-fg)}
 #avatar{width:30px;height:30px;border-radius:50%;background:var(--gc-accent);
   color:#fff;font:600 12px var(--gc-sans);display:grid;place-items:center}
 
-main{padding:26px 22px 60px;min-height:70dvh}
+main{padding:26px clamp(18px,3.2vw,64px) 60px;min-height:70dvh}
+
+/* Fließtext bleibt lesbar, auch wenn das Fenster breit ist: eine Zeile über
+   die ganze Breite eines Monitors kann man nicht mehr zurückfinden. Für
+   Listen und Tabellen gilt das nicht — die dürfen sich ausbreiten. */
+main p, .leer, .karte > p{max-width:78ch}
 .ansicht{display:none}.ansicht.an{display:block}
 
 /* Karten & Zeilen */
@@ -137,8 +145,8 @@ main{padding:26px 22px 60px;min-height:70dvh}
 .ablage-zeile a:hover{text-decoration:underline}
 /* Ein Name ist ein Name — in der App steht er in der Serifenschrift,
    in den Verwaltungslisten stand er bisher in serifenloser Fettschrift. */
-.ablage-zeile > b{font:600 15px var(--gc-serif);letter-spacing:-.01em;
-  color:var(--gc-fg)}
+.ablage-zeile > b{flex:1;min-width:0;font:600 15px var(--gc-serif);
+  letter-spacing:-.01em;color:var(--gc-fg)}
 .ablage-zeile .wann{font:11.5px var(--gc-mono);color:var(--gc-muted);flex:none}
 .jahr-kopf{font:600 20px var(--gc-serif);margin:22px 0 10px}
 /* Salon-Check: Zuschauen-Zeilen + Ampel-Karten */
@@ -158,6 +166,16 @@ main{padding:26px 22px 60px;min-height:70dvh}
 .gruss{font:600 26px var(--gc-serif);letter-spacing:-.015em;color:var(--gc-fg);margin:4px 0 2px}
 .dmeta{font:12.5px var(--gc-mono);letter-spacing:.02em;color:var(--gc-muted)}
 .sektion{margin:26px 0 10px}
+
+/* Auf einem breiten Bildschirm ist eine Belegzeile über die ganze Breite
+   keine Vollbreite, sondern Leere: links der Name, rechts der Betrag, in der
+   Mitte nichts. Deshalb wird die Liste dort zu einem Kartenfeld — die
+   Wochenüberschriften laufen weiter über alles. Auf dem Telefon bleibt es
+   eine Spalte, weil dann nur eine hineinpasst. */
+#belege-liste{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));
+  gap:9px;align-items:start}
+#belege-liste > .gruppe-kopf{grid-column:1/-1;margin-top:6px}
+#belege-liste > .leer{grid-column:1/-1}
 .zeile{display:flex;align-items:center;gap:14px;background:var(--gc-bg);
   border:1px solid var(--gc-border);border-radius:var(--r);padding:12px 16px;
   margin-bottom:9px;width:100%;text-align:left}
