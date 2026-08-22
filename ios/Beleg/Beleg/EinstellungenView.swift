@@ -18,6 +18,9 @@ struct EinstellungenView: View {
     @State private var testErgebnis: String?
     @State private var testLaeuft = false
     @State private var zeigeLoeschDialog = false
+    @State private var zeigeWerksDialog = false
+    @State private var setztZurueck = false
+    @State private var werksErgebnis: String?
 
     var body: some View {
         Form {
@@ -56,6 +59,8 @@ struct EinstellungenView: View {
                     Text("Ohne Verbindung bleiben Belege in der Warteschlange und werden nachgereicht, sobald es wieder klappt.")
                 }
 
+                testphase
+
                 Section {
                 } footer: {
                     HStack(spacing: 6) {
@@ -70,6 +75,88 @@ struct EinstellungenView: View {
         .warmerGrund()
         .navigationTitle("Einstellungen")
         .navigationBarTitleDisplayMode(.inline)
+        // Am Form, nicht an der Section: ein Dialog auf einer Section wird
+        // je Zeile angelegt und schluckt dort die Berührungen — der
+        // Testschalter ließ sich deshalb nicht umlegen.
+        .confirmationDialog("Auf Werkseinstellung zurücksetzen?",
+                            isPresented: $zeigeWerksDialog,
+                            titleVisibility: .visible) {
+            Button("Zurücksetzen", role: .destructive) {
+                Task { await zuruecksetzen() }
+            }
+            Button("Abbrechen", role: .cancel) { }
+        } message: {
+            Text("Das Onboarding und die Einrichtungsangaben gehen zurück "
+                 + "auf Anfang. Deine Anmeldung und deine Belegbox bleiben.")
+        }
+    }
+
+    // MARK: - Testphase
+
+    /// Solange babu erprobt wird, muss sich das Onboarding wieder ansehen
+    /// lassen — ohne sich jedes Mal neu anzumelden und ohne dass Belege
+    /// verschwinden. Beides steht ausdrücklich im Dialog, weil ein
+    /// Zurücksetzen sonst zu Recht Angst macht.
+    @ViewBuilder
+    private var testphase: some View {
+        Section {
+            Toggle("Testwerkzeuge zeigen", isOn: $store.testmodus)
+
+            if store.testmodus {
+                VStack(alignment: .leading, spacing: 10) {
+                    liste("Wird zurückgesetzt", AppStore.werkseinstellungGeht,
+                          symbol: "arrow.counterclockwise", farbe: GC.accent)
+                    liste("Bleibt", AppStore.werkseinstellungBleibt,
+                          symbol: "lock", farbe: GC.ok)
+                }
+                .padding(.vertical, 4)
+
+                Button(role: .destructive) {
+                    zeigeWerksDialog = true
+                } label: {
+                    HStack {
+                        if setztZurueck { ProgressView().padding(.trailing, 6) }
+                        Text(setztZurueck ? "Setze zurück …"
+                                          : "Auf Werkseinstellung zurücksetzen")
+                    }
+                }
+                .disabled(setztZurueck)
+
+                if let werksErgebnis {
+                    Text(werksErgebnis).font(.footnote).foregroundStyle(GC.muted)
+                }
+            }
+        } header: {
+            Text("Testphase")
+        } footer: {
+            Text(store.testmodus
+                 ? "Danach startet die App wieder mit dem Begrüßungsbildschirm. "
+                   + "Du bleibst angemeldet."
+                 : "Werkzeuge zum Erproben — im Alltag ausgeschaltet lassen.")
+        }
+    }
+
+    private func liste(_ titel: String, _ punkte: [String],
+                       symbol: String, farbe: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(titel, systemImage: symbol)
+                .font(.caption.weight(.semibold)).foregroundStyle(farbe)
+            ForEach(punkte, id: \.self) { punkt in
+                Text("· " + punkt).font(.caption).foregroundStyle(GC.desc)
+            }
+        }
+    }
+
+    private func zuruecksetzen() async {
+        setztZurueck = true
+        werksErgebnis = nil
+        let serverOk = await store.aufWerkseinstellung()
+        setztZurueck = false
+        // Die App wechselt gleich auf den Begrüßungsbildschirm; die Meldung
+        // zählt nur für den Fall, dass der Server nicht erreichbar war.
+        werksErgebnis = serverOk ? nil
+            : "Lokal zurückgesetzt. Die Einrichtungsangaben auf dem Server "
+            + "blieben stehen — ohne Verbindung geht das nicht."
     }
 
     // MARK: - Verbinden mit dem ganz normalen Konto

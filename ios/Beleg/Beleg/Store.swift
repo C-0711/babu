@@ -44,6 +44,11 @@ final class AppStore: ObservableObject {
     /// zurückgezogen). Dann darf die App nicht weiter „Verbunden ✓" behaupten.
     @Published var zugangAbgelaufen = false
 
+    /// Testphase: zeigt Werkzeuge, die im Alltag nichts zu suchen haben.
+    /// Hinter dem Schalter, weil ein Zurücksetzen sonst einen Fingerbreit
+    /// neben „Verbindung testen" liegt.
+    @Published var testmodus = false { didSet { speichern() } }
+
     private var geladen = false
     private var speicherTask: Task<Void, Never>?
 
@@ -68,6 +73,7 @@ final class AppStore: ObservableObject {
             chatVerlauf = z.chatVerlauf ?? []
         vorlagen = z.vorlagen ?? []
             verbundenAls = z.verbundenAls
+            testmodus = z.testmodus ?? false
             // Ältere Stände: Demo-Belege am festen Demo-Siegel nachträglich
             // markieren, damit sie nie im echten Stapel landen.
             let demoSiegel: Set<String> = ["77b2e0c4 9a11 f38d", "0d31f6a8 5be2 c974"]
@@ -100,6 +106,7 @@ final class AppStore: ObservableObject {
         var verbundenAls: String?
         // Neu ab 22.08.2026 — optional, damit ältere Stände weiter laden.
         var vorlagen: [Rechnungsvorlage]?
+        var testmodus: Bool?
     }
 
     private var zustand: Zustand {
@@ -107,7 +114,8 @@ final class AppStore: ObservableObject {
                 exportiert: exportiert, geprueft: geprueft, pruefSekunden: pruefSekunden,
                 ablageURL: ablageURL, ablageAktiv: ablageAktiv,
                 kassenberichte: kassenberichte, chatVerlauf: chatVerlauf,
-                verbundenAls: verbundenAls, vorlagen: vorlagen)
+                verbundenAls: verbundenAls, vorlagen: vorlagen,
+                testmodus: testmodus)
     }
 
     /// Entprellt auf ~0,25 s, damit Serien-Änderungen nicht pro Mutation schreiben.
@@ -504,4 +512,57 @@ extension DateFormatter {
         f.dateFormat = "dd.MM.yyyy HH:mm:ss"
         return f
     }()
+}
+
+// MARK: - Werkseinstellung (Testphase)
+
+extension AppStore {
+    /// Was ein Zurücksetzen anfasst — und was ausdrücklich nicht.
+    ///
+    /// Der Unterschied ist der ganze Sinn der Sache: das Onboarding soll
+    /// sich noch einmal ansehen lassen, ohne sich jedes Mal neu anmelden
+    /// zu müssen. Und ohne dass Belege verschwinden — die liegen in der
+    /// Belegbox, sind Auditmaterial und gehen eine App-Einstellung nichts
+    /// an. Ein Zurücksetzen, das Belege löscht, wäre kein Testwerkzeug,
+    /// sondern ein Unfall.
+    static let werkseinstellungGeht = [
+        "Das Onboarding — der Begrüßungsbildschirm kommt wieder",
+        "Belege und Kassenberichte auf diesem Gerät",
+        "Chatverlauf und Rechnungsvorlagen",
+        "Deine Einrichtungsangaben (Betrieb, Steuernummer, Versteuerung)",
+    ]
+    static let werkseinstellungBleibt = [
+        "Deine Anmeldung — du bleibst verbunden",
+        "Deine Belegbox mit allen abgelegten Belegen",
+        "Kundinnen, Termine und Preise",
+    ]
+
+    /// Zurück auf Anfang, ohne das Konto zu verlieren.
+    ///
+    /// Gibt zurück, ob auch die Einrichtungsangaben auf dem Server
+    /// zurückgesetzt werden konnten — ohne Verbindung bleibt das lokale
+    /// Zurücksetzen trotzdem gültig.
+    @MainActor
+    func aufWerkseinstellung() async -> Bool {
+        // Erst der Server, solange die Anmeldung noch steht.
+        var serverOk = false
+        if let url = URL(string: ablageURL), let pat = KeychainHelfer.ladePAT() {
+            serverOk = await AblageService.einrichtungZuruecksetzen(basis: url,
+                                                                    pat: pat)
+        }
+
+        belege = []
+        kassenberichte = []
+        chatVerlauf = []
+        vorlagen = []
+        exportiert = false
+        geprueft = 0
+        pruefSekunden = []
+        skr = "SKR04"
+        // Zuletzt, weil es den Bildschirm wechselt: alles darüber soll
+        // vorher durch sein.
+        onboarded = false
+        sichern()
+        return serverOk
+    }
 }
