@@ -773,6 +773,17 @@ def verarbeite(pfad: str) -> None:
                 f["netto"], f["ust"] = vlm_netto, vlm_ust
                 f["summenprobe_ok"] = True
                 f.setdefault("herkunft_vlm", []).extend(["netto", "ust"])
+
+                # Den Steuersatz nicht suchen, sondern ausrechnen. Die
+                # Heuristik sucht „7 %" und findet „7,00 %" nicht — auf einem
+                # Bäckerbon stand deshalb 19 % statt 7 %, und damit wäre die
+                # Vorsteuer falsch. Aus stimmigem Netto und Steuer ergibt er
+                # sich exakt; übernommen wird nur ein gesetzlicher Satz.
+                if vlm_netto > 0:
+                    satz = round(vlm_ust / vlm_netto * 100)
+                    if satz in (0, 5, 7, 16, 19):
+                        f["ust_satz"] = satz
+                        f.setdefault("herkunft_vlm", []).append("ust_satz")
             elif f.get("netto") is None or abs(
                     (f.get("netto") or 0) + (f.get("ust") or 0) - vlm_brutto) > 0.011:
                 # Die alte Aufteilung passt nicht mehr zum neuen Brutto.
