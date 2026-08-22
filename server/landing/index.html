@@ -207,6 +207,40 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
   text-align:left;line-height:1.5}
 .taschen figcaption b{color:var(--gc-fg)}
 
+/* ── Bilderstrecke ────────────────────────────────────────────────────
+   Ein Slider, der auch ohne JavaScript funktioniert: nativer horizontaler
+   Scroll mit Einrasten. Pfeile und Tastatur sind Zugabe. Auf dem Telefon
+   wischt man ohnehin — und dort wird die Seite gelesen. */
+.strecke{position:relative;margin-top:34px}
+.strecke-bahn{display:flex;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;
+  scroll-behavior:smooth;padding-bottom:6px;
+  scrollbar-width:none;-ms-overflow-style:none}
+.strecke-bahn::-webkit-scrollbar{display:none}
+/* `start`, nicht `center`: beim Zentrieren rastet ein Klick auf den
+   Pfeil entweder gar nicht oder gleich ans Ende — die Mittelpunkte
+   liegen weiter auseinander als ein Schritt. */
+.strecke-bahn > figure{flex:0 0 78%;scroll-snap-align:start;margin:0}
+@media(min-width:720px){.strecke-bahn > figure{flex:0 0 30%}}
+@media(min-width:1100px){.strecke-bahn > figure{flex:0 0 23%}}
+.strecke-bahn img{width:100%;height:auto;display:block;border-radius:18px;
+  border:1px solid var(--gc-border);background:var(--gc-desk)}
+.strecke-bahn figcaption{margin-top:12px;font-size:13.5px;color:var(--gc-desc);
+  line-height:1.5}
+.strecke-bahn figcaption b{color:var(--gc-fg);display:block;margin-bottom:2px}
+.strecke-nr{display:inline-flex;align-items:center;justify-content:center;
+  width:22px;height:22px;border-radius:99px;background:var(--gc-accent);
+  color:#fff;font:600 12px var(--gc-sans);margin-bottom:8px}
+.strecke-knoepfe{display:none;gap:8px;margin-top:16px}
+@media(min-width:720px){.strecke-knoepfe{display:flex}}
+.strecke-knoepfe button{width:38px;height:38px;border-radius:99px;
+  border:1px solid var(--gc-border);background:var(--gc-bg);cursor:pointer;
+  font-size:15px;color:var(--gc-fg);line-height:1}
+.strecke-knoepfe button:hover{background:var(--gc-desk)}
+.strecke-knoepfe button[disabled]{opacity:.35;cursor:default}
+.strecke-wisch{font-size:12px;color:var(--gc-muted);margin-top:12px}
+@media(min-width:720px){.strecke-wisch{display:none}}
+@media (prefers-reduced-motion:reduce){.strecke-bahn{scroll-behavior:auto}}
+
 /* Serie: immer nur vier auf einmal — zehn Videoplayer nebeneinander
    erschlagen die Seite, und angeschaut wird davon ohnehin keiner. */
 .spots figure.spot[hidden]{display:none}
@@ -255,6 +289,90 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
       <p>Am Monatsende liegt der fertige Stapel bereit, in genau dem Format,
       das das Finanzamt braucht. Du brauchst kein eigenes Steuerbüro mehr —
       und wenn du eins behalten willst, bekommt es alles fix und fertig.</p></div>
+  </div>
+</section>
+
+<section style="background:var(--gc-accent-subtle)">
+  <div class="lbl">In zehn Minuten dabei</div>
+  <h2>So fängst du an.</h2>
+  <p class="sub">Kein Termin, keine Schulung, kein Ordner. Vier Handgriffe — und danach machst du einfach weiter wie bisher.</p>
+
+  <div class="strecke" data-strecke>
+    <div class="strecke-bahn" tabindex="0" role="group"
+         aria-label="So fängst du an. Zum Durchblättern wischen oder die Pfeiltasten benutzen.">
+    <figure>
+      <img src="/bilder/start-1-laden.jpg" loading="lazy" width="692" height="859"
+        alt="Friseurin sitzt entspannt auf der Bank in ihrem Salon und richtet auf dem Telefon etwas ein">
+      <figcaption><span class="strecke-nr">1</span><b>App laden.</b> Aus dem App Store, wie jede andere App auch. Dauert so lange wie ein Kaffee.</figcaption>
+    </figure>
+    <figure>
+      <img src="/bilder/start-2-anmelden.jpg" loading="lazy" width="692" height="859"
+        alt="Friseurin steht am Empfangstresen und tippt mit dem Daumen kurz etwas in ihr Telefon">
+      <figcaption><span class="strecke-nr">2</span><b>Anmelden.</b> E-Mail und Passwort, mehr nicht. Dieselbe Anmeldung wie im Portal am Rechner.</figcaption>
+    </figure>
+    <figure>
+      <img src="/bilder/start-3-foto.jpg" loading="lazy" width="692" height="859"
+        alt="Hände halten ein Telefon über einen Kassenbon auf dem Tresen und fotografieren ihn von oben">
+      <figcaption><span class="strecke-nr">3</span><b>Ersten Beleg fotografieren.</b> Drauf halten, fertig. Du musst nicht sagen, was es ist — babu erkennt es und legt es an die richtige Stelle.</figcaption>
+    </figure>
+    <figure>
+      <img src="/bilder/start-4-fertig.jpg" loading="lazy" width="692" height="859"
+        alt="Friseurin lehnt am Feierabend entspannt an der Wand ihres leeren Salons, das Telefon liegt weggelegt auf ihrem Knie">
+      <figcaption><span class="strecke-nr">4</span><b>Das war es schon.</b> Ab jetzt läuft es nebenher. Am Monatsende liegt der fertige Stapel da, ohne dass du etwas dafür getan hättest.</figcaption>
+    </figure>
+    </div>
+    <div class="strecke-knoepfe">
+      <button type="button" data-zurueck aria-label="Ein Bild zurück">‹</button>
+      <button type="button" data-vor aria-label="Ein Bild weiter">›</button>
+    </div>
+    <p class="strecke-wisch">Zum Weiterblättern wischen →</p>
+  </div>
+</section>
+
+<section>
+  <div class="lbl">Ein Telefon, der ganze Laden</div>
+  <h2>Und das kann babu dann alles.</h2>
+  <p class="sub">Nicht nur Belege. Alles, was zwischen der ersten Kundin und dem Feierabend anfällt — das meiste davon, ohne dass du daran denken musst.</p>
+
+  <div class="strecke" data-strecke>
+    <div class="strecke-bahn" tabindex="0" role="group"
+         aria-label="Und das kann babu dann alles. Zum Durchblättern wischen oder die Pfeiltasten benutzen.">
+    <figure>
+      <img src="/bilder/kann-termine.jpg" loading="lazy" width="692" height="859"
+        alt="Friseurin schaut zwischen zwei Kundinnen kurz auf ihr Telefon, in der anderen Hand eine Bürste">
+      <figcaption><b>Termine.</b> Schreib hin, wie du es sagen würdest: „Frau Meier Donnerstag Farbe“. babu sucht die freie Lücke.</figcaption>
+    </figure>
+    <figure>
+      <img src="/bilder/kann-nachricht.jpg" loading="lazy" width="692" height="859"
+        alt="Friseurin sitzt auf der Lehne der Wartebank und liest schmunzelnd eine Nachricht auf dem Telefon">
+      <figcaption><b>Termine über WhatsApp.</b> Deine Kundin schreibt, babu antwortet mit freien Zeiten und trägt den Termin ein. Du bestätigst nur noch.</figcaption>
+    </figure>
+    <figure>
+      <img src="/bilder/kann-belege.jpg" loading="lazy" width="692" height="859"
+        alt="Umgekippter Schuhkarton auf dem Tresen, aus dem ein Haufen Kassenbons quillt, daneben ein Telefon">
+      <figcaption><b>Der Schuhkarton.</b> Bon, Vertrag, Brief vom Amt, Kontoauszug — ein Foto genügt. Jedes landet von selbst dort, wo es hingehört.</figcaption>
+    </figure>
+    <figure>
+      <img src="/bilder/kann-kundin.jpg" loading="lazy" width="692" height="859"
+        alt="Friseurin rührt Farbe in einer Schale an, das Telefon steht aufgestellt vor ihr">
+      <figcaption><b>Deine Kundinnen.</b> Welche Formel beim letzten Mal stimmte, was sie nicht verträgt. Der Karteikasten hinterm Spiegel, nur auffindbar.</figcaption>
+    </figure>
+    <figure>
+      <img src="/bilder/kann-rechnung.jpg" loading="lazy" width="692" height="859"
+        alt="Friseurin lehnt am Tresen und tippt konzentriert etwas in ihr Telefon, im Hintergrund zieht eine Kundin ihren Mantel an">
+      <figcaption><b>Rechnungen.</b> Stuhlmiete, Hochzeit, Firmenkunde. Mit deinem Briefkopf und allen Pflichtangaben, in einer Minute.</figcaption>
+    </figure>
+    <figure>
+      <img src="/bilder/kann-kasse.jpg" loading="lazy" width="692" height="859"
+        alt="Friseurin zählt abends bei Lampenlicht hinter dem Tresen Scheine und Münzen, das Telefon liegt daneben">
+      <figcaption><b>Abends kurz zählen.</b> Eine Zahl nach der anderen, wie auf deinem Papierzettel. Am Ende sagt babu: deine Kasse stimmt.</figcaption>
+    </figure>
+    </div>
+    <div class="strecke-knoepfe">
+      <button type="button" data-zurueck aria-label="Ein Bild zurück">‹</button>
+      <button type="button" data-vor aria-label="Ein Bild weiter">›</button>
+    </div>
+    <p class="strecke-wisch">Zum Weiterblättern wischen →</p>
   </div>
 </section>
 
@@ -1026,6 +1144,61 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
   if(weiter) weiter.addEventListener('click',function(){ seite++; zeige(); });
   zeige();
 })();
+
+/* ── Bilderstrecke ──────────────────────────────────────────────────────
+   Das Blättern macht der Browser: die Bahn ist ein normaler Scrollbereich
+   mit Einrasten, und Wischen funktioniert auch ohne diese Zeilen. Hier
+   kommen nur die Pfeile für die Maus und die Tastatur dazu — plus das
+   Ausgrauen am Anfang und Ende, damit niemand ins Leere klickt. */
+document.querySelectorAll("[data-strecke]").forEach(strecke => {
+  const bahn = strecke.querySelector(".strecke-bahn");
+  const zurueck = strecke.querySelector("[data-zurueck]");
+  const vor = strecke.querySelector("[data-vor]");
+  if (!bahn || !zurueck || !vor) return;
+
+  const schritt = () => {
+    const erste = bahn.querySelector("figure");
+    if (!erste) return bahn.clientWidth;
+    // Ein Bild plus Lücke — so landet man immer wieder auf einer Kante.
+    return erste.getBoundingClientRect().width + 16;
+  };
+
+  const knoepfePruefen = () => {
+    const rest = bahn.scrollWidth - bahn.clientWidth - bahn.scrollLeft;
+    zurueck.disabled = bahn.scrollLeft < 8;
+    vor.disabled = rest < 8;
+  };
+
+  zurueck.addEventListener("click", () =>
+    bahn.scrollBy({left: -schritt(), behavior: "smooth"}));
+  vor.addEventListener("click", () =>
+    bahn.scrollBy({left: schritt(), behavior: "smooth"}));
+
+  // Tastatur: die Bahn ist fokussierbar, also müssen die Pfeiltasten auch
+  // etwas tun — sonst ist sie für Tastaturnutzer eine Sackgasse.
+  bahn.addEventListener("keydown", e => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    bahn.scrollBy({left: e.key === "ArrowRight" ? schritt() : -schritt(),
+                   behavior: "smooth"});
+  });
+
+  bahn.addEventListener("scroll", knoepfePruefen, {passive: true});
+  window.addEventListener("resize", knoepfePruefen);
+
+  // Beim Laden ist die Bahn noch leer: die Bilder hängen an loading="lazy"
+  // und haben noch keine Breite. Wer hier einmal misst, sperrt den
+  // Vor-Knopf, obwohl es sechs Bilder weiterzublättern gäbe — genau so
+  // stand es beim ersten Versuch auf der Seite. Also mitmessen, während
+  // die Bahn wächst.
+  if (window.ResizeObserver) {
+    new ResizeObserver(knoepfePruefen).observe(bahn.querySelector("figure") || bahn);
+    bahn.querySelectorAll("img").forEach(bild => {
+      if (!bild.complete) bild.addEventListener("load", knoepfePruefen, {once: true});
+    });
+  }
+  knoepfePruefen();
+});
 </script>
 </body>
 </html>
