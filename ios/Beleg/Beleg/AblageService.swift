@@ -362,6 +362,14 @@ enum AblageService {
                        pat: pat) == nil
     }
 
+    /// Die Einrichtungsangaben löschen, damit sie neu abgefragt werden.
+    /// Belegbox, Konto und Kundendaten bleiben unberührt — das entscheidet
+    /// der Server, nicht die App.
+    static func einrichtungZuruecksetzen(basis: URL, pat: String) async -> Bool {
+        await schicken("api/einrichtung/zuruecksetzen", [:], basis: basis,
+                       pat: pat) == nil
+    }
+
     static func kassenvorschlag(tag: String, basis: URL, pat: String) async
             -> [String: Any]? {
         await holen("api/kasse/vorschlag?datum=\(tag)", basis: basis, pat: pat)

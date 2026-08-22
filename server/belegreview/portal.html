@@ -691,6 +691,27 @@ main{padding:26px 22px 60px;min-height:70dvh}
     <div class="sektion lbl">Mein Betrieb</div>
     <div class="karte"><input id="einst-betrieb" placeholder="Name des Salons"
       style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit"></div>
+
+    <!-- Solange babu erprobt wird: die Einrichtung noch einmal von vorn,
+         ohne sich neu anzumelden und ohne dass Belege verschwinden. -->
+    <div class="sektion lbl">Testphase</div>
+    <div class="karte">
+      <label class="feld" style="cursor:pointer"><span>Testwerkzeuge zeigen</span>
+        <input type="checkbox" id="einst-testmodus"></label>
+      <div id="einst-test" hidden style="margin-top:10px">
+        <div style="font-size:12px;color:var(--gc-desc);line-height:1.6">
+          <b style="color:var(--gc-accent)">Wird zurückgesetzt:</b>
+          deine Einrichtungsangaben — Betrieb, Steuernummer, Versteuerung,
+          Öffnungszeiten.<br>
+          <b style="color:var(--gc-ok,#6F8A6E)">Bleibt:</b>
+          deine Anmeldung, die Belegbox mit allen Belegen, Kundinnen,
+          Termine, Preise und der WhatsApp-Zugang.
+        </div>
+        <button class="loeschknopf" style="margin-top:10px"
+                onclick="einrichtungZuruecksetzen()">Einrichtung zurücksetzen</button>
+        <span id="einst-test-status" style="font-size:12px;margin-left:8px;color:var(--gc-muted)"></span>
+      </div>
+    </div>
   </section>
 
   <!-- RECHNUNGEN: was der Salon anderen berechnet -->
@@ -1936,6 +1957,28 @@ async function postOeffnen(pfad, knopf){
 }
 
 /* ————— EINSTELLUNGEN ————— */
+/* Testphase: der Schalter merkt sich nichts auf dem Server — er ist eine
+   Sichtsache dieses Browsers, damit der Knopf nicht im Alltag herumliegt. */
+function testmodusSchalten(){
+  const an = $("#einst-testmodus").checked;
+  localStorage.setItem("babu_testmodus", an ? "1" : "0");
+  $("#einst-test").hidden = !an;
+}
+
+async function einrichtungZuruecksetzen(){
+  if (!confirm("Einrichtung zurücksetzen?\n\nDeine Angaben zu Betrieb und "
+             + "Steuer gehen zurück auf Anfang. Anmeldung, Belegbox und "
+             + "Kundendaten bleiben.")) return;
+  const status = $("#einst-test-status");
+  status.textContent = "…";
+  const r = await api("/api/einrichtung/zuruecksetzen", {method:"POST"});
+  const d = await r.json().catch(() => ({}));
+  status.textContent = r.ok
+    ? `Zurückgesetzt (${d.geloescht ?? 0} Angaben). ${d.hinweis || ""}`
+    : (d.fehler || "Das ging nicht.");
+  if (r.ok) ladeEinstellungen();
+}
+
 async function ladeEinstellungen(){
   try{
     const ich = await (await api("/api/ich")).json();
@@ -1946,6 +1989,10 @@ async function ladeEinstellungen(){
     const eigenesKonto = (ich.un || "").includes("@");
     $("#einst-pw-lbl").hidden = !eigenesKonto;
     $("#einst-pw").hidden = !eigenesKonto;
+    const testAn = localStorage.getItem("babu_testmodus") === "1";
+    $("#einst-testmodus").checked = testAn;
+    $("#einst-test").hidden = !testAn;
+    $("#einst-testmodus").onchange = testmodusSchalten;
     const e = await (await api("/api/einstellungen")).json();
     document.querySelectorAll("#einst-schalter input").forEach(s =>
       s.checked = e[s.dataset.s] === "1");

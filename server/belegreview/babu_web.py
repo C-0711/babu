@@ -3658,6 +3658,47 @@ def api_termin_loeschen(termin_id: int, request: Request) -> Response:
 
 
 # ---------------------------------------------------------------------------
+# Zurücksetzen für die Testphase.
+#
+# Damit sich das Onboarding noch einmal ansehen lässt, ohne sich neu
+# anzumelden. Ausdrücklich NICHT betroffen: die Belegbox, das Konto und
+# alles Personenbezogene. Gelöscht wird nach Positivliste, nicht per
+# „alles weg" — sonst nimmt ein Testknopf beiläufig den WhatsApp-Zugang
+# und das Logo mit.
+# ---------------------------------------------------------------------------
+
+# Was zur Einrichtung gehört und beim Zurücksetzen verschwindet.
+EINRICHTUNGSFELDER = (
+    "betrieb_name", "betrieb_inhaberin", "betrieb_strasse", "betrieb_plz",
+    "betrieb_ort", "betrieb_telefon", "betrieb_email", "betrieb_web",
+    "steuernummer", "ust_id", "finanzamt", "kleinunternehmer",
+    "versteuerung", "iban", "bic", "bank", "oeffnung_von", "oeffnung_bis",
+    "einrichtung_fertig", "gruendung",
+)
+
+
+@app.post("/api/einrichtung/zuruecksetzen")
+def api_einrichtung_zuruecksetzen(request: Request) -> Response:
+    """Die Einrichtungsangaben löschen, damit sie neu abgefragt werden."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das macht die Inhaberin."},
+                            status_code=403)
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        cur = c.execute(
+            "DELETE FROM einstellungen WHERE un=? AND schluessel IN ({})".format(
+                ",".join("?" * len(EINRICHTUNGSFELDER))),
+            (inhaber, *EINRICHTUNGSFELDER))
+        weg = cur.rowcount
+    return JSONResponse({"ok": True, "geloescht": weg,
+                         "hinweis": "Belegbox, Konto und Kundendaten sind "
+                                    "unberührt."})
+
+
+# ---------------------------------------------------------------------------
 # Der Terminagent auf WhatsApp.
 #
 # Der Webhook ist die einzige Stelle in babu, an der jemand von außen
