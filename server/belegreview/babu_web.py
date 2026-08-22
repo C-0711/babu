@@ -1787,7 +1787,9 @@ EINSTELLUNG_SCHLUESSEL = {"benachrichtigung_frage", "benachrichtigung_post",
                           "anschrift", "ust_id", "iban", "bank", "versteuerung",
                           # Briefkopf der Rechnung
                           "marke_farbe", "marke_schrift", "marke_ausrichtung",
-                          "marke_linie", "marke_begruendung"}
+                          "marke_linie", "marke_begruendung",
+                          # Wann der Laden auf hat — der Kalender braucht es.
+                          "oeffnet", "schliesst"}
 
 
 # Registrierung: Interessentinnen hinterlassen alle Daten — der Zugang wird
@@ -3510,13 +3512,16 @@ def api_termin_vorschlag(body: dict, request: Request) -> Response:
     inhaber = salon_von(un)
     tag = wunsch["datum"]
     termine = _termine_lesen(inhaber, tag, tag)
-    frei = ka.freie_luecken(tag, termine, wunsch["minuten"], wunsch["wer"])
+    oeffnung = ka.oeffnung_aus(db_einstellungen(inhaber))
+    frei = ka.freie_luecken(tag, termine, wunsch["minuten"], wunsch["wer"],
+                            oeffnung=oeffnung)
 
     # Der Wunschzeitpunkt zuerst, wenn er wirklich frei ist. Geprüft wird am
     # Kalender, nicht an der Vorschlagsliste: die ist nur eine Auswahl fürs
     # Auge, und 14:00 kann frei sein, ohne darin vorzukommen.
     wunsch_geht = bool(wunsch["uhrzeit"]) and ka.ist_frei(
-        tag, termine, wunsch["uhrzeit"], wunsch["minuten"], wunsch["wer"])
+        tag, termine, wunsch["uhrzeit"], wunsch["minuten"], wunsch["wer"],
+        oeffnung=oeffnung)
     if wunsch_geht:
         frei = [wunsch["uhrzeit"]] + [z for z in frei if z != wunsch["uhrzeit"]]
     hinweis = ("An dem Tag ist nichts mehr frei." if not frei else

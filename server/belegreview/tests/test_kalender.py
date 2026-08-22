@@ -414,3 +414,48 @@ def test_belegtes_ist_nicht_frei():
 def test_nach_ladenschluss_ist_nichts_frei():
     assert ka.ist_frei("2026-09-03", [], "17:30", 60) is False
     assert ka.ist_frei("2026-09-03", [], "08:00", 60) is False
+
+
+def test_oeffnungszeiten_kommen_aus_den_einstellungen():
+    assert ka.oeffnung_aus({"oeffnet": "08:00", "schliesst": "20:00"}) == ("08:00", "20:00")
+    frei = ka.freie_luecken("2026-09-03", [], dauer=60,
+                            oeffnung=("08:00", "20:00"))
+    assert frei[0] == "08:00" and frei[-1] >= "18:00"
+
+
+@pytest.mark.parametrize("e", [
+    {}, {"oeffnet": "quatsch", "schliesst": "18:00"},
+    {"oeffnet": "18:00", "schliesst": "09:00"},      # Ende vor Anfang
+    {"oeffnet": "25:00", "schliesst": "26:00"},
+])
+def test_unsinnige_zeiten_fallen_auf_die_vorgabe_zurueck(e):
+    assert ka.oeffnung_aus(e) == ka.OEFFNUNG
+
+
+def test_die_echte_modellantwort_wird_verstanden():
+    """Wortlaut aus einem echten Gemma-Lauf vom 22.08.2026, samt Code-Zaun.
+
+    Das Modell antwortet mit ```json … ``` drumherum. Wer nur `json.loads`
+    aufruft, scheitert daran — deshalb steht die echte Antwort hier.
+    """
+    import json
+    import re
+    echt = (
+        "```json\n"
+        '{   "kundin": "Holder",   "leistung": "Schnitt",   "wer": "Jana",   '
+        '"datum": "2026-08-23",   "uhrzeit": "14:30",   "minuten": 45 }\n'
+        "```")
+    roh = json.loads(re.search(r"\{.*\}", echt, re.S).group(0))
+    w = ka.wunsch_pruefen(roh, dt.date(2026, 8, 22))
+    assert w["kundin"] == "Holder" and w["wer"] == "Jana"
+    assert w["uhrzeit"] == "14:30" and w["minuten"] == 45
+    assert w["sicher"] is True
+
+
+def test_null_werte_des_modells_stoeren_nicht():
+    """Gemma schreibt `null`, wo es nichts erkannt hat."""
+    w = ka.wunsch_pruefen({"kundin": "Frau Sommer", "wer": None,
+                           "uhrzeit": None, "datum": "2099-08-24",
+                           "minuten": 150}, dt.date(2026, 8, 22))
+    assert w["wer"] == "" and w["uhrzeit"] is None
+    assert w["minuten"] == 150 and w["sicher"] is True

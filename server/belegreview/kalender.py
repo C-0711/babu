@@ -13,6 +13,7 @@ Kundenname, und in Git bleibt alles für immer stehen.
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 MAX_MINUTEN = 24 * 60
 
@@ -122,6 +123,21 @@ def tag(datum: str, termine: list[dict], umsatz: float | None = None) -> dict:
 
 OEFFNUNG = ("09:00", "18:00")
 RASTER_MINUTEN = 15
+
+
+def oeffnung_aus(einstellungen: dict) -> tuple[str, str]:
+    """Öffnungszeiten aus den Einstellungen — mit der üblichen Vorgabe.
+
+    Unsinniges (Ende vor Anfang, kaputte Zeit) fällt auf die Vorgabe zurück:
+    ein Kalender ohne Zeiten wäre schlimmer als einer mit falschen.
+    """
+    e = einstellungen or {}
+    auf = str(e.get("oeffnet") or "").strip()
+    zu = str(e.get("schliesst") or "").strip()
+    muster = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+    if muster.match(auf) and muster.match(zu) and auf < zu:
+        return (auf, zu)
+    return OEFFNUNG
 
 
 def _minuten_seit_mitternacht(hhmm: str) -> int:

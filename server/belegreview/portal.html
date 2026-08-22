@@ -429,6 +429,8 @@ main{padding:26px 22px 60px;min-height:70dvh}
       <div class="kopf"><b id="menu-un">…</b><span id="menu-rolle"></span></div>
       <button role="menuitem" onclick="menuGeh('#einstellungen')">
         <span class="sym">⚙️</span> Konto &amp; Einstellungen</button>
+      <button role="menuitem" onclick="menuGeh('#termine')">
+        <span class="sym">🗓️</span> Termine</button>
       <button role="menuitem" onclick="menuGeh('#team')">
         <span class="sym">✂️</span> Dein Team</button>
       <button role="menuitem" onclick="menuGeh('#export')">
@@ -670,6 +672,30 @@ main{padding:26px 22px 60px;min-height:70dvh}
       style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit"></div>
   </section>
 
+  <!-- TERMINE: babu führt den Kalender selbst. Hinschreiben statt ausfüllen. -->
+  <section class="ansicht" id="a-termine">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <div class="gruss" style="font-size:22px">Termine</div>
+      <div class="mon-schalter">
+        <button id="t-zurueck" aria-label="Tag zurück">‹</button>
+        <b id="t-tag"></b>
+        <button id="t-vor" aria-label="Tag vor">›</button>
+      </div>
+    </div>
+    <p id="t-satz" style="color:var(--gc-desc);margin-bottom:14px"></p>
+    <div id="t-liste"><div class="skelett"></div></div>
+    <div class="karte" style="margin-top:16px">
+      <h3 style="font:600 15px var(--gc-serif);margin-bottom:8px">Neuer Termin</h3>
+      <input class="suchfeld" id="t-satz-feld" style="margin:0 0 8px"
+             placeholder="z. B. Frau Holder Donnerstag Farbe" autocomplete="off">
+      <button class="chip" id="t-suchen">Lücke suchen</button>
+      <div id="t-vorschlaege" style="margin-top:10px"></div>
+      <div style="font-size:11px;color:var(--gc-muted);margin-top:10px">
+        babu versteht den Satz und sucht die freie Zeit. Eingetragen wird
+        erst, wenn du eine antippst.</div>
+    </div>
+  </section>
+
   <!-- VERWALTUNG (nur Verwaltungs-Rolle): Anfragen einrichten, Nutzer pflegen -->
   <section class="ansicht" id="a-verwaltung">
     <a class="zurueck" href="#einstellungen">‹ Einstellungen</a>
@@ -850,6 +876,7 @@ const ansichten = { gesperrt: () => {}, heute: ladeHeute, belege: ladeBelege, fr
                     aufraeumen: ladeAufraeumen, post: ladePost, ablage: ladeAblage, export: ladeExport, team: ladeTeam,
                     abschluss: ladeAbschluss,
                     zahlen: ladeZahlen, bank: ladeBank, saloncheck: ladeSalonCheck,
+                    termine: ladeTermine,
                     einrichtung: ladeEinrichtung, verwaltung: ladeVerwaltung,
                     einstellungen: ladeEinstellungen, detail: null };
 function routen(){
@@ -2388,6 +2415,98 @@ document.addEventListener("keydown", ev => {
 });
 
 /* ————— VERWALTUNG: Anfragen einrichten, Nutzer pflegen ————— */
+/* ————— Termine: derselbe Kalender wie in der App ————— */
+let tTag = new Date().toISOString().slice(0, 10);
+let tWunsch = null;
+
+function tDatumText(iso){
+  const d = new Date(iso + "T12:00");
+  return d.toLocaleDateString("de-DE",
+    {weekday:"long", day:"numeric", month:"long"});
+}
+
+async function ladeTermine(){
+  $("#t-tag").textContent = tDatumText(tTag);
+  const ziel = $("#t-liste");
+  let d;
+  try{
+    d = await (await api("/api/termine?von=" + tTag + "&bis=" + tTag)).json();
+  }catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+  const tag = (d.tage || [])[0] || {};
+  $("#t-satz").textContent = tag.satz || "";
+  const liste = tag.liste || [];
+  if (!liste.length){
+    ziel.innerHTML = `<div class="leer"><b>Noch nichts eingetragen.</b>
+      Schreib unten hin, wer wann kommt — babu sucht die Lücke.</div>`;
+    return;
+  }
+  ziel.innerHTML = liste.map(t => `<div class="ablage-zeile">
+      <b style="font-variant-numeric:tabular-nums">${esc(t.start.slice(11,16))}</b>
+      <span>${esc(t.kundin || "—")}</span>
+      ${t.leistung ? `<span class="chip" style="font-size:11px">${esc(t.leistung)}</span>` : ""}
+      ${t.wer ? `<span class="wann">bei ${esc(t.wer)}</span>` : ""}
+      <span class="wann">${t.minuten} min</span>
+      <button class="loeschknopf" onclick="terminAbsagen(${t.id})">Abgesagt</button>
+    </div>`).join("");
+}
+
+function tBlaettern(tage){
+  const d = new Date(tTag + "T12:00");
+  d.setDate(d.getDate() + tage);
+  tTag = d.toISOString().slice(0, 10);
+  $("#t-vorschlaege").innerHTML = "";
+  ladeTermine();
+}
+$("#t-zurueck").addEventListener("click", () => tBlaettern(-1));
+$("#t-vor").addEventListener("click", () => tBlaettern(1));
+
+$("#t-suchen").addEventListener("click", async () => {
+  const text = $("#t-satz-feld").value.trim();
+  if (text.length < 3) return;
+  const knopf = $("#t-suchen");
+  knopf.textContent = "babu schaut nach …"; knopf.disabled = true;
+  try{
+    const r = await api("/api/termine/vorschlag", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({text})});
+    const d = await r.json();
+    if (!r.ok){ $("#t-vorschlaege").innerHTML =
+      `<div class="leer">${esc(d.fehler || "Das hat nicht geklappt.")}</div>`; return; }
+    tWunsch = d.wunsch;
+    if (d.wunsch && d.wunsch.datum){ tTag = d.wunsch.datum; await ladeTermine(); }
+    const zeiten = d.vorschlaege || [];
+    $("#t-vorschlaege").innerHTML =
+      (d.hinweis ? `<div style="font-size:12px;color:var(--gc-desc);margin-bottom:6px">${esc(d.hinweis)}</div>` : "")
+      + (zeiten.length
+         ? zeiten.map(z => `<button class="chip" style="margin:0 6px 6px 0"
+             onclick="terminBuchen('${z}')">${z} — eintragen</button>`).join("")
+         : `<div class="leer">An dem Tag ist nichts mehr frei.</div>`);
+  }catch{
+    $("#t-vorschlaege").innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`;
+  }finally{ knopf.textContent = "Lücke suchen"; knopf.disabled = false; }
+});
+
+async function terminBuchen(zeit){
+  if (!tWunsch) return;
+  const r = await api("/api/termine", {method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      start: (tWunsch.datum || tTag) + "T" + zeit,
+      minuten: tWunsch.minuten || 60, wer: tWunsch.wer || "",
+      kundin: tWunsch.kundin || "", leistung: tWunsch.leistung || ""})});
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok){ $("#t-vorschlaege").innerHTML =
+    `<div class="leer">${esc(d.fehler || "Das ging nicht.")}</div>`; return; }
+  $("#t-satz-feld").value = ""; $("#t-vorschlaege").innerHTML = "";
+  tWunsch = null;
+  ladeTermine();
+}
+
+async function terminAbsagen(id){
+  await api("/api/termin/" + id + "/absagen", {method:"POST"});
+  ladeTermine();
+}
+
 async function ladeVerwaltung(){
   const ziel = $("#verwaltung-inhalt");
   let regs = [], nutzer = [];
