@@ -206,6 +206,15 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
 .taschen figcaption{margin-top:12px;font-size:13.5px;color:var(--gc-desc);
   text-align:left;line-height:1.5}
 .taschen figcaption b{color:var(--gc-fg)}
+
+/* Serie: immer nur vier auf einmal — zehn Videoplayer nebeneinander
+   erschlagen die Seite, und angeschaut wird davon ohnehin keiner. */
+.spots figure.spot[hidden]{display:none}
+.spots-steuer{display:flex;align-items:center;gap:14px;margin-top:22px;flex-wrap:wrap}
+.knopf-leise{background:none;border:1px solid var(--gc-border);border-radius:99px;
+  padding:9px 18px;font:600 13px var(--gc-sans);color:var(--gc-fg);cursor:pointer}
+.knopf-leise:hover{border-color:var(--gc-accent);color:var(--gc-accent)}
+.spots-stand{font-size:12.5px;color:var(--gc-muted)}
 </style>
 </head>
 <body>
@@ -409,7 +418,7 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
   <h2>Zehn Gründe, warum du nie<br>weißt, was du bezahlst.</h2>
   <p class="sub">Kein Vorwurf an einzelne Kanzleien — so ist das System gebaut.
   Jede Folge dauert eine halbe Minute. Ton an lohnt sich.</p>
-  <div class="spots">
+  <div class="spots" id="spots">
       <figure class="spot">
         <video controls playsinline preload="none" poster="/bilder/poster-verschlampt.png"
           src="/bilder/spot-verschlampt.mp4"></video>
@@ -464,6 +473,11 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
   <div class="cta" style="margin-top:30px">
     <a class="knopf voll" href="/portal">Konto anlegen</a>
   </div>
+  <div class="spots-steuer">
+    <button type="button" id="spots-weiter" class="knopf-leise">Vier andere zeigen</button>
+    <span id="spots-stand" class="spots-stand"></span>
+  </div>
+
 </section>
 
 <!-- ── 4c · Dein Telefon kann das alles ─────────────────────────────── -->
@@ -558,6 +572,30 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
       </div></div>
       <figcaption><b>Was am Ende bleibt.</b> Am 3. liegt der Monat fertig da.
       Du schaust drüber — das war's.</figcaption>
+    </figure>
+  </div>
+
+  <div class="dreier" style="margin-top:38px">
+    <figure class="telefon">
+      <img src="/bilder/termine-morgens.jpg" loading="lazy" width="692" height="859"
+        alt="Friseurin steht morgens vor Ladenöffnung am Tresen, Kaffee in der einen Hand, Telefon in der anderen, und sieht entspannt ihre Termine durch"
+        style="width:100%;display:block;border-radius:22px;border:1px solid var(--gc-border)">
+      <p><strong>Morgens.</strong> Ein Blick aufs Telefon: Wer kommt heute,
+      wie voll ist der Tag. Bevor die erste Kundin da ist.</p>
+    </figure>
+    <figure class="telefon">
+      <img src="/bilder/rechnung-tresen.jpg" loading="lazy" width="692" height="859"
+        alt="Friseurin reicht einer lächelnden Kundin ein Blatt Papier über den Empfangstresen, daneben ein Kartenlesegerät"
+        style="width:100%;display:block;border-radius:22px;border:1px solid var(--gc-border)">
+      <p><strong>Zwischendurch.</strong> Rechnung schreiben, während sie noch
+      da ist. Nummer, Steuer und Ablage macht babu.</p>
+    </figure>
+    <figure class="telefon">
+      <img src="/bilder/feierabend-zahlen.jpg" loading="lazy" width="692" height="859"
+        alt="Friseurin sitzt nach Feierabend entspannt im Friseurstuhl im aufgeräumten Salon und schaut auf ihr Telefon"
+        style="width:100%;display:block;border-radius:22px;border:1px solid var(--gc-border)">
+      <p><strong>Abends.</strong> Zwei Minuten Kassenbuch, ein Blick auf die
+      Zahlen — und der Tag ist wirklich vorbei.</p>
     </figure>
   </div>
 
@@ -960,6 +998,33 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
   drop.ondragover=function(ev){ev.preventDefault();drop.classList.add('aktiv');};
   drop.ondragleave=function(){drop.classList.remove('aktiv');};
   drop.ondrop=function(ev){ev.preventDefault();drop.classList.remove('aktiv');lade(ev.dataTransfer.files);};
+})();
+
+/* ── Serie: vier auf einmal, der Rest wartet. ───────────────────────── */
+(function(){
+  var behaelter=document.getElementById('spots');
+  if(!behaelter) return;
+  var alle=[].slice.call(behaelter.querySelectorAll('figure.spot')),
+      proSeite=4,
+      // Startpunkt wechselt täglich, damit nicht immer dieselben vier
+      // oben stehen — ohne Zufall, damit ein Neuladen nicht springt.
+      seite=Math.floor(Date.now()/864e5)%Math.ceil(alle.length/proSeite),
+      stand=document.getElementById('spots-stand'),
+      weiter=document.getElementById('spots-weiter');
+  function zeige(){
+    // Umlaufendes Fenster: bei zehn Folgen und vier Plätzen bliebe sonst
+    // eine Seite mit nur zwei Videos übrig. Es sind immer genau vier.
+    var von=((seite*proSeite)%alle.length+alle.length)%alle.length,
+        drin={};
+    for(var k=0;k<proSeite;k++) drin[(von+k)%alle.length]=true;
+    alle.forEach(function(f,i){
+      f.hidden=!drin[i];
+      if(!drin[i]){ var v=f.querySelector('video'); if(v && !v.paused) v.pause(); }
+    });
+    if(stand) stand.textContent='Vier von '+alle.length+' Folgen';
+  }
+  if(weiter) weiter.addEventListener('click',function(){ seite++; zeige(); });
+  zeige();
 })();
 </script>
 </body>
