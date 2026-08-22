@@ -482,3 +482,17 @@ def test_deuten_veraendert_die_eingabe_nicht(baeckerbon):
     vorher = list(baeckerbon)
     deuten(baeckerbon, heute=date(2026, 8, 22))
     assert baeckerbon == vorher
+
+
+def test_die_spaltenangabe_bleibt_im_blatt():
+    """„rechte Kante bei 109 % der Blattbreite“ liest sich wie ein Fehler —
+    und war einer: die Spalte ist eine Position, die Breite eine Differenz."""
+    kaesten = [k("Laden GmbH", 60, 20, hoehe=22)]
+    kaesten += [rechts(t, 690, y) for t, y in
+                [("21,85", 100), ("11,76", 130), ("33,61", 160)]]
+    kaesten += [k("Rechnungsbetrag", 60, 190), rechts("40,00", 690, 190)]
+    l = deuten(kaesten, heute=date(2026, 8, 22))
+    spalten = [n for n in l.notizen if "Spalte" in n]
+    assert spalten, "keine Spalte erkannt"
+    prozent = int(spalten[0].split("bei ")[1].split("%")[0])
+    assert 0 <= prozent <= 100, spalten[0]

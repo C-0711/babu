@@ -635,15 +635,19 @@ def deuten(kaesten: list[Kasten], heute: date | None = None) -> Lesung:
         lesung.offen.append("Auf dem Bild war kein Text zu erkennen.")
         return lesung
 
-    blattbreite = max(z.x1 for z in zeilen) - min(z.x0 for z in zeilen)
+    linker_rand = min(z.x0 for z in zeilen)
+    blattbreite = max(z.x1 for z in zeilen) - linker_rand
     blatthoehe = max(z.y1 for z in zeilen) - min(z.y0 for z in zeilen)
 
     alle_betraege = [b for z in zeilen for b in betraege_in_zeile(z)]
     spalte = betragsspalte(alle_betraege, blattbreite)
     if spalte is not None:
+        # Der Anteil zählt vom linken Textrand, nicht vom Blattnullpunkt —
+        # sonst stünden im Protokoll Angaben wie „109 % der Blattbreite".
+        anteil = (spalte - linker_rand) / blattbreite if blattbreite else 0
         lesung.notizen.append(
             f"Die Beträge stehen in einer Spalte (rechte Kante bei "
-            f"{spalte / blattbreite:.0%} der Blattbreite).")
+            f"{min(max(anteil, 0), 1):.0%} der Blattbreite).")
 
     brutto_d, notizen = deute_summe(zeilen, spalte, blattbreite)
     lesung.notizen += notizen
