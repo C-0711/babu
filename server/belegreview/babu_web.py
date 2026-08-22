@@ -141,7 +141,8 @@ def _db() -> sqlite3.Connection:
     for spalte, typ in (("preis", "REAL"), ("ust_satz", "INTEGER"),
                         ("abgerechnet", "TEXT"), ("zahlart", "TEXT"),
                         ("kundin_id", "INTEGER"), ("bestaetigt", "INTEGER"),
-                        ("quelle", "TEXT"), ("telefon", "TEXT")):
+                        ("quelle", "TEXT"), ("telefon", "TEXT"),
+                        ("zahlung_ref", "TEXT")):
         try:
             conn.execute(f"ALTER TABLE termin ADD COLUMN {spalte} {typ}")
         except sqlite3.OperationalError:
@@ -3443,7 +3444,7 @@ def _termine_lesen(un: str, von: str, bis: str) -> list[dict]:
         zeilen = c.execute(
             """SELECT id, start, minuten, wer, kundin, leistung, notiz, abgesagt,
                       preis, ust_satz, abgerechnet, zahlart, kundin_id,
-                      bestaetigt, quelle, telefon
+                      bestaetigt, quelle, telefon, zahlung_ref
                FROM termin WHERE un=? AND start>=? AND start<=? ORDER BY start""",
             (un, von, bis + "T23:59")).fetchall()
     return [{"id": z[0], "start": z[1], "minuten": z[2], "wer": z[3],
@@ -3453,7 +3454,8 @@ def _termine_lesen(un: str, von: str, bis: str) -> list[dict]:
              # Aus WhatsApp kommt der Termin als Anfrage herein. Termine aus
              # der App gelten als bestätigt — sie hat sie selbst eingetragen.
              "bestaetigt": z[13] is None or bool(z[13]),
-             "quelle": z[14] or "app", "telefon": z[15]}
+             "quelle": z[14] or "app", "telefon": z[15],
+             "zahlung_ref": z[16]}
             for z in zeilen]
 
 
@@ -4233,10 +4235,16 @@ async def api_termin_abrechnen(termin_id: int, request: Request) -> Response:
         if not preis or preis <= 0:
             return JSONResponse(
                 {"fehler": "Was hat die Behandlung gekostet?"}, status_code=400)
-        c.execute("""UPDATE termin SET abgerechnet=?, zahlart=?, preis=?
-                     WHERE id=? AND un=?""",
+        c.execute("""UPDATE termin SET abgerechnet=?, zahlart=?, preis=?,
+                     zahlung_ref=? WHERE id=? AND un=?""",
                   (str((body or {}).get("am") or dt.date.today().isoformat())[:10],
-                   zahlart, round(float(preis), 2), termin_id, inhaber))
+                   zahlart, round(float(preis), 2),
+                   # Die Nummer beim Zahlungsdienstleister. Sie ist das
+                   # Einzige, was Kassenbuch und Kontoauszug später
+                   # zusammenbringt — ohne sie ist die Zahlung nicht
+                   # auffindbar, wenn jemand fragt.
+                   str((body or {}).get("referenz") or "").strip()[:80] or None,
+                   termin_id, inhaber))
     return JSONResponse({"ok": True, "zahlart": zahlart,
                          "preis": round(float(preis), 2)})
 
