@@ -3658,6 +3658,73 @@ def api_termin_loeschen(termin_id: int, request: Request) -> Response:
 
 
 # ---------------------------------------------------------------------------
+# Arbeitsverträge. Nina sagt, wen sie einstellt — den Rest rechnet
+# `arbeitsvertrag.py` aus: Klauseln, Anlagen, Urlaub, Fristen, und die
+# Prüfung, ob der Vertrag überhaupt zulässig wäre. Erzeugt wird hier nur
+# ein Entwurf; abgelegt wird er erst, wenn beide ihn angenommen haben.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/arbeitsvertrag/arten")
+def api_vertragsarten(request: Request) -> Response:
+    """Was zur Auswahl steht — samt dem, was daran hängt."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    import arbeitsvertrag as av  # noqa: PLC0415
+    import datetime as dt  # noqa: PLC0415
+    werte = av.werte_fuer(dt.date.today())
+    return JSONResponse({
+        "arten": [{"id": k, **v} for k, v in av.ARTEN.items()],
+        "nicht_anstellung": [{"id": k, "warnung": t}
+                             for k, t in av.KEINE_ANSTELLUNG.items()],
+        "werte": {"jahr": werte["jahr"],
+                  "mindestlohn": werte["mindestlohn"],
+                  "minijob_grenze": werte["minijob"],
+                  "ausbildung_mindest": werte["azubi"]},
+    })
+
+
+@app.post("/api/arbeitsvertrag/entwurf")
+async def api_vertrag_entwurf(request: Request) -> Response:
+    """Aus Eckdaten ein vollständiger Vertragsentwurf.
+
+    Gibt bei unzulässigen Angaben bewusst einen Fehler zurück statt eines
+    Vertrags mit Warnhinweis — ein Vertrag unter Mindestlohn soll gar nicht
+    erst entstehen.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Verträge macht die Inhaberin."},
+                            status_code=403)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+
+    import arbeitsvertrag as av  # noqa: PLC0415
+    inhaber = salon_von(un)
+    e = db_einstellungen(inhaber)
+    betrieb = {
+        "name": e.get("betrieb_name", ""),
+        "strasse": e.get("betrieb_strasse", ""),
+        "ort": " ".join(x for x in (e.get("betrieb_plz"), e.get("betrieb_ort")) if x),
+        "arbeitnehmerin": str((body or {}).get("arbeitnehmerin") or "").strip()[:80],
+    }
+    try:
+        vertrag = av.vertrag_bauen(body or {}, betrieb)
+    except av.VertragFehler as f:
+        return JSONResponse({"fehler": str(f)}, status_code=400)
+
+    # datetime ist nicht JSON-fähig — die Angaben als Text zurückgeben.
+    angaben = {k: (v.isoformat() if hasattr(v, "isoformat") else v)
+               for k, v in vertrag["angaben"].items() if k != "werte"}
+    return JSONResponse({**vertrag, "angaben": angaben,
+                         "text": av.als_text(vertrag)})
+
+
+# ---------------------------------------------------------------------------
 # Zurücksetzen für die Testphase.
 #
 # Damit sich das Onboarding noch einmal ansehen lässt, ohne sich neu
