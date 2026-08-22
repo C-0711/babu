@@ -89,6 +89,14 @@ struct TermineTab: View {
                         }
                     }
 
+                    if termine.contains(where: { !($0["bestaetigt"] as? Bool ?? true) }) {
+                        Section {
+                            Label("Aus WhatsApp sind Anfragen da — nach rechts "
+                                  + "wischen zum Bestätigen.", systemImage: "message")
+                                .font(.caption).foregroundStyle(GC.desc)
+                        }
+                    }
+
                     if let kasse, (kasse["termine"] as? Int ?? 0) > 0 {
                         Section {
                             Text(kasse["satz"] as? String ?? "")
@@ -169,6 +177,13 @@ struct TermineTab: View {
             HStack {
                 Text(start).font(.body.monospacedDigit().weight(.semibold))
                 Text(t["kundin"] as? String ?? "—").font(.body)
+                if !(t["bestaetigt"] as? Bool ?? true) {
+                    Text("angefragt")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(GC.accent.opacity(0.15), in: Capsule())
+                        .foregroundStyle(GC.accent)
+                }
                 Spacer()
                 Text("\(minuten) min").font(.caption).foregroundStyle(GC.muted)
             }
@@ -194,7 +209,12 @@ struct TermineTab: View {
             .tint(GC.warn)
         }
         .swipeActions(edge: .leading) {
-            if t["abgerechnet"] == nil {
+            if !(t["bestaetigt"] as? Bool ?? true) {
+                Button("Bestätigen") {
+                    Task { await bestaetigen(t["id"] as? Int) }
+                }
+                .tint(GC.accent)
+            } else if t["abgerechnet"] == nil {
                 Button("Abrechnen") { abzurechnen = t }
                     .tint(GC.accent)
             }
@@ -258,6 +278,13 @@ struct TermineTab: View {
         }
         satz = ""; vorschlaege = []; hinweis = ""; wunsch = nil
         await laden()
+    }
+
+    private func bestaetigen(_ id: Int?) async {
+        guard let id, let (url, pat) = zugang() else { return }
+        if await AblageService.terminBestaetigen(id: id, basis: url, pat: pat) {
+            await laden()
+        }
     }
 
     private func absagen(_ id: Int?) async {

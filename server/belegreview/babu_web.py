@@ -123,9 +123,25 @@ def _db() -> sqlite3.Connection:
          ust_satz INTEGER NOT NULL DEFAULT 19, aktiv INTEGER NOT NULL DEFAULT 1,
          angelegt TEXT)""")
     # Termine bekommen Preis und Abrechnung nachgerüstet.
+    # WhatsApp: ein Gesprächsfaden je Telefonnummer, damit „2" als Antwort
+    # weiß, worauf es sich bezieht. Auch das sind personenbezogene Daten —
+    # deshalb hier und nicht in der Belegbox.
+    conn.execute("""CREATE TABLE IF NOT EXISTS wa_faden
+        (id INTEGER PRIMARY KEY AUTOINCREMENT, un TEXT NOT NULL,
+         telefon TEXT NOT NULL, name TEXT, stand TEXT NOT NULL DEFAULT 'neu',
+         wunsch TEXT, vorschlaege TEXT, termin INTEGER, stumm INTEGER NOT NULL
+         DEFAULT 0, begonnen TEXT, zuletzt TEXT, UNIQUE (un, telefon))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS wa_nachricht
+        (id INTEGER PRIMARY KEY AUTOINCREMENT, un TEXT NOT NULL,
+         faden INTEGER NOT NULL, richtung TEXT NOT NULL, text TEXT NOT NULL,
+         wa_id TEXT, zeit TEXT NOT NULL)""")
+    conn.execute("""CREATE INDEX IF NOT EXISTS wa_nachricht_faden
+        ON wa_nachricht (faden, id)""")
+
     for spalte, typ in (("preis", "REAL"), ("ust_satz", "INTEGER"),
                         ("abgerechnet", "TEXT"), ("zahlart", "TEXT"),
-                        ("kundin_id", "INTEGER")):
+                        ("kundin_id", "INTEGER"), ("bestaetigt", "INTEGER"),
+                        ("quelle", "TEXT"), ("telefon", "TEXT")):
         try:
             conn.execute(f"ALTER TABLE termin ADD COLUMN {spalte} {typ}")
         except sqlite3.OperationalError:
@@ -3426,13 +3442,18 @@ def _termine_lesen(un: str, von: str, bis: str) -> list[dict]:
     with _DB_LOCK, _db() as c:
         zeilen = c.execute(
             """SELECT id, start, minuten, wer, kundin, leistung, notiz, abgesagt,
-                      preis, ust_satz, abgerechnet, zahlart, kundin_id
+                      preis, ust_satz, abgerechnet, zahlart, kundin_id,
+                      bestaetigt, quelle, telefon
                FROM termin WHERE un=? AND start>=? AND start<=? ORDER BY start""",
             (un, von, bis + "T23:59")).fetchall()
     return [{"id": z[0], "start": z[1], "minuten": z[2], "wer": z[3],
              "kundin": z[4], "leistung": z[5], "notiz": z[6],
              "abgesagt": bool(z[7]), "preis": z[8], "ust_satz": z[9],
-             "abgerechnet": z[10], "zahlart": z[11], "kundin_id": z[12]}
+             "abgerechnet": z[10], "zahlart": z[11], "kundin_id": z[12],
+             # Aus WhatsApp kommt der Termin als Anfrage herein. Termine aus
+             # der App gelten als bestätigt — sie hat sie selbst eingetragen.
+             "bestaetigt": z[13] is None or bool(z[13]),
+             "quelle": z[14] or "app", "telefon": z[15]}
             for z in zeilen]
 
 
@@ -3631,6 +3652,467 @@ def api_termin_loeschen(termin_id: int, request: Request) -> Response:
     inhaber = salon_von(un)
     with _DB_LOCK, _db() as c:
         c.execute("DELETE FROM termin WHERE id=? AND un=?", (termin_id, inhaber))
+    return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Der Terminagent auf WhatsApp.
+#
+# Der Webhook ist die einzige Stelle in babu, an der jemand von außen
+# hineinschreibt — ohne Anmeldung, nur über eine Adresse, die sich
+# herumsprechen kann. Deshalb steht vor allem anderen die Signaturprüfung,
+# und deshalb bucht der Agent nur „angefragt": eine Telefonnummer soll den
+# Kalender nicht endgültig vollschreiben können.
+# ---------------------------------------------------------------------------
+
+WA_GRAPH = os.environ.get("WA_GRAPH", "https://graph.facebook.com/v21.0")
+_WA_SCHLOSS = threading.Lock()
+
+
+def _wa_konto_zu(telefon_id: str) -> str | None:
+    """Welchem Salon gehört diese Absendernummer?
+
+    Ein Webhook für alle: Meta sagt nur, an welche Geschäftsnummer die
+    Nachricht ging. Findet sich dazu kein Konto, wird nichts getan — lieber
+    eine Nachricht verlieren als sie im falschen Kalender einzutragen.
+    """
+    if not telefon_id:
+        return None
+    with _DB_LOCK, _db() as c:
+        zeile = c.execute(
+            "SELECT un FROM einstellungen WHERE schluessel='wa_telefon_id' "
+            "AND wert=? LIMIT 1", (str(telefon_id),)).fetchone()
+    return zeile[0] if zeile else None
+
+
+def _wa_senden(un: str, telefon: str, text: str) -> bool:
+    """Antworten. Ohne eingerichteten Zugang wird nur mitgeschrieben.
+
+    Das ist Absicht, kein Notbehelf: so lässt sich der ganze Agent im
+    Prüfstand durchspielen, bevor Meta das Geschäftskonto freigibt.
+    """
+    e = db_einstellungen(un)
+    token, absender = e.get("wa_token", ""), e.get("wa_telefon_id", "")
+    if not token or not absender:
+        return False
+    try:
+        r = requests.post(
+            f"{WA_GRAPH}/{absender}/messages",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"messaging_product": "whatsapp", "to": telefon,
+                  "type": "text", "text": {"body": text}},
+            timeout=30)
+        return r.status_code < 300
+    except Exception:  # noqa: BLE001
+        return False        # nie den Token mitloggen
+
+
+def _wa_faden(un: str, telefon: str, name: str) -> dict:
+    with _DB_LOCK, _db() as c:
+        z = c.execute("""SELECT id, name, stand, wunsch, vorschlaege, termin,
+                         stumm FROM wa_faden WHERE un=? AND telefon=?""",
+                      (un, telefon)).fetchone()
+        if not z:
+            cur = c.execute("""INSERT INTO wa_faden (un, telefon, name, stand,
+                               begonnen, zuletzt) VALUES (?,?,?,?,?,?)""",
+                            (un, telefon, name, "neu", _jetzt_iso(), _jetzt_iso()))
+            return {"id": int(cur.lastrowid), "name": name, "stand": "neu",
+                    "wunsch": {}, "vorschlaege": [], "termin": None,
+                    "stumm": False, "frisch": True}
+        if name and not z[1]:
+            c.execute("UPDATE wa_faden SET name=? WHERE id=?", (name, z[0]))
+    return {"id": z[0], "name": z[1] or name, "stand": z[2],
+            "wunsch": json.loads(z[3] or "{}"),
+            "vorschlaege": json.loads(z[4] or "[]"),
+            "termin": z[5], "stumm": bool(z[6]), "frisch": False}
+
+
+def _wa_faden_setzen(faden_id: int, **felder) -> None:
+    erlaubt = {"stand", "wunsch", "vorschlaege", "termin", "stumm", "name"}
+    paare = {k: v for k, v in felder.items() if k in erlaubt}
+    if not paare:
+        return
+    for k in ("wunsch", "vorschlaege"):
+        if k in paare and not isinstance(paare[k], str):
+            paare[k] = json.dumps(paare[k], ensure_ascii=False)
+    satz = ", ".join(f"{k}=?" for k in paare) + ", zuletzt=?"
+    with _DB_LOCK, _db() as c:
+        c.execute(f"UPDATE wa_faden SET {satz} WHERE id=?",
+                  (*paare.values(), _jetzt_iso(), faden_id))
+
+
+def _wa_merken(un: str, faden: int, richtung: str, text: str,
+               wa_id: str = "") -> None:
+    with _DB_LOCK, _db() as c:
+        c.execute("""INSERT INTO wa_nachricht (un, faden, richtung, text,
+                     wa_id, zeit) VALUES (?,?,?,?,?,?)""",
+                  (un, faden, richtung, text[:2000], wa_id, _jetzt_iso()))
+
+
+def _wa_schon_gesehen(wa_id: str) -> bool:
+    """Meta stellt bei jedem Zweifel erneut zu. Ohne diese Prüfung stünde
+    derselbe Termin dreimal im Kalender."""
+    if not wa_id:
+        return False
+    with _DB_LOCK, _db() as c:
+        return c.execute("SELECT 1 FROM wa_nachricht WHERE wa_id=? LIMIT 1",
+                         (wa_id,)).fetchone() is not None
+
+
+def _wa_kundin_zu(un: str, telefon: str) -> dict | None:
+    """Kennen wir die Nummer schon? Dann heißt sie beim Namen."""
+    ziffern = re.sub(r"\D", "", telefon or "")[-9:]
+    if len(ziffern) < 6:
+        return None
+    with _DB_LOCK, _db() as c:
+        for kid, name, tel in c.execute(
+                "SELECT id, name, telefon FROM kundin WHERE un=? AND telefon<>''",
+                (un,)):
+            if re.sub(r"\D", "", tel or "")[-9:] == ziffern:
+                return {"id": kid, "name": name}
+    return None
+
+
+def _wa_wunsch_lesen(text: str, heute, kundin: str) -> dict:
+    """Was steht drin? Das Modell darf verstehen, nicht rechnen."""
+    import whatsapp as wam  # noqa: PLC0415
+    try:
+        r = requests.post(GEMMA_API, json={
+            "model": GEMMA_MODELL, "temperature": 0.1, "max_tokens": 300,
+            "messages": [{"role": "user",
+                          "content": wam.frage_bauen(text, heute, kundin)}],
+        }, timeout=90)
+        r.raise_for_status()
+        antwort = r.json()["choices"][0]["message"]["content"]
+        treffer = re.search(r"\{.*\}", antwort, re.S)
+        return json.loads(treffer.group(0)) if treffer else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _wa_termin_eintragen(un: str, faden: dict, datum: str, zeit: str,
+                         wunsch: dict, telefon: str) -> int | None:
+    """Die Zeit wirklich blockieren — aber als Anfrage.
+
+    Wirklich blockieren, weil ein Vorschlag ohne Sperre bedeutet, dass zwei
+    Kundinnen dieselbe Lücke bekommen. Als Anfrage, weil sonst jeder mit
+    der Nummer den Tag zustellen könnte.
+    """
+    import kalender as ka  # noqa: PLC0415
+    start = f"{datum}T{zeit}"
+    minuten = int(wunsch.get("minuten") or 60)
+    with _TERMIN_SCHLOSS:
+        bestehend = _termine_lesen(un, datum, datum)
+        neu = {"start": start, "minuten": minuten, "wer": wunsch.get("wer") or ""}
+        if ka.stoert(ka.pruefen(neu), bestehend):
+            return None
+        with _DB_LOCK, _db() as c:
+            cur = c.execute("""INSERT INTO termin (un, start, minuten, wer,
+                               kundin, leistung, notiz, abgesagt, bestaetigt,
+                               quelle, telefon, angelegt)
+                               VALUES (?,?,?,?,?,?,?,0,0,'whatsapp',?,?)""",
+                            (un, start, minuten, wunsch.get("wer") or "",
+                             faden.get("name") or wunsch.get("kundin") or "",
+                             wunsch.get("leistung") or "", "", telefon,
+                             _jetzt_iso()))
+            return int(cur.lastrowid)
+
+
+def _wa_offene(un: str, telefon: str) -> int:
+    """Wie viele unbestätigte Termine hält diese Nummer schon?
+
+    Ohne Grenze könnte jemand mit einer Telefonnummer den Kalender
+    zuschreiben — jede Anfrage sperrt schließlich echte Zeit.
+    """
+    with _DB_LOCK, _db() as c:
+        return c.execute(
+            """SELECT COUNT(*) FROM termin WHERE un=? AND telefon=?
+               AND quelle='whatsapp' AND bestaetigt=0 AND abgesagt=0""",
+            (un, telefon)).fetchone()[0]
+
+
+def _wa_antworten(un: str, faden: dict, telefon: str, text: str) -> str:
+    """Ein Zug im Gespräch: hereingekommener Text rein, Antwort raus."""
+    import datetime as dt  # noqa: PLC0415
+    import kalender as ka  # noqa: PLC0415
+    import whatsapp as wam  # noqa: PLC0415
+
+    heute = dt.date.today()
+    e = db_einstellungen(un)
+    salon = e.get("betrieb_name", "")
+    was_will_sie = wam.absicht(text)
+
+    if was_will_sie == "abbruch":
+        _wa_faden_setzen(faden["id"], stumm=1, stand="stumm")
+        return wam.abgemeldet()
+    if faden["stumm"]:
+        _wa_faden_setzen(faden["id"], stumm=0)     # sie schreibt von selbst wieder
+    if was_will_sie == "mensch":
+        _wa_faden_setzen(faden["id"], stand="wartet_mensch")
+        return wam.an_den_salon()
+    if was_will_sie == "absage":
+        _wa_faden_setzen(faden["id"], stand="wartet_mensch")
+        return wam.absage_angenommen()
+
+    # Steht eine Auswahl im Raum? Dann zuerst prüfen, ob sie getroffen wurde.
+    if faden["stand"] == "wartet_wahl" and faden["vorschlaege"]:
+        gewaehlt = wam.wahl_lesen(text, faden["vorschlaege"])
+        if gewaehlt and _wa_offene(un, telefon) >= wam.MAX_OFFEN:
+            _wa_faden_setzen(faden["id"], stand="wartet_mensch", vorschlaege=[])
+            return wam.genug_offen()
+        if gewaehlt:
+            wunsch = faden["wunsch"] or {}
+            datum = wunsch.get("datum")
+            termin_id = _wa_termin_eintragen(un, faden, datum, gewaehlt,
+                                             wunsch, telefon)
+            if termin_id is None:
+                frei = _wa_luecken(un, datum, wunsch)
+                _wa_faden_setzen(faden["id"], vorschlaege=frei,
+                                 stand="wartet_wahl" if frei else "neu")
+                return wam.zeit_ist_weg(frei)
+            _wa_faden_setzen(faden["id"], stand="gebucht", termin=termin_id,
+                             vorschlaege=[])
+            return wam.bestaetigen(datum, gewaehlt, faden.get("name") or "",
+                                   wunsch.get("leistung") or "")
+        # Keine erkennbare Wahl: vielleicht ein ganz neuer Wunsch.
+        neuer = ka.wunsch_pruefen(_wa_wunsch_lesen(text, heute,
+                                                   faden.get("name") or ""), heute)
+        if not neuer["datum"]:
+            return wam.nicht_verstanden(faden["vorschlaege"])
+    else:
+        neuer = ka.wunsch_pruefen(_wa_wunsch_lesen(text, heute,
+                                                   faden.get("name") or ""), heute)
+
+    if faden["frisch"] and not neuer["datum"]:
+        _wa_faden_setzen(faden["id"], stand="wartet_wunsch")
+        return wam.gruss(salon, faden.get("name") or "")
+    if not neuer["datum"]:
+        _wa_faden_setzen(faden["id"], stand="wartet_wunsch",
+                         wunsch={**(faden["wunsch"] or {}), **{
+                             k: v for k, v in neuer.items() if v}})
+        return wam.nach_tag_fragen()
+
+    wunsch = {**(faden["wunsch"] or {}), **{k: v for k, v in neuer.items() if v}}
+    frei = _wa_luecken(un, wunsch["datum"], wunsch)
+    _wa_faden_setzen(faden["id"], stand="wartet_wahl" if frei else "wartet_wunsch",
+                     wunsch=wunsch, vorschlaege=frei)
+    return wam.vorschlagen(wunsch["datum"], frei, wunsch.get("leistung") or "")
+
+
+def _wa_luecken(un: str, datum: str, wunsch: dict) -> list[str]:
+    import kalender as ka  # noqa: PLC0415
+    import whatsapp as wam  # noqa: PLC0415
+    termine = _termine_lesen(un, datum, datum)
+    oeffnung = ka.oeffnung_aus(db_einstellungen(un))
+    frei = ka.freie_luecken(datum, termine, int(wunsch.get("minuten") or 60),
+                            wunsch.get("wer") or "", oeffnung=oeffnung)
+    gewuenscht = wunsch.get("uhrzeit")
+    if gewuenscht and ka.ist_frei(datum, termine, gewuenscht,
+                                  int(wunsch.get("minuten") or 60),
+                                  wunsch.get("wer") or "", oeffnung=oeffnung):
+        frei = [gewuenscht] + [z for z in frei if z != gewuenscht]
+    return frei[:wam.HOECHSTENS_VORSCHLAEGE]
+
+
+def _wa_zug(un: str, telefon: str, name: str, text: str,
+            wa_id: str = "") -> str:
+    """Eine Nachricht vollständig abarbeiten — merken, antworten, merken."""
+    import whatsapp as wam  # noqa: PLC0415
+    with _WA_SCHLOSS:
+        if _wa_schon_gesehen(wa_id):
+            return ""
+        faden = _wa_faden(un, telefon, name)
+        _wa_merken(un, faden["id"], "ein", text, wa_id)
+        try:
+            antwort = wam.kuerzen(_wa_antworten(un, faden, telefon, text))
+        except Exception:  # noqa: BLE001
+            antwort = wam.nicht_verstanden(faden.get("vorschlaege") or [])
+        _wa_merken(un, faden["id"], "aus", antwort)
+    _wa_senden(un, telefon, antwort)
+    return antwort
+
+
+@app.get("/api/whatsapp/webhook")
+def api_wa_pruefung(request: Request) -> Response:
+    """Metas Klopfzeichen beim Einrichten des Webhooks."""
+    p = request.query_params
+    if p.get("hub.mode") != "subscribe":
+        return Response(status_code=400)
+    marke = str(p.get("hub.verify_token") or "")
+    with _DB_LOCK, _db() as c:
+        treffer = c.execute(
+            "SELECT 1 FROM einstellungen WHERE schluessel='wa_verify' AND wert=?",
+            (marke,)).fetchone()
+    if not marke or not treffer:
+        return Response(status_code=403)
+    return Response(str(p.get("hub.challenge") or ""), media_type="text/plain")
+
+
+@app.post("/api/whatsapp/webhook")
+async def api_wa_eingang(request: Request) -> Response:
+    """Was die Kundin geschrieben hat.
+
+    Antwortet immer mit 200, sobald die Signatur stimmt: Meta wiederholt
+    sonst stundenlang. Was babu damit anfängt, ist Metas Sache nicht.
+    """
+    import whatsapp as wam  # noqa: PLC0415
+    koerper = await request.body()
+    if len(koerper) > 512_000:
+        return JSONResponse({"ok": True})
+
+    nutzlast = {}
+    try:
+        nutzlast = json.loads(koerper or b"{}")
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"ok": True})
+
+    for n in wam.eingang_lesen(nutzlast):
+        un = _wa_konto_zu(n["an"])
+        if not un:
+            continue
+        e = db_einstellungen(un)
+        if e.get("wa_an") != "1":
+            continue
+        if not wam.signatur_pruefen(e.get("wa_geheimnis", ""), koerper,
+                                    request.headers.get("X-Hub-Signature-256", "")):
+            return JSONResponse({"ok": True}, status_code=403)
+        _wa_zug(un, n["telefon"], n["name"], n["text"], n["wa_id"])
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/whatsapp")
+def api_wa_stand(request: Request) -> Response:
+    """Was eingerichtet ist — ohne die Geheimnisse herauszugeben."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    inhaber = salon_von(un)
+    e = db_einstellungen(inhaber)
+    with _DB_LOCK, _db() as c:
+        faeden = c.execute("SELECT COUNT(*) FROM wa_faden WHERE un=?",
+                           (inhaber,)).fetchone()[0]
+        angefragt = c.execute(
+            """SELECT COUNT(*) FROM termin WHERE un=? AND quelle='whatsapp'
+               AND bestaetigt=0 AND abgesagt=0""", (inhaber,)).fetchone()[0]
+    return JSONResponse({
+        "an": e.get("wa_an") == "1",
+        "telefon_id": e.get("wa_telefon_id", ""),
+        "token_da": bool(e.get("wa_token")),
+        "geheimnis_da": bool(e.get("wa_geheimnis")),
+        "verify_da": bool(e.get("wa_verify")),
+        "sendet": bool(e.get("wa_token") and e.get("wa_telefon_id")),
+        "gespraeche": faeden, "angefragt": angefragt,
+        "webhook": "/api/whatsapp/webhook",
+    })
+
+
+@app.post("/api/whatsapp/einstellungen")
+async def api_wa_einrichten(request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das richtet die Inhaberin ein."},
+                            status_code=403)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    inhaber = salon_von(un)
+    for feld, schluessel in (("telefon_id", "wa_telefon_id"),
+                             ("token", "wa_token"),
+                             ("geheimnis", "wa_geheimnis"),
+                             ("verify", "wa_verify")):
+        wert = (body or {}).get(feld)
+        if wert is not None:                 # leerer String löscht bewusst
+            db_einstellung_setzen(inhaber, schluessel, str(wert).strip()[:400])
+    if "an" in (body or {}):
+        db_einstellung_setzen(inhaber, "wa_an", "1" if body["an"] else "0")
+    return api_wa_stand(request)
+
+
+@app.post("/api/whatsapp/probe")
+async def api_wa_probe(request: Request) -> Response:
+    """Der Prüfstand: eine Nachricht schreiben, als käme sie von außen.
+
+    Damit lässt sich der ganze Agent durchspielen, solange Meta das
+    Geschäftskonto noch nicht freigegeben hat. Geschickt wird nichts.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    text = str((body or {}).get("text") or "").strip()[:1000]
+    if not text:
+        return JSONResponse({"fehler": "Schreib etwas."}, status_code=400)
+    telefon = str((body or {}).get("telefon") or "probe-0711")[:32]
+    name = str((body or {}).get("name") or "")[:80]
+    antwort = _wa_zug(salon_von(un), telefon, name, text)
+    return JSONResponse({"antwort": antwort, "telefon": telefon})
+
+
+@app.get("/api/whatsapp/faeden")
+def api_wa_faeden(request: Request, faden: int = 0) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        if faden:
+            z = c.execute("""SELECT id, telefon, name, stand FROM wa_faden
+                             WHERE id=? AND un=?""", (faden, inhaber)).fetchone()
+            if not z:
+                return JSONResponse({"fehler": "unbekannt"}, status_code=404)
+            return JSONResponse({"id": z[0], "telefon": z[1], "name": z[2],
+                                 "stand": z[3], "nachrichten": [
+                {"richtung": n[0], "text": n[1], "zeit": n[2]}
+                for n in c.execute(
+                    """SELECT richtung, text, zeit FROM wa_nachricht
+                       WHERE faden=? AND un=? ORDER BY id LIMIT 200""",
+                    (faden, inhaber))]})
+        return JSONResponse({"faeden": [
+            {"id": z[0], "telefon": z[1], "name": z[2], "stand": z[3],
+             "zuletzt": z[4], "stumm": bool(z[5])}
+            for z in c.execute(
+                """SELECT id, telefon, name, stand, zuletzt, stumm FROM wa_faden
+                   WHERE un=? ORDER BY zuletzt DESC LIMIT 60""", (inhaber,))]})
+
+
+@app.post("/api/whatsapp/faden/{faden_id}/loeschen")
+def api_wa_faden_loeschen(faden_id: int, request: Request) -> Response:
+    """Ein Gesprächsverlauf mit Telefonnummer — muss weggehen können."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        c.execute("DELETE FROM wa_nachricht WHERE faden=? AND un=?",
+                  (faden_id, inhaber))
+        c.execute("DELETE FROM wa_faden WHERE id=? AND un=?",
+                  (faden_id, inhaber))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/termin/{termin_id}/bestaetigen")
+def api_termin_bestaetigen(termin_id: int, request: Request) -> Response:
+    """Die Anfrage aus WhatsApp annehmen. Erst hier steht der Termin fest."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        c.execute("UPDATE termin SET bestaetigt=1 WHERE id=? AND un=?",
+                  (termin_id, inhaber))
+        zeile = c.execute("SELECT start, telefon FROM termin WHERE id=? AND un=?",
+                          (termin_id, inhaber)).fetchone()
+    if zeile and zeile[1]:
+        import whatsapp as wam  # noqa: PLC0415
+        _wa_senden(inhaber, zeile[1], wam.kuerzen(
+            f"Dein Termin am {zeile[0][:10]} um {zeile[0][11:16]} Uhr ist "
+            "bestätigt. Wir freuen uns auf dich! ✂️"))
     return JSONResponse({"ok": True})
 
 

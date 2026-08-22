@@ -439,6 +439,8 @@ main{padding:26px 22px 60px;min-height:70dvh}
       <div class="menu-gruppe">Dein Salon</div>
       <button role="menuitem" onclick="menuGeh('#termine')">
         <span class="sym">🗓️</span> Termine</button>
+      <button role="menuitem" onclick="menuGeh('#whatsapp')">
+        <span class="sym">💬</span> WhatsApp-Termine</button>
       <button role="menuitem" onclick="menuGeh('#kundinnen')">
         <span class="sym">💇</span> Kundinnen</button>
       <button role="menuitem" onclick="menuGeh('#team')">
@@ -774,6 +776,52 @@ main{padding:26px 22px 60px;min-height:70dvh}
     </div>
   </section>
 
+  <!-- WHATSAPP: der Terminagent. Die einzige Stelle, an der jemand von
+       außen in babu hineinschreibt — entsprechend viel Erklärung. -->
+  <section class="ansicht" id="a-whatsapp">
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">WhatsApp-Termine</div>
+    <p style="color:var(--gc-desc);margin-bottom:14px">Deine Kundinnen schreiben,
+      babu antwortet mit freien Zeiten und trägt den Termin ein — als Anfrage,
+      die du bestätigst.</p>
+    <div id="w-stand"><div class="skelett"></div></div>
+
+    <div class="karte" style="margin-top:16px">
+      <h3 style="font:600 15px var(--gc-serif);margin-bottom:6px">Ausprobieren</h3>
+      <p style="font-size:13px;color:var(--gc-desc);margin-bottom:8px">
+        Schreib hier, als wärst du die Kundin. Es geht nichts nach draußen —
+        so siehst du, was babu antworten würde.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input class="suchfeld" id="w-probe" style="margin:0;flex:1 1 240px"
+               placeholder="Hätten Sie Donnerstag was frei für Farbe?">
+        <button class="chip" onclick="wProbe()">Absenden</button>
+      </div>
+      <div id="w-probe-log" style="margin-top:12px"></div>
+    </div>
+
+    <div class="lbl" style="margin-top:18px">Gespräche</div>
+    <div id="w-faeden"><div class="skelett"></div></div>
+
+    <details class="karte" style="margin-top:16px">
+      <summary style="cursor:pointer;font:600 15px var(--gc-serif)">Zugang einrichten</summary>
+      <p style="font-size:13px;color:var(--gc-desc);margin:8px 0">
+        Dafür braucht es ein WhatsApp-Business-Konto bei Meta, ein geprüftes
+        Unternehmen und eine freigegebene Nummer. Bis das steht, funktioniert
+        der Prüfstand oben trotzdem.</p>
+      <div style="display:grid;gap:8px">
+        <input class="suchfeld" id="w-telefon-id" style="margin:0" placeholder="Telefonnummern-ID (phone_number_id)">
+        <input class="suchfeld" id="w-token" style="margin:0" type="password" placeholder="Zugangstoken">
+        <input class="suchfeld" id="w-geheimnis" style="margin:0" type="password" placeholder="App-Geheimnis (für die Signatur)">
+        <input class="suchfeld" id="w-verify" style="margin:0" placeholder="Prüfwort für den Webhook (frei wählbar)">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button class="chip" onclick="wSpeichern()">Sichern</button>
+          <span style="font-size:12px;color:var(--gc-muted)">Webhook-Adresse:
+            <code id="w-adresse">…</code></span>
+        </div>
+      </div>
+      <div id="w-fehler" style="font-size:12px;color:var(--gc-accent);margin-top:8px"></div>
+    </details>
+  </section>
+
   <!-- PREISE: was der Salon anbietet. Ohne Preis kann ein Termin nichts wert sein. -->
   <section class="ansicht" id="a-preise">
     <a class="zurueck" href="#termine">‹ Termine</a>
@@ -974,7 +1022,7 @@ const ansichten = { gesperrt: () => {}, heute: ladeHeute, belege: ladeBelege, fr
                     abschluss: ladeAbschluss,
                     zahlen: ladeZahlen, bank: ladeBank, saloncheck: ladeSalonCheck,
                     termine: ladeTermine, kundinnen: ladeKundinnen,
-                    preise: ladePreise,
+                    preise: ladePreise, whatsapp: ladeWhatsapp,
                     rechnungen: ladeRechnungen,
                     vertraege: ladeVertraege, marketing: ladeMarketing,
                     briefkopf: ladeBriefkopf,
@@ -2760,7 +2808,10 @@ async function ladeTermine(){
       ${t.leistung ? `<span class="chip" style="font-size:11px">${esc(t.leistung)}</span>` : ""}
       ${t.wer ? `<span class="wann">bei ${esc(t.wer)}</span>` : ""}
       <span class="wann">${t.minuten} min</span>
-      ${t.abgerechnet
+      ${!t.bestaetigt
+        ? `<button class="chip" style="font-size:11px" onclick="terminBestaetigen(${t.id})">
+             Anfrage aus WhatsApp — bestätigen</button>`
+        : t.abgerechnet
         ? `<span class="chip" style="font-size:11px">✓ ${euro(t.preis || 0)} ${t.zahlart === "karte" ? "Karte" : "bar"}</span>`
         : `<button class="chip" style="font-size:11px" onclick="abrechnenFragen(${t.id}, ${t.preis || 0})">Abrechnen</button>`}
       <button class="loeschknopf" onclick="terminAbsagen(${t.id})">Abgesagt</button>
@@ -2835,6 +2886,103 @@ async function preisSpeichern(){
 async function preisWeg(id){
   await api("/api/leistung/" + id + "/loeschen", {method:"POST"});
   ladePreise();
+}
+
+/* ————— WhatsApp-Terminagent ————— */
+async function ladeWhatsapp(){
+  const ziel = $("#w-stand");
+  let d;
+  try{ d = await (await api("/api/whatsapp")).json(); }
+  catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+
+  $("#w-adresse").textContent = location.origin + d.webhook;
+  $("#w-telefon-id").value = d.telefon_id || "";
+  ziel.innerHTML = `<div class="karte">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <b>${d.an ? "Der Agent ist an." : "Der Agent ist aus."}</b>
+      <button class="chip" onclick="wSchalten(${d.an ? "false" : "true"})">
+        ${d.an ? "Ausschalten" : "Einschalten"}</button>
+      ${d.sendet
+        ? `<span class="chip" style="font-size:11px">verbunden</span>`
+        : `<span class="chip" style="font-size:11px">noch nicht verbunden — nur Prüfstand</span>`}
+    </div>
+    <div style="font-size:13px;color:var(--gc-desc);margin-top:8px">
+      ${d.gespraeche} Gespräche · ${d.angefragt} Termine warten auf dich
+      ${d.angefragt ? `<a class="chip" style="margin-left:6px" href="#termine">Ansehen</a>` : ""}
+    </div>
+  </div>`;
+  ladeFaeden();
+}
+
+async function wSchalten(an){
+  await api("/api/whatsapp/einstellungen", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify({an})});
+  ladeWhatsapp();
+}
+
+async function wSpeichern(){
+  const body = {telefon_id: $("#w-telefon-id").value};
+  for (const [feld, id] of [["token","#w-token"],["geheimnis","#w-geheimnis"],
+                            ["verify","#w-verify"]]){
+    if ($(id).value) body[feld] = $(id).value;
+  }
+  const r = await api("/api/whatsapp/einstellungen", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  if (!r.ok){ $("#w-fehler").textContent = "Das ging nicht."; return; }
+  $("#w-fehler").textContent = "";
+  $("#w-token").value = ""; $("#w-geheimnis").value = "";
+  ladeWhatsapp();
+}
+
+async function wProbe(){
+  const text = $("#w-probe").value.trim();
+  if (!text) return;
+  const log = $("#w-probe-log");
+  log.insertAdjacentHTML("beforeend",
+    `<div style="text-align:right;margin-bottom:6px"><span class="chip">${esc(text)}</span></div>`);
+  $("#w-probe").value = "";
+  const r = await api("/api/whatsapp/probe", {method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({text, name: "Prüfstand"})});
+  const d = await r.json().catch(() => ({}));
+  log.insertAdjacentHTML("beforeend",
+    `<div class="karte" style="margin-bottom:6px;white-space:pre-wrap">${esc(d.antwort || d.fehler || "…")}</div>`);
+  log.scrollTop = log.scrollHeight;
+  ladeFaeden();
+}
+
+async function ladeFaeden(){
+  const ziel = $("#w-faeden");
+  let d;
+  try{ d = await (await api("/api/whatsapp/faeden")).json(); }
+  catch{ ziel.innerHTML = ""; return; }
+  const liste = d.faeden || [];
+  ziel.innerHTML = !liste.length
+    ? `<div class="leer">Noch hat niemand geschrieben.</div>`
+    : liste.map(f => `<div class="ablage-zeile" style="cursor:pointer"
+        onclick="wFaden(${f.id})">
+        <b>${esc(f.name || f.telefon)}</b>
+        <span class="wann">${esc(f.stand)}</span>
+        ${f.stumm ? `<span class="chip" style="font-size:11px">abgemeldet</span>` : ""}
+        <button class="loeschknopf" onclick="event.stopPropagation();wFadenWeg(${f.id})">Weg</button>
+      </div>`).join("");
+}
+
+async function wFaden(id){
+  const d = await (await api("/api/whatsapp/faeden?faden=" + id)).json();
+  $("#w-faeden").innerHTML = `<div class="karte">
+    <a class="zurueck" href="javascript:ladeFaeden()">‹ Alle Gespräche</a>
+    <h3 style="font:600 15px var(--gc-serif);margin:6px 0">${esc(d.name || d.telefon)}</h3>
+    ${(d.nachrichten || []).map(n => `<div style="margin-bottom:6px;text-align:${n.richtung === "ein" ? "left" : "right"}">
+        <span class="chip" style="white-space:pre-wrap;text-align:left;display:inline-block">${esc(n.text)}</span>
+      </div>`).join("")}
+  </div>`;
+}
+
+async function wFadenWeg(id){
+  if (!confirm("Gespräch mit Telefonnummer löschen?")) return;
+  await api("/api/whatsapp/faden/" + id + "/loeschen", {method:"POST"});
+  ladeFaeden();
 }
 
 /* ————— Kundinnen ————— */
@@ -2992,6 +3140,11 @@ async function terminBuchen(zeit){
     `<div class="leer">${esc(d.fehler || "Das ging nicht.")}</div>`; return; }
   $("#t-satz-feld").value = ""; $("#t-vorschlaege").innerHTML = "";
   tWunsch = null;
+  ladeTermine();
+}
+
+async function terminBestaetigen(id){
+  await api("/api/termin/" + id + "/bestaetigen", {method:"POST"});
   ladeTermine();
 }
 
