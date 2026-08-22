@@ -183,6 +183,29 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
 .chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 10px}
 .chips button{border:1px solid var(--gc-border);background:var(--gc-canvas);border-radius:999px;
   padding:6px 11px;font-size:12px;cursor:pointer;color:var(--gc-desc)}
+
+/* ── Bildschirme in der Hosentasche ───────────────────────────────── */
+.taschen{display:grid;gap:22px;margin-top:34px}
+@media(min-width:760px){.taschen{grid-template-columns:repeat(4,1fr);gap:16px}}
+/* Eigener Name: `.rahmen` gibt es oben schon für die Foto-Telefone. */
+.taschen-rahmen{background:#1f1d1b;border-radius:26px;padding:7px;
+  box-shadow:0 12px 30px rgba(31,29,27,.14)}
+.schirm{background:var(--gc-canvas);border-radius:20px;padding:12px 11px 14px;
+  min-height:210px;text-align:left}
+.schirm .kopf{font:600 11px var(--gc-sans);color:var(--gc-fg);
+  padding-bottom:7px;border-bottom:1px solid var(--gc-border);margin-bottom:8px;
+  display:flex;justify-content:space-between;align-items:center}
+.schirm .zeile{display:flex;justify-content:space-between;gap:6px;
+  font-size:10.5px;color:var(--gc-body);padding:4px 0}
+.schirm .zeile b{font-variant-numeric:tabular-nums}
+.schirm .klein{font-size:9.5px;color:var(--gc-muted)}
+.schirm .stark{font:600 13px var(--gc-serif);color:var(--gc-fg);margin:2px 0 6px}
+.schirm .pille{display:inline-block;font-size:9px;padding:2px 7px;border-radius:99px;
+  background:var(--gc-desk);color:var(--gc-desc)}
+.schirm .haken{color:#6f8a6e;font-weight:600}
+.taschen figcaption{margin-top:12px;font-size:13.5px;color:var(--gc-desc);
+  text-align:left;line-height:1.5}
+.taschen figcaption b{color:var(--gc-fg)}
 </style>
 </head>
 <body>
@@ -470,6 +493,80 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
 </section>
 
 <!-- ── 5 · Für deinen Salon ─────────────────────────────────────────── -->
+<!-- ─────────────────────────────── Betrieb in der Hosentasche ─────────────────────────────── -->
+<section>
+  <div class="lbl">Ein Betrieb, ein Telefon</div>
+  <h2>Dein ganzer Laden passt in die Hosentasche.</h2>
+  <p class="sub">Nicht nur die Belege. Der ganze Betrieb: wer heute kommt, was
+  reinkommt, was rausgeht, was du anderen berechnest, was das Amt will. Vier
+  Bildschirme — mehr brauchst du nicht.</p>
+
+  <div class="taschen">
+    <figure>
+      <div class="taschen-rahmen"><div class="schirm">
+        <div class="kopf"><span>Termine</span><span class="klein">Sa, 22. Aug</span></div>
+        <div class="klein" style="margin-bottom:6px">3 Termine, 3 Std 45 min gebucht</div>
+        <div class="zeile"><b>11:00</b><span>Frau Holder</span><span class="pille">Schnitt</span></div>
+        <div class="zeile"><b>13:30</b><span>Frau Sommer</span><span class="pille">Farbe</span></div>
+        <div class="zeile"><b>16:00</b><span>Herr Betz</span><span class="pille">Schnitt</span></div>
+        <div class="klein" style="margin-top:8px;padding-top:7px;
+          border-top:1px solid var(--gc-border)">„Frau Meier Donnerstag Farbe" —
+          babu sucht die Lücke.</div>
+      </div></div>
+      <figcaption><b>Wer heute kommt.</b> Termin einfach hinschreiben, wie du
+      ihn sagen würdest. babu findet die freie Zeit.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="taschen-rahmen"><div class="schirm">
+        <div class="kopf"><span>Erfassen</span><span class="klein">Kamera</span></div>
+        <div class="stark">Halt einfach drauf.</div>
+        <div class="zeile"><span>Kassenbon</span><span class="haken">bei den Belegen ✓</span></div>
+        <div class="zeile"><span>Mietvertrag</span><span class="haken">bei den Verträgen ✓</span></div>
+        <div class="zeile"><span>Brief vom Amt</span><span class="haken">bei der Post ✓</span></div>
+        <div class="zeile"><span>Kontoauszug</span><span class="haken">bei den Auszügen ✓</span></div>
+        <div class="klein" style="margin-top:8px">Du musst nicht sagen, was es ist.</div>
+      </div></div>
+      <figcaption><b>Ein Foto, egal wovon.</b> babu erkennt, was es ist, und
+      legt es an die richtige Stelle. Ohne Nachfrage.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="taschen-rahmen"><div class="schirm">
+        <div class="kopf"><span>Rechnungen</span><span class="klein">August</span></div>
+        <div class="stark">Offen · 535,50 €</div>
+        <div class="zeile"><span>Jana Allgaier</span><b>535,50 €</b></div>
+        <div class="klein">Nr. 2026-0001 · Stuhlmiete</div>
+        <div class="klein" style="margin-top:9px;padding-top:7px;
+          border-top:1px solid var(--gc-border)">Vom Konto:</div>
+        <div class="zeile"><span>Jana hat am 02.09. bezahlt</span>
+          <span class="pille">Stimmt</span></div>
+      </div></div>
+      <figcaption><b>Was dir jemand schuldet.</b> Rechnung schreiben in einer
+      Minute — und babu sieht im Kontoauszug, wenn bezahlt wurde.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="taschen-rahmen"><div class="schirm">
+        <div class="kopf"><span>Dein Monat</span><span class="klein">3. September</span></div>
+        <div class="stark">August ist gerechnet und kann raus.</div>
+        <div class="zeile"><span>Eingenommen</span><b>4.812,00 €</b></div>
+        <div class="zeile"><span>Ausgegeben</span><b>2.104,50 €</b></div>
+        <div class="zeile" style="border-top:1px solid var(--gc-border);
+          margin-top:4px;padding-top:6px"><b>Bleibt dir</b><b>2.707,50 €</b></div>
+        <div class="klein" style="margin-top:8px">Umsatzsteuer fällig in 7 Tagen</div>
+      </div></div>
+      <figcaption><b>Was am Ende bleibt.</b> Am 3. liegt der Monat fertig da.
+      Du schaust drüber — das war's.</figcaption>
+    </figure>
+  </div>
+
+  <p class="sub" style="margin-top:34px"><strong>Und das ist der ganze
+  Unterschied:</strong> Du führst keinen Papierkram mehr. Du schaust ab und zu
+  drauf und sagst Ja. Alles andere hat babu schon gemacht — zwischen zwei
+  Terminen, während du geschnitten hast.</p>
+</section>
+
 <section style="background:var(--gc-chrome)">
   <div class="lbl">Für deinen Salon gebaut</div>
   <h2>babu kennt deinen Alltag.</h2>
