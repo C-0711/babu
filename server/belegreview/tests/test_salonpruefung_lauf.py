@@ -230,3 +230,33 @@ def test_ein_kaputter_bericht_kippt_den_lauf_nicht(welt, monkeypatch):
     st = status_leer()
     bw._bericht_schreiben("nina@0711.io", 2025, st, DOKUMENTE, [], {})
     assert st.get("bericht") is None
+
+
+def test_der_bericht_nennt_die_art_in_klartext(welt):
+    """„Erkannt als: behoerde" ist Vokabular. Beide Vokabulare müssen im
+    Bericht als Klartext ankommen."""
+    bw, _ = welt
+    konto(bw)
+    bw._bericht_schreiben("nina@0711.io", 2025, status_leer(), DOKUMENTE, [
+        {"datei": "a.pdf", "art": "behoerde"},
+        {"datei": "b.pdf", "art": "kontoauszug"},
+        {"datei": "c.pdf", "art": "euer"},
+    ], {"zahlen": {}, "unsicher": []})
+    text = bw.git_show("abschluss/2025/bericht.md").decode()
+    assert "Post vom Amt" in text
+    assert "Kontoauszug" in text
+    assert "Gewinnrechnung" in text
+    assert "behoerde" not in text
+
+
+def test_ein_bekannter_ablageort_wird_uebernommen(welt):
+    """Unterlagen, die schon einsortiert sind, liegen nicht unter
+    abschluss/<jahr> — dann darf der Bericht das nicht behaupten."""
+    bw, _ = welt
+    konto(bw)
+    bw._bericht_schreiben("nina@0711.io", 2025, status_leer(), DOKUMENTE,
+                          [{"datei": "a.pdf", "art": "kontoauszug",
+                            "ablage": "auszuege/2026-01"}],
+                          {"zahlen": {}, "unsicher": []})
+    text = bw.git_show("abschluss/2025/bericht.md").decode()
+    assert "auszuege/2026-01" in text

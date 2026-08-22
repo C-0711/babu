@@ -2741,7 +2741,7 @@ def _bericht_schreiben(un: str, jahr: int, status: dict, geerntet: list[dict],
                       "art": d.get("art"),
                       "art_label": _ABSCHLUSS_ART_LABEL.get(d.get("art"),
                                                             d.get("art")),
-                      "ablage": f"abschluss/{jahr}"}
+                      "ablage": d.get("ablage") or f"abschluss/{jahr}"}
                      for d in ergebnisse]
         zahlen = {k: v for k, v in (kennzahlen.get("zahlen") or {}).items()
                   if isinstance(v, (int, float))}
@@ -2761,10 +2761,15 @@ def _bericht_schreiben(un: str, jahr: int, status: dict, geerntet: list[dict],
         print(f"[salonpruefung] Bericht fehlgeschlagen: {ex!r}", flush=True)
 
 
+# Beide Vokabulare in Klartext: `abschluss_lesen` sagt euer/bwa/bescheid,
+# `einsortieren` sagt behoerde/kontoauszug/vertrag/beleg. Im Bericht stand
+# sonst „Erkannt als: behoerde" — das ist Vokabular, kein Klartext.
 _ABSCHLUSS_ART_LABEL = {
     "euer": "Gewinnrechnung", "bwa": "Monatsauswertung",
     "bescheid": "Steuerbescheid", "anlagen": "Anlagenliste",
     "susa": "Kontenliste", "sonstiges": "Unterlage",
+    "behoerde": "Post vom Amt", "kontoauszug": "Kontoauszug",
+    "vertrag": "Vertrag", "beleg": "Beleg",
 }
 
 
