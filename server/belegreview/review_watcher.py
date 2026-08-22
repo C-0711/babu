@@ -484,6 +484,21 @@ def felder_extrahieren(zeilen: list[tuple[str, float]]) -> dict:
     return f
 
 
+def _als_betrag(wert) -> float | None:
+    """Was das Modell als Zahl meldet, robust in einen Betrag verwandeln."""
+    if wert in (None, ""):
+        return None
+    try:
+        if isinstance(wert, str):
+            wert = wert.replace("€", "").replace(" ", "")
+            if "," in wert:
+                wert = wert.replace(".", "").replace(",", ".")
+        betrag = round(float(wert), 2)
+    except (TypeError, ValueError):
+        return None
+    return betrag if 0 <= betrag < 1_000_000 else None
+
+
 def einschaetzung(f: dict, sem: dict | None, dokumentklasse: str) -> dict:
     """Steuerliche Ersteinschätzung: semantische Belegart (bge-m3) bestimmt das
     Konto; deterministische Signale (Bewirtung) übersteuern; der Keyword-
@@ -633,22 +648,89 @@ def verarbeite(pfad: str) -> None:
         vlm = vlm_lesen(lokal)
     except Exception as ex:  # noqa: BLE001
         log(f"VLM nicht verfügbar: {ex!r}")
+    # Wer entscheidet — und warum es umgedreht wurde.
+    #
+    # Bis 22.08.2026 durfte das Bildmodell nur drei Felder füllen, und auch
+    # das nur, wenn die Regex nichts gefunden hatte. Den Betrag durfte es
+    # überhaupt nicht setzen. Das ging schief, sobald ein Beleg mehr als
+    # eine Zahl enthält: auf einer Parkquittung gewann der Steuersatz
+    # („19,00 %" statt 3,50 €), auf einer Rechnung das Stammkapital aus der
+    # Fußzeile (43.783,86 € statt 40,00 €), und als Lieferant stand das
+    # Wort „Rechnungsadresse", weil das die erste Zeile war.
+    #
+    # Eine Regex sieht Zeichen, kein Dokument. Sie kann nicht wissen, dass
+    # eine Prozentangabe kein Betrag ist, dass eine Fußzeile juristisches
+    # Beiwerk ist oder dass auf einer Rechnung oben der Empfänger steht und
+    # unten der Aussteller. Das Modell sieht genau das.
+    #
+    # Also führt jetzt das Modell, und die deterministische Lane wird zur
+    # Gegenprobe. Wo beide etwas sagen und sich widersprechen, wird nicht
+    # still entschieden, sondern gefragt — dasselbe Muster wie überall in
+    # babu: vorschlagen, nachrechnen, im Zweifel nachfragen.
+    regex_lesung = {k: f.get(k) for k in
+                    ("lieferant", "beleg_nr", "datum", "brutto", "netto", "ust")}
+    widerspruch: list[str] = []
+
     if vlm:
         for feld in ("lieferant", "beleg_nr", "datum"):
-            if not f.get(feld) and vlm.get(feld):
-                f[feld] = str(vlm[feld])
-                f.setdefault("herkunft_vlm", []).append(feld)
+            wert = vlm.get(feld)
+            if wert in (None, ""):
+                continue
+            wert = str(wert).strip()
+            alt_wert = (f.get(feld) or "").strip()
+            if alt_wert and alt_wert.lower() != wert.lower():
+                widerspruch.append(
+                    f"{feld}: gelesen „{wert}“, Textsuche fand „{alt_wert}“")
+            f[feld] = wert
+            f.setdefault("herkunft_vlm", []).append(feld)
+
+        # Beträge: nur übernehmen, wenn sie in sich stimmig sind. Ein Modell,
+        # das Netto und Umsatzsteuer nennt, die nicht zum Brutto passen, hat
+        # geraten — dann bleibt die gerechnete Lane stehen.
+        vlm_brutto = _als_betrag(vlm.get("brutto"))
+        if vlm_brutto is not None and vlm_brutto > 0:
+            if f.get("brutto") is not None and abs(vlm_brutto - f["brutto"]) > 0.011:
+                widerspruch.append(
+                    f"Betrag: gelesen {vlm_brutto:.2f} €, Textsuche fand "
+                    f"{f['brutto']:.2f} €")
+            f["brutto"] = vlm_brutto
+            f.setdefault("herkunft_vlm", []).append("brutto")
+
+            vlm_netto = _als_betrag(vlm.get("netto"))
+            vlm_ust = _als_betrag(vlm.get("ust"))
+            if (vlm_netto is not None and vlm_ust is not None
+                    and abs(vlm_netto + vlm_ust - vlm_brutto) < 0.011):
+                f["netto"], f["ust"] = vlm_netto, vlm_ust
+                f["summenprobe_ok"] = True
+                f.setdefault("herkunft_vlm", []).extend(["netto", "ust"])
+            elif f.get("netto") is None or abs(
+                    (f.get("netto") or 0) + (f.get("ust") or 0) - vlm_brutto) > 0.011:
+                # Die alte Aufteilung passt nicht mehr zum neuen Brutto.
+                satz = f.get("ust_satz") or 0
+                if satz > 0:
+                    netto = round(vlm_brutto / (1 + satz / 100), 2)
+                    f["netto"], f["ust"] = netto, round(vlm_brutto - netto, 2)
+                else:
+                    f["netto"], f["ust"] = vlm_brutto, 0.0
+                f["summenprobe_ok"] = False
+
         if vlm.get("bewirtung") is True:
             f["bewirtungssignal"] = True
+
+    f["regex_lesung"] = regex_lesung
+    f["widerspruch"] = widerspruch
 
     e = einschaetzung(f, sem, dokumentklasse)
     if aehnlich:
         e["hinweise"].append(
             f"Ähnlichster früherer Beleg: {aehnlich['datei']} ({aehnlich['score']:.0%}).")
-    if vlm and vlm.get("brutto") is not None and f["brutto"] is not None \
-            and abs(float(vlm["brutto"]) - f["brutto"]) > 0.011:
+    # Widersprochen sich die beiden Lesungen, wird das sichtbar — und der
+    # Beleg bekommt keinen stillen grünen Haken.
+    if widerspruch:
         e["hinweise"].append(
-            f"Abweichung: VLM liest Brutto {vlm['brutto']}, deterministische Lane {f['brutto']} — prüfen.")
+            "Zwei Lesungen weichen ab (" + "; ".join(widerspruch)
+            + "). Übernommen ist die Lesung aus dem Bild — bitte kurz ansehen.")
+        f.setdefault("offen", []).append("Zwei Lesungen weichen ab — kurz prüfen.")
 
     review = {
         "datei": pfad,
