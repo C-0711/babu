@@ -65,8 +65,8 @@ def test_jedes_feld_nennt_seine_quelle():
     ("USt-IdNr. DE123456789", "ust_id", "DE123456789"),
     ("IBAN DE02 1203 0000 0000 2020 51", "iban", "DE02120300000000202051"),
     ("BIC GENODEF1S02", "bic", "GENODEF1S02"),
-    ("Tel.: 0711 1234567", "betrieb_telefon", "0711 1234567"),
-    ("hallo@supremebeauty.de", "betrieb_email", "hallo@supremebeauty.de"),
+    ("Tel.: 0711 1234567", "telefon", "0711 1234567"),
+    ("hallo@supremebeauty.de", "email", "hallo@supremebeauty.de"),
     ("Salon SupremeBeauty GmbH", "rechtsform", "GmbH"),
     ("Friseur Weingärtle e.K.", "rechtsform", "e.K."),
 ])
@@ -121,10 +121,12 @@ def test_der_bescheid_schlaegt_den_briefbogen():
 
 
 def test_ein_widerspruch_verliert_die_sicherheit():
-    """Zwei Unterlagen, zwei Nummern — dann darf babu nicht still entscheiden."""
+    """Zwei Unterlagen, zwei Nummern — dann darf babu nicht still entscheiden.
+    Beide Arten müssen die Steuernummer liefern dürfen, sonst gibt es gar
+    keinen Widerspruch."""
     f = felder_ernten([
         {"datei": "a.pdf", "art": "bescheid", "text": "Steuernummer 93815/12345"},
-        {"datei": "b.pdf", "art": "sonstiges", "text": "Steuernummer 11/111/11111"},
+        {"datei": "b.pdf", "art": "euer", "text": "Steuernummer 11/111/11111"},
     ])
     s = feld(f, "steuernummer")
     assert s.sicher is False
@@ -343,7 +345,7 @@ def test_der_bericht_zeigt_alles():
 def test_ein_unsicheres_feld_ist_im_bericht_markiert():
     felder = felder_ernten([
         {"datei": "a.pdf", "art": "bescheid", "text": "Steuernummer 93815/12345"},
-        {"datei": "b.pdf", "art": "sonstiges", "text": "Steuernummer 11/111/11111"},
+        {"datei": "b.pdf", "art": "euer", "text": "Steuernummer 11/111/11111"},
     ])
     text = bericht(salon=None, dokumente=[], felder=felder, befunde=[])
     zeile = [z for z in text.splitlines() if "Steuernummer" in z][0]
@@ -361,3 +363,142 @@ def test_ein_strich_im_wert_zerlegt_die_tabelle_nicht():
 def test_ein_bericht_ohne_alles_ist_trotzdem_lesbar():
     text = bericht(salon=None, dokumente=[], felder=[], befunde=[])
     assert "deinen Salon" in text and "0 Unterlagen" in text
+
+
+# ————— Die Anschrift für die Rechnung —————
+
+def test_anschrift_wird_zusammengesetzt():
+    """rechnungen.py liest `anschrift` als eine Zeile — die muss entstehen."""
+    f = felder_aus_text(BESCHEID, quelle="b.pdf")
+    assert feld(f, "betrieb_strasse").wert == "Hauptstraße 3"
+    assert feld(f, "anschrift").wert == "Hauptstraße 3, 70173 Stuttgart"
+
+
+def test_eine_halbe_anschrift_wird_nicht_gesetzt():
+    """Ohne Straße keine Anschrift — halb ist auf einer Rechnung schlechter
+    als gar nicht."""
+    f = felder_aus_text("70173 Stuttgart", quelle="b.pdf")
+    assert feld(f, "betrieb_ort").wert == "Stuttgart"
+    assert feld(f, "anschrift") is None
+
+
+@pytest.mark.parametrize("zeile, soll", [
+    ("Hauptstraße 3", "Hauptstraße 3"),
+    ("Königstr. 41", "Königstr. 41"),
+    ("Am Marktplatz 7a", "Am Marktplatz 7a"),
+    ("Industriering 12", "Industriering 12"),
+    ("Nur ein Name", None),
+])
+def test_strassen(zeile, soll):
+    f = felder_aus_text(zeile, quelle="x.pdf")
+    treffer = feld(f, "betrieb_strasse")
+    assert (treffer.wert if treffer else None) == soll
+
+
+# ————— Wessen Daten stehen da? —————
+#
+# Aufgefallen am 22.08.2026 im Trockenlauf über echte Unterlagen: Auf einem
+# Steuerbescheid steht oben das Finanzamt mit Anschrift und Bankverbindung.
+# Die Ernte hätte auf Ninas Rechnungen die Kontonummer des Finanzamts
+# gesetzt. Diese Tests halten fest, dass das nicht wieder passiert.
+
+BESCHEID_MIT_BEHOERDENKOPF = """
+Finanzamt Ludwigsburg
+Alt-Württ.-Allee 40
+71638 Ludwigsburg
+Tel.: 07141/18-0
+IBAN DE24 6000 0000 0060 4015 00
+BIC MARKDEF1600
+Bescheid für 2024 über Einkommensteuer
+Steuernummer 71015/73457
+"""
+
+
+def test_die_anschrift_des_finanzamts_wird_nicht_uebernommen():
+    f = felder_ernten([{"datei": "bescheid.pdf", "art": "bescheid",
+                        "text": BESCHEID_MIT_BEHOERDENKOPF}])
+    assert feld(f, "anschrift") is None
+    assert feld(f, "betrieb_strasse") is None
+    assert feld(f, "betrieb_ort") is None
+
+
+def test_das_konto_des_finanzamts_wird_nicht_uebernommen():
+    """Der teuerste denkbare Fehler: fremde IBAN auf der eigenen Rechnung."""
+    f = felder_ernten([{"datei": "bescheid.pdf", "art": "bescheid",
+                        "text": BESCHEID_MIT_BEHOERDENKOPF}])
+    assert feld(f, "iban") is None
+    assert feld(f, "bic") is None
+
+
+def test_die_telefonnummer_der_behoerde_wird_nicht_uebernommen():
+    f = felder_ernten([{"datei": "bescheid.pdf", "art": "bescheid",
+                        "text": BESCHEID_MIT_BEHOERDENKOPF}])
+    assert feld(f, "telefon") is None
+
+
+def test_steuernummer_und_finanzamt_kommen_sehr_wohl_vom_bescheid():
+    """Wofür ein Bescheid da ist, darf er auch sagen."""
+    f = felder_ernten([{"datei": "bescheid.pdf", "art": "bescheid",
+                        "text": BESCHEID_MIT_BEHOERDENKOPF}])
+    assert feld(f, "steuernummer").wert == "71015/73457"
+    assert feld(f, "finanzamt").wert.startswith("Ludwigsburg")
+
+
+def test_der_vermieter_im_mietvertrag_wird_nicht_zur_salonadresse():
+    f = felder_ernten([{"datei": "miete.pdf", "art": "vertrag", "text": """
+        FBS-Gruppe GmbH · Info@FBS-Gruppe.de · Tel. 07141/95 47 50
+        Lindenstraße 12
+        71634 Ludwigsburg
+        Mietvertrag zwischen Vermieter und Mieter
+    """}])
+    assert f == []
+
+
+def test_die_iban_kommt_vom_kontoauszug():
+    """Der Kontoinhaber ist die Salonbetreiberin — hier stimmt sie."""
+    f = felder_ernten([{"datei": "auszug.pdf", "art": "kontoauszug", "text":
+                        "Kontoauszug Nr. 1\nIBAN DE02 1203 0000 0000 2020 51"}])
+    assert feld(f, "iban").wert == "DE02120300000000202051"
+
+
+def test_der_kontoauszug_liefert_keine_steuernummer():
+    f = felder_ernten([{"datei": "auszug.pdf", "art": "kontoauszug",
+                        "text": "Kontoauszug\nSteuernummer 93815/12345"}])
+    assert feld(f, "steuernummer") is None
+
+
+def test_eine_unbekannte_art_liefert_gar_nichts():
+    f = felder_ernten([{"datei": "x.pdf", "art": "irgendwas",
+                        "text": BESCHEID_MIT_BEHOERDENKOPF}])
+    assert f == []
+
+
+def test_beide_vokabulare_werden_verstanden():
+    """`einsortieren` sagt „behoerde", `abschluss_lesen` sagt „bescheid".
+    Fiele eine der beiden durch, lernte babu stillschweigend nichts."""
+    for art in ("behoerde", "bescheid"):
+        f = felder_ernten([{"datei": "b.pdf", "art": art,
+                            "text": BESCHEID_MIT_BEHOERDENKOPF}])
+        assert feld(f, "steuernummer") is not None, art
+        assert feld(f, "iban") is None, art
+
+
+def test_ein_kassenbon_liefert_keine_stammdaten():
+    f = felder_ernten([{"datei": "bon.jpg", "art": "beleg", "text":
+                        "Bäckerei Probe GmbH\nSteuernummer 93815/12345"}])
+    assert f == []
+
+
+@pytest.mark.parametrize("text, soll", [
+    ("Finanzamt Ludwigsburg", "Ludwigsburg"),
+    ("Finanzamt Stuttgart-Körperschaften", "Stuttgart-Körperschaften"),
+    ("An das Finanzamt\nLudwigsburg", "Ludwigsburg"),
+    # Der Fehlgriff aus Ninas Erklärungen: hinter der Formularbeschriftung
+    # folgt Fließtext, kein Ortsname.
+    ("An dasFinanzamt Daten für die mit @ gekennzeichneten Zeilen", None),
+    ("Finanzamt Regelfall vor und müssen nicht eingetragen werden", None),
+])
+def test_finanzamt_nur_wenn_ein_ort_dasteht(text, soll):
+    f = felder_aus_text(text, quelle="x.pdf")
+    treffer = feld(f, "finanzamt")
+    assert (treffer.wert if treffer else None) == soll

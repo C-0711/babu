@@ -84,9 +84,10 @@ def test_leere_felder_werden_gesetzt(welt):
     bw._stammdaten_ernten("nina@0711.io", st, DOKUMENTE, 2025, {})
     e = bw.db_einstellungen("nina@0711.io")
     assert e["steuernummer"] == "93815/12345"
-    assert e["betrieb_plz"] == "70173"
-    assert e["betrieb_ort"] == "Stuttgart"
-    assert e["iban"] == "DE02120300000000202051"
+    # Anschrift und IBAN kommen NICHT aus einem Bescheid — dort stehen die
+    # der Behörde. Siehe die Positivliste je Art.
+    assert "betrieb_plz" not in e
+    assert "iban" not in e
 
 
 def test_ein_gesetztes_feld_wird_nie_ueberschrieben(welt):
@@ -119,7 +120,7 @@ def test_unsichere_funde_werden_nur_vorgeschlagen(welt):
     st = status_leer()
     bw._stammdaten_ernten("nina@0711.io", st, [
         {"datei": "a.pdf", "art": "bescheid", "text": "Steuernummer 93815/12345"},
-        {"datei": "b.pdf", "art": "sonstiges", "text": "Steuernummer 11/111/11111"},
+        {"datei": "b.pdf", "art": "euer", "text": "Steuernummer 11/111/11111"},
     ], 2025, {})
     assert "steuernummer" not in bw.db_einstellungen("nina@0711.io")
     assert any(v["schluessel"] == "steuernummer" for v in st["vorschlaege"])
@@ -131,7 +132,7 @@ def test_jedes_geerntete_feld_steht_im_status(welt):
     st = status_leer()
     bw._stammdaten_ernten("nina@0711.io", st, DOKUMENTE, 2025, {})
     schluessel = {f["schluessel"] for f in st["felder"]}
-    assert "steuernummer" in schluessel and "iban" in schluessel
+    assert "steuernummer" in schluessel and "finanzamt" in schluessel
     for f in st["felder"]:
         assert f["quelle"] == "bescheid.pdf"
         assert f["regel"]
