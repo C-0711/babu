@@ -20,7 +20,7 @@ struct RechnungenTab: View {
     private var erledigte: [Rechnung] { rechnungen.filter { !$0.istOffen } }
 
     var body: some View {
-        NavigationStack {
+        Group {
             List {
                 if laedt {
                     HStack { ProgressView(); Text("Einen Moment …").foregroundStyle(GC.muted) }

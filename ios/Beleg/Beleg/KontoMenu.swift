@@ -50,6 +50,11 @@ struct KontoMenuView: View {
                 // dann was den Salon angeht, dann das Konto selbst.
                 Section("Buchhaltung") {
                     NavigationLink {
+                        RechnungenTab()
+                    } label: {
+                        Label("Rechnungen", systemImage: "eurosign.circle")
+                    }
+                    NavigationLink {
                         AbschlussView()
                     } label: {
                         Label("Monatsabschluss", systemImage: "chart.bar.doc.horizontal")
