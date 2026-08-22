@@ -443,6 +443,8 @@ main{padding:26px 22px 60px;min-height:70dvh}
         <span class="sym">💬</span> WhatsApp-Termine</button>
       <button role="menuitem" onclick="menuGeh('#kundinnen')">
         <span class="sym">💇</span> Kundinnen</button>
+      <button role="menuitem" onclick="menuGeh('#personal')">
+        <span class="sym">📋</span> Einstellen &amp; Personal</button>
       <button role="menuitem" onclick="menuGeh('#team')">
         <span class="sym">✂️</span> Dein Team</button>
       <button role="menuitem" onclick="menuGeh('#vertraege')">
@@ -843,6 +845,38 @@ main{padding:26px 22px 60px;min-height:70dvh}
     </details>
   </section>
 
+  <!-- PERSONAL: einstellen und sehen, wer wie weit ist -->
+  <section class="ansicht" id="a-personal">
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Einstellen &amp; Personal</div>
+    <p style="color:var(--gc-desc);margin-bottom:14px">Du legst an, sie macht
+      den Rest auf ihrem Telefon. Drucken musst du nichts.</p>
+    <div id="p-liste-personal"><div class="skelett"></div></div>
+
+    <details class="karte" style="margin-top:16px">
+      <summary style="cursor:pointer;font:600 15px var(--gc-serif)">Jemanden einstellen</summary>
+      <div style="display:grid;gap:8px;margin-top:12px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input class="suchfeld" id="pn-vorname" style="margin:0;flex:1 1 130px" placeholder="Vorname">
+          <input class="suchfeld" id="pn-name" style="margin:0;flex:1 1 130px" placeholder="Nachname">
+        </div>
+        <input class="suchfeld" id="pn-telefon" style="margin:0" placeholder="Handynummer — dorthin geht der Link">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <select class="suchfeld" id="pn-art" style="margin:0;flex:1 1 170px"></select>
+          <input class="suchfeld" id="pn-eintritt" style="margin:0;flex:1 1 130px" placeholder="Eintritt JJJJ-MM-TT">
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input class="suchfeld" id="pn-stunden" style="margin:0;flex:1 1 90px" placeholder="Std./Woche" inputmode="decimal">
+          <input class="suchfeld" id="pn-tage" style="margin:0;flex:1 1 90px" placeholder="Tage/Woche" inputmode="decimal">
+          <input class="suchfeld" id="pn-entgelt" style="margin:0;flex:1 1 110px" placeholder="Brutto/Monat" inputmode="decimal">
+        </div>
+        <input class="suchfeld" id="pn-taetigkeit" style="margin:0" placeholder="Tätigkeit, z. B. Friseurin">
+        <button class="chip" onclick="personalAnlegen()">Anlegen und Link erzeugen</button>
+      </div>
+      <div id="pn-hinweis" style="font-size:12px;color:var(--gc-desc);margin-top:10px"></div>
+      <div id="pn-fehler" style="font-size:12px;color:var(--gc-accent);margin-top:8px"></div>
+    </details>
+  </section>
+
   <!-- PREISE: was der Salon anbietet. Ohne Preis kann ein Termin nichts wert sein. -->
   <section class="ansicht" id="a-preise">
     <a class="zurueck" href="#termine">‹ Termine</a>
@@ -1044,6 +1078,7 @@ const ansichten = { gesperrt: () => {}, heute: ladeHeute, belege: ladeBelege, fr
                     zahlen: ladeZahlen, bank: ladeBank, saloncheck: ladeSalonCheck,
                     termine: ladeTermine, kundinnen: ladeKundinnen,
                     preise: ladePreise, whatsapp: ladeWhatsapp,
+                    personal: ladePersonal,
                     rechnungen: ladeRechnungen,
                     vertraege: ladeVertraege, marketing: ladeMarketing,
                     briefkopf: ladeBriefkopf,
@@ -3030,6 +3065,114 @@ async function wFadenWeg(id){
   if (!confirm("Gespräch mit Telefonnummer löschen?")) return;
   await api("/api/whatsapp/faden/" + id + "/loeschen", {method:"POST"});
   ladeFaeden();
+}
+
+/* ————— Personal ————— */
+const STAND_TEXT = {
+  eingeladen: "eingeladen, hat noch nicht angefangen",
+  im_wizard: "füllt gerade aus",
+  vollstaendig: "vollständig",
+};
+
+async function ladePersonal(){
+  const ziel = $("#p-liste-personal");
+  let d;
+  try{ d = await (await api("/api/mitarbeiter")).json(); }
+  catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+  if (d.fehler){ ziel.innerHTML = `<div class="leer">${esc(d.fehler)}</div>`; return; }
+
+  const liste = d.mitarbeiter || [];
+  ziel.innerHTML = !liste.length
+    ? `<div class="leer"><b>Noch niemand angelegt.</b>
+        Unten kannst du jemanden einstellen — sie bekommt einen Link und
+        macht den Rest selbst.</div>`
+    : liste.map(m => {
+        const name = esc(`${m.vorname || ""} ${m.name || ""}`.trim() || "ohne Namen");
+        const f = m.fortschritt || {};
+        return `<div class="ablage-zeile" style="flex-wrap:wrap">
+          <b>${name}</b>
+          <span class="pille" style="font-size:11px">${esc(STAND_TEXT[m.stand] || m.stand)}</span>
+          <span class="wann">${f.erledigt || 0}/${f.gesamt || 8} Schritte</span>
+          ${m.stand !== "vollstaendig"
+            ? `<button class="chip" style="font-size:11px"
+                 onclick="linkZeigen(${m.id})">Link noch einmal</button>` : ""}
+          <button class="loeschknopf" onclick="personalWeg(${m.id}, '${name}')">Weg</button>
+        </div>`;
+      }).join("");
+
+  // Arten und geltende Grenzen kommen aus der Vertragsmaschine — dort
+  // stehen sie ohnehin schon, und zum Jahreswechsel nur dort.
+  try{
+    const a = await (await api("/api/arbeitsvertrag/arten")).json();
+    $("#pn-art").innerHTML = a.arten.map(x =>
+      `<option value="${x.id}">${esc(x.name)}</option>`).join("");
+    $("#pn-hinweis").textContent =
+      `${a.werte.jahr}: Mindestlohn ${euro(a.werte.mindestlohn)} je Stunde, `
+      + `Minijob bis ${euro(a.werte.minijob_grenze)} im Monat. `
+      + `babu prüft das beim Anlegen.`;
+  }catch{}
+}
+
+async function personalAnlegen(){
+  const body = {
+    vorname: $("#pn-vorname").value, name: $("#pn-name").value,
+    telefon: $("#pn-telefon").value, art: $("#pn-art").value,
+    eintritt: $("#pn-eintritt").value,
+    stunden_woche: $("#pn-stunden").value, tage_woche: $("#pn-tage").value,
+    entgelt: ($("#pn-entgelt").value || "").replace(",", "."),
+    taetigkeit: $("#pn-taetigkeit").value,
+  };
+  const r = await api("/api/mitarbeiter", {method:"POST",
+    headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok){ $("#pn-fehler").textContent = d.fehler || "Das ging nicht."; return; }
+  $("#pn-fehler").textContent = "";
+  ["pn-vorname","pn-name","pn-telefon","pn-eintritt","pn-stunden","pn-tage",
+   "pn-entgelt","pn-taetigkeit"].forEach(id => $("#" + id).value = "");
+  linkKarte(d.einladung, d.satz, d.gilt_bis, d.befunde);
+  ladePersonal();
+}
+
+/* Den Link so anzeigen, dass er sich in einem Griff verschicken lässt —
+   auf dem Telefon über das Teilen-Menü, am Rechner in die Zwischenablage. */
+function linkKarte(pfad, satz, gilt, befunde){
+  const voll = location.origin + pfad;
+  $("#pn-hinweis").innerHTML = `<div class="karte" style="margin-top:10px">
+    <b>${esc(satz || "Link erzeugt.")}</b>
+    <div style="font-size:12px;word-break:break-all;margin:8px 0;
+      font-family:var(--gc-mono,monospace);color:var(--gc-desc)">${esc(voll)}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="chip" onclick="linkTeilen('${voll}')">Verschicken</button>
+      <button class="chip" onclick="navigator.clipboard.writeText('${voll}');
+        this.textContent='Kopiert ✓'">Kopieren</button>
+    </div>
+    <div style="font-size:11px;color:var(--gc-muted);margin-top:8px">
+      Gilt bis ${esc(gilt || "in zwei Wochen")}. Danach brauchst du einen neuen.</div>
+    ${(befunde || []).map(b => `<div style="font-size:12px;color:var(--gc-desc);
+      margin-top:6px">${esc(b.text)}</div>`).join("")}
+  </div>`;
+}
+
+function linkTeilen(url){
+  const text = `Hallo! Hier kannst du dich bei uns eintragen — dauert zehn `
+             + `Minuten und du brauchst nur dein Telefon: ${url}`;
+  if (navigator.share) navigator.share({text});
+  else { navigator.clipboard.writeText(text); alert("In die Zwischenablage kopiert."); }
+}
+
+async function linkZeigen(id){
+  const d = await (await api("/api/mitarbeiter/" + id + "/einladung")).json();
+  if (d.fehler){ alert(d.fehler); return; }
+  linkKarte(d.einladung, d.satz, d.gilt_bis, []);
+  $("#pn-hinweis").scrollIntoView({behavior:"smooth", block:"center"});
+}
+
+async function personalWeg(id, name){
+  if (!confirm(`${name} und die ganze Personalakte löschen?\n\n`
+             + `Die Ausweiskopie geht mit. Der Arbeitsvertrag bleibt in der `
+             + `Belegbox — für ihn gilt eine Aufbewahrungsfrist.`)) return;
+  await api("/api/mitarbeiter/" + id + "/loeschen", {method:"POST"});
+  ladePersonal();
 }
 
 /* ————— Kundinnen ————— */

@@ -3844,6 +3844,49 @@ def api_onboarding(marke: str) -> Response:
     })
 
 
+# Ausweiskopien liegen NICHT in der Belegbox.
+#
+# § 4a Abs. 5 AufenthG verlangt die Kopie „für die Dauer der Beschäftigung"
+# — also gerade nicht für immer. In Git bliebe jede Fassung stehen, auch
+# nach dem letzten Arbeitstag. Der Vertrag dagegen gehört in die Box: für
+# ihn gilt eine Aufbewahrungsfrist, und dort ist er fälschungssicher.
+AUSWEISE = Path(os.environ.get("BABU_AUSWEISE",
+                               str(Path.home() / "babu-web" / "ausweise")))
+AUSWEIS_MAX = 12 * 1024 * 1024
+
+
+def _ausweis_pfad(einladung: str) -> Path:
+    return AUSWEISE / (hashlib.sha256(einladung.encode()).hexdigest()[:24] + ".bin")
+
+
+# Eigener Pfad, nicht `/ausweis`: so heißt schon der Wizard-Schritt.
+@app.post("/api/onboarding/{marke}/ausweis-bild")
+async def api_onboarding_ausweis(marke: str, request: Request) -> Response:
+    """Das Ausweisfoto — in den löschbaren Ablageort, nicht in die Box."""
+    gefunden = _einladung_finden(marke)
+    if not gefunden:
+        return JSONResponse({"fehler": "Dieser Link gilt nicht mehr."},
+                            status_code=404)
+    daten = await request.body()
+    if not daten:
+        return JSONResponse({"fehler": "Da war kein Bild dabei."},
+                            status_code=400)
+    if len(daten) > AUSWEIS_MAX:
+        return JSONResponse(
+            {"fehler": "Das Bild ist zu groß. Meist hilft es, es noch einmal "
+                       "mit der Kamera aufzunehmen statt aus der Galerie zu "
+                       "wählen."}, status_code=413)
+    if not daten[:3] in (b"\xff\xd8\xff",) and not daten[:4] == b"%PDF":
+        return JSONResponse(
+            {"fehler": "Das sieht nicht nach einem Foto aus. Bitte noch "
+                       "einmal aufnehmen."}, status_code=400)
+
+    pfad = _ausweis_pfad(marke)
+    pfad.parent.mkdir(parents=True, exist_ok=True)
+    pfad.write_bytes(daten)
+    return JSONResponse({"ok": True, "groesse": len(daten)})
+
+
 @app.post("/api/onboarding/{marke}/{schritt_id}")
 async def api_onboarding_schritt(marke: str, schritt_id: str,
                                  request: Request) -> Response:
@@ -3883,6 +3926,11 @@ async def api_onboarding_schritt(marke: str, schritt_id: str,
             spalten.append(feld); werte.append(1 if wert else 0)
         else:
             spalten.append(feld); werte.append(wert)
+
+    # Angenommener Vertrag: ab in die Belegbox. Für ihn gilt eine
+    # Aufbewahrungsfrist, also gehört er dorthin, wo jede Fassung bleibt.
+    if schritt_id == "vertrag" and sauber.get("vertrag_angenommen"):
+        await _vertrag_ablegen(un, marke, person)
 
     fertig = len(erledigt) >= len(ob.SCHRITTE)
     spalten += ["erledigt", "stand"]
@@ -3935,6 +3983,103 @@ def api_onboarding_vertrag(marke: str) -> Response:
                          "form": vertrag["form"]["form"]})
 
 
+async def _vertrag_ablegen(un: str, marke: str, person: dict) -> None:
+    """Den angenommenen Vertrag in die Belegbox schreiben.
+
+    Mit Zeitstempel und Fassung: später muss nachvollziehbar sein, welchem
+    Text genau jemand zugestimmt hat.
+    """
+    import arbeitsvertrag as av  # noqa: PLC0415
+    import boxschreiber  # noqa: PLC0415
+    e = db_einstellungen(un)
+    try:
+        vertrag = av.vertrag_bauen({
+            "art": person["art"], "eintritt": person["eintritt"],
+            "befristet_bis": person["befristet_bis"],
+            "taetigkeit": person["taetigkeit"],
+            "stunden_woche": person["stunden_woche"],
+            "tage_woche": person["tage_woche"],
+            "urlaubstage": person["urlaubstage"],
+            "entgelt": (person["entgelt"] or 0) / 100,
+            "geburtsdatum": person["geburtsdatum"],
+        }, {"name": e.get("betrieb_name", ""),
+            "ort": " ".join(x for x in (e.get("betrieb_plz"),
+                                        e.get("betrieb_ort")) if x),
+            "arbeitnehmerin": f"{person['vorname'] or ''} "
+                              f"{person['name'] or ''}".strip()})
+    except av.VertragFehler:
+        return                      # ohne gültigen Vertrag nichts ablegen
+
+    kennung = f"{person['eintritt']}-{(person['name'] or 'unbenannt').lower()}"
+    kennung = re.sub(r"[^a-z0-9-]", "-", kennung)[:60]
+    angenommen = _jetzt_iso()
+    zettel = {
+        "art": "arbeitsvertrag", "fassung": vertrag["fassung"],
+        "angenommen": angenommen, "form": vertrag["form"]["form"],
+        "arbeitnehmerin": f"{person['vorname'] or ''} "
+                          f"{person['name'] or ''}".strip(),
+        "eintritt": person["eintritt"], "art_beschaeftigung": person["art"],
+    }
+    text = (av.als_text(vertrag)
+            + f"\n\nIn Textform angenommen am {angenommen} "
+              f"(Fassung {vertrag['fassung']}).\n")
+    try:
+        await run_in_threadpool(
+            boxschreiber.schreiben,
+            {f"dokumente/vertraege/{kennung}.txt": text.encode(),
+             f"dokumente/vertraege/{kennung}.meta.json":
+                 json.dumps(zettel, ensure_ascii=False, indent=1).encode()},
+            None, f"vertrag: {kennung}", un)
+    except boxschreiber.SchreibFehler:
+        pass            # der Wizard darf daran nicht scheitern
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+
+
+@app.get("/api/mitarbeiter/{mitarbeiter_id}/einladung")
+def api_einladung_zeigen(mitarbeiter_id: int, request: Request) -> Response:
+    """Den Link noch einmal — Handynummern verschreiben sich."""
+    import datetime as dt  # noqa: PLC0415
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das macht die Inhaberin."},
+                            status_code=403)
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        z = c.execute("""SELECT einladung, eingeladen_am, name, stand
+                         FROM mitarbeiter WHERE id=? AND un=?""",
+                      (mitarbeiter_id, inhaber)).fetchone()
+    if not z:
+        return JSONResponse({"fehler": "unbekannt"}, status_code=404)
+    if z[3] == "vollstaendig":
+        return JSONResponse(
+            {"fehler": "Sie ist schon fertig — der Link wird nicht mehr "
+                       "gebraucht."}, status_code=400)
+    try:
+        seit = dt.datetime.fromisoformat((z[1] or "").replace("Z", "+00:00"))
+    except ValueError:
+        seit = dt.datetime.now(dt.timezone.utc)
+    bis = (seit + dt.timedelta(days=EINLADUNG_GILT_TAGE)).date()
+    if bis < dt.date.today():
+        # Abgelaufen: einen frischen ausstellen, statt einen toten zu zeigen.
+        neu_marke = secrets.token_urlsafe(24)
+        with _DB_LOCK, _db() as c:
+            c.execute("""UPDATE mitarbeiter SET einladung=?, eingeladen_am=?
+                         WHERE id=? AND un=?""",
+                      (neu_marke, _jetzt_iso(), mitarbeiter_id, inhaber))
+        return JSONResponse({
+            "einladung": f"/start/{neu_marke}",
+            "gilt_bis": (dt.date.today()
+                         + dt.timedelta(days=EINLADUNG_GILT_TAGE)).isoformat(),
+            "satz": f"Der alte Link war abgelaufen — hier ist ein neuer für "
+                    f"{z[2]}."})
+    return JSONResponse({"einladung": f"/start/{z[0]}",
+                         "gilt_bis": bis.isoformat(),
+                         "satz": f"Der Link für {z[2]}."})
+
+
 @app.post("/api/mitarbeiter/{mitarbeiter_id}/loeschen")
 def api_mitarbeiter_loeschen(mitarbeiter_id: int, request: Request) -> Response:
     """Ganz weg. Eine Personalakte muss sich löschen lassen."""
@@ -3946,8 +4091,14 @@ def api_mitarbeiter_loeschen(mitarbeiter_id: int, request: Request) -> Response:
                             status_code=403)
     inhaber = salon_von(un)
     with _DB_LOCK, _db() as c:
+        z = c.execute("SELECT einladung FROM mitarbeiter WHERE id=? AND un=?",
+                      (mitarbeiter_id, inhaber)).fetchone()
         c.execute("DELETE FROM mitarbeiter WHERE id=? AND un=?",
                   (mitarbeiter_id, inhaber))
+    # Die Ausweiskopie geht mit. Sie darf ohnehin nur für die Dauer der
+    # Beschäftigung aufbewahrt werden.
+    if z and z[0]:
+        _ausweis_pfad(z[0]).unlink(missing_ok=True)
     return JSONResponse({"ok": True})
 
 

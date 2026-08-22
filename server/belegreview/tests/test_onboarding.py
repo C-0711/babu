@@ -415,3 +415,148 @@ def test_der_vertrag_steht_vor_der_zustimmung_bereit(welt):
 def test_ohne_gueltigen_link_kein_vertrag(welt):
     client, _ = welt
     assert client.get("/api/onboarding/" + "x" * 30 + "/vertrag/text").status_code == 404
+
+
+# ————— Ausweis und Vertrag: zwei Orte, mit Absicht —————
+
+JPEG = b"\xff\xd8\xff\xe0" + b"x" * 400
+
+
+def test_das_ausweisfoto_geht_nicht_in_die_belegbox(welt, tmp_path, monkeypatch):
+    """§ 4a Abs. 5 AufenthG: die Kopie ist „für die Dauer der Beschäftigung"
+    aufzubewahren — also gerade nicht für immer. In Git bliebe sie ewig."""
+    client, bw = welt
+    monkeypatch.setattr(bw, "AUSWEISE", tmp_path / "ausweise")
+    marke = client.post("/api/mitarbeiter", json=ECKDATEN).json()["einladung"].split("/")[-1]
+    vorher = client.get("/api/ablage").json()
+
+    r = client.post(f"/api/onboarding/{marke}/ausweis-bild", content=JPEG,
+                    headers={"Content-Type": "image/jpeg"})
+    assert r.status_code == 200 and r.json()["groesse"] == len(JPEG)
+    assert bw._ausweis_pfad(marke).read_bytes() == JPEG
+    assert client.get("/api/ablage").json() == vorher      # Box unberührt
+
+
+def test_kein_bild_kein_ausweis(welt, tmp_path, monkeypatch):
+    client, bw = welt
+    monkeypatch.setattr(bw, "AUSWEISE", tmp_path / "ausweise")
+    marke = client.post("/api/mitarbeiter", json=ECKDATEN).json()["einladung"].split("/")[-1]
+    assert client.post(f"/api/onboarding/{marke}/ausweis-bild",
+                       content=b"").status_code == 400
+    r = client.post(f"/api/onboarding/{marke}/ausweis-bild", content=b"kein bild")
+    assert r.status_code == 400 and "Foto" in r.json()["fehler"]
+
+
+def test_zu_grosses_bild_wird_erklaert(welt, tmp_path, monkeypatch):
+    client, bw = welt
+    monkeypatch.setattr(bw, "AUSWEISE", tmp_path / "ausweise")
+    monkeypatch.setattr(bw, "AUSWEIS_MAX", 100)
+    marke = client.post("/api/mitarbeiter", json=ECKDATEN).json()["einladung"].split("/")[-1]
+    r = client.post(f"/api/onboarding/{marke}/ausweis-bild", content=JPEG)
+    assert r.status_code == 413 and "Kamera" in r.json()["fehler"]
+
+
+def test_die_ausweiskopie_geht_beim_loeschen_mit(welt, tmp_path, monkeypatch):
+    client, bw = welt
+    monkeypatch.setattr(bw, "AUSWEISE", tmp_path / "ausweise")
+    d = client.post("/api/mitarbeiter", json=ECKDATEN).json()
+    marke = d["einladung"].split("/")[-1]
+    client.post(f"/api/onboarding/{marke}/ausweis-bild", content=JPEG)
+    assert bw._ausweis_pfad(marke).exists()
+
+    client.post(f"/api/mitarbeiter/{d['id']}/loeschen")
+    assert not bw._ausweis_pfad(marke).exists()
+
+
+def test_der_angenommene_vertrag_geht_in_die_belegbox(welt, monkeypatch, tmp_path):
+    """Für ihn gilt eine Aufbewahrungsfrist — dort bleibt jede Fassung."""
+    client, bw = welt
+    import boxschreiber
+    monkeypatch.setattr(boxschreiber, "KLON", tmp_path / "klon")
+    monkeypatch.setattr(boxschreiber, "REMOTE", str(bw.STORE))
+    monkeypatch.setattr(boxschreiber, "PAT_PFAD", tmp_path / "kein-pat")
+
+    marke = client.post("/api/mitarbeiter", json=ECKDATEN).json()["einladung"].split("/")[-1]
+    r = client.post(f"/api/onboarding/{marke}/vertrag",
+                    json={"vertrag_angenommen": True})
+    assert r.status_code == 200
+
+    import subprocess
+    stand = subprocess.run(["git", "-C", str(bw.STORE), "ls-tree", "-r",
+                            "--name-only", "HEAD"],
+                           capture_output=True, text=True).stdout
+    assert "dokumente/vertraege/" in stand
+    assert any(p.endswith(".meta.json") for p in stand.split())
+
+
+def test_der_zettel_haelt_fest_wem_wann_zugestimmt_wurde(welt, monkeypatch, tmp_path):
+    """Später muss nachvollziehbar sein, welchem Text genau."""
+    client, bw = welt
+    import boxschreiber, subprocess, json as js
+    monkeypatch.setattr(boxschreiber, "KLON", tmp_path / "klon")
+    monkeypatch.setattr(boxschreiber, "REMOTE", str(bw.STORE))
+    monkeypatch.setattr(boxschreiber, "PAT_PFAD", tmp_path / "kein-pat")
+    marke = client.post("/api/mitarbeiter", json=ECKDATEN).json()["einladung"].split("/")[-1]
+    client.post(f"/api/onboarding/{marke}/vertrag", json={"vertrag_angenommen": True})
+
+    dateien = subprocess.run(["git", "-C", str(bw.STORE), "ls-tree", "-r",
+                              "--name-only", "HEAD"],
+                             capture_output=True, text=True).stdout.split()
+    [zettel] = [d for d in dateien if d.endswith(".meta.json")]
+    inhalt = js.loads(subprocess.run(
+        ["git", "-C", str(bw.STORE), "show", f"HEAD:{zettel}"],
+        capture_output=True, text=True).stdout)
+    assert inhalt["art"] == "arbeitsvertrag" and inhalt["fassung"]
+    assert inhalt["angenommen"] and inhalt["arbeitnehmerin"] == "Jana Holder"
+
+
+# ————— Den Link noch einmal —————
+
+def test_der_link_laesst_sich_wieder_hervorholen(welt):
+    """Handynummern verschreiben sich."""
+    client, _ = welt
+    d = client.post("/api/mitarbeiter", json=ECKDATEN).json()
+    n = client.get(f"/api/mitarbeiter/{d['id']}/einladung").json()
+    assert n["einladung"] == d["einladung"]
+    assert "Holder" in n["satz"]
+
+
+def test_ein_abgelaufener_link_wird_ersetzt_statt_gezeigt(welt):
+    """Einen toten Link anzuzeigen hilft niemandem."""
+    client, bw = welt
+    import datetime as dt
+    d = client.post("/api/mitarbeiter", json=ECKDATEN).json()
+    alt = (dt.datetime.now(dt.timezone.utc)
+           - dt.timedelta(days=bw.EINLADUNG_GILT_TAGE + 3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    with bw._DB_LOCK, bw._db() as c:
+        c.execute("UPDATE mitarbeiter SET eingeladen_am=? WHERE id=?",
+                  (alt, d["id"]))
+    n = client.get(f"/api/mitarbeiter/{d['id']}/einladung").json()
+    assert n["einladung"] != d["einladung"]
+    assert "abgelaufen" in n["satz"]
+    # Und der neue funktioniert auch wirklich.
+    assert client.get("/api/onboarding/" + n["einladung"].split("/")[-1]
+                      ).status_code == 200
+
+
+def test_wer_fertig_ist_braucht_keinen_link_mehr(welt):
+    client, bw = welt
+    d = client.post("/api/mitarbeiter", json=ECKDATEN).json()
+    with bw._DB_LOCK, bw._db() as c:
+        c.execute("UPDATE mitarbeiter SET stand='vollstaendig' WHERE id=?",
+                  (d["id"],))
+    r = client.get(f"/api/mitarbeiter/{d['id']}/einladung")
+    assert r.status_code == 400 and "schon fertig" in r.json()["fehler"]
+
+
+def test_die_liste_zeigt_wer_wie_weit_ist(welt):
+    client, _ = welt
+    d = client.post("/api/mitarbeiter", json=ECKDATEN).json()
+    marke = d["einladung"].split("/")[-1]
+    client.post(f"/api/onboarding/{marke}/person",
+                json={"vorname": "Jana", "name": "Holder",
+                      "geburtsdatum": "02.03.1994"})
+    [m] = client.get("/api/mitarbeiter").json()["mitarbeiter"]
+    assert m["stand"] == "im_wizard"
+    assert m["fortschritt"]["erledigt"] == 1
+    assert m["fortschritt"]["gesamt"] == 8

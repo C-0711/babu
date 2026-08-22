@@ -208,6 +208,7 @@ function einsammeln(){
     return daten;
   }
   if (s.id === "ausweis"){
+    // Das Bild geht in einem eigenen Aufruf raus — es ist zu groß für JSON.
     daten.ausweis_dokument = $("#f_ausweis")?.files?.length ? "erfasst" : "";
     return daten;
   }
@@ -223,6 +224,20 @@ async function senden(){
   const knopf = $("#weiter");
   knopf.disabled = true; knopf.textContent = "Einen Moment …";
   try{
+    // Das Ausweisfoto zuerst — kommt es nicht an, ist der Schritt nicht
+    // erledigt, und sie soll das sofort erfahren.
+    if (stand.schritt.id === "ausweis"){
+      const datei = $("#f_ausweis")?.files?.[0];
+      if (!datei){ zeichnen("Es fehlt noch ein Foto deines Ausweises."); return; }
+      knopf.textContent = "Bild wird übertragen …";
+      const r = await fetch(`/api/onboarding/${MARKE}/ausweis-bild`, {
+        method: "POST", headers: {"Content-Type": datei.type || "image/jpeg"},
+        body: datei});
+      if (!r.ok){
+        zeichnen((await r.json()).fehler || "Das Bild kam nicht an.");
+        return;
+      }
+    }
     const r = await fetch(`/api/onboarding/${MARKE}/${stand.schritt.id}`, {
       method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify(einsammeln())});
