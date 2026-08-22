@@ -1,6 +1,8 @@
 #!/bin/sh
-# Nur zum Ansehen der Oberfläche. Eigene Datenbank in einem Wegwerf-Ordner,
-# damit weder die echte Belegbox noch portal.db angefasst werden.
+# Nur zum Ansehen der Oberfläche. ALLES in einen Wegwerf-Ordner: Datenbank,
+# Belegbox, Sitzungsgeheimnis, Arbeitskopien des Lese-Jobs. Jede Voreinstellung
+# im Code zeigt sonst nach ~/babu-web, und das gibt es auf diesem Rechner
+# wirklich — der Entwicklungsserver schriebe in echte Daten.
 #
 # Der Interpreter wird selbst gesucht: erst ./.venv (liegt neben diesem
 # Skript und ist in .gitignore), dann PYTHON, dann python3. Vorher stand der
@@ -29,7 +31,10 @@ fi
 export BABU_STORE="$D/babu.git" BABU_PORTAL_DB="$D/portal.db" \
        BABU_SESSION_GEHEIMNIS="$D/.geheimnis" BABU_INDEX_TTL=0 \
        BABU_SEITE="$(cd .. && pwd)/babu-web/index.html" \
-       BABU_ABSCHLUSS_TMP="$D/abschluss-tmp"
+       BABU_ABSCHLUSS_TMP="$D/abschluss-tmp" \
+       BABU_ORIGIN="http://127.0.0.1:${PORT:-8791}" \
+       BABU_BOX_KLON="$D/klon" BABU_BOX_REMOTE="$D/babu.git" \
+       BABU_PUSH_PAT="$D/.kein-pat"
 # Nicht nur „ist PYTHON gesetzt", sondern „gibt es das auch": ein toter
 # Pfad aus einer alten Sitzungs-Umgebung hat den Start zweimal gekippt, und
 # beim zweiten Mal stand er gar nicht mehr in der Datei, die ich geändert
