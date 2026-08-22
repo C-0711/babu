@@ -94,9 +94,14 @@ BEREICH = {
     "betrieb_strasse": "briefkopf",
     "betrieb_plz": "briefkopf",
     "betrieb_ort": "briefkopf",
-    "betrieb_telefon": "briefkopf",
-    "betrieb_email": "briefkopf",
-    "betrieb_web": "briefkopf",
+    # Achtung, zwei Familien, beide echt: den Briefkopf setzt babu_web aus
+    # betrieb_strasse/plz/ort zusammen, die Rechnung (rechnungen.py) liest
+    # `anschrift` als EINE Zeile und `telefon`/`email` ohne Präfix. Wer nur
+    # eine Familie füllt, hat entweder einen leeren Briefkopf oder eine
+    # Rechnung ohne Absender — und merkt es erst beim Drucken.
+    "anschrift": "briefkopf",
+    "telefon": "briefkopf",
+    "email": "briefkopf",
     "iban": "briefkopf",
     "bic": "briefkopf",
     "bank": "briefkopf",
@@ -111,9 +116,61 @@ FELD_NAME = {
     "gruendung": "Gegründet", "betrieb_name": "Name des Salons",
     "betrieb_inhaberin": "Inhaberin", "betrieb_strasse": "Straße",
     "betrieb_plz": "Postleitzahl", "betrieb_ort": "Ort",
-    "betrieb_telefon": "Telefon", "betrieb_email": "E-Mail",
-    "betrieb_web": "Web", "iban": "IBAN", "bic": "BIC", "bank": "Bank",
+    "anschrift": "Anschrift", "telefon": "Telefon", "email": "E-Mail",
+    "iban": "IBAN", "bic": "BIC", "bank": "Bank",
 }
+
+# ── Wessen Daten stehen da eigentlich? ──────────────────────────────────────
+#
+# Der Fehler, an dem das hier hängt, ist am 22.08.2026 in einem Trockenlauf
+# über Ninas echte Unterlagen aufgefallen — und er wäre teuer geworden.
+#
+# Auf einem Steuerbescheid steht oben das Finanzamt mit Anschrift, Telefon
+# und Bankverbindung, und irgendwo in der Mitte der Steuerpflichtige. Die
+# Ernte nahm den ersten Treffer und hätte auf Ninas Rechnungen die
+# Kontonummer des Finanzamts Ludwigsburg gesetzt. Im Mietvertrag stand der
+# Vermieter mit Telefon und E-Mail — dieselbe Falle.
+#
+# Ein Dokument sagt nur über BESTIMMTE Felder etwas über seinen Empfänger
+# aus. Ein Bescheid nennt die Steuernummer des Adressaten (dafür ist er da)
+# und das eigene Finanzamt — aber seine Anschrift ist die der Behörde. Ein
+# Kontoauszug nennt die IBAN des Kontoinhabers, also wirklich Ninas.
+#
+# Deshalb je Art eine Positivliste. Was nicht darin steht, wird gar nicht
+# geerntet, auch wenn es dasteht. Lieber ein leeres Feld als das Konto einer
+# fremden Partei auf der eigenen Rechnung.
+# Zwei Vokabulare treffen hier aufeinander: `einsortieren.py` kennt
+# behoerde/kontoauszug/vertrag/beleg, `abschluss_lesen.py` kennt
+# bescheid/euer/bwa/susa/anlagen. Beide sind gültig, je nachdem, wer die
+# Unterlage klassifiziert hat — also stehen beide hier. Fehlte eine Art,
+# fiele sie stillschweigend durch und babu lernte nichts.
+ERLAUBT_JE_ART: dict[str, tuple[str, ...]] = {
+    # Post vom Amt: Bescheide nennen die Steuernummer ihres Adressaten.
+    "behoerde": ("steuernummer", "finanzamt", "ust_id", "kleinunternehmer",
+                 "versteuerung"),
+    "bescheid": ("steuernummer", "finanzamt", "ust_id", "kleinunternehmer",
+                 "versteuerung"),
+    # Ein Kassenbon nennt die Daten des Ladens, nicht die des Salons.
+    "beleg": (),
+    "euer": ("steuernummer", "ust_id", "kleinunternehmer", "abschluss_art",
+             "versteuerung", "rechtsform"),
+    "bwa": ("steuernummer", "ust_id", "abschluss_art", "versteuerung"),
+    "susa": ("steuernummer", "ust_id"),
+    "anlagen": ("steuernummer",),
+    # Der Kontoinhaber ist die Salonbetreiberin — hier stimmen IBAN und Bank.
+    "kontoauszug": ("iban", "bic", "bank"),
+    # Verträge und fremde Rechnungen nennen zwei Parteien. Ohne zu wissen,
+    # welche die eigene ist, wird hier nichts übernommen.
+    "vertrag": (),
+    "rechnung": (),
+    "sonstiges": (),
+}
+
+
+def erlaubt(art: str, schluessel: str) -> bool:
+    """Darf dieses Feld aus dieser Art Unterlage stammen?"""
+    return schluessel in ERLAUBT_JE_ART.get(art, ())
+
 
 # Welche Unterlage bei einem Feld das letzte Wort hat. Ein Bescheid vom
 # Finanzamt schlägt eine Gewinnrechnung, und die schlägt einen Briefbogen.
@@ -142,7 +199,15 @@ BIC = re.compile(r"\b[A-Z]{4}DE[A-Z0-9]{2}(?:[A-Z0-9]{3})?\b")
 # die zweite Hälfte einer Steuernummer als Postleitzahl und der Name in der
 # Zeile darunter als Ort.
 PLZ_ORT = re.compile(r"(?<![\d/])(\d{5})[ \t]+([A-ZÄÖÜ][\wäöüß.\- ]{2,40})")
+STRASSE = re.compile(
+    r"^\s*([A-ZÄÖÜ][\wäöüß.\- ]{2,40}(?:stra(?:ss|ß)e|str\.|weg|platz|allee|gasse|ring|damm)"
+    r"\s+\d{1,4}\s*[a-zA-Z]?)\s*$", re.M | re.I)
 FINANZAMT = re.compile(r"Finanzamt\s+([A-ZÄÖÜ][\wäöüß.\- ]{2,40})")
+# Auf Steuerformularen steht „An das Finanzamt" als Beschriftung, und
+# dahinter beginnt der nächste Fließtext: „Daten für die mit @ gekennzeichneten
+# Zeilen…". Ein Ortsname enthält keine kleingeschriebenen Wörter — daran
+# lässt sich der Fehlgriff erkennen, ohne das Muster zu verengen.
+FLIESSTEXT = re.compile(r"\s[a-zäöüß]{2,}")
 TELEFON = re.compile(r"(?:Tel(?:efon)?\.?|Fon)[:\s]+([+\d][\d\s/()\-]{6,22})", re.I)
 EMAIL = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.]{2,10}\b")
 RECHTSFORMEN = ("GmbH & Co. KG", "GmbH", "UG (haftungsbeschränkt)", "UG",
@@ -179,22 +244,35 @@ def felder_aus_text(text: str, *, quelle: str, art: str = "sonstiges"
     ust = _erst(UST_IDNR, text, 1)
     nimm("ust_id", f"DE{ust}" if ust else None,
          "Umsatzsteuer-Identifikationsnummer im Text gefunden")
-    nimm("finanzamt", _erst(FINANZAMT, text, 1), "Zeile nennt das Finanzamt")
+    for m in FINANZAMT.finditer(text):
+        name = m.group(1).strip(" .,-")
+        if name and not FLIESSTEXT.search(name):
+            nimm("finanzamt", name, "Zeile nennt das Finanzamt")
+            break
 
     iban = _erst(IBAN_DE, text)
     nimm("iban", re.sub(r"\s+", "", iban) if iban else None,
          "IBAN im Text gefunden")
     nimm("bic", _erst(BIC, text), "BIC im Text gefunden")
 
+    strasse = _erst(STRASSE, text, 1)
+    nimm("betrieb_strasse", strasse, "Zeile sieht aus wie eine Straße mit Hausnummer")
     m = PLZ_ORT.search(text)
     if m:
-        nimm("betrieb_plz", m.group(1), "Postleitzahl mit Ort gefunden")
-        nimm("betrieb_ort", m.group(2).strip(" .,"), "Ort hinter der Postleitzahl")
+        plz, ort = m.group(1), m.group(2).strip(" .,")
+        nimm("betrieb_plz", plz, "Postleitzahl mit Ort gefunden")
+        nimm("betrieb_ort", ort, "Ort hinter der Postleitzahl")
+        # Die Rechnung braucht die Anschrift als eine Zeile. Nur setzen, wenn
+        # sie vollständig ist — eine halbe Adresse auf einer Rechnung ist
+        # schlechter als gar keine.
+        if strasse:
+            nimm("anschrift", f"{strasse}, {plz} {ort}",
+                 "aus Straße, Postleitzahl und Ort zusammengesetzt")
 
     tel = _erst(TELEFON, text, 1)
-    nimm("betrieb_telefon", re.sub(r"\s{2,}", " ", tel).strip() if tel else None,
+    nimm("telefon", re.sub(r"\s{2,}", " ", tel).strip() if tel else None,
          "Zeile nennt eine Telefonnummer")
-    nimm("betrieb_email", _erst(EMAIL, text), "E-Mail-Adresse im Text gefunden")
+    nimm("email", _erst(EMAIL, text), "E-Mail-Adresse im Text gefunden")
 
     for rf in RECHTSFORMEN:                       # längste zuerst, s. Liste
         if re.search(rf"\b{re.escape(rf)}", text):
@@ -233,6 +311,8 @@ def felder_ernten(dokumente: list[dict]) -> list[Feld]:
         art = d.get("art") or "sonstiges"
         for f in felder_aus_text(d.get("text") or "", quelle=d.get("datei") or "?",
                                  art=art):
+            if not erlaubt(art, f.schluessel):
+                continue          # steht da, gehört aber jemand anderem
             kandidaten.setdefault(f.schluessel, []).append((_rang(art), f))
 
     raus: list[Feld] = []
