@@ -482,6 +482,8 @@ main{padding:26px 22px 60px;min-height:70dvh}
   <section class="ansicht" id="a-heute">
     <div class="lbl" id="heute-eyebrow">DEIN MONAT</div>
     <div class="gruss" id="heute-gruss">Guten Tag ✨</div>
+    <div id="heute-monatslauf"></div>
+    <div id="heute-meldungen"></div>
     <div id="heute-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
 
@@ -955,7 +957,42 @@ document.querySelectorAll("nav button").forEach(b =>
   b.addEventListener("click", () => location.hash = "#" + b.dataset.ziel));
 
 /* ————— HEUTE ————— */
+/* Was ansteht und welcher Monat wartet — dasselbe wie in der App, nur
+   hier ganz oben, weil „Heute" die Seite ist, die zuerst aufgeht. */
+async function ladeAnstehendes(){
+  try{
+    const m = await (await api("/api/meldungen")).json();
+    const liste = m.meldungen || [];
+    $("#heute-meldungen").innerHTML = !liste.length ? "" :
+      `<div class="lbl" style="margin-top:6px">Das steht an</div>`
+      + liste.map(x => `<div class="karte ${x.dringend ? "nachfrage" : ""}"
+          style="margin-bottom:8px">
+          <b>${esc(x.titel)}</b>
+          <div style="font-size:13px;color:var(--gc-desc)">${esc(x.text)}</div>
+        </div>`).join("");
+  }catch{ $("#heute-meldungen").innerHTML = ""; }
+
+  try{
+    const l = await (await api("/api/monatslauf")).json();
+    if (!l.faellig){ $("#heute-monatslauf").innerHTML = ""; return; }
+    const offen = l.offen || [];
+    $("#heute-monatslauf").innerHTML = `<div class="karte" style="margin-bottom:10px">
+      <b>${esc(l.satz || "")}</b>
+      ${l.zahlen && l.zahlen.ergebnis != null
+        ? `<div style="display:flex;justify-content:space-between;margin-top:6px">
+             <span style="color:var(--gc-desc);font-size:13px">Bleibt dir</span>
+             <b>${euro(l.zahlen.ergebnis)}</b></div>` : ""}
+      ${offen.map(o => `<div style="font-size:12px;color:var(--gc-desc);margin-top:4px">
+          · ${esc(o.text)}</div>`).join("")}
+      <button class="chip" style="margin-top:10px"
+        onclick="location.hash='#abschluss'">
+        ${l.bereit ? "Anschauen und freigeben" : "Was fehlt noch?"}</button>
+    </div>`;
+  }catch{ $("#heute-monatslauf").innerHTML = ""; }
+}
+
 async function ladeHeute(){
+  ladeAnstehendes();
   const monat = jetztMonat();
   $("#heute-eyebrow").textContent = "DEIN " + monatName(monat).split(" ")[0].toUpperCase();
   const stunde = new Date().getHours();
