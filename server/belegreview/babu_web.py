@@ -1175,11 +1175,29 @@ def api_beleg_bild(stamm: str, request: Request) -> Response:
 
 
 def _zahl(wert) -> float | None:
-    """Zahl aus einer Einstellung — deutsche Schreibweise erlaubt."""
+    """Zahl aus einer Eingabe — deutsche Schreibweise erlaubt.
+
+    Echte Zahlen gehen NICHT durch den Text-Parser. Vorher wurde bei jedem
+    Wert der Punkt als Tausendertrenner entfernt — aus einem Trinkgeld von
+    12.50 (JSON-Zahl) wurden so 1250, aus 2400.50 Gehalt 24005. Nur
+    getippter Text wird deutsch gelesen, und auch dort trennt der Punkt nur
+    dann Tausender, wenn ein Komma dabei ist.
+    """
     if wert in (None, ""):
         return None
+    if isinstance(wert, (int, float)) and not isinstance(wert, bool):
+        return float(wert)
+    text = str(wert).strip()
+    if "," in text:                       # „2.400,50" — Punkt trennt Tausender
+        text = text.replace(".", "").replace(",", ".")
+    else:
+        # Ohne Komma ist der Punkt zweideutig: „2.400" meint
+        # zweitausendvierhundert, „89.50" meint Komma. Entschieden wird an
+        # den Nachkommastellen — genau wie im Betragsfeld der App.
+        teile = text.split(".")
+        text = text if len(teile) == 2 and len(teile[1]) == 2 else "".join(teile)
     try:
-        return float(str(wert).replace(".", "").replace(",", "."))
+        return float(text)
     except ValueError:
         return None
 
