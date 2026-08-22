@@ -114,7 +114,16 @@ main p, .leer, .karte > p{max-width:78ch}
   color:var(--gc-fg);cursor:pointer;text-align:left}
 #konto-menu button:hover{background:var(--gc-chrome)}
 #konto-menu button[hidden]{display:none}
-#konto-menu button .sym{width:18px;text-align:center;flex:none;opacity:.75}
+/* Strichstärke 1.5 auf 24er-Raster, wie die App sie zeichnet. Keine
+   Füllung, Farbe erbt vom Text — dadurch stimmt sie in jedem Zustand,
+   auch im roten „Abmelden". */
+.ik{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;
+  stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;
+  vector-effect:non-scaling-stroke}
+.ik.klein{width:15px;height:15px;stroke-width:1.6}
+.ik.gross{width:26px;height:26px;stroke-width:1.3}
+#konto-menu button .sym{opacity:.7}
+#konto-menu button:hover .sym{opacity:1}
 #konto-menu .trenner{height:1px;background:var(--gc-border);margin:5px 0}
 #konto-menu .weg{color:var(--gc-danger)}
 /* Unterreiter innerhalb eines Bereichs — das Schema sichtbar machen */
@@ -307,7 +316,9 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 .datev .box b{font:600 13px var(--gc-mono);font-variant-numeric:tabular-nums;color:var(--gc-fg)}
 .siegel{display:flex;align-items:center;gap:10px;background:var(--gc-accent-subtle);
   border-radius:8px;padding:10px 14px}
-.siegel .rosette{color:var(--gc-accent);font-size:17px}
+.siegel .rosette{color:var(--gc-accent);flex:none}
+.chip.mit-ik{display:inline-flex;align-items:center;gap:6px}
+.ik.funke{color:var(--gc-gold);vertical-align:-2px}
 .siegel .code{font:12px var(--gc-mono);color:var(--gc-fg)}
 .siegel small{display:block;color:var(--gc-desc);font-size:11.5px}
 .siegel button{margin-left:auto;font-size:12px;color:var(--gc-accent);font-weight:600}
@@ -498,6 +509,46 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 </div>
 
 <div id="app" hidden>
+<!-- ————— Symbole —————
+     Die App zeichnet dünne, einfarbige Striche (SF Symbols); das Portal
+     hatte bunte Emoji. Nebeneinander sieht man sofort, dass es zwei
+     Programme sind — die Emoji sind fett, farbig und in jedem System
+     anders gezeichnet.
+
+     Deshalb hier ein eigener Satz: 24er-Raster, Strichstärke 1.5, keine
+     Füllung, Farbe = Textfarbe. Einmal abgelegt, überall über <use>
+     verwendet — auch in den Bausteinen, die JavaScript zusammensetzt. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <g id="ik-euro"><path d="M17 7.6a5.9 5.9 0 1 0 0 8.8"/><path d="M5 10.6h8"/><path d="M5 13.4h8"/></g>
+    <g id="ik-diagramm"><path d="M4 20h16"/><path d="M7 20v-6"/><path d="M12 20V8"/><path d="M17 20v-9"/></g>
+    <g id="ik-export"><path d="M12 3v10"/><path d="M8.4 6.6 12 3l3.6 3.6"/><path d="M4 15v3.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V15"/></g>
+    <g id="ik-kalender"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M8 3v4"/><path d="M16 3v4"/><path d="M3.5 10h17"/></g>
+    <g id="ik-nachricht"><path d="M20.5 12a7.5 7.5 0 0 1-7.5 7.5H8.6L4.2 22l1.1-3.9A7.5 7.5 0 1 1 20.5 12z"/></g>
+    <g id="ik-person"><circle cx="12" cy="8" r="3.6"/><path d="M5 20.2a7 7 0 0 1 14 0"/></g>
+    <g id="ik-personen"><circle cx="9.5" cy="8.4" r="3.2"/><path d="M3.5 20a6 6 0 0 1 12 0"/><path d="M16 5.6a3.2 3.2 0 0 1 0 5.6"/><path d="M17.2 14.6A5.6 5.6 0 0 1 20.5 20"/></g>
+    <g id="ik-klemmbrett"><path d="M9 4.5H7A1.5 1.5 0 0 0 5.5 6v13A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V6A1.5 1.5 0 0 0 17 4.5h-2"/><rect x="9" y="2.8" width="6" height="3.4" rx="1.2"/><path d="M9 11h6"/><path d="M9 15h4"/></g>
+    <g id="ik-dokument"><path d="M13.5 3.5H7.5A1.5 1.5 0 0 0 6 5v14a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 18 19V8z"/><path d="M13.5 3.5V8H18"/><path d="M9 12.5h6"/><path d="M9 16h4"/></g>
+    <g id="ik-megafon"><path d="M4 10.5v3A1.5 1.5 0 0 0 5.5 15H7l9 4.5v-15L7 9H5.5A1.5 1.5 0 0 0 4 10.5z"/><path d="M19 9.5a3.5 3.5 0 0 1 0 5"/></g>
+    <g id="ik-briefkopf"><rect x="5" y="3.5" width="14" height="17" rx="1.8"/><path d="M8 7.5h5"/><path d="M8 12.5h8"/><path d="M8 16h8"/></g>
+    <!-- Kein Zahnrad: ein Kreis mit acht Speichen liest sich als Sonne,
+         sobald die Striche dünn sind. Die App nimmt für Einstellungen die
+         drei Schieberegler — eindeutig und genauso filigran. -->
+    <g id="ik-zahnrad"><path d="M3.5 7h17M3.5 12h17M3.5 17h17"/><circle cx="9" cy="7" r="2"/><circle cx="15.5" cy="12" r="2"/><circle cx="7.5" cy="17" r="2"/></g>
+    <g id="ik-schluessel"><circle cx="8" cy="8" r="4"/><path d="M11 11l9 9"/><path d="M17.5 17.5 20 15"/></g>
+    <g id="ik-abmelden"><path d="M14.5 4.5h4A1.5 1.5 0 0 1 20 6v12a1.5 1.5 0 0 1-1.5 1.5h-4"/><path d="M13 12H4"/><path d="M7.5 8.5 4 12l3.5 3.5"/></g>
+    <g id="ik-lupe-text"><circle cx="10.5" cy="10.5" r="6.2"/><path d="M15.2 15.2 20.5 20.5"/><path d="M7.8 8.8h5.4"/><path d="M7.8 12.2h3.4"/></g>
+    <g id="ik-neu-lesen"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 3.6V8h-4.4"/></g>
+    <g id="ik-amt"><path d="M3.5 20.5h17"/><path d="M4.5 9.5h15"/><path d="M12 3.2 20 8H4z"/><path d="M7 12v6M12 12v6M17 12v6"/></g>
+    <g id="ik-bank"><rect x="3.5" y="6.5" width="17" height="13" rx="2"/><path d="M3.5 10.5h17"/><path d="M7.5 15h4"/></g>
+    <g id="ik-kasse"><rect x="2.8" y="6.5" width="18.4" height="11" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M6 12h.01M18 12h.01"/></g>
+    <g id="ik-ordner"><path d="M3.5 7.2A1.7 1.7 0 0 1 5.2 5.5h3.6l1.8 2.2h8.2a1.7 1.7 0 0 1 1.7 1.7v8.4a1.7 1.7 0 0 1-1.7 1.7H5.2a1.7 1.7 0 0 1-1.7-1.7z"/></g>
+    <!-- Der Funke in der Begrüßung. Als ✨ ist er ein farbiges Emoji und
+         damit das Bunteste auf der Seite; als Strich bleibt er ein Gruß. -->
+    <g id="ik-funke"><path d="M12 3.5 13.6 9 19 10.6 13.6 12.2 12 17.7 10.4 12.2 5 10.6 10.4 9z"/><path d="M18.2 15.6l.7 2.2 2.2.7-2.2.7-.7 2.2-.7-2.2-2.2-.7 2.2-.7z"/></g>
+    <g id="ik-siegel"><path d="M12 3.2l2.2 1.6 2.7-.2.9 2.6 2.2 1.6-1 2.5 1 2.5-2.2 1.6-.9 2.6-2.7-.2L12 20.8l-2.2-1.6-2.7.2-.9-2.6L4 15.2l1-2.5-1-2.5 2.2-1.6.9-2.6 2.7.2z"/><path d="M9.4 12.2l1.9 1.9 3.5-3.8"/></g>
+  </defs>
+</svg>
 <header>
   <h1>babu</h1>
   <nav>
@@ -521,36 +572,36 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       <div class="kopf"><b id="menu-un">…</b><span id="menu-rolle"></span></div>
       <div class="menu-gruppe">Buchhaltung</div>
       <button role="menuitem" onclick="menuGeh('#rechnungen')">
-        <span class="sym">€</span> Rechnungen</button>
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-euro"/></svg> Rechnungen</button>
       <button role="menuitem" onclick="menuGeh('#abschluss')">
-        <span class="sym">📊</span> Monatsabschluss</button>
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-diagramm"/></svg> Monatsabschluss</button>
       <button role="menuitem" onclick="menuGeh('#export')">
-        <span class="sym">📦</span> Export für die Buchhaltung</button>
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-export"/></svg> Export für die Buchhaltung</button>
       <div class="menu-gruppe">Dein Salon</div>
       <button role="menuitem" onclick="menuGeh('#termine')">
-        <span class="sym">🗓️</span> Termine</button>
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-kalender"/></svg> Termine</button>
       <button role="menuitem" onclick="menuGeh('#whatsapp')">
-        <span class="sym">💬</span> WhatsApp-Termine</button>
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-nachricht"/></svg> WhatsApp-Termine</button>
       <button role="menuitem" onclick="menuGeh('#kundinnen')">
-        <span class="sym">💇</span> Kundinnen</button>
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-person"/></svg> Kundinnen</button>
       <button role="menuitem" onclick="menuGeh('#personal')">
-        <span class="sym">📋</span> Einstellen &amp; Personal</button>
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-klemmbrett"/></svg> Einstellen &amp; Personal</button>
       <button role="menuitem" onclick="menuGeh('#team')">
-        <span class="sym">✂️</span> Dein Team</button>
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-personen"/></svg> Dein Team</button>
       <button role="menuitem" onclick="menuGeh('#vertraege')">
-        <span class="sym">📁</span> Deine Verträge</button>
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-dokument"/></svg> Deine Verträge</button>
       <button role="menuitem" onclick="menuGeh('#marketing')">
-        <span class="sym">📣</span> Marketing</button>
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-megafon"/></svg> Marketing</button>
       <button role="menuitem" onclick="menuGeh('#briefkopf')">
-        <span class="sym">🎨</span> Dein Briefkopf</button>
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-briefkopf"/></svg> Dein Briefkopf</button>
       <div class="trenner"></div>
       <button role="menuitem" onclick="menuGeh('#einstellungen')">
-        <span class="sym">⚙️</span> Konto &amp; Einstellungen</button>
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-zahnrad"/></svg> Konto &amp; Einstellungen</button>
       <button role="menuitem" id="menu-verwaltung" hidden onclick="menuGeh('#verwaltung')">
-        <span class="sym">🔑</span> Zugänge verwalten</button>
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-schluessel"/></svg> Zugänge verwalten</button>
       <div class="trenner"></div>
       <button role="menuitem" class="weg" id="menu-abmelden">
-        <span class="sym">↩</span> Abmelden</button>
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-abmelden"/></svg> Abmelden</button>
     </div>
   </div>
 </header>
@@ -559,7 +610,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   <!-- NOCH KEINE BELEGBOX: ehrlich sagen, statt leere Kacheln zeigen -->
   <section class="ansicht" id="a-gesperrt">
     <div class="lbl">DEIN ZUGANG</div>
-    <div class="gruss">Fast fertig ✨</div>
+    <div class="gruss">Fast fertig <svg class="ik klein funke" viewBox="0 0 24 24"><use href="#ik-funke"/></svg></div>
     <div class="karte" style="margin-top:18px">
       <h3>Deine Belegbox richten wir noch ein</h3>
       <p>Dein Konto steht. Damit deine Belege, dein Kassenbuch und deine Zahlen
@@ -577,7 +628,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   <!-- HEUTE -->
   <section class="ansicht" id="a-heute">
     <div class="lbl" id="heute-eyebrow">DEIN MONAT</div>
-    <div class="gruss" id="heute-gruss">Guten Tag ✨</div>
+    <div class="gruss" id="heute-gruss">Guten Tag <svg class="ik klein funke" viewBox="0 0 24 24"><use href="#ik-funke"/></svg></div>
     <div id="heute-monatslauf"></div>
     <div id="heute-meldungen"></div>
     <div id="heute-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
@@ -1062,6 +1113,10 @@ const zeitKurz = iso => { if(!iso) return ""; const d = new Date(iso);
   return d.toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit"}) + ", " +
          d.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"}); };
 
+/* Ein Symbol aus dem Sprite oben. */
+const ikone = (name, klasse = "") =>
+  `<svg class="ik ${klasse}" viewBox="0 0 24 24"><use href="#ik-${name}"/></svg>`;
+
 async function api(pfad, opts){
   const r = await fetch(pfad, Object.assign({credentials:"same-origin"}, opts));
   if (r.status === 401) { zeigeLogin(); throw new Error("abgemeldet"); }
@@ -1230,7 +1285,9 @@ async function ladeHeute(){
   const monat = jetztMonat();
   $("#heute-eyebrow").textContent = "DEIN " + monatName(monat).split(" ")[0].toUpperCase();
   const stunde = new Date().getHours();
-  $("#heute-gruss").textContent = stunde < 11 ? "Guten Morgen ✨" : stunde < 18 ? "Schön, dass du da bist ✨" : "Guten Abend ✨";
+  const gruss = stunde < 11 ? "Guten Morgen"
+              : stunde < 18 ? "Schön, dass du da bist" : "Guten Abend";
+  $("#heute-gruss").innerHTML = esc(gruss) + " " + ikone("funke", "klein funke");
   let d;
   try{ d = await (await api("/api/monat/" + monat)).json(); }
   catch{ return; }
@@ -1322,7 +1379,7 @@ function belegZeile(z){
   const [satz, art] = statusSatz(z);
   const bild = z.datei && /\.(jpg|jpeg|png)$/i.test(z.datei)
     ? `<img class="thumb" loading="lazy" alt="" src="/api/beleg/${z.stamm}/bild?v=${z.bild_oid}">`
-    : `<div class="thumb doc">▤</div>`;
+    : `<div class="thumb doc"><svg class="ik" viewBox="0 0 24 24"><use href="#ik-dokument"/></svg></div>`;
   return `<button class="zeile einflug" onclick="location.hash='#detail/${z.stamm}'">
     ${bild}<div class="zmitte"><div class="zname">${z.lieferant || "Beleg vom " + (z.datum || zeitKurz(z.hochgeladen))}</div>
     <div class="zstatus ${art}">${satz}</div></div>
@@ -1438,7 +1495,7 @@ async function ladeDetail(stamm){
   const frage = d.status === "nachfrage";
   const bildTag = /\.(jpg|jpeg|png)$/i.test(d.datei||"")
     ? `<img id="belegbild" alt="Foto des Belegs" src="${d.bild_url}">`
-    : `<div class="pdfhinweis">▤<br>Dieses Dokument kam als Datei —<br><a href="${d.bild_url}">herunterladen und ansehen</a></div>`;
+    : `<div class="pdfhinweis"><svg class="ik" viewBox="0 0 24 24"><use href="#ik-dokument"/></svg><br>Dieses Dokument kam als Datei —<br><a href="${d.bild_url}">herunterladen und ansehen</a></div>`;
 
   /* Beleg-Weg */
   const aufn = d.audit && d.audit.aufnahme, rev = d.audit && d.audit.review;
@@ -1510,7 +1567,7 @@ async function ladeDetail(stamm){
     const siegelZeit = rev ? rev.zeit : (aufn ? aufn.zeit : null);
     if (aufn){
       html += `<div class="sekt"><span class="lbl">Unverändert seit</span>
-        <div class="siegel"><span class="rosette">✦</span>
+        <div class="siegel"><svg class="ik rosette" viewBox="0 0 24 24"><use href="#ik-siegel"/></svg>
         <div><span class="code">${aufn.commit}${rev ? " · " + rev.commit : ""}</span>
         <small>Seit ${zeitKurz(siegelZeit)} unverändert — jederzeit nachweisbar.</small></div>
         <button onclick="navigator.clipboard.writeText('${aufn.commit}${rev ? " "+rev.commit : ""}');this.textContent='Kopiert ✓'">Kopieren</button>
@@ -1538,8 +1595,12 @@ async function ladeDetail(stamm){
         <div style="font-size:13px;color:var(--gc-desc);margin-bottom:8px">Jede
         erkannte Zeile, und zu jedem Wert die Stelle auf dem Beleg.</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="chip" onclick="protokollZeigen('${d.stamm}')">Protokoll ansehen</button>
-          <button class="chip" onclick="neuLesen('${d.stamm}')">Noch einmal lesen</button>
+          <button class="chip mit-ik" onclick="protokollZeigen('${d.stamm}')">
+            <svg class="ik klein" viewBox="0 0 24 24"><use href="#ik-lupe-text"/></svg>
+            Protokoll ansehen</button>
+          <button class="chip mit-ik" onclick="neuLesen('${d.stamm}')">
+            <svg class="ik klein" viewBox="0 0 24 24"><use href="#ik-neu-lesen"/></svg>
+            Noch einmal lesen</button>
         </div>
         <div id="prot-${d.stamm}" class="prot" style="margin-top:12px"></div>
       </div></div>`;
@@ -1835,7 +1896,7 @@ async function ladeBank(){
   if (fehlend.length){
     html += `<div class="sektion lbl">Diese Zahlungen haben noch keinen Beleg</div>`;
     for (const u of fehlend){
-      html += `<div class="zeile"><div class="thumb doc">?</div>
+      html += `<div class="zeile"><div class="thumb doc"><svg class="ik" viewBox="0 0 24 24"><use href="#ik-euro"/></svg></div>
         <div class="zmitte"><div class="zname">${(u.gegenpartei||"Zahlung").split(" ").slice(0,5).join(" ")}</div>
         <div class="zstatus frage">vom ${u.datum || ""} — Beleg nachreichen: einfach oben rechts hochladen</div></div>
         <div class="zrechts"><div class="zbetrag">${euro(Math.abs(u.betrag||0))}</div></div></div>`;
@@ -1857,8 +1918,10 @@ function artLabel(art){
   if (art === "vollmacht") return "Vollmacht";
   return "Von deiner Kanzlei";
 }
-const ABLAGE_SYMBOL = {behoerde:"🏛", kanzlei:"📄", abschluss:"📊",
-                       kontoauszug:"🏦", export:"📦", kassenbuch:"💶"};
+/* Ein Strichsymbol je Ablagefach — dieselben Striche wie im Menü, damit
+   die Ablage nicht als einzige Ansicht bunt bleibt. */
+const ABLAGE_SYMBOL = {behoerde:"amt", kanzlei:"dokument", abschluss:"diagramm",
+                       kontoauszug:"bank", export:"export", kassenbuch:"kasse"};
 
 async function ladeAblage(){
   const ziel = $("#ablage-inhalt");
@@ -1875,7 +1938,7 @@ async function ladeAblage(){
     html += `<div class="jahr-kopf">${esc(j.jahr)} <span style="font:400 13px var(--gc-sans);color:var(--gc-muted)">· ${j.anzahl} ${j.anzahl === 1 ? "Unterlage" : "Unterlagen"}</span></div>`;
     for (const a of j.arten){
       html += `<details class="ordner"${i === 0 ? " open" : ""}>
-        <summary><span>${ABLAGE_SYMBOL[a.art] || "📁"}</span>
+        <summary><span>${ikone(ABLAGE_SYMBOL[a.art] || "ordner")}</span>
           <span>${esc(a.name)}</span>
           <span class="hinweis">${esc(a.hinweis)}</span>
           <span class="zaehler">${a.anzahl}</span></summary>
@@ -1963,7 +2026,7 @@ async function ladePost(){
   ziel.innerHTML = kopfHtml + (liste.length ? liste.map(doc => `
     <button class="zeile einflug" onclick="postOeffnen('${doc.pfad}', this)">
       ${doc.gelesen ? "" : `<span style="width:8px;height:8px;border-radius:50%;background:var(--gc-accent);flex:none"></span>`}
-      <div class="thumb doc">▤</div>
+      <div class="thumb doc"><svg class="ik" viewBox="0 0 24 24"><use href="#ik-dokument"/></svg></div>
       <div class="zmitte"><div class="zname" ${doc.gelesen ? "" : 'style="font-weight:700"'}>${doc.titel}</div>
       <div class="zstatus laeuft">${artLabel(doc.art)} · ${zeitKurz(doc.zeit)}</div></div>
       <div class="zrechts"><span class="chip">Ansehen</span></div>
@@ -2806,7 +2869,7 @@ async function hochladen(dateien){
     const kennung = "up-" + Math.random().toString(36).slice(2, 8);
     const zeile = document.createElement("div");
     zeile.className = "zeile einflug"; zeile.id = kennung;
-    zeile.innerHTML = `<div class="thumb doc">▤</div><div class="zmitte">
+    zeile.innerHTML = `<div class="thumb doc"><svg class="ik" viewBox="0 0 24 24"><use href="#ik-dokument"/></svg></div><div class="zmitte">
       <div class="zname">${datei.name}</div>
       <div class="zstatus laeuft">wird sicher abgelegt …</div></div>`;
     const liste = $("#belege-liste");
@@ -3642,7 +3705,7 @@ async function ladeVerwaltung(){
   ziel.innerHTML = html;
 }
 function startpasswortKarte(email, passwort){
-  return `<div class="siegel" style="margin-top:10px"><span class="rosette">✦</span>
+  return `<div class="siegel" style="margin-top:10px"><svg class="ik rosette" viewBox="0 0 24 24"><use href="#ik-siegel"/></svg>
     <div><span class="code">${email} · ${passwort}</span>
     <small>Startpasswort — erscheint nur dieses eine Mal. Jetzt notieren und persönlich weitergeben.</small></div>
     <button onclick="navigator.clipboard.writeText('${email} ${passwort}');this.textContent='Kopiert ✓'">Kopieren</button></div>`;
