@@ -351,6 +351,13 @@ enum AblageService {
         return "Das hat gerade nicht geklappt."
     }
 
+    /// Die Anfrage aus WhatsApp annehmen. Erst damit steht der Termin fest —
+    /// und die Kundin bekommt Bescheid.
+    static func terminBestaetigen(id: Int, basis: URL, pat: String) async -> Bool {
+        await schicken("api/termin/\(id)/bestaetigen", [:], basis: basis,
+                       pat: pat) == nil
+    }
+
     static func kassenvorschlag(tag: String, basis: URL, pat: String) async
             -> [String: Any]? {
         await holen("api/kasse/vorschlag?datum=\(tag)", basis: basis, pat: pat)
