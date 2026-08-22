@@ -46,6 +46,8 @@ BELEG_ENDUNGEN = BILD_ENDUNGEN | PDF_ENDUNGEN | HEIC_ENDUNGEN | XML_ENDUNGEN
 
 sys.path.insert(0, str(WURZEL))
 from doc_classify import classify_doc  # noqa: E402  (Kopie aus ~/OCR, standalone)
+from belegdeutung import Kasten, deuten  # noqa: E402
+from leseprotokoll import protokoll  # noqa: E402
 
 
 def log(msg: str) -> None:
@@ -161,8 +163,8 @@ OCR_DIENST_FRIST = float(os.environ.get("OCR_DIENST_FRIST", "60"))
 _OCR_QUELLE = "—"
 
 
-def ocr_dienst_zeilen(bildpfad: Path) -> list[tuple[float, str, float]]:
-    """(y, Text, Konfidenz) vom Dienst — oder ein Fehler, den der Aufrufer fängt."""
+def ocr_dienst_kaesten(bildpfad: Path) -> list[Kasten]:
+    """Erkannte Textstücke mit Position — oder ein Fehler für den Aufrufer."""
     grenze = "----babu-ocr"
     kopf = (f"--{grenze}\r\n"
             f'Content-Disposition: form-data; name="file"; '
@@ -184,57 +186,68 @@ def ocr_dienst_zeilen(bildpfad: Path) -> list[tuple[float, str, float]]:
     # Nur die erste Seite: mehrseitige Bündel behandelt der Watcher schon
     # weiter oben als eigenen Fall.
     d = ergebnisse[0].get("prunedResult") or {}
-    texte = d.get("rec_texts") or []
-    scores = d.get("rec_scores") or []
-    polys = d.get("rec_polys") or d.get("dt_polys") or []
-    zeilen = []
+    return _kaesten_aus(d.get("rec_texts") or [], d.get("rec_scores") or [],
+                        d.get("rec_polys") or d.get("dt_polys") or [])
+
+
+def _kaesten_aus(texte, scores, polys) -> list[Kasten]:
+    """Die drei Listen der Texterkennung zu Kästen zusammensetzen.
+
+    Kommt kein Umriss mit, wird die Zeilennummer als Höhe eingesetzt: die
+    Deutung braucht dann zwar keine Spalten mehr erkennen können, aber die
+    Reihenfolge stimmt und der Beleg fällt nicht aus.
+    """
+    kaesten: list[Kasten] = []
     for i, text in enumerate(texte):
-        conf = float(scores[i]) if i < len(scores) else 0.0
+        konf = float(scores[i]) if i < len(scores) else 0.0
         try:
-            y = float(min(punkt[1] for punkt in polys[i]))
+            xs = [float(punkt[0]) for punkt in polys[i]]
+            ys = [float(punkt[1]) for punkt in polys[i]]
+            x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
         except Exception:  # noqa: BLE001
-            y = float(i)
-        zeilen.append((y, str(text), conf))
-    return zeilen
+            x0, y0, x1, y1 = 0.0, float(i) * 20, float(len(str(text)) * 10), float(i) * 20 + 18
+        kaesten.append(Kasten(str(text), konf, x0, y0, x1, y1))
+    return kaesten
 
 
-def ocr_zeilen(bildpfad: Path) -> list[tuple[str, float]]:
-    """Erkannte Zeilen (Text, Konfidenz), von oben nach unten."""
+def ocr_kaesten(bildpfad: Path) -> list[Kasten]:
+    """Erkannte Textstücke samt Position, von oben nach unten.
+
+    Die Position ist kein Beiwerk: erst mit ihr lässt sich eine Betrags-
+    spalte von einer Zahl im Fließtext unterscheiden und ein groß gesetzter
+    Firmenname von der Fußzeile. Ohne sie bliebe nur Raten.
+    """
     global _OCR_QUELLE
     if OCR_DIENST:
         try:
-            zeilen = ocr_dienst_zeilen(bildpfad)
+            kaesten = ocr_dienst_kaesten(bildpfad)
             _OCR_QUELLE = "PP-OCRv6 (GPU-Dienst)"
-            zeilen.sort(key=lambda z: z[0])
-            return [(t, c) for _, t, c in zeilen]
+            return sorted(kaesten, key=lambda k: (k.y0, k.x0))
         except Exception as ex:  # noqa: BLE001
             log(f"OCR-Dienst nicht verfügbar ({ex!r}) — die eingebaute Lane springt ein")
 
     _OCR_QUELLE = "PP-OCRv5 (CPU, eingebaut)"
     eng = ocr_engine()
-    zeilen: list[tuple[float, str, float]] = []   # (y, text, conf)
+    kaesten: list[Kasten] = []
     if hasattr(eng, "predict"):                    # PaddleOCR 3.x
         for res in eng.predict(str(bildpfad)):
             d = res if isinstance(res, dict) else getattr(res, "json", {}).get("res", {})
-            texte = d.get("rec_texts") or []
-            scores = d.get("rec_scores") or []
-            polys = d.get("rec_polys")
-            if polys is None:
-                polys = d.get("dt_polys") or []
-            for i, text in enumerate(texte):
-                conf = float(scores[i]) if i < len(scores) else 0.0
-                try:
-                    y = float(min(p[1] for p in polys[i]))
-                except Exception:  # noqa: BLE001
-                    y = float(i)
-                zeilen.append((y, str(text), conf))
+            kaesten += _kaesten_aus(d.get("rec_texts") or [],
+                                    d.get("rec_scores") or [],
+                                    d.get("rec_polys") or d.get("dt_polys") or [])
     else:                                          # PaddleOCR 2.x
         for seite in (eng.ocr(str(bildpfad), cls=True) or []):
             for box, (text, conf) in (seite or []):
-                y = float(min(p[1] for p in box))
-                zeilen.append((y, str(text), float(conf)))
-    zeilen.sort(key=lambda z: z[0])
-    return [(t, c) for _, t, c in zeilen]
+                xs = [float(punkt[0]) for punkt in box]
+                ys = [float(punkt[1]) for punkt in box]
+                kaesten.append(Kasten(str(text), float(conf),
+                                      min(xs), min(ys), max(xs), max(ys)))
+    return sorted(kaesten, key=lambda k: (k.y0, k.x0))
+
+
+def ocr_zeilen(bildpfad: Path) -> list[tuple[str, float]]:
+    """Nur Text und Konfidenz — für alles, was die Position nicht braucht."""
+    return [(k.text, k.konf) for k in ocr_kaesten(bildpfad)]
 
 
 # ── Semantik: embeddinggemma-300m via vLLM (:11436, OpenAI-kompatibel) ──────
@@ -414,6 +427,110 @@ def vlm_lesen(bildpfad: Path) -> dict | None:
     return json.loads(m.group(0)) if m else None
 
 
+def gegenprobe_abgleichen(f: dict, vlm: dict | None) -> list[str]:
+    """Die zweite Lesung mit der ersten vergleichen — melden, nicht ersetzen.
+
+    Die Deutung hat Vorfahrt, weil sie zu jedem Wert die Zeile nennen kann.
+    Die Gegenprobe darf deshalb nichts überschreiben. Sie darf zweierlei:
+    eine Abweichung melden, damit ein Mensch hinsieht, und eine Lücke
+    füllen, die die Deutung offen gelassen hat — dann aber sichtbar
+    gekennzeichnet, weil für einen so gefüllten Wert keine Zeile benannt
+    werden kann.
+
+    Verändert `f` an Ort und Stelle und gibt die Abweichungen zurück.
+    """
+    widerspruch: list[str] = []
+    if not isinstance(vlm, dict):
+        return widerspruch
+
+    for feld, klartext in (("lieferant", "Lieferant"),
+                           ("beleg_nr", "Beleg-Nr."), ("datum", "Datum")):
+        gegen, unser = vlm.get(feld), f.get(feld)
+        if gegen in (None, "") or unser in (None, ""):
+            continue
+        a, b = str(gegen).strip(), str(unser).strip()
+        if feld == "datum":
+            a = _als_datum(a) or a
+        if (a.lower() != b.lower() and a.lower() not in b.lower()
+                and b.lower() not in a.lower()):
+            widerspruch.append(f"{klartext}: die Gegenprobe liest „{a}“, "
+                               f"gelesen wurde „{b}“")
+
+    gegen_brutto = _als_betrag(vlm.get("brutto"))
+    if (gegen_brutto is not None and f.get("brutto") is not None
+            and abs(gegen_brutto - f["brutto"]) > 0.011):
+        widerspruch.append(
+            f"Rechnungsbetrag: die Gegenprobe liest {gegen_brutto:.2f} €, "
+            f"gelesen wurden {f['brutto']:.2f} €")
+
+    herkunft = f.setdefault("herkunft", {})
+    aus_gegenprobe = {"regel": "aus der Gegenprobe übernommen, weil der Beleg "
+                      "selbst nichts hergab", "zeile": None,
+                      "zeilentext": "", "konf": 0.0}
+    for feld in ("lieferant", "beleg_nr"):
+        if f.get(feld) in (None, "") and vlm.get(feld):
+            f[feld] = str(vlm[feld]).strip()
+            herkunft[feld] = dict(aus_gegenprobe)
+    if f.get("datum") in (None, "") and vlm.get("datum"):
+        iso = _als_datum(str(vlm["datum"]))
+        if iso:
+            f["datum"] = iso
+            herkunft["datum"] = dict(aus_gegenprobe)
+    if f.get("brutto") is None and gegen_brutto is not None:
+        f["brutto"] = gegen_brutto
+        herkunft["brutto"] = dict(aus_gegenprobe)
+        f.setdefault("offen", []).append(
+            "Der Rechnungsbetrag stammt aus der Gegenprobe — auf dem Beleg "
+            "war keine Summe zu finden. Bitte einmal ansehen.")
+
+    if vlm.get("bewirtung") is True:
+        f["bewirtungssignal"] = True
+    return widerspruch
+
+
+def vlm_zusammenfassung(bildpfad: Path, felder: dict) -> str | None:
+    """Ein Satz, den ein Mensch liest — die Zusammenfassung zum grünen Haken.
+
+    Das Bildmodell entscheidet keine Zahlen mehr; die kommen aus der Deutung
+    und sind bis auf die Zeile nachweisbar. Was es kann und was keine Regel
+    kann, ist sagen, *worum es geht*: „Farbe und Entwickler beim
+    Friseurgroßhandel". Das steht neben dem Haken, damit man einen Beleg
+    wiedererkennt, ohne ihn zu öffnen.
+    """
+    import base64
+    b64 = base64.b64encode(bildpfad.read_bytes()).decode()
+    mime = "image/png" if bildpfad.suffix.lower() == ".png" else "image/jpeg"
+    bekannt = ", ".join(
+        f"{name} {wert}" for name, wert in (
+            ("Lieferant", felder.get("lieferant")),
+            ("Betrag", f"{felder['brutto']:.2f} EUR" if felder.get("brutto") else None),
+            ("Datum", felder.get("datum")))
+        if wert)
+    anweisung = (
+        "Du siehst einen deutschen Geschäftsbeleg. Schreibe EINEN deutschen "
+        "Satz, höchstens 120 Zeichen, der sagt, worum es geht — was gekauft "
+        "oder bezahlt wurde und bei wem. Kein Markdown, keine Anführungs"
+        "zeichen, keine Aufzählung, keine Wiederholung der Zahlen. "
+        "Schreibe so, wie man es einer Kollegin sagen würde. "
+        + (f"Bereits sicher gelesen: {bekannt}. " if bekannt else "")
+        + "Wenn das Bild nichts hergibt, antworte genau: unklar")
+    payload = {
+        "model": VLM_MODELL, "temperature": 0, "max_tokens": 120,
+        "messages": [{"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
+            {"type": "text", "text": anweisung},
+        ]}],
+    }
+    r = requests.post(VLM_API, json=payload, timeout=180)
+    r.raise_for_status()
+    satz = r.json()["choices"][0]["message"]["content"].strip()
+    satz = re.sub(r"^```.*?\n|```$", "", satz, flags=re.S).strip().strip('"„“')
+    satz = " ".join(satz.split())
+    if not satz or satz.lower().startswith("unklar"):
+        return None
+    return satz[:160]
+
+
 # ── Feld-Extraktion (Port der iOS-FeldParser-Heuristik, getestet am Gerät) ───
 
 BETRAG_RE = re.compile(r"\b\d{1,3}(?:\.\d{3})*,\d{2}\b")
@@ -552,6 +669,28 @@ def felder_extrahieren(zeilen: list[tuple[str, float]]) -> dict:
             f["netto"] = round(mx / (1 + s), 2)
             f["ust"] = round(mx - f["netto"], 2)
     return f
+
+
+def _als_datum(wert) -> str | None:
+    """TT.MM.JJJJ der Gegenprobe auf die ISO-Schreibweise bringen.
+
+    Ohne das meldete jedes Datum einen Widerspruch, nur weil zwei Lanes es
+    verschieden schreiben — und ein Warnhinweis, der immer erscheint, wird
+    nicht gelesen.
+    """
+    if not wert:
+        return None
+    t = str(wert).strip()
+    m = re.fullmatch(r"(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{2,4})", t)
+    if m:
+        tag, monat, jahr = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        jahr = jahr + 2000 if jahr < 100 else jahr
+        try:
+            return datetime(jahr, monat, tag).date().isoformat()
+        except ValueError:
+            return None
+    m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", t)
+    return t if m else None
 
 
 def _als_betrag(wert) -> float | None:
@@ -694,11 +833,58 @@ def verarbeite(pfad: str) -> None:
         lokal = bild
 
     t0 = time.time()
-    zeilen = ocr_zeilen(lokal)
+    kaesten = ocr_kaesten(lokal)
     dauer = time.time() - t0
+    zeilen = [(k.text, k.konf) for k in kaesten]
     text = "\n".join(t for t, _ in zeilen)
     dokumentklasse = classify_doc(text, name=Path(pfad).name, pages=seiten)
-    f = felder_extrahieren(zeilen)
+
+    # ── Wer entscheidet ──────────────────────────────────────────────────
+    #
+    # Die Deutung entscheidet. Sie arbeitet auf dem, was die Texterkennung
+    # tatsächlich geliefert hat — Zeilen an ihrem Ort, in ihrer Größe — und
+    # kann zu jeder Zahl sagen, aus welcher Zeile sie stammt und warum. Das
+    # ist die Eigenschaft, auf die es hier ankommt: was in eine Buchhaltung
+    # geht, muss nachweisbar sein, nicht nur plausibel.
+    #
+    # Bis zum 22.08.2026 war das zweimal anders geregelt und beide Male
+    # falsch. Erst führte eine Textsuche, die Zeichen sah statt Dokumente —
+    # sie hielt „19,00 %" für den Rechnungsbetrag und das Stammkapital aus
+    # der Fußzeile für die Summe. Dann führte das Bildmodell, das zwar
+    # versteht, aber nicht belegen kann, woher ein Wert kommt; für Zahlen,
+    # die gebucht werden, ist das der falsche Tausch.
+    #
+    # Das Bildmodell behält zwei Aufgaben, für die es das bessere Werkzeug
+    # ist: es liest denselben Beleg noch einmal und meldet Abweichungen,
+    # und es schreibt den Satz, der neben dem grünen Haken steht.
+    lesung = deuten(kaesten)
+    f = {
+        "lieferant": lesung.wert("lieferant"),
+        "beleg_nr": lesung.wert("beleg_nr"),
+        "datum": lesung.wert("datum"),
+        "netto": lesung.wert("netto"),
+        "ust": lesung.wert("ust"),
+        "brutto": lesung.wert("brutto"),
+        "ust_satz": lesung.wert("ust_satz"),
+        "summenprobe_ok": bool(lesung.wert("summenprobe_ok")),
+        "bewirtungssignal": False,
+        "offen": list(lesung.offen),
+        "herkunft": {name: {"regel": d.regel, "zeile": d.zeile_nr,
+                            "zeilentext": d.zeilentext, "konf": round(d.konf, 3)}
+                     for name, d in lesung.felder.items() if d.wert is not None},
+        "notizen": list(lesung.notizen),
+    }
+    if f["ust_satz"] is None:
+        f["ust_satz"] = 19
+        f["offen"].append("Kein Steuersatz auf dem Beleg — 19 % angenommen.")
+
+    # Das Bewirtungssignal bleibt eine Wortfrage („Restaurant", „Menü") und
+    # ist damit an der Textsuche gut aufgehoben.
+    try:
+        f["bewirtungssignal"] = bool(felder_extrahieren(zeilen).get("bewirtungssignal"))
+    except Exception as ex:  # noqa: BLE001
+        log(f"Bewirtungssignal nicht ermittelbar: {ex!r}")
+
     if seiten > 1:
         f["offen"].append(f"{seiten} Seiten — gelesen ist Seite 1. "
                           "Ein Bündel bitte als einzelne Belege einreichen.")
@@ -711,118 +897,47 @@ def verarbeite(pfad: str) -> None:
     except Exception as ex:  # noqa: BLE001 — Embed-Dienst weg → deterministisch weiter
         log(f"Semantik nicht verfügbar: {ex!r}")
 
-    # VLM-Lane (Gemma 4 liest das Bild): füllt Lücken der deterministischen
-    # Lane (Herkunft wird festgehalten) und liefert eine zweite Betrags-Lesung.
+    # ── Die Gegenprobe: dasselbe Bild, zweite Meinung ────────────────────
     vlm = None
     try:
         vlm = vlm_lesen(lokal)
     except Exception as ex:  # noqa: BLE001
-        log(f"VLM nicht verfügbar: {ex!r}")
-    # Wer entscheidet — und warum es umgedreht wurde.
-    #
-    # Bis 22.08.2026 durfte das Bildmodell nur drei Felder füllen, und auch
-    # das nur, wenn die Regex nichts gefunden hatte. Den Betrag durfte es
-    # überhaupt nicht setzen. Das ging schief, sobald ein Beleg mehr als
-    # eine Zahl enthält: auf einer Parkquittung gewann der Steuersatz
-    # („19,00 %" statt 3,50 €), auf einer Rechnung das Stammkapital aus der
-    # Fußzeile (43.783,86 € statt 40,00 €), und als Lieferant stand das
-    # Wort „Rechnungsadresse", weil das die erste Zeile war.
-    #
-    # Eine Regex sieht Zeichen, kein Dokument. Sie kann nicht wissen, dass
-    # eine Prozentangabe kein Betrag ist, dass eine Fußzeile juristisches
-    # Beiwerk ist oder dass auf einer Rechnung oben der Empfänger steht und
-    # unten der Aussteller. Das Modell sieht genau das.
-    #
-    # Also führt jetzt das Modell, und die deterministische Lane wird zur
-    # Gegenprobe. Wo beide etwas sagen und sich widersprechen, wird nicht
-    # still entschieden, sondern gefragt — dasselbe Muster wie überall in
-    # babu: vorschlagen, nachrechnen, im Zweifel nachfragen.
-    regex_lesung = {k: f.get(k) for k in
-                    ("lieferant", "beleg_nr", "datum", "brutto", "netto", "ust")}
-    widerspruch: list[str] = []
+        log(f"Gegenprobe nicht verfügbar: {ex!r}")
 
-    if vlm:
-        for feld in ("lieferant", "beleg_nr", "datum"):
-            wert = vlm.get(feld)
-            if wert in (None, ""):
-                continue
-            wert = str(wert).strip()
-            alt_wert = (f.get(feld) or "").strip()
-            if alt_wert and alt_wert.lower() != wert.lower():
-                widerspruch.append(
-                    f"{feld}: gelesen „{wert}“, Textsuche fand „{alt_wert}“")
-            f[feld] = wert
-            f.setdefault("herkunft_vlm", []).append(feld)
-
-        # Beträge: nur übernehmen, wenn sie in sich stimmig sind. Ein Modell,
-        # das Netto und Umsatzsteuer nennt, die nicht zum Brutto passen, hat
-        # geraten — dann bleibt die gerechnete Lane stehen.
-        vlm_brutto = _als_betrag(vlm.get("brutto"))
-        if vlm_brutto is not None and vlm_brutto > 0:
-            if f.get("brutto") is not None and abs(vlm_brutto - f["brutto"]) > 0.011:
-                widerspruch.append(
-                    f"Betrag: gelesen {vlm_brutto:.2f} €, Textsuche fand "
-                    f"{f['brutto']:.2f} €")
-            f["brutto"] = vlm_brutto
-            f.setdefault("herkunft_vlm", []).append("brutto")
-
-            vlm_netto = _als_betrag(vlm.get("netto"))
-            vlm_ust = _als_betrag(vlm.get("ust"))
-            if (vlm_netto is not None and vlm_ust is not None
-                    and abs(vlm_netto + vlm_ust - vlm_brutto) < 0.011):
-                f["netto"], f["ust"] = vlm_netto, vlm_ust
-                f["summenprobe_ok"] = True
-                f.setdefault("herkunft_vlm", []).extend(["netto", "ust"])
-
-                # Den Steuersatz nicht suchen, sondern ausrechnen. Die
-                # Heuristik sucht „7 %" und findet „7,00 %" nicht — auf einem
-                # Bäckerbon stand deshalb 19 % statt 7 %, und damit wäre die
-                # Vorsteuer falsch. Aus stimmigem Netto und Steuer ergibt er
-                # sich exakt; übernommen wird nur ein gesetzlicher Satz.
-                if vlm_netto > 0:
-                    satz = round(vlm_ust / vlm_netto * 100)
-                    if satz in (0, 5, 7, 16, 19):
-                        f["ust_satz"] = satz
-                        f.setdefault("herkunft_vlm", []).append("ust_satz")
-            elif f.get("netto") is None or abs(
-                    (f.get("netto") or 0) + (f.get("ust") or 0) - vlm_brutto) > 0.011:
-                # Die alte Aufteilung passt nicht mehr zum neuen Brutto.
-                satz = f.get("ust_satz") or 0
-                if satz > 0:
-                    netto = round(vlm_brutto / (1 + satz / 100), 2)
-                    f["netto"], f["ust"] = netto, round(vlm_brutto - netto, 2)
-                else:
-                    f["netto"], f["ust"] = vlm_brutto, 0.0
-                f["summenprobe_ok"] = False
-
-        if vlm.get("bewirtung") is True:
-            f["bewirtungssignal"] = True
-
-    f["regex_lesung"] = regex_lesung
+    widerspruch = gegenprobe_abgleichen(f, vlm)
     f["widerspruch"] = widerspruch
+
+    # ── Der Satz zum grünen Haken ────────────────────────────────────────
+    zusammenfassung = None
+    try:
+        zusammenfassung = vlm_zusammenfassung(lokal, f)
+    except Exception as ex:  # noqa: BLE001
+        log(f"Zusammenfassung nicht verfügbar: {ex!r}")
+    if not zusammenfassung and vlm and vlm.get("buchungstext"):
+        zusammenfassung = str(vlm["buchungstext"]).strip()[:160]
 
     e = einschaetzung(f, sem, dokumentklasse)
     if aehnlich:
         e["hinweise"].append(
             f"Ähnlichster früherer Beleg: {aehnlich['datei']} ({aehnlich['score']:.0%}).")
-    # Widersprochen sich die beiden Lesungen, wird das sichtbar — und der
-    # Beleg bekommt keinen stillen grünen Haken.
     if widerspruch:
         e["hinweise"].append(
-            "Zwei Lesungen weichen ab (" + "; ".join(widerspruch)
-            + "). Übernommen ist die Lesung aus dem Bild — bitte kurz ansehen.")
-        f.setdefault("offen", []).append("Zwei Lesungen weichen ab — kurz prüfen.")
+            "Die Gegenprobe liest etwas anderes (" + "; ".join(widerspruch)
+            + "). Gültig ist die Lesung vom Beleg — bitte kurz ansehen.")
+        f["offen"].append("Die Gegenprobe weicht ab — kurz prüfen.")
 
+    gelesen = datetime.now(timezone.utc).isoformat(timespec="seconds")
     review = {
         "datei": pfad,
         "engine": f"PaddleOCR {_OCR_QUELLE}",
-        "gelesen": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "gelesen": gelesen,
         "dauer_s": round(dauer, 2),
-        "zeilen": len(zeilen),
+        "zeilen": len(lesung.zeilen),
         "ocr_konfidenz": round(sum(c for _, c in zeilen) / len(zeilen), 3) if zeilen else 0,
         "dokumentklasse": dokumentklasse,
         "semantik": sem,
         "vlm": vlm,
+        "zusammenfassung": zusammenfassung,
         "aehnlich": aehnlich,
         "felder": f,
         "einschaetzung": e,
@@ -831,20 +946,12 @@ def verarbeite(pfad: str) -> None:
     if seiten > 1:
         review["seiten"] = seiten
 
-    md = [f"# BelegReview · {Path(pfad).name}", "",
-          f"> {review['engine']} · {review['zeilen']} Zeilen · "
-          f"ø Konfidenz {review['ocr_konfidenz']:.0%} · {dauer:.1f} s · "
-          f"Semantik {EMBED_MODELL}{' · VLM ' + VLM_MODELL if vlm else ''}", "",
-          f"- **Belegart:** {e['belegart']} · Dokumentklasse: {dokumentklasse}",
-          f"- **Lieferant:** {f['lieferant'] or '—'}",
-          f"- **Beleg-Nr.:** {f['beleg_nr'] or '—'}",
-          f"- **Datum:** {f['datum'] or '—'}",
-          f"- **Netto / USt / Brutto:** {f['netto']} / {f['ust']} / {f['brutto']} "
-          f"(Satz {f['ust_satz']} %, Summenprobe {'✓' if f['summenprobe_ok'] else '✗'})",
-          f"- **Konto (SKR04):** {e['konto_skr04'] or '—'} · Steuerschlüssel {e['steuerschluessel']}", ""]
-    md += [f"- {h}" for h in e["hinweise"]]
-    if f["offen"]:
-        md += ["", "Offen:"] + [f"- {o}" for o in f["offen"]]
+    md = protokoll(
+        lesung, datei=Path(pfad).name, engine=review["engine"], dauer_s=dauer,
+        zusammenfassung=zusammenfassung, belegart=e.get("belegart"),
+        konto=e.get("konto_skr04"), steuerschluessel=e.get("steuerschluessel"),
+        gegenprobe=vlm, widerspruch=widerspruch, dokumentklasse=dokumentklasse,
+        gelesen_am=gelesen).split("\n")
 
     if review_committen(name, review, md, vektor):
         log(f"review: {Path(pfad).name} — {e['belegart']}, brutto {f['brutto']}, {dauer:.1f}s OCR")

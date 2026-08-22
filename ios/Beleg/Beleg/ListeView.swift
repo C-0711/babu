@@ -201,6 +201,13 @@ struct DetailView: View {
     @State private var markierungen: [CGRect] = []
     @State private var zeigeLoeschen = false
 
+    /// Der Name, unter dem der Beleg in der Belegbox liegt — ohne ihn gibt
+    /// es kein Protokoll abzuholen.
+    private var protokollStamm: String? {
+        guard let name = beleg?.ablageDateiname else { return nil }
+        return (name as NSString).deletingPathExtension
+    }
+
     private var beleg: Beleg? { store.belege.first { $0.id == belegID } }
 
     // Wie die Ergebnis-Ansicht nach der Aufnahme: das Beleg-Foto groß, die
@@ -232,6 +239,14 @@ struct DetailView: View {
                                 .font(.system(size: 22, weight: .medium, design: .monospaced))
                                 .foregroundStyle(GC.fg)
                                 .layoutPriority(1)
+                        }
+                        if let satz = review?.zusammenfassung, !satz.isEmpty {
+                            // Was auf dem Beleg los war, in einer Zeile —
+                            // damit man ihn wiedererkennt, ohne ihn zu öffnen.
+                            Text(satz)
+                                .font(.footnote)
+                                .foregroundStyle(GC.desc)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         statusZeile(b)
                     }
@@ -278,27 +293,23 @@ struct DetailView: View {
     private func belegAnsicht(_ b: Beleg) -> some View {
         Group {
             if let bild = detailBild {
-                Image(uiImage: bild)
-                    .resizable()
-                    .scaledToFit()
-                    .overlay {
-                        GeometryReader { geo in
-                            ZStack {
-                                ForEach(Array(markierungen.enumerated()), id: \.offset) { _, r in
-                                    RoundedRectangle(cornerRadius: 5)
-                                        .fill(GC.ok.opacity(0.16))
-                                        .overlay(RoundedRectangle(cornerRadius: 5)
-                                            .stroke(GC.ok, lineWidth: 1.6))
-                                        .frame(width: r.width * geo.size.width + 10,
-                                               height: r.height * geo.size.height + 8)
-                                        .position(x: r.midX * geo.size.width,
-                                                  y: (1 - r.midY) * geo.size.height)
-                                }
-                            }
+                // Belege sind klein gedruckt. Wer nachsehen soll, ob babu
+                // richtig gelesen hat, muss hineinzoomen können — die
+                // Markierungen wachsen mit.
+                ZoombaresBild(bild: bild) { rahmen in
+                    ZStack {
+                        ForEach(Array(markierungen.enumerated()), id: \.offset) { _, r in
+                            RoundedRectangle(cornerRadius: 5)
+                                .fill(GC.ok.opacity(0.16))
+                                .overlay(RoundedRectangle(cornerRadius: 5)
+                                    .stroke(GC.ok, lineWidth: 1.6))
+                                .frame(width: r.width * rahmen.width + 10,
+                                       height: r.height * rahmen.height + 8)
+                                .position(x: r.midX * rahmen.width,
+                                          y: (1 - r.midY) * rahmen.height)
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-                    .shadow(color: Color(hex: 0x1F1E1A).opacity(0.22), radius: 14, y: 7)
+                }
             } else {
                 RoundedRectangle(cornerRadius: 14)
                     .fill(GC.accentSubtle)
@@ -357,6 +368,41 @@ struct DetailView: View {
                             Spacer()
                             Text(fmtEur(b.brutto)).font(.subheadline.monospaced())
                         }
+                        if let satz = review?.zusammenfassung, !satz.isEmpty {
+                            Text(satz)
+                                .font(.footnote)
+                                .foregroundStyle(GC.desc)
+                        }
+
+                        // Zuoberst, weil es die Frage beantwortet, mit der man
+                        // das ⓘ überhaupt öffnet: was hat babu da gelesen?
+                        if let stamm = protokollStamm {
+                            NavigationLink {
+                                ProtokollView(stamm: stamm).environmentObject(store)
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "text.magnifyingglass")
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text("Was babu gelesen hat")
+                                            .font(.subheadline.weight(.medium))
+                                        Text("Jede Zeile, und zu jedem Wert die Stelle "
+                                             + "auf dem Beleg")
+                                            .font(.caption2)
+                                            .foregroundStyle(GC.muted)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption2)
+                                        .foregroundStyle(GC.muted)
+                                }
+                                .foregroundStyle(GC.fg)
+                                .padding(10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(GC.accentSubtle,
+                                            in: RoundedRectangle(cornerRadius: 10))
+                            }
+                        }
+
                         BuchsatzView(beleg: b)
 
                         // Korrektur-Wege: bis zur Fixierung änderbar.
@@ -574,6 +620,16 @@ struct DetailView: View {
                         .font(.caption2)
                         .foregroundStyle(GC.accent)
                     Text(hinweis)
+                        .font(.caption)
+                        .foregroundStyle(GC.desc)
+                }
+            }
+            ForEach(f.widerspruch ?? [], id: \.self) { abweichung in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.caption2)
+                        .foregroundStyle(GC.warn)
+                    Text(abweichung)
                         .font(.caption)
                         .foregroundStyle(GC.desc)
                 }

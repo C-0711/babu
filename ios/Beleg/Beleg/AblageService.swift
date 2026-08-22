@@ -19,6 +19,15 @@ enum ReviewAntwort {
     case keineVerbindung     // Netzfehler / Timeout
 }
 
+/// Antwort auf `GET /review/<stamm>/protokoll` — das Leseprotokoll als Text.
+enum ProtokollAntwort {
+    case fertig(String)
+    case nochNicht           // 404: für diesen Beleg gibt es noch keines
+    case zugangFehlt
+    case serverProblem
+    case keineVerbindung
+}
+
 /// Fehlermeldung aus dem Chat-Stream (SSE-Frame `{"fehler": …}`).
 struct ChatFehler: Error {
     let meldung: String
@@ -898,6 +907,43 @@ enum AblageService {
         }
     }
 
+    /// Das Leseprotokoll holen (`GET /review/<stamm>/protokoll`).
+    static func protokollAbrufen(stamm: String, basis: URL,
+                                 pat: String) async -> ProtokollAntwort {
+        var request = URLRequest(url: basis.appendingPathComponent("review")
+            .appendingPathComponent(stamm).appendingPathComponent("protokoll"))
+        request.timeoutInterval = 12
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              let http = antwort as? HTTPURLResponse else { return .keineVerbindung }
+        switch http.statusCode {
+        case 200:
+            guard let text = String(data: daten, encoding: .utf8), !text.isEmpty else {
+                return .serverProblem
+            }
+            return .fertig(text)
+        case 404: return .nochNicht
+        case 401, 403: return .zugangFehlt
+        default: return .serverProblem
+        }
+    }
+
+    /// Den Beleg noch einmal lesen lassen (`POST /review/<stamm>/neu-lesen`).
+    ///
+    /// Gelöscht wird dabei nur das Ergebnis — der Beleg selbst bleibt liegen.
+    /// Das ist der Weg für Belege, die vor einer Verbesserung gelesen wurden:
+    /// niemand muss sie noch einmal fotografieren.
+    static func neuLesenAnstossen(stamm: String, basis: URL, pat: String) async -> Bool {
+        var request = URLRequest(url: basis.appendingPathComponent("review")
+            .appendingPathComponent(stamm).appendingPathComponent("neu-lesen"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 20
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (_, antwort) = try? await URLSession.shared.data(for: request),
+              let http = antwort as? HTTPURLResponse else { return false }
+        return http.statusCode == 200
+    }
+
     /// Verbindungs- und Token-Test OHNE Müll-Commit: eine Mini-txt-Datei senden.
     /// Der Server nimmt nur Bilder/PDF an — txt wird IMMER abgelehnt:
     /// gültiger Token ⇒ 400 (Dateityp) ⇒ verbunden · falscher Token ⇒ 401.
@@ -963,6 +1009,18 @@ struct BelegReviewDaten: Codable {
         var summenprobeOk: Bool?
         var bewirtungssignal: Bool?
         var offen: [String]?
+        /// Wo jeder Wert herkommt: Feldname → Zeile, Regel, Erkennungsgüte.
+        /// Das Vollständige steht im Leseprotokoll hinter dem ⓘ; hier reicht
+        /// es, um am Wert selbst zu zeigen, worauf er beruht.
+        var herkunft: [String: Herkunft]?
+        /// Was die Gegenprobe anders gelesen hat. Leer heißt: beide einig.
+        var widerspruch: [String]?
+    }
+    struct Herkunft: Codable {
+        var regel: String?
+        var zeile: Int?
+        var zeilentext: String?
+        var konf: Double?
     }
     struct Einschaetzung: Codable {
         var belegart: String?
@@ -1012,6 +1070,10 @@ struct BelegReviewDaten: Codable {
     var felder: Felder?
     var einschaetzung: Einschaetzung?
     var vlm: Vlm?
+    /// Der Satz zum grünen Haken: worum es auf diesem Beleg geht, in einer
+    /// Zeile. Kommt vom Bildmodell — es entscheidet keine Zahl mehr, aber es
+    /// kann sagen, was man da vor sich hat.
+    var zusammenfassung: String?
     var audit: Audit?
     var buchungssatz: Buchungssatz?
 
