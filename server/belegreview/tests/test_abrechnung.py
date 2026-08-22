@@ -146,3 +146,128 @@ def test_ohne_preis_keine_position():
 ])
 def test_preise_werden_richtig_gelesen(eingabe, erwartet):
     assert ab.leistung_pruefen({"name": "X", "preis": eingabe})["preis"] == erwartet
+
+
+# ————— Die Strecke am Server: Preis, Abrechnen, Kartei —————
+
+import subprocess  # noqa: E402
+
+
+@pytest.fixture()
+def welt(tmp_path, monkeypatch):
+    arbeit = tmp_path / "box"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(arbeit)], check=True)
+    for k, v in (("user.name", "t"), ("user.email", "t@l")):
+        subprocess.run(["git", "-C", str(arbeit), "config", k, v], check=True)
+    (arbeit / "README.md").write_text("box")
+    subprocess.run(["git", "-C", str(arbeit), "add", "-A"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(arbeit), "commit", "-q", "-m", "start"],
+                   check=True, capture_output=True)
+    bare = tmp_path / "babu.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(arbeit), str(bare)], check=True)
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    import babu_web
+    monkeypatch.setattr(babu_web, "STORE", bare)
+    monkeypatch.setattr(babu_web, "GEHEIMNIS_PFAD", tmp_path / ".geheimnis")
+    monkeypatch.setattr(babu_web, "PORTAL_DB", tmp_path / "portal.db")
+    monkeypatch.setattr(babu_web, "INDEX_TTL", 0.0)
+    babu_web._INDEX.update(head=None, geprueft=0.0, belege={}, reviews={},
+                           dokumente=[], zeiten={}, oid_cache={}, rechnungen={},
+                           kassenblaetter={})
+    babu_web.wer_token = lambda t: "christoph0711.io" if t == "test-pat" else None
+    from fastapi.testclient import TestClient
+    client = TestClient(babu_web.app, base_url="https://testserver")
+    assert client.post("/api/anmelden", json={"pat": "test-pat"}).status_code == 200
+    return client, babu_web
+
+
+def test_leistung_anlegen_und_wiederfinden(welt):
+    client, _ = welt
+    r = client.post("/api/leistungen", json={"name": "Farbe", "preis": "89,50",
+                                             "minuten": 120})
+    assert r.status_code == 200 and r.json()["preis"] == 89.5
+    liste = client.get("/api/leistungen").json()["leistungen"]
+    assert liste[0]["name"] == "Farbe" and liste[0]["minuten"] == 120
+
+
+def test_termin_abrechnen_und_kassenvorschlag(welt):
+    client, _ = welt
+    import datetime as dt
+    heute = dt.date.today().isoformat()
+    t = client.post("/api/termine", json={"start": f"{heute}T10:00", "minuten": 60,
+                                          "wer": "Jana", "kundin": "Frau Holder",
+                                          "leistung": "Schnitt"}).json()
+    assert client.post(f"/api/termin/{t['id']}/abrechnen",
+                       json={"zahlart": "bar", "preis": "42,00"}).status_code == 200
+
+    v = client.get("/api/kasse/vorschlag").json()
+    assert v["bar"] == 42.0 and v["karte"] == 0.0
+    assert v["vorschlag"] is True
+    assert "42" in v["satz"].replace(",", ".")
+
+
+def test_ohne_preis_kein_abrechnen(welt):
+    client, _ = welt
+    import datetime as dt
+    heute = dt.date.today().isoformat()
+    t = client.post("/api/termine", json={"start": f"{heute}T11:00", "minuten": 60,
+                                          "wer": "Jana"}).json()
+    r = client.post(f"/api/termin/{t['id']}/abrechnen", json={"zahlart": "bar"})
+    assert r.status_code == 400 and "gekostet" in r.json()["fehler"]
+
+
+def test_kundenkartei_mit_verlauf(welt):
+    client, _ = welt
+    k = client.post("/api/kundinnen", json={"name": "Frau Holder",
+                                            "telefon": "0711 123",
+                                            "allergie": "PPD-Unverträglichkeit"})
+    assert k.status_code == 200
+    kid = k.json()["id"]
+    assert client.post(f"/api/kundin/{kid}/behandlung", json={
+        "leistung": "Farbe", "formel": "7/0 + 8/3, 30 min",
+        "notiz": "Ansatz nachgedunkelt"}).status_code == 200
+
+    d = client.get(f"/api/kundin/{kid}").json()
+    assert d["allergie"] == "PPD-Unverträglichkeit"
+    assert d["verlauf"][0]["formel"] == "7/0 + 8/3, 30 min"
+
+
+def test_kundin_suchen(welt):
+    client, _ = welt
+    for n in ("Frau Holder", "Frau Sommer", "Herr Betz"):
+        client.post("/api/kundinnen", json={"name": n})
+    assert len(client.get("/api/kundinnen", params={"suche": "Frau"}).json()["kundinnen"]) == 2
+
+
+def test_loeschen_nimmt_den_ganzen_verlauf_mit(welt):
+    """Farbformeln und Allergiehinweise müssen wirklich weggehen."""
+    client, bw = welt
+    kid = client.post("/api/kundinnen", json={"name": "Frau Holder",
+                                              "allergie": "PPD"}).json()["id"]
+    client.post(f"/api/kundin/{kid}/behandlung", json={"formel": "7/0"})
+    assert client.post(f"/api/kundin/{kid}/loeschen").status_code == 200
+    assert client.get(f"/api/kundin/{kid}").status_code == 404
+    with bw._DB_LOCK, bw._db() as c:
+        assert c.execute("SELECT COUNT(*) FROM behandlung").fetchone()[0] == 0
+        assert c.execute("SELECT COUNT(*) FROM kundin").fetchone()[0] == 0
+
+
+def test_kundendaten_landen_nicht_in_der_belegbox(welt):
+    """In Git bliebe eine Farbformel für immer stehen."""
+    client, _ = welt
+    kid = client.post("/api/kundinnen", json={"name": "Frau Holder"}).json()["id"]
+    client.post(f"/api/kundin/{kid}/behandlung", json={"formel": "7/0 + 8/3"})
+    jahre = client.get("/api/ablage").json()["jahre"]
+    assert "7/0" not in str(jahre) and "Holder" not in str(jahre)
+
+
+def test_fremdes_konto_sieht_die_kartei_nicht(welt):
+    client, bw = welt
+    client.post("/api/kundinnen", json={"name": "Frau Holder"})
+    from fastapi.testclient import TestClient
+    fremd = TestClient(bw.app, base_url="https://testserver")
+    bw._REG_ZULETZT.clear()
+    fremd.post("/api/signup", json={"salon": "Fremd", "email": "fremd@x.de",
+                                    "passwort": "passwort-lang"})
+    assert fremd.get("/api/kundinnen").status_code == 403

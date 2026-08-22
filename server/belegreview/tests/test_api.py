@@ -82,6 +82,16 @@ def client(store, tmp_path_factory):
     sys.path.insert(0, str(HIER.parent))
     import babu_web  # noqa: PLC0415
 
+    # Die Umgebungsvariablen oben wirken nur, wenn babu_web hier zum ersten
+    # Mal importiert wird — importiert eine andere Testdatei es früher, zeigt
+    # STORE noch woanders hin. Deshalb nochmal ausdrücklich setzen: die Tests
+    # dürfen nicht davon abhängen, in welcher Reihenfolge pytest sammelt.
+    babu_web.STORE = store
+    babu_web.INDEX_TTL = 0.0
+    babu_web.GEHEIMNIS_PFAD = Path(os.environ["BABU_SESSION_GEHEIMNIS"])
+    babu_web.PORTAL_DB = tmp_path_factory.mktemp("db") / "portal.db"
+    babu_web._INDEX.update(head=None, geprueft=0.0)
+
     babu_web.wer_token = lambda token: {"test-pat": "christoph0711.io",
                                         "fremd-pat": "fremder.example"}.get(token)
     from fastapi.testclient import TestClient  # noqa: PLC0415
