@@ -335,6 +335,7 @@ enum AblageService {
     /// Nach der Behandlung: bar oder Karte. Daraus wird ein Vorschlag fürs
     /// Kassenbuch — gebucht wird nichts, das bestätigt sie abends selbst.
     static func terminAbrechnen(id: Int, preis: String, zahlart: String,
+                                referenz: String? = nil,
                                 basis: URL, pat: String) async -> String? {
         var request = URLRequest(
             url: basis.appendingPathComponent("api/termin/\(id)/abrechnen"))
@@ -342,8 +343,11 @@ enum AblageService {
         request.timeoutInterval = 30
         request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(
-            withJSONObject: ["preis": preis, "zahlart": zahlart])
+        var felder: [String: Any] = ["preis": preis, "zahlart": zahlart]
+        // Nur eine echte Zahlung bekommt eine Referenz. Ein Beleg aus dem
+        // Prüfstand hat im Kassenbuch nichts verloren.
+        if let referenz, !referenz.isEmpty { felder["referenz"] = referenz }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: felder)
         let (ergebnis, daten) = await ausfuehrenMitDaten(request)
         if ergebnis == .uebertragen { return nil }
         if let daten, let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],

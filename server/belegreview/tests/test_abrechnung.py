@@ -271,3 +271,32 @@ def test_fremdes_konto_sieht_die_kartei_nicht(welt):
     fremd.post("/api/signup", json={"salon": "Fremd", "email": "fremd@x.de",
                                     "passwort": "passwort-lang"})
     assert fremd.get("/api/kundinnen").status_code == 403
+
+
+def test_die_kartennummer_wird_mitgeschrieben(welt):
+    """Ohne die Referenz beim Anbieter ist eine Kartenzahlung später nicht
+    auffindbar — Kassenbuch und Kontoauszug hängen daran zusammen."""
+    client, _ = welt
+    import datetime as dt
+    heute = dt.date.today().isoformat()
+    t = client.post("/api/termine", json={"start": f"{heute}T14:00",
+                                          "minuten": 45, "kundin": "Frau Holder"}).json()
+    r = client.post(f"/api/termin/{t['id']}/abrechnen",
+                    json={"zahlart": "karte", "preis": "42,00",
+                          "referenz": "pi_3Qabc123"})
+    assert r.status_code == 200
+
+    liste = client.get(f"/api/termine?von={heute}&bis={heute}").json()["tage"][0]["liste"]
+    assert liste[0]["zahlung_ref"] == "pi_3Qabc123"
+
+
+def test_barzahlung_braucht_keine_referenz(welt):
+    client, _ = welt
+    import datetime as dt
+    heute = dt.date.today().isoformat()
+    t = client.post("/api/termine", json={"start": f"{heute}T15:00",
+                                          "minuten": 45, "kundin": "Frau Sommer"}).json()
+    assert client.post(f"/api/termin/{t['id']}/abrechnen",
+                       json={"zahlart": "bar", "preis": "20,00"}).status_code == 200
+    liste = client.get(f"/api/termine?von={heute}&bis={heute}").json()["tage"][0]["liste"]
+    assert liste[0]["zahlung_ref"] is None

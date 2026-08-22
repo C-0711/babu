@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Die Berechtigung für Tap to Pay on iPhone.
+
+  ACHTUNG: Diese Datei ist bewusst NICHT im Build eingehängt.
+
+  Apple muss die Berechtigung erst dem Bundle io.0711.beleg zuteilen. Bis
+  dahin schlägt jede Signierung fehl, die sie anfordert — und zwar auch
+  die für Ninas Telefon. Wer sie jetzt einhängt, macht die App
+  uninstallierbar, um ein Feature vorzubereiten, das ohnehin noch keinen
+  Zahlungsdienstleister hat.
+
+  Sobald Apple zugeteilt hat, in project.yml unter settings.base:
+      CODE_SIGN_ENTITLEMENTS: Support/Beleg.entitlements
+  und einmal `xcodegen generate` laufen lassen.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.developer.proximity-reader.payment.acceptance</key>
+	<true/>
+</dict>
+</plist>

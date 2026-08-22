@@ -18,6 +18,8 @@ struct AbrechnenSheet: View {
     @State private var leistungen: [[String: Any]] = []
     @State private var fehler: String?
     @State private var laeuft = false
+    @State private var kartenbeleg: Kartenbeleg?
+    @State private var kartenlaeuft = false
 
     var body: some View {
         NavigationStack {
@@ -64,6 +66,40 @@ struct AbrechnenSheet: View {
                         Text("Karte").tag("karte")
                     }
                     .pickerStyle(.segmented)
+
+                    // Karte kann heißen: an einem fremden Terminal gezogen,
+                    // oder hier am Telefon. Letzteres steht erst bereit,
+                    // wenn ein Zahlungsdienstleister angebunden ist —
+                    // solange läuft es über den Prüfstand.
+                    if zahlart == "karte" {
+                        Button {
+                            Task { await mitKarteKassieren() }
+                        } label: {
+                            HStack {
+                                if kartenlaeuft {
+                                    ProgressView().padding(.trailing, 6)
+                                }
+                                Label(kartenlaeuft
+                                      ? "Karte anhalten …"
+                                      : (kartenkasse.lage == .bereit
+                                         ? "Mit dem Telefon kassieren"
+                                         : "Kartenzahlung durchspielen"),
+                                      systemImage: "wave.3.right.circle")
+                            }
+                        }
+                        .disabled(kartenlaeuft || preis.trimmed.isEmpty)
+
+                        if let kartenbeleg {
+                            Text("\(kartenbeleg.betrag.text) angenommen · "
+                                 + kartenbeleg.referenz
+                                 + (kartenbeleg.probe ? " (Prüfstand)" : ""))
+                                .font(.caption)
+                                .foregroundStyle(kartenbeleg.probe ? GC.accent : GC.ok)
+                        } else if kartenkasse.lage != .bereit {
+                            Text(kartenkasse.lage.satz)
+                                .font(.caption).foregroundStyle(GC.muted)
+                        }
+                    }
                 }
 
                 if let fehler {
@@ -96,6 +132,28 @@ struct AbrechnenSheet: View {
         }
     }
 
+    /// Solange kein Anbieter angebunden ist, ist das der Prüfstand — und
+    /// jeder Beleg daraus trägt das auch sichtbar.
+    private var kartenkasse: any Kartenkasse {
+        let echte = KartenTerminal(tokenHolen: nil)
+        return echte.lage == .bereit ? echte : ProbeKasse(lage: echte.lage)
+    }
+
+    private func mitKarteKassieren() async {
+        guard let betrag = Kartenbetrag(euro: preis) else {
+            fehler = Kartenfehler.betragUnklar.errorDescription
+            return
+        }
+        kartenlaeuft = true; fehler = nil
+        defer { kartenlaeuft = false }
+        do {
+            kartenbeleg = try await kartenkasse.kassieren(betrag)
+        } catch {
+            fehler = (error as? Kartenfehler)?.errorDescription
+                  ?? error.localizedDescription
+        }
+    }
+
     private func euroText(_ wert: Double) -> String {
         String(format: "%.2f", wert).replacingOccurrences(of: ".", with: ",")
     }
@@ -117,7 +175,9 @@ struct AbrechnenSheet: View {
         laeuft = true
         defer { laeuft = false }
         if let meldung = await AblageService.terminAbrechnen(
-            id: id, preis: preis, zahlart: zahlart, basis: url, pat: pat) {
+            id: id, preis: preis, zahlart: zahlart,
+            referenz: kartenbeleg?.probe == false ? kartenbeleg?.referenz : nil,
+            basis: url, pat: pat) {
             fehler = meldung
             return
         }

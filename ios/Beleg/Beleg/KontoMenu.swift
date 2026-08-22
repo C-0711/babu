@@ -78,6 +78,11 @@ struct KontoMenuView: View {
                         Label("Deine Preise", systemImage: "tag")
                     }
                     NavigationLink {
+                        KartenzahlungView()
+                    } label: {
+                        Label("Kartenzahlung", systemImage: "creditcard")
+                    }
+                    NavigationLink {
                         TeamView()
                     } label: {
                         Label("Dein Team", systemImage: "person.2")
