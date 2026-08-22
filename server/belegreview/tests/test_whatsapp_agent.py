@@ -453,3 +453,57 @@ def test_fremdes_konto_sieht_die_gespraeche_nicht(welt):
     assert fremd.get("/api/whatsapp/faeden").status_code == 403
     assert fremd.post("/api/whatsapp/probe",
                       json={"text": "Hallo"}).status_code == 403
+
+
+# ————— Zuhören —————
+
+def _zeiten_in(text: str) -> list[str]:
+    import re
+    return re.findall(r"\b([012]\d:[0-5]\d)\b", text)
+
+def test_nachmittags_bekommt_nachmittage(welt):
+    """Der Fehler aus dem ersten Live-Versuch: „Donnerstag nachmittags"
+    wurde mit 09:00, 10:30, 11:45 beantwortet."""
+    client, _, _, gelesen = welt
+    tag = _donnerstag()
+    _sagt(gelesen, datum=tag, minuten=60, tageszeit="nachmittag")
+    antwort = client.post("/api/whatsapp/probe", json={
+        "text": "Hätten Sie Donnerstag nachmittags was frei?"}).json()["antwort"]
+    zeiten = _zeiten_in(antwort)
+    assert zeiten, antwort
+    assert all(int(z[:2]) >= 12 for z in zeiten), f"Vormittag angeboten: {zeiten}"
+
+
+def test_das_wort_im_text_genuegt(welt):
+    """Auch wenn das Modell die Tageszeit nicht mitliefert."""
+    client, _, _, gelesen = welt
+    tag = _donnerstag()
+    _sagt(gelesen, datum=tag, minuten=60)         # keine tageszeit vom Modell
+    antwort = client.post("/api/whatsapp/probe", json={
+        "text": "Donnerstag nachmittags bitte"}).json()["antwort"]
+    zeiten = _zeiten_in(antwort)
+    assert all(int(z[:2]) >= 12 for z in zeiten), f"Vormittag angeboten: {zeiten}"
+
+
+def test_wenn_nachmittags_nichts_frei_ist_wird_es_gesagt(welt):
+    client, _, _, gelesen = welt
+    tag = _donnerstag()
+    # Den ganzen Nachmittag zustellen.
+    for stunde in range(12, 18):
+        client.post("/api/termine", json={"start": f"{tag}T{stunde:02d}:00",
+                                          "minuten": 60, "kundin": "belegt"})
+    _sagt(gelesen, datum=tag, minuten=60, tageszeit="nachmittag")
+    antwort = client.post("/api/whatsapp/probe", json={
+        "text": "Donnerstag nachmittags?"}).json()["antwort"]
+    assert "Wunschzeit" in antwort, antwort
+
+
+def test_eine_genannte_uhrzeit_schlaegt_die_tageszeit(welt):
+    """Wer „um 10" sagt, meint 10 — auch wenn „vormittags" mitschwingt."""
+    client, _, _, gelesen = welt
+    tag = _donnerstag()
+    _sagt(gelesen, datum=tag, uhrzeit="10:00", minuten=60,
+          tageszeit="nachmittag")
+    antwort = client.post("/api/whatsapp/probe", json={
+        "text": "Donnerstag um 10?"}).json()["antwort"]
+    assert "1) 10:00" in antwort, antwort
