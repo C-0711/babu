@@ -11,12 +11,12 @@
    System-Stacks (kein CDN, DSGVO). Genau drei Motion-Momente: Stempel,
    Zeitleisten-Schritt, Karten-Einflug. */
 :root{
-  --gc-bg:#fff; --gc-canvas:#faf9f5; --gc-desk:#efece6; --gc-chrome:#f4f1ec;
-  --gc-fg:#111; --gc-body:#333; --gc-desc:#555; --gc-muted:#999;
-  --gc-accent:#857b61; --gc-accent-hover:#736950; --gc-accent-subtle:#f0ebe3;
-  --gc-border:#e5e7eb; --gc-border-l:#efefef;
-  --gc-ok:#6f8a6e; --gc-warn:#b0821f; --gc-danger:#a8433a;
-  --gc-gold:#c9b98d; --gc-scan:#1f1e1a;
+  --gc-bg:#fff; --gc-canvas:#fdfcf9; --gc-desk:#f7f3eb; --gc-chrome:#fbf8f2;
+  --gc-fg:#2e2a22; --gc-body:#4a4234; --gc-desc:#6b6151; --gc-muted:#8f8574;
+  --gc-accent:#8a7c5c; --gc-accent-hover:#736950; --gc-accent-subtle:#f0ebe3;
+  --gc-border:#ebe4d8; --gc-border-l:#efefef;
+  --gc-ok:#6f8a6e; --gc-warn:#a8791c; --gc-danger:#a8433a;
+  --gc-gold:#b9a574; --gc-scan:#2a2620;
   --gc-serif:'Playfair Display',Georgia,serif;
   --gc-sans:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   --gc-mono:'SF Mono',ui-monospace,Menlo,monospace;
@@ -79,6 +79,8 @@ main{padding:26px 22px 60px;min-height:70dvh}
 #konto-menu .trenner{height:1px;background:var(--gc-border);margin:5px 0}
 #konto-menu .weg{color:var(--gc-danger)}
 /* Unterreiter innerhalb eines Bereichs — das Schema sichtbar machen */
+.menu-gruppe{font:600 9.5px var(--gc-sans);letter-spacing:.11em;
+  text-transform:uppercase;color:var(--gc-muted);padding:10px 14px 4px}
 .unterreiter{display:flex;gap:4px;flex-wrap:wrap;margin:2px 0 18px;
   border-bottom:1px solid var(--gc-border);padding-bottom:0}
 .unterreiter button{background:none;border:0;border-bottom:2px solid transparent;
@@ -427,14 +429,27 @@ main{padding:26px 22px 60px;min-height:70dvh}
     </button>
     <div id="konto-menu" hidden role="menu">
       <div class="kopf"><b id="menu-un">…</b><span id="menu-rolle"></span></div>
-      <button role="menuitem" onclick="menuGeh('#einstellungen')">
-        <span class="sym">⚙️</span> Konto &amp; Einstellungen</button>
+      <div class="menu-gruppe">Buchhaltung</div>
+      <button role="menuitem" onclick="menuGeh('#rechnungen')">
+        <span class="sym">€</span> Rechnungen</button>
+      <button role="menuitem" onclick="menuGeh('#abschluss')">
+        <span class="sym">📊</span> Monatsabschluss</button>
+      <button role="menuitem" onclick="menuGeh('#export')">
+        <span class="sym">📦</span> Export für die Buchhaltung</button>
+      <div class="menu-gruppe">Dein Salon</div>
       <button role="menuitem" onclick="menuGeh('#termine')">
         <span class="sym">🗓️</span> Termine</button>
       <button role="menuitem" onclick="menuGeh('#team')">
         <span class="sym">✂️</span> Dein Team</button>
-      <button role="menuitem" onclick="menuGeh('#export')">
-        <span class="sym">📦</span> Export für die Buchhaltung</button>
+      <button role="menuitem" onclick="menuGeh('#vertraege')">
+        <span class="sym">📁</span> Deine Verträge</button>
+      <button role="menuitem" onclick="menuGeh('#marketing')">
+        <span class="sym">📣</span> Marketing</button>
+      <button role="menuitem" onclick="menuGeh('#briefkopf')">
+        <span class="sym">🎨</span> Dein Briefkopf</button>
+      <div class="trenner"></div>
+      <button role="menuitem" onclick="menuGeh('#einstellungen')">
+        <span class="sym">⚙️</span> Konto &amp; Einstellungen</button>
       <button role="menuitem" id="menu-verwaltung" hidden onclick="menuGeh('#verwaltung')">
         <span class="sym">🔑</span> Zugänge verwalten</button>
       <div class="trenner"></div>
@@ -672,6 +687,48 @@ main{padding:26px 22px 60px;min-height:70dvh}
       style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit"></div>
   </section>
 
+  <!-- RECHNUNGEN: was der Salon anderen berechnet -->
+  <section class="ansicht" id="a-rechnungen">
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Rechnungen</div>
+    <p style="color:var(--gc-desc);margin-bottom:14px">Stuhlmiete, Hochzeit,
+      Firmenkunde — was du anderen berechnest.</p>
+    <div id="r-vom-konto"></div>
+    <div id="r-liste"><div class="skelett"></div><div class="skelett"></div></div>
+  </section>
+
+  <!-- VERTRÄGE: was jeden Monat sicher abgeht -->
+  <section class="ansicht" id="a-vertraege">
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Deine Verträge</div>
+    <p style="color:var(--gc-desc);margin-bottom:14px">Miete, Versicherung,
+      Leasing — und wann gekündigt sein muss.</p>
+    <div id="v-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+  </section>
+
+  <!-- MARKETING: was der Salon nach außen zeigt -->
+  <section class="ansicht" id="a-marketing">
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Marketing</div>
+    <p style="color:var(--gc-desc);margin-bottom:14px">babu gestaltet es —
+      was drauf steht, schreibst du.</p>
+    <div id="m-stuecke"></div>
+    <div class="karte" id="m-form" style="margin-top:14px;display:none">
+      <label for="m-text" style="font:600 9.5px var(--gc-sans);letter-spacing:.11em;
+        text-transform:uppercase;color:var(--gc-muted)">Was soll drauf stehen?</label>
+      <input class="suchfeld" id="m-text" style="margin:6px 0 8px"
+             placeholder="z. B. Vom 1. bis 14. September haben wir Urlaub."
+             autocomplete="off">
+      <button class="chip" id="m-gestalten">Gestalten</button>
+      <div id="m-ergebnis" style="margin-top:12px"></div>
+    </div>
+  </section>
+
+  <!-- BRIEFKOPF: wie die Rechnung aussieht -->
+  <section class="ansicht" id="a-briefkopf">
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Dein Briefkopf</div>
+    <p style="color:var(--gc-desc);margin-bottom:14px">Eine Rechnung ist oft
+      das Einzige, was eine Kundin schriftlich von dir bekommt.</p>
+    <div id="b-inhalt"><div class="skelett"></div></div>
+  </section>
+
   <!-- TERMINE: babu führt den Kalender selbst. Hinschreiben statt ausfüllen. -->
   <section class="ansicht" id="a-termine">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -876,7 +933,9 @@ const ansichten = { gesperrt: () => {}, heute: ladeHeute, belege: ladeBelege, fr
                     aufraeumen: ladeAufraeumen, post: ladePost, ablage: ladeAblage, export: ladeExport, team: ladeTeam,
                     abschluss: ladeAbschluss,
                     zahlen: ladeZahlen, bank: ladeBank, saloncheck: ladeSalonCheck,
-                    termine: ladeTermine,
+                    termine: ladeTermine, rechnungen: ladeRechnungen,
+                    vertraege: ladeVertraege, marketing: ladeMarketing,
+                    briefkopf: ladeBriefkopf,
                     einrichtung: ladeEinrichtung, verwaltung: ladeVerwaltung,
                     einstellungen: ladeEinstellungen, detail: null };
 function routen(){
@@ -2415,6 +2474,184 @@ document.addEventListener("keydown", ev => {
 });
 
 /* ————— VERWALTUNG: Anfragen einrichten, Nutzer pflegen ————— */
+/* ————— Rechnungen ————— */
+async function ladeRechnungen(){
+  const ziel = $("#r-liste"), konto = $("#r-vom-konto");
+  let d, z = {vorschlaege: []};
+  try{
+    d = await (await api("/api/rechnungen")).json();
+    z = await (await api("/api/zahlungen")).json();
+  }catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+
+  // Was der Kontoauszug schon weiß — vorgeschlagen, nicht entschieden.
+  const v = z.vorschlaege || [];
+  konto.innerHTML = !v.length ? "" : `<div class="karte" style="margin-bottom:14px">
+    <div style="font:600 9.5px var(--gc-sans);letter-spacing:.11em;
+      text-transform:uppercase;color:var(--gc-muted);margin-bottom:8px">Vom Konto</div>
+    ${v.map(x => `<div class="ablage-zeile">
+      <span>${esc(x.text)}</span>
+      ${x.sicher ? "" : `<span class="chip" style="font-size:11px">bitte kurz prüfen</span>`}
+      <button class="chip" onclick="zahlungUebernehmen('${x.nummer}','${x.bezahlt_am}')">
+        Stimmt</button></div>`).join("")}
+    <div style="font-size:11px;color:var(--gc-muted);margin-top:8px">
+      babu trägt nichts von allein ein — bezahlt heißt, es zählt als Umsatz.</div>
+  </div>`;
+
+  const liste = d.rechnungen || [];
+  if (!liste.length){
+    ziel.innerHTML = `<div class="leer"><b>Noch keine Rechnung gestellt.</b>
+      Gestellt wird in der App — hier siehst du, was offen ist.</div>`;
+    return;
+  }
+  const offen = liste.filter(r => r.stand === "offen");
+  ziel.innerHTML =
+    (offen.length ? `<div class="jahr-kopf">Offen · ${euro(d.offen_summe)}</div>` : "")
+    + liste.map(r => `<div class="ablage-zeile">
+        <b>${esc(r.empfaenger?.name || r.empfaengerName || "—")}</b>
+        <span class="wann">Nr. ${esc(r.nummer)}</span>
+        <span class="chip" style="font-size:11px">${esc(r.stand)}</span>
+        <span class="wann">${euro(r.brutto)}</span>
+      </div>`).join("");
+}
+
+async function zahlungUebernehmen(nummer, am){
+  await api("/api/zahlungen/uebernehmen", {method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({nummer, am})});
+  ladeRechnungen();
+}
+
+/* ————— Verträge: was jeden Monat sicher abgeht ————— */
+async function ladeVertraege(){
+  const ziel = $("#v-inhalt");
+  let d;
+  try{ d = await (await api("/api/vertraege")).json(); }
+  catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+  if (!d.anzahl){
+    ziel.innerHTML = `<div class="leer"><b>Noch keine Verträge abgelegt.</b>
+      Fotografiere Miete, Versicherung oder Leasing — babu liest sie.</div>`;
+    return;
+  }
+  const anstehend = d.anstehend || [];
+  ziel.innerHTML =
+    `<div class="karte" style="margin-bottom:14px">
+       <div style="display:flex;justify-content:space-between">
+         <b>Das geht jeden Monat ab</b><b>${euro(d.monatlich)}</b></div>
+       <div style="display:flex;justify-content:space-between;
+         font-size:12px;color:var(--gc-desc);margin-top:4px">
+         <span>Im Jahr</span><span>${euro(d.jaehrlich)}</span></div>
+     </div>`
+    + (anstehend.length ? `<div class="jahr-kopf">Da musst du bald ran</div>`
+        + anstehend.map(v => `<div class="ablage-zeile">
+            <b>${esc(v.partner)}</b>
+            <span class="wann" style="color:var(--gc-warn)">
+              kündigen bis ${esc((v.datum||"").split("-").reverse().join("."))}
+              — noch ${v.tage} Tage</span></div>`).join("") : "")
+    + `<div class="jahr-kopf">Alle Verträge</div>`
+    + (d.vertraege || []).map(v => `<div class="ablage-zeile">
+        <b>${esc(v.partner || "—")}</b>
+        <span class="wann">${esc(v.art_name || "")}</span>
+        <span class="wann">${v.betrag_monat != null ? euro(v.betrag_monat) : "—"}</span>
+        <span class="wann">${esc(v.kuendigen_bis?.sicher
+            ? "kündbar bis " + (v.kuendigen_bis.datum||"").split("-").reverse().join(".")
+            : "Frist steht im Vertrag")}</span>
+      </div>`).join("");
+}
+
+/* ————— Marketing ————— */
+let mStueck = null;
+async function ladeMarketing(){
+  const ziel = $("#m-stuecke");
+  let d;
+  try{ d = await (await api("/api/marketing")).json(); }
+  catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+  ziel.innerHTML = (d.stuecke || []).map(x => `<button class="karte"
+      style="display:block;width:100%;text-align:left;margin-bottom:8px"
+      onclick="marketingWaehlen('${x.schluessel}')">
+      <b>${esc(x.name)}</b>
+      <div style="font-size:12px;color:var(--gc-desc)">${esc(x.dazu)}</div>
+      ${x.fertig ? `<span class="chip" style="font-size:11px">schon gestaltet</span>` : ""}
+    </button>`).join("");
+}
+
+function marketingWaehlen(schluessel){
+  mStueck = schluessel;
+  $("#m-form").style.display = "block";
+  $("#m-ergebnis").innerHTML = "";
+  $("#m-text").focus();
+}
+
+$("#m-gestalten").addEventListener("click", async () => {
+  const text = $("#m-text").value.trim();
+  if (!mStueck || text.length < 3) return;
+  const knopf = $("#m-gestalten");
+  knopf.textContent = "babu gestaltet …"; knopf.disabled = true;
+  try{
+    const r = await api("/api/marketing/entwerfen", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({stueck: mStueck, text})});
+    const d = await r.json();
+    $("#m-ergebnis").innerHTML = r.ok
+      ? `<img src="/api/marketing/${mStueck}?v=${Date.now()}"
+             style="max-width:100%;border-radius:10px">`
+      : `<div class="leer">${esc(d.fehler || "Das hat nicht geklappt.")}</div>`;
+    if (r.ok) ladeMarketing();
+  }catch{ $("#m-ergebnis").innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; }
+  finally{ knopf.textContent = "Gestalten"; knopf.disabled = false; }
+});
+
+/* ————— Briefkopf ————— */
+async function ladeBriefkopf(){
+  const ziel = $("#b-inhalt");
+  let d;
+  try{ d = await (await api("/api/marke")).json(); }
+  catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+  ziel.innerHTML = `<div class="karte">
+      <div style="display:flex;align-items:center;gap:14px">
+        ${d.logo ? `<img src="/api/marke/logo?v=${Date.now()}"
+             style="width:72px;height:72px;object-fit:contain">` : ""}
+        <div>
+          <div style="width:28px;height:28px;border-radius:6px;
+            background:${esc(d.farbe)};margin-bottom:6px"></div>
+          <div style="font-size:13px">${esc(d.in_worten || "")}</div>
+          ${d.begruendung ? `<div style="font-size:12px;color:var(--gc-desc)">
+            ${esc(d.begruendung)}</div>` : ""}
+        </div>
+      </div>
+    </div>
+    <button class="chip" style="margin-top:12px" id="b-zehn">Zeig mir zehn</button>
+    <div id="b-vorschlaege" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px"></div>
+    <div style="font-size:11px;color:var(--gc-muted);margin-top:10px">
+      Zum Entwerfen geht der Name deines Salons an einen Dienst außerhalb —
+      sonst bleibt alles hier.</div>`;
+  $("#b-zehn").addEventListener("click", briefkopfZehn);
+}
+
+async function briefkopfZehn(){
+  const knopf = $("#b-zehn"), ziel = $("#b-vorschlaege");
+  knopf.textContent = "babu entwirft zehn Zeichen …"; knopf.disabled = true;
+  try{
+    const r = await api("/api/marke/vorschlaege", {method:"POST"});
+    const d = await r.json();
+    if (!r.ok){ ziel.innerHTML = `<div class="leer">${esc(d.fehler||"")}</div>`; return; }
+    ziel.innerHTML = (d.vorschlaege || []).map(v => `<button
+      style="border:1px solid var(--gc-border);border-radius:10px;padding:6px;background:#fff"
+      onclick="briefkopfWaehlen(${v.nummer}, ${d.saat})">
+      <img src="/api/marke/vorschlag/${v.nummer}?v=${Date.now()}"
+           style="width:104px;height:104px;object-fit:contain"><br>
+      <span style="font-size:11px;color:var(--gc-desc)">${esc(v.farbe_name)}</span>
+      </button>`).join("");
+  }catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; }
+  finally{ knopf.textContent = "Zehn andere"; knopf.disabled = false; }
+}
+
+async function briefkopfWaehlen(nummer, saat){
+  await api("/api/marke/waehlen", {method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({nummer, saat})});
+  ladeBriefkopf();
+}
+
 /* ————— Termine: derselbe Kalender wie in der App ————— */
 let tTag = new Date().toISOString().slice(0, 10);
 let tWunsch = null;
