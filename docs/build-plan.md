@@ -132,6 +132,39 @@ Verteidigungslinie zusätzlich zum API-Scoping.
 - **Reconciliation:** Feldweiser Vergleich Lane A/B/Device. Übereinstimmung →
   hohe Feld-Confidence; Differenz → Serverwert bevorzugt, Abweichung wird dem
   Nutzer angezeigt (der Prototyp-Flow „Gerät las 54,82 · Server 54,62").
+
+> **Stand 22.08.2026 — wer entscheidet.** Die Vorfahrt zwischen den Lanes ist
+> keine Geschmacksfrage, und sie wurde an einem Tag zweimal falsch gesetzt,
+> bevor sie stimmte.
+>
+> Zuerst führte eine Textsuche über den flachen OCR-Text. Sie sieht Zeichen,
+> kein Dokument: auf einer Parkquittung gewann der Steuersatz („19,00 %"
+> statt 3,50 €), auf einer Rechnung das Stammkapital aus der Fußzeile
+> (43.783,86 € statt 40,00 €), und als Lieferant stand „Rechnungsadresse",
+> weil das die erste Zeile war.
+>
+> Dann führte das Bildmodell. Es versteht den Beleg, aber es kann nicht
+> sagen, aus welcher Zeile ein Wert stammt. Für Zahlen, die gebucht werden,
+> ist das der falsche Tausch: Buchhaltung braucht Nachweisbarkeit, nicht
+> Plausibilität.
+>
+> **Jetzt deutet Lane A — aber mit Geometrie statt Textsuche.** PaddleOCR
+> liefert zu jeder Zeile Ort und Schriftgröße, und genau daraus besteht ein
+> Beleg: oben groß der Aussteller, rechtsbündig die Betragsspalte, unten die
+> Summe, darunter das Kleingedruckte (`belegdeutung.py`). Jeder Wert trägt
+> Zeile, Regel und Erkennungsgüte mit sich.
+>
+> **Lane B ist Gegenprobe und Erzählerin.** Sie überschreibt nichts; sie
+> meldet Abweichungen und füllt nur Lücken — dann sichtbar gekennzeichnet,
+> weil für einen so gefüllten Wert keine Zeile benannt werden kann. Und sie
+> schreibt den einen Satz, der neben dem grünen Haken steht.
+>
+> **Das Leseprotokoll ist Teil des Produkts, nicht Diagnose.**
+> `leseprotokoll.py` schreibt zu jedem Beleg ein Markdown mit jeder
+> erkannten Zeile, jeder Herkunft und der Steuerrechnung als Rechnung;
+> `GET /review/{stamm}/protokoll` liefert es, die App zeigt es hinter dem ⓘ.
+> `POST /review/{stamm}/neu-lesen` stößt eine frische Lesung an und löscht
+> dabei nur das Ergebnis, nie den Beleg.
 - **Validierung:** Summenprobe (Netto + USt = Brutto, je Steuersatz),
   §-14-UStG-Pflichtangaben, USt-IdNr.-Syntaxprüfung, Dublettencheck.
 - Benchmark-Harness von Woche 1: kuratierter Belegkorpus (echte anonymisierte
