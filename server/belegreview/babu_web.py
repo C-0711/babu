@@ -1363,9 +1363,24 @@ async def ablage(request: Request) -> Response:
     un = angemeldet(request)   # App schickt Bearer; Portal-Cookie geht auch
     if un is None:
         return JSONResponse({"fehler": "Token fehlt oder ungültig"}, status_code=401)
-    if un not in ERLAUBT:
-        print(f"[ablage] 403: '{un}' nicht in BABU_ERLAUBT", flush=True)
-        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    # Dieselbe Tür wie überall sonst: wer für die Belegbox freigeschaltet ist,
+    # darf einreichen.
+    #
+    # Hier stand vorher nur `un not in ERLAUBT`. Diese Liste stammt aus der
+    # Zeit vor den Konten und enthält GitChain-Namen wie „christoph0711.io".
+    # Wer sich in der App mit E-Mail anmeldet, heißt aber „nina@0711.io" und
+    # stand nie darin — jedes Foto bekam 403 und blieb im Gerät liegen,
+    # während Portal-Uploads durchgingen, weil die eine andere Tür benutzen.
+    # Von außen sah das aus wie „die App lädt nicht hoch".
+    #
+    # ERLAUBT bleibt als zusätzlicher Weg für den PAT-Zugang: GitChain-Namen
+    # stehen in keiner Nutzertabelle.
+    if not (box_mitglied(un) or un in ERLAUBT):
+        print(f"[ablage] 403: '{un}' ist für keine Belegbox freigeschaltet",
+              flush=True)
+        return JSONResponse(
+            {"fehler": "Dein Zugang ist noch nicht für eine Belegbox "
+                       "freigeschaltet."}, status_code=403)
     try:
         form = await request.form()
     except Exception:  # noqa: BLE001
@@ -2298,7 +2313,9 @@ def review(stamm: str, request: Request) -> Response:
     un = wer(request)
     if un is None:
         return JSONResponse({"fehler": "Token fehlt oder ungültig"}, status_code=401)
-    if un not in ERLAUBT:
+    # Dieselbe Tür wie beim Einreichen: die App holt hier ihre
+    # Ergebnisse ab, und wer einreichen darf, darf auch lesen.
+    if not (box_mitglied(un) or un in ERLAUBT):
         return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
     if not NAME_RE.match(stamm):
         return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
