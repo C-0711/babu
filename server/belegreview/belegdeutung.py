@@ -551,8 +551,30 @@ def deute_lieferant(zeilen: list[Zeile], blatthoehe: float) -> Deutung:
 
 
 def _saubern(text: str) -> str:
-    t = re.sub(r"\s{2,}", " ", text).strip(" .,:;-—·|")
-    return t[:80]
+    """Satzzeichen am Rand entfernen — aber nicht den Punkt einer Abkürzung.
+
+    „Blumen Hofmann e.K." wurde zu „Blumen Hofmann e.K": der Schlusspunkt
+    gehört zur Rechtsform, nicht zur Zeichensetzung. Auf einer Rechnung ist
+    das ein Zeichen zu wenig am Firmennamen.
+    """
+    t = re.sub(r"\s{2,}", " ", text).strip(" ,:;-—·|")
+    while t.endswith(".") and not _abkuerzung(t):
+        t = t[:-1].rstrip(" ,:;-—·|")
+    return t.strip(" ,:;-—·|")[:80]
+
+
+# Endungen, deren Punkt zum Namen gehört. Eine Liste statt eines Musters:
+# „e.Kfr." und „GmbH." unterscheiden sich nicht in der Form, sondern darin,
+# was sie bedeuten — und das weiß nur, wer die Rechtsformen kennt.
+# Nur wirklich gepunktete Abkürzungen. „GmbH" und „KGaA" schreibt man ohne
+# Schlusspunkt — stünde „mbh." hier, bliebe aus „Müller GmbH." fälschlich
+# „Müller GmbH." stehen.
+ABKUERZUNG_ENDE = ("e.k.", "e.kfr.", "e.kfm.", "i.g.", "co.", "u.a.", "a.d.")
+
+
+def _abkuerzung(text: str) -> bool:
+    flach = _flach(text)
+    return any(flach.endswith(a) for a in ABKUERZUNG_ENDE)
 
 
 def deute_datum(zeilen: list[Zeile], heute: date | None = None) -> Deutung:
