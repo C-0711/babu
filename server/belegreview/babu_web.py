@@ -185,6 +185,24 @@ def _db() -> sqlite3.Connection:
     conn.execute("""CREATE TABLE IF NOT EXISTS app_schluessel
         (hash TEXT PRIMARY KEY, un TEXT NOT NULL, geraet TEXT,
          erstellt TEXT NOT NULL, zuletzt TEXT)""")
+    # Anlagenverzeichnis (BABU-58). Warum hier und nicht in der Belegbox:
+    # der Eintrag ist ABGELEITET und VERÄNDERLICH — die Nutzungsdauer wird
+    # nachgetragen, ein Gut geht ab, der Restbuchwert rechnet sich jedes Jahr
+    # neu. Die Belegbox ist der versionierte Ort für Belege, und der Beleg —
+    # die Rechnung über den Frisierstuhl — liegt dort längst; der Eintrag
+    # zeigt mit `beleg` nur auf ihn. Was in den Jahresabschluss geht, ist das
+    # ausgerechnete Verzeichnis, und das entsteht auf Abruf.
+    #
+    # Der Wert steht in ganzen CENT als INTEGER, nicht als REAL: ein Cent
+    # Differenz im Anlagenverzeichnis ist ein Fehler in der Bilanz, und
+    # Fließkomma verliert genau dort. Dasselbe Muster wie mitarbeiter.entgelt.
+    conn.execute("""CREATE TABLE IF NOT EXISTS anlagegut
+        (id INTEGER PRIMARY KEY AUTOINCREMENT, un TEXT NOT NULL,
+         bezeichnung TEXT NOT NULL, angeschafft TEXT NOT NULL,
+         wert_cent INTEGER NOT NULL, nutzungsdauer INTEGER, art TEXT,
+         beleg TEXT, notiz TEXT, abgang TEXT, angelegt TEXT)""")
+    conn.execute("""CREATE INDEX IF NOT EXISTS anlagegut_un
+        ON anlagegut (un, angeschafft)""")
     return conn
 
 
@@ -2267,6 +2285,251 @@ async def api_kontenrahmen_setzen(request: Request) -> Response:
     antwort.update(erlaubt=True, begruendung=bescheid.begruendung,
                    rueckfrage=None)
     return JSONResponse(antwort)
+
+
+# ---------------------------------------------------------------------------
+# Das Anlagenverzeichnis (BABU-58).
+#
+# `kontierung.py` entscheidet seit dem 22.08.2026 richtig, dass ein Gegenstand
+# über 800 € netto je Stück Anlagevermögen ist — und danach verschwand er.
+# Keine Liste, keine Nutzungsdauer, keine Abschreibung. Bei einer Prüfung ist
+# das Verzeichnis das Erste, wonach gefragt wird.
+#
+# Die Einträge liegen in portal.db (Tabelle `anlagegut`, siehe Begründung dort).
+# Gerechnet wird in `anlagen.py`; hier steht nur der Weg von und zur Datenbank.
+# ---------------------------------------------------------------------------
+
+ANLAGE_FELDER = ("bezeichnung", "angeschafft", "wert_cent", "nutzungsdauer",
+                 "art", "beleg", "notiz", "abgang")
+
+
+def _anlagegut_aus_zeile(zeile) -> "an.Anlagegut":
+    import anlagen as an  # noqa: PLC0415
+    return an.Anlagegut(
+        bezeichnung=zeile["bezeichnung"], angeschafft=zeile["angeschafft"],
+        wert_cent=zeile["wert_cent"], nutzungsdauer=zeile["nutzungsdauer"],
+        art=zeile["art"], beleg=zeile["beleg"], notiz=zeile["notiz"] or "",
+        abgang=zeile["abgang"], kennung=zeile["id"])
+
+
+def db_anlagegueter(un: str) -> list:
+    with _DB_LOCK, _db() as c:
+        c.row_factory = sqlite3.Row
+        zeilen = list(c.execute(
+            "SELECT * FROM anlagegut WHERE un=? ORDER BY angeschafft, id", (un,)))
+    gueter = []
+    for z in zeilen:
+        try:
+            gueter.append(_anlagegut_aus_zeile(z))
+        except ValueError:
+            # Ein Eintrag unter der GWG-Grenze kann nur aus einer früheren
+            # Fassung stammen. Er soll das Verzeichnis nicht anhalten — aber
+            # er wird auch nicht heimlich mitgerechnet.
+            print(f"[anlagen] Eintrag {z['id']} liegt unter der GWG-Grenze "
+                  f"und bleibt aus dem Verzeichnis", flush=True)
+    return gueter
+
+
+def _anlage_vorschlaege(un: str, jahr: int, vorhanden: set[str]) -> list[dict]:
+    """Belege, die babu als Anlagevermögen eingestuft hat und die noch fehlen.
+
+    Das war die eigentliche Lücke: die Entscheidung fiel, und dann passierte
+    nichts mehr. Der Vorschlag bringt den Beleg ins Verzeichnis, ohne dass
+    Nina die Zahlen abschreiben muss.
+    """
+    import anlagen as an  # noqa: PLC0415
+    idx = index_aktuell()
+    vorschlaege = []
+    for stamm, review in idx["reviews"].items():
+        if stamm in vorhanden:
+            continue
+        e = (review or {}).get("einschaetzung") or {}
+        if e.get("kategorie") != "anlagevermoegen":
+            continue
+        f = (review or {}).get("felder") or {}
+        netto = f.get("netto")
+        if netto is None:
+            continue
+        datum = str(f.get("datum") or "")
+        teile = datum.split(".")
+        iso = (f"{int(teile[2]):04d}-{int(teile[1]):02d}-{int(teile[0]):02d}"
+               if len(teile) == 3 else "")
+        if iso[:4] and int(iso[:4]) > jahr:
+            continue
+        vorschlaege.append({
+            "stamm": stamm,
+            "bezeichnung": ((review.get("vlm") or {}).get("lieferant")
+                            or f.get("lieferant") or stamm),
+            "angeschafft": iso,
+            "wert": f"{an.euro(an.cent(netto))}",
+            "beleg_nr": f.get("beleg_nr"),
+        })
+    return sorted(vorschlaege, key=lambda v: v["angeschafft"])
+
+
+@app.get("/api/anlagen")
+def api_anlagen(request: Request, jahr: int | None = None) -> Response:
+    """Das Anlagenverzeichnis eines Jahres, plus was noch hineingehört."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    import anlagen as an  # noqa: PLC0415
+    jahr = int(jahr or time.strftime("%Y"))
+    gueter = db_anlagegueter(salon_von(un))
+    d = an.verzeichnis(gueter, jahr)
+    d["vorschlaege"] = _anlage_vorschlaege(
+        un, jahr, {g.beleg for g in gueter if g.beleg})
+    # Die Auswahlliste kommt mit: die Oberfläche soll dieselben Arten und
+    # dieselben Quellen zeigen wie die Rechnung, nicht eine eigene Kopie.
+    d["arten"] = [{"code": n.code, "name": n.name, "jahre": n.jahre,
+                   "geprueft": n.geprueft, "quelle": n.quelle,
+                   "hinweis": n.hinweis}
+                  for n in an.NUTZUNGSDAUER.values()]
+    return JSONResponse(d)
+
+
+def _anlage_eingabe(body: dict) -> tuple[dict | None, str | None]:
+    """Was aus dem Formular kommt, geprüft — oder ein Satz, was fehlt."""
+    import anlagen as an  # noqa: PLC0415
+    bezeichnung = str((body or {}).get("bezeichnung") or "").strip()
+    if not bezeichnung:
+        return None, "Wie heißt das Anlagegut? Ohne Bezeichnung findet es im " \
+                     "Verzeichnis niemand wieder."
+    try:
+        wert_cent = an.cent((body or {}).get("wert"))
+    except Exception:  # noqa: BLE001
+        return None, "Was hat es netto gekostet? babu braucht einen Betrag."
+    art = (body or {}).get("art") or None
+    if art and art not in an.NUTZUNGSDAUER:
+        return None, "Diese Art kennt babu nicht."
+    dauer = (body or {}).get("nutzungsdauer")
+    return {
+        "bezeichnung": bezeichnung[:200],
+        "angeschafft": str((body or {}).get("angeschafft") or "").strip()[:20],
+        "wert_cent": wert_cent,
+        "nutzungsdauer": int(dauer) if dauer else None,
+        "art": art,
+        "beleg": (str((body or {}).get("beleg")).strip()[:200]
+                  if (body or {}).get("beleg") else None),
+        "notiz": str((body or {}).get("notiz") or "")[:500],
+        "abgang": (str((body or {}).get("abgang")).strip()[:20]
+                   if (body or {}).get("abgang") else None),
+    }, None
+
+
+@app.post("/api/anlagen")
+async def api_anlage_anlegen(request: Request) -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    import anlagen as an  # noqa: PLC0415
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    daten, grund = _anlage_eingabe(body)
+    if grund:
+        return JSONResponse({"fehler": grund}, status_code=400)
+    try:
+        # Die GWG-Grenze prüft das Rechenmodul, nicht die Route: sie steht in
+        # kontierung.py und darf nur an einer Stelle stehen.
+        gut = an.Anlagegut(**daten)
+    except ValueError as ex:
+        return JSONResponse({"fehler": str(ex)}, status_code=400)
+    # salon_von() greift selbst auf die Datenbank zu und nimmt dafür
+    # _DB_LOCK — der ist nicht wiedereintrittsfähig. Also VOR dem with.
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        cur = c.execute(
+            "INSERT INTO anlagegut (un, bezeichnung, angeschafft, wert_cent, "
+            "nutzungsdauer, art, beleg, notiz, abgang, angelegt) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (inhaber, *[daten[k] for k in ANLAGE_FELDER],
+             time.strftime("%Y-%m-%dT%H:%M:%S")))
+        kennung = cur.lastrowid
+    gut.kennung = kennung
+    return JSONResponse({"ok": True, "kennung": kennung,
+                         "anlage": an.zeile(gut, int(time.strftime("%Y"))),
+                         "rueckfrage": gut.rueckfrage})
+
+
+@app.post("/api/anlagen/{kennung}")
+async def api_anlage_aendern(kennung: int, request: Request) -> Response:
+    """Nachtragen, was beim Anlegen fehlte — meistens die Nutzungsdauer."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    import anlagen as an  # noqa: PLC0415
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    inhaber = salon_von(un)
+    with _DB_LOCK, _db() as c:
+        c.row_factory = sqlite3.Row
+        zeile = c.execute("SELECT * FROM anlagegut WHERE id=? AND un=?",
+                          (kennung, inhaber)).fetchone()
+    if zeile is None:
+        return JSONResponse({"fehler": "Dieses Anlagegut gibt es nicht."},
+                            status_code=404)
+    aktuell = {k: zeile[k] for k in ANLAGE_FELDER}
+    if "wert" in (body or {}):
+        aktuell["wert_cent"] = an.cent(body["wert"])
+    for feld in ("bezeichnung", "angeschafft", "art", "beleg", "notiz", "abgang"):
+        if feld in (body or {}):
+            aktuell[feld] = (str(body[feld]).strip() or None) if body[feld] else None
+    if "nutzungsdauer" in (body or {}):
+        aktuell["nutzungsdauer"] = (int(body["nutzungsdauer"])
+                                    if body["nutzungsdauer"] else None)
+    if not aktuell["bezeichnung"]:
+        return JSONResponse({"fehler": "Ohne Bezeichnung geht es nicht."},
+                            status_code=400)
+    try:
+        gut = an.Anlagegut(kennung=kennung, **aktuell)
+    except ValueError as ex:
+        return JSONResponse({"fehler": str(ex)}, status_code=400)
+    with _DB_LOCK, _db() as c:
+        c.execute(
+            "UPDATE anlagegut SET bezeichnung=?, angeschafft=?, wert_cent=?, "
+            "nutzungsdauer=?, art=?, beleg=?, notiz=?, abgang=? "
+            "WHERE id=? AND un=?",
+            (*[aktuell[k] for k in ANLAGE_FELDER], kennung, inhaber))
+    return JSONResponse({"ok": True, "kennung": kennung,
+                         "anlage": an.zeile(gut, int(time.strftime("%Y"))),
+                         "rueckfrage": gut.rueckfrage})
+
+
+@app.delete("/api/anlagen/{kennung}")
+def api_anlage_loeschen(kennung: int, request: Request) -> Response:
+    """Ein Fehleintrag verschwindet. Ein VERKAUFTES Gut wird nicht gelöscht,
+    sondern bekommt ein Abgangsdatum — sonst fehlt es im Vorjahr."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    inhaber = salon_von(un)          # nimmt selbst _DB_LOCK, also vorher
+    with _DB_LOCK, _db() as c:
+        cur = c.execute("DELETE FROM anlagegut WHERE id=? AND un=?",
+                        (kennung, inhaber))
+        weg = cur.rowcount
+    if not weg:
+        return JSONResponse({"fehler": "Dieses Anlagegut gibt es nicht."},
+                            status_code=404)
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/anlagen/{jahr}.csv")
+def api_anlagen_csv(jahr: int, request: Request) -> Response:
+    """Das Verzeichnis zum Weitergeben — es gehört in den Jahresabschluss."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    import anlagen as an  # noqa: PLC0415
+    text = an.als_csv(db_anlagegueter(salon_von(un)), int(jahr))
+    return Response(
+        content=text.encode("cp1252", errors="replace"),
+        media_type="text/csv; charset=windows-1252",
+        headers={"Content-Disposition":
+                 f'attachment; filename="Anlagenverzeichnis_{jahr}.csv"'})
 
 
 ROLLEN = {t.split(":")[0].strip().lower(): t.split(":")[1].strip().lower()
