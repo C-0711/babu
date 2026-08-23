@@ -218,7 +218,7 @@ struct ErgebnisUebersicht: View {
                 fertig()
                 store.tab = .belege
             } label: {
-                Text("Zur Belegliste").frame(maxWidth: .infinity)
+                Text("Zu den Dokumenten").frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
         }

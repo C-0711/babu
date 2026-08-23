@@ -48,7 +48,9 @@ struct MainTabs: View {
                 .tabItem { Label("Erfassen", systemImage: "viewfinder") }
                 .tag(AppStore.Tab.erfassen)
             ListeView()
-                .tabItem { Label("Belege", systemImage: "doc.text") }
+                // Nicht mehr nur Belege: Kontoauszüge, Verträge und Post
+                // vom Amt liegen hier ebenso, jedes in seiner Art.
+                .tabItem { Label("Dokumente", systemImage: "doc.text") }
                 .tag(AppStore.Tab.belege)
             TermineTab()
                 .tabItem { Label("Termine", systemImage: "calendar") }

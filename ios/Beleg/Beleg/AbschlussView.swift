@@ -181,7 +181,7 @@ struct AbschlussView: View {
             Button {
                 store.tab = .belege
             } label: {
-                Text("Zur Belegliste").font(.footnote)
+                Text("Zu den Dokumenten").font(.footnote)
             }
             .padding(.top, 2)
         }
