@@ -1,8 +1,12 @@
 import SwiftUI
 
-/// Kassenbuch: ein Kalender zeigt auf einen Blick, an welchen Tagen die
-/// Kasse gepflegt wurde (grüner Punkt), und für jeden Tag gibt es den
+/// Kassenbuch: ein Kalender zeigt auf einen Blick, an welchen Tagen es
+/// geführt wurde (grüner Punkt), und für jeden Tag gibt es den
 /// Frage-Ablauf — eine Zahl pro Schritt, groß und in einfacher Sprache.
+///
+/// Ein Name für die Sache: die App führt das **Kassenbuch**. Das Wort
+/// „Kasse" bleibt der Schublade vorbehalten — sie ist es, die abends
+/// stimmt oder nicht. Die Wörter stehen in `Kassenwort`.
 struct KasseTab: View {
     @EnvironmentObject var store: AppStore
 
@@ -27,8 +31,8 @@ struct KasseTab: View {
             }
             .background(GC.canvas)
             .warmerGrund()
-            .navigationTitle("Kassenbuch")
-            .mitMeldenKnopf("Kassenbuch")
+            .navigationTitle(Kassenwort.buch)
+            .mitMeldenKnopf(Kassenwort.buch)
             .toolbarTitleDisplayMode(.inline)
             .mitKontoMenu()
             .fullScreenCover(item: $workflow) { ref in
@@ -113,7 +117,8 @@ struct KasseTab: View {
             .frame(height: 44)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(KassenTag.anzeige(tag))\(gepflegt ? ", Kasse eingetragen" : "")")
+        .accessibilityLabel("\(KassenTag.anzeige(tag))"
+                            + (gepflegt ? ", im \(Kassenwort.buch) eingetragen" : ""))
     }
 
     private var monatsTitel: String {
@@ -155,7 +160,7 @@ struct KasseTab: View {
                     Image(systemName: b.kasseStimmt ? "checkmark.circle.fill" : "info.circle")
                         .font(.system(size: 28))
                         .foregroundStyle(b.kasseStimmt ? GC.ok : GC.warn)
-                    Text(b.kasseStimmt ? "Deine Kasse stimmt."
+                    Text(b.kasseStimmt ? Kassenwort.stimmt
                          : "Unterschied: \(fmtEur(b.differenz)) — ist notiert.")
                         .font(.body.weight(.medium))
                         .foregroundStyle(GC.fg)
@@ -167,25 +172,22 @@ struct KasseTab: View {
                 }
                 zeile("Bargeld eingenommen", fmtEur(b.einnahmenBar))
                 zeile("Mit Karte bezahlt", fmtEur(b.ecZahlungen))
+                if b.gutscheinVerkauf > 0 {
+                    zeile("Gutscheine verkauft", fmtEur(b.gutscheinVerkauf))
+                }
                 if b.gutscheineEingeloest > 0 {
                     zeile("Mit Gutschein bezahlt", fmtEur(b.gutscheineEingeloest))
                 }
                 zeile("Tagesumsatz gesamt", fmtEur(b.tagesumsatz))
-                zeile("Abends gezählt", fmtEur(b.gezaehltSchluss))
-                HStack(spacing: 6) {
-                    Image(systemName: b.uebermittelt != nil
-                          ? "checkmark.icloud" : "icloud.slash")
-                        .font(.caption)
-                    Text(b.uebermittelt != nil
-                         ? "In deiner Belegbox ✓"
-                         : "Kommt in die Belegbox, sobald Verbindung da ist.")
-                        .font(.caption)
+                if b.trinkgeldKarte > 0 {
+                    zeile("Trinkgeld auf der Karte", fmtEur(b.trinkgeldKarte))
                 }
-                .foregroundStyle(b.uebermittelt != nil ? GC.ok : GC.muted)
+                zeile("Abends gezählt", fmtEur(b.gezaehltSchluss))
+                uebermittlungsKarte(b)
                 Button {
                     workflow = TagRef(id: gewaehlt)
                 } label: {
-                    Text("Ändern").frame(maxWidth: .infinity)
+                    Text(Kassenwort.aendern).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
@@ -200,7 +202,7 @@ struct KasseTab: View {
                 Button {
                     workflow = TagRef(id: gewaehlt)
                 } label: {
-                    Text(gewaehlt == heute ? "Kasse jetzt eintragen" : "Nachtragen")
+                    Text(gewaehlt == heute ? Kassenwort.eintragen : Kassenwort.nachtragen)
                         .font(.title3.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
@@ -211,6 +213,29 @@ struct KasseTab: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .gcCard()
+    }
+
+    /// „Wie wird die Kasse übermittelt?" — Ninas Frage, bisher nirgends
+    /// beantwortet. Sichtbar war nur ein Haken; der sagt weder wohin noch
+    /// wann, und schon gar nicht, was am Monatsende daraus wird.
+    private func uebermittlungsKarte(_ b: Kassenbericht) -> some View {
+        let stand = Uebermittlung.fuer(b)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Image(systemName: stand.erledigt ? "checkmark.seal" : "clock")
+                    .font(.footnote)
+                    .foregroundStyle(stand.erledigt ? GC.ok : GC.muted)
+                Text(stand.satz)
+                    .font(.footnote)
+                    .foregroundStyle(stand.erledigt ? GC.body : GC.desc)
+            }
+            Text(Uebermittlung.monatsende)
+                .font(.caption)
+                .foregroundStyle(GC.muted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(GC.desk, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private func zeile(_ label: String, _ wert: String) -> some View {

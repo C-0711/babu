@@ -872,14 +872,21 @@ enum AblageService {
         var blatt: [String: Any] = [
             "datum": b.datum,
             "bestandVortag": b.bestandVortag, "einnahmenBar": b.einnahmenBar,
+            "gutscheinVerkauf": b.gutscheinVerkauf,
             "privateinlagen": b.privateinlagen, "barabhebungBank": b.barabhebungBank,
             "ecZahlungen": b.ecZahlungen, "gutscheineEingeloest": b.gutscheineEingeloest,
-            "trinkgeldTeamEC": b.trinkgeldTeamEC,
+            "trinkgeldKarte": b.trinkgeldKarte, "trinkgeldTeamEC": b.trinkgeldTeamEC,
             "sonstigeAusgaben": b.sonstigeAusgaben, "privatentnahmen": b.privatentnahmen,
+            "vorschussTeam": b.vorschussTeam, "auslagenErstattet": b.auslagenErstattet,
             "einzahlungBank": b.einzahlungBank, "gezaehltSchluss": b.gezaehltSchluss,
         ]
         if let grund = b.differenzGrund, !grund.isEmpty { blatt["differenzGrund"] = grund }
         if let notiz = b.sonstigeNotiz, !notiz.isEmpty { blatt["sonstigeNotiz"] = notiz }
+        if !b.trinkgeldVerteilt.isEmpty {
+            blatt["trinkgeldVerteilt"] = b.trinkgeldVerteilt.map {
+                ["name": $0.name, "betrag": $0.betrag]
+            }
+        }
         // Die Korrekturspur muss mit: die Belegbox ist der versionierte Ort,
         // an dem eine Prüfung nachlesen kann, was geändert wurde und warum.
         // Bliebe sie im Telefon, wäre sie mit dem Telefon weg.
