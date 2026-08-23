@@ -190,6 +190,46 @@ def test_kassenbuch_empfang(welt):
     assert r.status_code == 200
 
 
+def test_die_korrekturspur_landet_in_der_box(welt):
+    """GoBD: was nach dem Festschreiben geändert wurde, muss feststellbar
+    bleiben — und zwar am versionierten Ort, nicht nur im Telefon."""
+    client, bare, _ = welt
+    r = client.post("/api/kassenbuch", json={
+        "datum": "2026-08-21", "einnahmenBar": 430.0,
+        "korrekturen": [{
+            "zeitpunkt": "2026-08-22T09:14:00Z",
+            "grund": "Zwei Bons waren nicht eingetippt",
+            "aenderungen": [{"feld": "Bareinnahmen",
+                             "vorher": "420.00", "nachher": "430.00"}],
+        }]})
+    assert r.status_code == 200
+    blatt = json.loads(subprocess.run(
+        ["git", "-C", str(bare), "show", "HEAD:kassenbuch/2026-08/2026-08-21.json"],
+        capture_output=True, check=True).stdout)
+    k = blatt["korrekturen"]
+    assert len(k) == 1
+    assert k[0]["grund"] == "Zwei Bons waren nicht eingetippt"
+    assert k[0]["aenderungen"][0]["vorher"] == "420.00"
+    assert k[0]["zeitpunkt"] == "2026-08-22T09:14:00Z"
+
+
+def test_eine_korrektur_ohne_grund_wird_nicht_abgelegt(welt):
+    """Sonst stünde eine leere Zeile in der Prüfspur und sähe aus wie eine
+    Begründung."""
+    client, bare, _ = welt
+    client.post("/api/kassenbuch", json={
+        "datum": "2026-08-23", "einnahmenBar": 100.0,
+        "korrekturen": [
+            {"grund": "  ", "aenderungen": [{"feld": "x", "vorher": "1", "nachher": "2"}]},
+            {"grund": "ohne jede Änderung", "aenderungen": []},
+            {"kein": "dict-artiger Eintrag"},
+        ]})
+    blatt = json.loads(subprocess.run(
+        ["git", "-C", str(bare), "show", "HEAD:kassenbuch/2026-08/2026-08-23.json"],
+        capture_output=True, check=True).stdout)
+    assert "korrekturen" not in blatt
+
+
 def test_brief_wird_erklaert(welt, monkeypatch):
     client, _, bw = welt
     monkeypatch.setattr(bw, "brief_erklaerung_bauen", lambda daten, name: {

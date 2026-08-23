@@ -59,6 +59,10 @@ struct KassenberichtWorkflow: View {
     @State private var fertig = false
     @State private var differenzGrund = ""
     @State private var sonstigeNotiz = ""
+    // Ein festgeschriebener Tag wird nur mit Begründung geändert (GoBD).
+    // Die Frage kommt erst, wenn sie nötig ist — nicht bei jedem Speichern.
+    @State private var korrekturGrund = ""
+    @State private var fragtNachGrund = false
     @FocusState private var feldAktiv: Bool
 
     private var schritt: Schritt { Self.schritte[index] }
@@ -80,6 +84,19 @@ struct KassenberichtWorkflow: View {
         }
         .background(GC.canvas.ignoresSafeArea())
         .onAppear(perform: vorbereiten)
+        // Ein Tag, dessen Blatt schon in der Belegbox liegt, wird nicht
+        // stillschweigend überschrieben. Die Frage kommt nur dann.
+        .alert("Diesen Tag korrigieren?", isPresented: $fragtNachGrund) {
+            TextField("Warum? z. B. „Zwei Bons waren nicht eingetippt“",
+                      text: $korrekturGrund)
+            Button("Korrigieren") { sichern() }
+                .disabled(korrekturGrund.trimmingCharacters(
+                    in: .whitespacesAndNewlines).count < 3)
+            Button("Abbrechen", role: .cancel) { korrekturGrund = "" }
+        } message: {
+            Text("Der Tag ist schon abgeschlossen. Die alte Fassung bleibt "
+                 + "erhalten — schreib kurz dazu, was nicht stimmte.")
+        }
     }
 
     // MARK: - Kopf mit Fortschritt
@@ -247,8 +264,7 @@ struct KassenberichtWorkflow: View {
                 let notiz = sonstigeNotiz.trimmingCharacters(in: .whitespaces)
                 bericht.differenzGrund = grund.isEmpty ? nil : grund
                 bericht.sonstigeNotiz = notiz.isEmpty ? nil : notiz
-                store.kassenberichtSpeichern(bericht)
-                dismiss()
+                sichern()
             } label: {
                 Text("Fertig")
                     .font(.title3.weight(.semibold))
@@ -304,7 +320,10 @@ struct KassenberichtWorkflow: View {
             eingabeLaden()
         } else {
             bericht.erstellt = Date()
-            store.kassenberichtSpeichern(bericht)
+            if store.kassenberichtSpeichern(bericht) == .grundFehlt {
+                fragtNachGrund = true
+                return
+            }
             feldAktiv = false
             UINotificationFeedbackGenerator().notificationOccurred(.success)
             withAnimation(.spring(duration: 0.35)) { fertig = true }
@@ -316,5 +335,16 @@ struct KassenberichtWorkflow: View {
         if let wert { bericht[keyPath: schritt.pfad] = wert }
         index -= 1
         eingabeLaden()
+    }
+
+    /// Sichern — und wenn der Tag festgeschrieben ist, vorher nach dem Grund
+    /// fragen. Die Frage kommt nur dann, nicht bei jedem Speichern.
+    private func sichern() {
+        if store.kassenberichtSpeichern(bericht, grund: korrekturGrund) == .grundFehlt {
+            fragtNachGrund = true
+            return
+        }
+        korrekturGrund = ""
+        dismiss()
     }
 }

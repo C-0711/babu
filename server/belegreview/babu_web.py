@@ -3027,9 +3027,25 @@ def api_abschluss_vorschau(jahr: int, datei: str, request: Request) -> Response:
 # Nina bekommt in beiden Fällen dieselbe Antwort: „ist angekommen". Für sie
 # ist es angekommen — der Rest ist unsere Sache.
 
-FIXIT = os.environ.get("BABU_FIXIT", "https://fixit.0711.io").rstrip("/")
+# Nicht die Weboberfläche von Fixit, sondern der Dienst darunter — und zwar der
+# LOKALE. Das ist am 23.08.2026 teuer gelernt worden, deshalb steht es hier:
+#
+#   · fixit.0711.io/api/* nimmt ausschliesslich den Sitzungs-Keks. Ein Bearer
+#     bekommt dort 401, egal wie gültig er ist (server.mjs: `sitzungVon(req)`
+#     ohne `patVon`).
+#   · Es gibt ZWEI GitChain-Instanzen. gitchain.de kennt unsere Token, aber
+#     nicht den Kanal `workspace/0711/babu` (404). Der Container auf :3361
+#     kennt den Kanal — und führt eine eigene Nutzer- und Tokentabelle.
+#
+# Ein Token muss also von :3361 stammen (`gitchain-eingang/pat_lokal.py`), und
+# wir sprechen diesen Dienst direkt an. babu-web läuft auf derselben Maschine;
+# der Umweg über die Weboberfläche brächte nur deren Keks-Zwang mit.
+FIXIT = os.environ.get("BABU_FIXIT", "http://127.0.0.1:3361").rstrip("/")
 FIXIT_PAT_PFAD = Path(os.environ.get(
     "BABU_FIXIT_PAT", str(Path.home() / "gitchain-eingang" / ".pat_fixit")))
+# Der Kanal steht im PFAD (`/git/<typ>/<gruppe>/<kennung>/issues`), nicht im
+# Körper — ein `channel`-Feld in der Nutzlast wird stillschweigend verworfen.
+FIXIT_KANAL = os.environ.get("BABU_FIXIT_KANAL", "workspace/0711/babu")
 RUECKMELDUNG_MAX = 8000
 
 
@@ -3049,14 +3065,17 @@ def _an_fixit(vorgang: dict) -> tuple[bool, str]:
         return False, ("kein Fixit-Token hinterlegt — die Meldung liegt in "
                        "der Belegbox und wartet")
     try:
-        r = requests.post(f"{FIXIT}/api/issues", json=vorgang, timeout=15,
+        r = requests.post(f"{FIXIT}/git/{FIXIT_KANAL}/issues",
+                          json=vorgang, timeout=15,
                           headers={"Authorization": f"Bearer {pat}"})
     except Exception as ex:  # noqa: BLE001
         return False, f"Fixit nicht erreichbar: {ex!r}"[:160]
     if r.status_code not in (200, 201):
         return False, f"Fixit antwortete {r.status_code}: {r.text[:120]}"
     try:
-        return True, str(r.json().get("key") or r.json().get("id") or "angelegt")
+        d = r.json()
+        v = d.get("issue") if isinstance(d.get("issue"), dict) else d
+        return True, str(v.get("key") or v.get("number") or "angelegt")
     except Exception:  # noqa: BLE001
         return True, "angelegt"
 
@@ -3335,7 +3354,43 @@ KASSENBUCH_NOTIZEN = ("differenzGrund", "sonstigeNotiz")
 # steuerfrei (§ 3 Nr. 51 EStG) — dokumentiert wird es, damit bei einer
 # Kassenprüfung erklärbar ist, warum Geld die Schublade verlässt.
 TRINKGELD_MAX = 20
+# Korrekturspur: was nach dem Festschreiben geändert wurde, mit Grund. Muss in
+# die Belegbox, nicht nur ins Telefon — die Box ist der versionierte Ort, und
+# § 146 Abs. 4 AO verlangt, dass der ursprüngliche Inhalt feststellbar bleibt.
+KORREKTUR_MAX = 50
+AENDERUNG_MAX = 30
 _KASSEN_DATUM_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _korrekturen_lesen(roh) -> list[dict]:
+    """Die Korrekturspur aus dem Körper — geputzt, gedeckelt, ohne Überraschung."""
+    raus = []
+    for eintrag in (roh or [])[:KORREKTUR_MAX]:
+        if not isinstance(eintrag, dict):
+            continue
+        grund = str(eintrag.get("grund") or "").strip()[:300]
+        if not grund:
+            continue          # eine Korrektur ohne Grund ist keine
+        aenderungen = []
+        for a in (eintrag.get("aenderungen") or [])[:AENDERUNG_MAX]:
+            if not isinstance(a, dict):
+                continue
+            feld = str(a.get("feld") or "").strip()[:60]
+            if not feld:
+                continue
+            aenderungen.append({
+                "feld": feld,
+                "vorher": str(a.get("vorher") or "")[:80],
+                "nachher": str(a.get("nachher") or "")[:80],
+            })
+        if not aenderungen:
+            continue          # nichts geändert, nichts zu protokollieren
+        k = {"grund": grund, "aenderungen": aenderungen}
+        zeit = str(eintrag.get("zeitpunkt") or "").strip()[:40]
+        if zeit:
+            k["zeitpunkt"] = zeit
+        raus.append(k)
+    return raus
 
 
 # ---------------------------------------------------------------------------
@@ -6309,6 +6364,8 @@ async def api_kassenbuch(request: Request) -> Response:
             verteilt.append({"name": name, "betrag": round(betrag, 2)})
     if verteilt:
         blatt["trinkgeldVerteilt"] = verteilt
+    if (korrekturen := _korrekturen_lesen(body.get("korrekturen"))):
+        blatt["korrekturen"] = korrekturen
     blatt["von"] = un                     # wer es eingetragen hat
     import boxschreiber  # noqa: PLC0415
     try:

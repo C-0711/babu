@@ -880,6 +880,21 @@ enum AblageService {
         ]
         if let grund = b.differenzGrund, !grund.isEmpty { blatt["differenzGrund"] = grund }
         if let notiz = b.sonstigeNotiz, !notiz.isEmpty { blatt["sonstigeNotiz"] = notiz }
+        // Die Korrekturspur muss mit: die Belegbox ist der versionierte Ort,
+        // an dem eine Prüfung nachlesen kann, was geändert wurde und warum.
+        // Bliebe sie im Telefon, wäre sie mit dem Telefon weg.
+        if let korrekturen = b.korrekturen, !korrekturen.isEmpty {
+            let iso = ISO8601DateFormatter()
+            blatt["korrekturen"] = korrekturen.map { k in
+                [
+                    "zeitpunkt": iso.string(from: k.zeitpunkt),
+                    "grund": k.grund,
+                    "aenderungen": k.aenderungen.map {
+                        ["feld": $0.feld, "vorher": $0.vorher, "nachher": $0.nachher]
+                    },
+                ] as [String: Any]
+            }
+        }
         request.httpBody = try? JSONSerialization.data(withJSONObject: blatt)
         let (ergebnis, _) = await ausfuehrenMitDaten(request)
         return ergebnis == .uebertragen

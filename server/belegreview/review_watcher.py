@@ -48,6 +48,7 @@ sys.path.insert(0, str(WURZEL))
 from doc_classify import classify_doc  # noqa: E402  (Kopie aus ~/OCR, standalone)
 from belegdeutung import Kasten, deuten  # noqa: E402
 from leseprotokoll import protokoll  # noqa: E402
+import kontierung as kt  # noqa: E402
 
 
 def log(msg: str) -> None:
@@ -263,52 +264,83 @@ KATALOG_CACHE = WURZEL / "katalog_embeddinggemma.json"
 VLM_API = os.environ.get("VLM_API", "http://127.0.0.1:11435/v1/chat/completions")
 VLM_MODELL = os.environ.get("VLM_MODELL", "gemma4-mm")
 
-# code, SKR04-Konto, Label, Beschreibungstext fürs Embedding
+# ── Katalog: code, BUCHUNGSKATEGORIE, Label, Embedding-Text ──────────────────
+#
+# Bis 23.08.2026 stand hier in der zweiten Spalte ein festes SKR04-Konto. Das
+# war der Fehler, den Nina benannt hat: der Belegtext entschied unmittelbar
+# über das Sachkonto. Jetzt steht dort eine Kategorie aus kontierung.py, und
+# das Konto ergibt sich erst daraus — im Kontenrahmen des Betriebs.
+#
+# Wo das Embedding die Verwendung gar nicht wissen KANN, steht die Kategorie
+# in MEHRDEUTIG statt hier. Dann wird gefragt, nicht geraten.
 BABU_KATALOG = [
-    ("bewirtung", "6640", "Bewirtung",
+    ("bewirtung", "bewirtung", "Bewirtung",
      "Restaurant Gaststätte Gasthaus Café Bewirtung Speisen Getränke Menü Schnitzel Salat Wein Bier Trinkgeld Tisch Kellner Geschäftsessen"),
-    ("kfz", "6530", "Kfz/Tanken",
+    ("kfz", "kfz", "Kfz/Tanken",
      "Tankstelle Kraftstoff Diesel Benzin Super E10 Aral Shell Esso Jet Liter Zapfsäule Waschanlage Parkschein Parkhaus"),
-    ("buerobedarf", "6815", "Bürobedarf",
+    ("buerobedarf", "buerobedarf", "Bürobedarf",
      "Bürobedarf Kopierpapier Papier Toner Druckerpatrone Stifte Ordner Büromaterial Schreibwaren"),
-    ("telekom", "6805", "Telefon/Internet",
+    ("telekom", "telekom", "Telefon/Internet",
      "Telefon Mobilfunk Internet DSL Glasfaser Telekom Vodafone O2 Tarif Kommunikation Rufnummer"),
-    ("energie", "6325", "Energie",
+    ("energie", "energie", "Energie",
      "Strom Gas Wasser Stadtwerke Energieversorger Abschlag Zählerstand Grundversorgung Netzentgelt"),
-    ("fahrt", "6673", "Fahrtkosten",
+    ("fahrt", "fahrt", "Fahrtkosten",
      "Deutsche Bahn Fernverkehr ICE Ticket Fahrkarte Bahnfahrt ÖPNV Taxi Flug Bordkarte Reise"),
-    ("literatur", "6820", "Fachliteratur",
+    ("literatur", "literatur", "Fachliteratur",
      "Buchhandlung Verlag Fachbuch Fachzeitschrift Literatur Abonnement ISBN"),
-    ("geschenk", "6610", "Geschenke",
+    ("geschenk", "geschenk", "Geschenke",
      "Blumen Blumenstrauß Geschenk Präsent Aufmerksamkeit Gutschein Anlass"),
-    ("it", "6837", "IT/Hosting",
+    ("it", "it", "IT/Hosting",
      "Hosting Cloud Domain Software Lizenz SaaS IT-Dienstleistung Rechenzentrum "
      "Hetzner AWS Terminbuchung Online-Kalender Planity Buchungssystem Salonsoftware Monatsabo"),
-    ("sonstiges", "6850", "Sonstiger Betriebsbedarf",
+    ("sonstiges", "sonstiges", "Sonstiger Betriebsbedarf",
      "Quittung Kassenbon Einkauf Baumarkt Drogerie allgemeiner Betriebsbedarf"),
     # ── Salon-Katalog (SupremeBeauty): Konten vor Produktivgang vom
     #    Steuerberater bestätigen lassen — Texte sind die Embedding-Anker. ──
-    ("wareneingang", "5400", "Wareneinkauf",
+    ("wareneingang", None, "Wareneinkauf oder Verbrauch",
      "Friseurbedarf Haarfarbe Coloration Tönung Blondierung Shampoo Conditioner "
      "Haarpflege Styling Wella L'Oréal Schwarzkopf Henkel Kosmetik Nagellack Gel "
      "Wimpern Extensions Haarverlängerung Echthaar Slavic Hair delila Verkaufsware "
      "Großhandel Salonbedarf"),
-    ("fremdleistung", "5900", "Fremdleistungen",
+    ("fremdleistung", "fremdleistung", "Fremdleistungen",
      "Stuhlmiete Untermiete Kosmetikerin selbständig Fremdleistung Subunternehmer "
      "freie Mitarbeiterin Nageldesignerin auf Rechnung Provision"),
-    ("miete", "6310", "Miete Geschäftsräume",
+    ("miete", "miete", "Miete Geschäftsräume",
      "Miete Salonräume Gewerbemiete Nebenkosten Pacht Vermieter monatliche Miete "
      "Ladenlokal Geschäftsräume"),
-    ("reinigung", "6330", "Reinigung",
+    ("reinigung", "reinigung", "Reinigung",
      "Reinigungsfirma Gebäudereinigung Handtuchservice Wäscheservice Mietwäsche "
      "Handtücher Umhänge Fensterputzer Reinigungsmittel"),
-    ("versicherung", "6400", "Versicherungen",
+    ("versicherung", "versicherung", "Versicherungen",
      "Betriebshaftpflicht Inhaltsversicherung Geschäftsversicherung Police Beitrag "
      "Versicherungsschein Prämie Jahresbeitrag"),
-    ("werbung", "6600", "Werbung",
+    ("werbung", "werbung", "Werbung",
      "Anzeige Social Media Ads Instagram Facebook Flyer Druck Visitenkarten "
      "Gutscheinkarten Werbung Marketing Kampagne"),
+    # Neu am 23.08.2026. Vorher fiel ein Föhn unter „sonstiges" und die Frage
+    # nach GWG oder Anlage stellte sich nie — genau Ninas Punkt.
+    ("ausstattung", None, "Geräte und Einrichtung",
+     "Föhn Haartrockner Trockenhaube Friseurstuhl Bedienungsstuhl Waschbecken "
+     "Waschsessel Spiegel Ladeneinrichtung Kasse Kassensystem iPad Tablet "
+     "Laptop Drucker Klimagerät Heizstrahler Werkzeug Schere Haarschneide"
+     "maschine Glätteisen Lockenstab Anschaffung Gerät Möbel"),
 ]
+
+# Wo das Embedding die Verwendung nicht wissen KANN: Kandidaten und die Frage,
+# die sie auflöst. Lieber einmal fragen als jedes Mal falsch buchen.
+MEHRDEUTIG = {
+    "wareneingang": (("wareneinkauf", "verbrauchsmaterial"),
+                     "Nimmt die Kundin das mit, oder wird es im Salon "
+                     "aufgebraucht?"),
+    "ausstattung": (("gwg", "anlagevermoegen", "sonstiges"),
+                    "Was hat ein Stück netto gekostet — und kannst du es "
+                    "allein benutzen?"),
+}
+
+# Der Kontenrahmen des Betriebs. Eine Entscheidung, kein Belegmerkmal: er gilt
+# für alles oder für nichts. SKR03 und SKR04 dürfen sich nie im selben Stapel
+# begegnen (kontierung.gehoert_zum_rahmen prüft das).
+KONTENRAHMEN = os.environ.get("BABU_KONTENRAHMEN", "SKR04")
 
 
 def embed_text(text: str, als_dokument: bool = False) -> list[float]:
@@ -358,17 +390,60 @@ def semantik_klassifizieren(text: str) -> tuple[dict, list[float]]:
     scores = sorted(
         ((round(_cos(vektor, kv), 4), i) for i, kv in enumerate(katalog_vektoren())),
         reverse=True)
-    kandidaten = [{"code": BABU_KATALOG[i][0], "konto": BABU_KATALOG[i][1],
+    kandidaten = [{"code": BABU_KATALOG[i][0], "kategorie": BABU_KATALOG[i][1],
                    "label": BABU_KATALOG[i][2], "score": s} for s, i in scores[:3]]
     best = kandidaten[0]
     return {
         "modell": EMBED_MODELL,
         "belegart_code": best["code"],
         "belegart": best["label"],
-        "konto_skr04": best["konto"],
+        # Was der Text hergibt: eine Kategorie oder — bei mehrdeutigen — nichts.
+        # Ein Konto steht hier bewusst NICHT mehr; das entscheidet kontieren().
+        "kategorie": best["kategorie"],
         "konfidenz": best["score"],
         "kandidaten": kandidaten,
     }, vektor
+
+
+def kontieren(sem: dict | None, f: dict) -> kt.Entscheidung:
+    """Aus Semantik und gelesenen Beträgen ein Konto — oder eine Rückfrage.
+
+    Die Reihenfolge ist Ninas: erst die Verwendung (die steckt in der
+    Kategorie), dann das Konto im Kontenrahmen des Betriebs. Wo die Verwendung
+    aus dem Beleg nicht hervorgeht, kommt eine Frage zurück, kein Konto.
+    """
+    rahmen = KONTENRAHMEN
+    if not sem:
+        return kt.Entscheidung(
+            None, None, rahmen,
+            "Semantik nicht verfügbar.",
+            rueckfrage="Wofür war das? (Weiterverkauf, Verbrauch, Gerät, …)")
+
+    code = sem.get("belegart_code")
+    if code in MEHRDEUTIG:
+        moeglich, frage = MEHRDEUTIG[code]
+        if code == "ausstattung":
+            # Die Betragskaskade kann die Frage oft selbst beantworten.
+            # `selbstaendig_nutzbar` steht drin, sobald jemand die Rückfrage
+            # beantwortet hat — dann rechnet die Kaskade sie zu Ende, statt
+            # dieselbe Frage ein zweites Mal zu stellen.
+            return kt.entscheiden(
+                verwendung="betriebsausstattung",
+                netto_je_stueck=f.get("netto"),
+                selbstaendig_nutzbar=f.get("selbstaendig_nutzbar"),
+                rahmen=rahmen)
+        return kt.Entscheidung(
+            None, None, rahmen,
+            f"Der Beleg lässt beides zu: {' oder '.join(moeglich)}.",
+            rueckfrage=frage)
+
+    kategorie = sem.get("kategorie")
+    if not kategorie or kategorie not in kt.KATEGORIEN:
+        return kt.Entscheidung(
+            None, None, rahmen, "Keine Kategorie erkannt.",
+            rueckfrage="Wofür war das?")
+    return kt._fertig(kategorie, rahmen,
+                      f"Aus dem Belegtext erkannt: {kt.KATEGORIEN[kategorie].name}.")
 
 
 def aehnlichster_beleg(vektor: list[float], eigener_stamm: str) -> dict | None:
@@ -714,19 +789,43 @@ def _als_betrag(wert) -> float | None:
 
 
 def einschaetzung(f: dict, sem: dict | None, dokumentklasse: str) -> dict:
-    """Steuerliche Ersteinschätzung: semantische Belegart (bge-m3) bestimmt das
-    Konto; deterministische Signale (Bewirtung) übersteuern; der Keyword-
-    Klassifikator liefert nur noch die Dokumentklasse als Zusatzinfo."""
+    """Steuerliche Ersteinschätzung.
+
+    Seit 23.08.2026 in Ninas Reihenfolge: die Semantik liefert eine
+    BUCHUNGSKATEGORIE, kontieren() macht daraus im Kontenrahmen des Betriebs
+    ein Konto — oder eine Rückfrage. Deterministische Signale (Bewirtung)
+    übersteuern weiterhin; der Keyword-Klassifikator liefert nur noch die
+    Dokumentklasse als Zusatzinfo.
+
+    `konto_skr04` bleibt im Ausgabeformat, wird aber nur noch gefüllt, wenn der
+    Betrieb wirklich SKR04 fährt. Ein SKR03-Konto unter diesem Namen wäre genau
+    die Vermischung, die es nicht geben darf.
+    """
     ks = "8" if f["ust_satz"] == 7 else ("0" if f["ust_satz"] == 0 else "9")
-    e = {"belegart": dokumentklasse, "konto_skr04": None, "steuerschluessel": ks, "hinweise": []}
+    e = {"belegart": dokumentklasse, "konto_skr04": None, "steuerschluessel": ks,
+         "kontenrahmen": KONTENRAHMEN, "kategorie": None, "konto": None,
+         "kontierung_grund": None, "rueckfrage": None, "hinweise": []}
 
     if sem:
         e["belegart"] = f"{sem['belegart']} (semantisch, {sem['konfidenz']:.0%})"
-        e["konto_skr04"] = sem["konto_skr04"]
+
+    ent = kontieren(sem, f)
+    e["kategorie"] = ent.kategorie
+    e["konto"] = ent.konto
+    e["kontierung_grund"] = ent.begruendung
+    e["rueckfrage"] = ent.rueckfrage
+    if ent.rueckfrage:
+        e["hinweise"].append(ent.rueckfrage)
+    if ent.kategorie and not ent.geprueft:
+        e["hinweise"].append(
+            f"Konto für „{kt.KATEGORIEN[ent.kategorie].name}“ ist noch nicht "
+            f"steuerlich bestätigt.")
 
     bewirtung = f["bewirtungssignal"] or (sem and sem["belegart_code"] == "bewirtung")
     if bewirtung:
-        e["konto_skr04"] = "6640"
+        e["kategorie"] = "bewirtung"
+        e["konto"] = kt.konto("bewirtung", KONTENRAHMEN)
+        e["rueckfrage"] = None
         e["hinweise"] += [
             "Bewirtungsbeleg: 70 % abziehbar (§4 Abs. 5 Nr. 2 EStG), Vorsteuer zu 100 %.",
             "Bewirtungsangaben ergänzen: Anlass, Teilnehmer, Unterschrift.",
@@ -734,15 +833,21 @@ def einschaetzung(f: dict, sem: dict | None, dokumentklasse: str) -> dict:
         if any("Trinkgeld" in o for o in f["offen"]):
             e["hinweise"].append("Trinkgeld ist ohne Vorsteuer abziehbar — separat erfassen.")
     elif dokumentklasse == "Spendenbescheinigung":
-        e["konto_skr04"] = None
+        e["konto"] = None
+        e["kategorie"] = None
         e["hinweise"].append("Zuwendungsbestätigung → Sonderausgaben (Anlage SA), kein Betriebsausgabenkonto.")
     elif dokumentklasse == "Lohnsteuerbescheinigung":
         e["hinweise"].append("LStB → Anlage N (eCodes via VaSt), kein Buchungsbeleg.")
     elif sem is None:
-        e["konto_skr04"] = "6850"
+        e["kategorie"] = "sonstiges"
+        e["konto"] = kt.konto("sonstiges", KONTENRAHMEN)
         e["hinweise"].append("Semantik nicht verfügbar — Leistungsart prüfen (Vorschlag: sonstiger Betriebsbedarf).")
     if not f["summenprobe_ok"]:
         e["hinweise"].append("Summenprobe nicht bestanden — Beträge prüfen.")
+    # Altes Feld weiterbedienen, aber nur wahrheitsgemäß: unter SKR03 bleibt es
+    # leer, statt eine SKR03-Nummer als SKR04 auszugeben.
+    if KONTENRAHMEN == "SKR04":
+        e["konto_skr04"] = e["konto"]
     return e
 
 

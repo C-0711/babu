@@ -123,7 +123,7 @@ def test_mit_token_wird_weitergereicht(welt, monkeypatch):
     class Antwort:
         status_code = 201
         text = ""
-        def json(self): return {"key": "BABU-99"}
+        def json(self): return {"issue": {"key": "BABU-99", "number": 99}}
 
     def falsches_post(url, json=None, timeout=None, headers=None):
         gesendet.update(url=url, nutzlast=json, kopf=headers)
@@ -134,9 +134,12 @@ def test_mit_token_wird_weitergereicht(welt, monkeypatch):
     assert r.status_code == 200
     assert r.json()["weitergereicht"] is True
     assert r.json()["hinweis"] == "BABU-99"
-    assert gesendet["url"].endswith("/api/issues")
+    # Der Kanal steht im Pfad, nicht im Körper — und der Dienst ist der lokale
+    # GitChain-Container, nicht die Weboberfläche (die nimmt keinen Bearer).
+    assert gesendet["url"] == "http://127.0.0.1:3361/git/workspace/0711/babu/issues"
     assert gesendet["kopf"]["Authorization"].startswith("Bearer gcpat-")
     assert gesendet["nutzlast"]["type"] == "bug"
+    assert "channel" not in gesendet["nutzlast"]
     # Auch mit Fixit bleibt die Kopie in der Box.
     assert len(in_der_box(bare)) == 1
 

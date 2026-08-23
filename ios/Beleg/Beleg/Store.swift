@@ -515,18 +515,48 @@ final class AppStore: ObservableObject {
         kassenberichte.first { $0.datum == tag }
     }
 
-    /// Speichert oder ersetzt den Bericht des Tages (ein Bericht pro Tag)
-    /// und legt das Tagesblatt in der Belegbox ab (wenn verbunden).
-    func kassenberichtSpeichern(_ bericht: Kassenbericht) {
-        var neu = bericht
-        neu.uebermittelt = nil   // geänderte Zahlen → frisch übermitteln
-        if let i = kassenberichte.firstIndex(where: { $0.datum == bericht.datum }) {
-            kassenberichte[i] = neu
-        } else {
+    /// Speichert den Bericht des Tages (einer pro Tag) und legt das Tagesblatt
+    /// in der Belegbox ab (wenn verbunden).
+    ///
+    /// Seit 23.08.2026 überschreibt das nichts mehr stillschweigend. Ein Tag,
+    /// dessen Blatt schon in der Belegbox liegt, ist festgeschrieben; ihn zu
+    /// ändern ist eine Korrektur und braucht einen Grund, der stehen bleibt
+    /// (GoBD, § 146 Abs. 4 AO — der ursprüngliche Inhalt muss feststellbar
+    /// bleiben). Vorher hieß diese Zeile schlicht `kassenberichte[i] = neu`.
+    ///
+    /// Gibt `nil` zurück, wenn gespeichert wurde, sonst den Grund, warum
+    /// nicht — die Oberfläche fragt dann nach.
+    @discardableResult
+    func kassenberichtSpeichern(_ bericht: Kassenbericht,
+                                grund: String = "") -> Kassenfehler? {
+        guard let i = kassenberichte.firstIndex(where: { $0.datum == bericht.datum })
+        else {
+            var neu = bericht
+            neu.uebermittelt = nil
             kassenberichte.append(neu)
+            let tag = neu.datum
+            Task { await self.kassenblattSenden(tag) }
+            return nil
         }
-        let tag = neu.datum
+        do {
+            kassenberichte[i] = try kassenberichtKorrigieren(
+                alt: kassenberichte[i], neu: bericht, grund: grund)
+        } catch Kassenfehler.keineAenderung {
+            return nil          // nichts zu tun ist kein Fehler
+        } catch let f as Kassenfehler {
+            return f            // Grund fehlt — die Oberfläche fragt
+        } catch {
+            return nil
+        }
+        let tag = bericht.datum
         Task { await self.kassenblattSenden(tag) }
+        return nil
+    }
+
+    /// Ist der Tag schon festgeschrieben? Die Oberfläche fragt danach, bevor
+    /// sie eine Änderung ohne Grund überhaupt anbietet.
+    func kassentagFestgeschrieben(_ tag: String) -> Bool {
+        kassenbericht(fuer: tag)?.festgeschrieben ?? false
     }
 
     /// Ein Tagesblatt an die Belegbox senden (POST /api/kassenbuch).
