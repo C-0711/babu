@@ -75,6 +75,13 @@ struct KontoMenuView: View {
                 }
 
                 Section("Dein Salon") {
+                    // Name, Anschrift, Steuernummer: bisher nur im Portal im
+                    // Browser zu ändern, obwohl die App hierher verwies.
+                    NavigationLink {
+                        BetriebsangabenView()
+                    } label: {
+                        Label("Dein Betrieb", systemImage: "building.2")
+                    }
                     NavigationLink {
                         KundinnenView()
                     } label: {
@@ -108,13 +115,20 @@ struct KontoMenuView: View {
                 }
 
                 Section {
+                    // Funktionen wurden bisher zufällig entdeckt — diese Seite
+                    // zählt einmal alles auf, nach Anlass statt nach Technik.
+                    NavigationLink {
+                        WasBabuKannView { zurueck() }
+                    } label: {
+                        Label("Was babu alles kann", systemImage: "list.bullet.rectangle")
+                    }
                     NavigationLink {
                         EinstellungenView()
                     } label: {
                         Label("Einstellungen", systemImage: "gearshape")
                     }
                 } footer: {
-                    Text("Den fertigen Stapel bekommt dein Steuerbüro am Monatsende automatisch aus der Belegbox.")
+                    Text("Den fertigen Stand bekommt dein Steuerbüro am Monatsende automatisch aus der Belegbox.")
                 }
             }
             .warmerGrund()
