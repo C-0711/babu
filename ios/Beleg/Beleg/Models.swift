@@ -28,7 +28,9 @@ enum Herkunft: String, Codable {
     }
 }
 
-enum BelegStatus: String, Codable {
+// CaseIterable, damit der Harness ALLE Statuswörter durchgehen kann und
+// nicht nur die, an die jemand gerade gedacht hat.
+enum BelegStatus: String, Codable, CaseIterable {
     case offen, automatisch, bestaetigt, korrigiert, fixiert
 
     var label: String {
@@ -37,7 +39,11 @@ enum BelegStatus: String, Codable {
         case .automatisch: return "automatisch"
         case .bestaetigt: return "bestätigt"
         case .korrigiert: return "korrigiert → lernt"
-        case .fixiert: return "exportiert · fixiert"
+        // „fixiert" ist unser Wort, nicht Ninas. Auf dem Bildschirm steht
+        // dasselbe Wort, das der Export-Knopf verwendet: festgeschrieben.
+        // In der DATEV-Datei darf „Buchungsstapel" stehen bleiben — die liest
+        // das Steuerbüro, nicht sie.
+        case .fixiert: return "exportiert · festgeschrieben"
         }
     }
 }

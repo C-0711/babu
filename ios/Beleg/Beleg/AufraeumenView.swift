@@ -28,6 +28,11 @@ struct AufraeumenView: View {
     /// nicht an Ort und Stelle — zwei Finger auf der Karte wären dieselbe
     /// Geste wie das Wischen. Also aufs Bild tippen und in Ruhe hineinsehen.
     @State private var grossAnsehen: Grossansicht?
+    /// War beim Öffnen schon nichts offen? Dann ist „Alles aufgeräumt" gelogen
+    /// — es wurde ja nichts aufgeräumt. Seit das Aufräumen auch im Konto-Menü
+    /// steht, kommt man hier an, ohne dass etwas wartet; dann muss die Ansicht
+    /// das sagen, statt einen Erfolg zu feiern, den es nicht gab.
+    @State private var vonAnfangAnLeer = false
 
     private var oberster: Beleg? {
         guard let id = stapel.first else { return nil }
@@ -58,6 +63,7 @@ struct AufraeumenView: View {
         }
         .onAppear {
             stapel = store.belege.filter { $0.status == .offen }.map(\.id)
+            vonAnfangAnLeer = stapel.isEmpty
             startZeit = Date()
         }
         .sheet(isPresented: $zeigeBewirtung) {
@@ -315,7 +321,41 @@ struct AufraeumenView: View {
 
     // MARK: - Finale
 
+    @ViewBuilder
     private var finale: some View {
+        if vonAnfangAnLeer { nichtsOffen } else { geschafft }
+    }
+
+    /// Hier war nichts zu tun. Kein Konfetti, kein „geschafft" — nur die
+    /// Auskunft, warum der Stapel leer ist und wie er sich füllt.
+    private var nichtsOffen: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "rectangle.stack")
+                .font(.system(size: 40, weight: .light))
+                .foregroundStyle(GC.accent)
+            Text("Gerade ist nichts offen")
+                .font(.system(size: 28, weight: .semibold, design: .serif))
+                .foregroundStyle(GC.fg)
+                .multilineTextAlignment(.center)
+            Text("Sobald ein Beleg auf eine Entscheidung wartet, liegt er "
+                 + "hier — und du wischst dich in Ruhe durch.")
+                .font(.subheadline)
+                .foregroundStyle(GC.desc)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 36)
+            Button {
+                dismiss()
+            } label: {
+                Text("Fertig").frame(maxWidth: 200)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .padding(.top, 10)
+        }
+        .padding(.top, 70)
+    }
+
+    private var geschafft: some View {
         VStack(spacing: 14) {
             HStack(spacing: 10) {
                 Text("Alles aufgeräumt")

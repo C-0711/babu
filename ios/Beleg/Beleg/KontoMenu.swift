@@ -7,6 +7,15 @@ struct KontoMenuView: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) private var zurueck
 
+    // Drei Ansichten, die es längst gibt und die bisher niemand fand:
+    // Briefkopf und Vorlagen lagen ganz unten im Rechnungs-Reiter, das
+    // Aufräumen erschien nur, wenn gerade etwas offen war. Alle drei bringen
+    // ihr eigenes Blatt mit (eigener NavigationStack, eigener Fertig-Knopf) —
+    // deshalb sheet/fullScreenCover statt NavigationLink.
+    @State private var zeigeBriefkopf = false
+    @State private var zeigeVorlagen = false
+    @State private var zeigeAufraeumen = false
+
     /// Drei ehrliche Zustände: nicht verbunden, verbunden, oder verbunden
     /// gewesen — der Server nimmt den Zugang nicht mehr an.
     private var zeichen: String {
@@ -57,10 +66,22 @@ struct KontoMenuView: View {
                 // Was zusammengehört, steht zusammen: was die Zahlen angeht,
                 // dann was den Salon angeht, dann das Konto selbst.
                 Section("Buchhaltung") {
+                    // Der Wischstapel für offene Belege. Stand bisher nur auf
+                    // der Dokumentenliste, und dort auch nur, solange etwas
+                    // offen war — wer ihn einmal gesehen hatte, fand ihn nie
+                    // wieder. Hier steht er immer; ist nichts offen, sagt die
+                    // Ansicht das ehrlich, statt einen toten Knopf zu zeigen.
+                    blattZeile("Belege aufräumen", "rectangle.stack") {
+                        zeigeAufraeumen = true
+                    }
                     NavigationLink {
                         RechnungenTab()
                     } label: {
                         Label("Rechnungen", systemImage: "eurosign.circle")
+                    }
+                    blattZeile("Vorlagen", "doc.on.doc") { zeigeVorlagen = true }
+                    blattZeile("Dein Briefkopf", "paintpalette") {
+                        zeigeBriefkopf = true
                     }
                     NavigationLink {
                         AbschlussView()
@@ -143,7 +164,38 @@ struct KontoMenuView: View {
                     Button("Fertig") { zurueck() }
                 }
             }
+            .sheet(isPresented: $zeigeVorlagen) {
+                VorlagenView().environmentObject(store)
+            }
+            .sheet(isPresented: $zeigeBriefkopf) {
+                BriefkopfView().environmentObject(store)
+            }
+            .fullScreenCover(isPresented: $zeigeAufraeumen) {
+                AufraeumenView().environmentObject(store)
+            }
         }
+    }
+
+    /// Eine Zeile, die ein Blatt aufschlägt, statt weiterzuschieben. Sieht
+    /// aus wie die NavigationLink-Zeilen daneben — ein Knopf, der sich anders
+    /// anfühlt als seine Nachbarn, wirkt kaputt, auch wenn er tut.
+    private func blattZeile(_ titel: String, _ symbol: String,
+                            _ tun: @escaping () -> Void) -> some View {
+        Button(action: tun) {
+            HStack {
+                Label {
+                    Text(titel).foregroundStyle(GC.fg)
+                } icon: {
+                    Image(systemName: symbol).foregroundStyle(GC.accent)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(GC.muted.opacity(0.7))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
