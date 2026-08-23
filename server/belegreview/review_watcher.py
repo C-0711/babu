@@ -49,6 +49,7 @@ from doc_classify import classify_doc  # noqa: E402  (Kopie aus ~/OCR, standalon
 from belegdeutung import Kasten, Lesung, deuten  # noqa: E402
 from leseprotokoll import protokoll  # noqa: E402
 import kontierung as kt  # noqa: E402
+import kontenrahmen as kr  # noqa: E402
 
 
 def log(msg: str) -> None:
@@ -340,7 +341,25 @@ MEHRDEUTIG = {
 # Der Kontenrahmen des Betriebs. Eine Entscheidung, kein Belegmerkmal: er gilt
 # für alles oder für nichts. SKR03 und SKR04 dürfen sich nie im selben Stapel
 # begegnen (kontierung.gehoert_zum_rahmen prüft das).
-KONTENRAHMEN = os.environ.get("BABU_KONTENRAHMEN", "SKR04")
+#
+# Seit 23.08.2026 steht er in den Einrichtungsangaben des Betriebs (BABU-57).
+# `BABU_KONTENRAHMEN` bleibt die Vorgabe für einen Betrieb, der noch nichts
+# gewählt hat — die Betriebsangabe schlägt sie. Aufgefrischt wird einmal je
+# Takt: Nina stellt im Portal um, und der Watcher folgt ihr binnen Sekunden,
+# statt bis zum nächsten Dienstneustart im alten Rahmen weiterzubuchen.
+PORTAL_DB = Path(os.environ.get(
+    "BABU_PORTAL_DB", str(Path.home() / "babu-web" / "portal.db")))
+KONTENRAHMEN = kr.gewaehlt(PORTAL_DB, vorgabe=kr.vorgabe())
+
+
+def kontenrahmen_auffrischen() -> str:
+    """Den Rahmen aus den Betriebsangaben nachlesen; gibt den geltenden zurück."""
+    global KONTENRAHMEN
+    neu = kr.gewaehlt(PORTAL_DB, vorgabe=kr.vorgabe())
+    if neu != KONTENRAHMEN:
+        log(f"Kontenrahmen: {KONTENRAHMEN} → {neu} (Betriebsangabe)")
+        KONTENRAHMEN = neu
+    return KONTENRAHMEN
 
 
 def embed_text(text: str, als_dokument: bool = False) -> list[float]:
@@ -1108,6 +1127,9 @@ def hauptschleife() -> None:
     log(f"BelegReview-Watcher startet (Takt {TAKT}s, Remote {REMOTE})")
     while True:
         try:
+            # Vor jedem Durchlauf: gilt noch derselbe Kontenrahmen? Wer im
+            # Portal umstellt, soll nicht auf einen Dienstneustart warten.
+            kontenrahmen_auffrischen()
             if arbeitskopie_bereit():
                 for pfad in offene_belege():
                     try:

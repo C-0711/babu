@@ -13,6 +13,9 @@ Steuerberater bleibt der letzte Schritt vor dem Produktivgang.
 import calendar
 import re
 import time
+from dataclasses import dataclass, field
+
+import kontierung as kt
 
 BERATER = "0"        # per Env/Einstellung überschreibbar — vor Produktivgang setzen
 MANDANT = "0"
@@ -98,12 +101,26 @@ def _bu(satz: int | None) -> str | None:
     return BU_SCHLUESSEL.get(int(satz))
 
 
+def _konto_und_rahmen(review: dict) -> tuple[str | None, str]:
+    """Welches Konto der Beleg trägt — und aus welchem Rahmen es stammt.
+
+    `konto`/`kontenrahmen` schreibt der Watcher seit BABU-57. Reviews von
+    davor haben nur `konto_skr04`; die stammen aus einer Zeit, in der babu
+    ausschließlich SKR04 kannte, also gelten sie als SKR04. Das ist keine
+    Vermutung, sondern Aktenlage.
+    """
+    e = review.get("einschaetzung") or {}
+    konto = e.get("konto") or e.get("konto_skr04")
+    rahmen = e.get("kontenrahmen") or "SKR04"
+    return (str(konto) if konto else None), rahmen
+
+
 def buchungszeilen(review: dict) -> list[dict]:
     """Ein Review → 1..n Buchungssätze (je Steuersatz einer)."""
     f = review.get("felder") or {}
     e = review.get("einschaetzung") or {}
     v = review.get("vlm") or {}
-    konto = e.get("konto_skr04")
+    konto, _ = _konto_und_rahmen(review)
     if not konto or f.get("brutto") is None:
         return []
     datum = f.get("datum") or ""
@@ -139,6 +156,81 @@ def buchungszeilen(review: dict) -> list[dict]:
     return brauchbar
 
 
+# ── Der Mischungs-Melder ─────────────────────────────────────────────────────
+#
+# BABU-57. Der Buchungsstapel ist die Stelle, an der babus Konten das Haus
+# verlassen. Was hier durchrutscht, fällt beim Steuerberater auf — nach dem
+# Import, und dann ist es Handarbeit. Also wird hier geprüft, und zwar an der
+# einzigen Stelle, an der sich alle Konten eines Monats gleichzeitig ansehen
+# lassen.
+#
+# Drei Fälle, drei verschiedene Antworten:
+#
+#   1. Das Konto gehört zum eingestellten Rahmen  → in Ordnung.
+#   2. Das Konto gehört nachweislich zum ANDEREN  → Vermischung, Abbruch.
+#   3. babu kennt das Konto überhaupt nicht       → durchlassen, vermerken.
+#
+# Fall 3 ist Absicht. `kontierung.gehoert_zum_rahmen()` ist bewusst
+# konservativ und kennt nur die Konten, die babu selbst vergibt. Eine
+# handkorrigierte Kontierung (8400 Erlöse, ein Konto aus der Kanzlei) wäre
+# damit „fremd" — sie deshalb aus dem Stapel zu werfen hieße, fremde und
+# vermutlich richtige Arbeit stillschweigend wegzuwerfen. Der Melder sucht
+# Vermischung, er überstimmt keine Kontierung.
+
+
+class RahmenVermischung(Exception):
+    """SKR03 und SKR04 in einem Stapel. Kein Import, sondern ein Fehler."""
+
+
+@dataclass
+class Befund:
+    """Was die Rahmenprüfung über einen Stapel sagt."""
+    rahmen: str
+    vermischt: list[str] = field(default_factory=list)   # Konten aus dem anderen Rahmen
+    unbekannt: list[str] = field(default_factory=list)   # von babu nie vergeben
+    belege: list[str] = field(default_factory=list)      # wo die Vermischung steckt
+
+    @property
+    def sauber(self) -> bool:
+        return not self.vermischt
+
+    def meldung(self) -> str:
+        """Ein Satz, den Nina versteht, und die Belege dazu."""
+        return (f"Dieser Stapel ist auf {self.rahmen} eingestellt, enthält aber "
+                f"Konten aus dem anderen Kontenrahmen: "
+                f"{', '.join(self.vermischt)}. Betroffen: "
+                f"{', '.join(self.belege)}. Zwei Kontenrahmen in einem Stapel "
+                f"kann die Kanzlei nicht importieren.")
+
+
+def _stamm(review: dict) -> str:
+    datei = str(review.get("datei") or "")
+    return datei.rsplit("/", 1)[-1].rsplit(".", 1)[0] or "(unbenannter Beleg)"
+
+
+def rahmen_pruefen(reviews: list[dict], rahmen: str) -> Befund:
+    """Stammen alle Konten dieses Stapels aus `rahmen`?"""
+    anderer = next(r for r in kt.RAHMEN if r != rahmen)
+    befund = Befund(rahmen=rahmen)
+    for review in reviews:
+        konto, beleg_rahmen = _konto_und_rahmen(review)
+        if not konto:
+            continue
+        # Der Beleg sagt selbst, in welchem Rahmen er kontiert wurde. Das ist
+        # das verlässlichere Zeugnis als die Nummer: es gilt auch für Konten,
+        # die babu nicht selbst vergeben hat.
+        widerspruch = beleg_rahmen != rahmen
+        if kt.gehoert_zum_rahmen(konto, rahmen) and not widerspruch:
+            continue
+        if widerspruch or kt.gehoert_zum_rahmen(konto, anderer):
+            if konto not in befund.vermischt:
+                befund.vermischt.append(konto)
+            befund.belege.append(_stamm(review))
+        elif konto not in befund.unbekannt:
+            befund.unbekannt.append(konto)
+    return befund
+
+
 def _zeile(b: dict) -> str:
     felder = [""] * len(SPALTEN)
     felder[0] = b["umsatz"]
@@ -155,8 +247,21 @@ def _zeile(b: dict) -> str:
 
 def stapel(reviews: list[dict], monat: str, erzeugt: time.struct_time | None = None,
            berater: str = BERATER, mandant: str = MANDANT,
-           festschreibung: bool = True) -> str:
-    """Kompletter Stapel als Text (Zeilen mit CRLF verbinden macht als_bytes)."""
+           festschreibung: bool = True, rahmen: str | None = None) -> str:
+    """Kompletter Stapel als Text (Zeilen mit CRLF verbinden macht als_bytes).
+
+    Mit `rahmen` läuft der Mischungs-Melder mit: ein Konto aus dem anderen
+    Kontenrahmen bricht den Export ab, statt ihn zu erzeugen. Ohne `rahmen`
+    bleibt alles wie vorher — der Melder ist eine Zutat, kein Umbau.
+    """
+    if rahmen:
+        befund = rahmen_pruefen(reviews, rahmen)
+        if not befund.sauber:
+            raise RahmenVermischung(befund.meldung())
+        for konto in befund.unbekannt:
+            print(f"[extf] Konto {konto} hat babu nicht selbst vergeben — "
+                  f"gegen {rahmen} nicht prüfbar, geht unverändert mit",
+                  flush=True)
     erzeugt = erzeugt or time.localtime()
     jahr, mm = int(monat[:4]), int(monat[5:7])
     von = f"{jahr}{mm:02d}01"
