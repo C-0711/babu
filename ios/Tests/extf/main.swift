@@ -85,5 +85,23 @@ pruefe(monat.titel == "Buchungsstapel September 2026", "Titel folgt dem Monat")
 let feb = kal.date(from: DateComponents(year: 2028, month: 2, day: 3))!
 pruefe(extfMonat(fuer: feb).bis == "20280229", "Schaltjahr-Februar endet am 29.")
 
+// ————— Belegdatum: das Format, das der DATEV-Stapel braucht —————
+//
+// Am 23.08.2026 übernahm die App erstmals die Serverlesung. Der Server
+// schreibt ISO (2026-03-05), die App führt TT.MM.JJJJ. `extfBelegdatum`
+// zerlegt an Punkten — aus ISO wurde ein LEERES Belegdatum im Stapel.
+// Ein Buchungssatz ohne Belegdatum fällt beim Steuerberater durch, oder
+// schlimmer: fällt nicht auf.
+
+// Achtung: `pruefe` nimmt hier die Bedingung ZUERST — anders als im
+// Protokoll-Harness. Das kostet beim Schreiben eine Minute.
+pruefe(extfBelegdatum("05.03.2026") == "0503", "deutsches Datum ergibt TTMM")
+pruefe(extfBelegdatum("5.3.2026") == "0503", "einstellig wird aufgefüllt")
+pruefe(extfBelegdatum("2026-03-05") == "",
+       "ISO ergibt LEER — deshalb darf ISO nie in datumText landen")
+pruefe(extfBelegdatum("irgendwann") == "", "Murks ergibt leer")
+pruefe(extfBelegdatum("") == "", "leer bleibt leer")
+
 print(fehler == 0 ? "\nAlle Prüfungen bestanden." : "\n\(fehler) Prüfung(en) fehlgeschlagen.")
 exit(fehler == 0 ? 0 : 1)
+
