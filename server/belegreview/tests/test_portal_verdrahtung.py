@@ -53,3 +53,32 @@ def test_funktionen_hinter_den_ansichten_gibt_es():
     for name in re.findall(r":\s*(lade\w+)", block):
         assert re.search(rf"(async )?function {name}\s*\(", PORTAL), \
             f"{name}() ist eingetragen, aber nirgends definiert"
+
+
+def _ladeZahlen() -> str:
+    """Der Rumpf der Funktion hinter der Ansicht „Deine Zahlen"."""
+    return re.search(r"async function ladeZahlen\(\)\{(.*?)^\}", PORTAL,
+                     re.S | re.M).group(1)
+
+
+def test_die_kennzahlen_werden_in_der_auswertung_gezeigt():
+    """Gerechnet wurden sie längst, gesehen hat sie niemand.
+
+    `kennzahlen_monat()` hängt am Monatsabschluss, aber keine Ansicht holte
+    sie ab. Eine Quote, die niemand sieht, ändert nichts — deshalb stehen
+    sie jetzt unter „Deine Zahlen".
+    """
+    rumpf = _ladeZahlen()
+    assert "/api/monatsabschluss/" in rumpf, \
+        "die Auswertung holt die Kennzahlen nicht"
+    assert "kennzahlen" in rumpf
+
+
+def test_die_kennzahl_kacheln_nehmen_die_ganze_breite():
+    """Ein fester Mittelkasten verschenkt auf dem Bildschirm im Salon die
+    halbe Fläche — die Kacheln wachsen mit."""
+    css = re.search(r"\.lauf-kacheln\{([^}]*)\}", PORTAL)
+    assert css, "die Kacheln der Kennzahlen haben kein eigenes Gitter"
+    regel = css.group(1).replace(" ", "")
+    assert "repeat(auto-fill" in regel and "1fr" in regel
+    assert "max-width" not in regel

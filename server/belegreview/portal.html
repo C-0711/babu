@@ -477,6 +477,25 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 .datev .box i{display:block;font:9px var(--gc-mono);letter-spacing:.1em;
   text-transform:uppercase;color:var(--gc-muted);font-style:normal}
 .datev .box b{font:600 13px var(--gc-mono);font-variant-numeric:tabular-nums;color:var(--gc-fg)}
+
+/* Wie der Monat gelaufen ist — eine Kachel je Zahl. Bewusst ein Gitter,
+   das mitwächst: auf dem breiten Bildschirm im Salon stehen sechs Kacheln
+   nebeneinander, auf dem Telefon untereinander. Ein fester Kasten in der
+   Mitte hätte auf beiden das Falsche getan. */
+.lauf-kacheln{display:grid;gap:12px;
+  grid-template-columns:repeat(auto-fill,minmax(min(100%,208px),1fr))}
+.lauf-kachel{background:var(--gc-bg);border:1px solid var(--gc-border);
+  border-radius:var(--r);padding:14px 16px;display:flex;flex-direction:column}
+/* Die Zahl nach unten schieben: sonst steht sie in der Kachel mit der
+   zweizeiligen Überschrift tiefer als in ihren Nachbarn, und die Reihe
+   franst aus. */
+.lauf-kachel .wert{display:block;margin:auto 0 3px;padding-top:7px;
+  font:600 25px var(--gc-mono);font-variant-numeric:tabular-nums;
+  letter-spacing:-.02em;color:var(--gc-fg)}
+.lauf-kachel .wert.blass{color:var(--gc-muted);font-size:19px}
+.lauf-kachel .dazu{font-size:12px;color:var(--gc-desc)}
+.lauf-kachel .dazu.gut{color:var(--gc-ok)}
+.lauf-kachel .dazu.schau{color:var(--gc-warn)}
 .siegel{display:flex;align-items:center;gap:10px;background:var(--gc-accent-subtle);
   border-radius:8px;padding:10px 14px}
 .siegel .rosette{color:var(--gc-accent);flex:none}
@@ -2166,11 +2185,59 @@ function deltaHtml(jetzt, vorher){
   return p > 0 ? `<span class="delta hoch">▲ ${p} %</span>`
                : `<span class="delta runter">▼ ${Math.abs(p)} %</span>`;
 }
+/* Wie der Monat gelaufen ist — eine Kachel je Zahl.
+
+   Gerechnet wurde das längst (es hängt am Monatsabschluss), gesehen hat es
+   nur niemand. Deshalb hier, in ihren Worten: keine Quoten mit Zielwert,
+   sondern „gut so" oder der Satz, was gut wäre. Steht etwas noch auf „—",
+   war in dem Monat schlicht nichts zu messen. */
+function kennzahlKacheln(k){
+  if (!k) return "";
+  const proz = q => (q && q.wert != null) ? Math.round(q.wert * 100) + " %" : null;
+  const s = k.zeit_bis_haken_s || {};
+  const dauer = s.median == null ? null
+    : (s.median < 90 ? Math.round(s.median) + " Sek."
+                     : Math.round(s.median / 60) + " Min.");
+  const kacheln = [
+    ["Bis ein Beleg fertig war", dauer, s.median <= (s.ziel || 60),
+     "gut wäre eine Minute"],
+    ["Von allein fertig geworden", proz(k.auto_geprueft_quote),
+     (k.auto_geprueft_quote || {}).wert >= 0.8, "gut wären 8 von 10"],
+    ["Beträge gehen auf", proz(k.summenprobe_quote),
+     (k.summenprobe_quote || {}).wert >= 0.9, "gut wären 9 von 10"],
+    ["Nicht zu entziffern", proz(k.unlesbar_quote),
+     (k.unlesbar_quote || {}).wert <= 0.03, "gut wären höchstens 3 von 100"],
+    ["Nur als Sonstiges einsortiert", proz(k.fallback_6850_quote),
+     (k.fallback_6850_quote || {}).wert <= 0.15, "gut wären höchstens 15 von 100"],
+    ["Wartet noch auf dich",
+     (k.offen_zur_frist || {}).wert == null ? null : String(k.offen_zur_frist.wert),
+     (k.offen_zur_frist || {}).wert === 0, "gut wäre: nichts mehr offen"],
+  ];
+  return `<div class="sektion lbl">Wie der Monat gelaufen ist</div>
+    <p style="color:var(--gc-desc);font-size:13px;margin:0 0 10px">Nicht dein
+      Geld — wie leicht dir der Papierkram von der Hand ging.</p>
+    <div class="lauf-kacheln">` + kacheln.map(([titel, wert, gut, hinweis]) => `
+      <div class="lauf-kachel">
+        <span class="lbl">${titel}</span>
+        <b class="wert${wert == null ? " blass" : ""}">${wert == null ? "—" : wert}</b>
+        <div class="dazu${wert == null ? "" : (gut ? " gut" : " schau")}">${
+          wert == null ? "dafür war noch nichts da" : (gut ? "gut so" : hinweis)}</div>
+      </div>`).join("") + `</div>`;
+}
+
 async function ladeZahlen(){
   $("#z-mon-anzeige").textContent = monatName(zMonat);
   let d;
   try{ d = await (await api("/api/monat/" + zMonat)).json(); }
   catch{ return; }
+  // Die Kennzahlen hängen an der Monatsauswertung. Die sieht nur die
+  // Inhaberin (für die Mitarbeit kommt eine Absage) — dann bleibt der
+  // Abschnitt einfach weg, statt dass die ganze Ansicht hängt.
+  let lauf = null;
+  try{
+    const r = await api("/api/monatsabschluss/" + zMonat);
+    if (r.ok) lauf = (await r.json()).kennzahlen;
+  }catch{}
   const ziel = $("#zahlen-inhalt");
   if (!d.anzahl){
     ziel.innerHTML = `<div class="leer"><b>Noch keine Belege in ${monatName(zMonat).split(" ")[0]}.</b>
@@ -2215,6 +2282,8 @@ async function ladeZahlen(){
     }
     html += `</div>`;
   }
+
+  html += kennzahlKacheln(lauf);
 
   html += `<div class="sektion lbl">Für die Kanzlei</div><div class="karte">
     <p style="color:var(--gc-desc);font-size:13px">Der fertige Buchungsstapel dieses Monats —
