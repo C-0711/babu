@@ -1763,8 +1763,11 @@ DOKUMENT_ENDUNGEN = {".pdf", ".jpg", ".jpeg", ".png"}
 DOKUMENT_PFAD_RE = re.compile(r"^dokumente/[A-Za-z0-9._/ -]{1,200}$")
 # Alles, was in der Ablage steht, muss sich auch öffnen lassen — sonst führt
 # ein Eintrag ins Leere. Gelöscht werden darf davon nur `dokumente/`.
+# `docs/` sind die Belege — seit die Ablage sie als eigenes Fach zeigt,
+# gehören sie dazu. Gelöscht werden sie weiter nur über ihre eigene Route,
+# die den Beleg samt Beiakten wegnimmt.
 ABLAGE_PFAD_RE = re.compile(
-    r"^(dokumente|auszuege|abschluss|export|kassenbuch|rechnungen)/"
+    r"^(dokumente|auszuege|abschluss|export|kassenbuch|rechnungen|docs)/"
     r"[A-Za-z0-9._/ -]{1,200}$")
 
 
@@ -2810,6 +2813,116 @@ ABSCHLUSS_STAMM_KEYS = ("rechtsform", "steuernummer", "finanzamt", "kleinunterne
 _ABSCHLUSS_JOBS: dict[str, dict] = {}
 _ABSCHLUSS_LOCK = threading.Lock()
 
+
+# ── Klartext einer Unterlage: Textebene, sonst Paddle ───────────────────────
+#
+# Hier hing die Salonprüfung. Der Klartext für die Ernte kam aus
+# `abschluss_lesen.seiten_text()` — der Textebene des PDF. Ein Scan hat
+# keine, ein Foto erst recht nicht: bei beiden kam ein leerer String zurück,
+# und aus einem leeren String erntet man nichts. Nina lud ihre abfotografierten
+# Unterlagen hoch, und im Bericht stand weniger, als auf ihnen steht.
+#
+# Der Weg dafür existiert: derselbe Paddle-Dienst, durch den jeder Beleg geht
+# (`review_watcher.ocr_dienst_kaesten`). Importiert wird er NICHT — der
+# Modulzustand dort gehört dem pm2-Prozess, und `abschluss_lesen` hält sich
+# aus demselben Grund fern. Was hier steht, ist der Aufruf, nicht das Modell.
+#
+# `doc_ori=1` dreht schief fotografierte Blätter gerade und kostet laut /caps
+# nichts. `unwarp` bleibt aus: der Dienst meldet es selbst als schädlich.
+OCR_DIENST = os.environ.get("OCR_DIENST", "http://10.42.0.101:7833")
+OCR_DIENST_FRIST = float(os.environ.get("OCR_DIENST_FRIST", "60"))
+# Steuernummer, Finanzamt, Anschrift und IBAN stehen im Kopf, nicht im
+# Anhang. Acht Blätter sind der Bereich, den die Ernte ohnehin ansieht.
+OCR_SEITEN_MAX = 8
+# Ab so viel Text auf allen Seiten zusammen gilt die Textebene als tragfähig.
+# Ein gescanntes PDF trägt oft ein paar Zeichen (Seitenzahlen, ein Stempel).
+TEXTEBENE_SCHWELLE = 120
+# Was vom gelesenen Klartext neben der Unterlage aufgehoben wird, damit die
+# Suche in der Ablage ihn findet. Ein Bündel Kontoauszüge bläht die Box sonst
+# auf — die Kopfdaten stehen ohnehin vorn.
+ABSCHLUSS_TEXT_MAX = 20000
+
+
+def _ocr_seite(jpeg: bytes, name: str) -> str:
+    """Ein Blatt durch den Paddle-Dienst — Zeilen in Lesereihenfolge."""
+    import requests  # noqa: PLC0415
+    grenze = "----babu-abschluss"
+    kopf = (f"--{grenze}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{name}"\r\n'
+            f"Content-Type: image/jpeg\r\n\r\n").encode()
+    r = requests.post(
+        f"{OCR_DIENST}/ocr?doc_ori=1",
+        data=kopf + jpeg + f"\r\n--{grenze}--\r\n".encode(),
+        headers={"Content-Type": f"multipart/form-data; boundary={grenze}"},
+        timeout=OCR_DIENST_FRIST)
+    r.raise_for_status()
+    antwort = r.json()
+    if antwort.get("errorCode"):
+        raise RuntimeError(f"OCR-Dienst: {antwort.get('errorMsg')}")
+    seiten = (antwort.get("result") or {}).get("ocrResults") or []
+    if not seiten:
+        raise RuntimeError("OCR-Dienst lieferte keine Seite")
+    texte = (seiten[0].get("prunedResult") or {}).get("rec_texts") or []
+    return "\n".join(str(t) for t in texte)
+
+
+def klartext_der_unterlage(pfad) -> str:
+    """Was auf der Unterlage steht — egal, ob als Text oder als Bild.
+
+    Erst die Textebene: wo sie liegt, ist sie die bessere Quelle und kostet
+    nichts. Erst wenn dort nichts steht, wird gerendert und gelesen.
+
+    Gibt im Fehlerfall einen leeren String zurück. Ein Dienst, der gerade
+    weg ist, darf den Salon-Check nicht abbrechen — dann steht eben weniger
+    im Bericht, und das sagt der Bericht auch.
+    """
+    import abschluss_lesen  # noqa: PLC0415
+    textebene = ""
+    if str(pfad).lower().endswith(".pdf"):
+        try:
+            seiten = abschluss_lesen.seiten_text(pfad)[:OCR_SEITEN_MAX]
+        except Exception as ex:  # noqa: BLE001
+            print(f"[salonpruefung] {pfad}: keine Textebene lesbar: {ex!r}", flush=True)
+            seiten = []
+        textebene = "\n".join(s for s in seiten if s)
+        if len(textebene.strip()) >= TEXTEBENE_SCHWELLE:
+            return textebene
+    try:
+        bilder = abschluss_lesen.seiten_bilder(pfad)[:OCR_SEITEN_MAX]
+    except Exception as ex:  # noqa: BLE001
+        print(f"[salonpruefung] {pfad}: nicht darstellbar: {ex!r}", flush=True)
+        return textebene
+    name = Path(str(pfad)).name
+    gelesen = []
+    for i, jpeg in enumerate(bilder, 1):
+        try:
+            gelesen.append(_ocr_seite(jpeg, f"{i}-{name}"))
+        except Exception as ex:  # noqa: BLE001
+            print(f"[salonpruefung] {name} Seite {i} ungelesen: {ex!r}", flush=True)
+    aus_bild = "\n".join(t for t in gelesen if t)
+    # Ein Scan trägt manchmal eine dünne Textebene — eine Seitenzahl, einen
+    # Stempel. Was mehr hergibt, gewinnt; leer bleibt nur, wenn beide leer sind.
+    return aus_bild if len(aus_bild.strip()) > len(textebene.strip()) else textebene
+
+
+def unterlage_einordnen(art: str | None, text: str) -> str:
+    """Was für ein Papier ist das — im genaueren der beiden Vokabulare?
+
+    `abschluss_lesen` kennt nur Jahresabschluss-Unterlagen; alles andere
+    heißt dort „sonstiges", und für „sonstiges" erntet die Salonprüfung
+    nichts. Genau daran fielen Ninas Mietvertrag und ihre Kontoauszüge
+    durch. Wo das Abschluss-Vokabular passt, bleibt es stehen — es ist das
+    genauere. Sonst entscheidet `einsortieren`, dasselbe Verfahren, mit dem
+    jedes Foto aus der App einsortiert wird.
+    """
+    if art and art != "sonstiges":
+        return art
+    if not (text or "").strip():
+        return "sonstiges"        # raten wäre schlimmer als nichts wissen
+    import einsortieren  # noqa: PLC0415
+    entscheidung = einsortieren.entscheiden(text)
+    return entscheidung["art"] if entscheidung.get("punkte") else "sonstiges"
+
 # Ein fertiger Auftrag bleibt noch eine Stunde im Speicher — so lange fragt
 # das Portal ihn ab. Danach fliegt er raus.
 #
@@ -2968,6 +3081,42 @@ _ABSCHLUSS_ART_LABEL = {
 }
 
 
+def _unterlage_einsortieren(un: str, jahr: int, datei: str, art: str,
+                            text: str) -> None:
+    """Die gelesene Unterlage bekommt ihr Fach und ihren Klartext.
+
+    Bisher lag nach dem Salon-Check alles unter „Jahresabschluss" — auch der
+    Mietvertrag und die Kontoauszüge. In der Beiakte steht jetzt, was es
+    wirklich ist; die Ablage liest sie und legt es dorthin.
+
+    Der Klartext liegt daneben, damit die Suche über die Ablage findet, was
+    IN den Unterlagen steht, nicht nur, wie sie heißen. Gedeckelt, weil ein
+    Bündel Kontoauszüge sonst die Box aufbläht.
+    """
+    import boxschreiber  # noqa: PLC0415
+    rumpf = f"abschluss/{jahr}/{datei}"
+    alt = {}
+    roh = git_show(f"{rumpf}.meta.json")
+    if roh is not None:
+        try:
+            alt = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            alt = {}
+    meta = dict(alt, art="abschluss", erkannt=art,
+                fach=ABLAGE_FACH.get(art, "abschluss"),
+                art_label=_ABSCHLUSS_ART_LABEL.get(art, "Unterlage"),
+                jahr=jahr, gelesen_am=time.strftime("%Y-%m-%dT%H:%M:%S"))
+    dateien = {f"{rumpf}.meta.json":
+               json.dumps(meta, ensure_ascii=False, indent=1).encode()}
+    if text.strip():
+        dateien[f"{rumpf}.text.json"] = json.dumps(
+            {"text": text[:ABSCHLUSS_TEXT_MAX]}, ensure_ascii=False).encode()
+    try:
+        boxschreiber.schreiben(dateien, None, f"abschluss: einsortiert {datei}", un)
+    except Exception as ex:  # noqa: BLE001 — Einsortieren darf den Lauf nie kippen
+        print(f"[salonpruefung] {datei} nicht einsortiert: {ex!r}", flush=True)
+
+
 def _abschluss_job(un: str, jahr: int, pfade: list[Path]) -> None:
     import abschluss_lesen  # noqa: PLC0415
     import boxschreiber  # noqa: PLC0415
@@ -3000,14 +3149,17 @@ def _abschluss_job(un: str, jahr: int, pfade: list[Path]) -> None:
             # Für die Stammdaten-Ernte zählt der Klartext, nicht die
             # Zahlenauswertung. Die ersten Seiten genügen: Steuernummer,
             # Finanzamt und Anschrift stehen im Kopf, nicht im Anhang.
-            try:
-                geerntet.append({"datei": pfad.name, "art": d["art"],
-                                 "text": "\n".join(
-                                     abschluss_lesen.seiten_text(pfad)[:8])})
-            except Exception as ex:  # noqa: BLE001
-                print(f"[salonpruefung] {pfad.name} ohne Klartext: {ex!r}", flush=True)
+            #
+            # Der Klartext kommt jetzt auch aus einem Scan (Paddle), und die
+            # Art aus dem genaueren der beiden Vokabulare — sonst hieß Ninas
+            # Mietvertrag „sonstiges", und für sonstiges wird nichts geerntet.
+            text = klartext_der_unterlage(pfad)
+            art = unterlage_einordnen(d["art"], text)
+            d["art"] = art
+            geerntet.append({"datei": pfad.name, "art": art, "text": text})
+            _unterlage_einsortieren(un, jahr, pfad.name, art, text)
             with _ABSCHLUSS_LOCK:
-                eintrag.update(art=d["art"], seiten=d["seiten"], stand="gelesen")
+                eintrag.update(art=art, seiten=d["seiten"], stand="gelesen")
         kennzahlen = abschluss_lesen.zusammenfuehren(ergebnisse, jahr=jahr)
         _stammdaten_ernten(un, status, geerntet, jahr, einstellungen)
         with _ABSCHLUSS_LOCK:
@@ -3585,6 +3737,10 @@ def _korrekturen_lesen(roh) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 ABLAGE_ARTEN = {
+    # Dieselben Fächer wie die App sie zeigt (ios/.../Dokumentarten.swift):
+    # Belege, Kontoauszüge, Verträge, Post vom Amt. Die Belege fehlten hier —
+    # das Fach, in dem am meisten liegt, war das einzige ohne Ordner.
+    "beleg": ("Belege", "Kassenbons und Rechnungen, die du fotografiert hast"),
     "behoerde": ("Post vom Amt", "Bescheide, Schreiben und Fristen"),
     "kanzlei": ("Von deiner Kanzlei", "Auswertungen, Lohnunterlagen, Post"),
     "vertrag": ("Verträge", "Miete, Versicherung, Leasing — deine Dauerkosten"),
@@ -3595,12 +3751,58 @@ ABLAGE_ARTEN = {
     "rechnung": ("Rechnungen", "Was du anderen in Rechnung gestellt hast"),
 }
 
+# Welche erkannte Art in welches Fach gehört.
+#
+# Zwei Vokabulare beschreiben dasselbe Papier: `abschluss_lesen` sagt
+# euer/bwa/bescheid/susa/anlagen, `einsortieren` sagt
+# behoerde/kontoauszug/vertrag/beleg. Die Ablage hat gröbere Fächer, weil
+# Nina in Ordner schaut und nicht in ein Vokabular. Was hier fehlt, landet
+# beim Jahresabschluss — das ist der Ort, an dem alles vorher lag.
+ABLAGE_FACH = {
+    "vertrag": "vertrag", "kontoauszug": "kontoauszug",
+    "behoerde": "behoerde", "beleg": "beleg",
+}
+
 
 def _jahr_aus(pfad: str, zeit: str | None) -> str:
     for teil in pfad.split("/"):
         if len(teil) >= 4 and teil[:4].isdigit() and "2000" < teil[:4] < "2100":
             return teil[:4]
     return (zeit or "")[:4] or "ohne Jahr"
+
+
+def _abschluss_beiakten() -> dict[str, dict]:
+    """Die Beiakten der Salonprüfung: was aus jeder Unterlage geworden ist.
+
+    Beim Hochladen weiß niemand, was auf dem Blatt steht — die Unterlage
+    heißt dann „abschluss". Nach dem Lesen steht es in der Beiakte, und erst
+    damit kann die Ablage einen Mietvertrag zu den Verträgen legen statt zum
+    Jahresabschluss.
+    """
+    kopf = (_git(["rev-parse", "HEAD"], 10) or "HEAD").strip()
+    out = _git(["ls-tree", "-r", kopf], 60) or ""
+    oids: dict[str, str] = {}
+    for zeile in out.splitlines():
+        vorn, _, pfad = zeile.partition("\t")
+        teile = vorn.split()
+        if pfad.startswith("abschluss/") and pfad.endswith(".meta.json") \
+                and len(teile) == 3 and teile[1] == "blob":
+            oids[pfad.removesuffix(".meta.json")] = teile[2]
+    raus: dict[str, dict] = {}
+    for oid, roh in _blobs_lesen(list(oids.values())).items():
+        try:
+            raus[oid] = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            raus[oid] = {}
+    return {pfad: raus.get(oid) or {} for pfad, oid in oids.items()}
+
+
+def _beleg_titel(z: dict) -> str:
+    """Wie ein Beleg im Ordner heißt — so, wie Nina ihn wiedererkennt."""
+    teile = [z.get("lieferant") or "Beleg"]
+    if z.get("brutto") is not None:
+        teile.append(f"{z['brutto']:.2f}".replace(".", ",") + " €")
+    return " · ".join(teile)
 
 
 @app.get("/api/ablage")
@@ -3623,19 +3825,39 @@ def api_ablage(request: Request) -> Response:
                           "vertrag": d.get("vertrag"),
                           "loeschbar": True})
 
+    # Die Belege selbst. Sie fehlten hier — das Fach, in dem am meisten
+    # liegt, war das einzige ohne Ordner, und Nina suchte ihren Parkschein
+    # in der Ablage. Sie tragen ihren Stamm mit, damit ein Klick im Ordner
+    # dieselbe Beleg-Ansicht öffnet wie die Liste unter „Buchhaltung".
+    for z in index["belege"].values():
+        eintraege.append({"pfad": z["datei"], "titel": _beleg_titel(z),
+                          "art": "beleg", "stamm": z["stamm"],
+                          "zeit": z.get("hochgeladen"), "gelesen": None,
+                          "erklaerung": None, "vertrag": None,
+                          "status": z.get("status"), "loeschbar": False})
+
+    beiakten = _abschluss_beiakten()
+
     # Kontoauszüge, Abschlüsse, Stapel und Kassenblätter direkt aus dem Baum.
     kopf = _git(["rev-parse", "HEAD"])
     baum = _git(["ls-tree", "-r", "--name-only", (kopf or "HEAD").strip()]) or ""
     for pfad in baum.splitlines():
-        if pfad.endswith((".umsaetze.json", ".meta.json", ".erklaerung.json")):
+        if pfad.endswith((".umsaetze.json", ".meta.json", ".erklaerung.json",
+                          ".text.json")):
             continue
         name = pfad.rsplit("/", 1)[-1]
+        titel = name
         if pfad.startswith("auszuege/"):
-            art, titel = "kontoauszug", name
-        elif pfad.startswith("abschluss/") and not name.startswith("kennzahlen"):
-            art, titel = "abschluss", name
+            art = "kontoauszug"
+        elif pfad.startswith("abschluss/") and not name.startswith("kennzahlen") \
+                and not name.startswith("bericht"):
+            beiakte = beiakten.get(pfad) or {}
+            art = beiakte.get("fach") or "abschluss"
+            if art not in ABLAGE_ARTEN:
+                art = "abschluss"
+            titel = beiakte.get("titel") or name
         elif pfad.startswith("export/") and pfad.endswith(".csv"):
-            art, titel = "export", name
+            art = "export"
         elif pfad.startswith("kassenbuch/"):
             art, titel = "kassenbuch", "Kassenbuch " + name.removesuffix(".json")
         elif pfad.startswith("rechnungen/") and pfad.endswith(".pdf"):

@@ -2283,8 +2283,9 @@ function scStart(ziel, status){
   ziel.innerHTML = hinweis + `
     <div class="karte" style="text-align:center;padding:34px 20px">
       <div style="font:600 20px var(--gc-serif);margin-bottom:6px">Leg einfach alles vom letzten Jahr hier ab.</div>
-      <p style="color:var(--gc-desc);max-width:46ch;margin:0 auto 16px">Gewinnrechnung, Steuerbescheid, Anlagenliste — als Foto oder PDF,
-        egal in welcher Reihenfolge. Wir lesen das.</p>
+      <p style="color:var(--gc-desc);max-width:46ch;margin:0 auto 16px">Gewinnrechnung, Steuerbescheid, Mietvertrag, Kontoauszüge,
+        Rechnungen — als Foto oder PDF, egal in welcher Reihenfolge. Wir
+        lesen das und legen jede Unterlage in ihr Fach.</p>
       <button class="chip" id="sc-waehlen">Unterlagen auswählen</button>
       <div id="sc-liste" style="margin:12px auto 0;max-width:420px;text-align:left"></div>
       <button class="chip an" id="sc-los" style="margin-top:14px" hidden>Loslesen ›</button>
@@ -2430,9 +2431,13 @@ function ikoneKnoten(){
   return d;
 }
 
+/* Beide Vokabulare, weil beide vorkommen: was `abschluss_lesen` nicht kennt,
+   ordnet `einsortieren` ein — der Mietvertrag heißt dann „Vertrag". */
 const SC_ART = {euer: "Gewinnrechnung", bwa: "Monatsauswertung",
                 bescheid: "Steuerbescheid", anlagen: "Anlagenliste",
-                susa: "Kontenliste", sonstiges: "Unterlage"};
+                susa: "Kontenliste", sonstiges: "Unterlage",
+                behoerde: "Post vom Amt", kontoauszug: "Kontoauszug",
+                vertrag: "Vertrag", beleg: "Beleg"};
 
 function scVorschlaege(vorschlaege){
   const ziel = $("#sc-vorschlaege");

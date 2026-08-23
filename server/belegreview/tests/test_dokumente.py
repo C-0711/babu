@@ -75,8 +75,15 @@ def test_dokument_rundreise(welt):
 
 
 def test_dokument_pfad_grenzen(welt):
+    """Die Route bedient die Ablage — und nur die.
+
+    `docs/` steht hier nicht mehr: seit die Ablage die Belege als eigenes
+    Fach zeigt, gehören sie dazu. Was daneben liegt (die Leseprotokolle
+    unter `review/`, alles außerhalb der Box) bleibt draußen.
+    """
     client, _ = welt
-    assert client.get("/api/dokument/docs/2026-08/x.jpg").status_code == 400
+    assert client.get("/api/dokument/review/irgendwas.json").status_code == 400
+    assert client.get("/api/dokument/dokumente/../geheim.txt").status_code == 400
     assert client.post("/api/dokumente", params={"name": "boese.exe"},
                        content=b"x").status_code == 400
 
