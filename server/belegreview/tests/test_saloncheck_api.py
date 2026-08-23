@@ -112,12 +112,31 @@ def test_abschluss_rundreise(welt, monkeypatch):
     assert [f["schluessel"] for f in d["felder"]] == ["umsatz", "steuernummer",
                                                       "finanzamt"]
     assert d["dokumente"][0]["stand"] == "gelesen"
-    # Konfliktregel: leere Steuernummer übernommen, belegtes Finanzamt nur Vorschlag.
+    # Seit 23.08.2026: NICHTS wird gesetzt, alles wird angeboten. Das
+    # belegte Finanzamt bleibt, wie es war — auch nach der Übernahme.
+    e = client.get("/api/einstellungen").json()
+    assert "steuernummer" not in e
+    assert e["finanzamt"] == "Stuttgart"
+    assert d["vorschlaege"] == [
+        {"schluessel": "steuernummer", "alt": "", "neu": "71/123/45678",
+         "sicher": True},
+        {"schluessel": "finanzamt", "alt": "Stuttgart", "neu": "Ludwigsburg",
+         "sicher": True}]
+
+    # Die komplette Anlage in einem Zug: setzt die leeren, lässt das
+    # Belegte in Ruhe und sagt, was einzeln zu entscheiden bleibt.
+    u = client.post("/api/abschluss/uebernehmen").json()
+    assert u["gesetzt"] == {"steuernummer": "71/123/45678"}
+    assert u["bleibt_offen"] == ["finanzamt"]
     e = client.get("/api/einstellungen").json()
     assert e["steuernummer"] == "71/123/45678"
-    assert e["finanzamt"] == "Stuttgart"
-    assert d["vorschlaege"] == [{"schluessel": "finanzamt", "alt": "Stuttgart",
-                                 "neu": "Ludwigsburg"}]
+    assert e["finanzamt"] == "Stuttgart"          # unangetastet
+
+    # Zweimal drücken ändert nichts mehr — die leeren Felder sind gefüllt,
+    # das strittige bleibt strittig.
+    nochmal = client.post("/api/abschluss/uebernehmen").json()
+    assert nochmal["gesetzt"] == {}
+    assert nochmal["bleibt_offen"] == ["steuernummer", "finanzamt"]
 
     # kennzahlen.json liegt in der Box, der Report baut Karten daraus.
     kennzahlen = json.loads(subprocess.run(

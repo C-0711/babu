@@ -2877,32 +2877,86 @@ const SC_ART = {euer: "Gewinnrechnung", bwa: "Monatsauswertung",
                 behoerde: "Post vom Amt", kontoauszug: "Kontoauszug",
                 vertrag: "Vertrag", beleg: "Beleg"};
 
+/* Seit 23.08.2026 setzt der Salon-Check nichts mehr selbst — er bietet an.
+   Damit gibt es hier zwei Sorten Vorschlag, und sie brauchen zwei
+   verschiedene Fragen:
+
+     · wo nichts steht:      „Das haben wir gefunden. Eintragen?"
+     · wo etwas anderes steht: „Bei uns steht X, in den Unterlagen Y."
+
+   Für eine Neukundin ist die erste Sorte der Normalfall und einzeln
+   abzunicken eine Zumutung — deshalb ein Knopf für alle davon. Über
+   Widersprüche entscheidet sie einzeln; eine Massenübernahme ist keine
+   Entscheidung über den Einzelfall. Genau so hält es auch der Server:
+   `/api/abschluss/uebernehmen` überschreibt nie. */
 function scVorschlaege(vorschlaege){
   const ziel = $("#sc-vorschlaege");
-  if (!ziel || !vorschlaege) return;
-  vorschlaege.forEach(v => {
-    if (ziel.querySelector(`[data-k="${v.schluessel}"]`)) return;
+  if (!ziel || !vorschlaege || !vorschlaege.length) return;
+
+  const neue = vorschlaege.filter(v => !v.alt && v.sicher !== false);
+  const strittig = vorschlaege.filter(v => v.alt || v.sicher === false);
+
+  if (neue.length && !ziel.querySelector("[data-alle]")){
     const karte = document.createElement("div");
-    karte.className = "karte nachfrage einflug";
-    karte.dataset.k = v.schluessel;
+    karte.className = "karte einflug";
+    karte.dataset.alle = "1";
     karte.style.marginTop = "10px";
     karte.innerHTML =
-      `<div style="margin-bottom:8px">In deinen Unterlagen steht bei ` +
-      `${esc(SC_NAMEN[v.schluessel] || v.schluessel)} „${esc(v.neu)}" — bei uns „${esc(v.alt)}". Übernehmen?</div>` +
-      `<button class="chip an">Ja, übernehmen</button> <button class="chip">So lassen</button>`;
-    const [ja, nein] = karte.querySelectorAll("button");
-    ja.addEventListener("click", async () => {
-      ja.disabled = true;
+      `<b>${neue.length === 1 ? "Eine Angabe" : neue.length + " Angaben"} aus deinen Unterlagen</b>
+       <p style="color:var(--gc-desc);font-size:13px;margin:4px 0 8px">
+         ${neue.map(v => esc(SC_NAMEN[v.schluessel] || v.schluessel)).join(" · ")}</p>
+       <button class="chip an">Alle eintragen</button>
+       <button class="chip">Einzeln ansehen</button>
+       <span style="font-size:12px;color:var(--gc-muted);margin-left:8px" data-stand></span>`;
+    const [alle, einzeln] = karte.querySelectorAll("button");
+    const stand = karte.querySelector("[data-stand]");
+    alle.addEventListener("click", async () => {
+      alle.disabled = true; stand.textContent = "Einen Moment …";
       try{
-        await api("/api/einstellungen", {method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({[v.schluessel]: v.neu})});
-        karte.remove();
-      }catch{ ja.disabled = false; }
+        const d = await (await api("/api/abschluss/uebernehmen",
+                                   {method:"POST"})).json();
+        const n = Object.keys(d.gesetzt || {}).length;
+        stand.textContent = n === 1 ? "Eine Angabe eingetragen ✓"
+                                    : n + " Angaben eingetragen ✓";
+        alle.hidden = einzeln.hidden = true;
+      }catch{ stand.textContent = "Ging gerade nicht."; alle.disabled = false; }
     });
-    nein.addEventListener("click", () => karte.remove());
+    einzeln.addEventListener("click", () => {
+      karte.remove();
+      neue.forEach(v => scEinzelfrage(ziel, v));
+    });
     ziel.appendChild(karte);
+  }
+
+  strittig.forEach(v => scEinzelfrage(ziel, v));
+}
+
+function scEinzelfrage(ziel, v){
+  if (ziel.querySelector(`[data-k="${v.schluessel}"]`)) return;
+  const name = esc(SC_NAMEN[v.schluessel] || v.schluessel);
+  const karte = document.createElement("div");
+  karte.className = "karte nachfrage einflug";
+  karte.dataset.k = v.schluessel;
+  karte.style.marginTop = "10px";
+  const frage = v.sicher === false
+    ? `Deine Unterlagen widersprechen sich bei ${name}. Zuletzt gelesen: „${esc(v.neu)}". Eintragen?`
+    : (v.alt
+        ? `In deinen Unterlagen steht bei ${name} „${esc(v.neu)}" — bei uns „${esc(v.alt)}". Übernehmen?`
+        : `In deinen Unterlagen steht bei ${name} „${esc(v.neu)}". Eintragen?`);
+  karte.innerHTML = `<div style="margin-bottom:8px">${frage}</div>` +
+    `<button class="chip an">Ja, eintragen</button> <button class="chip">So lassen</button>`;
+  const [ja, nein] = karte.querySelectorAll("button");
+  ja.addEventListener("click", async () => {
+    ja.disabled = true;
+    try{
+      await api("/api/einstellungen", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({[v.schluessel]: v.neu})});
+      karte.remove();
+    }catch{ ja.disabled = false; }
   });
+  nein.addEventListener("click", () => karte.remove());
+  ziel.appendChild(karte);
 }
 
 function scReport(ziel, check, status){

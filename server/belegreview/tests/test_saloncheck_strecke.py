@@ -183,11 +183,13 @@ def test_der_kontoauszug_gibt_seine_iban_her(welt):
     bw._stammdaten_ernten("christoph0711.io", status,
                           [{"datei": "auszug.pdf", "art": art, "text": KONTOAUSZUG}],
                           2025, {})
-    e = bw.db_einstellungen("christoph0711.io")
-    assert e["iban"] == "DE02120300000000202051"
-    assert e["bic"] == "SOLADEST600"
+    # Angeboten, nicht gesetzt (Regel seit 23.08.2026).
+    assert bw.db_einstellungen("christoph0711.io") == {}
+    v = {x["schluessel"]: x["neu"] for x in status["vorschlaege"]}
+    assert v["iban"] == "DE02120300000000202051"
+    assert v["bic"] == "SOLADEST600"
     # Die Anschrift der Sparkasse gehört nicht Nina — Positivliste.
-    assert "betrieb_ort" not in e
+    assert "betrieb_ort" not in v
 
 
 def test_der_mietvertrag_gibt_nichts_her_und_das_ist_richtig(welt):

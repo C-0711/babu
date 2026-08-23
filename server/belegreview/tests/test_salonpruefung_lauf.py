@@ -77,17 +77,25 @@ def status_leer():
 
 # ————— Die Ernte setzt Felder —————
 
-def test_leere_felder_werden_gesetzt(welt):
+def test_leere_felder_werden_angeboten_nicht_gesetzt(welt):
+    """Geändert am 23.08.2026 — vorher setzte die Ernte leere Felder selbst.
+
+    Wer Unterlagen hochlädt, um zu SEHEN, was drinsteht, hat damit nicht
+    zugestimmt, dass daraus seine Betriebsangaben werden. Es wird
+    angeboten; setzen tut es ein Knopfdruck."""
     bw, _ = welt
     konto(bw)
     st = status_leer()
     bw._stammdaten_ernten("nina@0711.io", st, DOKUMENTE, 2025, {})
     e = bw.db_einstellungen("nina@0711.io")
-    assert e["steuernummer"] == "93815/12345"
+    assert "steuernummer" not in e
+    vorgeschlagen = {v["schluessel"]: v for v in st["vorschlaege"]}
+    assert vorgeschlagen["steuernummer"]["neu"] == "93815/12345"
+    assert vorgeschlagen["steuernummer"]["alt"] == ""     # da stand nichts
     # Anschrift und IBAN kommen NICHT aus einem Bescheid — dort stehen die
     # der Behörde. Siehe die Positivliste je Art.
-    assert "betrieb_plz" not in e
-    assert "iban" not in e
+    assert "betrieb_plz" not in vorgeschlagen
+    assert "iban" not in vorgeschlagen
 
 
 def test_ein_gesetztes_feld_wird_nie_ueberschrieben(welt):

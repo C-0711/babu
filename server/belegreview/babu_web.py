@@ -3606,9 +3606,33 @@ def db_abschluss_lesen(un: str) -> dict | None:
         return None
 
 
+def _vorschlag_merken(status: dict, schluessel: str, alt: str, neu: str,
+                      quelle: str | None = None, sicher: bool = True) -> None:
+    """Einen Fund vormerken — ohne ihn zu setzen. Doppelte fallen raus."""
+    if any(v["schluessel"] == schluessel for v in status["vorschlaege"]):
+        return
+    eintrag = {"schluessel": schluessel, "alt": alt, "neu": neu,
+               "sicher": bool(sicher)}
+    if quelle:
+        eintrag["quelle"] = quelle
+    status["vorschlaege"].append(eintrag)
+
+
 def _abschluss_feld_uebernehmen(un: str, status: dict, feld: dict,
                                 einstellungen: dict) -> None:
-    """Konfliktregel: leere Einstellung wird gesetzt, belegte nie überschrieben."""
+    """Ein gelesenes Stammdatenfeld — wird VORGESCHLAGEN, nie gesetzt.
+
+    Bis 23.08.2026 stand hier: leere Einstellung wird gesetzt, belegte nie
+    überschrieben. Das war gut gemeint und trotzdem falsch. Wer Unterlagen
+    hochlädt, um zu SEHEN, was drinsteht, hat damit nicht zugestimmt, dass
+    seine Betriebsangaben daraus entstehen — und wenn eine Steuernummer aus
+    einem falsch eingeordneten Bescheid stammt, steht sie da, ohne dass
+    jemand sie je bestätigt hat.
+
+    Jetzt gilt überall dieselbe Regel wie im Trichter von der Startseite:
+    **es wird angeboten, nicht gesetzt.** Was schon dasteht, wird ohnehin
+    nie überschrieben.
+    """
     k = feld["schluessel"]
     if k not in ABSCHLUSS_STAMM_KEYS or not feld.get("sicher"):
         return
@@ -3617,12 +3641,9 @@ def _abschluss_feld_uebernehmen(un: str, status: dict, feld: dict,
     else:
         neu = str(feld["wert"]).strip()[:200]
     alt = (einstellungen.get(k) or "").strip()
-    if not alt:
-        db_einstellung_setzen(un, k, neu)
-        einstellungen[k] = neu
-        feld["uebernommen"] = True
-    elif alt != neu:
-        status["vorschlaege"].append({"schluessel": k, "alt": alt, "neu": neu})
+    if alt == neu:
+        return          # steht schon so da, es gibt nichts anzubieten
+    _vorschlag_merken(status, k, alt, neu)
 
 
 def _stammdaten_ernten(un: str, status: dict, dokumente: list[dict],
@@ -3654,14 +3675,13 @@ def _stammdaten_ernten(un: str, status: dict, dokumente: list[dict],
                    "quelle": f.quelle, "regel": f.regel, "sicher": f.sicher,
                    "bereich": f.bereich, "zeit": time.strftime("%Y-%m-%dT%H:%M:%S")}
         with _ABSCHLUSS_LOCK:
-            if not alt and f.sicher:
-                db_einstellung_setzen(un, f.schluessel, wert)
-                einstellungen[f.schluessel] = wert
-                eintrag["uebernommen"] = True
-            elif alt != wert:
-                status["vorschlaege"].append(
-                    {"schluessel": f.schluessel, "alt": alt, "neu": wert,
-                     "quelle": f.quelle})
+            # Auch hier: anbieten, nicht setzen. Ein unsicherer Fund —
+            # zwei Unterlagen widersprechen sich — wird trotzdem angeboten,
+            # aber als unsicher gekennzeichnet. Ihn zu verschweigen wäre
+            # schlechter: dann erführe niemand von dem Widerspruch.
+            if alt != wert:
+                _vorschlag_merken(status, f.schluessel, alt, wert, f.quelle,
+                                  sicher=f.sicher)
             status["felder"].append(eintrag)
     status["geerntet"] = len([f for f in felder if f.sicher])
 
@@ -4384,6 +4404,42 @@ async def api_auswertung_konto(request: Request) -> Response:
                        max_age=SESSION_DAUER, httponly=True,
                        secure=SESSION_SECURE, samesite="lax", path="/")
     return antwort
+
+
+@app.post("/api/abschluss/uebernehmen")
+def api_abschluss_uebernehmen(request: Request) -> Response:
+    """Die komplette Anlage in einem Zug — aber nur, wo nichts steht.
+
+    Für eine Neukundin ist das der eigentliche Sinn des Salon-Checks: sie
+    lädt ihre Unterlagen hoch und hat danach ein eingerichtetes Profil,
+    ohne ein Feld abgetippt zu haben. Genau deshalb darf dieser eine Knopf
+    nichts überschreiben — wo schon etwas steht, hat es jemand hingesetzt,
+    und eine Massenübernahme ist keine Entscheidung über den Einzelfall.
+    Widersprüche bleiben als einzelne Rückfragen stehen.
+    """
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    with _ABSCHLUSS_LOCK:
+        status = _ABSCHLUSS_JOBS.get(un) or {}
+        vorschlaege = list(status.get("vorschlaege") or [])
+    if not vorschlaege:
+        vorschlaege = list((db_abschluss_lesen(un) or {}).get("vorschlaege") or [])
+    einstellungen = db_einstellungen(un)
+    gesetzt, offen = {}, []
+    for v in vorschlaege:
+        k, wert = v.get("schluessel"), str(v.get("neu") or "").strip()
+        if k not in ABSCHLUSS_STAMM_KEYS or not wert:
+            continue
+        if v.get("sicher") is False:
+            offen.append(k)      # zwei Unterlagen widersprechen sich
+            continue
+        if (einstellungen.get(k) or "").strip():
+            offen.append(k)      # da steht schon etwas — einzeln entscheiden
+            continue
+        db_einstellung_setzen(un, k, wert[:200])
+        gesetzt[k] = wert
+    return JSONResponse({"ok": True, "gesetzt": gesetzt, "bleibt_offen": offen})
 
 
 @app.get("/api/auswertung")
