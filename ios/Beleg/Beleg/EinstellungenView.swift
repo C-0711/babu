@@ -18,9 +18,14 @@ struct EinstellungenView: View {
     @State private var testErgebnis: String?
     @State private var testLaeuft = false
     @State private var zeigeLoeschDialog = false
+    /// Gerade abgemeldet — dann steht über dem Anmeldeformular, was passiert
+    /// ist und wie es weitergeht.
+    @State private var abgemeldet = false
     @State private var zeigeWerksDialog = false
     @State private var setztZurueck = false
     @State private var werksErgebnis: String?
+    /// Gehört der Startseite (CaptureTab), wird hier aber zurückgesetzt.
+    @AppStorage("einrichtungFertig") private var einrichtungFertig = false
 
     var body: some View {
         Form {
@@ -28,6 +33,21 @@ struct EinstellungenView: View {
                     verbundenBereich
                 } else {
                     anmeldenBereich
+                }
+
+                // Die App verwies an drei Stellen auf „die Einstellungen",
+                // wenn Betriebsname, Anschrift oder Steuernummer fehlten —
+                // nur gab es sie hier nie, sondern ausschließlich im Portal
+                // im Browser. Jetzt gibt es sie hier.
+                Section {
+                    NavigationLink {
+                        BetriebsangabenView()
+                    } label: {
+                        Label("Dein Betrieb", systemImage: "building.2")
+                    }
+                } footer: {
+                    Text("Name, Anschrift, Finanzamt und Steuernummer — das, "
+                         + "was auf jeder Rechnung stehen muss.")
                 }
 
                 Section {
@@ -78,16 +98,25 @@ struct EinstellungenView: View {
         // Am Form, nicht an der Section: ein Dialog auf einer Section wird
         // je Zeile angelegt und schluckt dort die Berührungen — der
         // Testschalter ließ sich deshalb nicht umlegen.
-        .confirmationDialog("Auf Werkseinstellung zurücksetzen?",
+        // Die alte Rückfrage nannte nur das Onboarding und die
+        // Einrichtungsangaben — dabei räumt der Knopf auch die Belege,
+        // Kassenberichte, den Chatverlauf und die Rechnungsvorlagen von
+        // diesem Gerät. Eine Rückfrage, die die Hälfte verschweigt, ist
+        // keine Rückfrage.
+        .confirmationDialog("Dieses Gerät leer räumen?",
                             isPresented: $zeigeWerksDialog,
                             titleVisibility: .visible) {
-            Button("Zurücksetzen", role: .destructive) {
+            Button("Ja, leer räumen", role: .destructive) {
                 Task { await zuruecksetzen() }
             }
             Button("Abbrechen", role: .cancel) { }
         } message: {
-            Text("Das Onboarding und die Einrichtungsangaben gehen zurück "
-                 + "auf Anfang. Deine Anmeldung und deine Belegbox bleiben.")
+            Text("Von diesem Telefon verschwinden: deine Belege und "
+                 + "Kassenberichte, der Chatverlauf, deine Rechnungsvorlagen "
+                 + "und deine Angaben zum Betrieb. "
+                 + "In deiner Belegbox bleibt alles erhalten, und angemeldet "
+                 + "bleibst du auch. Danach fängt die App wieder mit dem "
+                 + "Begrüßungsbildschirm an.")
         }
     }
 
@@ -116,8 +145,8 @@ struct EinstellungenView: View {
                 } label: {
                     HStack {
                         if setztZurueck { ProgressView().padding(.trailing, 6) }
-                        Text(setztZurueck ? "Setze zurück …"
-                                          : "Auf Werkseinstellung zurücksetzen")
+                        Text(setztZurueck ? "Räume leer …"
+                                          : "Dieses Gerät leer räumen")
                     }
                 }
                 .disabled(setztZurueck)
@@ -150,6 +179,9 @@ struct EinstellungenView: View {
     private func zuruecksetzen() async {
         setztZurueck = true
         werksErgebnis = nil
+        // Wer wieder bei null anfängt, soll auch wieder die Einrichtungskarte
+        // sehen — sonst führt der Weg zurück ins Leere.
+        einrichtungFertig = false
         let serverOk = await store.aufWerkseinstellung()
         setztZurueck = false
         // Die App wechselt gleich auf den Begrüßungsbildschirm; die Meldung
@@ -163,6 +195,18 @@ struct EinstellungenView: View {
 
     private var anmeldenBereich: some View {
         Section {
+            // Nach dem Abmelden keine leere Ansicht, sondern der Weg zurück.
+            // Sonst steht da nur ein Formular und die Frage, was gerade
+            // passiert ist.
+            if abgemeldet {
+                Label {
+                    Text("Abgemeldet. Mit E-Mail und Passwort wieder verbinden.")
+                        .font(.footnote)
+                        .foregroundStyle(GC.body)
+                } icon: {
+                    Image(systemName: "checkmark.circle").foregroundStyle(GC.ok)
+                }
+            }
             TextField("E-Mail", text: $email)
                 .keyboardType(.emailAddress)
                 .autocorrectionDisabled()
@@ -205,28 +249,39 @@ struct EinstellungenView: View {
                     }
                 }
             }
-            Button("Verbindung trennen", role: .destructive) {
+            // „Verbindung trennen" sagte nicht, was getrennt wird — und wer
+            // einen roten Knopf drückt, dessen Wort er nicht kennt, glaubt
+            // hinterher, etwas gelöscht zu haben. Der Knopf heißt jetzt, was
+            // er tut: dieses eine Gerät meldet sich ab.
+            Button("Dieses Gerät abmelden", role: .destructive) {
                 zeigeLoeschDialog = true
             }
         } header: {
             Text("Dein babu-Konto")
         } footer: {
-            Text("Die Verbindung bleibt sicher auf diesem Gerät.")
+            Text("Abmelden heißt: Dieses Telefon schickt nichts mehr in deine "
+                 + "Belegbox. Es heißt NICHT, dass etwas gelöscht wird — deine "
+                 + "Belege, dein Kassenbuch und dein Konto bleiben, wie sie sind.")
         }
-        .confirmationDialog("Verbindung wirklich trennen?",
+        .confirmationDialog("Dieses Gerät abmelden?",
                             isPresented: $zeigeLoeschDialog,
                             titleVisibility: .visible) {
-            Button("Ja, trennen", role: .destructive) {
+            Button("Ja, abmelden", role: .destructive) {
                 KeychainHelfer.loeschePAT()
                 verbunden = false
                 store.verbundenAls = nil
                 store.ablageAktiv = false   // ehrlich: ohne Verbindung geht nichts mehr
                 testErgebnis = nil
                 kontoFehler = nil
+                abgemeldet = true
             }
             Button("Abbrechen", role: .cancel) {}
         } message: {
-            Text("Danach kann die App keine Belege und kein Kassenbuch mehr in deine Belegbox legen, und Fragen bleiben unbeantwortet. Zum Wiederverbinden reichen E-Mail und Passwort.")
+            Text("Es geht nichts verloren: Alles, was schon in deiner Belegbox "
+                 + "liegt, bleibt dort. Neue Belege und Kassenbuchblätter "
+                 + "kommen von diesem Telefon aus aber nicht mehr an, und "
+                 + "Fragen bleiben unbeantwortet. Wieder anmelden kannst du "
+                 + "dich jederzeit mit E-Mail und Passwort.")
         }
     }
 

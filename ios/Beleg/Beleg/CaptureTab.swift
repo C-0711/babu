@@ -25,7 +25,41 @@ struct CaptureTab: View {
     @State private var zeigeDateien = false
     @State private var ladeFehler: String?
 
+    // MARK: Einrichtung (BABU-51)
+    /// Die Angaben aus dem babu-Konto. `nil` heißt „noch nicht nachgesehen" —
+    /// das ist etwas anderes als „nicht ausgefüllt" und wird auch so gezeigt.
+    @State private var kontoAngaben: [String: String]?
+    @State private var angabenGeholt = false
+    /// Welches Blatt die Karte gerade aufgeschlagen hat. Ein einziges
+    /// `.sheet(item:)` statt zweier Schalter — zwei sheet-Modifier an
+    /// derselben Ansicht (neben Scanner und Konto-Menü) liefern in SwiftUI
+    /// zuverlässig ein leeres weißes Blatt.
+    @State private var blatt: Einrichtungsblatt?
+    /// Einmal fertig, für immer weg — auch wenn später jemand alle Belege
+    /// löscht, ist das kein Grund, wieder von vorn anzuleiten.
+    @AppStorage("einrichtungFertig") private var einrichtungFertig = false
+
     enum Phase { case bereit, verarbeitet, ergebnis, nichtsErkannt }
+
+    enum Einrichtungsblatt: String, Identifiable {
+        case konto, betrieb
+        var id: String { rawValue }
+    }
+
+    private var einrichtungsschritte: [Einrichtungsschritt] {
+        Einrichtung.schritte(
+            kontoVerbunden: store.verbundenAls != nil && !store.zugangAbgelaufen,
+            angaben: kontoAngaben,
+            ersterBeleg: store.belege.contains { $0.istDemo != true },
+            kassenbuchBegonnen: !store.kassenberichte.isEmpty)
+    }
+
+    /// Erst zeigen, wenn wir wirklich nachgesehen haben. Sonst blitzt die
+    /// Karte bei jeder eingerichteten Nutzerin kurz auf und behauptet „—".
+    private var zeigeEinrichtung: Bool {
+        guard !einrichtungFertig, angabenGeholt else { return false }
+        return !Einrichtung.alleErledigt(einrichtungsschritte)
+    }
 
     var body: some View {
         NavigationStack {
@@ -46,12 +80,36 @@ struct CaptureTab: View {
             // Kamera an, sobald der Reiter offen ist. Ein Platzhalter, den
             // man erst wegtippen muss, kostet bei jedem Beleg eine Sekunde —
             // und der Sinn dieses Reiters ist genau eine Sache.
-            .onAppear {
-                if phase == .bereit && !zeigeScanner && ScannerView.verfuegbar
-                    && !kameraGezeigt {
-                    kameraGezeigt = true
-                    zeigeScanner = true
+            .onAppear { einrichtungNachsehen(); kameraVielleichtOeffnen() }
+            // Solange etwas fehlt, ist die Einrichtungskarte das Erste, was
+            // sie sieht — die Kamera würde sie zudecken.
+            .task {
+                await angabenHolen()
+                kameraVielleichtOeffnen()
+            }
+            .sheet(item: $blatt) { welches in
+                NavigationStack {
+                    Group {
+                        switch welches {
+                        case .konto: EinstellungenView()
+                        case .betrieb: BetriebsangabenView()
+                        }
+                    }
+                    // Beide Ansichten werden sonst geschoben und haben von
+                    // sich aus keinen Weg zurück. Ein Blatt ohne sichtbaren
+                    // Ausgang ist eine Sackgasse.
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Fertig") { blatt = nil }
+                        }
+                    }
                 }
+                .environmentObject(store)
+            }
+            .onChange(of: blatt) { _, offen in
+                // Nach dem Ausfüllen den Stand neu holen, sonst zählt die
+                // Karte weiter „3 von 7".
+                if offen == nil { Task { await angabenHolen() } }
             }
             .fullScreenCover(isPresented: $zeigeScanner) {
                 ScannerView(
@@ -133,18 +191,30 @@ struct CaptureTab: View {
 
     private var bereitView: some View {
         VStack(spacing: 22) {
-            Spacer()
-            // Kein schwarzer Kasten mehr: die Kamera geht beim Öffnen von
-            // selbst auf. Was hier steht, sieht nur, wer sie geschlossen hat.
-            Image(systemName: "viewfinder")
-                .font(.system(size: 44, weight: .light))
-                .foregroundStyle(GC.gold)
-            Text("Halt drauf — egal ob Kassenbon, Vertrag oder Brief vom Amt.\nbabu legt es an die richtige Stelle.")
-                .font(.footnote)
-                .foregroundStyle(GC.desc)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 36)
-            Spacer()
+            if zeigeEinrichtung {
+                ScrollView {
+                    EinrichtungsKarte(
+                        schritte: einrichtungsschritte,
+                        kontoVerbunden: store.verbundenAls != nil
+                                        && !store.zugangAbgelaufen,
+                        wahl: weiterZu)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 10)
+                }
+            } else {
+                Spacer()
+                // Kein schwarzer Kasten mehr: die Kamera geht beim Öffnen von
+                // selbst auf. Was hier steht, sieht nur, wer sie geschlossen hat.
+                Image(systemName: "viewfinder")
+                    .font(.system(size: 44, weight: .light))
+                    .foregroundStyle(GC.gold)
+                Text("Halt drauf — egal ob Kassenbon, Vertrag oder Brief vom Amt.\nbabu legt es an die richtige Stelle.")
+                    .font(.footnote)
+                    .foregroundStyle(GC.desc)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 36)
+                Spacer()
+            }
 
             VStack(spacing: 10) {
                 if ScannerView.verfuegbar {
@@ -197,6 +267,46 @@ struct CaptureTab: View {
             .padding(.horizontal, 24)
             .padding(.bottom, 12)
         }
+    }
+
+    // MARK: - Einrichtung (BABU-51)
+
+    /// Den Stand der Angaben im babu-Konto holen. Auch ohne Verbindung gilt
+    /// die Frage danach als gestellt — sonst wartet die Karte ewig.
+    private func angabenHolen() async {
+        defer { angabenGeholt = true; einrichtungNachsehen() }
+        guard let url = URL(string: store.ablageURL),
+              let pat = KeychainHelfer.ladePAT() else { return }
+        if let geladen = await AblageService.stammdatenLaden(basis: url, pat: pat) {
+            kontoAngaben = geladen
+        }
+    }
+
+    /// Sobald einmal alles steht, ist die Karte für immer weg.
+    private func einrichtungNachsehen() {
+        if angabenGeholt, Einrichtung.alleErledigt(einrichtungsschritte) {
+            einrichtungFertig = true
+        }
+    }
+
+    /// Jede Zeile der Karte führt an die Stelle, an der es weitergeht.
+    private func weiterZu(_ ziel: Einrichtungsziel) {
+        switch ziel {
+        case .konto: blatt = .konto
+        case .betrieb, .steuernummer: blatt = .betrieb
+        case .ersterBeleg: zeigeScanner = true
+        case .kassenbuch: store.tab = .kasse
+        }
+    }
+
+    /// Die Kamera geht von selbst auf — aber nicht über die Einrichtungskarte
+    /// hinweg, und erst, wenn feststeht, ob es die Karte überhaupt braucht.
+    private func kameraVielleichtOeffnen() {
+        guard phase == .bereit, !zeigeScanner, ScannerView.verfuegbar,
+              !kameraGezeigt, einrichtungFertig || angabenGeholt,
+              !zeigeEinrichtung else { return }
+        kameraGezeigt = true
+        zeigeScanner = true
     }
 
     // MARK: - Verarbeitung

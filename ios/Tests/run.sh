@@ -33,6 +33,10 @@ echo "— Protokoll-Harness —"
 swiftc -o "$ZIEL/protokoll" ../Beleg/Beleg/Protokollsatz.swift protokoll/main.swift
 "$ZIEL/protokoll"
 
+echo "— Einrichtungs-Harness —"
+swiftc -o "$ZIEL/einrichtung" ../Beleg/Beleg/Einrichtungsschritte.swift einrichtung/main.swift
+"$ZIEL/einrichtung"
+
 echo "— Parser-Harness —"
 swiftc -o "$ZIEL/parser" ../Beleg/Beleg/Models.swift ../Beleg/Beleg/FeldParser.swift parser/main.swift
 "$ZIEL/parser"
