@@ -129,6 +129,11 @@ struct KontoMenuView: View {
                         Label("Deine Verträge", systemImage: "shippingbox")
                     }
                     NavigationLink {
+                        KontoauszugView()
+                    } label: {
+                        Label("Kontoauszug", systemImage: "building.columns")
+                    }
+                    NavigationLink {
                         MarketingView()
                     } label: {
                         Label("Marketing", systemImage: "megaphone")

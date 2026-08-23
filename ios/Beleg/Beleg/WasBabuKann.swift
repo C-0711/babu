@@ -83,6 +83,11 @@ struct WasBabuKannView: View {
                            "Was reinkam, was rausging und was dir bleibt.") {
                     AbschlussView()
                 }
+                zurAnsicht("Kontoauszug", "building.columns",
+                           "Das PDF deiner Bank: babu prüft, ob zu jeder "
+                           + "Abbuchung ein Beleg da ist.") {
+                    KontoauszugView()
+                }
                 zurAnsicht("Export", "square.and.arrow.up",
                            "Die Buchungen als Datei für dein Steuerbüro. "
                            + "Meist brauchst du sie nicht — die Belegbox "

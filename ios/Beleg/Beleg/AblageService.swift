@@ -843,6 +843,52 @@ enum AblageService {
                 json["monatlich"] as? Double ?? 0, anstehend)
     }
 
+    // MARK: - Kontoauszug
+
+    /// Kontoauszug abgeben — der Server liest die Umsätze sofort und legt sie
+    /// für den Zahlungsabgleich bereit. Nur das Original-PDF der Bank trägt
+    /// einen Textlayer; ein Foto oder Scan kann der Abgleich nicht lesen.
+    static func kontoauszugAbgeben(daten: Data, dateiname: String, basis: URL,
+                                   pat: String) async
+            -> (gelesen: (monat: String, umsaetze: Int)?, meldung: String?) {
+        var teile = URLComponents(url: basis.appendingPathComponent("api/kontoauszug"),
+                                  resolvingAgainstBaseURL: false)
+        teile?.queryItems = [URLQueryItem(name: "name", value: dateiname)]
+        guard let url = teile?.url else { return (nil, "Das hat gerade nicht geklappt.") }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 120
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.httpBody = daten
+        guard let (koerper, roh) = try? await URLSession.shared.data(for: request),
+              let http = roh as? HTTPURLResponse
+        else { return (nil, "Keine Verbindung — später noch einmal.") }
+        let json = (try? JSONSerialization.jsonObject(with: koerper)) as? [String: Any]
+        if (200..<300).contains(http.statusCode), let monat = json?["monat"] as? String {
+            return ((monat, json?["umsaetze"] as? Int ?? 0), nil)
+        }
+        return (nil, json?["fehler"] as? String ?? "Das hat gerade nicht geklappt.")
+    }
+
+    /// Der Abgleich eines Monats: welche Abbuchung hat ihren Beleg, welche nicht.
+    static func abgleichLaden(monat: String, basis: URL, pat: String) async
+            -> (auszugDa: Bool, gedeckt: Int, fehlend: Int, fehlendSumme: Double,
+                bankgebuehren: Int, einnahmenSumme: Double)? {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/abgleich/\(monat)"))
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, _) = try? await URLSession.shared.data(for: request),
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+              let da = json["auszug_da"] as? Bool else { return nil }
+        return (da,
+                (json["gedeckt"] as? [[String: Any]])?.count ?? 0,
+                (json["fehlend"] as? [[String: Any]])?.count ?? 0,
+                json["fehlend_summe"] as? Double ?? 0,
+                (json["bankgebuehren"] as? [[String: Any]])?.count ?? 0,
+                json["einnahmen_summe"] as? Double ?? 0)
+    }
+
     // MARK: - Dein Team
 
     static func teamLaden(basis: URL, pat: String) async -> (leute: [TeamPerson],
