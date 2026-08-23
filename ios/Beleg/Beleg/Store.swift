@@ -374,6 +374,67 @@ final class AppStore: ObservableObject {
         belege[i] = b
     }
 
+    /// Was der Server gelesen hat, wird die Wahrheit des Belegs.
+    ///
+    /// Die App liest jeden Beleg auf dem Gerät selbst — schnell, offline,
+    /// aus der Kamera heraus. Das ist gut für den Moment der Aufnahme, aber
+    /// es ist eine Texterkennung auf einem Telefon. Der Server liest
+    /// denselben Beleg danach mit PaddleOCR auf der Grafikkarte, deutet ihn
+    /// über seine Geometrie und lässt ein Bildmodell gegenprüfen.
+    ///
+    /// An Beleg 0861 (Müller, 05.03.2026, 9,03 €) war das sichtbar: das
+    /// Gerät las falsch, der Server richtig — und angezeigt wurde das
+    /// Gerät. Also gilt ab jetzt: sobald die Zweitprüfung da ist, zählt
+    /// sie.
+    ///
+    /// Drei Grenzen, und die sind wichtig:
+    ///
+    /// 1. Ein **fixierter** Beleg ist exportiert und unantastbar.
+    /// 2. Was **ein Mensch korrigiert** hat, bleibt stehen. Wer von Hand
+    ///    eingreift, hat den Beleg in der Hand gehabt — dagegen rechnet
+    ///    keine Maschine an.
+    /// 3. Übernommen wird nur, was der Server auch wirklich gelesen hat.
+    ///    Ein leeres Feld überschreibt nie ein gefülltes.
+    ///
+    /// Gibt zurück, ob sich etwas geändert hat — dann lohnt das Speichern.
+    @discardableResult
+    func ausZweitpruefungUebernehmen(id: UUID, review: BelegReviewDaten) -> Bool {
+        guard let i = belege.firstIndex(where: { $0.id == id }) else { return false }
+        var b = belege[i]
+        guard b.status != .fixiert, b.status != .korrigiert, !review.fehlgeschlagen
+        else { return false }
+
+        let f = review.felder ?? BelegReviewDaten.Felder()
+        var geaendert = false
+        func setz<T: Equatable>(_ pfad: WritableKeyPath<Beleg, T>, _ neu: T?) {
+            guard let neu, b[keyPath: pfad] != neu else { return }
+            b[keyPath: pfad] = neu
+            geaendert = true
+        }
+
+        setz(\.lieferant, f.lieferant?.trimmingCharacters(in: .whitespacesAndNewlines)
+                             .isEmpty == false ? f.lieferant : nil)
+        setz(\.belegNr, f.belegNr?.isEmpty == false ? f.belegNr : nil)
+        setz(\.datumText, f.datum?.isEmpty == false ? f.datum : nil)
+        setz(\.brutto, f.brutto)
+        setz(\.netto, f.netto)
+        setz(\.ust, f.ust)
+        setz(\.ustSatz, f.ustSatz)
+        setz(\.konto, review.einschaetzung?.kontoSkr04)
+        setz(\.steuerschluessel, review.einschaetzung?.steuerschluessel)
+
+        guard geaendert else { return false }
+        b.summenprobeOK = abs(b.netto + b.ust - b.brutto) < 0.011
+        // Die Herkunft sagt jetzt die Wahrheit: das kam nicht vom Gerät.
+        b.herkunft = .ki
+        // Eine übernommene Lesung macht die auf dem Gerät gelesene
+        // Steuertabelle ungültig — sie gehört zu den alten Zahlen.
+        b.steuerPositionen = nil
+        if b.siegel != nil { siegeln(&b, status: b.status) }
+        belege[i] = b
+        return true
+    }
+
     /// Beleg entfernen — fixierte (exportierte) Belege sind unantastbar.
     func loeschen(id: UUID) {
         belege.removeAll { $0.id == id && $0.status != .fixiert }

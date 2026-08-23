@@ -641,16 +641,11 @@ struct DetailView: View {
                 // Ohne Methoden-Zusatz („semantisch, 30 %") — nur die Einordnung.
                 provZeile("Eingeordnet", String(art.split(separator: "(").first ?? "").trimmingCharacters(in: .whitespaces))
             }
-            vergleich("Brutto", lokal: fmtEur(b.brutto), server: f.brutto.map(fmtEur),
-                      gleich: f.brutto.map { abs($0 - b.brutto) < 0.011 })
-            vergleich("Netto", lokal: fmtEur(b.netto), server: f.netto.map(fmtEur),
-                      gleich: f.netto.map { abs($0 - b.netto) < 0.011 })
-            vergleich("USt", lokal: fmtEur(b.ust), server: f.ust.map(fmtEur),
-                      gleich: f.ust.map { abs($0 - b.ust) < 0.011 })
-            vergleich("Datum", lokal: b.datumText, server: f.datum,
-                      gleich: f.datum.map { $0 == b.datumText })
-            vergleich("Beleg-Nr.", lokal: b.belegNr, server: f.belegNr,
-                      gleich: f.belegNr.map { $0 == b.belegNr })
+            gelesen("Brutto", f.brutto.map(fmtEur))
+            gelesen("Netto", f.netto.map(fmtEur))
+            gelesen("USt", f.ust.map(fmtEur))
+            gelesen("Datum", f.datum)
+            gelesen("Beleg-Nr.", f.belegNr)
             if let konto = r.einschaetzung?.kontoSkr04 {
                 let gleich = konto == b.konto
                 provZeile("Konto", "\(konto) \(Kontenplan.bezeichnung(konto))" + (gleich ? " ✓" : " · Gerät: \(b.konto ?? "—")"))
@@ -755,27 +750,25 @@ struct DetailView: View {
     }
 
     /// Abgleich Gerät ↔ Server: ✓ bei Übereinstimmung, sonst beide Werte.
-    private func vergleich(_ key: String, lokal: String, server: String?, gleich: Bool?) -> some View {
+    /// Ein Wert aus der Zweitprüfung.
+    ///
+    /// Hier stand einmal „Prüfung: X · Aufnahme: Y" — ein Vergleich zwischen
+    /// dem, was das Gerät gelesen hatte, und dem, was der Server las. Seit
+    /// die App den Serverwert übernimmt, stimmen beide immer überein, und
+    /// aus dem Vergleich würde ein Haken, den sich niemand verdient hat:
+    /// zwei Lesungen, die sich einig sind, obwohl es nur eine ist.
+    ///
+    /// Der echte Gegencheck steht weiter unten als „Widerspruch" — dort
+    /// vergleicht der Server seine eigene Lesung mit der des Bildmodells.
+    private func gelesen(_ key: String, _ wert: String?) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(key)
                 .font(.caption2.monospaced())
                 .foregroundStyle(GC.muted)
                 .frame(width: 88, alignment: .leading)
-            if let server {
-                if gleich == true {
-                    Text("\(server) ✓")
-                        .font(.caption.monospaced())
-                        .foregroundStyle(GC.ok)
-                } else {
-                    Text("Prüfung: \(server) · Aufnahme: \(lokal)")
-                        .font(.caption.monospaced())
-                        .foregroundStyle(GC.warn)
-                }
-            } else {
-                Text("Prüfung: — · Aufnahme: \(lokal)")
-                    .font(.caption.monospaced())
-                    .foregroundStyle(GC.muted)
-            }
+            Text(wert?.isEmpty == false ? wert! : "nicht gelesen")
+                .font(.caption.monospaced())
+                .foregroundStyle(wert?.isEmpty == false ? GC.body : GC.muted)
         }
     }
 
@@ -793,6 +786,9 @@ struct DetailView: View {
         case .fertig(let r):
             review = r
             reviewHinweis = nil
+            // Was der Server gelesen hat, gilt — siehe
+            // AppStore.ausZweitpruefungUebernehmen.
+            store.ausZweitpruefungUebernehmen(id: b.id, review: r)
             // Audit-Stempel am Beleg persistieren — sichtbar in der Belegliste.
             if let audit = r.audit {
                 store.auditSetzen(id: b.id, aufnahme: audit.aufnahme?.commit,
