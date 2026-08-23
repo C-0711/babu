@@ -10,6 +10,8 @@ import datetime as dt
 import sys
 from pathlib import Path
 
+import re
+
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -80,8 +82,35 @@ def test_alter_am_stichtag():
 def test_unter_mindestlohn_gibt_es_keinen_vertrag():
     with pytest.raises(av.VertragFehler) as e:
         av.vertrag_bauen(eckdaten(entgelt=1200), BETRIEB)
-    assert "13,90" in str(e.value) or "13.90" in str(e.value)
+    assert "13,90" in str(e.value)
     assert "Mindestlohn" in str(e.value)
+
+
+def test_die_absagen_schreiben_ihre_betraege_auf_deutsch():
+    """Diese Sätze liest ein Mensch — seit sie im Portal stehen, jeder.
+
+    Der Test darüber ließ lange „13,90 ODER 13.90" durchgehen und hat den
+    Fehler damit gedeckt: es stand „Der Mindestlohn liegt 2026 bei 13.90 €".
+    Ein Test, der beides erlaubt, prüft nichts.
+    """
+    faelle = [
+        eckdaten(entgelt=1200),                                   # Mindestlohn
+        eckdaten(art="minijob", entgelt=1400, stunden=24),        # Minijob-Grenze
+        eckdaten(art="ausbildung", entgelt=300, lehrjahr=1),      # § 17 BBiG
+    ]
+    getroffen = 0
+    for daten in faelle:
+        try:
+            av.vertrag_bauen(daten, BETRIEB)
+        except av.VertragFehler as ex:
+            getroffen += 1
+            text = str(ex)
+            # Ein Punkt zwischen zwei Ziffern vor „€" ist ein englischer
+            # Dezimaltrenner — ein deutscher Tausenderpunkt hat drei Ziffern
+            # dahinter und danach noch ein Komma.
+            assert not re.search(r"\d\.\d{2}\s*€", text), text
+            assert "€" in text
+    assert getroffen == len(faelle), "kein Fall hat abgelehnt"
 
 
 def test_der_fehler_sagt_auch_was_reichen_wuerde():
@@ -422,7 +451,10 @@ def test_die_ausbildungsverguetung_steigt_mit_dem_lehrjahr(jahr, mindestens):
         av.vertrag_bauen(eckdaten(art="ausbildung", ausbildungsjahr=jahr,
                                   stunden_woche=40, tage_woche=5,
                                   entgelt=500), BETRIEB)
-    assert str(mindestens) in str(e.value)
+    # Seit die Beträge deutsch geschrieben werden, steht dort
+    # „1.014,00 €“ statt „1014“ — die Zahl wird also so gesucht,
+    # wie ein Mensch sie liest.
+    assert av._euro(mindestens) in str(e.value)
 
     av.vertrag_bauen(eckdaten(art="ausbildung", ausbildungsjahr=jahr,
                               stunden_woche=40, tage_woche=5,

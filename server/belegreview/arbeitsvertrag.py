@@ -311,13 +311,13 @@ def pruefen(roh: dict) -> dict:
         if entgelt < mindest_azubi:
             raise VertragFehler(
                 f"Die Mindestausbildungsvergütung liegt im {lehrjahr}. "
-                f"Ausbildungsjahr bei {mindest_azubi} € im Monat "
+                f"Ausbildungsjahr bei {_euro(mindest_azubi)} im Monat "
                 f"(§ 17 BBiG, Stand {werte['jahr']}); hier wären es "
-                f"{entgelt:.2f} €.")
+                f"{_euro(entgelt)}.")
         befunde.append({"art": "hinweis", "text":
             "Auszubildende fallen nicht unter den Mindestlohn (§ 22 Abs. 3 "
             f"MiLoG). Maßgeblich ist die Mindestausbildungsvergütung von "
-            f"{mindest_azubi} € — ein einschlägiger Tarifvertrag kann mehr "
+            f"{_euro(mindest_azubi)} — ein einschlägiger Tarifvertrag kann mehr "
             "vorsehen."})
     elif (alter is not None and alter < 18
           and not roh.get("berufsausbildung_abgeschlossen")):
@@ -328,16 +328,16 @@ def pruefen(roh: dict) -> dict:
             "Vergütung trotzdem sein."})
     elif stundenlohn < werte["mindestlohn"]:
         raise VertragFehler(
-            f"Das wären {stundenlohn:.2f} € je Stunde. Der Mindestlohn liegt "
-            f"{werte['jahr']} bei {werte['mindestlohn']:.2f} €. Bei "
+            f"Das wären {_euro(stundenlohn)} je Stunde. Der Mindestlohn liegt "
+            f"{werte['jahr']} bei {_euro(werte['mindestlohn'])}. Bei "
             f"{stunden:g} Stunden je Woche sind mindestens "
-            f"{monatsentgelt(werte['mindestlohn'], stunden):.2f} € im Monat "
+            f"{_euro(monatsentgelt(werte['mindestlohn'], stunden))} im Monat "
             "nötig.")
 
     if art == "minijob" and entgelt > werte["minijob"]:
         raise VertragFehler(
-            f"Ein Minijob endet {werte['jahr']} bei {werte['minijob']} € im "
-            f"Monat; hier wären es {entgelt:.2f} €. Entweder die Stunden "
+            f"Ein Minijob endet {werte['jahr']} bei {_euro(werte['minijob'])} im "
+            f"Monat; hier wären es {_euro(entgelt)}. Entweder die Stunden "
             f"senken (höchstens {werte['minijob'] / (stundenlohn * 13 / 3):.1f} "
             "je Woche) oder als Teilzeit anmelden.")
 
@@ -429,6 +429,12 @@ def pruefen(roh: dict) -> dict:
 # daran prüft `pflichtangaben_fehlen`, ob der Vertrag vollständig ist.
 
 def _euro(wert: float) -> str:
+    """Ein Betrag, wie man ihn in Deutschland schreibt: 13,90 € statt 13.90 €.
+
+    Die Absagen weiter oben schrieben ihre Beträge englisch. Solange sie nur
+    in einer Ausnahme landeten, fiel es nicht auf — seit sie im Portal
+    sichtbar sind, steht dort „Der Mindestlohn liegt 2026 bei 13.90 €".
+    """
     return f"{wert:,.2f} €".replace(",", "#").replace(".", ",").replace("#", ".")
 
 
