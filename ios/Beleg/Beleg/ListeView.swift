@@ -6,6 +6,25 @@ struct ListeView: View {
     @State private var filter: Filter = .alle
     @State private var zeigeAufraeumen = false
     @State private var loeschKandidat: UUID?
+    /// Welche Art gerade gezeigt wird. Belege sind die Voreinstellung —
+    /// das ist der häufigste Fall und der Grund, warum es die App gibt.
+    @State private var art: Dokumentart = .beleg
+    @State private var grossAnsehen: Grossansicht?
+    /// Der Weg des Stapels. Die Liste schiebt über NavigationLink, die
+    /// Blätter schieben selbst — ein Link in einer Listenzeile bekommt vom
+    /// System einen Pfeil, und der stand neben jeder Kachel.
+    @State private var pfad = NavigationPath()
+    /// Die Wahl zwischen Liste und Blättern bleibt bestehen. Wer einmal
+    /// entschieden hat, wie er sucht, will nicht bei jedem Start neu wählen.
+    @AppStorage("dokumentansicht") private var ansichtRoh = Dokumentansicht.liste.rawValue
+    private var ansicht: Dokumentansicht {
+        Dokumentansicht(rawValue: ansichtRoh) ?? .liste
+    }
+
+    /// Wie viele Dokumente je Art da sind — für die Zahl am Reiter.
+    private var anzahlJeArt: [Dokumentart: Int] {
+        Dictionary(grouping: store.belege, by: Dokumentart.von).mapValues(\.count)
+    }
 
     private var offeneAnzahl: Int {
         store.belege.filter { $0.status == .offen }.count
@@ -21,7 +40,7 @@ struct ListeView: View {
     }
 
     private var gefiltert: [Beleg] {
-        store.belege.filter { b in
+        store.belege.filter { Dokumentart.von($0) == art }.filter { b in
             switch filter {
             case .alle: return true
             case .automatisch: return b.status == .automatisch
@@ -32,8 +51,43 @@ struct ListeView: View {
         }
     }
 
+    /// Die Arten als Reiter. Belege stehen vorn und sind voreingestellt —
+    /// alles andere ist die Ausnahme, auch wenn es wichtig ist.
+    private var artenLeiste: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Dokumentart.allCases) { a in
+                    let anzahl = anzahlJeArt[a] ?? 0
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.18)) { art = a }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: a.symbol).font(.system(size: 12))
+                            Text(a.name).font(.subheadline)
+                            if anzahl > 0 {
+                                Text("\(anzahl)")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(art == a ? GC.fg : GC.muted)
+                            }
+                        }
+                        .padding(.horizontal, 13).padding(.vertical, 8)
+                        .background(art == a ? GC.accentSubtle : GC.bg,
+                                    in: Capsule())
+                        .overlay(Capsule().stroke(art == a ? GC.accent : GC.linie,
+                                                  lineWidth: 1))
+                        .foregroundStyle(art == a ? GC.fg : GC.desc)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(art == a ? [.isSelected] : [])
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 2)
+        }
+    }
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $pfad) {
             List {
                 // Was ansteht, steht oben — dort schaut sie ohnehin hin.
                 MonatslaufKarte()
@@ -71,10 +125,21 @@ struct ListeView: View {
                         .foregroundStyle(GC.muted)
                         .listRowBackground(GC.canvas)
                 }
-                ForEach(gefiltert) { b in
-                    NavigationLink(value: b.id) {
-                        BelegZeile(beleg: b)
-                    }
+                artenLeiste
+                    .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                    .listRowBackground(GC.canvas)
+
+                if ansicht == .blaetter {
+                    DokumentBlaetter(dokumente: gefiltert,
+                                     grossAnsehen: $grossAnsehen) { pfad.append($0) }
+                        .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 8, trailing: 12))
+                        .listRowBackground(GC.canvas)
+                        .listRowSeparator(.hidden)
+                } else {
+                  ForEach(gefiltert) { b in
+                        NavigationLink(value: b.id) {
+                            BelegZeile(beleg: b)
+                        }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         if b.status != .fixiert {
                             Button(role: .destructive) {
@@ -86,19 +151,33 @@ struct ListeView: View {
                             }
                         }
                     }
+                  }
                 }
                 if gefiltert.isEmpty {
-                    Text("Kein Beleg entspricht diesem Filter.")
+                    Text(filter == .alle ? art.leerSatz
+                                         : "Kein \(art.einzahl) entspricht diesem Filter.")
+                        .font(.footnote)
                         .foregroundStyle(GC.muted)
+                        .listRowBackground(GC.canvas)
                 }
             }
             .warmerGrund()
-            .navigationTitle("Belege")
+            .navigationTitle("Dokumente")
             .mitKontoMenu()
             .navigationDestination(for: UUID.self) { id in
                 DetailView(belegID: id)
             }
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            ansichtRoh = ansicht.andere.rawValue
+                        }
+                    } label: {
+                        Image(systemName: ansicht.symbol)
+                    }
+                    .accessibilityLabel(ansicht.andere.name)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Picker("Filter", selection: $filter) {
                         ForEach(Filter.allCases) { f in
@@ -106,6 +185,11 @@ struct ListeView: View {
                         }
                     }
                     .pickerStyle(.menu)
+                }
+            }
+            .sheet(item: $grossAnsehen) { auswahl in
+                if let b = store.belege.first(where: { $0.id == auswahl.id }) {
+                    BelegGrossView(beleg: b).environmentObject(store)
                 }
             }
             .fullScreenCover(isPresented: $zeigeAufraeumen) {

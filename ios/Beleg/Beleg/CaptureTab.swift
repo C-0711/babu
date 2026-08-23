@@ -253,7 +253,7 @@ struct CaptureTab: View {
                 Text("Der Beleg ist nicht mehr da")
                     .font(.title3.weight(.semibold))
                     .fontDesign(.serif)
-                Text("Wahrscheinlich wurde er gerade in der Belegliste gelöscht — alles gut.")
+                Text("Wahrscheinlich wurde er gerade unter „Dokumente“ gelöscht — alles gut.")
                     .font(.footnote)
                     .foregroundStyle(GC.desc)
                     .multilineTextAlignment(.center)
@@ -425,7 +425,7 @@ struct ErgebnisKarte: View {
             }
 
             if moeglichesDuplikat != nil {
-                Label("Sieht aus wie ein Beleg, den du schon hast — gleicher Betrag, gleicher Tag. Doppelt erfasst? Einen davon in der Belegliste nach links wischen und löschen.",
+                Label("Sieht aus wie ein Beleg, den du schon hast — gleicher Betrag, gleicher Tag. Doppelt erfasst? Einen davon unter „Dokumente“ nach links wischen und löschen.",
                       systemImage: "doc.on.doc")
                     .font(.footnote)
                     .foregroundStyle(GC.warn)
@@ -462,7 +462,7 @@ struct ErgebnisKarte: View {
                     }
                     .buttonStyle(.borderedProminent)
                 }
-                Button("Später — zur Belegliste") {
+                Button("Später — zu den Dokumenten") {
                     fertig()
                     store.tab = .belege
                 }
@@ -499,7 +499,7 @@ struct ErgebnisKarte: View {
                 fertig()
                 store.tab = .belege
             } label: {
-                Text("Zur Belegliste").frame(maxWidth: .infinity)
+                Text("Zu den Dokumenten").frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
         }
