@@ -788,6 +788,10 @@ def _index_bauen(head: str) -> None:
             "buchungstext": (datev_buchungssatz(review) or {}).get("buchungstext") if review else None,
             "offen": list(f.get("offen") or []),
             "summenprobe_ok": f.get("summenprobe_ok"),
+            # `summenprobe_ok` allein ist ein anonymes Nein: es sagt nicht,
+            # WELCHE Probe nicht aufging und mit welchen Zahlen. Die einzelnen
+            # Proben stehen längst im Review — sie kamen hier nur nie an.
+            "proben": list(f.get("proben") or []),
             "bewirtung": bool(f.get("bewirtungssignal")),
             "bewirtung_beantwortet": bewirtung_da,
         }
@@ -796,6 +800,11 @@ def _index_bauen(head: str) -> None:
             eintrag["ergaenzt"] = True
             if ergaenzung.get("brutto") is not None:
                 eintrag["brutto"] = ergaenzung["brutto"]
+                # Die Proben rechneten gegen den gelesenen Betrag. Wer ihn
+                # selbst einträgt, hebt genau die Zahl auf, gegen die geprüft
+                # wurde — die alte Rechnung neben dem neuen Betrag stehen zu
+                # lassen wäre eine Behauptung über etwas, das nicht mehr da ist.
+                eintrag["proben"] = []
             for kk in ("lieferant", "datum"):
                 if ergaenzung.get(kk):
                     eintrag[kk] = ergaenzung[kk]
@@ -818,6 +827,8 @@ def _index_bauen(head: str) -> None:
                     if ergaenzung.get(kk) is not None:
                         review["felder"][kk] = ergaenzung[kk]
                 review["felder"]["offen"] = eintrag["offen"]
+                if ergaenzung.get("brutto") is not None:
+                    review["felder"]["proben"] = []
             if ergaenzung.get("kategorie"):
                 eintrag["kategorie"] = ergaenzung["kategorie"]
                 if review is not None:
@@ -1372,6 +1383,11 @@ def api_beleg(stamm: str, request: Request) -> Response:
             for kk in ("brutto", "lieferant", "datum"):
                 if ang.get(kk) is not None:
                     d["felder"][kk] = ang[kk]
+            if ang.get("brutto") is not None:
+                # Siehe `_index_bauen`: die Proben rechneten gegen den
+                # gelesenen Betrag und gelten nicht mehr für den selbst
+                # eingetragenen.
+                d["felder"]["proben"] = []
             d["felder"]["offen"] = _offen_nach_angaben(
                 d["felder"].get("offen"), ang)
             if ang.get("kategorie"):

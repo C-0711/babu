@@ -57,6 +57,42 @@ def _herkunft(d: Deutung | None) -> str:
     return f"{ort} · {d.regel}"
 
 
+def _rechenproben(lesung: Lesung) -> list[str]:
+    """Der Abschnitt, in dem der Beleg sich selbst nachrechnet.
+
+    Er steht eigens da, weil er das stärkste Argument des Protokolls ist:
+    hier vergleicht der Beleg Zahlen, die unabhängig voneinander auf dem
+    Blatt stehen. Eine Probe, die nicht aufgeht, zeigt einen Lesefehler an,
+    den keine Konfidenz und kein zweites Modell finden würde — deshalb
+    gehört zu jeder Probe die Zeile, in der die Zahl steht.
+    """
+    t = ["## Die Rechenproben", ""]
+    if not lesung.proben:
+        t += ["Auf dem Beleg stand kein Betrag, an dem sich etwas nachrechnen "
+              "ließe.", ""]
+        return t
+
+    offen = [p for p in lesung.proben if not p.bestanden]
+    anzahl = len(lesung.proben)
+    if offen:
+        t.append(f"{len(offen)} von {anzahl} Proben "
+                 f"{'geht' if len(offen) == 1 else 'gehen'} nicht auf. Solange "
+                 "das so ist, ist mindestens eine der Zahlen falsch gelesen — "
+                 "bitte den Beleg ansehen.")
+    else:
+        t.append(f"Alle {anzahl} Proben gehen auf. Der Beleg bestätigt seine "
+                 "eigenen Zahlen, ohne dass eine fremde Quelle nötig wäre.")
+    t += ["", "| Probe | Ergebnis | Nachgerechnet | Steht in |",
+          "|---|---|---|---|"]
+    for p in lesung.proben:
+        ort = f"Zeile {p.zeile_nr + 1}" if p.zeile_nr is not None else "—"
+        t.append(f"| {_zelle(p.name)} | "
+                 + ("✓ geht auf" if p.bestanden else "✗ geht nicht auf")
+                 + f" | {_zelle(p.erklaerung)} | {ort} |")
+    t.append("")
+    return t
+
+
 def protokoll(lesung: Lesung, *, datei: str, engine: str, dauer_s: float,
               zusammenfassung: str | None = None,
               belegart: str | None = None, konto: str | None = None,
@@ -146,11 +182,19 @@ def protokoll(lesung: Lesung, *, datei: str, engine: str, dauer_s: float,
         t.append("Auf dem Beleg war kein Betrag zu finden.")
         t.append("")
 
+    # ── Die Rechenproben ──
+    t += _rechenproben(lesung)
+
     # ── Wie babu den Beleg gelesen hat ──
-    if lesung.notizen:
+    #
+    # Ohne die Proben: die stehen seit dem 23.08.2026 mit Tabelle und
+    # Zeilenverweis in ihrem eigenen Abschnitt. Zweimal dasselbe zu lesen
+    # macht das Protokoll nicht glaubwürdiger, sondern länger.
+    notizen = [n for n in lesung.notizen if not n.startswith("Probe ")]
+    if notizen:
         t.append("## Wie babu den Beleg gelesen hat")
         t.append("")
-        for n in lesung.notizen:
+        for n in notizen:
             t.append(f"- {n}")
         t.append("")
 

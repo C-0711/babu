@@ -449,6 +449,19 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 .feld span{font:11.5px var(--gc-mono);letter-spacing:.04em;text-transform:uppercase;
   color:var(--gc-muted);padding-top:2px}
 
+/* Die Rechenproben: eine Zeile je Rechnung, die der Beleg mit sich selbst
+   macht. Rechts steht, in welcher Belegzeile die Zahl gefunden wurde. */
+.probe{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--gc-border-l)}
+.probe:last-child{border-bottom:none}
+.probe .zeichen{flex:none;width:18px;text-align:center;font-size:14px;line-height:1.35}
+.probe.auf .zeichen{color:var(--gc-ok)}
+.probe.zu .zeichen{color:var(--gc-warn)}
+.probe .was{min-width:0}
+.probe .was b{display:block;font:600 13px var(--gc-sans);color:var(--gc-fg)}
+.probe .was p{font-size:12.5px;color:var(--gc-desc);margin-top:2px}
+.probe .wo{flex:none;margin-left:auto;padding-top:3px;white-space:nowrap;
+  font:11px var(--gc-mono);color:var(--gc-muted)}
+
 /* Beleg-Weg */
 .weg{list-style:none}
 .weg li{display:flex;gap:12px;padding:0 0 16px;position:relative}
@@ -1868,6 +1881,8 @@ async function ladeDetail(stamm){
         <div class="feld"><span>Dabei waren</span><b style="font-family:var(--gc-sans)">${(d.bewirtung.teilnehmer||[]).join(", ")}</b></div>` : ""}
       </div>`;
 
+    html += rechenproben(f.proben);
+
     if (b){
       html += `<div class="sekt"><span class="lbl">Das geht an DATEV</span><div class="datev">
         <div class="box"><i>Betrag</i><b>${b.umsatz} €</b></div>
@@ -1941,6 +1956,30 @@ function datumDeutsch(iso){
   return m ? `${m[3]}.${m[2]}.${m[1]}` : iso;
 }
 const feld = (k,v) => `<div class="feld"><span>${k}</span><b>${v}</b></div>`;
+
+/* Die Rechenproben — der Beleg rechnet sich selbst nach.
+   Nur daran fliegt ein verlesener Endbetrag auf: die Einzelposten oben und
+   das Rückgeld unten stehen unabhängig von ihm auf dem Beleg. Deshalb steht
+   hier nicht „nicht bestanden", sondern welche Rechnung mit welchen Zahlen
+   nicht aufgeht — und in welcher Zeile die Zahl gefunden wurde. */
+function rechenproben(proben){
+  if (!proben || !proben.length) return "";
+  const zu = proben.filter(p => !p.bestanden).length;
+  const kopf = zu
+    ? (zu === 1 ? "Eine Rechnung geht nicht auf." : zu + " Rechnungen gehen nicht auf.")
+      + " Dann ist eine der Zahlen falsch gelesen — sieh dir den Beleg an."
+    : "Alle " + proben.length + " Rechnungen gehen auf. Der Beleg bestätigt "
+      + "seine eigenen Zahlen.";
+  return `<div class="sekt"><span class="lbl">Die Rechenproben</span>
+    <div class="karte" style="margin:0">
+      <div style="font-size:13px;color:var(--gc-desc);margin-bottom:4px">${kopf}</div>`
+    + proben.map(p => `<div class="probe ${p.bestanden ? "auf" : "zu"}">
+        <span class="zeichen">${p.bestanden ? "✓" : "✗"}</span>
+        <div class="was"><b>${esc(p.name)}</b><p>${esc(p.erklaerung)}</p></div>
+        ${p.zeile != null ? `<span class="wo">Zeile ${p.zeile + 1}</span>` : ""}
+      </div>`).join("")
+    + `</div></div>`;
+}
 
 /* ————— RÜCKMELDEN —————
    Was Nina auffällt, wird ein Vorgang, ohne dass sie etwas dafür tut. Sie
