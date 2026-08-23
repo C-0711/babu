@@ -4,6 +4,8 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 HIER = Path(__file__).resolve().parent
 sys.path.insert(0, str(HIER.parent))
 import extf  # noqa: E402
@@ -156,6 +158,83 @@ def test_belegfeld_faengt_nie_mit_einem_rechenzeichen_an():
     """Belegfeld 1 lässt DATEV nur wenige Zeichen zu — ein Apostroph gehört
     nicht dazu. Also fällt das Rechenzeichen vorn weg."""
     assert _zeilen(_mit_text("Einkauf", beleg_nr="-2+3"))[0]["belegfeld1"] == "2+3"
+
+
+# ————— Der Mischungs-Melder: was den Stapel verlässt, wird geprüft —————
+#
+# BABU-57. Der Buchungsstapel ist die Stelle, an der babus Konten das Haus
+# verlassen. Fällt eine Vermischung hier nicht auf, fällt sie beim
+# Steuerberater auf — und dann ist der Import schon gelaufen.
+
+def _im_rahmen(konto, rahmen, stamm="20260812-x-beleg"):
+    return {"datei": f"docs/2026-08/{stamm}.jpg",
+            "felder": {"brutto": 119.0, "ust_satz": 19, "datum": "12.08.2026",
+                       "beleg_nr": "R-1"},
+            "einschaetzung": {"konto": konto, "kontenrahmen": rahmen,
+                              "konto_skr04": konto if rahmen == "SKR04" else None},
+            "semantik": {"belegart": "Wareneinkauf"},
+            "vlm": {"lieferant": "Großhandel"}}
+
+
+def test_ein_skr03_beleg_kommt_ueberhaupt_in_den_stapel():
+    """Vorher las der Writer nur `konto_skr04` — ein SKR03-Betrieb bekam
+    einen leeren Stapel und keinen Hinweis, warum."""
+    zeilen = extf.buchungszeilen(_im_rahmen("3400", "SKR03"))
+    assert len(zeilen) == 1 and zeilen[0]["konto"] == "3400"
+
+
+def test_ein_skr04_konto_im_skr03_stapel_faellt_auf():
+    with pytest.raises(extf.RahmenVermischung) as exc:
+        extf.stapel([_im_rahmen("3400", "SKR03"), _im_rahmen("5400", "SKR04")],
+                    "2026-08", erzeugt=ERZEUGT, rahmen="SKR03")
+    assert "5400" in str(exc.value)
+    assert "SKR03" in str(exc.value)
+
+
+def test_ein_sauberer_stapel_geht_durch():
+    text = extf.stapel([_im_rahmen("3400", "SKR03")], "2026-08",
+                       erzeugt=ERZEUGT, rahmen="SKR03")
+    assert text.split("\r\n")[2].split(";")[6] == "3400"
+
+
+def test_ohne_angegebenen_rahmen_wird_nicht_geprueft():
+    """Alte Aufrufer bleiben, wie sie waren — der Melder ist eine Zutat."""
+    text = extf.stapel([GOLDEN], "2026-07", erzeugt=ERZEUGT)
+    assert text.split("\r\n")[2].split(";")[6] == "6640"
+
+
+def test_ein_konto_das_babu_nicht_kennt_haelt_den_stapel_nicht_auf():
+    """Handkorrigierte Konten (8400 Erlöse) kann babu nicht beurteilen.
+
+    Sie zu verwerfen wäre schlimmer als sie durchzulassen: der Melder soll
+    Vermischung finden, nicht fremde Kontierung überstimmen."""
+    befund = extf.rahmen_pruefen([_im_rahmen("8400", "SKR03")], "SKR03")
+    assert befund.vermischt == []
+    assert befund.unbekannt == ["8400"]
+    text = extf.stapel([_im_rahmen("8400", "SKR03")], "2026-08",
+                       erzeugt=ERZEUGT, rahmen="SKR03")
+    assert text.split("\r\n")[2].split(";")[6] == "8400"
+
+
+def test_auch_der_vermerkte_rahmen_des_belegs_wird_geglaubt():
+    """Ein Beleg, der selbst sagt „ich bin SKR04", gehört nicht in einen
+    SKR03-Stapel — selbst wenn sein Konto in keinem der beiden vorkäme."""
+    beleg = _im_rahmen("8400", "SKR04")
+    with pytest.raises(extf.RahmenVermischung):
+        extf.stapel([beleg], "2026-08", erzeugt=ERZEUGT, rahmen="SKR03")
+
+
+def test_alte_reviews_ohne_rahmenvermerk_gelten_als_skr04():
+    """Vor BABU-57 schrieb der Watcher nur `konto_skr04` — das war SKR04."""
+    assert extf.rahmen_pruefen([GOLDEN], "SKR04").vermischt == []
+    assert extf.rahmen_pruefen([GOLDEN], "SKR03").vermischt == ["6640"]
+
+
+def test_die_meldung_nennt_den_beleg_nicht_nur_die_nummer():
+    """Nina muss den Beleg finden können, nicht nur wissen, dass es ihn gibt."""
+    beleg = _im_rahmen("5400", "SKR04", stamm="20260812-abc-schere")
+    befund = extf.rahmen_pruefen([beleg], "SKR03")
+    assert any("schere" in b for b in befund.belege)
 
 
 def test_letzter_tag_im_februar():

@@ -19,6 +19,7 @@ import re
 import secrets
 import sqlite3
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -29,6 +30,10 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 WURZEL = Path(__file__).resolve().parent
+sys.path.insert(0, str(WURZEL))
+import kontenrahmen as kr  # noqa: E402
+import kontierung as kt  # noqa: E402
+
 SEITE = Path(os.environ.get("BABU_SEITE", str(Path.home() / "babu-web" / "index.html")))
 STORE = Path(os.environ.get("BABU_STORE", str(Path.home() / "inspektor-store" / "inspektor"
                                               / "ws-christoph0711.io" / "babu.git")))
@@ -730,6 +735,12 @@ def _index_bauen(head: str) -> None:
                 for kk in ("konto_skr04", "steuerschluessel"):
                     if korrektur.get(kk):
                         review["einschaetzung"][kk] = korrektur[kk]
+                # Das Korrekturfeld heißt aus historischen Gründen
+                # `konto_skr04`; gemeint ist immer das Konto im Rahmen des
+                # Betriebs. Ohne diese Zeile ginge eine Korrektur am
+                # Buchungsstapel vorbei, seit der `konto` bevorzugt.
+                if korrektur.get("konto_skr04"):
+                    review["einschaetzung"]["konto"] = korrektur["konto_skr04"]
                 if korrektur.get("buchungstext"):
                     review.setdefault("vlm", {})
                     (review["vlm"] or {}).update(buchungstext=korrektur["buchungstext"])
@@ -2090,6 +2101,12 @@ def _einstellungen_mit_paket(un: str) -> dict:
     import saloncheck  # noqa: PLC0415
     e = db_einstellungen(un)
     e["paket_empfehlung"] = saloncheck.paket_empfehlung(e)
+    # Der geltende Kontenrahmen kommt mit, damit App und Portal ihn nicht in
+    # einem zweiten Aufruf holen müssen. Er ist ABGELEITET (Betriebsangabe
+    # schlägt Umgebungsvorgabe) und heißt deshalb anders als der gespeicherte
+    # Schlüssel — sonst schriebe ein Formular, das alles zurückschickt, die
+    # Vorgabe versehentlich als Wahl fest.
+    e["kontenrahmen_gilt"] = kr.aus_einstellungen(e, vorgabe=kr.vorgabe())
     return e
 
 
@@ -2110,10 +2127,146 @@ async def api_einstellungen_setzen(request: Request) -> Response:
         body = await request.json()
     except Exception:  # noqa: BLE001
         return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    # Der Kontenrahmen geht ABSICHTLICH nicht über diese Sammelroute: sein
+    # Wechsel ist ein Jahreswechsel-Vorgang mit Rückfrage (BABU-57). Hier
+    # durchgelassen wäre er wieder ein Schalter — und ein Formular, das alle
+    # Felder zurückschickt, stellte ihn beiläufig um. Lieber laut ablehnen
+    # als still ignorieren: sonst sucht jemand den Fehler an der falschen
+    # Stelle.
+    if kr.SCHLUESSEL in body or kr.SCHLUESSEL_AB in body:
+        return JSONResponse(
+            {"fehler": "Der Kontenrahmen wird über /api/kontenrahmen gesetzt — "
+                       "ein Wechsel gilt erst ab dem nächsten 1. Januar und "
+                       "braucht eine Bestätigung.",
+             "route": "/api/kontenrahmen"}, status_code=409)
     for schluessel, wert in body.items():
         if schluessel in EINSTELLUNG_SCHLUESSEL:
             db_einstellung_setzen(un, schluessel, str(wert)[:200])
     return JSONResponse(_einstellungen_mit_paket(un))
+
+
+# ---------------------------------------------------------------------------
+# Der Kontenrahmen des Betriebs (BABU-57).
+#
+# Er stand bis 23.08.2026 ausschließlich in `BABU_KONTENRAHMEN`. Das ist der
+# falsche Ort: SKR03 oder SKR04 ist eine Entscheidung des Betriebs — meistens
+# die der Kanzlei, die den Abschluss macht — und keine Einstellung des
+# Dienstes. Nina muss sie sehen und treffen können.
+#
+# Warum eine eigene Route statt eines Feldes in /api/einstellungen: weil ein
+# Wechsel kein Speichern ist. Er hat eine Vorbedingung (das Zieljahr darf noch
+# nicht bebucht sein), eine Wirkung in der Zukunft (1. Januar) und eine
+# Rückfrage. Das passt in kein Formularfeld.
+# ---------------------------------------------------------------------------
+
+def _gebuchte_jahre() -> list[int]:
+    """Jahre, in denen schon Belege mit einem Konto liegen.
+
+    Sie sind das einzige, was einen Wechsel im laufenden Jahr verbietet: wo
+    nichts gebucht ist, kann sich auch nichts vermischen. Gezählt wird nach
+    dem Belegmonat, nicht nach dem Upload — maßgeblich ist das
+    Wirtschaftsjahr, in das der Beleg gehört.
+    """
+    jahre = set()
+    for eintrag in index_aktuell()["belege"].values():
+        review = index_aktuell()["reviews"].get(eintrag["stamm"]) or {}
+        e = review.get("einschaetzung") or {}
+        if not (e.get("konto") or e.get("konto_skr04")):
+            continue
+        monat = eintrag.get("monat") or ""
+        if re.match(r"^\d{4}-\d{2}$", monat):
+            jahre.add(int(monat[:4]))
+    return sorted(jahre)
+
+
+def kontenrahmen_von(un: str) -> str:
+    """Der Rahmen, in dem dieser Betrieb bucht."""
+    return kr.aus_einstellungen(db_einstellungen(salon_von(un)),
+                                vorgabe=kr.vorgabe())
+
+
+def _kontenrahmen_auskunft(un: str) -> dict:
+    e = db_einstellungen(salon_von(un))
+    geplant = kr.geplanter_wechsel(e)
+    jetzt = kr.aus_einstellungen(e, vorgabe=kr.vorgabe())
+    return {
+        "rahmen": jetzt,
+        "gilt_ab": kr.gilt_ab_aus_einstellungen(e),
+        "gewaehlt": bool(e.get(kr.SCHLUESSEL)),
+        "vorgabe": kr.vorgabe(),
+        "rahmen_liste": list(kt.RAHMEN),
+        "gebuchte_jahre": _gebuchte_jahre(),
+        # Ein vorgemerkter Wechsel, der noch nicht wirkt. Die Oberfläche soll
+        # ihn zeigen — sonst wundert sich Nina im Dezember, warum ihr Klick
+        # von vor drei Monaten nichts geändert hat.
+        "wechsel_geplant": ({"jahr": geplant[0], "rahmen": geplant[1]}
+                            if geplant and geplant[1] != jetzt else None),
+        "hinweis": "SKR03 und SKR04 vergeben dieselben Nummern für "
+                   "verschiedene Dinge. Ein Wechsel gilt deshalb erst ab dem "
+                   "nächsten 1. Januar — alles, was vorher gebucht ist, "
+                   "bleibt im alten Rahmen.",
+    }
+
+
+@app.get("/api/kontenrahmen")
+def api_kontenrahmen(request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    return JSONResponse(_kontenrahmen_auskunft(un))
+
+
+@app.post("/api/kontenrahmen")
+async def api_kontenrahmen_setzen(request: Request) -> Response:
+    """Rahmen wählen oder wechseln. `bestaetigt=true` beantwortet die Rückfrage."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das entscheidet die Inhaberin."},
+                            status_code=403)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+
+    inhaber = salon_von(un)
+    e = db_einstellungen(inhaber)
+    heute_jahr = int(time.strftime("%Y"))
+    try:
+        bescheid = kr.wechsel_pruefen(
+            alt=kr.aus_einstellungen(e) if e.get(kr.SCHLUESSEL) else None,
+            neu=str((body or {}).get("rahmen") or ""),
+            heute_jahr=heute_jahr,
+            ab_jahr=(body or {}).get("ab_jahr"),
+            gebuchte_jahre=_gebuchte_jahre(),
+            bestaetigt=bool((body or {}).get("bestaetigt")))
+    except ValueError:
+        return JSONResponse(
+            {"fehler": f"Diesen Kontenrahmen gibt es nicht. Möglich sind "
+                       f"{' und '.join(kt.RAHMEN)}."}, status_code=400)
+
+    if not bescheid.erlaubt:
+        antwort = _kontenrahmen_auskunft(un)
+        antwort.update(erlaubt=False, begruendung=bescheid.begruendung,
+                       rueckfrage=bescheid.rueckfrage)
+        return JSONResponse(antwort, status_code=409)
+
+    neu = str(body["rahmen"]).strip().upper()
+    if bescheid.gilt_ab and bescheid.gilt_ab > heute_jahr:
+        # Vorgemerkt, nicht geschaltet: bis zum 1. Januar bucht der Betrieb
+        # weiter im alten Rahmen. Genau das ist der Unterschied zum Schalter.
+        db_einstellung_setzen(inhaber, kr.SCHLUESSEL_KOMMT,
+                              f"{bescheid.gilt_ab}:{neu}")
+    else:
+        db_einstellung_setzen(inhaber, kr.SCHLUESSEL, neu)
+        db_einstellung_setzen(inhaber, kr.SCHLUESSEL_AB,
+                              str(bescheid.gilt_ab or heute_jahr))
+        db_einstellung_setzen(inhaber, kr.SCHLUESSEL_KOMMT, "")
+    antwort = _kontenrahmen_auskunft(un)
+    antwort.update(erlaubt=True, begruendung=bescheid.begruendung,
+                   rueckfrage=None)
+    return JSONResponse(antwort)
 
 
 ROLLEN = {t.split(":")[0].strip().lower(): t.split(":")[1].strip().lower()
@@ -2306,9 +2459,17 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
     staemme = [s_ for s_, z in idx["belege"].items()
                if z["monat"] == monat and z["status"] in ("geprüft", "exportiert")]
     reviews = [idx["reviews"][s_] for s_ in sorted(staemme) if s_ in idx["reviews"]]
-    text = extf.stapel(reviews, monat,
-                       berater=os.environ.get("BABU_BERATER", extf.BERATER),
-                       mandant=os.environ.get("BABU_MANDANT", extf.MANDANT))
+    # Der Mischungs-Melder (BABU-57). Hier verlassen die Konten das Haus —
+    # was hier durchrutscht, fällt erst beim Steuerberater auf, nach dem
+    # Import. Ein Stapel mit zwei Kontenrahmen wird deshalb gar nicht erst
+    # erzeugt.
+    try:
+        text = extf.stapel(reviews, monat,
+                           berater=os.environ.get("BABU_BERATER", extf.BERATER),
+                           mandant=os.environ.get("BABU_MANDANT", extf.MANDANT),
+                           rahmen=kontenrahmen_von(un))
+    except extf.RahmenVermischung as fehler_:
+        return JSONResponse({"fehler": str(fehler_)}, status_code=409)
     daten = extf.als_bytes(text)
     if festschreiben:
         import boxschreiber  # noqa: PLC0415
@@ -4769,6 +4930,10 @@ EINRICHTUNGSFELDER = (
     "steuernummer", "ust_id", "finanzamt", "kleinunternehmer",
     "versteuerung", "iban", "bic", "bank", "oeffnung_von", "oeffnung_bis",
     "einrichtung_fertig", "gruendung",
+    # Der Kontenrahmen ist eine Einrichtungsangabe wie Steuernummer und
+    # Rechtsform — wer die Einrichtung zurücksetzt, wird auch nach ihm neu
+    # gefragt. Bis dahin gilt wieder die Vorgabe aus der Umgebung.
+    kr.SCHLUESSEL, kr.SCHLUESSEL_AB, kr.SCHLUESSEL_KOMMT,
 )
 
 
