@@ -6922,8 +6922,10 @@ def api_leistung_loeschen(leistung_id: int, request: Request) -> Response:
 
 
 # ---------------------------------------------------------------------------
-# Abrechnen: nach der Behandlung ein Tipp — bar oder Karte. Daraus wird ein
-# VORSCHLAG fürs Kassenbuch, keine Buchung (siehe abrechnung.py).
+# Abrechnen: nach der Behandlung ein Tipp — bar, Karte oder Gutschein.
+# Daraus wird ein VORSCHLAG fürs Kassenbuch, keine Buchung (siehe
+# abrechnung.py). Ein eingelöster Gutschein steht dort eigens, weil er
+# weder Bargeld noch neuer Umsatz ist.
 # ---------------------------------------------------------------------------
 
 @app.post("/api/termin/{termin_id}/abrechnen")

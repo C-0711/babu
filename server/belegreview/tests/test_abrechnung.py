@@ -66,6 +66,12 @@ def test_abrechnen_braucht_eine_zahlart():
     assert ab.zahlart_pruefen("karte") == "karte"
 
 
+def test_mit_gutschein_bezahlt_ist_eine_zahlart():
+    """Die Kasse kennt den Gutschein als Tagessumme, das Abrechnen bisher
+    nicht — wer am Termin „Gutschein" tippte, bekam eine Absage."""
+    assert ab.zahlart_pruefen("gutschein") == "gutschein"
+
+
 # ————— Der Vorschlag fürs Kassenbuch —————
 
 def test_die_tagessummen_werden_vorgeschlagen():
@@ -100,6 +106,43 @@ def test_sieben_prozent_wird_getrennt_ausgewiesen():
     tag = ab.tagesvorschlag("2026-09-03", [termin(preis=42.0), t])
     assert tag["umsatz7"] == 21.4
     assert tag["zusammen"] == 63.4
+
+
+def test_ein_eingeloester_gutschein_ist_kein_bargeld():
+    """Sonst stünde Geld im Kassenbuch, das nicht in der Schublade liegt.
+
+    Beim Einlösen kommt nichts herein — bezahlt wurde beim Verkauf des
+    Gutscheins. Die Summe gehört deshalb auf `gutscheineEingeloest`, das
+    weder in den Kassenbestand noch in den Tagesumsatz zählt.
+    """
+    tag = ab.tagesvorschlag("2026-09-03", [
+        termin(preis=42.0, zahlart="bar"),
+        termin(preis=40.0, zahlart="gutschein", id=2),
+    ])
+    assert tag["bar"] == 42.0
+    assert tag["gutschein"] == 40.0
+    assert tag["zusammen"] == 42.0        # der Gutschein bringt keinen Umsatz
+    assert tag["termine"] == 2
+
+
+def test_ein_gutschein_bringt_auch_keinen_umsatz_zu_sieben_prozent():
+    """Die Aufteilung 7/19 beschreibt den Tagesumsatz. Wäre der eingelöste
+    Gutschein darin, wären die 7 % größer als der Umsatz, aus dem sie
+    stammen sollen."""
+    t = termin(preis=21.4, zahlart="gutschein", id=4)
+    t["ust_satz"] = 7
+    tag = ab.tagesvorschlag("2026-09-03", [termin(preis=42.0), t])
+    assert tag["umsatz7"] == 0.0
+    assert tag["zusammen"] == 42.0
+
+
+def test_der_satz_nennt_den_gutschein_eigens():
+    """Ohne einen eigenen Halbsatz sähe es aus, als wäre die Behandlung
+    unbezahlt geblieben."""
+    tag = ab.tagesvorschlag("2026-09-03", [
+        termin(preis=42.0), termin(preis=40.0, zahlart="gutschein", id=2)])
+    assert "Gutschein" in tag["satz"]
+    assert "40" in tag["satz"].replace(",", ".")
 
 
 def test_der_satz_sagt_was_zu_tun_ist():
@@ -205,6 +248,25 @@ def test_termin_abrechnen_und_kassenvorschlag(welt):
     assert v["bar"] == 42.0 and v["karte"] == 0.0
     assert v["vorschlag"] is True
     assert "42" in v["satz"].replace(",", ".")
+
+
+def test_mit_gutschein_abrechnen_geht_und_bleibt_aus_der_kasse(welt):
+    """Vorher lief „gutschein" in einen Fehler; ginge er als „bar" durch,
+    stünde am Abend Bargeld im Vorschlag, das niemand gezählt hat."""
+    client, _ = welt
+    import datetime as dt
+    heute = dt.date.today().isoformat()
+    t = client.post("/api/termine", json={"start": f"{heute}T12:00", "minuten": 60,
+                                          "wer": "Jana", "kundin": "Frau Sommer",
+                                          "leistung": "Schnitt"}).json()
+    r = client.post(f"/api/termin/{t['id']}/abrechnen",
+                    json={"zahlart": "gutschein", "preis": "40,00"})
+    assert r.status_code == 200 and r.json()["zahlart"] == "gutschein"
+
+    v = client.get("/api/kasse/vorschlag").json()
+    assert v["gutschein"] == 40.0
+    assert v["bar"] == 0.0 and v["karte"] == 0.0
+    assert v["zusammen"] == 0.0
 
 
 def test_ohne_preis_kein_abrechnen(welt):
