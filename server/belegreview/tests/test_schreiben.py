@@ -149,6 +149,21 @@ def test_kpi(welt):
     assert d["betrieb"]["requests"] > 0
 
 
+def test_die_kennzahlen_haengen_auch_in_der_auswertung(welt):
+    """Eine Quote, die niemand abruft, ist keine Kennzahl.
+
+    `/api/kpi/{monat}` hatte keinen Aufrufer — weder App noch Portal. Die
+    fachlichen Zahlen stehen deshalb jetzt auch in der Monatsauswertung,
+    die das Portal ohnehin holt. Die Betriebswerte bleiben draußen: die
+    gehören dem Betrieb, nicht der Inhaberin.
+    """
+    client, _ = welt
+    kpi = client.get("/api/kpi/2026-08").json()
+    auswertung = client.get("/api/monatsabschluss/2026-08").json()
+    assert auswertung["kennzahlen"] == {k: v for k, v in kpi.items() if k != "betrieb"}
+    assert "betrieb" not in auswertung["kennzahlen"]
+
+
 def test_ablage_vertragsgleich(welt):
     """POST /ablage wie der alte Eingang: multipart file, {ok,ref,commit,datei};
     txt → 400 (Verbindungstest), Bearer-Auth."""

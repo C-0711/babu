@@ -159,8 +159,35 @@ def loeschen(pfade: list[str], nachricht: str, autor_un: str) -> str:
     return _commit_und_push(entfernen, nachricht, autor_un)
 
 
+NAME_MAX = 80
+
+
+def _mitte_kuerzen(name: str, hoechstens: int = NAME_MAX) -> str:
+    """Zu lange Namen in der MITTE kürzen — Anfang und Endung bleiben.
+
+    Vorher stand hier `[-80:]`: das behielt das Ende und warf den Anfang
+    weg. Vorne steht aber, worum es geht. Aus
+    „Rechnung-Friseurbedarf-Grosshandel-…-2026-03.pdf" wurde
+    „…-2026-03.pdf", und in einer Liste solcher Belege sah jede Zeile
+    gleich aus — genau die Namen, die eine Ablage lesbar machen, fielen als
+    Erstes weg.
+    """
+    if len(name) <= hoechstens:
+        return name
+    stamm, punkt, endung = name.rpartition(".")
+    if punkt and 0 < len(endung) <= 8 and stamm:
+        endung = "." + endung
+    else:
+        stamm, endung = name, ""
+    platz = hoechstens - len(endung) - 3          # drei Punkte als Auslassung
+    if platz < 8:                                 # absurd lange „Endung"
+        return name[:hoechstens]
+    vorn = (platz + 1) // 2
+    return stamm[:vorn] + "..." + stamm[len(stamm) - (platz - vorn):] + endung
+
+
 def beleg_dateiname(original: str) -> str:
     """Server-Namensschema JJJJMMTT-HHMMSS-<hex>-<name> wie beim Eingang."""
-    stamm = re.sub(r"[^A-Za-z0-9._-]", "_", original)[-80:] or "beleg"
+    stamm = _mitte_kuerzen(re.sub(r"[^A-Za-z0-9._-]", "_", original)) or "beleg"
     zeit = time.strftime("%Y%m%d-%H%M%S")
     return f"{zeit}-{secrets.token_hex(3)}-{stamm}"

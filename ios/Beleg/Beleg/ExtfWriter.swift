@@ -12,12 +12,27 @@ func exportierbareBelege(_ belege: [Beleg]) -> [Beleg] {
     }
 }
 
+/// Ein Textfeld des Stapels: in Anführungszeichen — und niemals eine Formel.
+///
+/// Die fertige Datei geht ans Steuerbüro und wird dort in Excel geöffnet.
+/// Beginnt ein Feld mit `=`, `+`, `-` oder `@`, führt Excel es als Formel
+/// aus; ein Lieferantenname wie `=cmd|…` wäre damit ein Angriff auf den
+/// Rechner der Kanzlei. Das führende Apostroph ist Excels eigene
+/// „das ist Text"-Markierung und wird beim Anzeigen nicht mitgedruckt.
+func extfFeld(_ wert: String) -> String {
+    var text = wert.replacingOccurrences(of: "\"", with: "'")
+    if let erstes = text.first, "=+-@\t\r\n".contains(erstes) {
+        text = "'" + text
+    }
+    return "\"" + text + "\""
+}
+
 /// Stapeltext für eine feste Belegmenge und einen Zeitraum (jjjjmmtt).
 func extfStapelText(belege: [Beleg], von: String, bis: String) -> String {
     var zeilen = ["\"EXTF\";700;21;\"Buchungsstapel\";13;;;",
                   ";\"RE\";\"DE\";;\"\(von)\";\"\(bis)\";"]
     for b in belege {
-        zeilen.append("\(extfBetrag(b.brutto));\"S\";\"EUR\";;;;\"\(b.kreditor)\";\"\(b.konto ?? "")\";\(b.steuerschluessel);\"\(extfBelegdatum(b.datumText))\";\"\(b.belegNr)\";\"\(b.lieferant)\"")
+        zeilen.append("\(extfBetrag(b.brutto));\"S\";\"EUR\";;;;\(extfFeld(b.kreditor));\(extfFeld(b.konto ?? ""));\(b.steuerschluessel);\(extfFeld(extfBelegdatum(b.datumText)));\(extfFeld(b.belegNr));\(extfFeld(b.lieferant))")
     }
     return zeilen.joined(separator: "\r\n")
 }

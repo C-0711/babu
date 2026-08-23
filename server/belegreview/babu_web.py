@@ -238,14 +238,21 @@ async def _metrik_mw(request: Request, call_next):
     return antwort
 
 # whoami-Cache: Token-Hash → (un, bis) — schont gitchain.de bei App-Polling.
-_CACHE: dict[int, tuple[str, float]] = {}
+#
+# Geschlüsselt wird mit SHA-256, nicht mit Pythons `hash()`. `hash()` ist für
+# Zeichenketten je Prozessstart zufällig gesalzen (PYTHONHASHSEED) und auf
+# Tempo gebaut, nicht auf Kollisionsfreiheit: wer zwei Zugangstoken findet,
+# die denselben `hash()` ergeben, bekäme das Konto des anderen. Für einen
+# Zwischenspeicher, an dem die Anmeldung hängt, ist das der falsche
+# Schlüssel — der Preis ist eine Hashrunde je Anfrage.
+_CACHE: dict[str, tuple[str, float]] = {}
 
 
 def wer_token(token: str) -> str | None:
     """PAT → Benutzername via whoami (mit 5-min-Cache). Kein Format-Vorurteil."""
     if not token:
         return None
-    schluessel = hash(token)
+    schluessel = hashlib.sha256(token.encode()).hexdigest()
     jetzt = time.time()
     eintrag = _CACHE.get(schluessel)
     if eintrag and eintrag[1] > jetzt:
@@ -1395,6 +1402,36 @@ HOCHLADEN_ENDUNGEN = {".jpg", ".jpeg", ".png", ".pdf", ".heic", ".xml"}
 HOCHLADEN_MAX = 40 * 1024 * 1024
 
 
+class KoerperZuGross(Exception):
+    """Die Anfrage schickt mehr, als diese Route annimmt."""
+
+
+async def koerper_lesen(request: Request, grenze: int) -> bytes:
+    """Den Anfragekörper lesen — mit einer Grenze, die VORHER greift.
+
+    Vorher stand überall `daten = await request.body()` und erst danach
+    `if len(daten) > MAX`. Der Fehler 413 war also richtig, kam aber zu
+    spät: bis dahin lagen die Daten schon vollständig im Speicher. Ein
+    Gigabyte hätte den Prozess gekippt, bevor die Prüfung an die Reihe kam
+    — und `/api/whatsapp/webhook` verlangt dafür nicht einmal eine
+    Anmeldung, weil die Signatur erst nach dem Lesen geprüft wird.
+
+    Zwei Riegel, weil einer nicht reicht: der Content-Length-Kopf spart im
+    Normalfall jedes Byte, aber er ist eine Behauptung des Absenders und
+    fehlt bei Chunked-Uploads ganz. Deshalb wird beim Lesen mitgezählt und
+    beim ersten Häppchen abgebrochen, das die Grenze reißt.
+    """
+    laenge = request.headers.get("content-length")
+    if laenge and laenge.isdigit() and int(laenge) > grenze:
+        raise KoerperZuGross
+    daten = bytearray()
+    async for stueck in request.stream():
+        daten += stueck
+        if len(daten) > grenze:
+            raise KoerperZuGross
+    return bytes(daten)
+
+
 @app.post("/ablage")
 async def ablage(request: Request) -> Response:
     """Beleg-Eingang, vertragsgleich zum bisherigen :7843-Eingang — aber über
@@ -1426,6 +1463,14 @@ async def ablage(request: Request) -> Response:
         return JSONResponse(
             {"fehler": "Dein Zugang ist noch nicht für eine Belegbox "
                        "freigeschaltet."}, status_code=403)
+    # Multipart landet über eine Spool-Datei auf der Platte, kippt den
+    # Prozess also nicht über den Speicher. Trotzdem gilt hier dieselbe
+    # Grenze wie überall: sagt der Kopf schon, dass es zu viel wird, wird
+    # gar nicht erst gelesen. Der Vorspann des Formulars darf dabei ein
+    # wenig kosten, deshalb ein Kilobyte Luft.
+    laenge = request.headers.get("content-length")
+    if laenge and laenge.isdigit() and int(laenge) > HOCHLADEN_MAX + 1024:
+        return JSONResponse({"fehler": "zu groß"}, status_code=413)
     try:
         form = await request.form()
     except Exception:  # noqa: BLE001
@@ -1484,11 +1529,12 @@ async def api_hochladen(request: Request, name: str = "beleg.jpg") -> Response:
     endung = Path(name).suffix.lower()
     if endung not in HOCHLADEN_ENDUNGEN:
         return JSONResponse({"fehler": "kein Beleg-Format"}, status_code=400)
-    daten = await request.body()
+    try:
+        daten = await koerper_lesen(request, HOCHLADEN_MAX)
+    except KoerperZuGross:
+        return JSONResponse({"fehler": "zu groß"}, status_code=413)
     if not daten:
         return JSONResponse({"fehler": "leer"}, status_code=400)
-    if len(daten) > HOCHLADEN_MAX:
-        return JSONResponse({"fehler": "zu groß"}, status_code=413)
     import boxschreiber  # noqa: PLC0415
     dateiname = boxschreiber.beleg_dateiname(name)
     monat = time.strftime("%Y-%m")
@@ -1572,11 +1618,12 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
     endung = Path(name).suffix.lower()
     if endung not in HOCHLADEN_ENDUNGEN:
         return JSONResponse({"fehler": "kein Beleg-Format"}, status_code=400)
-    daten = await request.body()
+    try:
+        daten = await koerper_lesen(request, HOCHLADEN_MAX)
+    except KoerperZuGross:
+        return JSONResponse({"fehler": "zu groß"}, status_code=413)
     if not daten:
         return JSONResponse({"fehler": "leer"}, status_code=400)
-    if len(daten) > HOCHLADEN_MAX:
-        return JSONResponse({"fehler": "zu groß"}, status_code=413)
 
     import einsortieren  # noqa: PLC0415
     # Bei PDFs liest der Server selbst nach — die App hat dort keinen Text.
@@ -1732,11 +1779,12 @@ async def api_dokument_hochladen(request: Request, name: str = "dokument.pdf",
     endung = Path(name).suffix.lower()
     if endung not in DOKUMENT_ENDUNGEN:
         return JSONResponse({"fehler": "kein Dokument-Format"}, status_code=400)
-    daten = await request.body()
+    try:
+        daten = await koerper_lesen(request, HOCHLADEN_MAX)
+    except KoerperZuGross:
+        return JSONResponse({"fehler": "zu groß"}, status_code=413)
     if not daten:
         return JSONResponse({"fehler": "leer"}, status_code=400)
-    if len(daten) > HOCHLADEN_MAX:
-        return JSONResponse({"fehler": "zu groß"}, status_code=413)
     import boxschreiber  # noqa: PLC0415
     dateiname = boxschreiber.beleg_dateiname(name)
     monat = time.strftime("%Y-%m")
@@ -1832,11 +1880,12 @@ async def api_kontoauszug(request: Request, name: str = "auszug.pdf") -> Respons
         return fehler
     if Path(name).suffix.lower() != ".pdf":
         return JSONResponse({"fehler": "bitte als PDF"}, status_code=400)
-    daten = await request.body()
+    try:
+        daten = await koerper_lesen(request, HOCHLADEN_MAX)
+    except KoerperZuGross:
+        return JSONResponse({"fehler": "zu groß"}, status_code=413)
     if not daten:
         return JSONResponse({"fehler": "leer"}, status_code=400)
-    if len(daten) > HOCHLADEN_MAX:
-        return JSONResponse({"fehler": "zu groß"}, status_code=413)
     import tempfile
     import kontoauszug as ka  # noqa: PLC0415
     with tempfile.NamedTemporaryFile(suffix=".pdf") as tf:
@@ -2289,14 +2338,15 @@ def _median(werte: list[float]) -> float | None:
     return round(werte[n // 2] if n % 2 else (werte[n // 2 - 1] + werte[n // 2]) / 2, 1)
 
 
-@app.get("/api/kpi/{monat}")
-def api_kpi(monat: str, request: Request) -> Response:
-    """Kennzahlen des Monats gegen die Spec-Ziele (docs/…/2026-08-13-salon-portal.md)."""
-    un, fehler = _box_wache(request)
-    if fehler:
-        return fehler
-    if not re.match(r"^\d{4}-\d{2}$", monat):
-        return JSONResponse({"fehler": "ungültiger Monat"}, status_code=400)
+def kennzahlen_monat(monat: str) -> dict:
+    """Die Kennzahlen eines Monats gegen die Zielwerte der Spec.
+
+    Steht als eigene Funktion da, weil zwei Stellen sie brauchen: der
+    Abnahmebericht `GET /api/kpi/{monat}` (Aufgabe Q.1 der Spec
+    docs/…/2026-08-13-salon-portal.md) und die Monatsauswertung, die das
+    Portal ohnehin abruft. Vorher hing alles allein in der KPI-Route — und
+    die rief niemand auf, also sah auch niemand, wenn eine Quote wegkippte.
+    """
     idx = index_aktuell()
     zeilen = [z for z in idx["belege"].values() if z["monat"] == monat]
     mit_review = [z for z in zeilen if z["review_zeit"]]
@@ -2313,8 +2363,7 @@ def api_kpi(monat: str, request: Request) -> Response:
     unlesbar = [z for z in mit_review if z["dokumentklasse"] == "unlesbar"]
     fallback = [z for z in mit_review if z["konto_skr04"] == "6850"]
     summenprobe = [z for z in mit_review if z["summenprobe_ok"]]
-    laufzeit = time.time() - _METRIK["start"]
-    return JSONResponse({
+    return {
         "monat": monat,
         "belege": len(zeilen),
         "brutto": round(sum(z["brutto"] or 0 for z in zeilen), 2),
@@ -2331,6 +2380,27 @@ def api_kpi(monat: str, request: Request) -> Response:
         "offen_zur_frist": {"wert": sum(1 for z in zeilen if z["status"] in ("nachfrage", "erfasst")),
                             "ziel": 0},
         "pflicht_metadaten_pro_beleg": {"wert": 0, "ziel": 0},
+    }
+
+
+@app.get("/api/kpi/{monat}")
+def api_kpi(monat: str, request: Request) -> Response:
+    """Der Abnahmebericht der Spec: Monatskennzahlen plus Betriebswerte.
+
+    Die fachlichen Zahlen hängen seit dem 23.08.2026 zusätzlich in
+    `/api/monatsabschluss/{monat}` — dort sieht sie jemand. Diese Route
+    bleibt, weil die Spec ihre Abnahme daran misst und weil die
+    Betriebswerte (Laufzeit, Fehlerquote, Antwortzeit) hier und nur hier
+    stehen; in die Auswertung der Inhaberin gehören sie nicht.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if not re.match(r"^\d{4}-\d{2}$", monat):
+        return JSONResponse({"fehler": "ungültiger Monat"}, status_code=400)
+    laufzeit = time.time() - _METRIK["start"]
+    return JSONResponse({
+        **kennzahlen_monat(monat),
         "betrieb": {"seit_s": round(laufzeit),
                     "requests": _METRIK["requests"],
                     "fehler_5xx_quote": round(_METRIK["fehler_5xx"] / _METRIK["requests"], 4) if _METRIK["requests"] else 0,
@@ -2668,6 +2738,33 @@ ABSCHLUSS_TMP = Path(os.environ.get("BABU_ABSCHLUSS_TMP",
 ABSCHLUSS_STAMM_KEYS = ("rechtsform", "steuernummer", "finanzamt", "kleinunternehmer")
 _ABSCHLUSS_JOBS: dict[str, dict] = {}
 _ABSCHLUSS_LOCK = threading.Lock()
+
+# Ein fertiger Auftrag bleibt noch eine Stunde im Speicher — so lange fragt
+# das Portal ihn ab. Danach fliegt er raus.
+#
+# Vorher flog er nie: `_ABSCHLUSS_JOBS` wuchs mit jedem Lauf um einen
+# Eintrag samt aller gelesenen Felder und leerte sich erst beim Neustart des
+# Prozesses. Verloren geht dabei nichts — der Endstand liegt in der
+# Datenbank (`db_abschluss_snapshot`), und `/api/abschluss/status` holt ihn
+# von dort, sobald der Speicher ihn nicht mehr hat.
+ABSCHLUSS_JOB_FRIST = 3600.0
+
+
+def _abschluss_jobs_aufraeumen() -> None:
+    """Beendete Aufträge nach der Frist vergessen.
+
+    Nur beendete: ein laufender Auftrag hat keinen Endzeitpunkt und bleibt
+    deshalb liegen, egal wie lange er dauert.
+
+    Aufzurufen, wer `_ABSCHLUSS_LOCK` ohnehin schon hält.
+    """
+    jetzt = time.time()
+    for name, status in list(_ABSCHLUSS_JOBS.items()):
+        beendet = status.get("beendet_um")
+        if beendet and jetzt - beendet > ABSCHLUSS_JOB_FRIST:
+            del _ABSCHLUSS_JOBS[name]
+
+
 # vLLM (:11435/:11436) teilt sich mit dem Review-Watcher — nie parallel fluten.
 _LLM_SEMAPHORE = threading.Semaphore(1)
 
@@ -2859,6 +2956,7 @@ def _abschluss_job(un: str, jahr: int, pfade: list[Path]) -> None:
         with _ABSCHLUSS_LOCK:
             status["stand"] = "fertig"
             status["hinweis"] = "Fertig — dein Salon-Check steht."
+            status["beendet_um"] = time.time()
             db_abschluss_snapshot(un, jahr, status)
         for pfad in pfade:
             pfad.unlink(missing_ok=True)
@@ -2868,6 +2966,7 @@ def _abschluss_job(un: str, jahr: int, pfade: list[Path]) -> None:
             status["stand"] = "fehler"
             status["hinweis"] = ("Das hat gerade nicht geklappt — "
                                  "versuch es später nochmal.")
+            status["beendet_um"] = time.time()
             db_abschluss_snapshot(un, jahr, status)
 
 
@@ -2887,11 +2986,12 @@ async def api_abschluss_hochladen(request: Request, jahr: int = 0,
     endung = Path(name).suffix.lower()
     if endung not in DOKUMENT_ENDUNGEN:
         return JSONResponse({"fehler": "kein Dokument-Format"}, status_code=400)
-    daten = await request.body()
+    try:
+        daten = await koerper_lesen(request, ABSCHLUSS_MAX)
+    except KoerperZuGross:
+        return JSONResponse({"fehler": "zu groß"}, status_code=413)
     if not daten:
         return JSONResponse({"fehler": "leer"}, status_code=400)
-    if len(daten) > ABSCHLUSS_MAX:
-        return JSONResponse({"fehler": "zu groß"}, status_code=413)
     import boxschreiber  # noqa: PLC0415
     dateiname = boxschreiber.beleg_dateiname(name)
     meta = json.dumps({"titel": name[:120], "art": "abschluss", "jahr": jahr,
@@ -2925,6 +3025,7 @@ def api_abschluss_start(request: Request, jahr: int = 0) -> Response:
     if jahr is None:
         return JSONResponse({"fehler": "ungültiges Jahr"}, status_code=400)
     with _ABSCHLUSS_LOCK:
+        _abschluss_jobs_aufraeumen()
         laufend = _ABSCHLUSS_JOBS.get(un)
         if laufend and laufend["stand"] in ("wartet", "liest"):
             return JSONResponse({"fehler": "wir lesen schon"}, status_code=409)
@@ -2951,6 +3052,7 @@ def api_abschluss_status(request: Request) -> Response:
     if fehler:
         return fehler
     with _ABSCHLUSS_LOCK:
+        _abschluss_jobs_aufraeumen()
         status = _ABSCHLUSS_JOBS.get(un)
         if status is not None:
             return JSONResponse(status, headers={"Cache-Control": "no-store"})
@@ -3551,11 +3653,12 @@ async def api_rechnung_pdf(nummer: str, request: Request) -> Response:
     rechnung, _ = _rechnung_holen(nummer)
     if rechnung is None:
         return JSONResponse({"fehler": "unbekannte Rechnung"}, status_code=404)
-    daten = await request.body()
+    try:
+        daten = await koerper_lesen(request, HOCHLADEN_MAX)
+    except KoerperZuGross:
+        return JSONResponse({"fehler": "zu groß"}, status_code=413)
     if not daten or not daten.startswith(b"%PDF"):
         return JSONResponse({"fehler": "bitte als PDF"}, status_code=400)
-    if len(daten) > HOCHLADEN_MAX:
-        return JSONResponse({"fehler": "zu groß"}, status_code=413)
     import boxschreiber  # noqa: PLC0415
     pfad = f"rechnungen/{(rechnung.get('datum') or '')[:7]}/{nummer}.pdf"
     try:
@@ -4271,15 +4374,16 @@ async def api_onboarding_ausweis(marke: str, request: Request) -> Response:
     if not gefunden:
         return JSONResponse({"fehler": "Dieser Link gilt nicht mehr."},
                             status_code=404)
-    daten = await request.body()
-    if not daten:
-        return JSONResponse({"fehler": "Da war kein Bild dabei."},
-                            status_code=400)
-    if len(daten) > AUSWEIS_MAX:
+    try:
+        daten = await koerper_lesen(request, AUSWEIS_MAX)
+    except KoerperZuGross:
         return JSONResponse(
             {"fehler": "Das Bild ist zu groß. Meist hilft es, es noch einmal "
                        "mit der Kamera aufzunehmen statt aus der Galerie zu "
                        "wählen."}, status_code=413)
+    if not daten:
+        return JSONResponse({"fehler": "Da war kein Bild dabei."},
+                            status_code=400)
     if not daten[:3] in (b"\xff\xd8\xff",) and not daten[:4] == b"%PDF":
         return JSONResponse(
             {"fehler": "Das sieht nicht nach einem Foto aus. Bitte noch "
@@ -4932,6 +5036,11 @@ def api_wa_pruefung(request: Request) -> Response:
     return Response(str(p.get("hub.challenge") or ""), media_type="text/plain")
 
 
+# Metas Webhook-Nutzlast ist ein kleines JSON — mehr als das ist nichts,
+# was babu je verarbeiten müsste.
+WA_KOERPER_MAX = 512_000
+
+
 @app.post("/api/whatsapp/webhook")
 async def api_wa_eingang(request: Request) -> Response:
     """Was die Kundin geschrieben hat.
@@ -4940,8 +5049,12 @@ async def api_wa_eingang(request: Request) -> Response:
     sonst stundenlang. Was babu damit anfängt, ist Metas Sache nicht.
     """
     import whatsapp as wam  # noqa: PLC0415
-    koerper = await request.body()
-    if len(koerper) > 512_000:
+    # Diese Route verlangt keine Anmeldung — die Signatur wird erst geprüft,
+    # wenn der Körper gelesen ist. Also muss die Grenze schon beim Lesen
+    # greifen, sonst legt ein Fremder dem Server beliebig viel in den Speicher.
+    try:
+        koerper = await koerper_lesen(request, WA_KOERPER_MAX)
+    except KoerperZuGross:
         return JSONResponse({"ok": True})
 
     nutzlast = {}
@@ -5493,12 +5606,13 @@ async def api_marke_logo(request: Request) -> Response:
         return fehler
     if rolle(un) == "mitarbeit":
         return JSONResponse({"fehler": "Das macht die Inhaberin."}, status_code=403)
-    daten = await request.body()
-    if not daten:
-        return JSONResponse({"fehler": "leer"}, status_code=400)
-    if len(daten) > LOGO_MAX:
+    try:
+        daten = await koerper_lesen(request, LOGO_MAX)
+    except KoerperZuGross:
         return JSONResponse({"fehler": "Das Bild ist zu groß — bis 4 MB."},
                             status_code=413)
+    if not daten:
+        return JSONResponse({"fehler": "leer"}, status_code=400)
     if not any(daten.startswith(k) for k in LOGO_TYPEN):
         return JSONResponse({"fehler": "Bitte als PNG oder JPG."}, status_code=400)
     pfad = _logo_pfad(salon_von(un))
@@ -6132,8 +6246,11 @@ async def api_team_foto(request: Request, id: int) -> Response:
         if not c.execute("SELECT 1 FROM team WHERE id=? AND un=?",
                          (id, un)).fetchone():
             return JSONResponse({"fehler": "unbekannt"}, status_code=404)
-    daten = await request.body()
-    if not daten or len(daten) > FOTO_MAX:
+    try:
+        daten = await koerper_lesen(request, FOTO_MAX)
+    except KoerperZuGross:
+        return JSONResponse({"fehler": "Das Bild ist zu groß."}, status_code=413)
+    if not daten:
         return JSONResponse({"fehler": "Das Bild ist zu groß."}, status_code=413)
     pfad = _foto_pfad(un, id)
     pfad.parent.mkdir(parents=True, exist_ok=True)
@@ -6201,6 +6318,10 @@ def api_monatsabschluss(monat: str, request: Request) -> Response:
                       vertraege=vertraege_aktuell()),
         "ustva": ma.ustva_entwurf(monat, erloese, vorsteuer, profil),
         "profil": profil,
+        # Wie gut der Monat gelaufen ist, gemessen an den Zielen der Spec.
+        # Das stand vorher nur in `/api/kpi/{monat}`, und die rief niemand
+        # auf: eine Quote, die niemand sieht, ist keine Kennzahl.
+        "kennzahlen": kennzahlen_monat(monat),
     })
 
 

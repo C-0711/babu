@@ -56,10 +56,33 @@ def _feld(wert: str | None) -> str:
     return '"' + str(wert).replace('"', "'") + '"'
 
 
+# Excel liest ein Feld, das mit einem dieser Zeichen beginnt, als FORMEL —
+# auch in Anführungszeichen. Die Stapeldatei geht ans Steuerbüro und wird
+# dort in Excel geöffnet; ein Lieferantenname wie `=cmd|'/c calc'!A1` wäre
+# damit ein Angriff auf den Rechner der Kanzlei, nicht bloß ein hässlicher
+# Buchungstext.
+FORMELZEICHEN = ("=", "+", "-", "@", "\t", "\r", "\n")
+
+
+def _entschaerfen(text: str) -> str:
+    """Führendes Apostroph vor alles, was Excel für eine Formel hielte.
+
+    Das Apostroph ist Excels eigene „das ist Text"-Markierung und wird beim
+    Anzeigen nicht mitgedruckt. DATEV importiert das Feld als Buchungstext,
+    also mit Apostroph — ein Zeichen mehr im Text ist der Preis dafür, dass
+    aus dem Text kein Befehl wird.
+    """
+    return "'" + text if text[:1] in FORMELZEICHEN else text
+
+
 def _belegfeld1(beleg_nr: str | None) -> str | None:
+    """Belegfeld 1 lässt DATEV nur wenige Zeichen zu — ein Apostroph gehört
+    nicht dazu. Ein führendes Rechenzeichen fällt deshalb weg, statt
+    entschärft zu werden; im Inneren stört es Excel nicht."""
     if not beleg_nr:
         return None
-    return re.sub(r"[^A-Za-z0-9$%&*+\-/]", "", beleg_nr)[:36] or None
+    sauber = re.sub(r"[^A-Za-z0-9$%&*+\-/]", "", beleg_nr).lstrip("+-*/@=")
+    return sauber[:36] or None
 
 
 # Vorsteuer-Schlüssel je Steuersatz. Die Corona-Sätze 5 %/16 % erkennt der
@@ -93,7 +116,10 @@ def buchungszeilen(review: dict) -> list[dict]:
         kurz = f"{int(teile[0]):02d}.{int(teile[1]):02d}." if len(teile) == 3 else ""
         text = " ".join(x for x in (einordnung, kurz, lieferant) if x)
     basis = {"konto": konto, "gegenkonto": GEGENKONTO, "belegdatum": belegdatum,
-             "belegfeld1": _belegfeld1(f.get("beleg_nr")), "text": text[:60]}
+             "belegfeld1": _belegfeld1(f.get("beleg_nr")),
+             # Erst entschärfen, dann kürzen: sonst sprengte das Apostroph
+             # die 60 Zeichen, die DATEV im Buchungstext annimmt.
+             "text": _entschaerfen(text)[:60]}
 
     tabelle = f.get("steuertabelle") or []
     if len(tabelle) > 1:

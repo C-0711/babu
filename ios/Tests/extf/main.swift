@@ -45,6 +45,20 @@ pruefe(zeilen[0].hasPrefix("\"EXTF\";"), "Kopfzeile beginnt mit EXTF")
 pruefe(zeilen[1].contains("\"20260801\"") && zeilen[1].contains("\"20260831\""),
        "Zeitraum aus Parametern, nicht fest verdrahtet")
 
+// --- Formel-Einschleusung -------------------------------------------------
+// Die Stapeldatei landet beim Steuerbüro und wird dort in Excel geöffnet.
+// Ein Lieferantenname, der mit = + - @ beginnt, ist für Excel eine Formel.
+let boese = fixture(lieferant: "=cmd|'/c calc'!A1", nr: "-2+3", datum: "01.08.2026",
+                    netto: 10, ust: 1.9, brutto: 11.9, konto: "6640")
+let boeseFelder = extfStapelText(belege: [boese], von: "20260801", bis: "20260831")
+    .components(separatedBy: "\r\n")[2].components(separatedBy: ";")
+pruefe(boeseFelder[11] == "\"'=cmd|'/c calc'!A1\"",
+       "Lieferantenname wird in Excel keine Formel")
+pruefe(boeseFelder[10] == "\"'-2+3\"", "Belegnummer mit Rechenzeichen wird entschärft")
+pruefe(boeseFelder[6] == "\"70001\"", "harmlose Felder bekommen kein Apostroph")
+pruefe(extfFeld("Sagt \"hallo\"") == "\"Sagt 'hallo'\"",
+       "Anführungszeichen im Text sprengen das Feld nicht")
+
 // --- Belegdatum-Randfälle -----------------------------------------------
 pruefe(extfBelegdatum("kein datum") == "", "unlesbares Datum bleibt leer statt Müll")
 pruefe(extfBelegdatum("32.13.2026") == "", "unplausibles Datum (32.13.) bleibt leer")

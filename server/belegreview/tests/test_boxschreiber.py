@@ -118,3 +118,35 @@ def test_kaputte_arbeitskopie_meldet_sich(box, monkeypatch):
     monkeypatch.setattr(boxschreiber, "_git", kaputt)
     with pytest.raises(boxschreiber.SchreibFehler, match="Vormerken"):
         boxschreiber.schreiben("docs/2026-08/x.txt", b"x", "aufnahme: x", "nina")
+
+
+# ————— Der Dateiname —————
+
+def test_kurze_namen_bleiben_ganz():
+    name = boxschreiber.beleg_dateiname("Rechnung-Mai.pdf")
+    assert name.endswith("-Rechnung-Mai.pdf")
+
+
+def test_lange_namen_verlieren_die_mitte_nicht_den_anfang():
+    """Vorne steht, worum es geht — hinten nur Datum und Endung.
+
+    Vorher schnitt `[-80:]` den Anfang ab: aus
+    „Rechnung-Friseurbedarf-…-2026-03.pdf" wurde „…-2026-03.pdf", und in
+    einer Liste solcher Belege sah jede Zeile gleich aus.
+    """
+    lang = "Rechnung-Friseurbedarf-Grosshandel-Sued-" + "x" * 90 + "-2026-03.pdf"
+    stamm = boxschreiber.beleg_dateiname(lang).split("-", 3)[3]
+    assert stamm.startswith("Rechnung-Friseurbedarf-Grosshandel")
+    assert stamm.endswith("-2026-03.pdf")
+    assert "..." in stamm
+    assert len(stamm) <= 80
+
+
+def test_ein_langer_name_ohne_endung_behaelt_seinen_anfang():
+    stamm = boxschreiber.beleg_dateiname("Kassenbon_" + "y" * 200).split("-", 3)[3]
+    assert stamm.startswith("Kassenbon_")
+    assert len(stamm) <= 80
+
+
+def test_ein_name_ganz_ohne_brauchbare_zeichen_heisst_beleg():
+    assert boxschreiber.beleg_dateiname("").endswith("-beleg")
