@@ -89,6 +89,26 @@ main{padding:26px clamp(18px,3.2vw,64px) 60px;min-height:70dvh}
 main p, .leer, .karte > p{max-width:78ch}
 .ansicht{display:none}.ansicht.an{display:block}
 
+/* ── Mehr Platz heißt mehr nebeneinander ─────────────────────────────────
+   Karten, die nichts voneinander wissen, stapeln sich auf einem breiten
+   Bildschirm sinnlos untereinander: man scrollt an Weißraum vorbei. Ab
+   einer Breite, die zwei volle Karten trägt, stehen sie nebeneinander, und
+   die Spaltenzahl kommt aus der Breite — nicht aus einer Geräteliste.
+   `align-items:start` verhindert, dass eine kurze Karte auf die Höhe ihrer
+   langen Nachbarin gezogen wird. */
+.spalten > *{margin-bottom:12px}
+/* „Nimm die ganze Breite" — als Klasse, damit es an einer Stelle steht und
+   nicht als style="" im HTML verstreut. Inline gesetzte Breiten waren der
+   Grund, warum das Portal breit AUSSAH und schmal WAR. */
+.voll{width:100%;max-width:none}
+@media (min-width:1180px){
+  .spalten{display:grid;align-items:start;gap:14px;
+    grid-template-columns:repeat(auto-fill,minmax(min(100%,420px),1fr))}
+  .spalten > *{margin-bottom:0}
+  /* Was eine Überschrift ist, gehört über alle Spalten, nicht in eine. */
+  .spalten > .lbl, .spalten > h2, .spalten > .voll{grid-column:1/-1}
+}
+
 /* Karten & Zeilen */
 .karte{background:var(--gc-bg);border:1px solid var(--gc-border);border-radius:var(--r);
   padding:16px 18px;margin-bottom:12px}
@@ -274,13 +294,17 @@ main p, .leer, .karte > p{max-width:78ch}
 .dmeta{font:12.5px var(--gc-mono);letter-spacing:.02em;color:var(--gc-muted)}
 .sektion{margin:26px 0 10px}
 
-/* Auf einem breiten Bildschirm ist eine Belegzeile über die ganze Breite
-   keine Vollbreite, sondern Leere: links der Name, rechts der Betrag, in der
-   Mitte nichts. Deshalb wird die Liste dort zu einem Kartenfeld — die
-   Wochenüberschriften laufen weiter über alles. Auf dem Telefon bleibt es
-   eine Spalte, weil dann nur eine hineinpasst. */
-#belege-liste{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));
-  gap:9px;align-items:start}
+/* Die Diagnose des Kartenfelds, das hier bis zum 23.08.2026 stand, war
+   richtig: eine Flex-Zeile über 2400 px ist keine Vollbreite, sondern links
+   der Name, rechts der Betrag und dazwischen nichts. Die Antwort war es
+   nicht — bei 2560 px standen sieben Kacheln nebeneinander, in jeder ein
+   abgeschnittener Lieferantenname, und untereinander fluchtete kein Betrag
+   mit dem nächsten.
+   Eine Buchhaltungsliste liest man senkrecht: den Blick eine Spalte von
+   Beträgen hinunter. Deshalb bleibt es eine Spalte, und die ZEILE wird
+   breit — als Tabelle mit ausgerichteten Feldern (Regel weiter unten, ab
+   1180 px). Das füllt die Breite mit Angaben statt mit Kacheln. */
+#belege-liste{display:grid;grid-template-columns:1fr;gap:9px;align-items:start}
 #belege-liste > .gruppe-kopf{grid-column:1/-1;margin-top:6px}
 #belege-liste > .leer{grid-column:1/-1}
 .zeile{display:flex;align-items:center;gap:14px;background:var(--gc-bg);
@@ -298,6 +322,33 @@ main p, .leer, .karte > p{max-width:78ch}
 .zstatus{font:11.5px var(--gc-mono);letter-spacing:.01em;margin-top:2px;
   color:var(--gc-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .zstatus.ok{color:var(--gc-ok)}.zstatus.frage{color:var(--gc-warn)}.zstatus.laeuft{color:var(--gc-muted)}
+/* Das Belegdatum. Auf schmalen Fenstern steckt es im Status, auf breiten
+   bekommt es eine eigene Spalte — sonst steht es nirgends. */
+.zdatum{display:none}
+
+/* ── Breite Bildschirme: aus der Zeile wird eine Tabelle ─────────────────
+   Eine Flex-Zeile schiebt bei 2400 px zwei Wörter an die beiden Ränder und
+   lässt zwei Meter Nichts dazwischen. Das ist keine genutzte Breite, das ist
+   dieselbe schmale Spalte — nur auseinandergezogen. Ab hier stehen die
+   Angaben in Spalten, die untereinander fluchten: Bild, Name, Datum, Betrag,
+   Konto. Bewusst nur in der Belegliste: `.zeile` wird anderswo mit anderer
+   Kindfolge benutzt, und ein Raster würde die verschieben. */
+@media (min-width:1180px){
+  #belege-liste .zeile, #heute-zuletzt .zeile{display:grid;align-items:center;column-gap:24px;
+    grid-template-columns:44px minmax(200px,2fr) minmax(180px,2fr) 110px
+                          minmax(110px,1fr) minmax(140px,1fr)}
+  /* Der Status steht sonst als zweite Zeile unter dem Namen und lässt die
+     Namensspalte auf 1400 px wachsen — dieselbe Leere, nur verschoben. Als
+     eigene Spalte trägt er Breite mit Inhalt. */
+  #belege-liste .zeile > .zmitte, #heute-zuletzt .zeile > .zmitte,
+  #belege-liste .zeile > .zrechts,
+  #heute-zuletzt .zeile > .zrechts{display:contents}
+  #belege-liste .zstatus, #heute-zuletzt .zstatus{margin-top:0}
+  #belege-liste .zdatum, #heute-zuletzt .zdatum{display:block;font:12.5px var(--gc-mono);
+    color:var(--gc-muted);white-space:nowrap}
+  #belege-liste .zbetrag, #belege-liste .zkonto,
+  #heute-zuletzt .zbetrag, #heute-zuletzt .zkonto{text-align:right}
+}
 .zrechts{text-align:right;flex:none}
 .zbetrag{font:15px var(--gc-mono);font-variant-numeric:tabular-nums;color:var(--gc-fg)}
 .zunten{font:11.5px var(--gc-mono);color:var(--gc-muted);margin-top:2px}
@@ -563,7 +614,14 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 #drop b{font:600 24px var(--gc-serif);color:var(--gc-fg)}
 
 /* Aufräumen */
-#a-aufraeumen .stapel{max-width:520px;margin:0 auto}
+/* Der Wischstapel bleibt mittig — ein Beleg nach dem anderen ist der Sinn.
+   Aber worum es dabei geht, ist das BILD: wer entscheiden soll, muss lesen
+   können, was draufsteht. Auf einem breiten Bildschirm darf die Karte also
+   wachsen, nur nicht ins Uferlose. */
+#a-aufraeumen .stapel{width:min(860px,100%);margin:0 auto}
+@media (min-width:1180px){
+  #a-aufraeumen .bild img{max-height:62dvh}
+}
 #a-aufraeumen .bild{background:var(--gc-desk);border-radius:var(--r);padding:18px;
   display:grid;place-items:center;margin-bottom:14px}
 #a-aufraeumen .bild img{max-width:100%;max-height:44dvh;border-radius:5px;
@@ -778,7 +836,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <div class="gruss" id="heute-gruss">Guten Tag <svg class="ik klein funke" viewBox="0 0 24 24"><use href="#ik-funke"/></svg></div>
     <div id="heute-monatslauf"></div>
     <div id="heute-meldungen"></div>
-    <div id="heute-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+    <div id="heute-inhalt" class="spalten"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
 
   <!-- BUCHHALTUNG: Belege -->
@@ -1215,6 +1273,10 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   <!-- EINRICHTUNG (Steuerdaten, eine Frage pro Schritt) -->
   <section class="ansicht" id="a-einrichtung">
     <a class="zurueck" href="#heute">‹ Heute</a>
+    <!-- Bleibt bewusst schmal: der Assistent stellt EINE Frage je Bildschirm.
+         Eine einzelne Frage über 2500 px zu ziehen macht sie nicht besser,
+         sondern lässt das Eingabefeld verloren aussehen. Vollbreite gilt für
+         Listen, Tabellen und Kacheln — nicht für einen Dialog. -->
     <div style="max-width:560px;margin:0 auto" id="einrichtung-inhalt"></div>
   </section>
 
@@ -1539,8 +1601,9 @@ async function ladeHeute(){
   try{
     const l = await (await api("/api/belege?limit=3")).json();
     if (l.belege.length){
-      html += `<div class="sektion lbl">Zuletzt</div>`;
+      html += `<div class="sektion lbl">Zuletzt</div><div class="voll" id="heute-zuletzt">`;
       for (const z of l.belege) html += belegZeile(z);
+      html += `</div>`;
     }
   }catch{}
   ziel.innerHTML = html;
@@ -1553,11 +1616,13 @@ function belegZeile(z){
   const bild = z.datei && /\.(jpg|jpeg|png)$/i.test(z.datei)
     ? `<img class="thumb" loading="lazy" alt="" src="/api/beleg/${z.stamm}/bild?v=${z.bild_oid}">`
     : `<div class="thumb doc"><svg class="ik" viewBox="0 0 24 24"><use href="#ik-dokument"/></svg></div>`;
+  const konto = z.konto || z.konto_skr04;
   return `<button class="zeile einflug" onclick="location.hash='#detail/${z.stamm}'">
     ${bild}<div class="zmitte"><div class="zname">${z.lieferant || "Beleg vom " + (z.datum || zeitKurz(z.hochgeladen))}</div>
     <div class="zstatus ${art}">${satz}</div></div>
+    <div class="zdatum">${z.datum ? datumKurz(z.datum) : ""}</div>
     <div class="zrechts"><div class="zbetrag">${euro(z.brutto)}</div>
-    <div class="zkonto">${z.konto_skr04 ? z.konto_skr04 + (z.ust_satz!=null ? " · " + z.ust_satz + " %" : "") : ""}</div></div>
+    <div class="zkonto">${konto ? konto + (z.ust_satz!=null ? " · " + z.ust_satz + " %" : "") : ""}</div></div>
   </button>`;
 }
 /* Zeitraum-Gruppen wie im Kanzlei-Standard: Diese Woche / Letzte Woche / Früher */
@@ -2629,7 +2694,7 @@ function scStart(ziel, status){
         Rechnungen — als Foto oder PDF, egal in welcher Reihenfolge. Wir
         lesen das und legen jede Unterlage in ihr Fach.</p>
       <button class="chip" id="sc-waehlen">Unterlagen auswählen</button>
-      <div id="sc-liste" style="margin:12px auto 0;max-width:420px;text-align:left"></div>
+      <div id="sc-liste" class="voll" style="margin:12px 0 0;text-align:left"></div>
       <button class="chip an" id="sc-los" style="margin-top:14px" hidden>Loslesen ›</button>
     </div>`;
   $("#sc-waehlen").addEventListener("click", () => $("#sc-datei").click());
@@ -3260,8 +3325,12 @@ async function ladeFristen(){
 }
 
 function datumKurz(iso){
-  const [j, m, tg] = iso.split("-");
-  return `${tg}.${m}.${j}`;
+  /* Nachsichtig, weil das Feld beides trägt: aus der Ablage kommt ISO, die
+     Deutung reicht bei manchen Belegen schon „21.07.2026" durch. Blind zu
+     zerlegen ergab „undefined.undefined.21.07.2026" mitten in der Liste. */
+  const s = String(iso || "");
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : s;
 }
 
 $("#ab-mon-zurueck").addEventListener("click", () => { abMonat = monatSchieben(abMonat, -1); ladeAbschluss(); });
