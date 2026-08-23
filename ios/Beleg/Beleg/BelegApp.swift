@@ -62,6 +62,10 @@ struct MainTabs: View {
                 .tabItem { Label("Fragen", systemImage: "questionmark.bubble") }
                 .tag(AppStore.Tab.fragen)
         }
+        // Einmal beim Start fragen, als wer dieses Gerät angemeldet ist —
+        // damit das Zeichen oben rechts von Anfang an die Wahrheit sagt und
+        // ein abgelaufener Zugang auffällt, bevor ein Beleg liegen bleibt.
+        .task { await store.kontoNachfragen() }
         // Rechnung aus Mail, WhatsApp oder Dateien: „Teilen → In babu öffnen"
         .onOpenURL { url in
             store.tab = .erfassen

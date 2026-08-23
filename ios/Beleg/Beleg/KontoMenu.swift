@@ -21,9 +21,14 @@ struct KontoMenuView: View {
 
     private var unterzeile: String {
         if store.verbundenAls == nil { return "Mit E-Mail und Passwort verbinden" }
-        return store.zugangAbgelaufen
-            ? "Der Zugang gilt nicht mehr — bitte neu verbinden"
-            : "Dein babu-Konto"
+        if store.zugangAbgelaufen { return "Der Zugang gilt nicht mehr — bitte neu verbinden" }
+        // Sagen, WOMIT man angemeldet ist, nicht nur DASS: „Dein babu-Konto"
+        // beantwortet die Frage nicht, die man sich hier stellt.
+        switch store.verbundenRolle {
+        case "mitarbeit": return "Angemeldet als Mitarbeiterin"
+        case "kanzlei":   return "Angemeldet als Kanzlei"
+        default:          return "Angemeldet — dein babu-Konto"
+        }
     }
 
     var body: some View {
@@ -36,8 +41,11 @@ struct KontoMenuView: View {
                             .foregroundStyle(farbe)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(store.verbundenAls ?? "Noch nicht verbunden")
-                                .font(.subheadline.weight(.medium))
+                                .font(.callout.weight(.medium))
                                 .foregroundStyle(GC.fg)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                                .textSelection(.enabled)
                             Text(unterzeile)
                                 .font(.caption)
                                 .foregroundStyle(store.zugangAbgelaufen ? GC.warn : GC.muted)
@@ -112,6 +120,10 @@ struct KontoMenuView: View {
             .warmerGrund()
             .navigationTitle("Dein Konto")
             .navigationBarTitleDisplayMode(.inline)
+            // Beim Öffnen nachfragen, als wer dieses Gerät angemeldet ist.
+            // Das füllt den Namen auch bei Zugängen aus älteren Fassungen
+            // und sagt nebenbei, ob der Schlüssel überhaupt noch gilt.
+            .task { await store.kontoNachfragen() }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Fertig") { zurueck() }

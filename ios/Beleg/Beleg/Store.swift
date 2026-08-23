@@ -43,6 +43,10 @@ final class AppStore: ObservableObject {
     /// Der Server hat den Zugang abgelehnt (Konto abgeschaltet oder Schlüssel
     /// zurückgezogen). Dann darf die App nicht weiter „Verbunden ✓" behaupten.
     @Published var zugangAbgelaufen = false
+    /// Die Rolle des angemeldeten Kontos — „salon" oder „mitarbeit".
+    /// Wird beim Nachfragen mitgeliefert und im Konto angezeigt, damit
+    /// sichtbar ist, WOMIT man angemeldet ist, nicht nur DASS.
+    @Published var verbundenRolle: String? { didSet { speichern() } }
 
     /// Testphase: zeigt Werkzeuge, die im Alltag nichts zu suchen haben.
     /// Hinter dem Schalter, weil ein Zurücksetzen sonst einen Fingerbreit
@@ -73,6 +77,7 @@ final class AppStore: ObservableObject {
             chatVerlauf = z.chatVerlauf ?? []
         vorlagen = z.vorlagen ?? []
             verbundenAls = z.verbundenAls
+            verbundenRolle = z.verbundenRolle
             testmodus = z.testmodus ?? false
             // Ältere Stände: Demo-Belege am festen Demo-Siegel nachträglich
             // markieren, damit sie nie im echten Stapel landen.
@@ -104,6 +109,7 @@ final class AppStore: ObservableObject {
         var kassenberichte: [Kassenbericht]?
         var chatVerlauf: [ChatUnterhaltung]?
         var verbundenAls: String?
+        var verbundenRolle: String?
         // Neu ab 22.08.2026 — optional, damit ältere Stände weiter laden.
         var vorlagen: [Rechnungsvorlage]?
         var testmodus: Bool?
@@ -114,7 +120,8 @@ final class AppStore: ObservableObject {
                 exportiert: exportiert, geprueft: geprueft, pruefSekunden: pruefSekunden,
                 ablageURL: ablageURL, ablageAktiv: ablageAktiv,
                 kassenberichte: kassenberichte, chatVerlauf: chatVerlauf,
-                verbundenAls: verbundenAls, vorlagen: vorlagen,
+                verbundenAls: verbundenAls, verbundenRolle: verbundenRolle,
+                vorlagen: vorlagen,
                 testmodus: testmodus)
     }
 
@@ -198,6 +205,27 @@ final class AppStore: ObservableObject {
     }
 
     /// Alle offenen Übertragungen erneut anstoßen (App-Start, Foreground, manuell).
+    /// Beim Server nachfragen, als wer dieses Gerät angemeldet ist.
+    ///
+    /// Ein Gerät kann einen gültigen Schlüssel haben, ohne den Namen zu
+    /// kennen — bei Ninas Telefon war das so, der Schlüssel stammt aus
+    /// einer älteren Fassung. „Verbunden" ohne Namen ist keine Auskunft.
+    /// Die Antwort sagt außerdem ehrlich, ob der Zugang noch gilt.
+    @MainActor
+    func kontoNachfragen() async {
+        guard let url = URL(string: ablageURL),
+              let pat = KeychainHelfer.ladePAT() else { return }
+        let antwort = await AblageService.werBinIch(basis: url, pat: pat)
+        if antwort.abgelaufen {
+            zugangAbgelaufen = true
+            return
+        }
+        guard let un = antwort.un else { return }   // kein Netz — nichts ändern
+        zugangAbgelaufen = false
+        if verbundenAls != un { verbundenAls = un }
+        if verbundenRolle != antwort.rolle { verbundenRolle = antwort.rolle }
+    }
+
     func ablageRetry() {
         guard ablageAktiv else { return }
         for b in belege where b.ablageStatus == .ausstehend || b.ablageStatus == .fehlgeschlagen {
