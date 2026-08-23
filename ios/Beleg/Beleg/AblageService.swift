@@ -526,6 +526,33 @@ enum AblageService {
         }
     }
 
+    /// Wer bin ich? (`GET /api/ich`, Bearer-Geräteschlüssel)
+    ///
+    /// Die App merkt sich den Kontonamen beim Verbinden. Wessen Schlüssel
+    /// aus einer älteren Fassung stammt, hat einen gültigen Zugang, aber
+    /// keinen Namen — im Konto stand dann „verbunden" ohne zu sagen, als
+    /// wer. Statt das nur bei neuen Anmeldungen zu füllen, fragt die App
+    /// jetzt nach: der Server weiß es, und die Antwort heilt auch alte
+    /// Installationen, ohne dass jemand sich neu verbinden muss.
+    ///
+    /// Nebenbei ist es die ehrlichste Prüfung, ob der Zugang noch gilt:
+    /// 401 heißt abgelaufen, und das gehört im Konto auch so hin.
+    static func werBinIch(basis: URL, pat: String) async
+        -> (un: String?, rolle: String?, abgelaufen: Bool) {
+        var request = URLRequest(url: basis.appendingPathComponent("api/ich"))
+        request.timeoutInterval = 12
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              let http = antwort as? HTTPURLResponse else { return (nil, nil, false) }
+        if http.statusCode == 401 || http.statusCode == 403 {
+            return (nil, nil, true)
+        }
+        guard http.statusCode == 200,
+              let json = (try? JSONSerialization.jsonObject(with: daten)) as? [String: Any]
+        else { return (nil, nil, false) }
+        return (json["un"] as? String, json["rolle"] as? String, false)
+    }
+
     /// Brief vom Amt ablegen — babu liest ihn und erklärt ihn danach
     /// in einfachen Worten (Sidecar-Erklärung, siehe `briefErklaerung`).
     static func briefAblegen(daten: Data, dateiname: String, basis: URL,
