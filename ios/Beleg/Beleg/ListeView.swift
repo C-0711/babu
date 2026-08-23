@@ -163,6 +163,7 @@ struct ListeView: View {
             }
             .warmerGrund()
             .navigationTitle("Dokumente")
+            .mitMeldenKnopf("Dokumente")
             .mitKontoMenu()
             .navigationDestination(for: UUID.self) { id in
                 DetailView(belegID: id)

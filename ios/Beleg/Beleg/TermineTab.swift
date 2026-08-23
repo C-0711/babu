@@ -152,6 +152,7 @@ struct TermineTab: View {
                 }
             }
             .navigationTitle("Termine")
+            .mitMeldenKnopf("Termine")
             .toolbarTitleDisplayMode(.inline)
             .mitKontoMenu()
             .warmerGrund()

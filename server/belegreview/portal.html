@@ -337,6 +337,14 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   border-radius:8px;padding:10px 14px}
 .siegel .rosette{color:var(--gc-accent);flex:none}
 .chip.mit-ik{display:inline-flex;align-items:center;gap:6px}
+/* Der Rückmeldeknopf. Auf schmalen Fenstern bleibt nur das Zeichen — dort
+   zählt jeder Millimeter im Kopf, und die Sprechblase erklärt sich. */
+@media (max-width:820px){.melden-wort{display:none}}
+#melden-blatt{position:fixed;inset:0;z-index:60;background:rgba(31,30,26,.34);
+  display:grid;place-items:center;padding:20px}
+#melden-blatt[hidden]{display:none}
+.melden-karte{background:var(--gc-bg);border-radius:16px;padding:22px;
+  width:min(520px,100%);box-shadow:0 24px 70px rgba(31,30,26,.3)}
 .ik.funke{color:var(--gc-gold);vertical-align:-2px}
 .siegel .code{font:12px var(--gc-mono);color:var(--gc-fg)}
 .siegel small{display:block;color:var(--gc-desc);font-size:11.5px}
@@ -527,6 +535,28 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   babu ersetzt keine individuelle Steuerberatung.</div>
 </div>
 
+<div id="melden-blatt" hidden role="dialog" aria-modal="true"
+     aria-labelledby="melden-titel">
+  <div class="melden-karte">
+    <div class="gruss" id="melden-titel" style="font-size:20px">Ist dir was aufgefallen?</div>
+    <p style="color:var(--gc-desc);font-size:13px;margin:6px 0 12px">Schreib es
+      einfach hin — in deinen Worten. Wir kümmern uns darum; du musst nichts
+      weiter tun.</p>
+    <div class="chips" style="margin:0 0 10px">
+      <button class="chip an" id="melden-fehler">Etwas stimmt nicht</button>
+      <button class="chip" id="melden-wunsch">Ich hätte gern …</button>
+    </div>
+    <textarea id="melden-text" rows="5" placeholder="Zum Beispiel: Der Beleg vom Bäcker zeigt 19 % statt 7 %."
+      style="width:100%;padding:11px 13px;border:1px solid var(--gc-border);
+             border-radius:10px;font:inherit;background:var(--gc-bg);resize:vertical"></textarea>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
+      <button class="chip an" id="melden-senden">Abschicken</button>
+      <button class="chip" id="melden-zu">Abbrechen</button>
+      <span id="melden-stand" style="font-size:12px;color:var(--gc-muted)"></span>
+    </div>
+  </div>
+</div>
+
 <div id="app" hidden>
 <!-- ————— Symbole —————
      Die App zeichnet dünne, einfarbige Striche (SF Symbols); das Portal
@@ -565,6 +595,8 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <!-- Der Funke in der Begrüßung. Als ✨ ist er ein farbiges Emoji und
          damit das Bunteste auf der Seite; als Strich bleibt er ein Gruß. -->
     <g id="ik-funke"><path d="M12 3.5 13.6 9 19 10.6 13.6 12.2 12 17.7 10.4 12.2 5 10.6 10.4 9z"/><path d="M18.2 15.6l.7 2.2 2.2.7-2.2.7-.7 2.2-.7-2.2-2.2-.7 2.2-.7z"/></g>
+    <!-- Sprechblase mit Ausrufezeichen: „mir ist was aufgefallen". -->
+    <g id="ik-melden"><path d="M20.5 11.5a7.5 7.5 0 0 1-7.5 7.5H8.6L4.2 22l1.1-3.9A7.5 7.5 0 1 1 20.5 11.5z"/><path d="M12.4 7.6v4.2"/><path d="M12.4 14.6h.01"/></g>
     <g id="ik-siegel"><path d="M12 3.2l2.2 1.6 2.7-.2.9 2.6 2.2 1.6-1 2.5 1 2.5-2.2 1.6-.9 2.6-2.7-.2L12 20.8l-2.2-1.6-2.7.2-.9-2.6L4 15.2l1-2.5-1-2.5 2.2-1.6.9-2.6 2.7.2z"/><path d="M9.4 12.2l1.9 1.9 3.5-3.8"/></g>
   </defs>
 </svg>
@@ -582,6 +614,9 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <span id="stand"></span>
     <button class="chip" id="hochladen-knopf">Beleg hochladen</button>
     <input type="file" id="hochladen-datei" accept=".jpg,.jpeg,.png,.pdf,.heic,image/*,application/pdf" multiple hidden>
+    <button class="chip mit-ik" id="melden-knopf" title="Ist dir was aufgefallen?">
+      <svg class="ik klein" viewBox="0 0 24 24"><use href="#ik-melden"/></svg>
+      <span class="melden-wort">Aufgefallen?</span></button>
     <button id="konto-knopf" aria-label="Dein Konto und Einstellungen"
             aria-haspopup="true" aria-expanded="false">
       <span class="striche"><i></i><i></i><i></i></span>
@@ -1644,6 +1679,64 @@ function datumDeutsch(iso){
   return m ? `${m[3]}.${m[2]}.${m[1]}` : iso;
 }
 const feld = (k,v) => `<div class="feld"><span>${k}</span><b>${v}</b></div>`;
+
+/* ————— RÜCKMELDEN —————
+   Was Nina auffällt, wird ein Vorgang, ohne dass sie etwas dafür tut. Sie
+   sieht ein Feld und einen Knopf; den Zusammenhang (welche Ansicht, welcher
+   Beleg, welches Konto) hängt der Server an. */
+let meldeArt = "fehler";
+
+function meldenOeffnen(){
+  meldeArt = "fehler";
+  $("#melden-fehler").classList.add("an");
+  $("#melden-wunsch").classList.remove("an");
+  $("#melden-text").value = "";
+  $("#melden-stand").textContent = "";
+  $("#melden-blatt").hidden = false;
+  setTimeout(() => $("#melden-text").focus(), 60);
+}
+function meldenSchliessen(){ $("#melden-blatt").hidden = true; }
+
+async function meldenSenden(){
+  const text = $("#melden-text").value.trim();
+  const stand = $("#melden-stand");
+  if (text.length < 3){ stand.textContent = "Ein Satz genügt — aber einer muss es sein."; return; }
+  const knopf = $("#melden-senden");
+  knopf.disabled = true; stand.textContent = "wird gesendet …";
+  try{
+    const r = await api("/api/rueckmeldung", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({text, art: meldeArt, quelle: "portal",
+        // Aus welcher Ansicht heraus — das ist die Frage, die man sonst
+        // zurückfragen müsste.
+        ansicht: (location.hash || "#heute").replace("#",""),
+        beleg: (location.hash.startsWith("#detail/")
+                ? location.hash.split("/")[1] : null)})});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok){ stand.textContent = d.fehler || "Ging gerade nicht."; knopf.disabled = false; return; }
+    stand.textContent = "Angekommen ✓ — danke.";
+    setTimeout(meldenSchliessen, 1100);
+  }catch{ stand.textContent = "Gerade keine Verbindung — gleich nochmal."; }
+  finally{ knopf.disabled = false; }
+}
+
+$("#melden-knopf").addEventListener("click", meldenOeffnen);
+$("#melden-zu").addEventListener("click", meldenSchliessen);
+$("#melden-senden").addEventListener("click", meldenSenden);
+$("#melden-fehler").addEventListener("click", () => {
+  meldeArt = "fehler";
+  $("#melden-fehler").classList.add("an"); $("#melden-wunsch").classList.remove("an");
+});
+$("#melden-wunsch").addEventListener("click", () => {
+  meldeArt = "wunsch";
+  $("#melden-wunsch").classList.add("an"); $("#melden-fehler").classList.remove("an");
+});
+$("#melden-blatt").addEventListener("click", ev => {
+  if (ev.target.id === "melden-blatt") meldenSchliessen();   // daneben tippen schließt
+});
+document.addEventListener("keydown", ev => {
+  if (ev.key === "Escape" && !$("#melden-blatt").hidden) meldenSchliessen();
+});
 
 /* ————— LESEPROTOKOLL —————
    Der Server schreibt zu jedem Beleg ein Markdown: jede erkannte Zeile mit

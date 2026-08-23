@@ -3008,6 +3008,118 @@ def api_abschluss_vorschau(jahr: int, datei: str, request: Request) -> Response:
                     headers={"Cache-Control": "private, max-age=86400"})
 
 
+# ── Ninas Rückmeldeknopf ─────────────────────────────────────────────────
+#
+# Was Nina auffällt, soll ein Vorgang werden, ohne dass sie etwas dafür tut.
+#
+# Der Weg dorthin hat eine Klippe: Fixit nimmt für Maschinen einen
+# GitChain-PAT an, aber nur einen mit Zugang zum Kanal `workspace/0711/babu`.
+# Der PAT, mit dem babu in seine Belegbox schreibt, hat den nicht — er sieht
+# 131 Repos, keines davon unter `workspace/`.
+#
+# Deshalb zwei Schritte, in dieser Reihenfolge:
+#
+#   1. Die Meldung wird IMMER in der Belegbox festgehalten. Damit ist sie
+#      versioniert, überlebt jeden Neustart und geht auch dann nicht
+#      verloren, wenn Fixit gerade nicht erreichbar ist.
+#   2. Danach wird versucht, sie an Fixit weiterzureichen.
+#
+# Nina bekommt in beiden Fällen dieselbe Antwort: „ist angekommen". Für sie
+# ist es angekommen — der Rest ist unsere Sache.
+
+FIXIT = os.environ.get("BABU_FIXIT", "https://fixit.0711.io").rstrip("/")
+FIXIT_PAT_PFAD = Path(os.environ.get(
+    "BABU_FIXIT_PAT", str(Path.home() / "gitchain-eingang" / ".pat_fixit")))
+RUECKMELDUNG_MAX = 8000
+
+
+def _fixit_pat() -> str | None:
+    """Der Token für Fixit — bewusst ein eigener, nicht der der Belegbox."""
+    try:
+        t = FIXIT_PAT_PFAD.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return t if t.startswith("gcpat-") else None
+
+
+def _an_fixit(vorgang: dict) -> tuple[bool, str]:
+    """Versuchen weiterzureichen. Scheitern ist erlaubt, Schweigen nicht."""
+    pat = _fixit_pat()
+    if not pat:
+        return False, ("kein Fixit-Token hinterlegt — die Meldung liegt in "
+                       "der Belegbox und wartet")
+    try:
+        r = requests.post(f"{FIXIT}/api/issues", json=vorgang, timeout=15,
+                          headers={"Authorization": f"Bearer {pat}"})
+    except Exception as ex:  # noqa: BLE001
+        return False, f"Fixit nicht erreichbar: {ex!r}"[:160]
+    if r.status_code not in (200, 201):
+        return False, f"Fixit antwortete {r.status_code}: {r.text[:120]}"
+    try:
+        return True, str(r.json().get("key") or r.json().get("id") or "angelegt")
+    except Exception:  # noqa: BLE001
+        return True, "angelegt"
+
+
+@app.post("/api/rueckmeldung")
+async def api_rueckmeldung(request: Request) -> Response:
+    """Was Nina auffällt — ein Feld, ein Knopf, fertig."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+
+    text = str(body.get("text") or "").strip()[:RUECKMELDUNG_MAX]
+    if len(text) < 3:
+        return JSONResponse({"fehler": "Schreib kurz, was los ist — ein Satz "
+                             "genügt."}, status_code=400)
+
+    import rueckmeldung as rm  # noqa: PLC0415
+    meldung = rm.Meldung(
+        text=text,
+        art="wunsch" if str(body.get("art")) == "wunsch" else "fehler",
+        quelle="portal" if str(body.get("quelle")) == "portal" else "app",
+        ansicht=str(body.get("ansicht") or "")[:80] or None,
+        beleg=str(body.get("beleg") or "")[:80] or None,
+        von=un,
+        geraet=str(body.get("geraet") or "")[:80] or None,
+        fassung=str(body.get("fassung") or "")[:40] or None,
+    )
+    try:
+        vorgang = rm.als_vorgang(meldung, autor=un.split("@")[0][:40])
+    except ValueError as ex:
+        return JSONResponse({"fehler": str(ex)}, status_code=400)
+
+    # Schritt 1: festhalten. Das darf nicht scheitern, ohne dass Nina es merkt.
+    import boxschreiber  # noqa: PLC0415
+    stempel = time.strftime("%Y%m%d-%H%M%S")
+    pfad = f"rueckmeldungen/{time.strftime('%Y-%m')}/{stempel}-{_un_ordner(un)}.json"
+    gesichert = True
+    try:
+        await run_in_threadpool(
+            boxschreiber.schreiben, pfad,
+            json.dumps({"meldung": vars(meldung), "vorgang": vorgang},
+                       ensure_ascii=False, indent=1).encode(),
+            f"rückmeldung: {vorgang['title'][:60]}", un)
+    except Exception as ex:  # noqa: BLE001
+        gesichert = False
+        print(f"[rückmeldung] konnte nicht abgelegt werden: {ex!r}", flush=True)
+
+    # Schritt 2: weiterreichen.
+    weiter, hinweis = await run_in_threadpool(_an_fixit, vorgang)
+    print(f"[rückmeldung] {un}: {vorgang['title'][:60]} — "
+          f"abgelegt={gesichert} weitergereicht={weiter} ({hinweis})", flush=True)
+
+    if not gesichert and not weiter:
+        return JSONResponse({"fehler": "Das ging gerade nicht — bitte gleich "
+                             "noch einmal."}, status_code=503)
+    return JSONResponse({"ok": True, "titel": vorgang["title"],
+                         "weitergereicht": weiter, "hinweis": hinweis})
+
+
 @app.get("/api/salon-check/bericht")
 def api_salon_check_bericht(request: Request, jahr: int = 0) -> Response:
     """Der Bericht zur Salonprüfung als Markdown — was babu über den Salon weiß."""
