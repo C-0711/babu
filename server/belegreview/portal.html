@@ -462,6 +462,19 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 .probe .wo{flex:none;margin-left:auto;padding-top:3px;white-space:nowrap;
   font:11px var(--gc-mono);color:var(--gc-muted)}
 
+/* Der Vertragsentwurf. Der Hinweis, dass die Vorlage anwaltlich ungeprüft
+   ist, steht bewusst in derselben Größe wie der Rest — klein gesetzt wäre er
+   genau das Kleingedruckte, das er nicht sein darf. */
+.ungeprueft{margin-top:12px;padding:10px 12px;border-radius:8px;font-size:13px;
+  line-height:1.5;color:var(--gc-body);background:var(--gc-accent-subtle);
+  border-left:3px solid var(--gc-warn)}
+.vertrag{margin-top:14px}
+.vertrag .blatt{background:var(--gc-canvas);border:1px solid var(--gc-border);
+  border-radius:var(--r);padding:16px 18px;max-height:60dvh;overflow:auto;
+  white-space:pre-wrap;font:13px/1.6 var(--gc-sans);color:var(--gc-body)}
+.vertrag .liste{margin-top:10px;font-size:13px;color:var(--gc-desc)}
+.vertrag .liste li{margin-left:18px}
+
 /* Beleg-Weg */
 .weg{list-style:none}
 .weg li{display:flex;gap:12px;padding:0 0 16px;position:relative}
@@ -1248,10 +1261,18 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
           <input class="suchfeld" id="pn-entgelt" style="margin:0;flex:1 1 110px" placeholder="Brutto/Monat" inputmode="decimal">
         </div>
         <input class="suchfeld" id="pn-taetigkeit" style="margin:0" placeholder="Tätigkeit, z. B. Friseurin">
-        <button class="chip" onclick="personalAnlegen()">Anlegen und Link erzeugen</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="chip" onclick="personalAnlegen()">Anlegen und Link erzeugen</button>
+          <button class="chip" onclick="vertragEntwurf()">Arbeitsvertrag entwerfen</button>
+        </div>
       </div>
+      <div class="ungeprueft">Die Vertragsvorlagen hat <b>kein Fachanwalt geprüft</b>.
+        babu rechnet Mindestlohn, Urlaub, Probezeit und Fristen nach und lehnt
+        ab, was nicht zulässig wäre — aber der Wortlaut selbst gehört einmal
+        einer Anwältin vorgelegt, bevor du ihn unterschreiben lässt.</div>
       <div id="pn-hinweis" style="font-size:12px;color:var(--gc-desc);margin-top:10px"></div>
       <div id="pn-fehler" style="font-size:12px;color:var(--gc-accent);margin-top:8px"></div>
+      <div id="pn-vertrag"></div>
     </details>
   </section>
 
@@ -4275,6 +4296,78 @@ function linkTeilen(url){
              + `Minuten und du brauchst nur dein Telefon: ${url}`;
   if (navigator.share) navigator.share({text});
   else { navigator.clipboard.writeText(text); alert("In die Zwischenablage kopiert."); }
+}
+
+/* ————— Der Arbeitsvertrag —————
+   babu baut aus denselben Eckdaten, die oben schon stehen, einen ganzen
+   Vertrag: Klauseln, Anlagen, Urlaubstage, Kündigungsfristen. Was nicht
+   zulässig wäre, kommt gar nicht erst zurück — dann steht hier der Satz,
+   warum nicht, statt eines Vertrags mit Warnhinweis darin. */
+async function vertragEntwurf(){
+  const ziel = $("#pn-vertrag");
+  const nimm = id => ($("#" + id).value || "").trim();
+  const koerper = {
+    art: nimm("pn-art"), eintritt: nimm("pn-eintritt"),
+    stunden_woche: nimm("pn-stunden").replace(",", "."),
+    tage_woche: nimm("pn-tage").replace(",", "."),
+    entgelt: nimm("pn-entgelt").replace(",", "."),
+    taetigkeit: nimm("pn-taetigkeit"),
+    arbeitnehmerin: `${nimm("pn-vorname")} ${nimm("pn-name")}`.trim(),
+  };
+  ziel.innerHTML = `<div class="skelett" style="height:120px;margin-top:14px"></div>`;
+  let r, d;
+  try{
+    r = await api("/api/arbeitsvertrag/entwurf", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(koerper)});
+    d = await r.json();
+  }catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+  if (!r.ok){
+    // Die Absage ist ein ganzer Satz („Der Mindestlohn liegt 2026 bei
+    // 13,90 €") — genau der gehört hierher, nicht „ging nicht".
+    ziel.innerHTML = `<div class="ungeprueft" style="border-left-color:var(--gc-danger)">
+      <b>So geht der Vertrag nicht.</b><br>${esc(d.fehler || "Das ging nicht.")}</div>`;
+    return;
+  }
+  ziel.innerHTML = vertragKarte(d);
+  ziel.scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+
+/* Der fertige Entwurf am Bildschirm: erst was babu daran geprüft hat, dann
+   der Wortlaut, dann die Anlagen. Der Hinweis auf die fehlende anwaltliche
+   Prüfung steht oben — nicht darunter, wo ihn niemand mehr liest. */
+function vertragKarte(v){
+  const a = v.angaben || {};
+  const eck = [
+    ["Art", v.art_name], ["Eintritt", datumDeutsch(a.eintritt)],
+    ["Stunden je Woche", a.stunden_woche], ["Tage je Woche", a.tage_woche],
+    ["Brutto im Monat", a.entgelt != null ? euro(a.entgelt) : null],
+    ["Stundenlohn", a.stundenlohn != null ? euro(a.stundenlohn) : null],
+    ["Urlaub", a.urlaubstage ? a.urlaubstage + " Tage" : null],
+    ["Probezeit", a.probezeit_monate ? a.probezeit_monate + " Monate" : "keine"],
+  ].filter(x => x[1] != null && x[1] !== "");
+  return `<div class="vertrag">
+    <div class="ungeprueft"><b>Entwurf — kein Fachanwalt geprüft</b><br>
+      Lies ihn durch, bevor du ihn weitergibst. babu hat nachgerechnet, was
+      sich nachrechnen lässt; für den Wortlaut steht niemand gerade.</div>
+    <div class="karte" style="margin:12px 0 0">
+      ${eck.map(x => feld(x[0], esc(String(x[1])))).join("")}
+    </div>
+    ${(v.befunde || []).map(x => `<div class="ungeprueft"
+      style="border-left-color:${x.art === "warnung" ? "var(--gc-danger)" : "var(--gc-accent)"}">
+      ${esc(x.text)}</div>`).join("")}
+    <div class="ungeprueft" style="border-left-color:var(--gc-accent)">
+      ${esc((v.form || {}).grund || "")}</div>
+    <div class="blatt">${esc(v.text || "")}</div>
+    <div class="liste"><b>Das gehört noch dazu:</b><ul>${
+      (v.anlagen || []).map(x => `<li>${esc(x.titel)}${
+        x.pflicht ? "" : " (freiwillig)"}</li>`).join("")}</ul></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      <button class="chip" onclick="navigator.clipboard.writeText(
+        this.closest('.vertrag').querySelector('.blatt').textContent);
+        this.textContent='Kopiert ✓'">Wortlaut kopieren</button>
+      <button class="chip" onclick="this.closest('.vertrag').remove()">Schließen</button>
+    </div>
+  </div>`;
 }
 
 async function linkZeigen(id){
