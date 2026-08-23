@@ -40,6 +40,7 @@ struct CaptureTab: View {
             }
             .warmerGrund()
             .navigationTitle("Erfassen")
+            .mitMeldenKnopf("Erfassen")
             .toolbarTitleDisplayMode(.inline)
             .mitKontoMenu()
             // Kamera an, sobald der Reiter offen ist. Ein Platzhalter, den

@@ -78,6 +78,7 @@ struct FragenTab: View {
             .background(GC.canvas)
             .warmerGrund()
             .navigationTitle("Fragen")
+            .mitMeldenKnopf("Fragen")
             .mitKontoMenu()
             .toolbarTitleDisplayMode(.inline)
             .toolbar {

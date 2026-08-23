@@ -526,6 +526,37 @@ enum AblageService {
         }
     }
 
+    /// Ninas Rückmeldung abschicken (`POST /api/rueckmeldung`).
+    ///
+    /// Der Server hält sie in der Belegbox fest und reicht sie an Fixit
+    /// weiter. Für Nina ist beides derselbe Vorgang: sie schreibt, es kommt
+    /// an. Ob Fixit gerade erreichbar war, ist unsere Sache, nicht ihre —
+    /// deshalb gilt hier schon 200 als Erfolg.
+    static func rueckmeldenSenden(text: String, art: String, ansicht: String,
+                                  beleg: String?, geraet: String?,
+                                  fassung: String?, basis: URL,
+                                  pat: String) async -> (ok: Bool, fehler: String?) {
+        var request = URLRequest(url: basis.appendingPathComponent("api/rueckmeldung"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var koerper: [String: Any] = ["text": text, "art": art,
+                                      "quelle": "app", "ansicht": ansicht]
+        if let beleg { koerper["beleg"] = beleg }
+        if let geraet { koerper["geraet"] = geraet }
+        if let fassung { koerper["fassung"] = fassung }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: koerper)
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              let http = antwort as? HTTPURLResponse else {
+            return (false, "Gerade keine Verbindung — gleich noch einmal.")
+        }
+        if http.statusCode == 200 { return (true, nil) }
+        let json = (try? JSONSerialization.jsonObject(with: daten)) as? [String: Any]
+        return (false, json?["fehler"] as? String
+                ?? "Das hat gerade nicht geklappt.")
+    }
+
     /// Wer bin ich? (`GET /api/ich`, Bearer-Geräteschlüssel)
     ///
     /// Die App merkt sich den Kontonamen beim Verbinden. Wessen Schlüssel

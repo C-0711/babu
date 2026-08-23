@@ -28,6 +28,7 @@ struct KasseTab: View {
             .background(GC.canvas)
             .warmerGrund()
             .navigationTitle("Kassenbuch")
+            .mitMeldenKnopf("Kassenbuch")
             .toolbarTitleDisplayMode(.inline)
             .mitKontoMenu()
             .fullScreenCover(item: $workflow) { ref in
