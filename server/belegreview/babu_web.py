@@ -551,11 +551,34 @@ def _blobs_lesen(oids: list[str]) -> dict[str, bytes]:
 
 
 def _monat_aus_name(name: str, pfad: str) -> str | None:
+    """Notnagel: der Monat aus dem Hochladezeitpunkt im Dateinamen.
+
+    Nur solange kein Belegdatum gelesen ist — siehe `_beleg_monat`.
+    """
     m = re.match(r"^(\d{4})(\d{2})\d{2}-", name)
     if m:
         return f"{m.group(1)}-{m.group(2)}"
     m = re.match(r"^docs/(\d{4}-\d{2})/", pfad)
     return m.group(1) if m else None
+
+
+def _beleg_monat(datum, name: str, pfad: str) -> str | None:
+    """In welchen Monat ein Beleg gehört: den seines DATUMS.
+
+    Das ist keine Kleinigkeit. Der Monat steuert den Monatsabschluss, den
+    DATEV-Stapel und die Umsatzsteuer-Voranmeldung. Bisher kam er aus dem
+    Zeitstempel im Dateinamen, also aus dem Hochladen — ein Kassenbon vom
+    5. März, den Nina im August abfotografiert, landete im August. Damit
+    stimmt weder der Abschluss des einen noch der des anderen Monats.
+
+    Erst wenn kein Datum gelesen ist, bleibt der Hochladezeitpunkt als
+    Notnagel: irgendwo muss der Beleg auftauchen, sonst fehlt er ganz.
+    """
+    if isinstance(datum, str):
+        m = re.match(r"^(\d{4})-(\d{2})-\d{2}$", datum)
+        if m:
+            return f"{m.group(1)}-{m.group(2)}"
+    return _monat_aus_name(name, pfad)
 
 
 def _zeiten_walk() -> dict[str, dict]:
@@ -642,7 +665,7 @@ def _index_bauen(head: str) -> None:
             "stamm": stamm,
             "datei": pfad,
             "bild_oid": pfade.get(pfad),
-            "monat": _monat_aus_name(name, pfad),
+            "monat": _beleg_monat(f.get("datum"), name, pfad),
             "hochgeladen": (zeiten.get(pfad) or {}).get("zeit"),
             "status": _status_ableiten(review, bewirtung_da),
             "review_zeit": (zeiten.get(review_pfad_) or {}).get("zeit") if review else None,
@@ -672,6 +695,10 @@ def _index_bauen(head: str) -> None:
             for kk in ("lieferant", "datum"):
                 if ergaenzung.get(kk):
                     eintrag[kk] = ergaenzung[kk]
+            if ergaenzung.get("datum"):
+                # Wer das Datum nachträgt, verschiebt damit auch den Monat —
+                # sonst bliebe der Beleg im falschen Abschluss stehen.
+                eintrag["monat"] = _beleg_monat(ergaenzung["datum"], name, pfad)
             # Beantwortete Punkte verschwinden aus der Nachfrage-Liste.
             beantwortet = set(ergaenzung.get("beantwortet") or [])
             eintrag["offen"] = [o for o in eintrag["offen"] if o not in beantwortet]
