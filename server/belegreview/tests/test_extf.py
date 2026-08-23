@@ -117,6 +117,47 @@ def test_unbekannter_satz_kommt_nicht_in_den_stapel():
     assert len(text.rstrip("\r\n").split("\r\n")) == 2      # nur Kopf + Spalten
 
 
+def _mit_text(buchungstext, beleg_nr="R-1"):
+    return {"felder": {"brutto": 119.0, "ust_satz": 19, "datum": "12.08.2026",
+                       "beleg_nr": beleg_nr},
+            "einschaetzung": {"konto_skr04": "5900"},
+            "semantik": {"belegart": "Wareneinkauf"},
+            "vlm": {"buchungstext": buchungstext}}
+
+
+def test_buchungstext_wird_in_excel_keine_formel():
+    """Die EXTF-Datei landet beim Steuerbüro und wird dort in Excel geöffnet.
+
+    Ein Buchungstext, der mit `=`, `+`, `-` oder `@` beginnt, ist für Excel
+    eine Formel — ein Lieferantenname wie `=cmd|…` wird damit zum Angriff
+    auf den Rechner der Steuerkanzlei. Das führende Apostroph macht daraus
+    wieder Text; DATEV liest das Feld unverändert als Buchungstext.
+    """
+    for gefaehrlich in ("=cmd|'/c calc'!A1", "+1+1", "-2+3", "@SUM(A1)"):
+        zeile = extf._zeile(_zeilen(_mit_text(gefaehrlich))[0])
+        feld = zeile.split(";")[13]
+        assert feld.startswith('"\''), feld
+        assert gefaehrlich in feld            # der Inhalt bleibt vollständig
+
+
+def test_harmloser_buchungstext_bleibt_unangetastet():
+    """Kein Apostroph, wo keines hingehört — sonst stünde es in jeder Buchung."""
+    zeile = extf._zeile(_zeilen(_mit_text("Wareneinkauf Großhandel"))[0])
+    assert zeile.split(";")[13] == '"Wareneinkauf Großhandel"'
+
+
+def test_buchungstext_bleibt_auch_entschaerft_hoechstens_sechzig_zeichen():
+    """DATEV nimmt 60 Zeichen — das Schutzzeichen darf sie nicht sprengen."""
+    zeile = _zeilen(_mit_text("=" + "A" * 80))[0]
+    assert len(zeile["text"]) == 60
+
+
+def test_belegfeld_faengt_nie_mit_einem_rechenzeichen_an():
+    """Belegfeld 1 lässt DATEV nur wenige Zeichen zu — ein Apostroph gehört
+    nicht dazu. Also fällt das Rechenzeichen vorn weg."""
+    assert _zeilen(_mit_text("Einkauf", beleg_nr="-2+3"))[0]["belegfeld1"] == "2+3"
+
+
 def test_letzter_tag_im_februar():
     """Schaltjahr-Regel, nicht die Vierer-Faustregel: 2100 hat keinen 29.02."""
     assert extf.stapel([], "2024-02", erzeugt=ERZEUGT).split(";")[15] == "20240229"

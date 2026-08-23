@@ -30,6 +30,8 @@ from __future__ import annotations
 
 import datetime as dt
 
+from geld import anteil_cent
+
 # ———————————————————————————————————————————————————————————————
 # Sozialversicherung 2026
 # ———————————————————————————————————————————————————————————————
@@ -207,34 +209,38 @@ def sv_beitraege(brutto_cent: int, *, kv_zusatz: float = 0.029,
     an = ag = 0
     teile = {}
 
+    # Gerundet wird mit `anteil_cent`, nicht mit `round`: § 23 SGB IV und die
+    # Beitragsverfahrensverordnung verlangen kaufmännische Rundung auf den
+    # Cent — `round` rundet den halben Cent zur geraden Ziffer und meldet
+    # damit systematisch falsche Beiträge.
     if kv_pflichtig:
-        kv = round(kv_pv_basis * (w["kv_allgemein"] + kv_zusatz))
+        kv = anteil_cent(kv_pv_basis, w["kv_allgemein"] + kv_zusatz)
         teile["kv"] = kv
         an += kv // 2
         ag += kv - kv // 2
 
         pv_satz = w["pv"] - min(kinder_abschlaege, 4) * w["pv_abschlag_je_kind"]
-        pv = round(kv_pv_basis * pv_satz)
+        pv = anteil_cent(kv_pv_basis, pv_satz)
         # Der Zuschlag für Kinderlose trägt allein die Arbeitnehmerin.
-        zuschlag = round(kv_pv_basis * w["pv_kinderlos"]) if kinderlos else 0
+        zuschlag = anteil_cent(kv_pv_basis, w["pv_kinderlos"]) if kinderlos else 0
         teile["pv"] = pv + zuschlag
         an += pv // 2 + zuschlag
         ag += pv - pv // 2
 
     if rv_pflichtig:
-        rv = round(rv_alv_basis * w["rv"])
+        rv = anteil_cent(rv_alv_basis, w["rv"])
         teile["rv"] = rv
         an += rv // 2
         ag += rv - rv // 2
 
     if alv_pflichtig:
-        alv = round(rv_alv_basis * w["alv"])
+        alv = anteil_cent(rv_alv_basis, w["alv"])
         teile["alv"] = alv
         an += alv // 2
         ag += alv - alv // 2
 
     # Insolvenzgeldumlage trägt der Arbeitgeber allein.
-    insolvenz = round(rv_alv_basis * w["insolvenzgeld"])
+    insolvenz = anteil_cent(rv_alv_basis, w["insolvenzgeld"])
     ag += insolvenz
     teile["insolvenzgeld"] = insolvenz
 

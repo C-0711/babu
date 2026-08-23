@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import re
 
+from geld import rund as _rund
+
 # Bis zu diesem Bruttobetrag genügt die Kleinbetragsrechnung (§ 33 UStDV):
 # ohne Empfängeranschrift, ohne getrennten Steuerausweis.
 KLEINBETRAG_GRENZE = 250.0
@@ -24,10 +26,6 @@ HINWEIS_19 = ("Kein Ausweis von Umsatzsteuer nach § 19 UStG "
 
 class RechnungFehler(ValueError):
     """Die Rechnung ließe sich so nicht stellen."""
-
-
-def _rund(wert: float) -> float:
-    return round(wert + 0.0, 2)
 
 
 def naechste_nummer(vorhandene: list[str | None], jahr: int) -> str:

@@ -184,3 +184,29 @@ def test_offen_bis_bezahlt():
     assert re_.stand(r) == "offen"
     assert re_.stand(dict(r, bezahlt_am="2026-09-02")) == "bezahlt"
     assert re_.stand(dict(r, storniert_durch="2026-0002")) == "storniert"
+
+
+# ————— Runden —————
+
+def test_halber_cent_steuer_geht_auf_nicht_zur_geraden_zahl():
+    """2,50 € netto zu 19 % sind 0,475 € Steuer — kaufmännisch also 0,48 €.
+
+    Pythons `round()` rundete hier auf 0,47 ab, weil es zur geraden Ziffer
+    rundet. Auf einer Rechnung ist das falsch ausgewiesene Steuer.
+    """
+    r = re_.aufbauen(nummer="2026-0001", datum="2026-08-21", empfaenger=EMPF,
+                     positionen=[pos(betrag=2.50, satz=19)], stammdaten=STAMM)
+    assert r["ust"] == 0.48
+    assert r["saetze"] == [{"satz": 19, "netto": 2.5, "ust": 0.48}]
+    assert r["brutto"] == 2.98
+
+
+def test_glatte_betraege_bleiben_wie_sie_waren():
+    """Was schon richtig gerechnet war, darf sich nicht verschieben."""
+    r = re_.aufbauen(nummer="2026-0001", datum="2026-08-21", empfaenger=EMPF,
+                     positionen=[pos(betrag=450.0, satz=19),
+                                 pos(text="Pflegeset", betrag=19.90, satz=7)],
+                     stammdaten=STAMM)
+    assert r["netto"] == 469.9
+    assert r["ust"] == 86.89          # 85,50 + 1,39
+    assert r["brutto"] == 556.79

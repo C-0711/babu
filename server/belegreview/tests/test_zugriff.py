@@ -5,6 +5,7 @@ kein Zugang zu ihren Belegen: freigeschaltet ist, wer zum Betrieb gehört
 (Inhaberin, ihr Team) oder ihn betreut (Kanzlei). Wer sich selbst
 registriert, bekommt sein Konto — aber keine fremden Belege zu sehen.
 """
+import hashlib
 import json
 import subprocess
 import sys
@@ -15,6 +16,15 @@ import pytest
 HIER = Path(__file__).resolve().parent
 GOLDEN = HIER / "golden" / "review_weingaertle.json"
 STAMM = "20260812-225200-c781d6-beleg_2026-07-21_weingaerty_22bf8b36"
+
+# Die `welt`-Fixture ersetzt `babu_web.wer_token` dauerhaft durch einen
+# Platzhalter, damit kein Test gitchain.de anruft. Wer die echte Funktion
+# prüfen will, muss sie sich vorher merken — beim Einsammeln der Tests steht
+# sie noch.
+sys.path.insert(0, str(HIER.parent))
+import babu_web as _babu_web_beim_einsammeln  # noqa: E402
+
+ECHTES_WER_TOKEN = _babu_web_beim_einsammeln.wer_token
 
 
 def _git(repo: Path, *args: str) -> None:
@@ -228,6 +238,31 @@ def test_verwaltung_richtet_die_box_ein(welt):
     verwaltung.post("/api/nutzer-aktion",
                     json={"email": "neu@salon.de", "aktion": "box_sperren"})
     assert fremde.get("/api/belege").status_code == 403
+
+
+def test_der_pat_zwischenspeicher_schluesselt_auf_sha256(welt, monkeypatch):
+    """`hash()` ist der falsche Schlüssel für einen Zugangsspeicher.
+
+    Er ist je Prozessstart zufällig gesalzen und für Zeichenketten auf Tempo
+    gebaut, nicht auf Kollisionsfreiheit — wer zwei Token mit demselben
+    `hash()` findet, bekommt das Konto des anderen.
+    """
+    bw = welt
+
+    class Antwort:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"un": "christoph0711.io"}
+
+    monkeypatch.setattr(bw.requests, "get", lambda *a, **k: Antwort())
+    bw._CACHE.clear()
+    try:
+        assert ECHTES_WER_TOKEN("ein-geheimes-token") == "christoph0711.io"
+        assert list(bw._CACHE) == [hashlib.sha256(b"ein-geheimes-token").hexdigest()]
+    finally:
+        bw._CACHE.clear()
 
 
 def test_von_der_verwaltung_angelegte_konten_haben_die_box(welt):

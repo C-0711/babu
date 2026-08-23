@@ -9,6 +9,8 @@ sie sich stützt und was noch fehlt.
 """
 from __future__ import annotations
 
+from geld import rund as _rund
+
 # Kostengruppen der BWA nach SKR04 — die Konten, die babu vergibt.
 KOSTENGRUPPEN: list[tuple[str, str, tuple[str, ...]]] = [
     ("personal", "Löhne und Gehälter", ("6000", "6010", "6020", "6030",
@@ -32,10 +34,6 @@ KENNZIFFERN = {
     "66": "Vorsteuer aus Rechnungen",
     "83": "Das zahlst du (oder bekommst zurück)",
 }
-
-
-def _rund(wert: float) -> float:
-    return round(wert + 0.0, 2)
 
 
 def _netto(brutto: float, satz: int) -> float:

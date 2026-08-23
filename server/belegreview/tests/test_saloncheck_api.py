@@ -153,6 +153,45 @@ def test_status_nach_neustart_ist_unterbrochen(welt):
     assert "nochmal" in d["hinweis"]
 
 
+def test_beendete_auftraege_werden_nach_der_frist_vergessen(welt):
+    """`_ABSCHLUSS_JOBS` wuchs bis zum Neustart des Prozesses.
+
+    Jeder Lauf hinterließ einen Eintrag samt aller gelesenen Felder — auch
+    der von vorgestern, den niemand mehr abfragt.
+    """
+    client, _, bw = welt
+    alt = time.time() - bw.ABSCHLUSS_JOB_FRIST - 1
+    bw._ABSCHLUSS_JOBS["vorgestern@salon.de"] = {"stand": "fertig", "jahr": 2023,
+                                                 "beendet_um": alt}
+    bw._ABSCHLUSS_JOBS["gescheitert@salon.de"] = {"stand": "fehler", "jahr": 2023,
+                                                  "beendet_um": alt}
+    bw._ABSCHLUSS_JOBS["eben@salon.de"] = {"stand": "fertig", "jahr": 2024,
+                                           "beendet_um": time.time()}
+    bw._ABSCHLUSS_JOBS["laeuft@salon.de"] = {"stand": "liest", "jahr": 2024}
+
+    client.get("/api/abschluss/status")
+
+    assert "vorgestern@salon.de" not in bw._ABSCHLUSS_JOBS
+    assert "gescheitert@salon.de" not in bw._ABSCHLUSS_JOBS
+    # Frisch Fertiges wird noch abgefragt, Laufendes hat kein Ende.
+    assert "eben@salon.de" in bw._ABSCHLUSS_JOBS
+    assert "laeuft@salon.de" in bw._ABSCHLUSS_JOBS
+
+
+def test_nach_dem_aufraeumen_kommt_der_stand_aus_der_datenbank(welt):
+    """Vergessen heißt nicht verloren — der Endstand liegt im Schnappschuss."""
+    client, _, bw = welt
+    bw.db_abschluss_snapshot("christoph0711.io", 2024,
+                             {"stand": "fertig", "jahr": 2024, "dokumente": [],
+                              "felder": [], "vorschlaege": [], "hinweis": "steht"})
+    bw._ABSCHLUSS_JOBS["christoph0711.io"] = {
+        "stand": "fertig", "jahr": 2024,
+        "beendet_um": time.time() - bw.ABSCHLUSS_JOB_FRIST - 1}
+    d = client.get("/api/abschluss/status").json()
+    assert bw._ABSCHLUSS_JOBS == {}
+    assert d["stand"] == "fertig" and d["hinweis"] == "steht"
+
+
 def test_salon_check_ohne_kennzahlen_ist_leer(welt):
     client, _, _ = welt
     r = client.get("/api/salon-check", params={"jahr": 2024}).json()

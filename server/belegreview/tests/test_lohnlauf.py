@@ -164,6 +164,35 @@ def test_negatives_brutto_gibt_es_nicht():
         ll.sv_beitraege(-1)
 
 
+def test_der_halbe_cent_geht_auf():
+    """§ 23 SGB IV verlangt kaufmännische Rundung, nicht die zur geraden Zahl.
+
+    1.002,50 € Brutto ergeben rechnerisch 186,465 € Rentenversicherung und
+    26,065 € Arbeitslosenversicherung. Pythons `round()` machte daraus
+    186,46 € und 26,06 €, weil es auf die gerade Ziffer abrundet — ein
+    falsch gemeldeter Beitrag, kein Schönheitsfehler.
+    """
+    b = ll.sv_beitraege(100250)
+    assert b["teile"]["rv"] == 18647      # nicht 18646
+    assert b["teile"]["alv"] == 2607      # nicht 2606
+
+
+def test_der_halbe_cent_geht_auch_dann_auf_wenn_float_daneben_liegt():
+    """1.001,25 € × 3,6 % sind exakt 36,045 € — als `float` aber 36,04499…
+
+    Deshalb wird der Anteil in `Decimal` multipliziert: sonst liefe die
+    Rundungsregel ins Leere, bevor sie überhaupt greifen könnte.
+    """
+    assert ll.sv_beitraege(100125)["teile"]["pv"] == 3605      # nicht 3604
+
+
+def test_bekannte_beitraege_verschieben_sich_nicht():
+    """Was schon richtig gerundet war, muss auf den Cent gleich bleiben."""
+    b = ll.sv_beitraege(300000, kv_zusatz=0.029)
+    assert b["teile"] == {"kv": 52500, "pv": 10800, "rv": 55800,
+                          "alv": 7800, "insolvenzgeld": 450}
+
+
 # ————— Die Übergabe —————
 
 def test_die_uebergabe_enthaelt_stammdaten_und_bewegungsdaten():
