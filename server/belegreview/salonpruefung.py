@@ -144,6 +144,17 @@ FELD_NAME = {
 # bescheid/euer/bwa/susa/anlagen. Beide sind gültig, je nachdem, wer die
 # Unterlage klassifiziert hat — also stehen beide hier. Fehlte eine Art,
 # fiele sie stillschweigend durch und babu lernte nichts.
+#
+# Seit 23.08.2026 kommt das zweite Vokabular wirklich an: die Salonprüfung
+# reicht durch, was `abschluss_lesen` nicht kennt, an `einsortieren` weiter
+# (babu_web.unterlage_einordnen). Vorher hieß Ninas Mietvertrag „sonstiges",
+# und für sonstiges wird nichts geerntet — die Liste war also vollständig
+# und wirkungslos zugleich.
+#
+# **Wer eine Art hinzufügt, schreibt ihre Zeile hier mit.** Ohne Eintrag
+# wird nichts geerntet, und das sieht von außen genauso aus wie „hier steht
+# nichts drin". `tests/test_saloncheck_strecke.py` prüft die Vollständigkeit
+# gegen beide Klassifikatoren.
 ERLAUBT_JE_ART: dict[str, tuple[str, ...]] = {
     # Post vom Amt: Bescheide nennen die Steuernummer ihres Adressaten.
     "behoerde": ("steuernummer", "finanzamt", "ust_id", "kleinunternehmer",

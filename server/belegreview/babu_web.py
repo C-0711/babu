@@ -640,6 +640,65 @@ def _status_ableiten(review: dict | None, bewirtung_da: bool) -> str:
     return "nachfrage"
 
 
+# Welche offene Frage eine nachgetragene Angabe beantwortet.
+#
+# Die offenen Punkte sind ganze Sätze aus `belegdeutung` — „Der
+# Rechnungsbetrag ist nicht sicher zu lesen." Verglichen wurde bisher gegen
+# die Feldnamen der Angaben („brutto"), und das kann nie zusammenpassen: die
+# Nutzerin trug den Betrag nach, und die Frage danach blieb trotzdem stehen.
+# Deshalb Stichwörter statt Gleichheit — großzügig, aber je Feld nur die
+# Wörter, die wirklich nach diesem Feld fragen.
+ANGABE_STICHWORT = {
+    "brutto": ("rechnungsbetrag", "brutto", "gesamtbetrag", "der betrag",
+               "betrag nicht"),
+    "lieferant": ("ausgestellt", "lieferant", "aussteller"),
+    "datum": ("belegdatum", "datum"),
+}
+
+
+def _offen_nach_angaben(offen: list, angaben: dict | None) -> list:
+    """Welche Fragen nach den nachgetragenen Angaben noch offen sind."""
+    beantwortet = set((angaben or {}).get("beantwortet") or [])
+    woerter = tuple(w for feld in beantwortet
+                    for w in ANGABE_STICHWORT.get(feld, ()))
+    if not woerter:
+        return list(offen or [])
+    return [o for o in (offen or [])
+            if not any(w in str(o).lower() for w in woerter)]
+
+
+def _beleg_abgeschlossen(offen: list, bewirtung: bool, bewirtung_da: bool) -> bool:
+    """Ist von der Nutzerin her alles beantwortet?
+
+    Dieselbe Regel wie in `_status_ableiten`, nur ohne die Summenprobe: wer
+    den Betrag selbst einträgt, hat keine Probe mehr, die aufgehen könnte —
+    ihre Angabe gilt. Die Bewirtungsfrage (Anlass, Teilnehmer) beantwortet
+    ein Betrag dagegen nicht, die bleibt stehen.
+    """
+    echte_offen = [o for o in (offen or []) if "trinkgeld" not in str(o).lower()]
+    return not echte_offen and not (bewirtung and not bewirtung_da)
+
+
+def _kategorie_anwenden(review: dict, kategorie: str) -> None:
+    """Aus der gewählten Kategorie wird das Konto — im Rahmen des Betriebs.
+
+    Nina wählt „Kfz-Kosten", nicht „6530". Welche Nummer daraus wird, weiß
+    `kontierung`; hier wird nur eingesetzt. `konto_skr04` nur dann, wenn der
+    Betrieb wirklich SKR04 fährt — eine SKR03-Nummer unter diesem Namen wäre
+    genau die Vermischung, die es nicht geben darf.
+    """
+    import kontierung as kt  # noqa: PLC0415
+    e = review.setdefault("einschaetzung", {})
+    rahmen = e.get("kontenrahmen") or "SKR04"
+    konto = kt.konto(kategorie, rahmen) if rahmen in kt.RAHMEN else None
+    e["kategorie"] = kategorie
+    e["konto"] = konto
+    e["kontierung_grund"] = "von Hand gewählt"
+    e["rueckfrage"] = None
+    if rahmen == "SKR04":
+        e["konto_skr04"] = konto
+
+
 def _index_bauen(head: str) -> None:
     # Klassisches ls-tree-Format „<mode> <typ> <oid>\t<pfad>“ — läuft auch auf
     # Git < 2.36 (H200V: 2.34), das --format für ls-tree noch nicht kennt.
@@ -710,6 +769,8 @@ def _index_bauen(head: str) -> None:
             "belegart": ((review.get("semantik") or {}).get("belegart")) if review else None,
             "dokumentklasse": (review or {}).get("dokumentklasse") if review else None,
             "konto_skr04": e.get("konto_skr04"),
+            # Das „wofür" in Ninas Worten — daraus wird erst das Konto.
+            "kategorie": e.get("kategorie"),
             "steuerschluessel": e.get("steuerschluessel"),
             "buchungstext": (datev_buchungssatz(review) or {}).get("buchungstext") if review else None,
             "offen": list(f.get("offen") or []),
@@ -730,10 +791,13 @@ def _index_bauen(head: str) -> None:
                 # sonst bliebe der Beleg im falschen Abschluss stehen.
                 eintrag["monat"] = _beleg_monat(ergaenzung["datum"], name, pfad)
             # Beantwortete Punkte verschwinden aus der Nachfrage-Liste.
-            beantwortet = set(ergaenzung.get("beantwortet") or [])
-            eintrag["offen"] = [o for o in eintrag["offen"] if o not in beantwortet]
-            if not eintrag["offen"] and eintrag.get("status") == "nachfrage":
-                eintrag["status"] = "erfasst"
+            eintrag["offen"] = _offen_nach_angaben(eintrag["offen"], ergaenzung)
+            # Und wer alles beantwortet hat, ist fertig. Vorher stand der
+            # Beleg danach auf „erfasst" — im Portal heißt das „wird noch
+            # gelesen", und gelesen wurde er längst.
+            if eintrag.get("status") == "nachfrage" and _beleg_abgeschlossen(
+                    eintrag["offen"], eintrag["bewirtung"], bewirtung_da):
+                eintrag["status"] = "geprüft"
             if review is not None:
                 review = json.loads(json.dumps(review))
                 review.setdefault("felder", {})
@@ -741,6 +805,12 @@ def _index_bauen(head: str) -> None:
                     if ergaenzung.get(kk) is not None:
                         review["felder"][kk] = ergaenzung[kk]
                 review["felder"]["offen"] = eintrag["offen"]
+            if ergaenzung.get("kategorie"):
+                eintrag["kategorie"] = ergaenzung["kategorie"]
+                if review is not None:
+                    _kategorie_anwenden(review, ergaenzung["kategorie"])
+                    eintrag["konto_skr04"] = \
+                        review["einschaetzung"].get("konto_skr04")
         korrektur = oid_cache.get(korrektur_pfade.get(stamm, ""))
         if isinstance(korrektur, dict):
             eintrag["korrigiert"] = True
@@ -1289,9 +1359,10 @@ def api_beleg(stamm: str, request: Request) -> Response:
             for kk in ("brutto", "lieferant", "datum"):
                 if ang.get(kk) is not None:
                     d["felder"][kk] = ang[kk]
-            beantwortet = set(ang.get("beantwortet") or [])
-            d["felder"]["offen"] = [o for o in (d["felder"].get("offen") or [])
-                                    if o not in beantwortet]
+            d["felder"]["offen"] = _offen_nach_angaben(
+                d["felder"].get("offen"), ang)
+            if ang.get("kategorie"):
+                _kategorie_anwenden(d, ang["kategorie"])
             d["ergaenzt"] = True
             d["angaben"] = ang
             d["buchungssatz"] = datev_buchungssatz(d) if d else None
@@ -1721,8 +1792,11 @@ DOKUMENT_ENDUNGEN = {".pdf", ".jpg", ".jpeg", ".png"}
 DOKUMENT_PFAD_RE = re.compile(r"^dokumente/[A-Za-z0-9._/ -]{1,200}$")
 # Alles, was in der Ablage steht, muss sich auch öffnen lassen — sonst führt
 # ein Eintrag ins Leere. Gelöscht werden darf davon nur `dokumente/`.
+# `docs/` sind die Belege — seit die Ablage sie als eigenes Fach zeigt,
+# gehören sie dazu. Gelöscht werden sie weiter nur über ihre eigene Route,
+# die den Beleg samt Beiakten wegnimmt.
 ABLAGE_PFAD_RE = re.compile(
-    r"^(dokumente|auszuege|abschluss|export|kassenbuch|rechnungen)/"
+    r"^(dokumente|auszuege|abschluss|export|kassenbuch|rechnungen|docs)/"
     r"[A-Za-z0-9._/ -]{1,200}$")
 
 
@@ -3360,6 +3434,116 @@ ABSCHLUSS_STAMM_KEYS = ("rechtsform", "steuernummer", "finanzamt", "kleinunterne
 _ABSCHLUSS_JOBS: dict[str, dict] = {}
 _ABSCHLUSS_LOCK = threading.Lock()
 
+
+# ── Klartext einer Unterlage: Textebene, sonst Paddle ───────────────────────
+#
+# Hier hing die Salonprüfung. Der Klartext für die Ernte kam aus
+# `abschluss_lesen.seiten_text()` — der Textebene des PDF. Ein Scan hat
+# keine, ein Foto erst recht nicht: bei beiden kam ein leerer String zurück,
+# und aus einem leeren String erntet man nichts. Nina lud ihre abfotografierten
+# Unterlagen hoch, und im Bericht stand weniger, als auf ihnen steht.
+#
+# Der Weg dafür existiert: derselbe Paddle-Dienst, durch den jeder Beleg geht
+# (`review_watcher.ocr_dienst_kaesten`). Importiert wird er NICHT — der
+# Modulzustand dort gehört dem pm2-Prozess, und `abschluss_lesen` hält sich
+# aus demselben Grund fern. Was hier steht, ist der Aufruf, nicht das Modell.
+#
+# `doc_ori=1` dreht schief fotografierte Blätter gerade und kostet laut /caps
+# nichts. `unwarp` bleibt aus: der Dienst meldet es selbst als schädlich.
+OCR_DIENST = os.environ.get("OCR_DIENST", "http://10.42.0.101:7833")
+OCR_DIENST_FRIST = float(os.environ.get("OCR_DIENST_FRIST", "60"))
+# Steuernummer, Finanzamt, Anschrift und IBAN stehen im Kopf, nicht im
+# Anhang. Acht Blätter sind der Bereich, den die Ernte ohnehin ansieht.
+OCR_SEITEN_MAX = 8
+# Ab so viel Text auf allen Seiten zusammen gilt die Textebene als tragfähig.
+# Ein gescanntes PDF trägt oft ein paar Zeichen (Seitenzahlen, ein Stempel).
+TEXTEBENE_SCHWELLE = 120
+# Was vom gelesenen Klartext neben der Unterlage aufgehoben wird, damit die
+# Suche in der Ablage ihn findet. Ein Bündel Kontoauszüge bläht die Box sonst
+# auf — die Kopfdaten stehen ohnehin vorn.
+ABSCHLUSS_TEXT_MAX = 20000
+
+
+def _ocr_seite(jpeg: bytes, name: str) -> str:
+    """Ein Blatt durch den Paddle-Dienst — Zeilen in Lesereihenfolge."""
+    import requests  # noqa: PLC0415
+    grenze = "----babu-abschluss"
+    kopf = (f"--{grenze}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{name}"\r\n'
+            f"Content-Type: image/jpeg\r\n\r\n").encode()
+    r = requests.post(
+        f"{OCR_DIENST}/ocr?doc_ori=1",
+        data=kopf + jpeg + f"\r\n--{grenze}--\r\n".encode(),
+        headers={"Content-Type": f"multipart/form-data; boundary={grenze}"},
+        timeout=OCR_DIENST_FRIST)
+    r.raise_for_status()
+    antwort = r.json()
+    if antwort.get("errorCode"):
+        raise RuntimeError(f"OCR-Dienst: {antwort.get('errorMsg')}")
+    seiten = (antwort.get("result") or {}).get("ocrResults") or []
+    if not seiten:
+        raise RuntimeError("OCR-Dienst lieferte keine Seite")
+    texte = (seiten[0].get("prunedResult") or {}).get("rec_texts") or []
+    return "\n".join(str(t) for t in texte)
+
+
+def klartext_der_unterlage(pfad) -> str:
+    """Was auf der Unterlage steht — egal, ob als Text oder als Bild.
+
+    Erst die Textebene: wo sie liegt, ist sie die bessere Quelle und kostet
+    nichts. Erst wenn dort nichts steht, wird gerendert und gelesen.
+
+    Gibt im Fehlerfall einen leeren String zurück. Ein Dienst, der gerade
+    weg ist, darf den Salon-Check nicht abbrechen — dann steht eben weniger
+    im Bericht, und das sagt der Bericht auch.
+    """
+    import abschluss_lesen  # noqa: PLC0415
+    textebene = ""
+    if str(pfad).lower().endswith(".pdf"):
+        try:
+            seiten = abschluss_lesen.seiten_text(pfad)[:OCR_SEITEN_MAX]
+        except Exception as ex:  # noqa: BLE001
+            print(f"[salonpruefung] {pfad}: keine Textebene lesbar: {ex!r}", flush=True)
+            seiten = []
+        textebene = "\n".join(s for s in seiten if s)
+        if len(textebene.strip()) >= TEXTEBENE_SCHWELLE:
+            return textebene
+    try:
+        bilder = abschluss_lesen.seiten_bilder(pfad)[:OCR_SEITEN_MAX]
+    except Exception as ex:  # noqa: BLE001
+        print(f"[salonpruefung] {pfad}: nicht darstellbar: {ex!r}", flush=True)
+        return textebene
+    name = Path(str(pfad)).name
+    gelesen = []
+    for i, jpeg in enumerate(bilder, 1):
+        try:
+            gelesen.append(_ocr_seite(jpeg, f"{i}-{name}"))
+        except Exception as ex:  # noqa: BLE001
+            print(f"[salonpruefung] {name} Seite {i} ungelesen: {ex!r}", flush=True)
+    aus_bild = "\n".join(t for t in gelesen if t)
+    # Ein Scan trägt manchmal eine dünne Textebene — eine Seitenzahl, einen
+    # Stempel. Was mehr hergibt, gewinnt; leer bleibt nur, wenn beide leer sind.
+    return aus_bild if len(aus_bild.strip()) > len(textebene.strip()) else textebene
+
+
+def unterlage_einordnen(art: str | None, text: str) -> str:
+    """Was für ein Papier ist das — im genaueren der beiden Vokabulare?
+
+    `abschluss_lesen` kennt nur Jahresabschluss-Unterlagen; alles andere
+    heißt dort „sonstiges", und für „sonstiges" erntet die Salonprüfung
+    nichts. Genau daran fielen Ninas Mietvertrag und ihre Kontoauszüge
+    durch. Wo das Abschluss-Vokabular passt, bleibt es stehen — es ist das
+    genauere. Sonst entscheidet `einsortieren`, dasselbe Verfahren, mit dem
+    jedes Foto aus der App einsortiert wird.
+    """
+    if art and art != "sonstiges":
+        return art
+    if not (text or "").strip():
+        return "sonstiges"        # raten wäre schlimmer als nichts wissen
+    import einsortieren  # noqa: PLC0415
+    entscheidung = einsortieren.entscheiden(text)
+    return entscheidung["art"] if entscheidung.get("punkte") else "sonstiges"
+
 # Ein fertiger Auftrag bleibt noch eine Stunde im Speicher — so lange fragt
 # das Portal ihn ab. Danach fliegt er raus.
 #
@@ -3518,6 +3702,42 @@ _ABSCHLUSS_ART_LABEL = {
 }
 
 
+def _unterlage_einsortieren(un: str, jahr: int, datei: str, art: str,
+                            text: str) -> None:
+    """Die gelesene Unterlage bekommt ihr Fach und ihren Klartext.
+
+    Bisher lag nach dem Salon-Check alles unter „Jahresabschluss" — auch der
+    Mietvertrag und die Kontoauszüge. In der Beiakte steht jetzt, was es
+    wirklich ist; die Ablage liest sie und legt es dorthin.
+
+    Der Klartext liegt daneben, damit die Suche über die Ablage findet, was
+    IN den Unterlagen steht, nicht nur, wie sie heißen. Gedeckelt, weil ein
+    Bündel Kontoauszüge sonst die Box aufbläht.
+    """
+    import boxschreiber  # noqa: PLC0415
+    rumpf = f"abschluss/{jahr}/{datei}"
+    alt = {}
+    roh = git_show(f"{rumpf}.meta.json")
+    if roh is not None:
+        try:
+            alt = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            alt = {}
+    meta = dict(alt, art="abschluss", erkannt=art,
+                fach=ABLAGE_FACH.get(art, "abschluss"),
+                art_label=_ABSCHLUSS_ART_LABEL.get(art, "Unterlage"),
+                jahr=jahr, gelesen_am=time.strftime("%Y-%m-%dT%H:%M:%S"))
+    dateien = {f"{rumpf}.meta.json":
+               json.dumps(meta, ensure_ascii=False, indent=1).encode()}
+    if text.strip():
+        dateien[f"{rumpf}.text.json"] = json.dumps(
+            {"text": text[:ABSCHLUSS_TEXT_MAX]}, ensure_ascii=False).encode()
+    try:
+        boxschreiber.schreiben(dateien, None, f"abschluss: einsortiert {datei}", un)
+    except Exception as ex:  # noqa: BLE001 — Einsortieren darf den Lauf nie kippen
+        print(f"[salonpruefung] {datei} nicht einsortiert: {ex!r}", flush=True)
+
+
 def _abschluss_job(un: str, jahr: int, pfade: list[Path]) -> None:
     import abschluss_lesen  # noqa: PLC0415
     import boxschreiber  # noqa: PLC0415
@@ -3550,14 +3770,17 @@ def _abschluss_job(un: str, jahr: int, pfade: list[Path]) -> None:
             # Für die Stammdaten-Ernte zählt der Klartext, nicht die
             # Zahlenauswertung. Die ersten Seiten genügen: Steuernummer,
             # Finanzamt und Anschrift stehen im Kopf, nicht im Anhang.
-            try:
-                geerntet.append({"datei": pfad.name, "art": d["art"],
-                                 "text": "\n".join(
-                                     abschluss_lesen.seiten_text(pfad)[:8])})
-            except Exception as ex:  # noqa: BLE001
-                print(f"[salonpruefung] {pfad.name} ohne Klartext: {ex!r}", flush=True)
+            #
+            # Der Klartext kommt jetzt auch aus einem Scan (Paddle), und die
+            # Art aus dem genaueren der beiden Vokabulare — sonst hieß Ninas
+            # Mietvertrag „sonstiges", und für sonstiges wird nichts geerntet.
+            text = klartext_der_unterlage(pfad)
+            art = unterlage_einordnen(d["art"], text)
+            d["art"] = art
+            geerntet.append({"datei": pfad.name, "art": art, "text": text})
+            _unterlage_einsortieren(un, jahr, pfad.name, art, text)
             with _ABSCHLUSS_LOCK:
-                eintrag.update(art=d["art"], seiten=d["seiten"], stand="gelesen")
+                eintrag.update(art=art, seiten=d["seiten"], stand="gelesen")
         kennzahlen = abschluss_lesen.zusammenfuehren(ergebnisse, jahr=jahr)
         _stammdaten_ernten(un, status, geerntet, jahr, einstellungen)
         with _ABSCHLUSS_LOCK:
@@ -4145,6 +4368,10 @@ def _korrekturen_lesen(roh) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 ABLAGE_ARTEN = {
+    # Dieselben Fächer wie die App sie zeigt (ios/.../Dokumentarten.swift):
+    # Belege, Kontoauszüge, Verträge, Post vom Amt. Die Belege fehlten hier —
+    # das Fach, in dem am meisten liegt, war das einzige ohne Ordner.
+    "beleg": ("Belege", "Kassenbons und Rechnungen, die du fotografiert hast"),
     "behoerde": ("Post vom Amt", "Bescheide, Schreiben und Fristen"),
     "kanzlei": ("Von deiner Kanzlei", "Auswertungen, Lohnunterlagen, Post"),
     "vertrag": ("Verträge", "Miete, Versicherung, Leasing — deine Dauerkosten"),
@@ -4155,6 +4382,18 @@ ABLAGE_ARTEN = {
     "rechnung": ("Rechnungen", "Was du anderen in Rechnung gestellt hast"),
 }
 
+# Welche erkannte Art in welches Fach gehört.
+#
+# Zwei Vokabulare beschreiben dasselbe Papier: `abschluss_lesen` sagt
+# euer/bwa/bescheid/susa/anlagen, `einsortieren` sagt
+# behoerde/kontoauszug/vertrag/beleg. Die Ablage hat gröbere Fächer, weil
+# Nina in Ordner schaut und nicht in ein Vokabular. Was hier fehlt, landet
+# beim Jahresabschluss — das ist der Ort, an dem alles vorher lag.
+ABLAGE_FACH = {
+    "vertrag": "vertrag", "kontoauszug": "kontoauszug",
+    "behoerde": "behoerde", "beleg": "beleg",
+}
+
 
 def _jahr_aus(pfad: str, zeit: str | None) -> str:
     for teil in pfad.split("/"):
@@ -4163,12 +4402,42 @@ def _jahr_aus(pfad: str, zeit: str | None) -> str:
     return (zeit or "")[:4] or "ohne Jahr"
 
 
-@app.get("/api/ablage")
-def api_ablage(request: Request) -> Response:
-    """Alles Abgelegte als Ordnerbaum: Jahr → Art → Dokumente."""
-    un, fehler = _box_wache(request)
-    if fehler:
-        return fehler
+def _abschluss_beiakten() -> dict[str, dict]:
+    """Die Beiakten der Salonprüfung: was aus jeder Unterlage geworden ist.
+
+    Beim Hochladen weiß niemand, was auf dem Blatt steht — die Unterlage
+    heißt dann „abschluss". Nach dem Lesen steht es in der Beiakte, und erst
+    damit kann die Ablage einen Mietvertrag zu den Verträgen legen statt zum
+    Jahresabschluss.
+    """
+    kopf = (_git(["rev-parse", "HEAD"], 10) or "HEAD").strip()
+    out = _git(["ls-tree", "-r", kopf], 60) or ""
+    oids: dict[str, str] = {}
+    for zeile in out.splitlines():
+        vorn, _, pfad = zeile.partition("\t")
+        teile = vorn.split()
+        if pfad.startswith("abschluss/") and pfad.endswith(".meta.json") \
+                and len(teile) == 3 and teile[1] == "blob":
+            oids[pfad.removesuffix(".meta.json")] = teile[2]
+    raus: dict[str, dict] = {}
+    for oid, roh in _blobs_lesen(list(oids.values())).items():
+        try:
+            raus[oid] = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            raus[oid] = {}
+    return {pfad: raus.get(oid) or {} for pfad, oid in oids.items()}
+
+
+def _beleg_titel(z: dict) -> str:
+    """Wie ein Beleg im Ordner heißt — so, wie Nina ihn wiedererkennt."""
+    teile = [z.get("lieferant") or "Beleg"]
+    if z.get("brutto") is not None:
+        teile.append(f"{z['brutto']:.2f}".replace(".", ",") + " €")
+    return " · ".join(teile)
+
+
+def _ablage_eintraege() -> list[dict]:
+    """Alles Abgelegte als flache Liste — die Grundlage für Baum und Suche."""
     index = index_aktuell()
     zeiten = index["zeiten"]
     eintraege: list[dict] = []
@@ -4183,19 +4452,39 @@ def api_ablage(request: Request) -> Response:
                           "vertrag": d.get("vertrag"),
                           "loeschbar": True})
 
+    # Die Belege selbst. Sie fehlten hier — das Fach, in dem am meisten
+    # liegt, war das einzige ohne Ordner, und Nina suchte ihren Parkschein
+    # in der Ablage. Sie tragen ihren Stamm mit, damit ein Klick im Ordner
+    # dieselbe Beleg-Ansicht öffnet wie die Liste unter „Buchhaltung".
+    for z in index["belege"].values():
+        eintraege.append({"pfad": z["datei"], "titel": _beleg_titel(z),
+                          "art": "beleg", "stamm": z["stamm"],
+                          "zeit": z.get("hochgeladen"), "gelesen": None,
+                          "erklaerung": None, "vertrag": None,
+                          "status": z.get("status"), "loeschbar": False})
+
+    beiakten = _abschluss_beiakten()
+
     # Kontoauszüge, Abschlüsse, Stapel und Kassenblätter direkt aus dem Baum.
     kopf = _git(["rev-parse", "HEAD"])
     baum = _git(["ls-tree", "-r", "--name-only", (kopf or "HEAD").strip()]) or ""
     for pfad in baum.splitlines():
-        if pfad.endswith((".umsaetze.json", ".meta.json", ".erklaerung.json")):
+        if pfad.endswith((".umsaetze.json", ".meta.json", ".erklaerung.json",
+                          ".text.json")):
             continue
         name = pfad.rsplit("/", 1)[-1]
+        titel = name
         if pfad.startswith("auszuege/"):
-            art, titel = "kontoauszug", name
-        elif pfad.startswith("abschluss/") and not name.startswith("kennzahlen"):
-            art, titel = "abschluss", name
+            art = "kontoauszug"
+        elif pfad.startswith("abschluss/") and not name.startswith("kennzahlen") \
+                and not name.startswith("bericht"):
+            beiakte = beiakten.get(pfad) or {}
+            art = beiakte.get("fach") or "abschluss"
+            if art not in ABLAGE_ARTEN:
+                art = "abschluss"
+            titel = beiakte.get("titel") or name
         elif pfad.startswith("export/") and pfad.endswith(".csv"):
-            art, titel = "export", name
+            art = "export"
         elif pfad.startswith("kassenbuch/"):
             art, titel = "kassenbuch", "Kassenbuch " + name.removesuffix(".json")
         elif pfad.startswith("rechnungen/") and pfad.endswith(".pdf"):
@@ -4208,6 +4497,16 @@ def api_ablage(request: Request) -> Response:
                           "zeit": (zeiten.get(pfad) or {}).get("zeit"),
                           "gelesen": None, "erklaerung": None, "vertrag": None,
                           "loeschbar": False})
+    return eintraege
+
+
+@app.get("/api/ablage")
+def api_ablage(request: Request) -> Response:
+    """Alles Abgelegte als Ordnerbaum: Jahr → Art → Dokumente."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    eintraege = _ablage_eintraege()
 
     jahre: dict[str, dict] = {}
     for e in eintraege:
@@ -4229,6 +4528,187 @@ def api_ablage(request: Request) -> Response:
                         "arten": arten})
     return JSONResponse({"jahre": ausgabe,
                          "gesamt": sum(j["anzahl"] for j in ausgabe)})
+
+
+# ── Suchen: in dem, was gelesen wurde ───────────────────────────────────────
+#
+# Ein Beleg heißt 20260812-225200-c781d6-….jpg. Wer darin nach „Rotenberger"
+# sucht, findet nichts — der Name sagt nichts, der Inhalt alles. Gesucht wird
+# deshalb im gelesenen Text: im OCR-Text jedes Belegs, in der Erklärung eines
+# Briefs, in den Vertragsdaten und im Klartext der Salon-Check-Unterlagen.
+#
+# Bewusst ein Textvergleich, keine Bedeutungssuche. Nina sucht einen Namen
+# oder einen Betrag, den sie kennt — dafür ist Stichwortsuche das Werkzeug,
+# das immer dasselbe tut und keine Erklärung braucht, wenn es nichts findet.
+SUCHE_TREFFER_MAX = 60
+SUCHE_UMFELD = 60           # Zeichen links und rechts der Fundstelle
+
+
+def _fundstelle(text: str, suche: str) -> str | None:
+    """Die Stelle im Text, an der es steht — mit etwas Umfeld."""
+    i = text.lower().find(suche)
+    if i < 0:
+        return None
+    von = max(0, i - SUCHE_UMFELD)
+    bis = min(len(text), i + len(suche) + SUCHE_UMFELD)
+    ausschnitt = " ".join(text[von:bis].split())
+    return ("… " if von else "") + ausschnitt + (" …" if bis < len(text) else "")
+
+
+def _durchsuchbarer_text(e: dict, reviews: dict, klartexte: dict) -> str:
+    """Alles, was zu einem Ablage-Stück gelesen wurde, als ein Text."""
+    teile = [e.get("titel") or "", Path(e["pfad"]).name]
+    if e.get("stamm"):
+        r = reviews.get(e["stamm"]) or {}
+        f = r.get("felder") or {}
+        v = r.get("vlm") or {}
+        teile += [str(r.get("ocr_text") or ""), str(r.get("zusammenfassung") or ""),
+                  str(f.get("lieferant") or ""), str(v.get("lieferant") or ""),
+                  str(f.get("beleg_nr") or ""),
+                  "" if f.get("brutto") is None
+                  else f"{f['brutto']:.2f}".replace(".", ",")]
+    erk = e.get("erklaerung")
+    if isinstance(erk, dict):
+        teile += [str(erk.get("einfach") or ""), str(erk.get("was_tun") or "")]
+    ver = e.get("vertrag")
+    if isinstance(ver, dict):
+        teile += [str(v) for v in ver.values() if isinstance(v, (str, int, float))]
+    teile.append(klartexte.get(e["pfad"], ""))
+    return "\n".join(t for t in teile if t)
+
+
+def _abschluss_klartexte() -> dict[str, str]:
+    """Der beim Salon-Check gelesene Text, je Unterlage."""
+    kopf = (_git(["rev-parse", "HEAD"], 10) or "HEAD").strip()
+    out = _git(["ls-tree", "-r", kopf], 60) or ""
+    oids: dict[str, str] = {}
+    for zeile in out.splitlines():
+        vorn, _, pfad = zeile.partition("\t")
+        teile = vorn.split()
+        if pfad.endswith(".text.json") and len(teile) == 3 and teile[1] == "blob":
+            oids[pfad.removesuffix(".text.json")] = teile[2]
+    roh = _blobs_lesen(list(oids.values()))
+    texte: dict[str, str] = {}
+    for pfad, oid in oids.items():
+        try:
+            texte[pfad] = str(json.loads(roh.get(oid, b"{}")).get("text") or "")
+        except Exception:  # noqa: BLE001
+            texte[pfad] = ""
+    return texte
+
+
+@app.get("/api/ablage/suche")
+def api_ablage_suche(request: Request, q: str = "") -> Response:
+    """Sucht in allem, was babu gelesen hat — nicht nur in Dateinamen."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    suche = (q or "").strip().lower()[:120]
+    if len(suche) < 2:
+        # Ein einzelner Buchstabe trifft alles; das ist kein Suchergebnis,
+        # sondern die Ablage mit Extraschritten.
+        return JSONResponse({"suche": q, "treffer": [], "gesamt": 0})
+    reviews = index_aktuell()["reviews"]
+    klartexte = _abschluss_klartexte()
+    treffer = []
+    for e in _ablage_eintraege():
+        stelle = _fundstelle(_durchsuchbarer_text(e, reviews, klartexte), suche)
+        if stelle is None:
+            continue
+        treffer.append(dict(e, fundstelle=stelle,
+                            jahr=_jahr_aus(e["pfad"], e.get("zeit")),
+                            fach=ABLAGE_ARTEN.get(e["art"], (e["art"], ""))[0]))
+    treffer.sort(key=lambda t: t["zeit"] or "", reverse=True)
+    return JSONResponse({"suche": q, "gesamt": len(treffer),
+                         "treffer": treffer[:SUCHE_TREFFER_MAX]})
+
+
+# ── Umbenennen und verschieben ──────────────────────────────────────────────
+#
+# Beides fasst die Datei NICHT an. Der Name eines Dokuments und sein Fach
+# stehen in der Beiakte daneben; die Unterlage selbst bleibt Bit für Bit,
+# wo sie liegt. Das ist keine Bequemlichkeit, sondern die Bedingung dafür,
+# dass das Siegel („unverändert seit") weiter gilt: eine umbenannte Datei
+# wäre in der Historie ein anderes Stück Papier.
+ABLAGE_BEIAKTE_RE = re.compile(r"^(dokumente|abschluss)/[A-Za-z0-9._/ -]{1,200}$")
+
+
+def _beiakte_aendern(un: str, pfad: str, **felder) -> Response | None:
+    """Die Beiakte eines Ablage-Stücks fortschreiben. None heißt: hat geklappt."""
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Die Ablage ordnet die Inhaberin."},
+                            status_code=403)
+    if not ABLAGE_BEIAKTE_RE.match(pfad) or ".." in pfad \
+            or pfad.endswith((".meta.json", ".text.json")):
+        return JSONResponse(
+            {"fehler": "Belege heißen nach dem, was auf ihnen steht — ändere sie "
+                       "im Beleg selbst. Kassenbuch, Kontoauszüge und Stapel "
+                       "bleiben, wie sie sind."}, status_code=400)
+    if git_show(pfad) is None:
+        return JSONResponse({"fehler": "unbekannte Unterlage"}, status_code=404)
+    alt = {}
+    roh = git_show(f"{pfad}.meta.json")
+    if roh is not None:
+        try:
+            alt = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            alt = {}
+    if not isinstance(alt, dict):
+        alt = {}
+    meta = dict(alt, **felder, geaendert_am=_jetzt_iso(), geaendert_von=un)
+    import boxschreiber  # noqa: PLC0415
+    try:
+        boxschreiber.schreiben(
+            f"{pfad}.meta.json",
+            json.dumps(meta, ensure_ascii=False, indent=1).encode(),
+            f"ablage: {Path(pfad).name}", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return None
+
+
+@app.post("/api/ablage/umbenennen")
+async def api_ablage_umbenennen(request: Request) -> Response:
+    """Einer Unterlage einen Namen geben, den man wiedererkennt."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    titel = str((body or {}).get("titel", "")).strip()[:120]
+    if not titel:
+        return JSONResponse({"fehler": "Bitte einen Namen eingeben."},
+                            status_code=400)
+    pfad = str((body or {}).get("pfad", ""))
+    antwort = await run_in_threadpool(_beiakte_aendern, un, pfad, titel=titel)
+    return antwort or JSONResponse({"ok": True, "pfad": pfad, "titel": titel})
+
+
+@app.post("/api/ablage/verschieben")
+async def api_ablage_verschieben(request: Request) -> Response:
+    """Eine Unterlage in ein anderes Fach legen — babu ordnet, Nina entscheidet."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    art = str((body or {}).get("art", "")).strip()
+    if art not in ABLAGE_ARTEN or art == "beleg":
+        # „beleg" ist kein Ziel: was dort liegt, ist ein aufgenommener Beleg
+        # mit Leseprotokoll und Buchungssatz, kein umetikettiertes PDF.
+        return JSONResponse({"fehler": "Dieses Fach gibt es nicht."},
+                            status_code=400)
+    pfad = str((body or {}).get("pfad", ""))
+    antwort = await run_in_threadpool(_beiakte_aendern, un, pfad,
+                                      art=art, fach=art)
+    return antwort or JSONResponse({"ok": True, "pfad": pfad, "art": art})
 
 
 # ---------------------------------------------------------------------------
@@ -6680,10 +7160,32 @@ def api_marke_entwerfen(request: Request) -> Response:
     return JSONResponse({**stil, "in_worten": marke.als_text(stil)})
 
 
+@app.get("/api/kategorien")
+def api_kategorien(request: Request) -> Response:
+    """Die Buchungskategorien zur Auswahl — Ninas Wörter, nicht DATEVs.
+
+    Das Portal soll die Liste nicht selbst führen: sie stünde dann zweimal
+    da und liefe auseinander. Der Kontenrahmen des Betriebs entscheidet,
+    welche Nummer daneben steht.
+    """
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    import kontierung as kt  # noqa: PLC0415
+    rahmen = (db_einstellungen(un).get("kontenrahmen") or "SKR04").strip()
+    if rahmen not in kt.RAHMEN:
+        rahmen = "SKR04"
+    return JSONResponse({"kontenrahmen": rahmen, "kategorien": [
+        {"code": k.code, "name": k.name, "konto": k.konto(rahmen),
+         "bestaetigt": k.geprueft, "hinweis": k.hinweis}
+        for k in kt.KATEGORIEN.values()]})
+
+
 @app.post("/api/angaben/{stamm}")
 async def api_angaben(stamm: str, request: Request) -> Response:
     """Was babu nicht lesen konnte, trägt die Nutzerin selbst nach —
-    Betrag, Datum, Laden. Eigener Commit, das Original bleibt unberührt."""
+    Betrag, Datum, Laden, Kategorie. Eigener Commit, das Original bleibt
+    unberührt."""
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
@@ -6717,10 +7219,20 @@ async def api_angaben(stamm: str, request: Request) -> Response:
     if datum:
         daten["datum"] = datum
         daten["beantwortet"].append("datum")
+    # Die Kategorie ist das „wofür" — Nina wählt „Kfz-Kosten", nicht „6530".
+    # Nur was `kontierung` kennt, wird angenommen: eine erfundene Kategorie
+    # hätte kein Konto und liefe still ins Leere.
+    kategorie = str(body.get("kategorie", "")).strip()[:40]
+    if kategorie:
+        import kontierung as kt  # noqa: PLC0415
+        if kategorie not in kt.KATEGORIEN:
+            return JSONResponse({"fehler": "Diese Kategorie kennen wir nicht."},
+                                status_code=400)
+        daten["kategorie"] = kategorie
     notiz = str(body.get("notiz", "")).strip()[:200]
     if notiz:
         daten["notiz"] = notiz
-    if not daten["beantwortet"] and not notiz:
+    if not daten["beantwortet"] and not notiz and not kategorie:
         return JSONResponse({"fehler": "Bitte mindestens eine Angabe ausfüllen."},
                             status_code=400)
 

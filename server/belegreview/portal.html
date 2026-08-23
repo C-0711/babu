@@ -135,19 +135,98 @@ main p, .leer, .karte > p{max-width:78ch}
   padding:8px 12px;font:500 14px var(--gc-sans);color:var(--gc-muted);cursor:pointer}
 .unterreiter button:hover{color:var(--gc-fg)}
 .unterreiter button.an{color:var(--gc-fg);border-bottom-color:var(--gc-accent)}
-/* Ablage: Ordner wie in einem Laufwerk */
-.ordner{border:1px solid var(--gc-border);border-radius:12px;background:var(--gc-bg);
-  margin-bottom:10px;overflow:hidden}
-.ordner>summary{list-style:none;cursor:pointer;padding:13px 15px;display:flex;
-  align-items:center;gap:11px;font:600 15px var(--gc-sans)}
-.ordner>summary::-webkit-details-marker{display:none}
-.ordner>summary::before{content:"";width:9px;height:9px;flex:none;
-  border-right:2px solid var(--gc-muted);border-bottom:2px solid var(--gc-muted);
-  transform:rotate(-45deg);transition:transform .18s ease;margin-right:2px}
-.ordner[open]>summary::before{transform:rotate(45deg)}
-.ordner .zaehler{margin-left:auto;font:400 12.5px var(--gc-sans);color:var(--gc-muted)}
-.ordner .hinweis{font:400 12.5px var(--gc-sans);color:var(--gc-desc)}
-.ordner-inhalt{padding:0 15px 12px 37px}
+/* Ablage: links der Schrank, rechts die aufgeschlagene Mappe.
+   Nina wünschte sich „Ordner, in die ich hineingehe". Eine lange Seite mit
+   aufklappbaren Abschnitten war das nicht: man sieht nie, wo man ist, und
+   auf einem 27-Zoll-Schirm bleibt rechts die Hälfte leer. Der Baum steht
+   fest an der Seite, der Inhalt füllt den Rest. */
+.ablage-flaeche{display:grid;grid-template-columns:250px minmax(0,1fr);
+  gap:26px;align-items:start}
+@media(max-width:820px){.ablage-flaeche{grid-template-columns:1fr;gap:14px}}
+.ablage-baum{position:sticky;top:78px;max-height:calc(100dvh - 110px);
+  overflow-y:auto;padding-right:4px}
+@media(max-width:820px){.ablage-baum{position:static;max-height:none}}
+.ablage-baum .jahr{font:600 15px var(--gc-serif);color:var(--gc-fg);
+  margin:14px 0 4px;display:flex;align-items:baseline;gap:7px}
+.ablage-baum .jahr:first-child{margin-top:0}
+.ablage-baum .jahr span{font:10px var(--gc-mono);color:var(--gc-muted)}
+.ablage-baum button{display:flex;align-items:center;gap:9px;width:100%;
+  padding:7px 10px;border-radius:8px;font:400 13.5px var(--gc-sans);
+  color:var(--gc-body);text-align:left}
+.ablage-baum button:hover{background:var(--gc-chrome)}
+.ablage-baum button.an{background:var(--gc-accent-subtle);color:var(--gc-fg);
+  font-weight:550}
+.ablage-baum button .zaehler{margin-left:auto;font:11px var(--gc-mono);
+  color:var(--gc-muted);flex:none}
+.ablage-baum .ik{width:16px;height:16px;color:var(--gc-muted)}
+.ablage-baum button.an .ik{color:var(--gc-accent)}
+
+.mappe-kopf{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  margin-bottom:14px}
+.mappe-kopf h2{font:600 19px var(--gc-serif);color:var(--gc-fg)}
+.mappe-kopf .hinweis{font-size:13px;color:var(--gc-desc);flex:1;min-width:0}
+
+/* Kacheln: ein Blatt Papier, das man wiedererkennt. Dieselbe Anmutung wie
+   die Blätter im Salon-Check — Hochformat, Haken oben rechts. */
+.kacheln{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));
+  gap:16px}
+.kachel{position:relative;text-align:left;display:block;width:100%;
+  border-radius:10px;padding:0;color:inherit;text-decoration:none}
+.kachel:hover .name{text-decoration:underline}
+.kachel .blatt{aspect-ratio:1/1.30;background:var(--gc-desk);border-radius:8px;
+  border:1px solid var(--gc-border);overflow:hidden;display:grid;
+  place-items:center;color:var(--gc-muted)}
+.kachel .blatt img{width:100%;height:100%;object-fit:cover;
+  object-position:top center}
+/* Kein Bild — dann das Symbol groß genug, dass es wie ein Blatt aussieht
+   und nicht wie ein vergessener Punkt. */
+.kachel .blatt .ik{width:40px;height:40px}
+.kachel:hover .blatt{border-color:var(--gc-accent)}
+.kachel .name{font:600 13.5px/1.35 var(--gc-serif);color:var(--gc-fg);
+  margin:8px 2px 1px;overflow-wrap:anywhere}
+.kachel .wann{font:10.5px var(--gc-mono);color:var(--gc-muted);margin:0 2px}
+.kachel .marke{position:absolute;top:7px;left:7px;background:var(--gc-bg)}
+.stueck-werkzeug{display:flex;gap:6px;margin:6px 2px 0;flex-wrap:wrap}
+.stueck-werkzeug button{font:9.5px var(--gc-mono);letter-spacing:.04em;
+  text-transform:uppercase;color:var(--gc-muted);padding:3px 6px;
+  border:1px solid var(--gc-border);border-radius:999px}
+.stueck-werkzeug button:hover{color:var(--gc-fg);border-color:var(--gc-accent)}
+
+/* Hochladen: ein Balken je Datei, am Ende ein Haken.
+   Ohne Fortschritt wartet man doppelt so lange, wie es dauert — man weiß
+   ja nicht, ob überhaupt etwas passiert. Der Balken zeigt echtes Senden
+   (XHR meldet es), nicht eine Animation, die immer gleich lang läuft. */
+.upzeile{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 12px;
+  align-items:baseline;padding:9px 0;border-bottom:1px solid var(--gc-border-l)}
+.upzeile .upname{font:600 13.5px var(--gc-serif);color:var(--gc-fg);
+  overflow-wrap:anywhere}
+.upzeile .upstand{font:10.5px var(--gc-mono);letter-spacing:.04em;
+  color:var(--gc-muted);text-align:right;white-space:nowrap}
+.upzeile .upbalken{grid-column:1/-1;height:3px;border-radius:2px;
+  background:var(--gc-border);overflow:hidden}
+.upzeile .upbalken i{display:block;height:100%;width:0;border-radius:2px;
+  background:var(--gc-accent);transition:width .2s ease}
+.upzeile.fertig .upstand{color:var(--gc-ok)}
+.upzeile.fertig .upbalken i{background:var(--gc-ok)}
+.upzeile.schief .upstand{color:var(--gc-danger)}
+.upzeile.schief .upbalken i{background:var(--gc-danger)}
+
+/* Suchtreffer: die Fundstelle ist der Grund, warum die Zeile da steht. */
+.fundstelle{font:12.5px/1.5 var(--gc-sans);color:var(--gc-desc);
+  background:var(--gc-desk);border-radius:7px;padding:7px 10px;margin-top:6px}
+.fundstelle mark{background:var(--gc-accent-subtle);color:var(--gc-fg);
+  border-radius:3px;padding:0 2px}
+
+/* Ein Dokument groß, mit dem daneben, was gelesen wurde. */
+#unterlage-grid{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);
+  gap:22px}
+@media(max-width:900px){#unterlage-grid{grid-template-columns:1fr}}
+#unterlage-buehne{background:var(--gc-desk);border-radius:var(--r);padding:16px;
+  min-height:70dvh;display:flex;align-items:flex-start;justify-content:center}
+#unterlage-buehne img, #unterlage-buehne iframe{width:100%;border:0;
+  border-radius:6px;background:var(--gc-bg)}
+#unterlage-buehne iframe{height:76dvh}
+
 .ablage-zeile{display:flex;align-items:center;gap:10px;padding:10px 0;
   border-top:1px solid var(--gc-border);font-size:14px}
 .ablage-zeile a{color:var(--gc-fg);text-decoration:none;flex:1}
@@ -260,6 +339,20 @@ main p, .leer, .karte > p{max-width:78ch}
 .gruppe-kopf{margin:20px 0 8px}
 .suchfeld{width:100%;min-width:0;padding:10px 14px;border:1px solid var(--gc-border);
   border-radius:999px;font:inherit;background:var(--gc-bg);margin:4px 0 10px}
+
+/* Eingaben. Die gab es bisher nur als Inline-Stil an jedem einzelnen Feld —
+   dreizehnmal dieselbe Zeile, und jede konnte einzeln veralten. Die
+   Beschriftung ist Schreibmaschine wie überall, das Feld selbst ruhig. */
+.eingabe-gitter{display:grid;gap:10px;
+  grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.eingabe-gitter label{display:block;font:9.5px/1 var(--gc-mono);
+  letter-spacing:.11em;text-transform:uppercase;color:var(--gc-muted)}
+.eingabe-gitter label.breit{grid-column:1/-1}
+.eingabe-gitter input, .eingabe-gitter select{width:100%;margin-top:5px;
+  padding:9px 12px;border:1px solid var(--gc-border);border-radius:8px;
+  font:14px var(--gc-sans);color:var(--gc-fg);background:var(--gc-bg)}
+.eingabe-gitter input:focus, .eingabe-gitter select:focus{
+  outline:2px solid var(--gc-accent);outline-offset:1px}
 
 /* Lange, unumbrechbare Zeichenketten — Webhook-Adressen, IBANs, Dateinamen —
    drücken sonst ihre Spalte auf und schieben die ganze Seite über den Rand.
@@ -786,6 +879,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     </div>
     <p style="color:var(--gc-desc);margin-bottom:10px">Hat jede Zahlung vom Konto ihren Beleg?</p>
     <button class="chip" id="bank-auszug-knopf" style="margin-bottom:14px">Kontoauszug ablegen</button>
+    <div id="bank-hochladen"></div>
     <div id="bank-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
 
@@ -798,12 +892,29 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     </div>
     <div class="gruss" style="font-size:22px;margin-bottom:4px">Deine Ablage</div>
     <p style="color:var(--gc-desc);margin-bottom:14px">Alles, was zu deinem Salon
-      gehört — geordnet nach Jahr. Aufheben musst du nichts mehr selbst.</p>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+      gehört — links die Ordner, rechts, was darin liegt. Aufheben musst du
+      nichts mehr selbst.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+      <input class="suchfeld" id="ablage-suche" style="flex:1;min-width:220px;margin:0"
+        placeholder="Suchen — auch in dem, was auf den Blättern steht" autocomplete="off">
       <button class="chip" id="ablage-vertrag">Vertrag ablegen</button>
       <input type="file" id="vertrag-datei" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*" hidden>
+      <div class="unterreiter" style="margin:0;border:0" id="ablage-ansicht-schalter">
+        <button data-ansicht="kacheln" class="an">Kacheln</button>
+        <button data-ansicht="liste">Liste</button>
+      </div>
     </div>
-    <div id="ablage-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+    <div id="ablage-hochladen"></div>
+    <div class="ablage-flaeche">
+      <aside class="ablage-baum" id="ablage-baum"><div class="skelett"></div></aside>
+      <div class="ablage-mappe" id="ablage-mappe"><div class="skelett"></div><div class="skelett"></div></div>
+    </div>
+  </section>
+
+  <!-- EINE UNTERLAGE GROSS: das Blatt links, daneben was babu gelesen hat -->
+  <section class="ansicht" id="a-unterlage">
+    <a class="zurueck" href="#ablage">‹ Zurück in die Ablage</a>
+    <div id="unterlage-inhalt"><div class="skelett" style="height:300px"></div></div>
   </section>
 
   <section class="ansicht" id="a-post">
@@ -817,6 +928,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <button class="chip" id="brief-knopf" style="margin-bottom:10px">Brief vom Amt ablegen</button>
     <input type="file" id="auszug-datei" accept=".pdf,application/pdf" hidden>
     <input type="file" id="brief-datei" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*" hidden>
+    <div id="post-hochladen"></div>
     <input class="suchfeld" id="post-suche" placeholder="Suchen — z. B. Lohn, Auswertung …" autocomplete="off">
     <div class="chips" style="margin-top:0">
       <button class="chip an" id="post-f-alle">Alle</button>
@@ -1282,17 +1394,24 @@ const ansichten = { gesperrt: () => {}, heute: ladeHeute, belege: ladeBelege, fr
                     vertraege: ladeVertraege, marketing: ladeMarketing,
                     briefkopf: ladeBriefkopf,
                     einrichtung: ladeEinrichtung, verwaltung: ladeVerwaltung,
-                    einstellungen: ladeEinstellungen, detail: null };
+                    einstellungen: ladeEinstellungen, detail: null,
+                    unterlage: null };
+/* Welcher Reiter oben leuchtet, wenn die Ansicht selbst keiner ist. */
+const REITER_ZU = {detail: "belege", unterlage: "ablage"};
 function routen(){
   const h = location.hash.slice(1) || "heute";
-  const [ziel, arg] = h.split("/");
+  const ziel = h.split("/")[0];
+  // Der Rest hinter dem ersten Schrägstrich, ungeteilt: ein Ablagepfad ist
+  // „dokumente/2026-08/miete.pdf" und hätte sich sonst in Stücke zerlegt.
+  const arg = h.slice(ziel.length + 1);
   let name = ansichten[ziel] !== undefined ? ziel : "heute";
   if (!meineBox && !OHNE_BOX_ERLAUBT.includes(name)) name = "gesperrt";
   document.querySelectorAll(".ansicht").forEach(a => a.classList.remove("an"));
   document.querySelectorAll("nav button").forEach(b =>
-    b.classList.toggle("an", b.dataset.ziel === (name==="detail" ? "belege" : name)));
+    b.classList.toggle("an", b.dataset.ziel === (REITER_ZU[name] || name)));
   $("#a-" + name).classList.add("an");
   if (name === "detail") ladeDetail(arg);
+  else if (name === "unterlage") ladeUnterlage(arg);
   else if (ansichten[name]) ansichten[name]();
 }
 window.addEventListener("hashchange", routen);
@@ -1485,41 +1604,78 @@ document.querySelectorAll("#filter-chips .chip").forEach(c => c.addEventListener
 }));
 
 /* ————— DETAIL ————— */
-/* Was babu nicht lesen konnte, trägt die Nutzerin hier direkt nach —
-   sichtbar an der Stelle, an der die Frage steht. */
-function angabenFormular(stamm, f){
-  const fehlt = (was) => (f.offen || []).some(o => (o || "").toLowerCase().includes(was));
-  const brauchtBetrag = !f.brutto || fehlt("betrag") || fehlt("brutto") || fehlt("summe");
-  const brauchtLaden = !f.lieferant || fehlt("lieferant") || fehlt("laden");
-  const brauchtDatum = !f.datum || fehlt("datum");
-  return `<div class="karte nachfrage" style="margin-top:10px" id="ang-${stamm}">
-    <h3>Trag nach, was fehlt</h3>
-    <p style="color:var(--gc-desc);font-size:13px;margin-bottom:10px">
-      babu konnte hier nicht alles lesen. Was du einträgst, gilt.</p>
-    <div style="display:grid;gap:8px">
-      ${brauchtBetrag ? `<label style="font-size:13px">Betrag (mit Cent)
-        <input id="ang-brutto" inputmode="decimal" placeholder="z. B. 4,20"
-          style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-top:3px"></label>` : ""}
-      ${brauchtLaden ? `<label style="font-size:13px">Wo war das?
-        <input id="ang-lieferant" placeholder="z. B. APCOA Parking"
-          style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-top:3px"></label>` : ""}
-      ${brauchtDatum ? `<label style="font-size:13px">Datum
-        <input id="ang-datum" type="date"
-          style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-top:3px"></label>` : ""}
-      <label style="font-size:13px">Notiz (wenn du magst)
-        <input id="ang-notiz" placeholder="z. B. Parken beim Großhandel"
-          style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-top:3px"></label>
+/* Am Schreibtisch wird aufgeräumt — also muss hier alles änderbar sein.
+   Das Formular gab es schon, aber nur solange eine Frage offen war: wer
+   sah, dass die 4,20 € vom Parkschein falsch dastehen, fand keinen Weg,
+   sie zu berichtigen (BABU-42). Jetzt steht es immer da, vorbelegt mit dem,
+   was gelesen wurde, und aufgeklappt genau dann, wenn etwas fehlt. */
+
+/* Die Kategorien führt der Server (kontierung.py). Einmal holen und
+   merken — eine zweite Liste im Portal liefe irgendwann auseinander. */
+let kategorienCache = null;
+async function kategorienHolen(){
+  if (kategorienCache) return kategorienCache;
+  try{
+    const r = await api("/api/kategorien");
+    kategorienCache = r.ok ? (await r.json()).kategorien || [] : [];
+  }catch{ kategorienCache = []; }
+  return kategorienCache;
+}
+
+function aenderungsFormular(stamm, f, e, offenBleibt){
+  const wert = (x) => x == null ? "" : String(x);
+  // Der Betrag steht deutsch da — mit Komma, so wie er eingetippt wird.
+  const betrag = f.brutto != null ? f.brutto.toFixed(2).replace(".", ",") : "";
+  const datum = /^\d{4}-\d{2}-\d{2}$/.test(wert(f.datum)) ? f.datum
+    : (/^(\d{2})\.(\d{2})\.(\d{4})$/.test(wert(f.datum))
+        ? f.datum.replace(/^(\d{2})\.(\d{2})\.(\d{4})$/, "$3-$2-$1") : "");
+  return `<div class="karte ${offenBleibt ? "nachfrage" : ""}" style="margin-top:10px" id="ang-${stamm}">
+    <h3>${offenBleibt ? "Trag nach, was fehlt" : "Beleg ändern"}</h3>
+    <p style="color:var(--gc-desc);font-size:13px;margin-bottom:12px">
+      ${offenBleibt
+        ? "babu konnte hier nicht alles lesen. Was du einträgst, gilt."
+        : "Stimmt etwas nicht? Ändere es hier — was du einträgst, gilt."}</p>
+    <div class="eingabe-gitter">
+      <label>Betrag (mit Cent)
+        <input id="ang-brutto" inputmode="decimal" placeholder="z. B. 4,20" value="${esc(betrag)}"></label>
+      <label>Datum
+        <input id="ang-datum" type="date" value="${esc(datum)}"></label>
+      <label>Wo war das?
+        <input id="ang-lieferant" placeholder="z. B. APCOA Parking" value="${esc(wert(f.lieferant))}"></label>
+      <label>Wofür war das?
+        <select id="ang-kategorie"><option value="">— noch offen —</option></select></label>
+      <label class="breit">Notiz (wenn du magst)
+        <input id="ang-notiz" placeholder="z. B. Parken beim Großhandel"></label>
     </div>
-    <button class="hin" style="margin-top:12px" onclick="angabenSenden('${stamm}')">Speichern</button>
-    <span id="ang-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>
+    <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="hin" onclick="angabenSenden('${stamm}')">${
+        offenBleibt ? "Speichern und abschließen" : "Änderung speichern"}</button>
+      <span id="ang-status" style="font-size:12px;color:var(--gc-muted)"></span>
+    </div>
   </div>`;
 }
+
+/* Das Auswahlfeld wird nachgefüllt, sobald die Liste da ist — das Formular
+   steht sofort, statt auf einen zweiten Netzweg zu warten. */
+async function kategorieFeldFuellen(gewaehlt){
+  const feld = $("#ang-kategorie");
+  if (!feld) return;
+  for (const k of await kategorienHolen()){
+    const o = document.createElement("option");
+    o.value = k.code;
+    o.textContent = k.name;
+    if (k.code === gewaehlt) o.selected = true;
+    feld.appendChild(o);
+  }
+}
+
 async function angabenSenden(stamm){
   const status = $("#ang-status");
   const wert = (id) => { const e = document.getElementById(id); return e ? e.value.trim() : ""; };
   const koerper = {brutto: wert("ang-brutto"), lieferant: wert("ang-lieferant"),
-                   datum: wert("ang-datum"), notiz: wert("ang-notiz")};
-  if (!koerper.brutto && !koerper.lieferant && !koerper.datum && !koerper.notiz){
+                   datum: wert("ang-datum"), kategorie: wert("ang-kategorie"),
+                   notiz: wert("ang-notiz")};
+  if (!Object.values(koerper).some(Boolean)){
     status.textContent = "Bitte mindestens ein Feld ausfüllen."; return;
   }
   status.textContent = "wird gespeichert …";
@@ -1529,6 +1685,7 @@ async function angabenSenden(stamm){
     const d = await r.json().catch(() => ({}));
     if (!r.ok){ status.textContent = d.fehler || "Ging gerade nicht."; return; }
     status.textContent = "Gespeichert ✓";
+    etag = null;   // die Belegliste zeigt sonst den alten Stand
     setTimeout(() => ladeDetail(stamm), 700);
   }catch{ status.textContent = "Gerade keine Verbindung."; }
 }
@@ -1602,7 +1759,7 @@ async function ladeDetail(stamm){
         onclick="bewirtungSheet('${d.stamm}','${lieferant} · ${euro(f.brutto)}')">
         <h3>Mit wem warst du essen?</h3><p>Kurz notiert, und der Beleg zählt voll.</p>
         <span class="hin">Kurz klären ›</span></button>` : ""}
-      ${(frage && !bewirtungOffen) || !f.brutto ? angabenFormular(d.stamm, f) : ""}
+      ${aenderungsFormular(d.stamm, f, e, (frage && !bewirtungOffen) || !f.brutto)}
       ${d.bewirtung ? `<div class="feld" style="margin-top:8px"><span>Anlass</span><b style="font-family:var(--gc-sans)">${d.bewirtung.anlass}</b></div>
         <div class="feld"><span>Dabei waren</span><b style="font-family:var(--gc-sans)">${(d.bewirtung.teilnehmer||[]).join(", ")}</b></div>` : ""}
       </div>`;
@@ -1670,6 +1827,7 @@ async function ladeDetail(stamm){
   }
   html += `</div></div></div>`;
   ziel.innerHTML = html;
+  kategorieFeldFuellen(e.kategorie);
   const bild = $("#belegbild");
   if (bild) bild.addEventListener("click", () => bild.classList.toggle("zoom"));
 }
@@ -2032,59 +2190,306 @@ function artLabel(art){
 }
 /* Ein Strichsymbol je Ablagefach — dieselben Striche wie im Menü, damit
    die Ablage nicht als einzige Ansicht bunt bleibt. */
-const ABLAGE_SYMBOL = {behoerde:"amt", kanzlei:"dokument", abschluss:"diagramm",
-                       kontoauszug:"bank", export:"export", kassenbuch:"kasse"};
+const ABLAGE_SYMBOL = {beleg:"euro", behoerde:"amt", kanzlei:"dokument",
+                       vertrag:"klemmbrett", abschluss:"diagramm",
+                       kontoauszug:"bank", export:"export", kassenbuch:"kasse",
+                       rechnung:"briefkopf"};
+/* Dieselben Namen wie im Baum — für das Verschieben, wo es noch keinen
+   Ordner dieses Fachs gibt und der Baum ihn deshalb nicht zeigt. */
+const ABLAGE_NAME = {behoerde:"Post vom Amt", kanzlei:"Von deiner Kanzlei",
+                     vertrag:"Verträge", abschluss:"Jahresabschluss",
+                     kontoauszug:"Kontoauszüge"};
+
+/* Wo Nina gerade steht und wie sie schaut. Beides überlebt einen Wechsel in
+   eine andere Ansicht — wer aus einem Dokument zurückkommt, will in seinem
+   Ordner stehen und nicht wieder ganz oben. */
+let ablageDaten = null, ablageJahr = null, ablageFach = null;
+let ablageAnsicht = localStorage.getItem("ablageAnsicht") || "kacheln";
+let ablageSuche = "", ablageTreffer = null, ablageSuchTakt = null;
 
 async function ladeAblage(){
-  const ziel = $("#ablage-inhalt");
-  let d;
-  try{ d = await (await api("/api/ablage")).json(); }
-  catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
-  if (!d.gesamt){
-    ziel.innerHTML = `<div class="leer"><b>Noch nichts abgelegt.</b>
+  const baum = $("#ablage-baum"), mappe = $("#ablage-mappe");
+  try{ ablageDaten = await (await api("/api/ablage")).json(); }
+  catch{ mappe.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+  if (!ablageDaten.gesamt){
+    baum.innerHTML = "";
+    mappe.innerHTML = `<div class="leer"><b>Noch nichts abgelegt.</b>
       Sobald Belege, Kontoauszüge oder Post vom Amt da sind, ordnen wir sie hier ein.</div>`;
     return;
   }
-  let html = "";
-  d.jahre.forEach((j, i) => {
-    html += `<div class="jahr-kopf">${esc(j.jahr)} <span style="font:400 13px var(--gc-sans);color:var(--gc-muted)">· ${j.anzahl} ${j.anzahl === 1 ? "Unterlage" : "Unterlagen"}</span></div>`;
-    for (const a of j.arten){
-      html += `<details class="ordner"${i === 0 ? " open" : ""}>
-        <summary><span>${ikone(ABLAGE_SYMBOL[a.art] || "ordner")}</span>
-          <span>${esc(a.name)}</span>
-          <span class="hinweis">${esc(a.hinweis)}</span>
-          <span class="zaehler">${a.anzahl}</span></summary>
-        <div class="ordner-inhalt">` +
-        a.stuecke.map(s => `<div class="ablage-zeile">
-            <a href="/api/dokument/${encodeURI(s.pfad)}" target="_blank" rel="noopener">${esc(s.titel)}</a>
-            ${s.vertrag && s.vertrag.betrag_monat
-              ? `<span class="chip" style="font-size:11px">${euro(s.vertrag.betrag_monat)} im Monat</span>` : ""}
-            ${s.erklaerung ? `<span class="chip" style="font-size:11px">erklärt ✓</span>` : ""}
-            <span class="wann">${s.zeit ? zeitKurz(s.zeit) : ""}</span>
-            ${s.loeschbar && meineRolle !== "mitarbeit"
-              ? `<button class="loeschknopf" onclick="dokumentLoeschen('${s.pfad}','${esc(s.titel).replace(/'/g,"")}')">Löschen</button>` : ""}
-          </div>`).join("") +
-        `</div></details>`;
+  // Beim ersten Öffnen im neuesten Jahr und im vollsten Fach stehen.
+  const jahre = ablageDaten.jahre;
+  if (!jahre.some(j => j.jahr === ablageJahr)){
+    ablageJahr = jahre[0].jahr; ablageFach = null;
+  }
+  const jahr = jahre.find(j => j.jahr === ablageJahr);
+  if (!jahr.arten.some(a => a.art === ablageFach)){
+    ablageFach = jahr.arten.slice().sort((a,b) => b.anzahl - a.anzahl)[0].art;
+  }
+  ablageBaumZeichnen();
+  ablageMappeZeichnen();
+}
+
+function ablageBaumZeichnen(){
+  const ziel = $("#ablage-baum");
+  ziel.innerHTML = (ablageTreffer
+    ? `<div class="jahr">Suche <span>· ${ablageTreffer.gesamt}</span></div>
+       <button class="an">${ikone("lupe-text")} <span>Treffer</span></button>` : "")
+    + ablageDaten.jahre.map(j => `
+    <div class="jahr">${esc(j.jahr)} <span>· ${j.anzahl}</span></div>` +
+    j.arten.map(a => `<button data-jahr="${esc(j.jahr)}" data-fach="${esc(a.art)}"
+        class="${!ablageTreffer && j.jahr === ablageJahr && a.art === ablageFach ? "an" : ""}"
+        title="${esc(a.hinweis)}">
+        ${ikone(ABLAGE_SYMBOL[a.art] || "ordner")}
+        <span>${esc(a.name)}</span><span class="zaehler">${a.anzahl}</span></button>`).join("")
+  ).join("");
+  ziel.querySelectorAll("button[data-fach]").forEach(b =>
+    b.addEventListener("click", () => {
+      ablageJahr = b.dataset.jahr; ablageFach = b.dataset.fach;
+      ablageTreffer = null; $("#ablage-suche").value = ""; ablageSuche = "";
+      ablageBaumZeichnen(); ablageMappeZeichnen();
+    }));
+}
+
+/* Ein Vorschaubild gibt es nur, wo wirklich ein Bild liegt. Ein PDF bekommt
+   sein Symbol statt eines kaputten Rahmens. */
+function ablageVorschau(s){
+  if (/\.(jpg|jpeg|png)$/i.test(s.pfad)){
+    return `<img alt="" loading="lazy" src="/api/dokument/${encodeURI(s.pfad)}">`;
+  }
+  return ikone("dokument", "gross");
+}
+
+function ablageZiel(s){
+  return s.stamm ? `#detail/${s.stamm}` : `#unterlage/${s.pfad}`;
+}
+
+function ablageKachel(s){
+  const marke = s.status === "nachfrage" ? `<span class="marke warn">braucht dich</span>`
+    : s.erklaerung ? `<span class="marke ok">erklärt</span>`
+    : s.vertrag && s.vertrag.betrag_monat
+      ? `<span class="marke akzent">${euro(s.vertrag.betrag_monat)}/Monat</span>` : "";
+  return `<div>
+    <a class="kachel" href="${ablageZiel(s)}">
+      <div class="blatt">${ablageVorschau(s)}</div>
+      ${marke}
+      <div class="name">${esc(s.titel)}</div>
+      <div class="wann">${s.zeit ? zeitKurz(s.zeit) : ""}</div>
+    </a>
+    ${s.fundstelle ? `<div class="fundstelle">${esc(s.fundstelle)}</div>` : ""}
+    ${ablageWerkzeug(s)}
+  </div>`;
+}
+
+function ablageZeile(s){
+  return `<div class="ablage-zeile">
+    <a href="${ablageZiel(s)}">${esc(s.titel)}</a>
+    ${s.fach ? `<span class="marke nackt">${esc(s.fach)}</span>` : ""}
+    <span class="wann">${s.zeit ? zeitKurz(s.zeit) : ""}</span>
+    ${ablageWerkzeug(s)}
+  </div>`;
+}
+
+/* Umbenennen und Verschieben gibt es nur, wo eine Beiakte danebenliegt —
+   also bei Unterlagen und Salon-Check-Blättern. Ein Beleg heißt nach dem,
+   was auf ihm steht; ein Buchungsstapel heißt, wie die Kanzlei ihn kennt. */
+function ablageWerkzeug(s){
+  const ordnerbar = /^(dokumente|abschluss)\//.test(s.pfad)
+    && meineRolle !== "mitarbeit";
+  const wie = esc(s.titel).replace(/'/g, "");
+  return `<div class="stueck-werkzeug">
+    ${ordnerbar ? `<button onclick="ablageUmbenennen('${s.pfad}','${wie}')">Umbenennen</button>
+      <button onclick="ablageVerschieben('${s.pfad}')">Verschieben</button>` : ""}
+    ${s.loeschbar && meineRolle !== "mitarbeit"
+      ? `<button onclick="dokumentLoeschen('${s.pfad}','${wie}')">Löschen</button>` : ""}
+  </div>`;
+}
+
+function ablageMappeZeichnen(){
+  const ziel = $("#ablage-mappe");
+  let kopf, stuecke;
+  if (ablageTreffer){
+    stuecke = ablageTreffer.treffer;
+    kopf = `<div class="mappe-kopf"><h2>${ablageTreffer.gesamt} ${
+      ablageTreffer.gesamt === 1 ? "Treffer" : "Treffer"} für „${esc(ablageSuche)}"</h2>
+      <span class="hinweis">Gesucht wird auch in dem, was babu auf den Blättern gelesen hat.</span></div>`;
+    if (!stuecke.length){
+      ziel.innerHTML = kopf + `<div class="leer"><b>Dazu finden wir nichts.</b>
+        Versuch ein anderes Wort — einen Ladennamen, einen Betrag, eine Nummer.</div>`;
+      return;
     }
-  });
-  ziel.innerHTML = html;
+  } else {
+    const jahr = ablageDaten.jahre.find(j => j.jahr === ablageJahr);
+    const fach = jahr && jahr.arten.find(a => a.art === ablageFach);
+    if (!fach){ ziel.innerHTML = `<div class="leer">Dieser Ordner ist leer.</div>`; return; }
+    stuecke = fach.stuecke;
+    kopf = `<div class="mappe-kopf"><h2>${esc(fach.name)} ${esc(jahr.jahr)}</h2>
+      <span class="hinweis">${esc(fach.hinweis)}</span></div>`;
+  }
+  ziel.innerHTML = kopf + (ablageAnsicht === "kacheln"
+    ? `<div class="kacheln">${stuecke.map(ablageKachel).join("")}</div>`
+    : stuecke.map(s => ablageZeile(s)
+        + (s.fundstelle ? `<div class="fundstelle">${esc(s.fundstelle)}</div>` : "")).join(""));
+}
+
+document.querySelectorAll("#ablage-ansicht-schalter button").forEach(b =>
+  b.addEventListener("click", () => {
+    ablageAnsicht = b.dataset.ansicht;
+    localStorage.setItem("ablageAnsicht", ablageAnsicht);
+    document.querySelectorAll("#ablage-ansicht-schalter button").forEach(x =>
+      x.classList.toggle("an", x === b));
+    if (ablageDaten) ablageMappeZeichnen();
+  }));
+document.querySelectorAll("#ablage-ansicht-schalter button").forEach(b =>
+  b.classList.toggle("an", b.dataset.ansicht === ablageAnsicht));
+
+$("#ablage-suche").addEventListener("input", ev => {
+  const wort = ev.target.value.trim();
+  clearTimeout(ablageSuchTakt);
+  // Erst tippen lassen, dann fragen — sonst eine Anfrage je Buchstabe.
+  ablageSuchTakt = setTimeout(() => ablageSuchen(wort), 260);
+});
+
+async function ablageSuchen(wort){
+  ablageSuche = wort;
+  if (wort.length < 2){
+    ablageTreffer = null;
+    if (ablageDaten){ ablageBaumZeichnen(); ablageMappeZeichnen(); }
+    return;
+  }
+  try{
+    ablageTreffer = await (await api("/api/ablage/suche?q="
+      + encodeURIComponent(wort))).json();
+  }catch{ return; }
+  ablageBaumZeichnen();
+  ablageMappeZeichnen();
+}
+
+async function ablageUmbenennen(pfad, jetzt){
+  const titel = prompt("Wie soll die Unterlage heißen?", jetzt);
+  if (titel === null || !titel.trim()) return;
+  try{
+    const r = await api("/api/ablage/umbenennen", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({pfad, titel: titel.trim()})});
+    if (!r.ok){ alert((await r.json().catch(()=>({}))).fehler || "Ging gerade nicht."); return; }
+    ladeAblage();
+  }catch{ alert("Gerade keine Verbindung."); }
+}
+
+async function ablageVerschieben(pfad){
+  // Die Fächer stehen im Baum — dieselben Namen, damit niemand raten muss.
+  const faecher = [];
+  for (const j of ablageDaten.jahre) for (const a of j.arten)
+    if (a.art !== "beleg" && !faecher.some(f => f.art === a.art)) faecher.push(a);
+  for (const [art, name] of Object.entries(ABLAGE_NAME))
+    if (!faecher.some(f => f.art === art)) faecher.push({art, name});
+  const wahl = prompt("In welches Fach?\n\n"
+    + faecher.map((f, i) => `${i + 1}. ${f.name}`).join("\n"), "1");
+  const i = parseInt(wahl, 10) - 1;
+  if (!(i >= 0 && i < faecher.length)) return;
+  try{
+    const r = await api("/api/ablage/verschieben", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({pfad, art: faecher[i].art})});
+    if (!r.ok){ alert((await r.json().catch(()=>({}))).fehler || "Ging gerade nicht."); return; }
+    ladeAblage();
+  }catch{ alert("Gerade keine Verbindung."); }
+}
+
+/* Ein Dokument groß — daneben, was babu daraus gelesen hat. Bisher öffnete
+   ein Klick die Datei in einem neuen Fenster, und alles, was babu darüber
+   wusste, blieb zurück. */
+async function ladeUnterlage(pfad){
+  const ziel = $("#unterlage-inhalt");
+  ziel.innerHTML = `<div class="skelett" style="height:300px"></div>`;
+  if (!ablageDaten){
+    try{ ablageDaten = await (await api("/api/ablage")).json(); }catch{}
+  }
+  const alle = (ablageDaten ? ablageDaten.jahre : [])
+    .flatMap(j => j.arten.flatMap(a => a.stuecke.map(s => ({...s, fachName: a.name, jahr: j.jahr}))));
+  const s = alle.find(x => x.pfad === pfad);
+  if (!s){
+    ziel.innerHTML = `<div class="leer"><b>Diese Unterlage finden wir gerade nicht.</b></div>`;
+    return;
+  }
+  const url = "/api/dokument/" + encodeURI(s.pfad);
+  const buehne = /\.(jpg|jpeg|png)$/i.test(s.pfad)
+    ? `<img alt="${esc(s.titel)}" src="${url}">`
+    : /\.pdf$/i.test(s.pfad)
+      ? `<iframe title="${esc(s.titel)}" src="${url}"></iframe>`
+      : `<div style="color:var(--gc-muted);text-align:center;align-self:center">
+           ${ikone("dokument", "gross")}<br>Diese Datei zeigen wir nicht im Fenster —
+           <a href="${url}" target="_blank" rel="noopener">herunterladen und ansehen</a></div>`;
+
+  let rechts = `<div class="gruss" style="font-size:22px;margin-bottom:2px">${esc(s.titel)}</div>
+    <div class="dmeta" style="margin-bottom:16px">${
+      [s.fachName, s.jahr, s.zeit ? zeitKurz(s.zeit) : null].filter(Boolean).map(esc).join(" · ")}</div>`;
+
+  if (s.erklaerung && s.erklaerung.einfach){
+    rechts += `<div class="sekt"><span class="lbl">Was drinsteht</span>
+      <div class="karte" style="margin:0"><p>${esc(s.erklaerung.einfach)}</p>
+      ${s.erklaerung.was_tun ? `<p style="margin-top:8px"><b>Zu tun:</b> ${esc(s.erklaerung.was_tun)}</p>` : ""}
+      ${s.erklaerung.bis_wann ? `<p style="margin-top:4px"><b>Bis:</b> ${esc(s.erklaerung.bis_wann)}</p>` : ""}
+      </div></div>`;
+  }
+  if (s.vertrag){
+    const v = s.vertrag;
+    rechts += `<div class="sekt"><span class="lbl">Aus dem Vertrag gelesen</span>
+      <div class="karte" style="margin:0">
+      ${v.partner ? feld("Mit wem", esc(v.partner)) : ""}
+      ${v.betrag_monat ? feld("Im Monat", euro(v.betrag_monat)) : ""}
+      ${v.laufzeit ? feld("Laufzeit", esc(v.laufzeit)) : ""}
+      ${v.kuendigungsfrist ? feld("Kündigungsfrist", esc(v.kuendigungsfrist)) : ""}
+      </div></div>`;
+  }
+  rechts += `<div class="sekt"><span class="lbl">Das Leseprotokoll</span>
+    <div class="karte" style="margin:0">
+      <div style="font-size:13px;color:var(--gc-desc);margin-bottom:8px">Wort für
+        Wort, was babu auf den Blättern gelesen hat.</div>
+      <button class="chip mit-ik" onclick="unterlageProtokoll('${s.pfad}')">
+        <svg class="ik klein" viewBox="0 0 24 24"><use href="#ik-lupe-text"/></svg>
+        Protokoll ansehen</button>
+      <div id="unterlage-prot" class="prot" style="margin-top:12px"></div>
+    </div></div>`;
+
+  rechts += `<div style="display:flex;gap:8px;flex-wrap:wrap">
+    <a class="chip" href="${url}" target="_blank" rel="noopener">In neuem Fenster öffnen</a>
+    ${ablageWerkzeug(s)}</div>`;
+
+  ziel.innerHTML = `<div id="unterlage-grid">
+    <div id="unterlage-buehne">${buehne}</div><div>${rechts}</div></div>`;
+}
+
+/* Der gelesene Klartext liegt als Beiakte neben der Unterlage — beim
+   Salon-Check geschrieben, damit die Suche ihn findet und man ihn nachlesen
+   kann. Wo keine liegt, wird das gesagt statt eine leere Fläche gezeigt. */
+async function unterlageProtokoll(pfad){
+  const ziel = $("#unterlage-prot");
+  if (!ziel) return;
+  if (ziel.innerHTML.trim()){ ziel.innerHTML = ""; return; }
+  ziel.innerHTML = `<div class="skelett" style="height:80px"></div>`;
+  try{
+    const r = await api("/api/dokument/" + encodeURI(pfad + ".text.json"));
+    if (!r.ok){
+      ziel.innerHTML = `<p>Von dieser Unterlage haben wir noch keinen Klartext —
+        er entsteht, wenn sie durch den Salon-Check läuft.</p>`;
+      return;
+    }
+    const d = await r.json();
+    ziel.innerHTML = `<pre>${esc(d.text || "")}</pre>`;
+  }catch{ ziel.innerHTML = `<p>Gerade keine Verbindung.</p>`; }
 }
 $("#ablage-vertrag").addEventListener("click", () => $("#vertrag-datei").click());
 $("#vertrag-datei").addEventListener("change", async ev => {
   const datei = ev.target.files[0];
   ev.target.value = "";
   if (!datei) return;
-  const knopf = $("#ablage-vertrag");
-  knopf.textContent = "Wird gelesen …";
-  try{
-    const r = await api("/api/dokumente?art=vertrag&name=" + encodeURIComponent(datei.name)
+  const a = await hochladenMitBalken(datei,
+    "/api/dokumente?art=vertrag&name=" + encodeURIComponent(datei.name)
       + "&titel=" + encodeURIComponent("Vertrag · " + datei.name),
-      {method:"POST", body: datei});
-    knopf.textContent = r.ok ? "Abgelegt ✓ — wir lesen ihn gerade"
-                             : "Das hat nicht geklappt — nochmal?";
-    if (r.ok){ setTimeout(ladeAblage, 1500); setTimeout(ladeAblage, 20000); }
-  }catch{ knopf.textContent = "Gerade keine Verbindung — nochmal?"; }
-  setTimeout(() => { knopf.textContent = "Vertrag ablegen"; }, 6000);
+    $("#ablage-hochladen"), {fertigSatz: "abgelegt, wird gelesen"});
+  if (a.ok){ setTimeout(ladeAblage, 1500); setTimeout(ladeAblage, 20000); }
 });
 
 async function ladePost(){
@@ -2161,35 +2566,25 @@ $("#brief-datei").addEventListener("change", async ev => {
   const datei = ev.target.files[0];
   ev.target.value = "";
   if (!datei) return;
-  const knopf = $("#brief-knopf");
-  knopf.textContent = "Wird abgelegt …";
-  try{
-    const r = await api("/api/dokumente?art=behoerde&name=" + encodeURIComponent(datei.name)
+  const a = await hochladenMitBalken(datei,
+    "/api/dokumente?art=behoerde&name=" + encodeURIComponent(datei.name)
       + "&titel=" + encodeURIComponent("Brief vom Amt · " + datei.name),
-      {method:"POST", body: datei});
-    knopf.textContent = r.ok ? "Abgelegt ✓ — wir erklären ihn dir gleich hier"
-                             : "Das hat nicht geklappt — nochmal?";
-    if (r.ok){ setTimeout(ladePost, 1200); setTimeout(ladePost, 15000); }
-  }catch{ knopf.textContent = "Gerade keine Verbindung — nochmal?"; }
-  setTimeout(() => { knopf.textContent = "Brief vom Amt ablegen"; }, 6000);
+    $("#post-hochladen"), {fertigSatz: "abgelegt, wird erklärt"});
+  if (a.ok){ setTimeout(ladePost, 1200); setTimeout(ladePost, 15000); }
 });
 $("#auszug-knopf").addEventListener("click", () => $("#auszug-datei").click());
 $("#auszug-datei").addEventListener("change", async ev => {
   const datei = ev.target.files[0];
   ev.target.value = "";
   if (!datei) return;
-  const knopf = $("#auszug-knopf");
-  knopf.textContent = "Wird gelesen …";
-  try{
-    const r = await api("/api/kontoauszug?name=" + encodeURIComponent(datei.name),
-      {method:"POST", body: datei});
-    const d = await r.json();
-    knopf.textContent = r.ok
-      ? `Gelesen ✓ — ${d.umsaetze} Zahlungen aus ${monatName(d.monat)}`
-      : (d.fehler || "Das hat nicht geklappt — nochmal?");
-    if (r.ok && $("#a-bank").classList.contains("an")){ bMonat = d.monat; ladeBank(); }
-  }catch{ knopf.textContent = "Gerade keine Verbindung — nochmal?"; }
-  setTimeout(() => { knopf.textContent = "Kontoauszug ablegen"; }, 4000);
+  // Der Auszug wird aus der Bank- wie aus der Postansicht angestoßen — der
+  // Balken gehört dorthin, wo man gerade steht.
+  const wohin = $("#a-bank").classList.contains("an")
+    ? $("#bank-hochladen") : $("#post-hochladen");
+  const a = await hochladenMitBalken(datei,
+    "/api/kontoauszug?name=" + encodeURIComponent(datei.name), wohin,
+    {fertigSatz: d => `${d.umsaetze} Zahlungen aus ${monatName(d.monat)}`});
+  if (a.ok && $("#a-bank").classList.contains("an")){ bMonat = a.d.monat; ladeBank(); }
 });
 
 /* ————— SALON-CHECK: Unterlagen ablegen, zuschauen, Ampel-Karten ————— */
@@ -2230,8 +2625,9 @@ function scStart(ziel, status){
   ziel.innerHTML = hinweis + `
     <div class="karte" style="text-align:center;padding:34px 20px">
       <div style="font:600 20px var(--gc-serif);margin-bottom:6px">Leg einfach alles vom letzten Jahr hier ab.</div>
-      <p style="color:var(--gc-desc);max-width:46ch;margin:0 auto 16px">Gewinnrechnung, Steuerbescheid, Anlagenliste — als Foto oder PDF,
-        egal in welcher Reihenfolge. Wir lesen das.</p>
+      <p style="color:var(--gc-desc);max-width:46ch;margin:0 auto 16px">Gewinnrechnung, Steuerbescheid, Mietvertrag, Kontoauszüge,
+        Rechnungen — als Foto oder PDF, egal in welcher Reihenfolge. Wir
+        lesen das und legen jede Unterlage in ihr Fach.</p>
       <button class="chip" id="sc-waehlen">Unterlagen auswählen</button>
       <div id="sc-liste" style="margin:12px auto 0;max-width:420px;text-align:left"></div>
       <button class="chip an" id="sc-los" style="margin-top:14px" hidden>Loslesen ›</button>
@@ -2246,18 +2642,10 @@ $("#sc-datei").addEventListener("change", async ev => {
   const liste = $("#sc-liste");
   if (!dateien.length || !liste) return;
   for (const datei of dateien){
-    const zeile = document.createElement("div");
-    zeile.className = "sc-zeile einflug";
-    zeile.innerHTML = `<span>${esc(datei.name)}</span><span>lädt …</span>`;
-    liste.appendChild(zeile);
-    try{
-      const r = await api(`/api/abschluss?jahr=${SC_JAHR}&name=` +
-                          encodeURIComponent(datei.name), {method:"POST", body: datei});
-      const d = await r.json();
-      zeile.lastElementChild.innerHTML = r.ok ? '<span style="color:var(--gc-ok)">abgelegt ✓</span>'
-                                              : esc(d.fehler || "hat nicht geklappt");
-      if (r.ok) scHochgeladen++;
-    }catch{ zeile.lastElementChild.textContent = "gerade keine Verbindung"; }
+    const a = await hochladenMitBalken(datei,
+      `/api/abschluss?jahr=${SC_JAHR}&name=` + encodeURIComponent(datei.name),
+      liste);
+    if (a.ok) scHochgeladen++;
   }
   // Wer Unterlagen hochlädt, will sie gelesen haben — also gleich loslegen.
   // Der Knopf bleibt als Rückfallebene sichtbar, falls der Start scheitert.
@@ -2377,9 +2765,13 @@ function ikoneKnoten(){
   return d;
 }
 
+/* Beide Vokabulare, weil beide vorkommen: was `abschluss_lesen` nicht kennt,
+   ordnet `einsortieren` ein — der Mietvertrag heißt dann „Vertrag". */
 const SC_ART = {euer: "Gewinnrechnung", bwa: "Monatsauswertung",
                 bescheid: "Steuerbescheid", anlagen: "Anlagenliste",
-                susa: "Kontenliste", sonstiges: "Unterlage"};
+                susa: "Kontenliste", sonstiges: "Unterlage",
+                behoerde: "Post vom Amt", kontoauszug: "Kontoauszug",
+                vertrag: "Vertrag", beleg: "Beleg"};
 
 function scVorschlaege(vorschlaege){
   const ziel = $("#sc-vorschlaege");
@@ -3051,42 +3443,87 @@ async function fuersNetzVerkleinern(datei){
   }
 }
 
+/* Ein Balken je Datei. Ohne Fortschritt und ohne „fertig" wartet man doppelt
+   so lange, wie es dauert — man weiß ja nicht, ob überhaupt etwas passiert. */
+function fortschrittZeile(elternteil, name, vorne = false){
+  const el = document.createElement("div");
+  el.className = "upzeile einflug";
+  el.innerHTML = `<div class="upname"></div><div class="upstand">wird vorbereitet …</div>
+    <div class="upbalken"><i></i></div>`;
+  el.querySelector(".upname").textContent = name;
+  elternteil[vorne ? "prepend" : "append"](el);
+  const stand = el.querySelector(".upstand"), balken = el.querySelector("i");
+  return {
+    knoten: el,
+    // Ganz bei null sieht der Balken aus, als sei nichts passiert.
+    anteil(p){ balken.style.width = Math.round(Math.max(0.03, p) * 100) + "%"; },
+    sagen(text){ stand.textContent = text; },
+    fertig(text){ el.classList.add("fertig"); balken.style.width = "100%";
+                  stand.textContent = text + " ✓"; },
+    schief(text){ el.classList.add("schief"); balken.style.width = "100%";
+                  stand.textContent = text; },
+  };
+}
+
+/* `fetch` meldet keinen SENDE-Fortschritt — nur, dass die Antwort da ist.
+   Ein Balken, der bloß „angefangen/fertig" kennt, wäre eine Lüge mit
+   Animation. XHR meldet ihn; deshalb hier XHR und sonst nirgends. */
+function sendenMitFortschritt(url, koerper, beiAnteil){
+  return new Promise((gut, schlecht) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", url, true);
+    x.withCredentials = true;
+    x.upload.addEventListener("progress", e => {
+      if (e.lengthComputable) beiAnteil(e.loaded / e.total);
+    });
+    x.addEventListener("load", () => {
+      if (x.status === 401){ zeigeLogin(); schlecht(new Error("abgemeldet")); return; }
+      let d = {};
+      try{ d = JSON.parse(x.responseText); }catch{}
+      gut({ok: x.status >= 200 && x.status < 300, status: x.status, d});
+    });
+    x.addEventListener("error", () => schlecht(new Error("keine Verbindung")));
+    x.send(koerper);
+  });
+}
+
+/* Eine Datei hochladen: erst verkleinern, dann senden, Balken mitlaufen
+   lassen, am Ende ein Haken. Verkleinert wird IMMER zuerst — ein Telefonfoto
+   sind schnell 5 MB, und die Erkennung braucht sie nicht: gemessen halten
+   Beträge bis 620 px Seitenbreite durch. */
+async function hochladenMitBalken(datei, url, elternteil,
+                                  {fertigSatz = "abgelegt", vorne = false} = {}){
+  const zeile = fortschrittZeile(elternteil, datei.name, vorne);
+  try{
+    const schlank = await fuersNetzVerkleinern(datei);
+    zeile.sagen(schlank !== datei
+      ? `${Math.round(schlank.size / 1024)} statt ${Math.round(datei.size / 1024)} KB`
+      : "wird gesendet …");
+    const a = await sendenMitFortschritt(url, schlank, p => zeile.anteil(p));
+    if (!a.ok){
+      zeile.schief(a.d.fehler
+        || (a.status === 413 ? "zu groß (max. 40 MB)"
+          : a.status === 400 ? "dieses Format können wir nicht ablegen"
+          : "gerade nicht speicherbar — gleich nochmal"));
+      return a;
+    }
+    zeile.fertig(typeof fertigSatz === "function" ? fertigSatz(a.d) : fertigSatz);
+    return a;
+  }catch{
+    zeile.schief("gerade keine Verbindung");
+    return {ok: false, status: 0, d: {}};
+  }
+}
+
 async function hochladen(dateien){
   location.hash = "#belege";
   for (const datei of dateien){
-    const kennung = "up-" + Math.random().toString(36).slice(2, 8);
-    const zeile = document.createElement("div");
-    zeile.className = "zeile einflug"; zeile.id = kennung;
-    zeile.innerHTML = `<div class="thumb doc"><svg class="ik" viewBox="0 0 24 24"><use href="#ik-dokument"/></svg></div><div class="zmitte">
-      <div class="zname">${datei.name}</div>
-      <div class="zstatus laeuft">wird sicher abgelegt …</div></div>`;
-    const liste = $("#belege-liste");
-    liste.prepend(zeile);
-    try{
-      const schlank = await fuersNetzVerkleinern(datei);
-      if (schlank !== datei){
-        zeile.querySelector(".zstatus").textContent =
-          `wird gesendet (${Math.round(schlank.size / 1024)} statt ${Math.round(datei.size / 1024)} KB) …`;
-      }
-      const r = await api("/api/hochladen?name=" + encodeURIComponent(datei.name),
-        {method:"POST", body: schlank});
-      const d = await r.json();
-      if (!r.ok){
-        zeile.querySelector(".zstatus").textContent =
-          r.status === 413 ? "zu groß (max. 40 MB)" :
-          r.status === 400 ? "dieses Format kann ich nicht ablegen" :
-          "gerade nicht speicherbar — gleich nochmal";
-        zeile.querySelector(".zstatus").className = "zstatus frage";
-        continue;
-      }
-      zeile.querySelector(".zstatus").textContent = "abgelegt ✓ — wird gelesen …";
-      etag = null;  // nächster Poll holt frisch
-    }catch{
-      zeile.querySelector(".zstatus").textContent = "gerade keine Verbindung";
-      zeile.querySelector(".zstatus").className = "zstatus frage";
-    }
+    const a = await hochladenMitBalken(datei,
+      "/api/hochladen?name=" + encodeURIComponent(datei.name),
+      $("#belege-liste"), {fertigSatz: "abgelegt, wird gelesen", vorne: true});
+    if (a.ok) etag = null;   // nächster Poll holt frisch
   }
-  setTimeout(ladeBelege, 800);
+  setTimeout(ladeBelege, 1200);
 }
 
 /* ————— Frische: ETag-Poll alle 30 s ————— */
