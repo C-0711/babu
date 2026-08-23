@@ -261,6 +261,20 @@ main p, .leer, .karte > p{max-width:78ch}
 .suchfeld{width:100%;min-width:0;padding:10px 14px;border:1px solid var(--gc-border);
   border-radius:999px;font:inherit;background:var(--gc-bg);margin:4px 0 10px}
 
+/* Eingaben. Die gab es bisher nur als Inline-Stil an jedem einzelnen Feld —
+   dreizehnmal dieselbe Zeile, und jede konnte einzeln veralten. Die
+   Beschriftung ist Schreibmaschine wie überall, das Feld selbst ruhig. */
+.eingabe-gitter{display:grid;gap:10px;
+  grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.eingabe-gitter label{display:block;font:9.5px/1 var(--gc-mono);
+  letter-spacing:.11em;text-transform:uppercase;color:var(--gc-muted)}
+.eingabe-gitter label.breit{grid-column:1/-1}
+.eingabe-gitter input, .eingabe-gitter select{width:100%;margin-top:5px;
+  padding:9px 12px;border:1px solid var(--gc-border);border-radius:8px;
+  font:14px var(--gc-sans);color:var(--gc-fg);background:var(--gc-bg)}
+.eingabe-gitter input:focus, .eingabe-gitter select:focus{
+  outline:2px solid var(--gc-accent);outline-offset:1px}
+
 /* Lange, unumbrechbare Zeichenketten — Webhook-Adressen, IBANs, Dateinamen —
    drücken sonst ihre Spalte auf und schieben die ganze Seite über den Rand.
    Auf einem Telefon ist das der Unterschied zwischen benutzbar und kaputt.
@@ -1485,41 +1499,78 @@ document.querySelectorAll("#filter-chips .chip").forEach(c => c.addEventListener
 }));
 
 /* ————— DETAIL ————— */
-/* Was babu nicht lesen konnte, trägt die Nutzerin hier direkt nach —
-   sichtbar an der Stelle, an der die Frage steht. */
-function angabenFormular(stamm, f){
-  const fehlt = (was) => (f.offen || []).some(o => (o || "").toLowerCase().includes(was));
-  const brauchtBetrag = !f.brutto || fehlt("betrag") || fehlt("brutto") || fehlt("summe");
-  const brauchtLaden = !f.lieferant || fehlt("lieferant") || fehlt("laden");
-  const brauchtDatum = !f.datum || fehlt("datum");
-  return `<div class="karte nachfrage" style="margin-top:10px" id="ang-${stamm}">
-    <h3>Trag nach, was fehlt</h3>
-    <p style="color:var(--gc-desc);font-size:13px;margin-bottom:10px">
-      babu konnte hier nicht alles lesen. Was du einträgst, gilt.</p>
-    <div style="display:grid;gap:8px">
-      ${brauchtBetrag ? `<label style="font-size:13px">Betrag (mit Cent)
-        <input id="ang-brutto" inputmode="decimal" placeholder="z. B. 4,20"
-          style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-top:3px"></label>` : ""}
-      ${brauchtLaden ? `<label style="font-size:13px">Wo war das?
-        <input id="ang-lieferant" placeholder="z. B. APCOA Parking"
-          style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-top:3px"></label>` : ""}
-      ${brauchtDatum ? `<label style="font-size:13px">Datum
-        <input id="ang-datum" type="date"
-          style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-top:3px"></label>` : ""}
-      <label style="font-size:13px">Notiz (wenn du magst)
-        <input id="ang-notiz" placeholder="z. B. Parken beim Großhandel"
-          style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-top:3px"></label>
+/* Am Schreibtisch wird aufgeräumt — also muss hier alles änderbar sein.
+   Das Formular gab es schon, aber nur solange eine Frage offen war: wer
+   sah, dass die 4,20 € vom Parkschein falsch dastehen, fand keinen Weg,
+   sie zu berichtigen (BABU-42). Jetzt steht es immer da, vorbelegt mit dem,
+   was gelesen wurde, und aufgeklappt genau dann, wenn etwas fehlt. */
+
+/* Die Kategorien führt der Server (kontierung.py). Einmal holen und
+   merken — eine zweite Liste im Portal liefe irgendwann auseinander. */
+let kategorienCache = null;
+async function kategorienHolen(){
+  if (kategorienCache) return kategorienCache;
+  try{
+    const r = await api("/api/kategorien");
+    kategorienCache = r.ok ? (await r.json()).kategorien || [] : [];
+  }catch{ kategorienCache = []; }
+  return kategorienCache;
+}
+
+function aenderungsFormular(stamm, f, e, offenBleibt){
+  const wert = (x) => x == null ? "" : String(x);
+  // Der Betrag steht deutsch da — mit Komma, so wie er eingetippt wird.
+  const betrag = f.brutto != null ? f.brutto.toFixed(2).replace(".", ",") : "";
+  const datum = /^\d{4}-\d{2}-\d{2}$/.test(wert(f.datum)) ? f.datum
+    : (/^(\d{2})\.(\d{2})\.(\d{4})$/.test(wert(f.datum))
+        ? f.datum.replace(/^(\d{2})\.(\d{2})\.(\d{4})$/, "$3-$2-$1") : "");
+  return `<div class="karte ${offenBleibt ? "nachfrage" : ""}" style="margin-top:10px" id="ang-${stamm}">
+    <h3>${offenBleibt ? "Trag nach, was fehlt" : "Beleg ändern"}</h3>
+    <p style="color:var(--gc-desc);font-size:13px;margin-bottom:12px">
+      ${offenBleibt
+        ? "babu konnte hier nicht alles lesen. Was du einträgst, gilt."
+        : "Stimmt etwas nicht? Ändere es hier — was du einträgst, gilt."}</p>
+    <div class="eingabe-gitter">
+      <label>Betrag (mit Cent)
+        <input id="ang-brutto" inputmode="decimal" placeholder="z. B. 4,20" value="${esc(betrag)}"></label>
+      <label>Datum
+        <input id="ang-datum" type="date" value="${esc(datum)}"></label>
+      <label>Wo war das?
+        <input id="ang-lieferant" placeholder="z. B. APCOA Parking" value="${esc(wert(f.lieferant))}"></label>
+      <label>Wofür war das?
+        <select id="ang-kategorie"><option value="">— noch offen —</option></select></label>
+      <label class="breit">Notiz (wenn du magst)
+        <input id="ang-notiz" placeholder="z. B. Parken beim Großhandel"></label>
     </div>
-    <button class="hin" style="margin-top:12px" onclick="angabenSenden('${stamm}')">Speichern</button>
-    <span id="ang-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>
+    <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="hin" onclick="angabenSenden('${stamm}')">${
+        offenBleibt ? "Speichern und abschließen" : "Änderung speichern"}</button>
+      <span id="ang-status" style="font-size:12px;color:var(--gc-muted)"></span>
+    </div>
   </div>`;
 }
+
+/* Das Auswahlfeld wird nachgefüllt, sobald die Liste da ist — das Formular
+   steht sofort, statt auf einen zweiten Netzweg zu warten. */
+async function kategorieFeldFuellen(gewaehlt){
+  const feld = $("#ang-kategorie");
+  if (!feld) return;
+  for (const k of await kategorienHolen()){
+    const o = document.createElement("option");
+    o.value = k.code;
+    o.textContent = k.name;
+    if (k.code === gewaehlt) o.selected = true;
+    feld.appendChild(o);
+  }
+}
+
 async function angabenSenden(stamm){
   const status = $("#ang-status");
   const wert = (id) => { const e = document.getElementById(id); return e ? e.value.trim() : ""; };
   const koerper = {brutto: wert("ang-brutto"), lieferant: wert("ang-lieferant"),
-                   datum: wert("ang-datum"), notiz: wert("ang-notiz")};
-  if (!koerper.brutto && !koerper.lieferant && !koerper.datum && !koerper.notiz){
+                   datum: wert("ang-datum"), kategorie: wert("ang-kategorie"),
+                   notiz: wert("ang-notiz")};
+  if (!Object.values(koerper).some(Boolean)){
     status.textContent = "Bitte mindestens ein Feld ausfüllen."; return;
   }
   status.textContent = "wird gespeichert …";
@@ -1529,6 +1580,7 @@ async function angabenSenden(stamm){
     const d = await r.json().catch(() => ({}));
     if (!r.ok){ status.textContent = d.fehler || "Ging gerade nicht."; return; }
     status.textContent = "Gespeichert ✓";
+    etag = null;   // die Belegliste zeigt sonst den alten Stand
     setTimeout(() => ladeDetail(stamm), 700);
   }catch{ status.textContent = "Gerade keine Verbindung."; }
 }
@@ -1602,7 +1654,7 @@ async function ladeDetail(stamm){
         onclick="bewirtungSheet('${d.stamm}','${lieferant} · ${euro(f.brutto)}')">
         <h3>Mit wem warst du essen?</h3><p>Kurz notiert, und der Beleg zählt voll.</p>
         <span class="hin">Kurz klären ›</span></button>` : ""}
-      ${(frage && !bewirtungOffen) || !f.brutto ? angabenFormular(d.stamm, f) : ""}
+      ${aenderungsFormular(d.stamm, f, e, (frage && !bewirtungOffen) || !f.brutto)}
       ${d.bewirtung ? `<div class="feld" style="margin-top:8px"><span>Anlass</span><b style="font-family:var(--gc-sans)">${d.bewirtung.anlass}</b></div>
         <div class="feld"><span>Dabei waren</span><b style="font-family:var(--gc-sans)">${(d.bewirtung.teilnehmer||[]).join(", ")}</b></div>` : ""}
       </div>`;
@@ -1670,6 +1722,7 @@ async function ladeDetail(stamm){
   }
   html += `</div></div></div>`;
   ziel.innerHTML = html;
+  kategorieFeldFuellen(e.kategorie);
   const bild = $("#belegbild");
   if (bild) bild.addEventListener("click", () => bild.classList.toggle("zoom"));
 }

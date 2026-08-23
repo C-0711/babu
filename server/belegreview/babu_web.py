@@ -617,6 +617,65 @@ def _status_ableiten(review: dict | None, bewirtung_da: bool) -> str:
     return "nachfrage"
 
 
+# Welche offene Frage eine nachgetragene Angabe beantwortet.
+#
+# Die offenen Punkte sind ganze Sätze aus `belegdeutung` — „Der
+# Rechnungsbetrag ist nicht sicher zu lesen." Verglichen wurde bisher gegen
+# die Feldnamen der Angaben („brutto"), und das kann nie zusammenpassen: die
+# Nutzerin trug den Betrag nach, und die Frage danach blieb trotzdem stehen.
+# Deshalb Stichwörter statt Gleichheit — großzügig, aber je Feld nur die
+# Wörter, die wirklich nach diesem Feld fragen.
+ANGABE_STICHWORT = {
+    "brutto": ("rechnungsbetrag", "brutto", "gesamtbetrag", "der betrag",
+               "betrag nicht"),
+    "lieferant": ("ausgestellt", "lieferant", "aussteller"),
+    "datum": ("belegdatum", "datum"),
+}
+
+
+def _offen_nach_angaben(offen: list, angaben: dict | None) -> list:
+    """Welche Fragen nach den nachgetragenen Angaben noch offen sind."""
+    beantwortet = set((angaben or {}).get("beantwortet") or [])
+    woerter = tuple(w for feld in beantwortet
+                    for w in ANGABE_STICHWORT.get(feld, ()))
+    if not woerter:
+        return list(offen or [])
+    return [o for o in (offen or [])
+            if not any(w in str(o).lower() for w in woerter)]
+
+
+def _beleg_abgeschlossen(offen: list, bewirtung: bool, bewirtung_da: bool) -> bool:
+    """Ist von der Nutzerin her alles beantwortet?
+
+    Dieselbe Regel wie in `_status_ableiten`, nur ohne die Summenprobe: wer
+    den Betrag selbst einträgt, hat keine Probe mehr, die aufgehen könnte —
+    ihre Angabe gilt. Die Bewirtungsfrage (Anlass, Teilnehmer) beantwortet
+    ein Betrag dagegen nicht, die bleibt stehen.
+    """
+    echte_offen = [o for o in (offen or []) if "trinkgeld" not in str(o).lower()]
+    return not echte_offen and not (bewirtung and not bewirtung_da)
+
+
+def _kategorie_anwenden(review: dict, kategorie: str) -> None:
+    """Aus der gewählten Kategorie wird das Konto — im Rahmen des Betriebs.
+
+    Nina wählt „Kfz-Kosten", nicht „6530". Welche Nummer daraus wird, weiß
+    `kontierung`; hier wird nur eingesetzt. `konto_skr04` nur dann, wenn der
+    Betrieb wirklich SKR04 fährt — eine SKR03-Nummer unter diesem Namen wäre
+    genau die Vermischung, die es nicht geben darf.
+    """
+    import kontierung as kt  # noqa: PLC0415
+    e = review.setdefault("einschaetzung", {})
+    rahmen = e.get("kontenrahmen") or "SKR04"
+    konto = kt.konto(kategorie, rahmen) if rahmen in kt.RAHMEN else None
+    e["kategorie"] = kategorie
+    e["konto"] = konto
+    e["kontierung_grund"] = "von Hand gewählt"
+    e["rueckfrage"] = None
+    if rahmen == "SKR04":
+        e["konto_skr04"] = konto
+
+
 def _index_bauen(head: str) -> None:
     # Klassisches ls-tree-Format „<mode> <typ> <oid>\t<pfad>“ — läuft auch auf
     # Git < 2.36 (H200V: 2.34), das --format für ls-tree noch nicht kennt.
@@ -687,6 +746,8 @@ def _index_bauen(head: str) -> None:
             "belegart": ((review.get("semantik") or {}).get("belegart")) if review else None,
             "dokumentklasse": (review or {}).get("dokumentklasse") if review else None,
             "konto_skr04": e.get("konto_skr04"),
+            # Das „wofür" in Ninas Worten — daraus wird erst das Konto.
+            "kategorie": e.get("kategorie"),
             "steuerschluessel": e.get("steuerschluessel"),
             "buchungstext": (datev_buchungssatz(review) or {}).get("buchungstext") if review else None,
             "offen": list(f.get("offen") or []),
@@ -707,10 +768,13 @@ def _index_bauen(head: str) -> None:
                 # sonst bliebe der Beleg im falschen Abschluss stehen.
                 eintrag["monat"] = _beleg_monat(ergaenzung["datum"], name, pfad)
             # Beantwortete Punkte verschwinden aus der Nachfrage-Liste.
-            beantwortet = set(ergaenzung.get("beantwortet") or [])
-            eintrag["offen"] = [o for o in eintrag["offen"] if o not in beantwortet]
-            if not eintrag["offen"] and eintrag.get("status") == "nachfrage":
-                eintrag["status"] = "erfasst"
+            eintrag["offen"] = _offen_nach_angaben(eintrag["offen"], ergaenzung)
+            # Und wer alles beantwortet hat, ist fertig. Vorher stand der
+            # Beleg danach auf „erfasst" — im Portal heißt das „wird noch
+            # gelesen", und gelesen wurde er längst.
+            if eintrag.get("status") == "nachfrage" and _beleg_abgeschlossen(
+                    eintrag["offen"], eintrag["bewirtung"], bewirtung_da):
+                eintrag["status"] = "geprüft"
             if review is not None:
                 review = json.loads(json.dumps(review))
                 review.setdefault("felder", {})
@@ -718,6 +782,12 @@ def _index_bauen(head: str) -> None:
                     if ergaenzung.get(kk) is not None:
                         review["felder"][kk] = ergaenzung[kk]
                 review["felder"]["offen"] = eintrag["offen"]
+            if ergaenzung.get("kategorie"):
+                eintrag["kategorie"] = ergaenzung["kategorie"]
+                if review is not None:
+                    _kategorie_anwenden(review, ergaenzung["kategorie"])
+                    eintrag["konto_skr04"] = \
+                        review["einschaetzung"].get("konto_skr04")
         korrektur = oid_cache.get(korrektur_pfade.get(stamm, ""))
         if isinstance(korrektur, dict):
             eintrag["korrigiert"] = True
@@ -1260,9 +1330,10 @@ def api_beleg(stamm: str, request: Request) -> Response:
             for kk in ("brutto", "lieferant", "datum"):
                 if ang.get(kk) is not None:
                     d["felder"][kk] = ang[kk]
-            beantwortet = set(ang.get("beantwortet") or [])
-            d["felder"]["offen"] = [o for o in (d["felder"].get("offen") or [])
-                                    if o not in beantwortet]
+            d["felder"]["offen"] = _offen_nach_angaben(
+                d["felder"].get("offen"), ang)
+            if ang.get("kategorie"):
+                _kategorie_anwenden(d, ang["kategorie"])
             d["ergaenzt"] = True
             d["angaben"] = ang
             d["buchungssatz"] = datev_buchungssatz(d) if d else None
@@ -6045,10 +6116,32 @@ def api_marke_entwerfen(request: Request) -> Response:
     return JSONResponse({**stil, "in_worten": marke.als_text(stil)})
 
 
+@app.get("/api/kategorien")
+def api_kategorien(request: Request) -> Response:
+    """Die Buchungskategorien zur Auswahl — Ninas Wörter, nicht DATEVs.
+
+    Das Portal soll die Liste nicht selbst führen: sie stünde dann zweimal
+    da und liefe auseinander. Der Kontenrahmen des Betriebs entscheidet,
+    welche Nummer daneben steht.
+    """
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    import kontierung as kt  # noqa: PLC0415
+    rahmen = (db_einstellungen(un).get("kontenrahmen") or "SKR04").strip()
+    if rahmen not in kt.RAHMEN:
+        rahmen = "SKR04"
+    return JSONResponse({"kontenrahmen": rahmen, "kategorien": [
+        {"code": k.code, "name": k.name, "konto": k.konto(rahmen),
+         "bestaetigt": k.geprueft, "hinweis": k.hinweis}
+        for k in kt.KATEGORIEN.values()]})
+
+
 @app.post("/api/angaben/{stamm}")
 async def api_angaben(stamm: str, request: Request) -> Response:
     """Was babu nicht lesen konnte, trägt die Nutzerin selbst nach —
-    Betrag, Datum, Laden. Eigener Commit, das Original bleibt unberührt."""
+    Betrag, Datum, Laden, Kategorie. Eigener Commit, das Original bleibt
+    unberührt."""
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
@@ -6082,10 +6175,20 @@ async def api_angaben(stamm: str, request: Request) -> Response:
     if datum:
         daten["datum"] = datum
         daten["beantwortet"].append("datum")
+    # Die Kategorie ist das „wofür" — Nina wählt „Kfz-Kosten", nicht „6530".
+    # Nur was `kontierung` kennt, wird angenommen: eine erfundene Kategorie
+    # hätte kein Konto und liefe still ins Leere.
+    kategorie = str(body.get("kategorie", "")).strip()[:40]
+    if kategorie:
+        import kontierung as kt  # noqa: PLC0415
+        if kategorie not in kt.KATEGORIEN:
+            return JSONResponse({"fehler": "Diese Kategorie kennen wir nicht."},
+                                status_code=400)
+        daten["kategorie"] = kategorie
     notiz = str(body.get("notiz", "")).strip()[:200]
     if notiz:
         daten["notiz"] = notiz
-    if not daten["beantwortet"] and not notiz:
+    if not daten["beantwortet"] and not notiz and not kategorie:
         return JSONResponse({"fehler": "Bitte mindestens eine Angabe ausfüllen."},
                             status_code=400)
 
