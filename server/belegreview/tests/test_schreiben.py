@@ -164,6 +164,18 @@ def test_die_kennzahlen_haengen_auch_in_der_auswertung(welt):
     assert "betrieb" not in auswertung["kennzahlen"]
 
 
+def test_keine_kennzahl_behauptet_etwas_ungemessenes(welt):
+    """`pflicht_metadaten_pro_beleg` stand fest auf 0 — bei Ziel 0.
+
+    Damit meldete die Zahl immer Erfolg, ohne je etwas anzusehen. Seit die
+    Kennzahlen der Inhaberin gezeigt werden, ist das keine Kleinigkeit
+    mehr: eine grüne Kachel, hinter der nichts gemessen wird, ist
+    schlimmer als gar keine.
+    """
+    client, _ = welt
+    assert "pflicht_metadaten_pro_beleg" not in client.get("/api/kpi/2026-08").json()
+
+
 def test_ablage_vertragsgleich(welt):
     """POST /ablage wie der alte Eingang: multipart file, {ok,ref,commit,datei};
     txt → 400 (Verbindungstest), Bearer-Auth."""

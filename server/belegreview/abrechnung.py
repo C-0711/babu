@@ -1,7 +1,7 @@
 """Aus dem Termin abrechnen — und was daraus fürs Kassenbuch folgt.
 
 babu kennt den Termin und seit heute auch den Preis. Nach der Behandlung
-genügt ein Tipp: bar oder Karte.
+genügt ein Tipp: bar, Karte oder Gutschein.
 
 Was babu daraus ausdrücklich NICHT macht: das Kassenbuch selbst schreiben.
 Es legt die Tagessummen fertig hin, bestätigt werden sie abends von der
@@ -14,7 +14,14 @@ Reine Rechnung ohne I/O.
 """
 from __future__ import annotations
 
-ZAHLARTEN = ("bar", "karte")
+# „gutschein" heißt: die Kundin hat mit einem Gutschein bezahlt, also einen
+# eingelöst. Kein Geld wechselt den Besitzer und es entsteht kein neuer
+# Erlös — beides war beim VERKAUF des Gutscheins (Einzweck-Gutschein, der
+# Salon kennt seinen Steuersatz). Zahlt sie drauf, weil die Behandlung
+# teurer war, ist nur die Differenz eine Zahlung; ein Termin trägt aber nur
+# eine Zahlart, also wird ein solcher Termin heute mit der Zahlart der
+# Aufzahlung abgerechnet. Aufteilen kann babu das noch nicht.
+ZAHLARTEN = ("bar", "karte", "gutschein")
 SAETZE = (0, 7, 19)
 PREIS_MAX = 10_000.0
 
@@ -68,7 +75,7 @@ def leistung_pruefen(roh: dict) -> dict:
 def zahlart_pruefen(wert: str) -> str:
     art = str(wert or "").strip().lower()
     if art not in ZAHLARTEN:
-        raise AbrechnungFehler("Bar oder Karte?")
+        raise AbrechnungFehler("Bar, Karte oder Gutschein?")
     return art
 
 
@@ -83,7 +90,7 @@ def tagesvorschlag(datum: str, termine: list[dict]) -> dict:
     weder ein Zeitpunkt noch eine Bestätigung — beides gehört zur
     Bestätigung der Inhaberin, nicht hierher.
     """
-    bar = karte = sieben = 0.0
+    bar = karte = gutschein = sieben = 0.0
     gezaehlt = 0
     offen = 0
     for t in termine or []:
@@ -99,8 +106,17 @@ def tagesvorschlag(datum: str, termine: list[dict]) -> dict:
         if preis <= 0:
             continue
         gezaehlt += 1
-        if t.get("zahlart") == "karte":
+        art = t.get("zahlart")
+        if art == "karte":
             karte += preis
+        elif art == "gutschein":
+            # Gehört ins Kassenbuch auf `gutscheineEingeloest`: kein
+            # Bargeld in der Schublade, kein neuer Erlös. Liefe es wie
+            # früher in `bar`, stimmte am Abend der Kassenbestand nicht
+            # mehr — und die Aufteilung 7/19 zählte einen Umsatz mit, den
+            # es an diesem Tag nicht gab. Deshalb auch kein `sieben`.
+            gutschein += preis
+            continue
         else:
             bar += preis
         if int(t.get("ust_satz") or 19) == 7:
@@ -112,8 +128,12 @@ def tagesvorschlag(datum: str, termine: list[dict]) -> dict:
     else:
         satz = (f"{gezaehlt} abgerechnet: {_euro(bar)} bar, {_euro(karte)} Karte "
                 f"— zusammen {_euro(zusammen)}.")
+        if gutschein:
+            satz += (f" Dazu {_euro(gutschein)} mit Gutschein bezahlt — dafür "
+                     f"kam das Geld schon beim Verkauf herein.")
     return {"datum": datum, "vorschlag": True, "termine": gezaehlt, "offen": offen,
             "bar": round(bar, 2), "karte": round(karte, 2),
+            "gutschein": round(gutschein, 2),
             "umsatz7": round(sieben, 2), "zusammen": zusammen, "satz": satz}
 
 

@@ -2890,7 +2890,10 @@ def kennzahlen_monat(monat: str) -> dict:
                               "ziel": 0.9},
         "offen_zur_frist": {"wert": sum(1 for z in zeilen if z["status"] in ("nachfrage", "erfasst")),
                             "ziel": 0},
-        "pflicht_metadaten_pro_beleg": {"wert": 0, "ziel": 0},
+        # `pflicht_metadaten_pro_beleg` stand hier fest auf 0 bei Ziel 0 und
+        # meldete damit immer Erfolg, ohne je einen Beleg anzusehen. Raus:
+        # seit die Kennzahlen in der Auswertung stehen, wäre das eine grüne
+        # Kachel, hinter der nichts gemessen wird.
     }
 
 
@@ -6922,8 +6925,10 @@ def api_leistung_loeschen(leistung_id: int, request: Request) -> Response:
 
 
 # ---------------------------------------------------------------------------
-# Abrechnen: nach der Behandlung ein Tipp — bar oder Karte. Daraus wird ein
-# VORSCHLAG fürs Kassenbuch, keine Buchung (siehe abrechnung.py).
+# Abrechnen: nach der Behandlung ein Tipp — bar, Karte oder Gutschein.
+# Daraus wird ein VORSCHLAG fürs Kassenbuch, keine Buchung (siehe
+# abrechnung.py). Ein eingelöster Gutschein steht dort eigens, weil er
+# weder Bargeld noch neuer Umsatz ist.
 # ---------------------------------------------------------------------------
 
 @app.post("/api/termin/{termin_id}/abrechnen")
