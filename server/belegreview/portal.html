@@ -192,6 +192,25 @@ main p, .leer, .karte > p{max-width:78ch}
   border:1px solid var(--gc-border);border-radius:999px}
 .stueck-werkzeug button:hover{color:var(--gc-fg);border-color:var(--gc-accent)}
 
+/* Hochladen: ein Balken je Datei, am Ende ein Haken.
+   Ohne Fortschritt wartet man doppelt so lange, wie es dauert — man weiß
+   ja nicht, ob überhaupt etwas passiert. Der Balken zeigt echtes Senden
+   (XHR meldet es), nicht eine Animation, die immer gleich lang läuft. */
+.upzeile{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 12px;
+  align-items:baseline;padding:9px 0;border-bottom:1px solid var(--gc-border-l)}
+.upzeile .upname{font:600 13.5px var(--gc-serif);color:var(--gc-fg);
+  overflow-wrap:anywhere}
+.upzeile .upstand{font:10.5px var(--gc-mono);letter-spacing:.04em;
+  color:var(--gc-muted);text-align:right;white-space:nowrap}
+.upzeile .upbalken{grid-column:1/-1;height:3px;border-radius:2px;
+  background:var(--gc-border);overflow:hidden}
+.upzeile .upbalken i{display:block;height:100%;width:0;border-radius:2px;
+  background:var(--gc-accent);transition:width .2s ease}
+.upzeile.fertig .upstand{color:var(--gc-ok)}
+.upzeile.fertig .upbalken i{background:var(--gc-ok)}
+.upzeile.schief .upstand{color:var(--gc-danger)}
+.upzeile.schief .upbalken i{background:var(--gc-danger)}
+
 /* Suchtreffer: die Fundstelle ist der Grund, warum die Zeile da steht. */
 .fundstelle{font:12.5px/1.5 var(--gc-sans);color:var(--gc-desc);
   background:var(--gc-desk);border-radius:7px;padding:7px 10px;margin-top:6px}
@@ -860,6 +879,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     </div>
     <p style="color:var(--gc-desc);margin-bottom:10px">Hat jede Zahlung vom Konto ihren Beleg?</p>
     <button class="chip" id="bank-auszug-knopf" style="margin-bottom:14px">Kontoauszug ablegen</button>
+    <div id="bank-hochladen"></div>
     <div id="bank-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
 
@@ -884,6 +904,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
         <button data-ansicht="liste">Liste</button>
       </div>
     </div>
+    <div id="ablage-hochladen"></div>
     <div class="ablage-flaeche">
       <aside class="ablage-baum" id="ablage-baum"><div class="skelett"></div></aside>
       <div class="ablage-mappe" id="ablage-mappe"><div class="skelett"></div><div class="skelett"></div></div>
@@ -907,6 +928,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <button class="chip" id="brief-knopf" style="margin-bottom:10px">Brief vom Amt ablegen</button>
     <input type="file" id="auszug-datei" accept=".pdf,application/pdf" hidden>
     <input type="file" id="brief-datei" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*" hidden>
+    <div id="post-hochladen"></div>
     <input class="suchfeld" id="post-suche" placeholder="Suchen — z. B. Lohn, Auswertung …" autocomplete="off">
     <div class="chips" style="margin-top:0">
       <button class="chip an" id="post-f-alle">Alle</button>
@@ -2463,17 +2485,11 @@ $("#vertrag-datei").addEventListener("change", async ev => {
   const datei = ev.target.files[0];
   ev.target.value = "";
   if (!datei) return;
-  const knopf = $("#ablage-vertrag");
-  knopf.textContent = "Wird gelesen …";
-  try{
-    const r = await api("/api/dokumente?art=vertrag&name=" + encodeURIComponent(datei.name)
+  const a = await hochladenMitBalken(datei,
+    "/api/dokumente?art=vertrag&name=" + encodeURIComponent(datei.name)
       + "&titel=" + encodeURIComponent("Vertrag · " + datei.name),
-      {method:"POST", body: datei});
-    knopf.textContent = r.ok ? "Abgelegt ✓ — wir lesen ihn gerade"
-                             : "Das hat nicht geklappt — nochmal?";
-    if (r.ok){ setTimeout(ladeAblage, 1500); setTimeout(ladeAblage, 20000); }
-  }catch{ knopf.textContent = "Gerade keine Verbindung — nochmal?"; }
-  setTimeout(() => { knopf.textContent = "Vertrag ablegen"; }, 6000);
+    $("#ablage-hochladen"), {fertigSatz: "abgelegt, wird gelesen"});
+  if (a.ok){ setTimeout(ladeAblage, 1500); setTimeout(ladeAblage, 20000); }
 });
 
 async function ladePost(){
@@ -2550,35 +2566,25 @@ $("#brief-datei").addEventListener("change", async ev => {
   const datei = ev.target.files[0];
   ev.target.value = "";
   if (!datei) return;
-  const knopf = $("#brief-knopf");
-  knopf.textContent = "Wird abgelegt …";
-  try{
-    const r = await api("/api/dokumente?art=behoerde&name=" + encodeURIComponent(datei.name)
+  const a = await hochladenMitBalken(datei,
+    "/api/dokumente?art=behoerde&name=" + encodeURIComponent(datei.name)
       + "&titel=" + encodeURIComponent("Brief vom Amt · " + datei.name),
-      {method:"POST", body: datei});
-    knopf.textContent = r.ok ? "Abgelegt ✓ — wir erklären ihn dir gleich hier"
-                             : "Das hat nicht geklappt — nochmal?";
-    if (r.ok){ setTimeout(ladePost, 1200); setTimeout(ladePost, 15000); }
-  }catch{ knopf.textContent = "Gerade keine Verbindung — nochmal?"; }
-  setTimeout(() => { knopf.textContent = "Brief vom Amt ablegen"; }, 6000);
+    $("#post-hochladen"), {fertigSatz: "abgelegt, wird erklärt"});
+  if (a.ok){ setTimeout(ladePost, 1200); setTimeout(ladePost, 15000); }
 });
 $("#auszug-knopf").addEventListener("click", () => $("#auszug-datei").click());
 $("#auszug-datei").addEventListener("change", async ev => {
   const datei = ev.target.files[0];
   ev.target.value = "";
   if (!datei) return;
-  const knopf = $("#auszug-knopf");
-  knopf.textContent = "Wird gelesen …";
-  try{
-    const r = await api("/api/kontoauszug?name=" + encodeURIComponent(datei.name),
-      {method:"POST", body: datei});
-    const d = await r.json();
-    knopf.textContent = r.ok
-      ? `Gelesen ✓ — ${d.umsaetze} Zahlungen aus ${monatName(d.monat)}`
-      : (d.fehler || "Das hat nicht geklappt — nochmal?");
-    if (r.ok && $("#a-bank").classList.contains("an")){ bMonat = d.monat; ladeBank(); }
-  }catch{ knopf.textContent = "Gerade keine Verbindung — nochmal?"; }
-  setTimeout(() => { knopf.textContent = "Kontoauszug ablegen"; }, 4000);
+  // Der Auszug wird aus der Bank- wie aus der Postansicht angestoßen — der
+  // Balken gehört dorthin, wo man gerade steht.
+  const wohin = $("#a-bank").classList.contains("an")
+    ? $("#bank-hochladen") : $("#post-hochladen");
+  const a = await hochladenMitBalken(datei,
+    "/api/kontoauszug?name=" + encodeURIComponent(datei.name), wohin,
+    {fertigSatz: d => `${d.umsaetze} Zahlungen aus ${monatName(d.monat)}`});
+  if (a.ok && $("#a-bank").classList.contains("an")){ bMonat = a.d.monat; ladeBank(); }
 });
 
 /* ————— SALON-CHECK: Unterlagen ablegen, zuschauen, Ampel-Karten ————— */
@@ -2636,18 +2642,10 @@ $("#sc-datei").addEventListener("change", async ev => {
   const liste = $("#sc-liste");
   if (!dateien.length || !liste) return;
   for (const datei of dateien){
-    const zeile = document.createElement("div");
-    zeile.className = "sc-zeile einflug";
-    zeile.innerHTML = `<span>${esc(datei.name)}</span><span>lädt …</span>`;
-    liste.appendChild(zeile);
-    try{
-      const r = await api(`/api/abschluss?jahr=${SC_JAHR}&name=` +
-                          encodeURIComponent(datei.name), {method:"POST", body: datei});
-      const d = await r.json();
-      zeile.lastElementChild.innerHTML = r.ok ? '<span style="color:var(--gc-ok)">abgelegt ✓</span>'
-                                              : esc(d.fehler || "hat nicht geklappt");
-      if (r.ok) scHochgeladen++;
-    }catch{ zeile.lastElementChild.textContent = "gerade keine Verbindung"; }
+    const a = await hochladenMitBalken(datei,
+      `/api/abschluss?jahr=${SC_JAHR}&name=` + encodeURIComponent(datei.name),
+      liste);
+    if (a.ok) scHochgeladen++;
   }
   // Wer Unterlagen hochlädt, will sie gelesen haben — also gleich loslegen.
   // Der Knopf bleibt als Rückfallebene sichtbar, falls der Start scheitert.
@@ -3445,42 +3443,87 @@ async function fuersNetzVerkleinern(datei){
   }
 }
 
+/* Ein Balken je Datei. Ohne Fortschritt und ohne „fertig" wartet man doppelt
+   so lange, wie es dauert — man weiß ja nicht, ob überhaupt etwas passiert. */
+function fortschrittZeile(elternteil, name, vorne = false){
+  const el = document.createElement("div");
+  el.className = "upzeile einflug";
+  el.innerHTML = `<div class="upname"></div><div class="upstand">wird vorbereitet …</div>
+    <div class="upbalken"><i></i></div>`;
+  el.querySelector(".upname").textContent = name;
+  elternteil[vorne ? "prepend" : "append"](el);
+  const stand = el.querySelector(".upstand"), balken = el.querySelector("i");
+  return {
+    knoten: el,
+    // Ganz bei null sieht der Balken aus, als sei nichts passiert.
+    anteil(p){ balken.style.width = Math.round(Math.max(0.03, p) * 100) + "%"; },
+    sagen(text){ stand.textContent = text; },
+    fertig(text){ el.classList.add("fertig"); balken.style.width = "100%";
+                  stand.textContent = text + " ✓"; },
+    schief(text){ el.classList.add("schief"); balken.style.width = "100%";
+                  stand.textContent = text; },
+  };
+}
+
+/* `fetch` meldet keinen SENDE-Fortschritt — nur, dass die Antwort da ist.
+   Ein Balken, der bloß „angefangen/fertig" kennt, wäre eine Lüge mit
+   Animation. XHR meldet ihn; deshalb hier XHR und sonst nirgends. */
+function sendenMitFortschritt(url, koerper, beiAnteil){
+  return new Promise((gut, schlecht) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", url, true);
+    x.withCredentials = true;
+    x.upload.addEventListener("progress", e => {
+      if (e.lengthComputable) beiAnteil(e.loaded / e.total);
+    });
+    x.addEventListener("load", () => {
+      if (x.status === 401){ zeigeLogin(); schlecht(new Error("abgemeldet")); return; }
+      let d = {};
+      try{ d = JSON.parse(x.responseText); }catch{}
+      gut({ok: x.status >= 200 && x.status < 300, status: x.status, d});
+    });
+    x.addEventListener("error", () => schlecht(new Error("keine Verbindung")));
+    x.send(koerper);
+  });
+}
+
+/* Eine Datei hochladen: erst verkleinern, dann senden, Balken mitlaufen
+   lassen, am Ende ein Haken. Verkleinert wird IMMER zuerst — ein Telefonfoto
+   sind schnell 5 MB, und die Erkennung braucht sie nicht: gemessen halten
+   Beträge bis 620 px Seitenbreite durch. */
+async function hochladenMitBalken(datei, url, elternteil,
+                                  {fertigSatz = "abgelegt", vorne = false} = {}){
+  const zeile = fortschrittZeile(elternteil, datei.name, vorne);
+  try{
+    const schlank = await fuersNetzVerkleinern(datei);
+    zeile.sagen(schlank !== datei
+      ? `${Math.round(schlank.size / 1024)} statt ${Math.round(datei.size / 1024)} KB`
+      : "wird gesendet …");
+    const a = await sendenMitFortschritt(url, schlank, p => zeile.anteil(p));
+    if (!a.ok){
+      zeile.schief(a.d.fehler
+        || (a.status === 413 ? "zu groß (max. 40 MB)"
+          : a.status === 400 ? "dieses Format können wir nicht ablegen"
+          : "gerade nicht speicherbar — gleich nochmal"));
+      return a;
+    }
+    zeile.fertig(typeof fertigSatz === "function" ? fertigSatz(a.d) : fertigSatz);
+    return a;
+  }catch{
+    zeile.schief("gerade keine Verbindung");
+    return {ok: false, status: 0, d: {}};
+  }
+}
+
 async function hochladen(dateien){
   location.hash = "#belege";
   for (const datei of dateien){
-    const kennung = "up-" + Math.random().toString(36).slice(2, 8);
-    const zeile = document.createElement("div");
-    zeile.className = "zeile einflug"; zeile.id = kennung;
-    zeile.innerHTML = `<div class="thumb doc"><svg class="ik" viewBox="0 0 24 24"><use href="#ik-dokument"/></svg></div><div class="zmitte">
-      <div class="zname">${datei.name}</div>
-      <div class="zstatus laeuft">wird sicher abgelegt …</div></div>`;
-    const liste = $("#belege-liste");
-    liste.prepend(zeile);
-    try{
-      const schlank = await fuersNetzVerkleinern(datei);
-      if (schlank !== datei){
-        zeile.querySelector(".zstatus").textContent =
-          `wird gesendet (${Math.round(schlank.size / 1024)} statt ${Math.round(datei.size / 1024)} KB) …`;
-      }
-      const r = await api("/api/hochladen?name=" + encodeURIComponent(datei.name),
-        {method:"POST", body: schlank});
-      const d = await r.json();
-      if (!r.ok){
-        zeile.querySelector(".zstatus").textContent =
-          r.status === 413 ? "zu groß (max. 40 MB)" :
-          r.status === 400 ? "dieses Format kann ich nicht ablegen" :
-          "gerade nicht speicherbar — gleich nochmal";
-        zeile.querySelector(".zstatus").className = "zstatus frage";
-        continue;
-      }
-      zeile.querySelector(".zstatus").textContent = "abgelegt ✓ — wird gelesen …";
-      etag = null;  // nächster Poll holt frisch
-    }catch{
-      zeile.querySelector(".zstatus").textContent = "gerade keine Verbindung";
-      zeile.querySelector(".zstatus").className = "zstatus frage";
-    }
+    const a = await hochladenMitBalken(datei,
+      "/api/hochladen?name=" + encodeURIComponent(datei.name),
+      $("#belege-liste"), {fertigSatz: "abgelegt, wird gelesen", vorne: true});
+    if (a.ok) etag = null;   // nächster Poll holt frisch
   }
-  setTimeout(ladeBelege, 800);
+  setTimeout(ladeBelege, 1200);
 }
 
 /* ————— Frische: ETag-Poll alle 30 s ————— */
