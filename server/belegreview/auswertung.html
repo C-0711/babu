@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Deine Auswertung — babu</title>
+<style>
+/* Dieselbe Stimme wie das Portal: Serifen für Überschriften, Schreibmaschine
+   für alles Technische, warmer Grund. Bewusst eine eigene, kleine Seite —
+   sie ist die einzige, die jemand ohne Konto sieht, und sie soll schnell da
+   sein statt das ganze Portal zu laden. */
+:root{
+  --gc-canvas:#faf8f4; --gc-bg:#fff; --gc-fg:#221f1b; --gc-desc:#5b544a;
+  --gc-muted:#8b8378; --gc-border:#e7e1d6; --gc-accent:#7a6a4f;
+  --gc-accent-subtle:#f3eee3; --gc-ok:#4a7a52; --gc-warn:#a4712c;
+  --gc-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --gc-serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --gc-mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  --r:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--gc-canvas);color:var(--gc-fg);font:15px/1.6 var(--gc-sans);
+  -webkit-font-smoothing:antialiased}
+header{border-bottom:1px solid var(--gc-border);background:var(--gc-bg);
+  padding:12px clamp(16px,4vw,48px)}
+header b{font:600 17px var(--gc-serif);letter-spacing:-.015em}
+main{padding:clamp(20px,4vw,44px) clamp(16px,4vw,48px) 80px;
+  max-width:1400px;margin:0 auto}
+.lbl{font:11px var(--gc-mono);letter-spacing:.12em;text-transform:uppercase;
+  color:var(--gc-muted);margin-bottom:6px}
+h1{font:600 clamp(24px,3.4vw,34px) var(--gc-serif);letter-spacing:-.02em;margin-bottom:6px}
+.karte{background:var(--gc-bg);border:1px solid var(--gc-border);
+  border-radius:var(--r);padding:clamp(16px,2.4vw,28px)}
+/* Zwei Spalten, sobald Platz ist: links der Bericht, rechts das Passwort.
+   Wer den Bericht liest, soll das Feld daneben sehen, nicht darunter suchen. */
+.zwei{display:grid;gap:20px;align-items:start}
+@media (min-width:1000px){.zwei{grid-template-columns:minmax(0,1.6fr) minmax(330px,1fr)}}
+#bericht{overflow-x:auto}
+#bericht h1{font-size:22px;margin:0 0 10px}
+#bericht h2{font:600 16px var(--gc-serif);margin:22px 0 8px}
+#bericht table{border-collapse:collapse;width:100%;font-size:14px;min-width:420px}
+#bericht th,#bericht td{padding:7px 10px;border-bottom:1px solid var(--gc-border);
+  text-align:left}
+#bericht th:not(:first-child),#bericht td:not(:first-child){text-align:right;
+  font-family:var(--gc-mono);font-size:13px}
+#bericht blockquote{border-left:3px solid var(--gc-accent-subtle);
+  padding-left:12px;margin:8px 0;color:var(--gc-muted);
+  font:12.5px var(--gc-mono)}
+#bericht p{margin:8px 0;max-width:70ch}
+#bericht li{margin-left:20px}
+#bericht strong{font-weight:600}
+label{display:block;font:12px var(--gc-mono);color:var(--gc-desc);
+  letter-spacing:.02em;margin:14px 0 5px}
+input{width:100%;padding:12px 13px;border:1px solid var(--gc-border);
+  border-radius:9px;font:15px var(--gc-sans);background:var(--gc-bg)}
+input:focus{outline:2px solid var(--gc-accent);outline-offset:1px}
+button{width:100%;padding:13px;border:0;border-radius:9px;background:var(--gc-fg);
+  color:#fff;font:600 15px var(--gc-sans);cursor:pointer;margin-top:16px}
+button:disabled{opacity:.45;cursor:default}
+.hinweis{font-size:13px;color:var(--gc-desc);margin-top:10px}
+.fehler{color:var(--gc-warn);font-size:13.5px;margin-top:10px}
+.felder{font:12.5px var(--gc-mono);color:var(--gc-desc);margin-top:14px;
+  border-top:1px solid var(--gc-border);padding-top:12px}
+.felder div{display:flex;justify-content:space-between;gap:12px;padding:2px 0}
+</style>
+</head>
+<body>
+<header><b>babu</b></header>
+<main>
+  <div id="laedt" class="lbl">Einen Moment …</div>
+
+  <div id="weg" hidden>
+    <div class="lbl">Deine Auswertung</div>
+    <h1 id="titel">Das haben wir gelesen</h1>
+    <p class="hinweis" id="fuer"></p>
+
+    <div class="zwei" style="margin-top:22px">
+      <div class="karte" id="bericht"></div>
+
+      <div class="karte">
+        <div class="lbl">Konto anlegen</div>
+        <p style="font-size:13.5px;color:var(--gc-desc)">
+          Leg ein Passwort fest — danach gehört die Auswertung dir, und du
+          siehst sie jederzeit in der App.</p>
+        <form id="form" autocomplete="on">
+          <label for="pw">Passwort</label>
+          <input id="pw" type="password" autocomplete="new-password"
+                 minlength="10" required>
+          <label for="pw2">Noch einmal</label>
+          <input id="pw2" type="password" autocomplete="new-password"
+                 minlength="10" required>
+          <button id="knopf" type="submit">Konto anlegen</button>
+        </form>
+        <div class="fehler" id="fehler" hidden></div>
+        <div class="felder" id="felder" hidden></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="aus" hidden>
+    <h1>Das hat nicht geklappt</h1>
+    <p class="hinweis" id="ausgrund"></p>
+    <p class="hinweis"><a href="/portal">Zur Anmeldung ›</a></p>
+  </div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+/* Der Schlüssel steht im Pfad, nicht in der Adresszeile als Parameter:
+   Parameter landen in Protokollen und in Verweisen auf Folgeseiten. */
+const SCHLUESSEL = decodeURIComponent(location.pathname.split("/").pop() || "");
+
+/* Genau so viel Markdown, wie der Bericht benutzt. Keine Bibliothek für
+   fünf Regeln — und nichts, was fremdes HTML durchließe: erst escapen,
+   dann auszeichnen. */
+function md(text){
+  /* Reihenfolge ist hier der ganze Trick: erst die Zeile ANSEHEN, dann
+     escapen. Wer zuerst escapet, findet danach kein „> " mehr — aus dem
+     Zitat wird ein sichtbares Größer-Zeichen. Genau so stand es beim
+     ersten Anlauf auf der Seite. */
+  const zeilen = String(text ?? "").split("\n");
+  let raus = "", tabelle = [];
+  const tabelleSchliessen = () => {
+    if (!tabelle.length) return;
+    const kopf = tabelle[0], rest = tabelle.slice(2);
+    raus += "<table><thead><tr>" + kopf.map(z => `<th>${z}</th>`).join("")
+         + "</tr></thead><tbody>"
+         + rest.map(r => "<tr>" + r.map(z => `<td>${z}</td>`).join("") + "</tr>").join("")
+         + "</tbody></table>";
+    tabelle = [];
+  };
+  for (const roh of zeilen){
+    const z = roh.trim();
+    if (z.startsWith("|")){
+      tabelle.push(z.replace(/^\||\|$/g, "").split("|").map(x => stark(esc(x.trim()))));
+      continue;
+    }
+    tabelleSchliessen();
+    if (!z){ continue; }
+    const inhalt = p => stark(esc(p));
+    if (z.startsWith("## ")) raus += `<h2>${inhalt(z.slice(3))}</h2>`;
+    else if (z.startsWith("# ")) raus += `<h1>${inhalt(z.slice(2))}</h1>`;
+    else if (z.startsWith("> ")) raus += `<blockquote>${inhalt(z.slice(2))}</blockquote>`;
+    else if (z.startsWith("- ")) raus += `<li>${inhalt(z.slice(2))}</li>`;
+    else if (z === "---") raus += "<hr style='border:0;border-top:1px solid var(--gc-border);margin:18px 0'>";
+    else raus += `<p>${inhalt(z)}</p>`;
+  }
+  tabelleSchliessen();
+  return raus;
+}
+const stark = t => t.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+                    .replace(/\*(.+?)\*/g, "<em>$1</em>");
+
+function raus(grund){
+  $("#laedt").hidden = true; $("#weg").hidden = true;
+  $("#aus").hidden = false; $("#ausgrund").textContent = grund;
+}
+
+(async () => {
+  if (!SCHLUESSEL) return raus("Dieser Link ist unvollständig.");
+  let d;
+  try{
+    const r = await fetch("/api/auswertung/bericht?schluessel="
+                          + encodeURIComponent(SCHLUESSEL));
+    d = await r.json();
+    if (!r.ok) return raus(d.fehler || "Dieser Link gilt nicht mehr.");
+  }catch{ return raus("Gerade keine Verbindung — versuch es in einem Moment noch einmal."); }
+
+  $("#laedt").hidden = true; $("#weg").hidden = false;
+  $("#fuer").textContent = "Für " + d.mail;
+  $("#bericht").innerHTML = md(d.bericht || "Der Bericht ist noch nicht fertig.");
+
+  const felder = d.felder || {};
+  const namen = {betrieb_name:"Betrieb", rechtsform:"Rechtsform",
+    steuernummer:"Steuernummer", finanzamt:"Finanzamt", anschrift:"Anschrift",
+    kontenrahmen:"Kontenrahmen", kleinunternehmer:"Kleinunternehmerin"};
+  const eintraege = Object.entries(felder);
+  if (eintraege.length){
+    $("#felder").hidden = false;
+    $("#felder").innerHTML = "<div class='lbl'>Das übernehmen wir für dich</div>"
+      + eintraege.map(([k, w]) =>
+          `<div><span>${esc(namen[k] || k)}</span><b>${esc(w)}</b></div>`).join("");
+  }
+
+  $("#form").addEventListener("submit", async ev => {
+    ev.preventDefault();
+    const knopf = $("#knopf"), fehler = $("#fehler");
+    fehler.hidden = true;
+    knopf.disabled = true; knopf.textContent = "Einen Moment …";
+    try{
+      const r = await fetch("/api/auswertung/konto", {
+        method:"POST", headers:{"content-type":"application/json"},
+        credentials:"same-origin",
+        body: JSON.stringify({schluessel: SCHLUESSEL,
+          passwort: $("#pw").value, passwort2: $("#pw2").value})});
+      const a = await r.json();
+      if (r.ok && a.ok){ location.href = "/portal#heute"; return; }
+      fehler.textContent = a.fehler || "Das hat nicht geklappt.";
+      fehler.hidden = false;
+    }catch{
+      fehler.textContent = "Gerade keine Verbindung.";
+      fehler.hidden = false;
+    }
+    knopf.disabled = false; knopf.textContent = "Konto anlegen";
+  });
+})();
+</script>
+</body>
+</html>

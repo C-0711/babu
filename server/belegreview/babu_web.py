@@ -21,6 +21,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+from datetime import datetime, timezone
 import time
 from pathlib import Path
 
@@ -203,6 +204,18 @@ def _db() -> sqlite3.Connection:
          beleg TEXT, notiz TEXT, abgang TEXT, angelegt TEXT)""")
     conn.execute("""CREATE INDEX IF NOT EXISTS anlagegut_un
         ON anlagegut (un, angeschafft)""")
+    # Eine angeforderte Auswertung, die noch niemandem gehört. Kein Konto:
+    # wer auf der Startseite eine fremde Adresse einträgt, soll damit kein
+    # Konto erzeugen können (siehe einladung.py). Vom Schlüssel steht nur
+    # der sha256 hier — wer die Datenbank liest, kommt damit nicht hinein.
+    conn.execute("""CREATE TABLE IF NOT EXISTS einladung
+        (id INTEGER PRIMARY KEY AUTOINCREMENT, mail TEXT NOT NULL,
+         schluessel_hash TEXT NOT NULL UNIQUE, erstellt TEXT NOT NULL,
+         frist TEXT NOT NULL, verbraucht TEXT, stand TEXT NOT NULL,
+         gelesen TEXT NOT NULL DEFAULT '{}', bericht TEXT NOT NULL DEFAULT '',
+         anriss TEXT NOT NULL DEFAULT '', ip TEXT)""")
+    conn.execute("""CREATE INDEX IF NOT EXISTS einladung_mail
+        ON einladung (mail, erstellt)""")
     return conn
 
 
@@ -4024,6 +4037,396 @@ def _an_fixit(vorgang: dict) -> tuple[bool, str]:
         return True, str(v.get("key") or v.get("number") or "angelegt")
     except Exception:  # noqa: BLE001
         return True, "angelegt"
+
+
+# ── Der Trichter: von der Startseite bis ins Profil ──────────────────────────
+#
+#   Startseite → E-Mail + Unterlagen
+#              → Anriss der Auswertung + Anmeldelink per Mail
+#              → Link öffnen, Passwort zweimal
+#              → Konto steht, Bericht da, Angaben auf Knopfdruck ins Profil
+#
+# Zwei Dinge, die die Form dieser Routen bestimmen:
+#
+# 1. **Der Schlüssel entsteht erst, wenn der Bericht fertig ist.** Bis dahin
+#    gibt es nichts zu verschicken, und ein Schlüssel, der irgendwo wartet,
+#    ist ein Schlüssel, der auslaufen kann. Er existiert genau einmal im
+#    Klartext: in der Mail.
+#
+# 2. **Hochladen braucht eine eigene Erlaubnis, die NICHT der Schlüssel ist.**
+#    Der Korb ist ein signierter, kurzlebiger Ausweis (HMAC wie die Sitzung).
+#    Wer ihn hat, darf Dateien in genau diesen Vorgang legen — und sonst
+#    nichts. Wäre es der Anmeldeschlüssel, stünde er im Browser jeder
+#    Zwischenstation.
+
+# Wohin der Link in der Mail zeigt. Muss von außen erreichbar sein — in der
+# Entwicklung ist das localhost, im Betrieb babu.0711.io.
+BASIS_URL = os.environ.get("BABU_BASIS_URL", "https://babu.0711.io").rstrip("/")
+AUSWERTUNG_KORB_DAUER = 30 * 60        # eine halbe Stunde zum Hochladen
+AUSWERTUNG_DATEIEN_MAX = 12
+AUSWERTUNG_TMP = Path(os.environ.get(
+    "BABU_AUSWERTUNG_TMP", str(Path.home() / "babu-web" / "auswertung-tmp")))
+_AUSWERTUNG_ZULETZT: dict[str, float] = {}
+
+
+def _korb_signieren(eid: int) -> str:
+    return _signieren(f"korb:{eid}", int(time.time()) + AUSWERTUNG_KORB_DAUER)
+
+
+def _korb_pruefen(korb: str) -> int | None:
+    wert = _pruefen(korb or "")
+    if not wert or not wert.startswith("korb:"):
+        return None
+    try:
+        return int(wert.split(":", 1)[1])
+    except ValueError:
+        return None
+
+
+# `_db()` liefert Tupel, keine Zeilen mit Namen — die Spalten stehen deshalb
+# hier, an einer Stelle, statt als Zahlenindizes im Code verteilt.
+_EINLADUNG_SPALTEN = ("id", "mail", "schluessel_hash", "erstellt", "frist",
+                      "verbraucht", "stand", "gelesen", "bericht", "anriss", "ip")
+_EINLADUNG_SELECT = "SELECT " + ", ".join(_EINLADUNG_SPALTEN) + " FROM einladung"
+
+
+def _einladung_zeile(eid: int) -> dict | None:
+    with _DB_LOCK, _db() as c:
+        z = c.execute(_EINLADUNG_SELECT + " WHERE id=?", (eid,)).fetchone()
+    return dict(zip(_EINLADUNG_SPALTEN, z)) if z else None
+
+
+def _einladung_per_schluessel(schluessel: str) -> dict | None:
+    import einladung as ei  # noqa: PLC0415
+    with _DB_LOCK, _db() as c:
+        z = c.execute(_EINLADUNG_SELECT + " WHERE schluessel_hash=?",
+                      (ei.schluessel_hash(schluessel),)).fetchone()
+    return dict(zip(_EINLADUNG_SPALTEN, z)) if z else None
+
+
+def _als_einladung(zeile: dict):
+    """DB-Zeile → das Modell aus einladung.py, damit dort geprüft wird."""
+    import einladung as ei  # noqa: PLC0415
+    lies = lambda w: datetime.fromisoformat(w) if w else None  # noqa: E731
+    return ei.Einladung(
+        mail=zeile["mail"], schluessel_hash=zeile["schluessel_hash"] or "",
+        erstellt=lies(zeile["erstellt"]), frist=lies(zeile["frist"]),
+        verbraucht=lies(zeile["verbraucht"]),
+        gelesen=json.loads(zeile["gelesen"] or "{}"),
+        bericht=zeile["bericht"] or "")
+
+
+@app.post("/api/auswertung/anfordern")
+async def api_auswertung_anfordern(request: Request) -> Response:
+    """Schritt 1: eine Adresse, ein Vorgang, ein Korb zum Hochladen.
+
+    Die Antwort ist IMMER dieselbe — sie verrät nicht, ob es die Adresse
+    schon gibt. Nur der Korb unterscheidet sich, und den bekommt auch, wer
+    schon ein Konto hat: sonst wäre sein Fehlen die Auskunft.
+    """
+    import einladung as ei  # noqa: PLC0415
+    if not _origin_ok(request):
+        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    ip = _client_ip(request)
+    jetzt = time.time()
+    if jetzt - _AUSWERTUNG_ZULETZT.get(ip, 0.0) < 20:
+        return JSONResponse({"fehler": "kurz warten, dann nochmal"},
+                            status_code=429)
+    try:
+        koerper = json.loads(await koerper_lesen(request, 8 * 1024))
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    mail = str(koerper.get("email") or "").strip().lower()[:200]
+    if not ei.mail_gueltig(mail):
+        return JSONResponse({"fehler": "Diese E-Mail-Adresse sieht nicht "
+                                       "richtig aus."}, status_code=400)
+    with _DB_LOCK, _db() as c:
+        frueher = [datetime.fromisoformat(z[0]) for z in c.execute(
+            "SELECT erstellt FROM einladung WHERE mail=? ORDER BY id DESC LIMIT 10",
+            (mail,))]
+    if ei.gebremst(frueher):
+        # Freundlich und ohne Zahl: wie oft jemand es versucht hat, geht
+        # Dritte nichts an.
+        return JSONResponse({"ok": True, "hinweis": ei.ANTWORT_NACH_AUSSEN})
+    nun = datetime.now(timezone.utc)
+    with _DB_LOCK, _db() as c:
+        cur = c.execute(
+            """INSERT INTO einladung (mail, schluessel_hash, erstellt, frist,
+                                      stand, ip)
+               VALUES (?, ?, ?, ?, 'wartet', ?)""",
+            (mail, f"offen:{secrets.token_hex(16)}", nun.isoformat(),
+             (nun + ei.FRIST).isoformat(), ip))
+        eid = cur.lastrowid
+    _AUSWERTUNG_ZULETZT[ip] = jetzt
+    _zaehler_aufraeumen(_AUSWERTUNG_ZULETZT, jetzt, 3600)
+    return JSONResponse({"ok": True, "korb": _korb_signieren(eid),
+                         "hinweis": ei.ANTWORT_NACH_AUSSEN})
+
+
+@app.post("/api/auswertung/unterlage")
+async def api_auswertung_unterlage(request: Request, korb: str = "",
+                                   name: str = "unterlage.pdf") -> Response:
+    """Schritt 2: eine Datei in den Korb. Eine je Aufruf, wie beim Abschluss."""
+    if not _origin_ok(request):
+        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    eid = _korb_pruefen(korb)
+    if eid is None or not _einladung_zeile(eid):
+        return JSONResponse({"fehler": "Der Vorgang ist abgelaufen — "
+                                       "fang bitte noch einmal an."},
+                            status_code=403)
+    if Path(name).suffix.lower() not in DOKUMENT_ENDUNGEN:
+        return JSONResponse({"fehler": "kein Dokument-Format"}, status_code=400)
+    ordner = AUSWERTUNG_TMP / str(eid)
+    ordner.mkdir(parents=True, exist_ok=True)
+    if len(list(ordner.iterdir())) >= AUSWERTUNG_DATEIEN_MAX:
+        return JSONResponse({"fehler": f"Mehr als {AUSWERTUNG_DATEIEN_MAX} "
+                                       f"Unterlagen brauchen wir nicht."},
+                            status_code=400)
+    try:
+        daten = await koerper_lesen(request, ABSCHLUSS_MAX)
+    except KoerperZuGross:
+        return JSONResponse({"fehler": "zu groß"}, status_code=413)
+    if not daten:
+        return JSONResponse({"fehler": "leer"}, status_code=400)
+    import boxschreiber  # noqa: PLC0415
+    (ordner / boxschreiber.beleg_dateiname(name)).write_bytes(daten)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/auswertung/lesen")
+async def api_auswertung_lesen(request: Request, korb: str = "",
+                               jahr: int = 0) -> Response:
+    """Schritt 3: loslesen. Antwortet sofort — das Lesen dauert Minuten."""
+    if not _origin_ok(request):
+        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    eid = _korb_pruefen(korb)
+    zeile = _einladung_zeile(eid) if eid is not None else None
+    if zeile is None:
+        return JSONResponse({"fehler": "Der Vorgang ist abgelaufen — "
+                                       "fang bitte noch einmal an."},
+                            status_code=403)
+    if zeile["stand"] != "wartet":
+        return JSONResponse({"ok": True, "stand": zeile["stand"]})
+    ordner = AUSWERTUNG_TMP / str(eid)
+    pfade = sorted(ordner.glob("*")) if ordner.exists() else []
+    if not pfade:
+        return JSONResponse({"fehler": "Es ist noch keine Unterlage da."},
+                            status_code=400)
+    jahr = _abschluss_jahr(jahr or int(time.strftime("%Y")) - 1) \
+        or int(time.strftime("%Y")) - 1
+    with _DB_LOCK, _db() as c:
+        c.execute("UPDATE einladung SET stand='liest' WHERE id=?", (eid,))
+    threading.Thread(target=_auswertung_job, args=(eid, jahr, pfade),
+                     daemon=True).start()
+    return JSONResponse({"ok": True, "stand": "liest"})
+
+
+def _auswertung_ordner_leeren(eid: int) -> None:
+    """Die hochgeladenen Unterlagen gehören niemandem — ein Tempordner ist
+    kein Aufbewahrungsort. Wer ein Konto anlegt, lädt sie dort erneut hoch;
+    dann liegen sie in seiner Belegbox."""
+    import shutil  # noqa: PLC0415
+    shutil.rmtree(AUSWERTUNG_TMP / str(eid), ignore_errors=True)
+
+
+def _auswertung_job(eid: int, jahr: int, pfade: list[Path]) -> None:
+    """Lesen, Bericht bauen, Schlüssel prägen, Mail rausschicken.
+
+    Der Schlüssel entsteht hier — nicht früher. Vorher gäbe es nichts zu
+    verschicken, und er läge nur herum.
+    """
+    import abschluss_lesen  # noqa: PLC0415
+    import auswertung as aw  # noqa: PLC0415
+    import einladung as ei  # noqa: PLC0415
+    import postfach  # noqa: PLC0415
+    try:
+        ergebnisse = []
+        for pfad in pfade:
+            with _LLM_SEMAPHORE:
+                ergebnisse.append(abschluss_lesen.dokument_lesen(pfad, jahr=jahr))
+        # Gelesen ist gelesen: die Dateien werden ab hier nicht mehr
+        # gebraucht und gehören weg, BEVOR irgendwo „fertig" steht. Lag das
+        # Aufräumen am Ende, war der Vorgang schon fertig, während die
+        # Unterlagen noch im Tempordner lagen — ein Fenster, das es nicht
+        # geben muss.
+        _auswertung_ordner_leeren(eid)
+        kennzahlen = abschluss_lesen.zusammenfuehren(ergebnisse, jahr=jahr)
+        zahlen = dict(kennzahlen["zahlen"], jahr=jahr)
+        stamm = {k: v for k, v in (kennzahlen["stammdaten"] or {}).items() if v}
+        bericht = aw.bericht(zahlen, titel="Deine Auswertung")
+        anriss = aw.bericht(zahlen, titel="Deine Auswertung", nur_anriss=True)
+        gelesen = aw.uebernehmbare_felder(stamm)
+
+        schluessel = ei.schluessel_erzeugen()
+        zeile = _einladung_zeile(eid) or {}
+        with _DB_LOCK, _db() as c:
+            c.execute("""UPDATE einladung SET schluessel_hash=?, gelesen=?,
+                         bericht=?, anriss=?, stand='fertig' WHERE id=?""",
+                      (ei.schluessel_hash(schluessel),
+                       json.dumps(gelesen, ensure_ascii=False), bericht,
+                       anriss, eid))
+        modell = _als_einladung(dict(zeile, bericht=anriss))
+        betreff, text = ei.mail_text(modell, schluessel, basis=BASIS_URL)
+        ok, hinweis = postfach.senden(zeile["mail"], betreff, text,
+                                      stempel=time.strftime("%Y%m%d-%H%M%S"))
+        print(f"[auswertung] {eid}: {hinweis}", flush=True)
+        if not ok:
+            with _DB_LOCK, _db() as c:
+                c.execute("UPDATE einladung SET stand='wartet_auf_post' WHERE id=?",
+                          (eid,))
+    except Exception as ex:  # noqa: BLE001
+        print(f"[auswertung] {eid} gescheitert: {ex!r}", flush=True)
+        with _DB_LOCK, _db() as c:
+            c.execute("UPDATE einladung SET stand='fehler' WHERE id=?", (eid,))
+        # Wer auf der Startseite „der Link kommt per E-Mail" gelesen hat,
+        # wartet sonst auf eine Nachricht, die nie kommt. Ein Fehlschlag ist
+        # kein Grund zu schweigen — er ist der Grund, etwas zu sagen.
+        zeile = _einladung_zeile(eid) or {}
+        if zeile.get("mail"):
+            postfach.senden(
+                zeile["mail"], "Deine Unterlagen konnten wir nicht lesen",
+                "Hallo,\n\n"
+                "wir haben es versucht, aber aus deinen Unterlagen ließ sich "
+                "keine Auswertung machen. Das liegt fast immer an der Datei "
+                "selbst: ein abgebrochener Scan, ein passwortgeschütztes PDF "
+                "oder ein Foto, auf dem die Zahlen nicht lesbar sind.\n\n"
+                "Versuch es gern noch einmal — am besten mit der "
+                "Gewinnrechnung als PDF, so wie du sie vom Steuerbüro "
+                "bekommen hast.\n\n"
+                "Es ist nichts von dir gespeichert worden.\n",
+                stempel=time.strftime("%Y%m%d-%H%M%S"))
+    finally:
+        # Netz für den Fehlerpfad — im Normalfall ist hier längst leer.
+        _auswertung_ordner_leeren(eid)
+
+
+@app.get("/api/auswertung/stand")
+def api_auswertung_stand(korb: str = "") -> Response:
+    """Damit die Startseite sagen kann, wie weit es ist."""
+    eid = _korb_pruefen(korb)
+    zeile = _einladung_zeile(eid) if eid is not None else None
+    if zeile is None:
+        return JSONResponse({"fehler": "unbekannt"}, status_code=404)
+    # Der Anriss geht per Mail. Hier steht nur, WIE WEIT es ist — sonst
+    # bekäme den Bericht, wer die Adresse eingetippt hat, nicht die, der sie
+    # gehört.
+    return JSONResponse({"stand": zeile["stand"]})
+
+
+@app.get("/auswertung/{schluessel}")
+def auswertung_seite(schluessel: str) -> FileResponse:
+    """Die Seite hinter dem Link. Ohne Anmeldung — sie IST die Anmeldung."""
+    return FileResponse(WURZEL / "auswertung.html", media_type="text/html",
+                        headers=HTML_FRISCH)
+
+
+@app.get("/api/auswertung/bericht")
+def api_auswertung_bericht(schluessel: str = "") -> Response:
+    """Was auf der Seite steht, bevor ein Konto existiert."""
+    import einladung as ei  # noqa: PLC0415
+    zeile = _einladung_per_schluessel(schluessel)
+    geprueft = ei.pruefen(_als_einladung(zeile) if zeile else None, schluessel)
+    if not geprueft.ok:
+        return JSONResponse({"fehler": geprueft.grund}, status_code=404)
+    return JSONResponse({"mail": zeile["mail"], "bericht": zeile["bericht"],
+                         "felder": json.loads(zeile["gelesen"] or "{}"),
+                         "stand": zeile["stand"]})
+
+
+@app.post("/api/auswertung/konto")
+async def api_auswertung_konto(request: Request) -> Response:
+    """Schritt 4: Passwort zweimal — und aus der Einladung wird ein Konto."""
+    import einladung as ei  # noqa: PLC0415
+    if not _origin_ok(request):
+        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    try:
+        koerper = json.loads(await koerper_lesen(request, 8 * 1024))
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    schluessel = str(koerper.get("schluessel") or "")
+    zeile = _einladung_per_schluessel(schluessel)
+    if zeile is None:
+        # Derselbe Satz wie bei einem falschen Schlüssel — sonst ließe sich
+        # erraten, welche Links es gibt.
+        return JSONResponse({"fehler": "Dieser Link ist uns nicht bekannt."},
+                            status_code=404)
+    ergebnis = ei.einloesen(_als_einladung(zeile), schluessel,
+                            str(koerper.get("passwort") or ""),
+                            str(koerper.get("passwort2") or ""))
+    if not ergebnis.ok:
+        return JSONResponse({"fehler": ergebnis.grund}, status_code=400)
+
+    mail = zeile["mail"]
+    felder = json.loads(zeile["gelesen"] or "{}")
+    salon = str(felder.get("betrieb_name") or mail.split("@")[0])[:120]
+    if nutzer_anlegen(mail, "", salon, "salon",
+                      passwort=str(koerper.get("passwort")), box=False) is None:
+        # Es gibt das Konto schon. Der Link ist trotzdem verbraucht — sonst
+        # bliebe er als zweiter Weg zu einem fremden Konto offen.
+        with _DB_LOCK, _db() as c:
+            c.execute("UPDATE einladung SET verbraucht=? WHERE id=?",
+                      (_jetzt_iso(), zeile["id"]))
+        return JSONResponse({"fehler": "Für diese E-Mail gibt es schon einen "
+                                       "Zugang — melde dich einfach an."},
+                            status_code=409)
+    # Der Bericht wandert ins Konto. Die gelesenen Angaben NICHT: sie werden
+    # angeboten, nicht gesetzt. „Auf Knopfdruck ins Profil" heißt, dass es
+    # einen Knopf gibt — nicht, dass es schon passiert ist.
+    db_einstellung_setzen(mail, "auswertung_bericht", zeile["bericht"][:20000])
+    db_einstellung_setzen(mail, "auswertung_vorschlag",
+                          json.dumps(felder, ensure_ascii=False)[:4000])
+    with _DB_LOCK, _db() as c:
+        c.execute("UPDATE einladung SET verbraucht=? WHERE id=?",
+                  (_jetzt_iso(), zeile["id"]))
+    exp = int(time.time()) + SESSION_DAUER
+    antwort = JSONResponse({"ok": True, "un": mail})
+    antwort.set_cookie(SESSION_COOKIE, _signieren(mail, exp),
+                       max_age=SESSION_DAUER, httponly=True,
+                       secure=SESSION_SECURE, samesite="lax", path="/")
+    return antwort
+
+
+@app.get("/api/auswertung")
+def api_auswertung_meine(request: Request) -> Response:
+    """Der Bericht im angemeldeten Konto, samt dem, was noch offensteht."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    e = db_einstellungen(un)
+    vorschlag = {}
+    try:
+        vorschlag = json.loads(e.get("auswertung_vorschlag") or "{}")
+    except Exception:  # noqa: BLE001
+        pass
+    # Nur zeigen, was noch nicht im Profil steht — sonst bietet der Knopf an,
+    # etwas zu übernehmen, das längst dort steht.
+    offen = {k: v for k, v in vorschlag.items() if not (e.get(k) or "").strip()}
+    return JSONResponse({"bericht": e.get("auswertung_bericht") or "",
+                         "vorschlag": vorschlag, "offen": offen})
+
+
+@app.post("/api/auswertung/uebernehmen")
+async def api_auswertung_uebernehmen(request: Request) -> Response:
+    """Der Knopfdruck: die gelesenen Angaben werden zu Betriebsangaben."""
+    import auswertung as aw  # noqa: PLC0415
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    e = db_einstellungen(un)
+    try:
+        vorschlag = json.loads(e.get("auswertung_vorschlag") or "{}")
+    except Exception:  # noqa: BLE001
+        vorschlag = {}
+    # Durch dieselbe Positivliste wie beim Lesen. Was zwischendurch in der
+    # Einstellung stand, kommt hier nicht vorbei.
+    erlaubt = aw.uebernehmbare_felder(vorschlag)
+    gesetzt = {}
+    for schluessel, wert in erlaubt.items():
+        if (e.get(schluessel) or "").strip():
+            continue          # nichts überschreiben, was schon dasteht
+        db_einstellung_setzen(un, schluessel, str(wert)[:200])
+        gesetzt[schluessel] = wert
+    return JSONResponse({"ok": True, "gesetzt": gesetzt})
 
 
 @app.post("/api/rueckmeldung")

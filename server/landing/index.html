@@ -423,10 +423,101 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
       trägt sich selbst ein — mit grünem Haken.</p>
     </figure>
   </div>
-  <div class="cta" style="margin-top:34px">
-    <a class="knopf voll" href="/portal">Salon-Check starten</a>
+  <!-- Der Trichter: E-Mail und Unterlagen, mehr braucht es nicht. Ein Konto
+       entsteht erst, wenn jemand den Link aus der Mail öffnet — wer hier eine
+       fremde Adresse einträgt, soll damit kein Konto erzeugen können. -->
+  <div id="sc-trichter" style="margin-top:34px;max-width:640px;margin-inline:auto;text-align:left">
+    <form id="sc-form">
+      <label class="lbl" for="sc-mail" style="display:block;margin-bottom:6px">Deine E-Mail</label>
+      <input id="sc-mail" type="email" required autocomplete="email"
+             placeholder="du@deinsalon.de"
+             style="width:100%;padding:13px 14px;border:1px solid var(--gc-border);
+                    border-radius:10px;font:16px var(--gc-sans);background:#fff">
+
+      <label class="lbl" for="sc-dateien" style="display:block;margin:16px 0 6px">
+        Deine Unterlagen vom letzten Jahr</label>
+      <input id="sc-dateien" type="file" multiple accept=".pdf,.jpg,.jpeg,.png"
+             style="width:100%;padding:12px;border:1px dashed var(--gc-border);
+                    border-radius:10px;background:#fff">
+      <p style="font-size:12.5px;color:var(--gc-muted);margin-top:6px">
+        Gewinnrechnung, Steuerbescheid, Anlagenliste — als PDF oder Foto.
+        Höchstens zwölf Stück.</p>
+
+      <button class="knopf voll" type="submit" id="sc-los" style="margin-top:18px;width:100%">
+        Auswertung anfordern</button>
+    </form>
+    <div id="sc-stand" style="margin-top:14px;font-size:14px;color:var(--gc-desc)"></div>
   </div>
 </section>
+
+<script>
+(function(){
+  var form = document.getElementById("sc-form");
+  if (!form) return;
+  var stand = document.getElementById("sc-stand"),
+      knopf = document.getElementById("sc-los");
+  var sagen = function(t){ stand.textContent = t; };
+
+  /* Vor dem Senden verkleinern: ein Telefonfoto sind schnell 5 MB, und die
+     Erkennung braucht die Auflösung nicht — gemessen halten Beträge bis
+     620 px Seitenbreite durch. PDFs bleiben unangetastet. */
+  function verkleinern(datei){
+    if (!/^image\//.test(datei.type)) return Promise.resolve(datei);
+    return new Promise(function(fertig){
+      var bild = new Image(), url = URL.createObjectURL(datei);
+      bild.onload = function(){
+        var kante = 1654, s = Math.min(1, kante / Math.max(bild.width, bild.height));
+        if (s >= 1){ URL.revokeObjectURL(url); return fertig(datei); }
+        var c = document.createElement("canvas");
+        c.width = Math.round(bild.width * s); c.height = Math.round(bild.height * s);
+        c.getContext("2d").drawImage(bild, 0, 0, c.width, c.height);
+        c.toBlob(function(b){ URL.revokeObjectURL(url); fertig(b || datei); },
+                 "image/jpeg", 0.86);
+      };
+      bild.onerror = function(){ URL.revokeObjectURL(url); fertig(datei); };
+      bild.src = url;
+    });
+  }
+
+  form.addEventListener("submit", function(ev){
+    ev.preventDefault();
+    var mail = document.getElementById("sc-mail").value.trim();
+    var dateien = Array.prototype.slice.call(
+      document.getElementById("sc-dateien").files || []);
+    if (!dateien.length){ sagen("Bitte leg mindestens eine Unterlage dazu."); return; }
+    knopf.disabled = true;
+    sagen("Einen Moment …");
+
+    fetch("/api/auswertung/anfordern", {method:"POST",
+      headers:{"content-type":"application/json"},
+      body: JSON.stringify({email: mail})})
+    .then(function(r){ return r.json().then(function(d){ return {r:r, d:d}; }); })
+    .then(function(a){
+      if (!a.r.ok || !a.d.korb) throw new Error(a.d.fehler || "Das ging gerade nicht.");
+      var korb = a.d.korb, i = 0;
+      function naechste(){
+        if (i >= dateien.length){
+          return fetch("/api/auswertung/lesen?korb=" + encodeURIComponent(korb),
+                       {method:"POST"}).then(function(){
+            sagen("Danke — wir lesen deine Unterlagen. Der Link zu deiner "
+                + "Auswertung kommt per E-Mail, das dauert ein paar Minuten.");
+            form.hidden = true;
+          });
+        }
+        var d = dateien[i++];
+        sagen("Lade " + i + " von " + dateien.length + " …");
+        return verkleinern(d).then(function(klein){
+          return fetch("/api/auswertung/unterlage?korb=" + encodeURIComponent(korb)
+                       + "&name=" + encodeURIComponent(d.name),
+                       {method:"POST", body: klein});
+        }).then(naechste);
+      }
+      return naechste();
+    })
+    .catch(function(e){ sagen(e.message || "Das ging gerade nicht."); knopf.disabled = false; });
+  });
+})();
+</script>
 
 <!-- ── 4 · Kostenvergleich ──────────────────────────────────────────── -->
 <section>

@@ -1598,6 +1598,28 @@ async function ladeHeute(){
       <b>${ungelesen === 1 ? "Ein neues Dokument" : ungelesen + " neue Dokumente"} von deiner Kanzlei</b> — zur Post ›</button>`;
   }
 
+  /* Wer über den Trichter hereinkam, hat einen Bericht — und Angaben, die
+     noch nicht in seinem Profil stehen. „Auf Knopfdruck ins Profil" heißt,
+     dass hier ein Knopf steht, nicht dass es schon passiert ist. */
+  try{
+    const aw = await (await api("/api/auswertung")).json();
+    const offen = Object.keys(aw.offen || {}).length;
+    if (aw.bericht){
+      html += `<div class="sektion lbl">Deine Auswertung</div>
+        <div class="karte voll">
+          <b>Wir haben deine Unterlagen gelesen.</b>
+          <p style="color:var(--gc-desc);font-size:13px;margin:4px 0 10px">
+            ${offen ? offen + (offen === 1 ? " Angabe steht" : " Angaben stehen")
+                    + " bereit für deine Betriebsangaben."
+                    : "Alle Angaben daraus stehen schon in deinem Profil."}</p>
+          <button class="chip" onclick="location.hash='#einstellungen'">Bericht ansehen</button>
+          ${offen ? `<button class="chip" id="aw-uebernehmen"
+             style="background:var(--gc-fg);color:#fff;margin-left:6px">In mein Profil übernehmen</button>` : ""}
+          <span id="aw-stand" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>
+        </div>`;
+    }
+  }catch{}
+
   try{
     const l = await (await api("/api/belege?limit=3")).json();
     if (l.belege.length){
@@ -1607,6 +1629,23 @@ async function ladeHeute(){
     }
   }catch{}
   ziel.innerHTML = html;
+  const uk = $("#aw-uebernehmen");
+  if (uk) uk.addEventListener("click", async () => {
+    uk.disabled = true;
+    $("#aw-stand").textContent = "Einen Moment …";
+    try{
+      const r = await api("/api/auswertung/uebernehmen", {method:"POST"});
+      const d = await r.json();
+      const n = Object.keys(d.gesetzt || {}).length;
+      $("#aw-stand").textContent = n
+        ? (n === 1 ? "Eine Angabe übernommen ✓" : n + " Angaben übernommen ✓")
+        : "Es war nichts mehr offen.";
+      uk.hidden = true;
+    }catch{
+      $("#aw-stand").textContent = "Ging gerade nicht — gleich nochmal.";
+      uk.disabled = false;
+    }
+  });
 }
 
 /* ————— BELEGE ————— */

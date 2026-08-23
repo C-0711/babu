@@ -123,9 +123,7 @@ def anfordern(mail: str, *, frueher: list[datetime] | None = None,
     if not mail_gueltig(adresse):
         return Ergebnis(False, "Diese E-Mail-Adresse sieht nicht richtig aus.")
 
-    grenze = _jetzt() - VERSUCHE_FENSTER
-    jung = [t for t in (frueher or []) if t > grenze]
-    if len(jung) >= VERSUCHE_MAX:
+    if gebremst(frueher):
         # Nach außen bleibt es freundlich und ohne Auskunft darüber, wie oft
         # es jemand versucht hat — die Bremse ist keine Information für Dritte.
         return Ergebnis(False, "Wir haben dir gerade erst geschrieben — "
@@ -138,6 +136,16 @@ def anfordern(mail: str, *, frueher: list[datetime] | None = None,
         erstellt=jetzt, frist=jetzt + FRIST,
         gelesen=dict(gelesen or {}), bericht=bericht),
         schluessel=schluessel)
+
+
+def gebremst(frueher: list[datetime] | None) -> bool:
+    """Hat diese Adresse es im Zeitfenster schon zu oft versucht?
+
+    Eigene Funktion, weil die Bremse an zwei Stellen gebraucht wird: beim
+    Anfordern (bevor Arbeit anfällt) und bevor eine Mail rausgeht.
+    """
+    grenze = _jetzt() - VERSUCHE_FENSTER
+    return len([t for t in (frueher or []) if t > grenze]) >= VERSUCHE_MAX
 
 
 # Was nach außen gesagt wird, egal was drinnen passiert ist. Wer hier
