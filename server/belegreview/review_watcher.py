@@ -511,7 +511,12 @@ def vlm_zusammenfassung(bildpfad: Path, felder: dict) -> str | None:
         "Satz, höchstens 120 Zeichen, der sagt, worum es geht — was gekauft "
         "oder bezahlt wurde und bei wem. Kein Markdown, keine Anführungs"
         "zeichen, keine Aufzählung, keine Wiederholung der Zahlen. "
-        "Schreibe so, wie man es einer Kollegin sagen würde. "
+        # Ohne diesen Satz kommt „Ich habe zwei Kaffee gekauft" heraus —
+        # babu spricht dann in der Ich-Form über einen Einkauf, den die
+        # Nutzerin gemacht hat. Der Satz steht neben jedem grünen Haken.
+        "Schreibe sachlich in der dritten Person, ohne „ich“ und ohne „wir“ — "
+        "am besten als knappe Feststellung, etwa „Zwei Kaffee beim Kiosk "
+        "Sonnenschein“. "
         + (f"Bereits sicher gelesen: {bekannt}. " if bekannt else "")
         + "Wenn das Bild nichts hergibt, antworte genau: unklar")
     payload = {

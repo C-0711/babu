@@ -496,3 +496,18 @@ def test_die_spaltenangabe_bleibt_im_blatt():
     assert spalten, "keine Spalte erkannt"
     prozent = int(spalten[0].split("bei ")[1].split("%")[0])
     assert 0 <= prozent <= 100, spalten[0]
+
+
+@pytest.mark.parametrize("roh, soll", [
+    ("Blumen Hofmann e.K.", "Blumen Hofmann e.K."),
+    ("Friseur Weingärtle e.Kfr.", "Friseur Weingärtle e.Kfr."),
+    ("Bürobedarf Müller GmbH.", "Bürobedarf Müller GmbH"),
+    ("Kiosk Sonnenschein,", "Kiosk Sonnenschein"),
+    ("— Laden GmbH —", "Laden GmbH"),
+    ("Muster GmbH & Co. KG", "Muster GmbH & Co. KG"),
+])
+def test_der_punkt_einer_rechtsform_bleibt_stehen(roh, soll):
+    """„e.K." ist eine Rechtsform, kein Satzende. Auf einer Rechnung ist der
+    fehlende Punkt ein Zeichen zu wenig am Firmennamen."""
+    from belegdeutung import _saubern
+    assert _saubern(roh) == soll
