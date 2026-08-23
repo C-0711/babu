@@ -3327,10 +3327,23 @@ def _brief_job(pfad: str, daten: bytes, name: str, un: str) -> None:
 KASSENBUCH_ZAHLEN = ("bestandVortag", "einnahmenBar", "privateinlagen",
                      "gutscheineEingeloest", "gutscheinVerkauf",
                      "umsatzFrei", "umsatz7",
-                     "barabhebungBank", "ecZahlungen", "trinkgeldTeamEC",
-                     "sonstigeAusgaben", "privatentnahmen", "einzahlungBank",
+                     "barabhebungBank", "ecZahlungen",
+                     "trinkgeldKarte", "trinkgeldTeamEC",
+                     "sonstigeAusgaben", "privatentnahmen",
+                     "vorschussTeam", "auslagenErstattet", "einzahlungBank",
                      "gezaehltSchluss")
 KASSENBUCH_NOTIZEN = ("differenzGrund", "sonstigeNotiz")
+# `trinkgeldKarte` ist das Trinkgeld, das mit dem Kartenumsatz aufs
+# Geschäftskonto kam; `trinkgeldTeamEC` der Teil davon, der bar ans Team
+# ausgezahlt wurde. Die Differenz ist der Anteil der Inhaberin und damit
+# Betriebseinnahme — sie wird nicht mitgeschickt, sondern gerechnet, damit
+# im Blatt keine zwei Zahlen einander widersprechen können.
+#
+# `vorschussTeam` und `auslagenErstattet` trennen, was bisher alles
+# „Entnahme" hieß: ein Vorschuss ist eine Forderung (wird mit dem Lohn
+# verrechnet), eine erstattete Auslage ist Aufwand, und nur der Rest geht
+# wirklich ins Private.
+#
 # Trinkgeld je Person: [{"name": "Jana", "betrag": 12.50}]. Für das Team
 # steuerfrei (§ 3 Nr. 51 EStG) — dokumentiert wird es, damit bei einer
 # Kassenprüfung erklärbar ist, warum Geld die Schublade verlässt.

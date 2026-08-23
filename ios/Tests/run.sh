@@ -29,6 +29,10 @@ echo "— Protokoll-Harness —"
 swiftc -o "$ZIEL/protokoll" ../Beleg/Beleg/Protokollsatz.swift protokoll/main.swift
 "$ZIEL/protokoll"
 
+echo "— Kassenbuch-Harness —"
+swiftc -o "$ZIEL/kasse" ../Beleg/Beleg/Kassenbuch.swift kasse/main.swift
+"$ZIEL/kasse"
+
 echo "— Parser-Harness —"
 swiftc -o "$ZIEL/parser" ../Beleg/Beleg/Models.swift ../Beleg/Beleg/FeldParser.swift parser/main.swift
 "$ZIEL/parser"
