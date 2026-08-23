@@ -511,3 +511,229 @@ def test_der_punkt_einer_rechtsform_bleibt_stehen(roh, soll):
     fehlende Punkt ein Zeichen zu wenig am Firmennamen."""
     from belegdeutung import _saubern
     assert _saubern(roh) == soll
+
+
+# ── Die Rechenproben: der Beleg prüft sich selbst ────────────────────────────
+#
+# Nina, 22.08.2026: „Manchmal steht ein völlig falscher Endbetrag da." Das
+# Tückische daran ist, dass niemand es merkt: die Zahl sieht aus wie ein
+# Betrag, sie steht an der richtigen Stelle, sie ist plausibel. Auffliegen
+# kann sie nur am Beleg selbst — die Posten müssen die Summe ergeben, Netto
+# und Steuer den Bruttobetrag, die Steuer den Satz, Gegeben minus Rückgeld
+# das, was zu zahlen war. Geht eine dieser Proben nicht auf, ist eine Zahl
+# falsch gelesen, und dann wird gefragt statt gebucht.
+
+
+def probe(lesung, name):
+    for p in lesung.proben:
+        if p.name == name:
+            return p
+    return None
+
+
+@pytest.fixture
+def rechnung_mit_verlesener_summe(rechnung_mit_fusszeile):
+    """Dieselbe Rechnung — nur dass aus „40,00“ beim Lesen „90,00“ wurde.
+
+    Das ist Ninas Fall in Reinform: der Betrag steht in der Summenzeile, er
+    ist plausibel, und Netto und Steuer lassen sich aus ihm zurückrechnen.
+    Nur die Positionen darüber wissen es besser.
+    """
+    return [x for x in rechnung_mit_fusszeile if x.text != "40,00"] + [
+        rechts("90,00", 520, 496, hoehe=18)]
+
+
+def test_verlesene_summe_faellt_durch_die_einzelposten(rechnung_mit_verlesener_summe):
+    l = deuten(rechnung_mit_verlesener_summe, heute=date(2026, 8, 22))
+    assert l.wert("brutto") == 90.00          # so steht es (verlesen) auf dem Blatt
+    assert l.wert("summenprobe_ok") is False
+    assert probe(l, "Einzelposten").bestanden is False
+    assert any("Posten" in o for o in l.offen), l.offen
+
+
+def test_einzelposten_die_aufgehen_bestehen_die_probe(rechnung_mit_fusszeile):
+    l = deuten(rechnung_mit_fusszeile, heute=date(2026, 8, 22))
+    assert probe(l, "Einzelposten").bestanden is True
+    assert l.wert("summenprobe_ok") is True
+
+
+def test_ein_cent_zu_wenig_ist_ein_lesefehler():
+    """Posten addieren sich ohne Rundung — ein Cent Differenz ist kein Rest."""
+    l = deuten([
+        k("Friseurbedarf Südwest GmbH", 60, 30, hoehe=30),
+        k("1 Coloration 60 ml", 60, 386, hoehe=15), rechts("21,85", 520, 386, hoehe=15),
+        k("2 Entwickler 1 L", 60, 408, hoehe=15), rechts("11,75", 520, 408, hoehe=15),
+        k("Nettosumme", 60, 448, hoehe=15), rechts("33,61", 520, 448, hoehe=15),
+        k("zzgl. USt 19 %", 60, 470, hoehe=15), rechts("6,39", 520, 470, hoehe=15),
+        k("Rechnungsbetrag", 60, 496, hoehe=18), rechts("40,00", 520, 496, hoehe=18),
+    ], heute=date(2026, 8, 22))
+    assert probe(l, "Einzelposten").bestanden is False
+    assert l.wert("summenprobe_ok") is False
+
+
+def test_ohne_erkennbare_posten_wird_keine_probe_behauptet(baeckerbon):
+    """Was sich nicht sauber addieren lässt, darf auch nicht durchfallen."""
+    l = deuten([x for x in baeckerbon if x.text not in ("1 x Brötchen", "1,30")],
+               heute=date(2026, 8, 22))
+    assert probe(l, "Einzelposten") is None
+
+
+def test_bargeld_geht_auf():
+    l = deuten([
+        k("Kiosk Meier", 40, 20, hoehe=22),
+        k("SUMME", 40, 100), rechts("44,50", 300, 100),
+        k("Gegeben", 40, 130), rechts("50,00", 300, 130),
+        k("Rückgeld", 40, 160), rechts("5,50", 300, 160),
+    ], heute=date(2026, 8, 22))
+    assert probe(l, "Bargeld").bestanden is True
+    assert l.wert("summenprobe_ok") is True
+
+
+def test_bargeld_das_nicht_aufgeht_meldet_sich():
+    """Wer 50 gibt und 5,50 zurückbekommt, hat nicht 54,50 bezahlt."""
+    l = deuten([
+        k("Kiosk Meier", 40, 20, hoehe=22),
+        k("SUMME", 40, 100), rechts("54,50", 300, 100),
+        k("Gegeben", 40, 130), rechts("50,00", 300, 130),
+        k("Rückgeld", 40, 160), rechts("5,50", 300, 160),
+    ], heute=date(2026, 8, 22))
+    assert probe(l, "Bargeld").bestanden is False
+    assert l.wert("summenprobe_ok") is False
+    assert any("Rückgeld" in o for o in l.offen), l.offen
+
+
+def test_trinkgeld_ist_kein_lesefehler():
+    """Mehr gegeben als zurückbekommen heißt Trinkgeld, nicht falsch gelesen."""
+    l = deuten([
+        k("Gasthaus Sonne", 40, 20, hoehe=22),
+        k("SUMME", 40, 100), rechts("44,50", 300, 100),
+        k("Gegeben", 40, 130), rechts("50,00", 300, 130),
+        k("Rückgeld", 40, 160), rechts("3,00", 300, 160),
+    ], heute=date(2026, 8, 22))
+    assert probe(l, "Bargeld") is None
+    assert any("Trinkgeld" in n for n in l.notizen), l.notizen
+    assert l.wert("summenprobe_ok") is True
+
+
+def test_der_steuersatz_muss_zu_netto_und_steuer_passen():
+    """13 % von 100 gibt es nicht — dann ist eine der Zahlen falsch gelesen."""
+    l = deuten([
+        k("Laden GmbH", 40, 20, hoehe=22),
+        k("Netto", 40, 100), rechts("100,00", 300, 100),
+        k("MwSt 19 %", 40, 130), rechts("13,00", 300, 130),
+        k("Gesamtbetrag", 40, 160), rechts("113,00", 300, 160),
+    ], heute=date(2026, 8, 22))
+    assert probe(l, "Steuersatz").bestanden is False
+    assert l.wert("summenprobe_ok") is False
+    assert any("Steuer" in o for o in l.offen), l.offen
+
+
+def test_die_gescheiterte_probe_wird_benannt(rechnung_mit_verlesener_summe):
+    """„Summenprobe nicht bestanden“ hilft niemandem — welche denn?"""
+    l = deuten(rechnung_mit_verlesener_summe, heute=date(2026, 8, 22))
+    d = l.felder["summenprobe_ok"]
+    assert "Einzelposten" in d.regel, d.regel
+    gescheitert = [p for p in l.proben if not p.bestanden]
+    assert gescheitert and all("33,61" in p.erklaerung for p in gescheitert)
+
+
+def test_bestandene_proben_stehen_im_protokoll(rechnung_mit_fusszeile):
+    """Auch eine bestandene Probe gehört sichtbar gemacht — sonst glaubt man
+    der Zahl nur, statt sie nachlesen zu können."""
+    l = deuten(rechnung_mit_fusszeile, heute=date(2026, 8, 22))
+    assert any("Probe" in n for n in l.notizen), l.notizen
+
+
+# ── Steuersätze: 7 % und 0 % kommen im Salon wirklich vor ────────────────────
+#
+# Die Lesung nahm 19 % als Normalfall an. Im Salon stimmt das oft nicht:
+# Zeitschriften fürs Wartezimmer sind 7 %, Porto und Versicherung 0 %, und
+# was ein Kleinunternehmer schreibt, trägt gar keine Steuer. Wer 19 %
+# annimmt, wo nichts steht, zieht Vorsteuer, die es nie gab.
+
+
+def test_ohne_steuerausweis_werden_keine_neunzehn_prozent_erfunden():
+    l = deuten([
+        k("Kosmetikstudio Elke", 40, 20, hoehe=22),
+        k("Gemäß §19 UStG keine Umsatzsteuer ausgewiesen", 40, 100, hoehe=13),
+        k("Gesamt", 40, 140), rechts("25,00", 300, 140),
+    ], heute=date(2026, 8, 22))
+    assert l.wert("ust_satz") == 0
+    assert l.wert("ust") == 0.0
+    assert l.wert("netto") == 25.00
+    assert any("19" in n and "UStG" in n for n in l.notizen), l.notizen
+
+
+def test_stiller_beleg_bekommt_null_prozent_statt_neunzehn():
+    """Steht keine Umsatzsteuer drauf, ist das eine Aussage — keine Lücke."""
+    l = deuten([
+        k("Deutsche Post Filiale", 40, 20, hoehe=22),
+        k("Porto Briefmarken", 40, 100, hoehe=14),
+        k("Summe", 40, 140), rechts("8,50", 300, 140),
+    ], heute=date(2026, 8, 22))
+    assert l.wert("ust_satz") == 0
+    assert l.wert("ust") == 0.0
+    assert l.wert("netto") == 8.50
+    assert not any("Umsatzsteuer" in o for o in l.offen), l.offen
+
+
+def test_hoher_betrag_ohne_steuerausweis_wird_zur_rueckfrage():
+    """Über der Kleinbetragsgrenze muss eine Rechnung die Steuer ausweisen —
+    fehlt sie dort, ist entweder die Lesung unvollständig oder der Beleg."""
+    l = deuten([
+        k("Möbelhaus Bahn", 40, 20, hoehe=22),
+        k("Empfangstresen", 40, 100, hoehe=14),
+        k("Summe", 40, 140), rechts("480,00", 300, 140),
+    ], heute=date(2026, 8, 22))
+    assert l.wert("ust_satz") == 0
+    assert any("Umsatzsteuer" in o for o in l.offen), l.offen
+
+
+def test_zwei_steuersaetze_bleiben_getrennt():
+    """Ein Drogeriebon trägt 19 % und 7 % nebeneinander. Wer daraus einen
+    Satz macht, meldet eine falsche Voranmeldung."""
+    l = deuten([
+        k("REWE Markt", 40, 20, hoehe=22),
+        k("A 19%", 40, 160), k("15,97", 200, 160), k("3,03", 300, 160),
+        k("19,00", 400, 160),
+        k("B 7%", 40, 190), k("79,81", 200, 190), k("5,59", 300, 190),
+        k("85,40", 400, 190),
+        k("SUMME", 40, 230), k("104,40", 400, 230),
+    ], heute=date(2026, 8, 22))
+    assert len(l.steuerpositionen) == 2
+    assert {p.satz for p in l.steuerpositionen} == {7, 19}
+    assert l.wert("brutto") == 104.40
+    assert l.wert("netto") == 95.78
+    assert l.wert("ust") == 8.62
+    assert l.wert("summenprobe_ok") is True
+
+
+def test_ein_satz_bleibt_ein_satz(baeckerbon):
+    """Der Normalfall darf durch die Mehrsatz-Logik nicht schlechter werden."""
+    l = deuten(baeckerbon, heute=date(2026, 8, 22))
+    assert l.wert("ust_satz") == 7
+    assert l.wert("summenprobe_ok") is True
+
+
+def test_steuertabelle_in_der_reihenfolge_des_bons():
+    """Der Weingärtle-Bon druckt USt, Brutto, Netto — in dieser Reihenfolge.
+
+    Wer nur „Netto Steuer Brutto" erwartet, findet die Zeile nie. Welche
+    Spalte welche ist, sagt am Ende nicht die Kopfzeile, sondern die
+    Rechnung: der größte Wert ist der Brutto, und Netto plus Steuer muss ihn
+    ergeben.
+    """
+    l = deuten([
+        k("Rotenberger Weingärtle", 40, 20, hoehe=22),
+        k("USt.", 40, 300, hoehe=12), k("Brutto", 140, 300, hoehe=12),
+        k("Netto", 240, 300, hoehe=12), k("USt.%", 340, 300, hoehe=12),
+        k("5,59", 40, 330), k("85,40", 140, 330), k("79,81", 240, 330),
+        k("A 7%", 340, 330),
+        k("9,13", 40, 360), k("57,20", 140, 360), k("48,07", 240, 360),
+        k("19%", 340, 360),
+        k("Summe", 40, 400), k("142,60", 240, 400),
+    ], heute=date(2026, 8, 22))
+    assert {p.satz for p in l.steuerpositionen} == {7, 19}
+    assert l.wert("netto") == 127.88
+    assert l.wert("ust") == 14.72
+    assert l.wert("ust_satz") == 7          # der größere Anteil

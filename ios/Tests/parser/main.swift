@@ -23,6 +23,8 @@ pruefe(f1.belegNr == "4711", "Beleg-Nr. über Label")
 let f2 = parse(["Gasthaus Sonne", "SUMME 44,50", "GEGEBEN 50,00", "RÜCKGELD 5,50"])
 pruefe(gleich(f2.brutto, 44.50), "Brutto ist die Summe, nicht das Gegeben")
 pruefe(f2.bewirtungsSignal, "Gasthaus erkannt")
+pruefe(f2.ustSatz == 0 && gleich(f2.ust, 0),
+       "ohne Steuerausweis keine erfundenen 19 %")
 
 // 3. §19-Kleinunternehmer: keine Vorsteuer erfinden
 let f3 = parse(["Kosmetikstudio Elke", "Gemäß §19 UStG keine Umsatzsteuer ausgewiesen",
@@ -57,6 +59,27 @@ pruefe(Kontierung.vorschlag(felder: f7).confidence <= 70,
 let f8 = parse(["Blumen Riedle", "Bon 5512", "03.08.2026", "19% MwSt", "12,61", "2,39", "15,00"])
 pruefe(gleich(f8.brutto, 15.00), "einfacher Bon: Brutto 15,00")
 pruefe(!f8.gutschriftSignal, "kein falsches Gutschrift-Signal")
+
+// 9. Gegeben minus Rückgeld muss der Betrag sein — sonst ist eine der drei
+//    Zahlen falsch gelesen. Genau so fällt ein verlesener Endbetrag auf.
+let f9 = parse(["Kiosk Meier", "SUMME 54,50", "Netto 45,80", "MwSt 19% 8,70",
+                "GEGEBEN 50,00", "RÜCKGELD 5,50"])
+pruefe(!f9.summenprobeOK, "Bargeld geht nicht auf: 50,00 − 5,50 ≠ 54,50")
+
+// 10. Mehr gegeben als nötig ist Trinkgeld, kein Lesefehler
+let f10 = parse(["Gasthaus Sonne", "SUMME 44,50", "GEGEBEN 50,00", "RÜCKGELD 3,00"])
+pruefe(gleich(f10.brutto, 44.50), "Trinkgeld ändert den Rechnungsbetrag nicht")
+
+// 11. Beleg ohne jeden Steuerausweis (Porto, Versicherung, Beitrag): 0 %.
+//     19 % anzunehmen wäre Vorsteuer, die auf keinem Beleg stand.
+let f11 = parse(["Deutsche Post Filiale", "Porto Briefmarken", "Summe 8,50"])
+pruefe(f11.ustSatz == 0, "kein Steuerausweis → Satz 0")
+pruefe(gleich(f11.netto, 8.50) && gleich(f11.ust, 0), "netto gleich brutto")
+
+// 12. 7 % steht auch neben 19 % noch da (Zeitschrift im Wartezimmer)
+let f12 = parse(["Presse Müller", "Zeitschrift 7,00 %", "Netto 4,67",
+                 "MwSt 0,33", "Summe 5,00"])
+pruefe(f12.ustSatz == 7, "7,00 % wird als 7 gelesen")
 
 print(fehler == 0 ? "\nAlle Prüfungen bestanden." : "\n\(fehler) Prüfung(en) fehlgeschlagen.")
 exit(fehler == 0 ? 0 : 1)
