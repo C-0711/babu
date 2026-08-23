@@ -3805,12 +3805,8 @@ def _beleg_titel(z: dict) -> str:
     return " · ".join(teile)
 
 
-@app.get("/api/ablage")
-def api_ablage(request: Request) -> Response:
-    """Alles Abgelegte als Ordnerbaum: Jahr → Art → Dokumente."""
-    un, fehler = _box_wache(request)
-    if fehler:
-        return fehler
+def _ablage_eintraege() -> list[dict]:
+    """Alles Abgelegte als flache Liste — die Grundlage für Baum und Suche."""
     index = index_aktuell()
     zeiten = index["zeiten"]
     eintraege: list[dict] = []
@@ -3870,6 +3866,16 @@ def api_ablage(request: Request) -> Response:
                           "zeit": (zeiten.get(pfad) or {}).get("zeit"),
                           "gelesen": None, "erklaerung": None, "vertrag": None,
                           "loeschbar": False})
+    return eintraege
+
+
+@app.get("/api/ablage")
+def api_ablage(request: Request) -> Response:
+    """Alles Abgelegte als Ordnerbaum: Jahr → Art → Dokumente."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    eintraege = _ablage_eintraege()
 
     jahre: dict[str, dict] = {}
     for e in eintraege:
@@ -3891,6 +3897,187 @@ def api_ablage(request: Request) -> Response:
                         "arten": arten})
     return JSONResponse({"jahre": ausgabe,
                          "gesamt": sum(j["anzahl"] for j in ausgabe)})
+
+
+# ── Suchen: in dem, was gelesen wurde ───────────────────────────────────────
+#
+# Ein Beleg heißt 20260812-225200-c781d6-….jpg. Wer darin nach „Rotenberger"
+# sucht, findet nichts — der Name sagt nichts, der Inhalt alles. Gesucht wird
+# deshalb im gelesenen Text: im OCR-Text jedes Belegs, in der Erklärung eines
+# Briefs, in den Vertragsdaten und im Klartext der Salon-Check-Unterlagen.
+#
+# Bewusst ein Textvergleich, keine Bedeutungssuche. Nina sucht einen Namen
+# oder einen Betrag, den sie kennt — dafür ist Stichwortsuche das Werkzeug,
+# das immer dasselbe tut und keine Erklärung braucht, wenn es nichts findet.
+SUCHE_TREFFER_MAX = 60
+SUCHE_UMFELD = 60           # Zeichen links und rechts der Fundstelle
+
+
+def _fundstelle(text: str, suche: str) -> str | None:
+    """Die Stelle im Text, an der es steht — mit etwas Umfeld."""
+    i = text.lower().find(suche)
+    if i < 0:
+        return None
+    von = max(0, i - SUCHE_UMFELD)
+    bis = min(len(text), i + len(suche) + SUCHE_UMFELD)
+    ausschnitt = " ".join(text[von:bis].split())
+    return ("… " if von else "") + ausschnitt + (" …" if bis < len(text) else "")
+
+
+def _durchsuchbarer_text(e: dict, reviews: dict, klartexte: dict) -> str:
+    """Alles, was zu einem Ablage-Stück gelesen wurde, als ein Text."""
+    teile = [e.get("titel") or "", Path(e["pfad"]).name]
+    if e.get("stamm"):
+        r = reviews.get(e["stamm"]) or {}
+        f = r.get("felder") or {}
+        v = r.get("vlm") or {}
+        teile += [str(r.get("ocr_text") or ""), str(r.get("zusammenfassung") or ""),
+                  str(f.get("lieferant") or ""), str(v.get("lieferant") or ""),
+                  str(f.get("beleg_nr") or ""),
+                  "" if f.get("brutto") is None
+                  else f"{f['brutto']:.2f}".replace(".", ",")]
+    erk = e.get("erklaerung")
+    if isinstance(erk, dict):
+        teile += [str(erk.get("einfach") or ""), str(erk.get("was_tun") or "")]
+    ver = e.get("vertrag")
+    if isinstance(ver, dict):
+        teile += [str(v) for v in ver.values() if isinstance(v, (str, int, float))]
+    teile.append(klartexte.get(e["pfad"], ""))
+    return "\n".join(t for t in teile if t)
+
+
+def _abschluss_klartexte() -> dict[str, str]:
+    """Der beim Salon-Check gelesene Text, je Unterlage."""
+    kopf = (_git(["rev-parse", "HEAD"], 10) or "HEAD").strip()
+    out = _git(["ls-tree", "-r", kopf], 60) or ""
+    oids: dict[str, str] = {}
+    for zeile in out.splitlines():
+        vorn, _, pfad = zeile.partition("\t")
+        teile = vorn.split()
+        if pfad.endswith(".text.json") and len(teile) == 3 and teile[1] == "blob":
+            oids[pfad.removesuffix(".text.json")] = teile[2]
+    roh = _blobs_lesen(list(oids.values()))
+    texte: dict[str, str] = {}
+    for pfad, oid in oids.items():
+        try:
+            texte[pfad] = str(json.loads(roh.get(oid, b"{}")).get("text") or "")
+        except Exception:  # noqa: BLE001
+            texte[pfad] = ""
+    return texte
+
+
+@app.get("/api/ablage/suche")
+def api_ablage_suche(request: Request, q: str = "") -> Response:
+    """Sucht in allem, was babu gelesen hat — nicht nur in Dateinamen."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    suche = (q or "").strip().lower()[:120]
+    if len(suche) < 2:
+        # Ein einzelner Buchstabe trifft alles; das ist kein Suchergebnis,
+        # sondern die Ablage mit Extraschritten.
+        return JSONResponse({"suche": q, "treffer": [], "gesamt": 0})
+    reviews = index_aktuell()["reviews"]
+    klartexte = _abschluss_klartexte()
+    treffer = []
+    for e in _ablage_eintraege():
+        stelle = _fundstelle(_durchsuchbarer_text(e, reviews, klartexte), suche)
+        if stelle is None:
+            continue
+        treffer.append(dict(e, fundstelle=stelle,
+                            jahr=_jahr_aus(e["pfad"], e.get("zeit")),
+                            fach=ABLAGE_ARTEN.get(e["art"], (e["art"], ""))[0]))
+    treffer.sort(key=lambda t: t["zeit"] or "", reverse=True)
+    return JSONResponse({"suche": q, "gesamt": len(treffer),
+                         "treffer": treffer[:SUCHE_TREFFER_MAX]})
+
+
+# ── Umbenennen und verschieben ──────────────────────────────────────────────
+#
+# Beides fasst die Datei NICHT an. Der Name eines Dokuments und sein Fach
+# stehen in der Beiakte daneben; die Unterlage selbst bleibt Bit für Bit,
+# wo sie liegt. Das ist keine Bequemlichkeit, sondern die Bedingung dafür,
+# dass das Siegel („unverändert seit") weiter gilt: eine umbenannte Datei
+# wäre in der Historie ein anderes Stück Papier.
+ABLAGE_BEIAKTE_RE = re.compile(r"^(dokumente|abschluss)/[A-Za-z0-9._/ -]{1,200}$")
+
+
+def _beiakte_aendern(un: str, pfad: str, **felder) -> Response | None:
+    """Die Beiakte eines Ablage-Stücks fortschreiben. None heißt: hat geklappt."""
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Die Ablage ordnet die Inhaberin."},
+                            status_code=403)
+    if not ABLAGE_BEIAKTE_RE.match(pfad) or ".." in pfad \
+            or pfad.endswith((".meta.json", ".text.json")):
+        return JSONResponse(
+            {"fehler": "Belege heißen nach dem, was auf ihnen steht — ändere sie "
+                       "im Beleg selbst. Kassenbuch, Kontoauszüge und Stapel "
+                       "bleiben, wie sie sind."}, status_code=400)
+    if git_show(pfad) is None:
+        return JSONResponse({"fehler": "unbekannte Unterlage"}, status_code=404)
+    alt = {}
+    roh = git_show(f"{pfad}.meta.json")
+    if roh is not None:
+        try:
+            alt = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            alt = {}
+    if not isinstance(alt, dict):
+        alt = {}
+    meta = dict(alt, **felder, geaendert_am=_jetzt_iso(), geaendert_von=un)
+    import boxschreiber  # noqa: PLC0415
+    try:
+        boxschreiber.schreiben(
+            f"{pfad}.meta.json",
+            json.dumps(meta, ensure_ascii=False, indent=1).encode(),
+            f"ablage: {Path(pfad).name}", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return None
+
+
+@app.post("/api/ablage/umbenennen")
+async def api_ablage_umbenennen(request: Request) -> Response:
+    """Einer Unterlage einen Namen geben, den man wiedererkennt."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    titel = str((body or {}).get("titel", "")).strip()[:120]
+    if not titel:
+        return JSONResponse({"fehler": "Bitte einen Namen eingeben."},
+                            status_code=400)
+    pfad = str((body or {}).get("pfad", ""))
+    antwort = await run_in_threadpool(_beiakte_aendern, un, pfad, titel=titel)
+    return antwort or JSONResponse({"ok": True, "pfad": pfad, "titel": titel})
+
+
+@app.post("/api/ablage/verschieben")
+async def api_ablage_verschieben(request: Request) -> Response:
+    """Eine Unterlage in ein anderes Fach legen — babu ordnet, Nina entscheidet."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    art = str((body or {}).get("art", "")).strip()
+    if art not in ABLAGE_ARTEN or art == "beleg":
+        # „beleg" ist kein Ziel: was dort liegt, ist ein aufgenommener Beleg
+        # mit Leseprotokoll und Buchungssatz, kein umetikettiertes PDF.
+        return JSONResponse({"fehler": "Dieses Fach gibt es nicht."},
+                            status_code=400)
+    pfad = str((body or {}).get("pfad", ""))
+    antwort = await run_in_threadpool(_beiakte_aendern, un, pfad,
+                                      art=art, fach=art)
+    return antwort or JSONResponse({"ok": True, "pfad": pfad, "art": art})
 
 
 # ---------------------------------------------------------------------------
