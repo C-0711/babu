@@ -44,6 +44,11 @@ ZAHL_VORRANG = {
     "raumkosten": ("euer", "bwa", "susa"),
     "afa": ("euer", "anlagen", "bwa"),
     "sonstige_kosten": ("euer", "bwa"),
+    # Eigener Posten, seit dem ersten echten Abschluss: dort standen 15.518,40 €
+    # für Steuerberatung, Abschluss und Buchführung gegen 16.441,48 € Gewinn.
+    # In „sonstige_kosten" versteckt wäre das die wichtigste Zahl des Berichts
+    # gewesen — und unsichtbar.
+    "steuerberatung": ("euer", "susa", "bwa"),
     "gewinn": ("euer", "bescheid", "bwa"),
     "ust_zahllast": ("bescheid", "euer"),
     "est_vorauszahlungen": ("bescheid",),
@@ -161,13 +166,14 @@ def art_erkennen(seite1_text: str, llm=llm_json) -> str:
 
 _EXTRAKT_FELDER = {
     "euer": ("umsatz", "wareneinsatz", "personal", "raumkosten", "afa",
-             "sonstige_kosten", "gewinn", "ust_zahllast",
+             "sonstige_kosten", "steuerberatung", "gewinn", "ust_zahllast",
              "steuernummer", "finanzamt", "rechtsform"),
     "bwa": ("umsatz", "wareneinsatz", "personal", "raumkosten", "afa",
-            "sonstige_kosten", "gewinn"),
+            "sonstige_kosten", "steuerberatung", "gewinn"),
     "bescheid": ("gewinn", "ust_zahllast", "est_vorauszahlungen",
                  "steuernummer", "finanzamt", "rechtsform"),
-    "susa": ("umsatz", "wareneinsatz", "personal", "raumkosten"),
+    "susa": ("umsatz", "wareneinsatz", "personal", "raumkosten",
+             "steuerberatung"),
     "anlagen": ("afa",),
     "sonstiges": (),
 }
@@ -178,7 +184,10 @@ _FELD_ERKLAERUNG = """\
 - personal: Löhne, Gehälter und Sozialabgaben gesamt
 - raumkosten: Miete, Nebenkosten, Energie für die Geschäftsräume
 - afa: Abschreibungen gesamt
-- sonstige_kosten: alle übrigen Betriebsausgaben
+- sonstige_kosten: alle übrigen Betriebsausgaben OHNE die Steuerberatung
+- steuerberatung: Rechts-/Steuerberatung, Abschluss- und Prüfungskosten,
+  Buchführungskosten zusammen (SKR04 6825, 6827, 6830) — falls getrennt
+  ausgewiesen, sonst null
 - gewinn: Gewinn/Überschuss bzw. "Einkünfte aus Gewerbebetrieb"
 - ust_zahllast: Umsatzsteuer-Zahllast des Jahres
 - est_vorauszahlungen: festgesetzte Einkommensteuer-Vorauszahlungen (Jahressumme)
