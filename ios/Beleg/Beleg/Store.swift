@@ -374,6 +374,23 @@ final class AppStore: ObservableObject {
         belege[i] = b
     }
 
+    /// ISO in das Format bringen, das die App führt.
+    ///
+    /// Der Server schreibt Daten als `2026-03-05`, die App als `05.03.2026`.
+    /// Das ist kein Schönheitsunterschied: `extfBelegdatum` zerlegt an
+    /// Punkten, und aus einem ISO-Datum wird dort ein LEERES Belegdatum im
+    /// DATEV-Stapel. Ein Buchungssatz ohne Belegdatum fällt beim
+    /// Steuerberater durch — oder schlimmer, fällt nicht auf.
+    private func deutschesDatum(_ iso: String?) -> String? {
+        guard let iso, !iso.isEmpty else { return nil }
+        let teile = iso.split(separator: "-")
+        guard teile.count == 3, teile[0].count == 4,
+              let j = Int(teile[0]), let m = Int(teile[1]), let t = Int(teile[2]),
+              (1...12).contains(m), (1...31).contains(t)
+        else { return iso.contains(".") ? iso : nil }   // schon deutsch, oder Murks
+        return String(format: "%02d.%02d.%04d", t, m, j)
+    }
+
     /// Was der Server gelesen hat, wird die Wahrheit des Belegs.
     ///
     /// Die App liest jeden Beleg auf dem Gerät selbst — schnell, offline,
@@ -415,7 +432,7 @@ final class AppStore: ObservableObject {
         setz(\.lieferant, f.lieferant?.trimmingCharacters(in: .whitespacesAndNewlines)
                              .isEmpty == false ? f.lieferant : nil)
         setz(\.belegNr, f.belegNr?.isEmpty == false ? f.belegNr : nil)
-        setz(\.datumText, f.datum?.isEmpty == false ? f.datum : nil)
+        setz(\.datumText, deutschesDatum(f.datum))
         setz(\.brutto, f.brutto)
         setz(\.netto, f.netto)
         setz(\.ust, f.ust)

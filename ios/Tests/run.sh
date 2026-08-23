@@ -32,3 +32,9 @@ swiftc -o "$ZIEL/protokoll" ../Beleg/Beleg/Protokollsatz.swift protokoll/main.sw
 echo "— Parser-Harness —"
 swiftc -o "$ZIEL/parser" ../Beleg/Beleg/Models.swift ../Beleg/Beleg/FeldParser.swift parser/main.swift
 "$ZIEL/parser"
+
+# Bis hierher gekommen heißt: kein Harness ist abgebrochen (set -e oben) und
+# keiner hat mit != 0 geendet. Ohne diese Zeile sah ein Übersetzungsfehler
+# aus wie „keine Fehlschläge" — wer nur ✗ zählt, zählt bei einem gar nicht
+# gelaufenen Harness null.
+echo "Alle Harnesse durchgelaufen."
