@@ -184,8 +184,7 @@ struct AufraeumenView: View {
                         BadgeView(text: Kontenplan.bezeichnung(konto), color: GC.accent)
                     }
                     BadgeView(text: beleg.herkunft.kurz,
-                              color: beleg.herkunft == .historie ? GC.accent :
-                                     beleg.herkunft == .regel ? GC.ok : GC.warn)
+                              color: herkunftsFarbe(beleg.herkunft))
                     Text("\(beleg.confidence) %")
                         .font(.caption.monospaced())
                         .foregroundStyle(GC.muted)

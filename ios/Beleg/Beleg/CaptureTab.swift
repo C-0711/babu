@@ -510,7 +510,7 @@ struct ErgebnisKarte: View {
 
             HStack(spacing: 10) {
                 BadgeView(text: aktuell.herkunft.kurz,
-                          color: aktuell.herkunft == .historie ? GC.accent : aktuell.herkunft == .regel ? GC.ok : GC.warn)
+                          color: herkunftsFarbe(aktuell.herkunft))
                 ProgressView(value: Double(aktuell.confidence), total: 100)
                     .tint(confColor(aktuell.confidence))
                 Text("\(aktuell.confidence) %")

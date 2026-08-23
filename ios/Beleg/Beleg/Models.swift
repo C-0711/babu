@@ -10,9 +10,13 @@ enum Herkunft: String, Codable {
     /// Anzeige ohne Technik-Vokabular (Rohwerte bleiben stabil — persistiert).
     var anzeige: String {
         switch self {
-        case .historie: return "aus deiner Historie"
-        case .regel: return "nach fester Regel"
-        case .ki: return "Vorschlag"
+        case .historie: return "vom Gerät, nach deiner Historie"
+        case .regel: return "vom Gerät, nach fester Regel"
+        // Seit 23.08.2026 steht `.ki` für genau eines: die Lesung vom Server
+        // wurde übernommen. Das ist die verlässlichste Quelle, die es gibt —
+        // „Vorschlag" wäre dafür das falsche Wort, und die Zahlen vom Gerät
+        // klängen daneben sicherer, als sie sind.
+        case .ki: return "geprüft gelesen"
         case .mensch: return "von dir festgelegt"
         }
     }
@@ -20,9 +24,9 @@ enum Herkunft: String, Codable {
     /// Kurzform für Badges.
     var kurz: String {
         switch self {
-        case .historie: return "Historie"
-        case .regel: return "Regel"
-        case .ki: return "Vorschlag"
+        case .historie: return "vom Gerät"
+        case .regel: return "vom Gerät"
+        case .ki: return "geprüft"
         case .mensch: return "Manuell"
         }
     }

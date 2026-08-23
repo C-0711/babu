@@ -79,3 +79,19 @@ struct CardBackground: ViewModifier {
 extension View {
     func gcCard() -> some View { modifier(CardBackground()) }
 }
+
+
+/// Die Farbe zur Herkunft einer Angabe — an EINER Stelle, nicht in jeder
+/// Ansicht neu ausgerechnet.
+///
+/// Sie war verkehrt herum: die Serverlesung bekam Warn-Orange, die Vermutung
+/// des Geräts bekam Grün. Wer nur auf die Farbe schaut, hielt damit das
+/// Unsicherste für das Sicherste. Das Modell (`Herkunft`) kennt keine Farben
+/// — deshalb steht die Regel hier und nicht dort.
+func herkunftsFarbe(_ h: Herkunft) -> Color {
+    switch h {
+    case .ki: return GC.ok          // vom Server gelesen — das gilt
+    case .mensch: return GC.accent  // von Hand gesetzt — das gilt auch
+    case .historie, .regel: return GC.muted   // vom Gerät geraten
+    }
+}

@@ -272,10 +272,13 @@ final class AppStore: ObservableObject {
             // Serverseitiger Name (mit Zeitstempel-Präfix) ist der Schlüssel
             // zum BelegReview-Ergebnis.
             if let serverDatei { belege[j].ablageDateiname = serverDatei }
-            // Audit-Stempel nachladen — Backoff-Polling statt Einmal-Schuss:
-            // die Prüfung braucht je nach Rückstau Sekunden bis Minuten.
+            // Die Serverlesung nachholen — Backoff statt Einmal-Schuss: die
+            // Prüfung braucht je nach Rückstau Sekunden bis Minuten. Der
+            // erste Versuch kommt bewusst früh (3 s statt 10 s): im Regelfall
+            // ist die Lesung dann schon da, und Nina sieht gar nicht erst die
+            // Zahlen vom Gerät.
             Task {
-                for wartezeit: UInt64 in [10, 20, 40, 80, 160] {
+                for wartezeit: UInt64 in [3, 6, 12, 25, 50, 100] {
                     try? await Task.sleep(nanoseconds: wartezeit * 1_000_000_000)
                     await self.auditLaden(id)
                     if self.belege.first(where: { $0.id == id })?.auditReview != nil { break }
@@ -297,6 +300,17 @@ final class AppStore: ObservableObject {
         }
     }
 
+    /// Die Serverlesung holen — und ANWENDEN.
+    ///
+    /// Bis 23.08.2026 holte diese Stelle nur die Prüfstempel. Übernommen
+    /// wurde die Lesung erst, wenn jemand den Beleg von Hand aufmachte
+    /// (ListeView.reviewLaden). Bis dahin stand überall — in der Liste, in
+    /// der Ergebniskarte, im Export — das, was das Telefon geraten hatte.
+    ///
+    /// Das Gerät liest mit Vision auf einem Foto; der Server liest mit
+    /// Paddle und deutet mit Geometrie. Wenn die beiden sich unterscheiden,
+    /// hat der Server recht. Also gilt seine Lesung, sobald sie da ist —
+    /// nicht, sobald jemand hinsieht.
     func auditLaden(_ id: UUID) async {
         guard let url = URL(string: ablageURL),
               let pat = KeychainHelfer.ladePAT(),
@@ -305,7 +319,11 @@ final class AppStore: ObservableObject {
               let dateiname = belege[i].ablageDateiname else { return }
         let stamm = (dateiname as NSString).deletingPathExtension
         guard case .fertig(let review) = await AblageService.reviewAbrufen(
-            stamm: stamm, basis: url, pat: pat), let audit = review.audit else { return }
+            stamm: stamm, basis: url, pat: pat) else { return }
+        // Zuerst die Zahlen, dann die Stempel: schlägt das Setzen fehl (weil
+        // der Beleg fixiert ist), sollen die Stempel trotzdem stehen.
+        ausZweitpruefungUebernehmen(id: id, review: review)
+        guard let audit = review.audit else { return }
         auditSetzen(id: id, aufnahme: audit.aufnahme?.commit, review: audit.review?.commit,
                     status: review.fehlgeschlagen ? "fehlgeschlagen" : "ok")
     }
