@@ -95,21 +95,30 @@ struct EinstellungenView: View {
         .warmerGrund()
         .navigationTitle("Einstellungen")
         .navigationBarTitleDisplayMode(.inline)
-        // Am Form, nicht an der Section: ein Dialog auf einer Section wird
-        // je Zeile angelegt und schluckt dort die Berührungen — der
-        // Testschalter ließ sich deshalb nicht umlegen.
-        // Die alte Rückfrage nannte nur das Onboarding und die
-        // Einrichtungsangaben — dabei räumt der Knopf auch die Belege,
-        // Kassenberichte, den Chatverlauf und die Rechnungsvorlagen von
-        // diesem Gerät. Eine Rückfrage, die die Hälfte verschweigt, ist
-        // keine Rückfrage.
-        .confirmationDialog("Dieses Gerät leer räumen?",
-                            isPresented: $zeigeWerksDialog,
-                            titleVisibility: .visible) {
+        // Beide Rückfragen dieser Seite hängen hier am Form — und beide sind
+        // `alert`, nicht mehr `confirmationDialog`. Grund, im Simulator
+        // nachgemessen (iOS 26, iPhone 16e): ein `confirmationDialog` wird
+        // dort an seinen Auslöser geheftet und als schmales Popover gezeigt.
+        // Darin fällt der Abbrechen-Knopf ersatzlos weg — sichtbar blieb
+        // allein „Ja, leer räumen“ bzw. „Ja, abmelden“, der lange Erklärtext
+        // gequetscht auf halbe Breite. Eine Rückfrage, bei der man das Nein
+        // nicht sieht, ist keine Rückfrage, sondern eine Falle. `alert`
+        // erscheint mittig, in voller Breite und zeigt beide Knöpfe.
+        //
+        // Was NICHT die Ursache war: die Schalter. Der frühere Kommentar hier
+        // vermutete, ein Dialog schlucke die Berührungen. Nachgemessen legen
+        // sich „Belege automatisch ablegen“ und „Testwerkzeuge zeigen“ bei
+        // jeder Berührung um — angemeldet wie abgemeldet, mit beiden Dialogen
+        // im Baum.
+        //
+        // Die Rückfrage nennt außerdem alles, was verschwindet: der Knopf
+        // räumt neben Onboarding und Einrichtungsangaben auch Belege,
+        // Kassenberichte, Chatverlauf und Rechnungsvorlagen von diesem Gerät.
+        .alert("Dieses Gerät leer räumen?", isPresented: $zeigeWerksDialog) {
+            Button("Abbrechen", role: .cancel) { }
             Button("Ja, leer räumen", role: .destructive) {
                 Task { await zuruecksetzen() }
             }
-            Button("Abbrechen", role: .cancel) { }
         } message: {
             Text("Von diesem Telefon verschwinden: deine Belege und "
                  + "Kassenberichte, der Chatverlauf, deine Rechnungsvorlagen "
@@ -117,6 +126,16 @@ struct EinstellungenView: View {
                  + "In deiner Belegbox bleibt alles erhalten, und angemeldet "
                  + "bleibst du auch. Danach fängt die App wieder mit dem "
                  + "Begrüßungsbildschirm an.")
+        }
+        .alert("Dieses Gerät abmelden?", isPresented: $zeigeLoeschDialog) {
+            Button("Abbrechen", role: .cancel) { }
+            Button("Ja, abmelden", role: .destructive) { abmelden() }
+        } message: {
+            Text("Es geht nichts verloren: Alles, was schon in deiner Belegbox "
+                 + "liegt, bleibt dort. Neue Belege und Kassenbuchblätter "
+                 + "kommen von diesem Telefon aus aber nicht mehr an, und "
+                 + "Fragen bleiben unbeantwortet. Wieder anmelden kannst du "
+                 + "dich jederzeit mit E-Mail und Passwort.")
         }
     }
 
@@ -263,26 +282,21 @@ struct EinstellungenView: View {
                  + "Belegbox. Es heißt NICHT, dass etwas gelöscht wird — deine "
                  + "Belege, dein Kassenbuch und dein Konto bleiben, wie sie sind.")
         }
-        .confirmationDialog("Dieses Gerät abmelden?",
-                            isPresented: $zeigeLoeschDialog,
-                            titleVisibility: .visible) {
-            Button("Ja, abmelden", role: .destructive) {
-                KeychainHelfer.loeschePAT()
-                verbunden = false
-                store.verbundenAls = nil
-                store.ablageAktiv = false   // ehrlich: ohne Verbindung geht nichts mehr
-                testErgebnis = nil
-                kontoFehler = nil
-                abgemeldet = true
-            }
-            Button("Abbrechen", role: .cancel) {}
-        } message: {
-            Text("Es geht nichts verloren: Alles, was schon in deiner Belegbox "
-                 + "liegt, bleibt dort. Neue Belege und Kassenbuchblätter "
-                 + "kommen von diesem Telefon aus aber nicht mehr an, und "
-                 + "Fragen bleiben unbeantwortet. Wieder anmelden kannst du "
-                 + "dich jederzeit mit E-Mail und Passwort.")
-        }
+        // Die Rückfrage dazu hängt am Form, nicht hier: eine Section ist keine
+        // eigene Ansicht, ihre Modifier landen je Zeile — und ein Alert je
+        // Zeile ist einer zu viel.
+    }
+
+    /// Dieses Gerät abmelden. Steht als eigene Funktion da, weil die
+    /// Rückfrage oben am Form hängt und der Knopf hier unten sitzt.
+    private func abmelden() {
+        KeychainHelfer.loeschePAT()
+        verbunden = false
+        store.verbundenAls = nil
+        store.ablageAktiv = false   // ehrlich: ohne Verbindung geht nichts mehr
+        testErgebnis = nil
+        kontoFehler = nil
+        abgemeldet = true
     }
 
     private func verbinden() {

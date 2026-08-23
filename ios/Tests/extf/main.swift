@@ -116,6 +116,27 @@ pruefe(extfBelegdatum("2026-03-05") == "",
 pruefe(extfBelegdatum("irgendwann") == "", "Murks ergibt leer")
 pruefe(extfBelegdatum("") == "", "leer bleibt leer")
 
+// ————— Zwei Sprachen, eine Grenze —————
+//
+// In die DATEV-Datei gehört das DATEV-Wort: der Kopfsatz heißt „Buchungsstapel"
+// und der Dateiname trägt es auch. Auf Ninas Bildschirm gehört es nicht hin,
+// und „fixiert" schon gar nicht — dort steht dasselbe Wort wie am
+// Export-Knopf: festgeschrieben. `BelegStatus.label` ist die einzige dieser
+// Zeichenketten, die sie tatsächlich zu sehen bekommt (ListeView, BelegZeile).
+let stapeltext = extfStapelText(belege: [b1], von: "20260801", bis: "20260831")
+pruefe(stapeltext.hasPrefix("\"EXTF\";700;21;\"Buchungsstapel\""),
+       "die DATEV-Datei behält ihr Wort")
+pruefe(monat.dateiname.contains("Buchungsstapel"),
+       "der Dateiname für das Steuerbüro auch")
+
+let bildschirmworte = BelegStatus.allCases.map(\.label)
+pruefe(!bildschirmworte.contains { $0.lowercased().contains("fixiert") },
+       "kein Statuswort auf dem Bildschirm sagt „fixiert“")
+pruefe(!bildschirmworte.contains { $0.lowercased().contains("stapel") },
+       "und keins sagt „Stapel“")
+pruefe(BelegStatus.fixiert.label == "exportiert · festgeschrieben",
+       "exportierte Belege heißen festgeschrieben")
+
 print(fehler == 0 ? "\nAlle Prüfungen bestanden." : "\n\(fehler) Prüfung(en) fehlgeschlagen.")
 exit(fehler == 0 ? 0 : 1)
 

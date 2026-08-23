@@ -586,6 +586,9 @@ struct VertragskisteView: View {
                     }
                 }
             }
+            // Ohne das stand diese eine Liste als einzige der App auf iOS-Grau
+            // (#F2F2F7) statt auf der warmen Fläche — siehe Theme.swift.
+            .warmerGrund()
             .navigationTitle("Deine Verträge")
             .navigationBarTitleDisplayMode(.inline)
             .task { await laden() }
