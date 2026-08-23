@@ -2606,6 +2606,186 @@ def belegdaten_kontext(max_zeichen: int = 12000) -> str:
     return "\n\n".join(bloecke)
 
 
+# ---------------------------------------------------------------------------
+# Was für eine Frage ist das?
+#
+# Nina hat kein Steuerbüro mehr, das sie kurz anrufen kann — sie fragt babu
+# auch Dinge, die mit keinem einzelnen Beleg zu tun haben. Bisher bekam das
+# Modell zu JEDER Frage 14.000 Zeichen Belege und dazu die Anweisung, ihre
+# Unterlagen ausschließlich aus den mitgelieferten Daten zu beantworten. Auf
+# „Was ist eine Umsatzsteuervoranmeldung?" kam damit „das steht nicht in
+# deinen Unterlagen" — die Frage lief ins Leere, und zwar genau dort, wo der
+# Nutzen am größten wäre.
+#
+# Sortiert wird über Stichwörter, nicht über ein Modell: die Unterscheidung
+# muss auch dann greifen, wenn vLLM gerade nicht antwortet, und sie muss ohne
+# Server prüfbar sein.
+# ---------------------------------------------------------------------------
+
+# Sie fragt nach ihren eigenen Zahlen: Possessiv, erste Person, ein Zeitraum.
+BESTANDS_MARKER = (
+    "mein", "meine", "meinem", "meinen", "meiner", "habe ich", "ich habe",
+    "hatte ich", "wie viel", "wieviel", "wie hoch", "zeig mir", "zeige mir",
+    "welche beleg", "welche rechnung", "diesen monat", "letzten monat",
+    "dieses jahr", "letztes jahr", "im januar", "im februar", "im märz",
+    "im april", "im mai", "im juni", "im juli", "im august", "im september",
+    "im oktober", "im november", "im dezember", "bei mir", "in meinem",
+)
+
+# Sie fragt nach einer Regel: Definition, Pflicht, Erlaubnis.
+ALLGEMEIN_MARKER = (
+    "was ist", "was sind", "was bedeutet", "was heißt", "was heisst",
+    "wofür", "wozu", "muss ich", "musst du", "darf ich", "brauche ich",
+    "kann ich", "soll ich", "wie lange", "wie funktioniert", "wie geht",
+    "wer muss", "was passiert", "lohnt sich", "gibt es", "erklär", "erklaer",
+    "unterschied",
+)
+
+
+def _kommt_vor(worte: tuple[str, ...], text: str) -> bool:
+    return any(w in text for w in worte)
+
+
+def frage_art(frage: str) -> str:
+    """„bestand" (ihre eigenen Zahlen) oder „allgemein" (Steuerwissen).
+
+    Im Zweifel „bestand" — das war das bisherige Verhalten, und eine falsch
+    als allgemein einsortierte Frage bekäme ihre Belege nicht zu sehen.
+    """
+    text = " " + (frage or "").lower() + " "
+    if _kommt_vor(BESTANDS_MARKER, text):
+        return "bestand"
+    return "allgemein" if _kommt_vor(ALLGEMEIN_MARKER, text) else "bestand"
+
+
+# Fachwörter aus Ninas Alltag, jeweils mit einem Satz in ihrer Sprache.
+# Bewusst OHNE Beträge, Fristen und Jahreszahlen: die ändern sich, und was
+# hier falsch stünde, würde das Modell brav nachplappern. Erklärt wird, was
+# das Wort BEDEUTET — die Zahlen dazu holt sich die Antwort woanders.
+STEUERWORTE: dict[tuple[str, ...], str] = {
+    ("umsatzsteuervoranmeldung", "voranmeldung", "ustva"):
+        "Umsatzsteuervoranmeldung: die regelmäßige Zwischenmeldung ans "
+        "Finanzamt — wie viel Umsatzsteuer du deinen Kundinnen berechnet und "
+        "wie viel du selbst beim Einkauf bezahlt hast; die Differenz "
+        "überweist du oder bekommst sie zurück.",
+    ("kleinunternehmer",):
+        "Kleinunternehmerregelung (§ 19 UStG): wer wenig Umsatz macht, darf "
+        "ohne Umsatzsteuer arbeiten — dann steht keine Umsatzsteuer auf der "
+        "Rechnung, dafür gibt es auch keine vom Einkauf zurück.",
+    ("vorsteuer",):
+        "Vorsteuer: die Umsatzsteuer, die du selbst beim Einkauf bezahlt hast "
+        "und dir vom Finanzamt zurückholst.",
+    ("eür", "euer-", "einnahmen-überschuss", "einnahmenüberschuss"):
+        "EÜR (Einnahmen-Überschuss-Rechnung): die einfache Gewinnermittlung "
+        "— Einnahmen minus Ausgaben, mehr steckt nicht dahinter.",
+    ("gobd",):
+        "GoBD: die Regeln, wie Belege und Kassendaten aufbewahrt werden "
+        "müssen — vollständig, unveränderbar und für einen Prüfer "
+        "nachvollziehbar.",
+    ("tse", "technische sicherheitseinrichtung"):
+        "TSE: die Sicherheitseinrichtung in einer elektronischen Kasse, die "
+        "jeden Bon unveränderbar mitschreibt.",
+    ("absetzen", "betriebsausgabe", "abschreib"):
+        "Absetzen (Betriebsausgabe): was du für den Salon ausgibst, drückt "
+        "den Gewinn und damit die Steuer — dafür muss der Beleg aufgehoben "
+        "werden.",
+    ("aufheben", "aufbewahr", "wegwerfen"):
+        "Aufbewahrung: Rechnungen, Kassenbons und Kontoauszüge gehören ins "
+        "Archiv, nicht in den Müll — wie lange genau, hängt an der Belegart.",
+    ("dauerfristverlängerung",):
+        "Dauerfristverlängerung: ein Antrag, mit dem du die "
+        "Umsatzsteuervoranmeldung einen Monat später abgeben darfst.",
+    ("ist-versteuerung", "soll-versteuerung", "versteuerung"):
+        "Ist- und Soll-Versteuerung: bei Ist zählt die Umsatzsteuer, wenn das "
+        "Geld ankommt, bei Soll schon mit dem Rechnungsdatum.",
+    ("betriebsprüfung", "kassennachschau", "prüfungsanordnung"):
+        "Betriebsprüfung: das Finanzamt sieht sich die Buchhaltung eines "
+        "Zeitraums selbst an und kündigt das vorher schriftlich an.",
+}
+
+
+def begriffe_erklaeren(frage: str) -> str:
+    """Die Fachwörter aus dieser Frage, jedes mit seinem Klartext-Satz."""
+    text = (frage or "").lower()
+    treffer = [satz for worte, satz in STEUERWORTE.items()
+               if any(w in text for w in worte)]
+    if not treffer:
+        return ""
+    return ("SO ERKLÄRST DU DIE FACHWÖRTER (ihre Sprache, nicht Amtsdeutsch):\n"
+            + "\n".join("· " + t for t in treffer))
+
+
+# Ab hier wäre die Antwort eine Beratung im Sinne des Steuerberatungsgesetzes
+# oder des Rechtsdienstleistungsgesetzes. babu weist die Frage trotzdem nicht
+# ab — es sagt, wo die Auskunft aufhört, und nennt einen nächsten Schritt.
+BERATUNGS_WORTE = (
+    "einspruch", "widerspruch", "betriebsprüfung", "prüfungsanordnung",
+    "steuerprüfung", "kassennachschau", "sonderprüfung", "selbstanzeige",
+    "hinterzieh", "vollstreckung", "pfändung", "säumniszuschlag", "stundung",
+    "mahnbescheid", "finanzgericht", "klage", "schätzungsbescheid",
+    "haftungsbescheid", "insolvenz", "kündig", "abmahnung", "abfindung",
+    "aufhebungsvertrag", "nachzahlung", "strafe", "bußgeld", "anwalt",
+)
+
+BERATUNGS_HINWEIS = (
+    "Hier hört meine Auskunft auf und Beratung fängt an — die darf ich dir "
+    "nicht geben. Nimm das oben als Vorbereitung mit und lass es von einer "
+    "Steuerberaterin oder Anwältin bestätigen, bevor du etwas unterschreibst "
+    "oder eine Frist verstreichen lässt."
+)
+
+# Hat die Antwort die Grenze selbst schon benannt? Dann kein zweites Mal.
+_GRENZE_GESAGT = ("steuerberat", "rechtsberat", "anwalt", "anwält", "kanzlei")
+
+
+def beratungsfall(text: str) -> bool:
+    return _kommt_vor(BERATUNGS_WORTE, " " + (text or "").lower() + " ")
+
+
+def beratungshinweis_fuer(text: str) -> str | None:
+    """Der Hinweis, falls dieser Text eine Beratungsfrage berührt."""
+    return BERATUNGS_HINWEIS if beratungsfall(text) else None
+
+
+def mit_beratungsgrenze(antwort: str, frage: str) -> str:
+    """Den Hinweis anhängen — aber nur, wenn er noch fehlt.
+
+    Deterministisch statt dem Modell überlassen: die Grenze ist eine Zusage
+    an die Nutzerin, kein Stilmittel, und ein Sprachmodell vergisst sie
+    zuverlässig genau dann, wenn die Frage dringend klingt.
+    """
+    if not beratungsfall(frage):
+        return antwort
+    if _kommt_vor(_GRENZE_GESAGT, (antwort or "").lower()):
+        return antwort
+    return (antwort.rstrip() + "\n\n" + BERATUNGS_HINWEIS) if antwort \
+        else BERATUNGS_HINWEIS
+
+
+def verlauf_aus_anfrage(roh, zuege: int | None = None) -> list[dict]:
+    """Der Gesprächsverlauf, den der Client mitschickt — geprüft und gekappt.
+
+    Seit BABU-25 führt der Server den Verlauf nicht mehr selbst (siehe den
+    Abschnitt „Gespräche" weiter unten). Er kommt von dort, wo er ohnehin
+    schon liegt: aus der App bzw. dem Portal. Fremde Rollen fliegen raus —
+    ein „system" aus dem Client wäre eine zweite Anweisung an das Modell.
+    """
+    if zuege is None:
+        zuege = VERLAUF_ZUEGE
+    if not isinstance(roh, list):
+        return []
+    sauber: list[dict] = []
+    for eintrag in roh:
+        if not isinstance(eintrag, dict):
+            continue
+        rolle = str(eintrag.get("rolle") or eintrag.get("role") or "")
+        text = str(eintrag.get("text") or eintrag.get("content") or "").strip()
+        if rolle not in ("user", "assistant") or not text:
+            continue
+        sauber.append({"role": rolle, "content": text[:2000]})
+    return sauber[-(zuege * 2):]
+
+
 @app.post("/chat")
 def chat(body: dict, request: Request) -> Response:
     # Sync-Route: läuft im Starlette-Threadpool, damit requests/subprocess
@@ -2621,21 +2801,34 @@ def chat(body: dict, request: Request) -> Response:
     if not frage or len(frage) > 2000:
         return JSONResponse({"fehler": "frage fehlt oder zu lang"}, status_code=400)
 
-    # Das Gespräch: entweder ein bestehendes fortsetzen oder eines beginnen.
-    gespraech_id = body.get("gespraech")
-    try:
-        gespraech_id = int(gespraech_id) if gespraech_id else None
-    except (TypeError, ValueError):
-        gespraech_id = None
-    if gespraech_id is not None and not gespraech_gehoert(un, gespraech_id):
-        return JSONResponse({"fehler": "unbekanntes Gespräch"}, status_code=404)
-    if gespraech_id is None:
-        gespraech_id = gespraech_anlegen(un, frage)
+    # Das Gedächtnis kommt vom Client. Der Server schreibt nichts mehr mit —
+    # warum, steht im Abschnitt „Gespräche" ganz unten (BABU-25).
+    verlauf = verlauf_aus_anfrage(body.get("verlauf"))
 
+    # Allgemeine Frage oder Frage nach dem eigenen Bestand? Davon hängt ab,
+    # wie viel Fallwissen mitgeht und was das Modell damit tun soll.
+    art = frage_art(frage)
     import wissen  # noqa: PLC0415
-    kontext = wissen.kontext(frage, _welt_fuer(un))
-    verlauf = verlauf_lesen(gespraech_id)
-    nachricht_anhaengen(gespraech_id, "user", frage)
+    # Zu „Was ist eine Umsatzsteuervoranmeldung?" sind sechzig Belege nur
+    # Ballast — der Rahmen (wer ist dieser Betrieb) reicht als Hintergrund.
+    kontext = wissen.kontext(frage, _welt_fuer(un),
+                             budget=2000 if art == "allgemein" else wissen.BUDGET)
+    glossar = begriffe_erklaeren(frage)
+    auftrag = (
+        "ALLGEMEINE FRAGE — beantworte sie aus deinem Wissen, nicht aus ihren "
+        "Unterlagen. Sie hat kein Steuerbüro mehr, das sie kurz anrufen kann; "
+        "erklär jedes Fachwort in einem Nebensatz. Schreib NICHT, dass die "
+        "Antwort nicht in ihren Unterlagen steht — danach ist nicht gefragt. "
+        "Die Angaben unten sind nur Hintergrund.\n\n"
+        if art == "allgemein" else "")
+    if beratungsfall(frage):
+        auftrag += (
+            "ACHTUNG, das berührt eine Beratung: sag in EINEM Satz, dass du "
+            "das nicht abschließend beurteilen darfst, nenne trotzdem alles, "
+            "was du zur Sache weißt, und schließ mit einem konkreten nächsten "
+            "Schritt. Weise die Frage nicht ab.\n\n")
+    if glossar:
+        auftrag += glossar + "\n\n"
     payload = {
         "model": GEMMA_MODELL,
         "temperature": 0.2,
@@ -2679,7 +2872,8 @@ def chat(body: dict, request: Request) -> Response:
                 "oder Fristen. Was du nicht weißt, sagst du."},
             *verlauf,
             {"role": "user", "content":
-                f"WAS BABU ÜBER DIESEN SALON WEISS:\n{kontext}\n\nFRAGE: {frage}"},
+                f"{auftrag}WAS BABU ÜBER DIESEN SALON WEISS:\n{kontext}"
+                f"\n\nFRAGE: {frage}"},
         ],
     }
 
@@ -2707,23 +2901,26 @@ def chat(body: dict, request: Request) -> Response:
                             yield "data: " + json.dumps({"d": delta}, ensure_ascii=False) + "\n\n"
             except Exception:  # noqa: BLE001
                 yield "data: " + json.dumps({"fehler": "Gemma nicht erreichbar"}) + "\n\n"
-            if gesammelt:
-                nachricht_anhaengen(gespraech_id, "assistant", "".join(gesammelt))
+            # Die Grenze zur Beratung ist eine Zusage an die Nutzerin, kein
+            # Stilmittel des Modells — sie kommt notfalls als letztes Stück
+            # hinterher, damit sie auch im Stream nicht fehlt.
+            nachgereicht = mit_beratungsgrenze("".join(gesammelt), frage)
+            if gesammelt and nachgereicht != "".join(gesammelt):
+                yield "data: " + json.dumps(
+                    {"d": nachgereicht[len("".join(gesammelt)):]},
+                    ensure_ascii=False) + "\n\n"
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(sse(), media_type="text/event-stream",
-                                 headers={"Cache-Control": "no-cache",
-                                          "X-Gespraech": str(gespraech_id)})
+                                 headers={"Cache-Control": "no-cache"})
 
     try:
         r = requests.post(GEMMA_API, json=payload, timeout=120)
         r.raise_for_status()
         antwort = r.json()["choices"][0]["message"]["content"].strip()
     except Exception:  # noqa: BLE001
-        return JSONResponse({"fehler": "Gemma nicht erreichbar",
-                             "gespraech": gespraech_id}, status_code=502)
-    nachricht_anhaengen(gespraech_id, "assistant", antwort)
-    return JSONResponse({"antwort": antwort, "gespraech": gespraech_id})
+        return JSONResponse({"fehler": "Gemma nicht erreichbar"}, status_code=502)
+    return JSONResponse({"antwort": mit_beratungsgrenze(antwort, frage)})
 
 
 # ---------------------------------------------------------------------------
@@ -3305,13 +3502,23 @@ def brief_erklaerung_bauen(daten: bytes, name: str, llm=None) -> dict:
             roh = llm([{"role": "user", "content":
                         frage + "\n\nBRIEF:\n" + "\n\n".join(t[:6000] for t in texte[:5])}])
         else:
+            texte = []
             bilder = abschluss_lesen.seiten_bilder(f.name)
             roh = llm([abschluss_lesen._bild_nachricht(frage, bilder[0])])
-    return {"einfach": str(roh.get("einfach") or "").strip()[:600],
-            "was_tun": (str(roh.get("was_tun")).strip()[:300]
-                        if roh.get("was_tun") else None),
-            "bis_wann": (str(roh.get("bis_wann")).strip()[:20]
-                         if roh.get("bis_wann") else None)}
+    erklaerung = {"einfach": str(roh.get("einfach") or "").strip()[:600],
+                  "was_tun": (str(roh.get("was_tun")).strip()[:300]
+                              if roh.get("was_tun") else None),
+                  "bis_wann": (str(roh.get("bis_wann")).strip()[:20]
+                               if roh.get("bis_wann") else None)}
+    # Ein Bescheid mit Einspruchsfrist, eine Prüfungsanordnung, eine
+    # Vollstreckungsankündigung: da wäre die Antwort eine Beratung. Das steht
+    # dann im Brief selbst — babu sagt es, statt zu raten. Geprüft wird der
+    # Brieftext UND die Erklärung: bei einem Foto gibt es keinen Brieftext.
+    erklaerung["hinweis"] = beratungshinweis_fuer(
+        " ".join(t or "" for t in texte[:5])
+        + " " + (erklaerung["einfach"] or "")
+        + " " + (erklaerung["was_tun"] or ""))
+    return erklaerung
 
 
 # Verträge und Dauerkosten: Miete, Versicherung, Leasing, Wartung. Diese
@@ -6514,10 +6721,25 @@ async def api_kassenbuch(request: Request) -> Response:
 
 
 # ---------------------------------------------------------------------------
-# Gespräche: der Chat merkt sich, worüber gesprochen wurde. Bisher stand jede
-# Frage für sich — eine Rückfrage („und wie viel war das nochmal?") lief ins
-# Leere. Gespeichert wird in SQLite: ein Chatverlauf ist kein Auditmaterial,
-# er enthält Persönliches und muss löschbar bleiben (Art. 17 DSGVO).
+# Gespräche — und warum der Server keine mehr anlegt (BABU-25).
+#
+# Der Chat hat ein Gedächtnis bekommen, damit „und wie viel war das nochmal?"
+# nicht ins Leere läuft. Dafür schrieb der Server jedes Gespräch in SQLite
+# mit und gab eine Kennung zurück. Nachgesehen: KEIN Client hat diese Kennung
+# je zurückgeschickt — weder die App noch das Portal. Die Fäden wurden nie
+# wieder gelesen; das Gedächtnis, für das sie gedacht waren, war nie aktiv.
+# Übrig blieb eine zweite, unsichtbare Kopie von Chats über den eigenen
+# Betrieb, ohne Auskunfts- und ohne Löschweg.
+#
+# ENTSCHIEDEN: Der Verlauf reist mit der Frage mit (`verlauf` im Body, siehe
+# `verlauf_aus_anfrage`). Er liegt in der App ohnehin schon, ist dort sichtbar
+# und dort löschbar. Der Server schreibt nichts mehr auf — die sicherste
+# Chatkopie ist die, die es nicht gibt (Datenminimierung, Art. 5 Abs. 1 c).
+#
+# Was FRÜHER gespeichert wurde, bleibt liegen und bleibt lesbar: Auskunft
+# (Art. 15) über `/api/gespraeche` und `/api/gespraech/{id}`, Löschung
+# (Art. 17) einzeln oder in einem Griff über `/api/gespraeche/loeschen`.
+# Gelöscht wird von der Inhaberin, nicht von uns.
 # ---------------------------------------------------------------------------
 
 # So viele Züge gehen als Verlauf ans Modell. Mehr hilft selten und kostet
@@ -6525,35 +6747,10 @@ async def api_kassenbuch(request: Request) -> Response:
 VERLAUF_ZUEGE = 6
 
 
-def gespraech_anlegen(un: str, titel: str) -> int:
-    with _DB_LOCK, _db() as c:
-        cur = c.execute(
-            "INSERT INTO gespraech (un, titel, begonnen, zuletzt) VALUES (?,?,?,?)",
-            (un, titel[:120], _jetzt_iso(), _jetzt_iso()))
-        return int(cur.lastrowid)
-
-
 def gespraech_gehoert(un: str, gespraech_id: int) -> bool:
     with _DB_LOCK, _db() as c:
         return c.execute("SELECT 1 FROM gespraech WHERE id=? AND un=?",
                          (gespraech_id, un)).fetchone() is not None
-
-
-def nachricht_anhaengen(gespraech_id: int, rolle: str, text: str) -> None:
-    with _DB_LOCK, _db() as c:
-        c.execute("INSERT INTO nachricht (gespraech, rolle, text, zeit) VALUES (?,?,?,?)",
-                  (gespraech_id, rolle, text, _jetzt_iso()))
-        c.execute("UPDATE gespraech SET zuletzt=? WHERE id=?",
-                  (_jetzt_iso(), gespraech_id))
-
-
-def verlauf_lesen(gespraech_id: int, zuege: int = VERLAUF_ZUEGE) -> list[dict]:
-    """Die letzten Züge, älteste zuerst — so erwartet es das Modell."""
-    with _DB_LOCK, _db() as c:
-        zeilen = c.execute(
-            "SELECT rolle, text FROM nachricht WHERE gespraech=? ORDER BY id DESC LIMIT ?",
-            (gespraech_id, zuege * 2)).fetchall()
-    return [{"role": z[0], "content": z[1]} for z in reversed(zeilen)]
 
 
 def _welt_fuer(un: str) -> dict:
@@ -6646,6 +6843,26 @@ def api_gespraech_loeschen(gespraech_id: int, request: Request) -> Response:
         c.execute("DELETE FROM nachricht WHERE gespraech=?", (gespraech_id,))
         c.execute("DELETE FROM gespraech WHERE id=?", (gespraech_id,))
     return JSONResponse({"ok": True})
+
+
+@app.post("/api/gespraeche/loeschen")
+def api_gespraeche_loeschen(request: Request) -> Response:
+    """Alles auf einmal wegräumen (Art. 17 DSGVO).
+
+    Einzeln zu löschen ist bei sechzehn Fäden keine echte Möglichkeit — und
+    ein Recht, das nur mit sechzehn Klicks geht, ist ein zähes Recht.
+    """
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    with _DB_LOCK, _db() as c:
+        # Erst die Nachrichten, dann die Fäden — sonst bliebe der Text in der
+        # Datenbank stehen und nur die Zuordnung wäre weg.
+        c.execute("DELETE FROM nachricht WHERE gespraech IN "
+                  "(SELECT id FROM gespraech WHERE un=?)", (un,))
+        cur = c.execute("DELETE FROM gespraech WHERE un=?", (un,))
+        anzahl = cur.rowcount
+    return JSONResponse({"ok": True, "geloescht": max(anzahl, 0)})
 
 
 if __name__ == "__main__":

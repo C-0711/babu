@@ -1,23 +1,12 @@
 import SwiftUI
 import PhotosUI
 
-/// Eine Chat-Nachricht — Codable, damit der Verlauf App-Neustarts überlebt.
-struct ChatNachricht: Identifiable, Equatable, Codable {
-    var id = UUID()
-    let vonMir: Bool
-    var text: String
-}
-
-/// Eine Unterhaltung: Titel ist die erste Frage — wie man es von Chats kennt.
-struct ChatUnterhaltung: Identifiable, Equatable, Codable {
-    var id = UUID()
-    var titel: String
-    var nachrichten: [ChatNachricht]
-    var zuletzt: Date
-}
+// `ChatNachricht`, `ChatUnterhaltung` und die Textarbeit liegen in
+// `Chattexte.swift` — ohne SwiftUI, damit sie im Harness prüfbar sind.
 
 /// Fragen an die Belegbox: Chat mit Gemma 4 auf der H200V — Antworten
-/// aus den BelegReview-Daten plus Steuer-Grundfragen (`POST /chat`).
+/// aus den BelegReview-Daten, zu allgemeinen Steuerfragen und zu Briefen
+/// vom Amt (`POST /chat`).
 struct FragenTab: View {
     @EnvironmentObject var store: AppStore
 
@@ -30,6 +19,12 @@ struct FragenTab: View {
     @State private var briefLaeuft = false
     @State private var vertragAuswahl: PhotosPickerItem?
     @State private var zeigeVertragDateien = false
+    // Was der Server FRÜHER mitgeschrieben hat (BABU-25). Neues kommt keins
+    // mehr dazu; was liegt, muss sie sehen und wegwerfen können.
+    @State private var serverGespraeche: [ServerGespraech] = []
+    @State private var serverGeoeffnet: ServerGespraech?
+    @State private var serverNachrichten: [ChatNachricht] = []
+    @State private var serverFrageLoeschen = false
     @FocusState private var feldAktiv: Bool
 
     private var aktuelleIndex: Int? {
@@ -166,11 +161,9 @@ struct FragenTab: View {
             for wartezeit: UInt64 in [6, 8, 10, 15, 20, 30] {
                 try? await Task.sleep(nanoseconds: wartezeit * 1_000_000_000)
                 if let e = await AblageService.briefErklaerung(pfad: pfad, basis: url, pat: pat) {
-                    var text = e.einfach
-                    if let tun = e.wasTun, !tun.isEmpty { text += "\n\nWas du tun musst: \(tun)" }
-                    if let bis = e.bisWann, !bis.isEmpty { text += "\n\nZeit bis: \(bis)" }
-                    text += "\n\nDer Brief liegt jetzt sicher in deiner Belegbox."
-                    textSetzen(index, text)
+                    textSetzen(index, Chattexte.briefAntwort(
+                        einfach: e.einfach, wasTun: e.wasTun,
+                        bisWann: e.bisWann, hinweis: e.hinweis))
                     briefLaeuft = false
                     return
                 }
@@ -238,12 +231,13 @@ struct FragenTab: View {
             Text("Frag babu")
                 .font(.title3.weight(.semibold))
                 .fontDesign(.serif)
-            Text("Zu deinen Belegen, zur App und zu Steuerfragen. Mit der Büroklammer legst du Briefe vom Amt und Verträge ab — babu liest sie. Zum Beispiel:")
+            Text("Zu deinen Belegen, zur App — und zu allem Steuerlichen, auch wenn es mit keinem einzelnen Beleg zu tun hat. Mit der Büroklammer fotografierst du einen Brief vom Amt: babu sagt dir, was er will und bis wann. Zum Beispiel:")
                 .font(.footnote)
                 .foregroundStyle(GC.desc)
             ForEach(["Wie viel habe ich im Juli für Bewirtung ausgegeben?",
+                     "Muss ich die Rechnung aufheben?",
+                     "Was ist eine Umsatzsteuervoranmeldung?",
                      "Was kann ich als Friseurin absetzen?",
-                     "Wie trage ich mein Kassenbuch ein?",
                      "Brauche ich eine Kasse mit TSE?"], id: \.self) { beispiel in
                 Button {
                     eingabe = beispiel
@@ -264,7 +258,7 @@ struct FragenTab: View {
     private var verlaufsListe: some View {
         NavigationStack {
             Group {
-                if store.chatVerlauf.isEmpty {
+                if store.chatVerlauf.isEmpty && serverGespraeche.isEmpty {
                     Text("Noch keine früheren Fragen — stell einfach die erste.")
                         .font(.footnote)
                         .foregroundStyle(GC.desc)
@@ -296,12 +290,26 @@ struct FragenTab: View {
                                 }
                             }
                         }
+                        if !serverGespraeche.isEmpty { serverAbschnitt }
                     }
                     .listStyle(.plain)
                 }
             }
             .navigationTitle("Frühere Fragen")
             .navigationBarTitleDisplayMode(.inline)
+            .task { await serverGespraecheLaden() }
+            .sheet(item: $serverGeoeffnet) { g in serverGespraechAnsicht(g) }
+            .confirmationDialog("Alles vom Server löschen?",
+                                isPresented: $serverFrageLoeschen,
+                                titleVisibility: .visible) {
+                Button("Alle \(serverGespraeche.count) löschen", role: .destructive) {
+                    Task { await serverAllesLoeschen() }
+                }
+                Button("Abbrechen", role: .cancel) {}
+            } message: {
+                Text("Die Gespräche verschwinden vom Server. Deine Fragen hier "
+                     + "in der App bleiben.")
+            }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Fertig") { zeigeVerlauf = false }
@@ -318,6 +326,119 @@ struct FragenTab: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+
+    // MARK: - Was früher auf dem Server lag (BABU-25)
+    //
+    // Der Server hat jede Frage zusätzlich mitgeschrieben — unsichtbar, ohne
+    // Weg dorthin und ohne Weg weg. Mitgeschrieben wird nicht mehr; was noch
+    // liegt, steht hier: ansehen (Art. 15 DSGVO) und löschen (Art. 17).
+
+    private var serverAbschnitt: some View {
+        Section {
+            ForEach(serverGespraeche) { g in
+                Button {
+                    serverGeoeffnet = g
+                } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(g.titel)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(GC.fg)
+                            .lineLimit(2)
+                        Text("\(g.nachrichten) Nachricht"
+                             + (g.nachrichten == 1 ? "" : "en")
+                             + (Chattexte.datumDeutsch(g.zuletzt).map { " · \($0)" } ?? ""))
+                            .font(.caption2)
+                            .foregroundStyle(GC.muted)
+                    }
+                }
+                .swipeActions {
+                    Button(role: .destructive) {
+                        Task { await serverLoeschen(g) }
+                    } label: {
+                        Label("Löschen", systemImage: "trash")
+                    }
+                }
+            }
+            Button(role: .destructive) {
+                serverFrageLoeschen = true
+            } label: {
+                Label("Alle vom Server löschen", systemImage: "trash")
+                    .font(.subheadline)
+            }
+        } header: {
+            Text("Früher auf dem Server gespeichert")
+        } footer: {
+            Text("babu hat diese Gespräche früher zusätzlich auf dem Server "
+                 + "abgelegt. Das tut es nicht mehr. Was damals gespeichert "
+                 + "wurde, kannst du hier ansehen und löschen.")
+                .font(.caption2)
+        }
+    }
+
+    private func serverGespraechAnsicht(_ g: ServerGespraech) -> some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    if serverNachrichten.isEmpty {
+                        Text("Wird geladen …")
+                            .font(.footnote)
+                            .foregroundStyle(GC.muted)
+                    }
+                    ForEach(serverNachrichten) { blase($0) }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .background(GC.canvas)
+            .navigationTitle(g.titel)
+            .navigationBarTitleDisplayMode(.inline)
+            .task {
+                serverNachrichten = []
+                guard let url = URL(string: store.ablageURL),
+                      let pat = KeychainHelfer.ladePAT(),
+                      let n = await AblageService.gespraechNachrichten(
+                        id: g.id, basis: url, pat: pat) else { return }
+                serverNachrichten = n.map {
+                    ChatNachricht(vonMir: $0.vonMir, text: $0.text)
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Fertig") { serverGeoeffnet = nil }
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Löschen", role: .destructive) {
+                        Task {
+                            await serverLoeschen(g)
+                            serverGeoeffnet = nil
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func serverGespraecheLaden() async {
+        guard let url = URL(string: store.ablageURL),
+              let pat = KeychainHelfer.ladePAT() else { return }
+        serverGespraeche = await AblageService.gespraecheLaden(basis: url, pat: pat) ?? []
+    }
+
+    private func serverLoeschen(_ g: ServerGespraech) async {
+        guard let url = URL(string: store.ablageURL),
+              let pat = KeychainHelfer.ladePAT() else { return }
+        if await AblageService.gespraechLoeschen(id: g.id, basis: url, pat: pat) {
+            serverGespraeche.removeAll { $0.id == g.id }
+        }
+    }
+
+    private func serverAllesLoeschen() async {
+        guard let url = URL(string: store.ablageURL),
+              let pat = KeychainHelfer.ladePAT() else { return }
+        if await AblageService.gespraecheAlleLoeschen(basis: url, pat: pat) {
+            serverGespraeche = []
+        }
     }
 
     private func blase(_ nachricht: ChatNachricht) -> some View {
@@ -417,6 +538,9 @@ struct FragenTab: View {
         let frage = eingabe.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !frage.isEmpty, !laeuft else { return }
         eingabe = ""
+        // Vor dem Anhängen greifen: die neue Frage geht als `frage` mit,
+        // nicht noch einmal im Verlauf.
+        let verlauf = Chattexte.verlaufFuerServer(nachrichten)
         _ = anhaengen(ChatNachricht(vonMir: true, text: frage))
 
         guard let url = URL(string: store.ablageURL), KeychainHelfer.ladePAT() != nil else {
@@ -434,7 +558,8 @@ struct FragenTab: View {
             var gesammelt = ""
             var gemeldet: String?
             do {
-                for try await stueck in AblageService.fragenStream(frage, basis: url, pat: pat) {
+                for try await stueck in AblageService.fragenStream(
+                        frage, verlauf: verlauf, basis: url, pat: pat) {
                     gestreamt = true
                     gesammelt += stueck
                     textSetzen(index, gesammelt)
@@ -448,7 +573,8 @@ struct FragenTab: View {
             if let gemeldet {
                 textSetzen(index, gemeldet)
             } else if !gestreamt {
-                let antwort = await AblageService.fragen(frage, basis: url, pat: pat)
+                let antwort = await AblageService.fragen(frage, verlauf: verlauf,
+                                                         basis: url, pat: pat)
                 textSetzen(index, antwort
                     ?? "Gerade keine Verbindung — im Export-Tab (Zahnrad) prüfen und noch einmal fragen.")
             }

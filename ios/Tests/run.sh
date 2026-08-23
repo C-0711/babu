@@ -37,6 +37,10 @@ echo "— Einrichtungs-Harness —"
 swiftc -o "$ZIEL/einrichtung" ../Beleg/Beleg/Einrichtungsschritte.swift einrichtung/main.swift
 "$ZIEL/einrichtung"
 
+echo "— Chattexte-Harness —"
+swiftc -o "$ZIEL/chat" ../Beleg/Beleg/Chattexte.swift chat/main.swift
+"$ZIEL/chat"
+
 echo "— Parser-Harness —"
 swiftc -o "$ZIEL/parser" ../Beleg/Beleg/Models.swift ../Beleg/Beleg/FeldParser.swift parser/main.swift
 "$ZIEL/parser"

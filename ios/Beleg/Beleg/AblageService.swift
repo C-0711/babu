@@ -648,9 +648,12 @@ enum AblageService {
     }
 
     /// Erklärung zum abgelegten Brief holen (entsteht im Hintergrund).
+    /// `hinweis` steht drin, wenn der Brief eine Beratung berührt —
+    /// Einspruchsfrist, Prüfungsanordnung, Vollstreckung.
     static func briefErklaerung(pfad: String, basis: URL,
                                 pat: String) async -> (einfach: String, wasTun: String?,
-                                                       bisWann: String?)? {
+                                                       bisWann: String?,
+                                                       hinweis: String?)? {
         var request = URLRequest(url: basis.appendingPathComponent("api/dokumente"))
         request.timeoutInterval = 30
         request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
@@ -661,7 +664,70 @@ enum AblageService {
               let e = treffer["erklaerung"] as? [String: Any],
               let einfach = e["einfach"] as? String, !einfach.isEmpty
         else { return nil }
-        return (einfach, e["was_tun"] as? String, e["bis_wann"] as? String)
+        return (einfach, e["was_tun"] as? String, e["bis_wann"] as? String,
+                e["hinweis"] as? String)
+    }
+
+    // MARK: - Früher auf dem Server gespeicherte Gespräche (BABU-25)
+    //
+    // Der Server schreibt keine Chats mehr mit. Was er früher mitgeschrieben
+    // hat, liegt noch da — Nina muss es sehen (Art. 15 DSGVO) und löschen
+    // können (Art. 17). Diese drei Wege gab es serverseitig längst; gerufen
+    // hat sie niemand.
+
+    /// Die Fäden, die auf dem Server liegen — neueste zuerst.
+    static func gespraecheLaden(basis: URL, pat: String) async -> [ServerGespraech]? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/gespraeche"))
+        request.timeoutInterval = 20
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              (antwort as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+              let liste = json["gespraeche"] as? [[String: Any]] else { return nil }
+        return liste.compactMap { z in
+            guard let id = z["id"] as? Int else { return nil }
+            return ServerGespraech(id: id,
+                                   titel: (z["titel"] as? String) ?? "Ohne Titel",
+                                   zuletzt: (z["zuletzt"] as? String) ?? "",
+                                   nachrichten: (z["nachrichten"] as? Int) ?? 0)
+        }
+    }
+
+    /// Was in einem gespeicherten Faden steht — die Auskunft selbst.
+    static func gespraechNachrichten(id: Int, basis: URL, pat: String) async
+            -> [(vonMir: Bool, text: String)]? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/gespraech/\(id)"))
+        request.timeoutInterval = 20
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              (antwort as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+              let liste = json["nachrichten"] as? [[String: Any]] else { return nil }
+        return liste.compactMap { n in
+            guard let text = n["text"] as? String else { return nil }
+            return (vonMir: (n["rolle"] as? String) == "user", text: text)
+        }
+    }
+
+    static func gespraechLoeschen(id: Int, basis: URL, pat: String) async -> Bool {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/gespraech/\(id)/loeschen"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 20
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        let (ergebnis, _) = await ausfuehrenMitDaten(request)
+        return ergebnis == .uebertragen
+    }
+
+    /// Alles auf einmal — ein Recht, das sechzehn Klicks kostet, ist zäh.
+    static func gespraecheAlleLoeschen(basis: URL, pat: String) async -> Bool {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/gespraeche/loeschen"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        let (ergebnis, _) = await ausfuehrenMitDaten(request)
+        return ergebnis == .uebertragen
     }
 
     // MARK: - Rechnungen stellen
@@ -908,8 +974,10 @@ enum AblageService {
     }
 
     /// Frage an den Belegbox-Assistenten — gestreamt (SSE): liefert Text-Stücke,
-    /// sobald Gemma sie erzeugt.
-    static func fragenStream(_ frage: String, basis: URL,
+    /// sobald Gemma sie erzeugt. Der bisherige Gesprächsverlauf reist mit:
+    /// er liegt in der App, der Server schreibt keinen mehr mit (BABU-25).
+    static func fragenStream(_ frage: String, verlauf: [[String: String]] = [],
+                             basis: URL,
                              pat: String) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             Task {
@@ -919,7 +987,8 @@ enum AblageService {
                 request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.httpBody = try? JSONSerialization.data(
-                    withJSONObject: ["frage": frage, "stream": true])
+                    withJSONObject: ["frage": frage, "stream": true,
+                                     "verlauf": verlauf])
                 do {
                     let (bytes, antwort) = try await URLSession.shared.bytes(for: request)
                     guard (antwort as? HTTPURLResponse)?.statusCode == 200 else {
@@ -950,13 +1019,15 @@ enum AblageService {
     }
 
     /// Frage an den Belegbox-Assistenten (Gemma 4 über `POST /chat`).
-    static func fragen(_ frage: String, basis: URL, pat: String) async -> String? {
+    static func fragen(_ frage: String, verlauf: [[String: String]] = [],
+                       basis: URL, pat: String) async -> String? {
         var request = URLRequest(url: basis.appendingPathComponent("chat"))
         request.httpMethod = "POST"
         request.timeoutInterval = 120
         request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["frage": frage])
+        request.httpBody = try? JSONSerialization.data(
+            withJSONObject: ["frage": frage, "verlauf": verlauf])
         guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
               (antwort as? HTTPURLResponse)?.statusCode == 200,
               let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any] else {
