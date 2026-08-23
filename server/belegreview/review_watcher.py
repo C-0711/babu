@@ -46,7 +46,7 @@ BELEG_ENDUNGEN = BILD_ENDUNGEN | PDF_ENDUNGEN | HEIC_ENDUNGEN | XML_ENDUNGEN
 
 sys.path.insert(0, str(WURZEL))
 from doc_classify import classify_doc  # noqa: E402  (Kopie aus ~/OCR, standalone)
-from belegdeutung import Kasten, deuten  # noqa: E402
+from belegdeutung import Kasten, Lesung, deuten  # noqa: E402
 from leseprotokoll import protokoll  # noqa: E402
 import kontierung as kt  # noqa: E402
 
@@ -788,6 +788,48 @@ def _als_betrag(wert) -> float | None:
     return betrag if 0 <= betrag < 1_000_000 else None
 
 
+def felder_aus_lesung(lesung: Lesung) -> dict:
+    """Aus der Deutung den Feldsatz machen, den Review, App und Export lesen.
+
+    Zwei Dinge kommen hier aus der Deutung mit, die früher unterwegs
+    verlorengingen:
+
+    * **Die Rechenproben.** Sie stehen einzeln mit Namen und Erklärung im
+      Review, damit eine Rückfrage sagen kann, *welche* Probe nicht aufging.
+    * **Die Steuertabelle.** Der Export teilt einen Bon mit 19 % und 7 % in
+      zwei Buchungszeilen — dafür muss er die Sätze einzeln bekommen. Seit
+      die Deutung die Führung hat, kam hier nichts mehr an, und jeder
+      Mehrsatz-Bon wurde auf einen Schlüssel gebucht.
+    """
+    f = {
+        "lieferant": lesung.wert("lieferant"),
+        "beleg_nr": lesung.wert("beleg_nr"),
+        "datum": lesung.wert("datum"),
+        "netto": lesung.wert("netto"),
+        "ust": lesung.wert("ust"),
+        "brutto": lesung.wert("brutto"),
+        "ust_satz": lesung.wert("ust_satz"),
+        "summenprobe_ok": bool(lesung.wert("summenprobe_ok")),
+        "bewirtungssignal": False,
+        "offen": list(lesung.offen),
+        "herkunft": {name: {"regel": d.regel, "zeile": d.zeile_nr,
+                            "zeilentext": d.zeilentext, "konf": round(d.konf, 3)}
+                     for name, d in lesung.felder.items() if d.wert is not None},
+        "notizen": list(lesung.notizen),
+        "proben": [{"name": p.name, "bestanden": p.bestanden,
+                    "erklaerung": p.erklaerung, "zeile": p.zeile_nr}
+                   for p in lesung.proben],
+    }
+    if lesung.steuerpositionen:
+        f["steuertabelle"] = [p.als_dict() for p in lesung.steuerpositionen]
+    if f["ust_satz"] is None:
+        # Ohne erkennbaren Satz wird nicht 19 % angenommen: die Annahme
+        # erzeugte Vorsteuer, die auf keinem Beleg stand. 0 % kostet im
+        # Zweifel Abzug, 19 % kosten im Zweifel eine Nachzahlung.
+        f["ust_satz"] = 0
+    return f
+
+
 def einschaetzung(f: dict, sem: dict | None, dokumentklasse: str) -> dict:
     """Steuerliche Ersteinschätzung.
 
@@ -843,7 +885,14 @@ def einschaetzung(f: dict, sem: dict | None, dokumentklasse: str) -> dict:
         e["konto"] = kt.konto("sonstiges", KONTENRAHMEN)
         e["hinweise"].append("Semantik nicht verfügbar — Leistungsart prüfen (Vorschlag: sonstiger Betriebsbedarf).")
     if not f["summenprobe_ok"]:
-        e["hinweise"].append("Summenprobe nicht bestanden — Beträge prüfen.")
+        # „Summenprobe nicht bestanden" schickt Nina auf die Suche. Welche
+        # Probe nicht aufging und mit welchen Zahlen, zeigt ihr die Zeile.
+        gescheitert = [p for p in (f.get("proben") or []) if not p.get("bestanden")]
+        if gescheitert:
+            e["hinweise"].append("Rechenprobe nicht bestanden — " + "; ".join(
+                f"{p['name']}: {p['erklaerung']}" for p in gescheitert) + ".")
+        else:
+            e["hinweise"].append("Summenprobe nicht bestanden — Beträge prüfen.")
     # Altes Feld weiterbedienen, aber nur wahrheitsgemäß: unter SKR03 bleibt es
     # leer, statt eine SKR03-Nummer als SKR04 auszugeben.
     if KONTENRAHMEN == "SKR04":
@@ -968,25 +1017,7 @@ def verarbeite(pfad: str) -> None:
     # ist: es liest denselben Beleg noch einmal und meldet Abweichungen,
     # und es schreibt den Satz, der neben dem grünen Haken steht.
     lesung = deuten(kaesten)
-    f = {
-        "lieferant": lesung.wert("lieferant"),
-        "beleg_nr": lesung.wert("beleg_nr"),
-        "datum": lesung.wert("datum"),
-        "netto": lesung.wert("netto"),
-        "ust": lesung.wert("ust"),
-        "brutto": lesung.wert("brutto"),
-        "ust_satz": lesung.wert("ust_satz"),
-        "summenprobe_ok": bool(lesung.wert("summenprobe_ok")),
-        "bewirtungssignal": False,
-        "offen": list(lesung.offen),
-        "herkunft": {name: {"regel": d.regel, "zeile": d.zeile_nr,
-                            "zeilentext": d.zeilentext, "konf": round(d.konf, 3)}
-                     for name, d in lesung.felder.items() if d.wert is not None},
-        "notizen": list(lesung.notizen),
-    }
-    if f["ust_satz"] is None:
-        f["ust_satz"] = 19
-        f["offen"].append("Kein Steuersatz auf dem Beleg — 19 % angenommen.")
+    f = felder_aus_lesung(lesung)
 
     # Das Bewirtungssignal bleibt eine Wortfrage („Restaurant", „Menü") und
     # ist damit an der Textsuche gut aufgehoben.

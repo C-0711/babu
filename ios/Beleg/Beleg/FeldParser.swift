@@ -8,7 +8,10 @@ struct Felder {
     var netto: Double?
     var ust: Double?
     var brutto: Double?
-    var ustSatz: Int = 19
+    /// 19, 7 oder 0 — immer das, was auf dem Beleg steht. Steht dort nichts,
+    /// bleibt es bei 0: „nicht gefunden" wurde früher stillschweigend zu
+    /// 19 %, und das war Vorsteuer, die kein Beleg auswies.
+    var ustSatz: Int = 0
     var summenprobeOK = false
     var felderZahl = 0
     var ocrKonfidenz: Double = 0
@@ -65,8 +68,13 @@ enum FeldParser {
             ?? ersteGruppe(gesamt, #"\b(?:bon|beleg)\s*(\d{3,})"#)
         )?.trimmingCharacters(in: .whitespaces)
 
-        // Steuersatz-Heuristik (Fallback; eine Steuertabelle überstimmt sie unten)
-        if matcht(gesamt, #"7\s*%"#), !matcht(gesamt, #"19\s*%"#) { f.ustSatz = 7 }
+        // Steuersatz: aus dem Beleg gelesen, nie angenommen. Die alte Regel
+        // („7 %, wenn nirgends 19 % steht") ließ 19 % als Normalfall stehen —
+        // und im Salon stimmt das oft nicht: Porto, Versicherung, Miete,
+        // Beiträge und Bankgebühren tragen gar keine Umsatzsteuer. Steht
+        // nichts da, sind es 0 %; was sonst herauskäme, wäre Vorsteuer, die
+        // auf keinem Beleg stand. Eine Steuertabelle überstimmt das unten.
+        f.ustSatz = gesetzlicheSaetze(gesamt).max() ?? 0
 
         // Kein Steuerausweis (§19 UStG, Porto, steuerfrei): dann wird unten
         // KEINE Vorsteuer aus dem Brutto zurückgerechnet — erfundene 19 %
@@ -144,9 +152,43 @@ enum FeldParser {
             }
         }
 
+        // Gegenprobe am Bargeld: Gegeben minus Rückgeld muss der Betrag sein.
+        // Ein Barbon trägt seine Kontrolle unten mit sich — wer 50 hinlegt
+        // und 5,50 zurückbekommt, hat 44,50 bezahlt. Steht oben etwas
+        // anderes, ist eine der drei Zahlen falsch gelesen, und dann darf
+        // der Beleg nicht mit grünem Haken durchlaufen.
+        //
+        // Nur nach unten: mehr gegeben als nötig ist Trinkgeld, kein Fehler.
+        if let brutto = f.brutto,
+           let gegeben = betragAusZeile(alleZeilen, #"gegeben|barzahlung|bar bezahlt"#),
+           let rueckgeld = betragAusZeile(alleZeilen, #"r(ü|ue)ckgeld|wechselgeld|zur(ü|ue)ck"#),
+           runde2(gegeben - rueckgeld) < brutto - 0.005 {
+            f.summenprobeOK = false
+        }
+
         f.felderZahl = [f.lieferant != nil, f.belegNr != nil, f.datumText != nil,
                         f.netto != nil, f.ust != nil, f.brutto != nil].filter { $0 }.count
         return f
+    }
+
+    /// Alle Prozentangaben im Text, die ein gesetzlicher Steuersatz sein
+    /// können. „7,00 %" gehört dazu — die alte Textsuche fand nur „7 %" und
+    /// buchte den Bäckerbon mit 19 %.
+    static func gesetzlicheSaetze(_ text: String) -> [Int] {
+        alleGruppen(text, #"\b(\d{1,2})(?:[.,]0{1,2})?\s*%"#)
+            .compactMap { Int($0) }
+            .filter { [0, 5, 7, 16, 19].contains($0) }
+    }
+
+    /// Der größte Betrag in der letzten Zeile, die auf das Muster passt.
+    /// Barbelege drucken Gegeben und Rückgeld ganz unten.
+    static func betragAusZeile(_ zeilen: [String], _ muster: String) -> Double? {
+        for z in zeilen.reversed() where matcht(z, muster, caseInsensitive: true) {
+            let betraege = alleTreffer(z, #"\b(?:"# + betragMuster + #")\b"#)
+                .compactMap { parseBetrag($0) }
+            if let groesster = betraege.max() { return groesster }
+        }
+        return nil
     }
 
     static func parseBetrag(_ s: String) -> Double? {
@@ -265,6 +307,15 @@ enum FeldParser {
         guard let m = re.firstMatch(in: text, range: range), m.numberOfRanges > 1,
               let r = Range(m.range(at: 1), in: text) else { return nil }
         return String(text[r])
+    }
+
+    /// Wie `alleTreffer`, liefert aber je Treffer die erste Capture-Gruppe.
+    private static func alleGruppen(_ text: String, _ pattern: String) -> [String] {
+        guard let re = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let range = NSRange(text.startIndex..., in: text)
+        return re.matches(in: text, range: range).compactMap {
+            $0.numberOfRanges > 1 ? Range($0.range(at: 1), in: text).map { r in String(text[r]) } : nil
+        }
     }
 
     private static func alleTreffer(_ text: String, _ pattern: String) -> [String] {

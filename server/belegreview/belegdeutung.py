@@ -32,6 +32,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from itertools import combinations
 
 # ── Was hereinkommt ──────────────────────────────────────────────────────────
 
@@ -113,12 +114,52 @@ class Betrag:
 
 
 @dataclass
+class Probe:
+    """Eine Rechenprobe, die der Beleg an sich selbst besteht — oder nicht.
+
+    Ein Beleg trägt seine eigene Wahrheit mit sich: die Posten müssen die
+    Summe ergeben, Netto und Steuer den Bruttobetrag, die Steuer den
+    ausgewiesenen Satz, und Gegeben minus Rückgeld das, was zu zahlen war.
+    Dafür braucht es keine fremde Quelle und kein zweites Modell — nur das,
+    was auf dem Blatt steht.
+
+    Deshalb steht hier ein `name`: „Summenprobe nicht bestanden" sagt
+    niemandem, wo er hinsehen soll. „Die Posten ergeben 33,61 €, ausgewiesen
+    sind 90,00 €" sagt es.
+    """
+    name: str
+    bestanden: bool
+    erklaerung: str
+    zeile_nr: int | None = None
+
+
+@dataclass
+class Steuerposition:
+    """Netto, Steuer und Brutto zu einem Steuersatz — eine Buchungszeile.
+
+    Ein Drogeriebon trägt 19 % und 7 % nebeneinander. Wer daraus einen Satz
+    macht, bucht eine Zeile mit dem falschen Schlüssel und meldet eine
+    falsche Voranmeldung. Also bleiben die Sätze getrennt.
+    """
+    satz: int
+    netto: float
+    ust: float
+    brutto: float
+
+    def als_dict(self) -> dict:
+        return {"satz": self.satz, "netto": self.netto,
+                "ust": self.ust, "brutto": self.brutto}
+
+
+@dataclass
 class Lesung:
     """Das Ergebnis: gedeutete Felder, die Zeilen, und was offen blieb."""
     zeilen: list[Zeile] = field(default_factory=list)
     felder: dict[str, Deutung] = field(default_factory=dict)
     offen: list[str] = field(default_factory=list)
     notizen: list[str] = field(default_factory=list)
+    proben: list[Probe] = field(default_factory=list)
+    steuerpositionen: list[Steuerposition] = field(default_factory=list)
 
     def wert(self, name: str):
         d = self.felder.get(name)
@@ -192,6 +233,39 @@ DATUMWORT = ("rechnungsdatum", "belegdatum", "bondatum", "datum",
 
 GESETZLICHE_SAETZE = (0, 5, 7, 16, 19)
 
+# Was ein Barbeleg unten druckt: was hingelegt wurde und was zurückkam.
+# Bewusst eng gehalten — beide Wortgruppen müssen auf dem Beleg stehen,
+# sonst wird nicht gerechnet.
+GEGEBENWORT = ("gegeben", "bar gegeben", "gegeben bar", "barzahlung",
+               "bar bezahlt", "erhalten")
+RUECKGELDWORT = ("rückgeld", "rueckgeld", "wechselgeld", "zurück", "zurueck",
+                 "retour")
+
+# Sätze, mit denen ein Beleg sagt, dass er keine Umsatzsteuer trägt. Das ist
+# keine Lücke, sondern eine Aussage — und sie gilt vor jeder Annahme.
+KEIN_STEUERAUSWEIS = re.compile(
+    r"kleinunternehmer"
+    r"|§\s*19\s*(?:abs\.?\s*\d\s*)?ustg?"
+    r"|nach\s*§\s*19\b"
+    r"|kein[e]?[nr]?\s+(?:umsatz|mehrwert)steuer"
+    r"|ohne\s+(?:umsatz|mehrwert)steuer"
+    r"|(?:umsatz|mehrwert)steuer\s*(?:wird\s*)?nicht\s+(?:ausgewiesen|erhoben|berechnet)"
+    r"|(?:umsatz|mehrwert)steuer[-\s]?(?:frei|befreit)"
+    r"|steuerfrei"
+    r"|nicht\s+umsatzsteuerpflichtig"
+    r"|§\s*4\s*(?:nr\.?|abs)", re.I)
+
+# Bis 250 € brutto darf eine Rechnung als Kleinbetragsrechnung ohne
+# getrennten Steuerausweis auskommen (§ 33 UStDV). Darüber fehlt etwas,
+# wenn keine Steuer dasteht — dann wird gefragt.
+KLEINBETRAGSGRENZE = 250.0
+
+# Zwei Genauigkeiten, und der Unterschied ist keine Förmlichkeit:
+# Posten addieren sich ohne Rundung, da ist ein Cent ein Lesefehler.
+# Wo Prozente im Spiel sind, darf die letzte Stelle wandern.
+CENT = 0.005
+RUNDUNG = 0.011
+
 MONATE = {"januar": 1, "februar": 2, "märz": 3, "maerz": 3, "april": 4,
           "mai": 5, "juni": 6, "juli": 7, "august": 8, "september": 9,
           "oktober": 10, "november": 11, "dezember": 12,
@@ -203,6 +277,15 @@ def _flach(s: str) -> str:
     """Kleingeschrieben und ohne Akzente — zum Vergleichen, nicht zum Zeigen."""
     s = unicodedata.normalize("NFKD", s.lower())
     return "".join(c for c in s if not unicodedata.combining(c))
+
+
+def _de(x: float) -> str:
+    """Ein Betrag, wie er in einem deutschen Satz steht: 1.234,56 €.
+
+    Die Proben erklären sich in ganzen Sätzen, und darin gehört ein Betrag
+    deutsch geschrieben — „33.61" liest im Zweifel jemand als 33 Cent.
+    """
+    return f"{x:,.2f} €".replace(",", "␣").replace(".", ",").replace("␣", ".")
 
 
 def _enthaelt(text: str, woerter) -> str | None:
@@ -370,13 +453,83 @@ def deute_summe(zeilen: list[Zeile], spalte: float | None,
     return Deutung(wert=None, regel="kein Betrag gefunden"), notizen
 
 
-def deute_steuer(zeilen: list[Zeile], brutto: float | None
-                 ) -> tuple[Deutung, Deutung, Deutung, list[str]]:
+def _kein_steuerausweis(zeilen: list[Zeile]) -> Zeile | None:
+    """Die Zeile, in der der Beleg sagt, dass er keine Umsatzsteuer trägt.
+
+    „Kleinunternehmer nach § 19 UStG" ist keine fehlende Angabe, sondern
+    eine gemachte: 0 %. Wer sie überliest und 19 % annimmt, zieht Vorsteuer
+    aus einer Rechnung, die keine ausweist.
+    """
+    for z in zeilen:
+        if KEIN_STEUERAUSWEIS.search(z.text):
+            return z
+    return None
+
+
+def _tabellentripel(werte: tuple[float, float, float], satz: int
+                    ) -> Steuerposition | None:
+    """Drei Zahlen einer Steuerzeile — welche ist welche?
+
+    Nicht die Spaltenüberschrift entscheidet das, sondern die Rechnung: der
+    größte Wert ist der Bruttobetrag, die beiden anderen müssen ihn ergeben,
+    und die kleinere muss zum Satz passen. So ist es gleichgültig, in
+    welcher Reihenfolge die Kasse druckt — und die Reihenfolgen sind
+    verschieden: der eine Bon schreibt Netto, Steuer, Brutto, der nächste
+    Steuer, Brutto, Netto.
+    """
+    brutto, netto, ust = sorted(werte, reverse=True)
+    if netto <= 0 or abs(netto + ust - brutto) > RUNDUNG:
+        return None
+    erwartet = netto * satz / 100
+    if abs(ust - erwartet) > max(0.02, erwartet * 0.02):
+        return None
+    return Steuerposition(satz=satz, netto=netto, ust=ust, brutto=brutto)
+
+
+def steuerpositionen_finden(zeilen: list[Zeile]) -> list[tuple[Steuerposition, Zeile]]:
+    """Zeilen der Bauart „B 7 % 79,81 5,59 85,40“ — je Satz eine Position.
+
+    Übernommen wird nur, was sich eindeutig auflösen lässt: passen in einer
+    Zeile zwei verschiedene Dreiergruppen auf den Satz, wird geraten statt
+    gelesen, und dann lieber gar nichts.
+    """
+    gefunden: list[tuple[Steuerposition, Zeile]] = []
+    for z in zeilen:
+        if _enthaelt(z.text, FUSSZEILE):
+            continue
+        satz = steuersatz_in_zeile(z)
+        if satz is None:
+            continue
+        werte = [b.wert for b in betraege_in_zeile(z)]
+        if len(werte) < 3:
+            continue
+        treffer: list[Steuerposition] = []
+        for drei in combinations(werte, 3):
+            p = _tabellentripel(drei, satz)
+            if p and not any(_gleiche_position(p, t) for t in treffer):
+                treffer.append(p)
+        if len(treffer) == 1:
+            gefunden.append((treffer[0], z))
+    return gefunden
+
+
+def _gleiche_position(a: Steuerposition, b: Steuerposition) -> bool:
+    return all(abs(getattr(a, f) - getattr(b, f)) <= CENT
+               for f in ("netto", "ust", "brutto"))
+
+
+def deute_steuer(zeilen: list[Zeile], brutto: float | None,
+                 gefunden: list[tuple[Steuerposition, Zeile]] | None = None
+                 ) -> tuple[Deutung, Deutung, Deutung, list[str], list[Steuerposition]]:
     """Steuersatz, Steuerbetrag und Netto — gerechnet, nicht gesucht.
 
-    Zurück kommen (satz, ust, netto). Der Satz wird, wo möglich, aus Netto
-    und Steuer bestimmt statt aus der Prozentangabe: „7,00 %" fand die alte
-    Textsuche nie, und ein falscher Satz macht die Vorsteuer falsch.
+    Zurück kommen (satz, ust, netto, notizen, positionen). Der Satz wird, wo
+    möglich, aus Netto und Steuer bestimmt statt aus der Prozentangabe:
+    „7,00 %" fand die alte Textsuche nie, und ein falscher Satz macht die
+    Vorsteuer falsch.
+
+    Angenommen wird dabei nichts. Trägt der Beleg keine Umsatzsteuer, sind
+    es 0 % — nicht 19 %. Der Unterschied ist Vorsteuer, die es nie gab.
     """
     notizen: list[str] = []
     satz_d = Deutung(wert=None, regel="kein Steuersatz gefunden")
@@ -399,6 +552,31 @@ def deute_steuer(zeilen: list[Zeile], brutto: float | None
                    if _enthaelt(z.text, NETTOWORT)
                    and not _enthaelt(z.text, STEUERWORT)
                    and not _enthaelt(z.text, FUSSZEILE)]
+
+    # Mehrere Sätze auf einem Beleg: der Drogeriemarkt druckt 19 % und 7 %
+    # untereinander. Dann ist die Summe beider Zeilen die Wahrheit, und
+    # jeder Satz behält seine eigene Zeile für den Export.
+    gefunden = steuerpositionen_finden(zeilen) if gefunden is None else gefunden
+    positionen = [p for p, _ in gefunden]
+    if len({p.satz for p in positionen}) > 1:
+        gross, z = max(gefunden, key=lambda pz: pz[0].netto)
+        netto_d = Deutung(round(sum(p.netto for p in positionen), 2),
+                          "Summe der Steuerzeilen", z.nr, z.text, z.konf)
+        ust_d = Deutung(round(sum(p.ust for p in positionen), 2),
+                        "Summe der Steuerzeilen", z.nr, z.text, z.konf)
+        satz_d = Deutung(gross.satz, "größter Anteil der Steuertabelle",
+                         z.nr, z.text, z.konf)
+        aufzaehlung = ", ".join(
+            f"{p.satz} % auf {_de(p.brutto)}" for p in sorted(
+                positionen, key=lambda p: -p.netto))
+        notizen.append(f"Zwei Steuersätze auf einem Beleg ({aufzaehlung}) — "
+                       "gebucht wird je Satz eine eigene Zeile.")
+        summe = round(sum(p.brutto for p in positionen), 2)
+        if brutto is not None and abs(summe - brutto) > CENT:
+            notizen.append(
+                f"Die Steuerzeilen ergeben zusammen {_de(summe)}, als Betrag "
+                f"steht {_de(brutto)} da.")
+        return satz_d, ust_d, netto_d, notizen, positionen
 
     # Der Satz zuerst, unabhängig von Beträgen: „inkl. 19 % MwSt" steht oft
     # allein in einer Zeile, und daraus lässt sich alles Weitere rechnen.
@@ -425,7 +603,7 @@ def deute_steuer(zeilen: list[Zeile], brutto: float | None
                                      z.nr, z.text, z.konf)
                     ust_d = Deutung(s, "Steuertabelle", z.nr, z.text, z.konf)
                     netto_d = Deutung(n, "Steuertabelle", z.nr, z.text, z.konf)
-                    return satz_d, ust_d, netto_d, notizen
+                    return satz_d, ust_d, netto_d, notizen, positionen
         if satz and brutto:
             # Welcher Betrag der Zeile ist die Steuer? Der, der zum Satz passt.
             erwartet = round(brutto - brutto / (1 + satz / 100), 2)
@@ -437,7 +615,7 @@ def deute_steuer(zeilen: list[Zeile], brutto: float | None
                                  "Summenprobe bestätigt", z.nr, z.text, z.konf)
                 netto_d = Deutung(round(brutto - treffer[0].wert, 2),
                                   "Brutto minus Steuer", z.nr, z.text, z.konf)
-                return satz_d, ust_d, netto_d, notizen
+                return satz_d, ust_d, netto_d, notizen, positionen
         if len(bs) == 1 and not ust_d:
             ust_d = Deutung(bs[0].wert, "einzige Zahl der Steuerzeile",
                             z.nr, z.text, z.konf)
@@ -473,6 +651,32 @@ def deute_steuer(zeilen: list[Zeile], brutto: float | None
                             f"aus Brutto und {satz_d.wert} % gerechnet",
                             satz_d.zeile_nr, satz_d.zeilentext, satz_d.konf)
 
+    # Kein Wort von Steuer auf dem ganzen Beleg? Dann sind es 0 %.
+    #
+    # Bis zum 23.08.2026 wurden hier 19 % angenommen und aus dem Brutto
+    # herausgerechnet. Das ist im Salon regelmäßig falsch: Porto, Versiche-
+    # rung, Miete, Beiträge, Bankgebühren und alles von Kleinunternehmern
+    # tragen keine Umsatzsteuer. Was die Annahme erzeugte, war Vorsteuer,
+    # die es nie gab — und die zieht man nicht ab, sie wird zurückgefordert.
+    #
+    # „Beziffert" heißt: irgendwo steht ein Steuersatz oder ein Betrag in
+    # einer Steuer- oder Nettozeile. Der bloße Satz „keine Umsatzsteuer
+    # ausgewiesen" enthält zwar das Wort, aber keine Zahl — und ist damit
+    # genau das Gegenteil eines Steuerausweises.
+    steuer_beziffert = bool(satz_d) or any(
+        betraege_in_zeile(z) for z in steuerzeilen + nettozeilen)
+    if brutto is not None and not steuer_beziffert:
+        ansage = _kein_steuerausweis(zeilen)
+        grund = ("Der Beleg weist keine Umsatzsteuer aus"
+                 + (f": „{ansage.text}“" if ansage else ""))
+        ort = (ansage.nr, ansage.text, ansage.konf) if ansage else (None, "", 0.0)
+        satz_d = Deutung(0, grund, *ort)
+        ust_d = Deutung(0.0, grund, *ort)
+        netto_d = Deutung(brutto, "ohne Steuerausweis ist netto gleich brutto", *ort)
+        notizen.append(grund + " — gebucht wird mit 0 %; es gibt keine "
+                       "Vorsteuer abzuziehen.")
+        return satz_d, ust_d, netto_d, notizen, positionen
+
     # Den Satz zuletzt aus Netto und Steuer bestimmen — das ist der genaue Weg.
     if netto_d and ust_d and netto_d.wert:
         gerechnet = round(ust_d.wert / netto_d.wert * 100)
@@ -489,7 +693,7 @@ def deute_steuer(zeilen: list[Zeile], brutto: float | None
                 "gesetzlicher Satz. Einer der beiden Beträge ist falsch "
                 "gelesen; die Vorsteuer ist damit nicht verlässlich.")
 
-    return satz_d, ust_d, netto_d, notizen
+    return satz_d, ust_d, netto_d, notizen, positionen
 
 
 def deute_lieferant(zeilen: list[Zeile], blatthoehe: float) -> Deutung:
@@ -647,6 +851,165 @@ def deute_nummer(zeilen: list[Zeile]) -> Deutung:
     return Deutung(None, "keine Zeile nennt eine Belegnummer")
 
 
+# ── Die Rechenproben ─────────────────────────────────────────────────────────
+#
+# Nina, 22.08.2026: „Manchmal steht ein völlig falscher Endbetrag da." Das
+# Tückische daran: die Zahl steht an der richtigen Stelle, sie ist plausibel,
+# und Netto und Steuer lassen sich aus ihr zurückrechnen — die Rechnung geht
+# scheinbar auf, weil sie sich selbst bestätigt.
+#
+# Auffliegen kann so ein Betrag nur an dem, was unabhängig von ihm auf dem
+# Beleg steht: an den Einzelposten darüber und am Bargeld darunter. Deshalb
+# genügt eine Probe nicht, es braucht die, die nicht aus dem Endbetrag
+# abgeleitet sind.
+
+
+def abschlussblock(zeilen: list[Zeile], tabellenzeilen: set[int]) -> int | None:
+    """Ab welcher Zeile der Beleg zusammenrechnet, statt aufzulisten.
+
+    Alles darüber sind Posten, alles darunter sind Summen. Die Grenze ist
+    die erste Zeile, die einen Betrag trägt und dabei von Summe, Steuer oder
+    Netto spricht — oder eine Steuertabellenzeile ist.
+    """
+    for z in zeilen:
+        if z.nr in tabellenzeilen:
+            return z.nr
+        if not betraege_in_zeile(z) or _enthaelt(z.text, FUSSZEILE):
+            continue
+        if (_enthaelt(z.text, SUMMENWORT) or _enthaelt(z.text, STEUERWORT)
+                or _enthaelt(z.text, NETTOWORT)):
+            return z.nr
+    return None
+
+
+def einzelposten_probe(zeilen: list[Zeile], spalte: float | None,
+                       blattbreite: float, brutto_d: Deutung,
+                       netto: float | None,
+                       tabellenzeilen: set[int]) -> Probe | None:
+    """Ergeben die Posten über der Summe genau das, was ausgewiesen ist?
+
+    Das ist die einzige Probe, die einen verlesenen Endbetrag wirklich
+    fängt: die Posten stehen auf dem Blatt, unabhängig von ihm.
+
+    Gerechnet wird nur, wo sich sauber rechnen lässt — es braucht eine
+    Betragsspalte, und jede Postenzeile darf genau einen Betrag darin haben.
+    Sobald ein Rabatt, ein Pfand oder eine Zwischensumme dazwischensteht,
+    ist die Summe der Spalte nicht mehr der Rechnungsbetrag. Dann wird
+    nichts behauptet: eine Probe, die falschen Alarm schlägt, wird nach dem
+    dritten Mal nicht mehr gelesen.
+    """
+    if spalte is None or brutto_d.wert is None or brutto_d.zeile_nr is None:
+        return None
+    bis = brutto_d.zeile_nr
+    grenze = abschlussblock(zeilen, tabellenzeilen)
+    if grenze is not None:
+        bis = min(bis, grenze)
+
+    posten: list[tuple[Zeile, Betrag]] = []
+    for z in zeilen:
+        if z.nr >= bis:
+            break
+        if _enthaelt(z.text, FUSSZEILE):
+            continue
+        in_spalte = [b for b in betraege_in_zeile(z)
+                     if abs(b.x1 - spalte) <= blattbreite * 0.04]
+        if not in_spalte:
+            continue
+        if len(in_spalte) > 1:
+            return None                     # keine saubere Spalte
+        if (_enthaelt(z.text, KEINE_SUMME) or _enthaelt(z.text, SUMMENWORT)
+                or _enthaelt(z.text, STEUERWORT) or _enthaelt(z.text, NETTOWORT)):
+            return None                     # Rabatt, Pfand, Zwischensumme …
+        if re.search(r"[-−]\s*\d", z.text):
+            return None                     # Abzüge lassen sich nicht addieren
+        posten.append((z, in_spalte[0]))
+
+    if not posten:
+        return None
+    summe = round(sum(b.wert for _, b in posten), 2)
+    gerechnet = " + ".join(f"{b.wert:.2f}".replace(".", ",") for _, b in posten)
+    if abs(summe - brutto_d.wert) <= CENT:
+        return Probe("Einzelposten", True,
+                     f"Die Posten ergeben zusammen {_de(summe)} — genau den "
+                     "ausgewiesenen Rechnungsbetrag", posten[-1][0].nr)
+    if netto is not None and abs(summe - netto) <= CENT:
+        return Probe("Einzelposten", True,
+                     f"Die Posten ergeben zusammen {_de(summe)} — genau die "
+                     "ausgewiesene Nettosumme", posten[-1][0].nr)
+    ausgewiesen = _de(brutto_d.wert)
+    if netto is not None and abs(netto - brutto_d.wert) > CENT:
+        ausgewiesen += f" (netto {_de(netto)})"
+    return Probe("Einzelposten", False,
+                 f"Die Posten {gerechnet} ergeben {_de(summe)}, ausgewiesen "
+                 f"sind {ausgewiesen}", posten[-1][0].nr)
+
+
+def bargeld_probe(zeilen: list[Zeile], brutto: float | None
+                  ) -> tuple[Probe | None, list[str]]:
+    """Gegeben minus Rückgeld muss sein, was zu zahlen war.
+
+    Ein Barbeleg trägt seine Kontrolle unten mit sich. Wer 50 € hinlegt und
+    5,50 € zurückbekommt, hat 44,50 € bezahlt — steht oben etwas anderes,
+    ist eine der drei Zahlen falsch gelesen.
+
+    Umgekehrt gilt das nicht: wer mehr gibt, als er zurückbekommt und zahlen
+    musste, hat Trinkgeld gegeben. Das ist kein Lesefehler, sondern eine
+    Notiz wert.
+    """
+    if brutto is None:
+        return None, []
+
+    def betrag_aus(woerter) -> tuple[float, Zeile] | None:
+        for z in reversed(zeilen):
+            if _enthaelt(z.text, FUSSZEILE) or not _enthaelt(z.text, woerter):
+                continue
+            bs = betraege_in_zeile(z)
+            if bs:
+                return max(b.wert for b in bs), z
+        return None
+
+    gegeben = betrag_aus(GEGEBENWORT)
+    rueck = betrag_aus(RUECKGELDWORT)
+    if gegeben is None or rueck is None:
+        return None, []
+    bezahlt = round(gegeben[0] - rueck[0], 2)
+    if abs(bezahlt - brutto) <= CENT:
+        return Probe("Bargeld", True,
+                     f"Gegeben {_de(gegeben[0])} minus Rückgeld "
+                     f"{_de(rueck[0])} ergibt {_de(bezahlt)} — den "
+                     "ausgewiesenen Betrag", rueck[1].nr), []
+    if bezahlt > brutto:
+        return None, [f"Gegeben {_de(gegeben[0])} minus Rückgeld "
+                      f"{_de(rueck[0])} ergibt {_de(bezahlt)}, zu zahlen waren "
+                      f"{_de(brutto)} — die Differenz von "
+                      f"{_de(round(bezahlt - brutto, 2))} ist vermutlich "
+                      "Trinkgeld."]
+    return Probe("Bargeld", False,
+                 f"Gegeben {_de(gegeben[0])} minus Rückgeld {_de(rueck[0])} "
+                 f"ergibt {_de(bezahlt)}, ausgewiesen sind {_de(brutto)}",
+                 rueck[1].nr), []
+
+
+def steuersatz_probe(netto: float | None, ust: float | None,
+                     satz: int | None) -> Probe | None:
+    """Passt die ausgewiesene Steuer zum ausgewiesenen Satz?
+
+    Hier wird großzügiger gerechnet als bei den Posten: 7 % von 1,21 € sind
+    8,47 Cent, auf dem Bon stehen 9. Das ist Rundung, kein Lesefehler. Sechs
+    Euro Unterschied sind es nicht.
+    """
+    if netto is None or ust is None or satz is None or netto <= 0:
+        return None
+    erwartet = round(netto * satz / 100, 2)
+    if abs(ust - erwartet) <= max(0.02, erwartet * 0.01):
+        return Probe("Steuersatz", True,
+                     f"{satz} % von {_de(netto)} sind {_de(erwartet)} — das "
+                     "steht auch da")
+    return Probe("Steuersatz", False,
+                 f"{satz} % von {_de(netto)} wären {_de(erwartet)}, "
+                 f"ausgewiesen sind {_de(ust)}")
+
+
 # ── Das Ganze ────────────────────────────────────────────────────────────────
 
 def deuten(kaesten: list[Kasten], heute: date | None = None) -> Lesung:
@@ -671,10 +1034,15 @@ def deuten(kaesten: list[Kasten], heute: date | None = None) -> Lesung:
             f"Die Beträge stehen in einer Spalte (rechte Kante bei "
             f"{min(max(anteil, 0), 1):.0%} der Blattbreite).")
 
+    # Einmal suchen, zweimal gebraucht: die Deutung rechnet mit den Sätzen,
+    # die Postenprobe muss wissen, wo die Steuertabelle anfängt.
+    tabelle = steuerpositionen_finden(zeilen)
     brutto_d, notizen = deute_summe(zeilen, spalte, blattbreite)
     lesung.notizen += notizen
-    satz_d, ust_d, netto_d, notizen = deute_steuer(zeilen, brutto_d.wert)
+    satz_d, ust_d, netto_d, notizen, positionen = deute_steuer(
+        zeilen, brutto_d.wert, tabelle)
     lesung.notizen += notizen
+    lesung.steuerpositionen = positionen
 
     lesung.felder = {
         "lieferant": deute_lieferant(zeilen, blatthoehe),
@@ -686,19 +1054,80 @@ def deuten(kaesten: list[Kasten], heute: date | None = None) -> Lesung:
         "ust_satz": satz_d,
     }
 
-    probe = (brutto_d and netto_d and ust_d
-             and abs(netto_d.wert + ust_d.wert - brutto_d.wert) < 0.011)
-    lesung.felder["summenprobe_ok"] = Deutung(
-        bool(probe),
-        "Netto + Steuer = Brutto" if probe else "Netto + Steuer ergibt nicht Brutto")
+    # ── Der Beleg rechnet sich selbst nach ──
+    #
+    # Vier Proben, und keine davon braucht eine fremde Quelle. Die erste
+    # bestätigt sich unter Umständen selbst — Netto und Steuer stammen oft
+    # aus dem Brutto —, deshalb zählen die anderen drei mit.
+    if brutto_d.wert is not None:
+        if netto_d.wert is not None and ust_d.wert is not None:
+            geht_auf = abs(netto_d.wert + ust_d.wert - brutto_d.wert) <= RUNDUNG
+            lesung.proben.append(Probe(
+                "Netto + Steuer", geht_auf,
+                f"Netto {_de(netto_d.wert)} plus Steuer {_de(ust_d.wert)} "
+                + ("ergibt " if geht_auf else "ergibt nicht ")
+                + _de(brutto_d.wert), brutto_d.zeile_nr))
+        else:
+            lesung.proben.append(Probe(
+                "Netto + Steuer", False,
+                "Netto und Steuer gehen nicht auf und wurden verworfen",
+                brutto_d.zeile_nr))
+
+    # Bei zwei Sätzen auf einem Beleg sagt die Summe nichts über den Satz —
+    # 7 % von allem wäre falsch. Dann prüft jede Steuerzeile für sich.
+    if len({p.satz for p in positionen}) > 1:
+        for pos in positionen:
+            p = steuersatz_probe(pos.netto, pos.ust, pos.satz)
+            if p:
+                lesung.proben.append(Probe(f"Steuersatz {pos.satz} %",
+                                           p.bestanden, p.erklaerung))
+    else:
+        p = steuersatz_probe(netto_d.wert, ust_d.wert, satz_d.wert)
+        if p:
+            lesung.proben.append(p)
+    p = einzelposten_probe(zeilen, spalte, blattbreite, brutto_d,
+                           netto_d.wert, {z.nr for _, z in tabelle})
+    if p:
+        lesung.proben.append(p)
+    p, hinweise = bargeld_probe(zeilen, brutto_d.wert)
+    if p:
+        lesung.proben.append(p)
+    lesung.notizen += hinweise
+
+    # Ohne die Netto-Steuer-Probe gibt es kein „geht auf": ein Beleg ohne
+    # Betrag ist nicht geprüft, sondern ungelesen.
+    hauptprobe = [p for p in lesung.proben if p.name == "Netto + Steuer"]
+    probe_ok = bool(hauptprobe) and all(p.bestanden for p in lesung.proben)
+    gescheitert = [p for p in lesung.proben if not p.bestanden]
+    if gescheitert:
+        regel = "; ".join(f"{p.name} geht nicht auf: {p.erklaerung}"
+                          for p in gescheitert)
+    elif lesung.proben:
+        regel = "alle Proben gehen auf: " + ", ".join(p.name for p in lesung.proben)
+    else:
+        regel = "kein Betrag, nichts nachzurechnen"
+    lesung.felder["summenprobe_ok"] = Deutung(probe_ok, regel)
+    for p in lesung.proben:
+        lesung.notizen.append(f"Probe {p.name}: {p.erklaerung}"
+                              + ("." if p.bestanden else " — das geht nicht auf."))
 
     for name, klartext in (("lieferant", "Wer den Beleg ausgestellt hat"),
                            ("datum", "Das Belegdatum"),
                            ("brutto", "Der Rechnungsbetrag")):
         if not lesung.felder[name]:
             lesung.offen.append(f"{klartext} ist nicht sicher zu lesen.")
-    if brutto_d and not probe:
-        lesung.offen.append("Netto und Steuer gehen nicht auf — Beträge prüfen.")
+    # Welche Probe gescheitert ist, gehört in die Rückfrage. „Summenprobe
+    # nicht bestanden" schickt Nina auf die Suche; „die Posten ergeben
+    # 33,61 €, ausgewiesen sind 90,00 €" zeigt ihr die Zeile.
+    for p in gescheitert:
+        lesung.offen.append(f"{p.name}: {p.erklaerung} — bitte prüfen.")
+    if (satz_d.wert == 0 and brutto_d.wert is not None
+            and brutto_d.wert > KLEINBETRAGSGRENZE):
+        lesung.offen.append(
+            f"Auf dem Beleg steht keine Umsatzsteuer, der Betrag ist mit "
+            f"{_de(brutto_d.wert)} aber über der Kleinbetragsgrenze von "
+            f"{_de(KLEINBETRAGSGRENZE)} — bitte prüfen, ob eine Rechnung mit "
+            "Steuerausweis fehlt.")
 
     schwach = [z for z in zeilen if z.konf < 0.6]
     if schwach and len(schwach) > len(zeilen) / 3:
