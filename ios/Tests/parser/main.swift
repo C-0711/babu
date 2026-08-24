@@ -83,3 +83,13 @@ pruefe(f12.ustSatz == 7, "7,00 % wird als 7 gelesen")
 
 print(fehler == 0 ? "\nAlle Prüfungen bestanden." : "\n\(fehler) Prüfung(en) fehlgeschlagen.")
 exit(fehler == 0 ? 0 : 1)
+
+// 20. Fremdwährung: AED-Beleg wird NICHT als Euro gelesen
+let f20 = parse(["Uber 13:30", "Gesamtsumme 55,74 AED", "Fahrpreis 45,74 AED",
+                "Trinkgeld 5,00 AED"])
+pruefe(f20.waehrung == "AED", "AED als Fremdwährung erkannt")
+let f20b = parse(["EDEKA", "SUMME € 16,08", "EC-Cash 16,08"])
+pruefe(f20b.waehrung == nil, "Euro-Beleg bleibt ohne Fremdwährung")
+let f20c = parse(["Hotel Praha", "Total 799,00 CZK", "Karte 799,00"])
+pruefe(f20c.waehrung == "CZK", "CZK erkannt")
+

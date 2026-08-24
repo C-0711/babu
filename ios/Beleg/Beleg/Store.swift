@@ -181,12 +181,23 @@ final class AppStore: ObservableObject {
         beleg.ocrText = ocrText
         beleg.steuerPositionen = felder.steuerPositionen.isEmpty ? nil : felder.steuerPositionen
         beleg.gutschriftSignal = felder.gutschriftSignal ? true : nil
+        if let w = felder.waehrung {
+            // Fremdwährung: die gelesenen Zahlen sind KEINE Euro. Original
+            // festhalten, Steuerfelder neutralisieren — den Euro-Wert setzt
+            // die Buchhaltung (Kontoauszug-Abgleich oder Kurs).
+            beleg.fremdBetrag = felder.brutto
+            beleg.fremdWaehrung = w
+            beleg.ust = 0
+            beleg.netto = beleg.brutto
+            beleg.ustSatz = 0
+            beleg.steuerschluessel = "0"
+        }
 
         // Das Telefon beurteilt die Qualität und liefert eine Erstauswertung —
         // verbindlich gebucht wird aus der Lesung der Belegbox (PaddleOCR),
         // sobald sie da ist (ausZweitpruefungUebernehmen). Nur OHNE Belegbox
         // bleibt der alte Sofort-Weg, sonst gäbe es gar keinen.
-        if !ablageAktiv, beleg.confidence >= 95 {
+        if !ablageAktiv, beleg.confidence >= 95, beleg.fremdWaehrung == nil {
             siegeln(&beleg, status: .automatisch)
         }
         if ablageAktiv, bildJpeg != nil {
@@ -477,6 +488,10 @@ final class AppStore: ObservableObject {
             setz(\.lieferant, g.lieferant?.trimmingCharacters(in: .whitespacesAndNewlines)
                                  .isEmpty == false ? g.lieferant : nil)
             setz(\.datumText, deutschesDatum(g.datum))
+            if let w = g.waehrung?.uppercased(), w != "EUR" {
+                setz(\.fremdBetrag, g.betrag)
+                setz(\.fremdWaehrung, w)
+            }
             if let e = g.betragEur, e > 0 {
                 let satz = g.ustSatz ?? 0
                 setz(\.brutto, e)
@@ -547,6 +562,10 @@ final class AppStore: ObservableObject {
         if let l = lieferant?.trimmingCharacters(in: .whitespacesAndNewlines),
            !l.isEmpty { b.lieferant = l }
         if let d = deutschesDatum(datum) { b.datumText = d }
+        if betragEur > 0, waehrung != "EUR" {
+            b.fremdBetrag = b.fremdBetrag ?? b.brutto
+            b.fremdWaehrung = waehrung
+        }
         if betragEur > 0 {
             b.brutto = betragEur
             b.netto = (betragEur / (1 + Double(ustSatz) / 100) * 100).rounded() / 100

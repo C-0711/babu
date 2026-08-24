@@ -610,6 +610,15 @@ struct ErgebnisKarte: View {
             BuchungsfragenView(belegID: beleg.id)
                 .environmentObject(store)
         }
+        // Keine Erstauswertung mehr (24.08.2026): nach der Aufnahme gehen
+        // die Daten direkt nach hinten, und hier erscheint sofort das
+        // Ergebnis — die Buchung oder die Fragen. Wer das Blatt weglegt,
+        // behält den Knopf auf der Karte als Wiedereinstieg.
+        .onAppear {
+            if store.ablageAktiv, aktuell.status == .offen {
+                zeigeBuchungsfragen = true
+            }
+        }
         .sheet(isPresented: $zeigeBewirtung) {
             BewirtungsangabenSheet(belegID: beleg.id) {
                 store.buchen(id: beleg.id, konto: nil, steuerschluessel: nil,

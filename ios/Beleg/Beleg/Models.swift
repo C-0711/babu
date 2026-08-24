@@ -164,6 +164,11 @@ struct Beleg: Identifiable, Codable {
     // Steuertabelle je Satz (Mehrsatz-Belege) und Gutschrift-Signal
     var steuerPositionen: [SteuerPosition]?
     var gutschriftSignal: Bool?
+    // Fremdwährung: der Originalbetrag und seine Währung (z. B. 55,74 AED).
+    // brutto/netto/ust sind dann der EURO-Wert aus der Buchhaltung — bis er
+    // da ist, bleibt der Beleg offen statt falsch in Euro gebucht.
+    var fremdBetrag: Double?
+    var fremdWaehrung: String?
     // Die Buchhaltung (Gemma) hat noch Fragen — der Beleg wartet auf Nina.
     // Gesetzt, wenn die Zweitprüfung da ist, aber nicht gebucht werden
     // konnte, oder wenn sie das Fragenpaket vorzeitig weggelegt hat.

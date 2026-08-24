@@ -20,6 +20,9 @@ struct Felder {
     /// Steuertabelle je Satz (7 % und 19 % getrennt) — bleibt am Beleg,
     /// damit der Export Mehrsatz-Belege aufteilen kann.
     var steuerPositionen: [SteuerPosition] = []
+    /// Erkannte Fremdwährung (AED, CHF, USD …) — nil heißt Euro. Steht sie,
+    /// sind ALLE Beträge dieses Belegs in dieser Währung, nicht in Euro.
+    var waehrung: String?
 }
 
 /// Heuristischer Parser über den erkannten Textzeilen — die On-Device-Lane
@@ -32,6 +35,10 @@ enum FeldParser {
     static let betragMuster = #"\d{1,3}(?:\.\d{3})+,\d{2}|\d{1,6},\d{2}"#
 
     static func parse(zeilen: [(text: String, conf: Double)]) -> Felder {
+        // Fremdwährung zuerst: steht auf dem Beleg AED/CHF/USD & Co. neben
+        // den Beträgen, sind die Zahlen KEINE Euro — der Euro-Wert kommt
+        // später von der Buchhaltung (Kontoauszug-Abgleich oder Kurs).
+        let fremd = fremdwaehrung(zeilen.map(\.text))
         var f = Felder()
         let alleZeilen = zeilen.map { $0.text }
         let gesamt = alleZeilen.joined(separator: "\n")
@@ -168,6 +175,7 @@ enum FeldParser {
 
         f.felderZahl = [f.lieferant != nil, f.belegNr != nil, f.datumText != nil,
                         f.netto != nil, f.ust != nil, f.brutto != nil].filter { $0 }.count
+        f.waehrung = fremd
         return f
     }
 
@@ -404,5 +412,30 @@ enum Kontierung {
                          confidence: min(basis, 74),
                          begruendung: "Kein Historien- oder Regeltreffer — Leistungsart bitte prüfen.",
                          steuerschluessel: ksDefault)
+    }
+}
+
+
+extension FeldParser {
+    /// Welche Nicht-Euro-Währung der Beleg trägt — die erste, die neben
+    /// einer Zahl auftaucht. € gewinnt: Belege mit Euro-Zeichen (auch
+    /// Kartenzettel mit Umrechnung) gelten als Euro.
+    static func fremdwaehrung(_ zeilen: [String]) -> String? {
+        let muster = ["AED", "CHF", "USD", "GBP", "CZK", "PLN", "TRY",
+                      "SEK", "DKK", "NOK", "HUF"]
+        var treffer: String?
+        for z in zeilen {
+            if z.contains("€") || z.uppercased().contains(" EUR") { return nil }
+            guard treffer == nil else { continue }
+            let gross = z.uppercased()
+            for w in muster where gross.contains(w) {
+                // Nur zählen, wenn eine Zahl in der Nähe steht — sonst ist
+                // es Text („USD-Konto") und kein Betrag.
+                if z.rangeOfCharacter(from: .decimalDigits) != nil {
+                    treffer = w
+                }
+            }
+        }
+        return treffer
     }
 }

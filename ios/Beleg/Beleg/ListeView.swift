@@ -349,10 +349,17 @@ struct DetailView: View {
                                     .accessibilityLabel("Alles in Ordnung")
                             }
                             Spacer()
-                            Text(fmtEur(b.brutto))
-                                .font(.system(size: 22, weight: .medium, design: .monospaced))
-                                .foregroundStyle(GC.fg)
-                                .layoutPriority(1)
+                            VStack(alignment: .trailing, spacing: 1) {
+                                Text(fmtEur(b.brutto))
+                                    .font(.system(size: 22, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(GC.fg)
+                                if let w = b.fremdWaehrung, let orig = b.fremdBetrag {
+                                    Text("\(orig, format: .number.precision(.fractionLength(2))) \(w) umgerechnet")
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(GC.desc)
+                                }
+                            }
+                            .layoutPriority(1)
                         }
                         if let satz = review?.zusammenfassung, !satz.isEmpty {
                             // Was auf dem Beleg los war, in einer Zeile —
@@ -540,6 +547,22 @@ struct DetailView: View {
                                 }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
+                                if b.status != .fixiert, store.ablageAktiv,
+                                   !b.ocrText.isEmpty {
+                                    // Die Buchhaltung noch einmal ranlassen —
+                                    // heilt Altfälle (Fremdwährung, falsches
+                                    // Konto) mit einer frischen Einschätzung.
+                                    Button {
+                                        zeigeAlle = false
+                                        zeigeBuchungsfragen = true
+                                    } label: {
+                                        Label("Neu einschätzen & buchen",
+                                              systemImage: "questionmark.bubble")
+                                            .font(.caption)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                }
                             }
 
                             // Fremder Beleg im Stapel? Muss ohne Wischgeste
