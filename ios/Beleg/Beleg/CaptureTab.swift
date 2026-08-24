@@ -553,32 +553,46 @@ struct ErgebnisKarte: View {
                         .font(.footnote)
                         .foregroundStyle(GC.warn)
                 }
-                if aktuell.confidence >= 80 {
-                    Button {
-                        if aktuell.brauchtBewirtungsangaben {
-                            zeigeBewirtung = true
-                        } else {
-                            store.buchen(id: aktuell.id, konto: nil, steuerschluessel: nil,
-                                         dauer: Date().timeIntervalSince(startZeit))
-                        }
-                    } label: {
-                        Text("Buchung bestätigen").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
+                if store.ablageAktiv {
+                    // Das Telefon hat nur eine Erstauswertung gemacht — es
+                    // beurteilt die Qualität, gebucht wird aus der Lesung
+                    // der Belegbox, sobald sie da ist. Kein Knopf, der so
+                    // tut, als stünde die Buchung schon fest.
+                    Label("Erstauswertung — babu liest den Beleg gerade "
+                          + "gründlich in deiner Belegbox. Gebucht wird, "
+                          + "sobald das Ergebnis da ist.",
+                          systemImage: "clock.arrow.circlepath")
+                        .font(.footnote)
+                        .foregroundStyle(GC.desc)
+                    abschlussButtons
                 } else {
-                    Button {
-                        zeigeReview = true
-                    } label: {
-                        Text("Kontierung prüfen").frame(maxWidth: .infinity)
+                    if aktuell.confidence >= 80 {
+                        Button {
+                            if aktuell.brauchtBewirtungsangaben {
+                                zeigeBewirtung = true
+                            } else {
+                                store.buchen(id: aktuell.id, konto: nil, steuerschluessel: nil,
+                                             dauer: Date().timeIntervalSince(startZeit))
+                            }
+                        } label: {
+                            Text("Buchung bestätigen").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    } else {
+                        Button {
+                            zeigeReview = true
+                        } label: {
+                            Text("Kontierung prüfen").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
                     }
-                    .buttonStyle(.borderedProminent)
+                    Button("Später — zu den Dokumenten") {
+                        fertig()
+                        store.tab = .belege
+                    }
+                    .font(.footnote)
+                    .frame(maxWidth: .infinity)
                 }
-                Button("Später — zu den Dokumenten") {
-                    fertig()
-                    store.tab = .belege
-                }
-                .font(.footnote)
-                .frame(maxWidth: .infinity)
             default:
                 SiegelZeile(beleg: aktuell)
                 abschlussButtons

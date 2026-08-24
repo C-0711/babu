@@ -174,7 +174,11 @@ final class AppStore: ObservableObject {
         beleg.steuerPositionen = felder.steuerPositionen.isEmpty ? nil : felder.steuerPositionen
         beleg.gutschriftSignal = felder.gutschriftSignal ? true : nil
 
-        if beleg.confidence >= 95 {
+        // Das Telefon beurteilt die Qualität und liefert eine Erstauswertung —
+        // verbindlich gebucht wird aus der Lesung der Belegbox (PaddleOCR),
+        // sobald sie da ist (ausZweitpruefungUebernehmen). Nur OHNE Belegbox
+        // bleibt der alte Sofort-Weg, sonst gäbe es gar keinen.
+        if !ablageAktiv, beleg.confidence >= 95 {
             siegeln(&beleg, status: .automatisch)
         }
         if ablageAktiv, bildJpeg != nil {
@@ -458,14 +462,29 @@ final class AppStore: ObservableObject {
         setz(\.konto, review.einschaetzung?.kontoSkr04)
         setz(\.steuerschluessel, review.einschaetzung?.steuerschluessel)
 
+        if geaendert {
+            b.summenprobeOK = abs(b.netto + b.ust - b.brutto) < 0.011
+            // Die Herkunft sagt jetzt die Wahrheit: das kam nicht vom Gerät.
+            b.herkunft = .ki
+            // Eine übernommene Lesung macht die auf dem Gerät gelesene
+            // Steuertabelle ungültig — sie gehört zu den alten Zahlen.
+            b.steuerPositionen = nil
+            if b.siegel != nil { siegeln(&b, status: b.status) }
+        }
+
+        // Erst mit der Serverlesung wird gebucht — das Telefon hatte nur
+        // vorgeschlagen. Gebucht wird still aber nur, wenn nichts offen ist:
+        // ohne Konto oder mit offener Bewirtungsfrage bleibt der Beleg im
+        // Aufräumen-Stapel, statt falsch in den Export zu rutschen.
+        if b.status == .offen,
+           let konto = b.konto, !konto.isEmpty,
+           !b.brauchtBewirtungsangaben,
+           b.brutto > 0 {
+            siegeln(&b, status: .automatisch)
+            geaendert = true
+        }
+
         guard geaendert else { return false }
-        b.summenprobeOK = abs(b.netto + b.ust - b.brutto) < 0.011
-        // Die Herkunft sagt jetzt die Wahrheit: das kam nicht vom Gerät.
-        b.herkunft = .ki
-        // Eine übernommene Lesung macht die auf dem Gerät gelesene
-        // Steuertabelle ungültig — sie gehört zu den alten Zahlen.
-        b.steuerPositionen = nil
-        if b.siegel != nil { siegeln(&b, status: b.status) }
         belege[i] = b
         return true
     }
