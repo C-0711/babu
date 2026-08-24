@@ -312,7 +312,6 @@ struct DetailView: View {
     @State private var zeigeFeldEditor = false
     @State private var zeigeKontierung = false
     @State private var detailBild: UIImage?
-    @State private var markierungen: [CGRect] = []
     @State private var zeigeLoeschen = false
     @State private var zeigeBuchungsfragen = false
 
@@ -412,23 +411,11 @@ struct DetailView: View {
     private func belegAnsicht(_ b: Beleg) -> some View {
         Group {
             if let bild = detailBild {
-                // Belege sind klein gedruckt. Wer nachsehen soll, ob babu
-                // richtig gelesen hat, muss hineinzoomen können — die
-                // Markierungen wachsen mit.
-                ZoombaresBild(bild: bild) { rahmen in
-                    ZStack {
-                        ForEach(Array(markierungen.enumerated()), id: \.offset) { _, r in
-                            RoundedRectangle(cornerRadius: 5)
-                                .fill(GC.ok.opacity(0.16))
-                                .overlay(RoundedRectangle(cornerRadius: 5)
-                                    .stroke(GC.ok, lineWidth: 1.6))
-                                .frame(width: r.width * rahmen.width + 10,
-                                       height: r.height * rahmen.height + 8)
-                                .position(x: r.midX * rahmen.width,
-                                          y: (1 - r.midY) * rahmen.height)
-                        }
-                    }
-                }
+                // Belege sind klein gedruckt — hineinzoomen können reicht.
+                // Die grünen Fundstellen-Kästen sind raus (24.08.2026,
+                // Christoph): sie verdeckten den Beleg mehr, als sie halfen;
+                // was gelesen wurde, steht hinterm ⓘ.
+                ZoombaresBild(bild: bild) { _ in EmptyView() }
             } else {
                 RoundedRectangle(cornerRadius: 14)
                     .fill(GC.accentSubtle)
@@ -479,10 +466,6 @@ struct DetailView: View {
         guard let b = beleg else { return }
         if detailBild == nil, let daten = b.bildJpeg {
             detailBild = UIImage(data: daten)
-        }
-        if markierungen.isEmpty, let bild = detailBild {
-            let ocr = await OCRService.erkenne(bild)
-            markierungen = FeldMarker.markierungen(zeilen: ocr.zeilen, beleg: b)
         }
         if b.ablageStatus == .uebertragen {
             await reviewLaden(fuer: b)
