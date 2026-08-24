@@ -2997,11 +2997,19 @@ async def api_buchungsfragen(stamm: str, request: Request) -> Response:
     # Kontext für den Abgleich: die Kontobewegungen des Belegmonats (Bank/
     # PayPal aus den Auszügen) und die Nachbar-Belege — damit Gemma den
     # Euro-Betrag einer Fremdwährungszahlung findet und Dubletten sieht.
-    monat, umsaetze, nachbarn = None, [], []
+    monat, umsaetze, nachbarn, bild = None, [], [], None
     try:
         review_daten = json.loads(git_show(pfad) or b"{}")
         datum = ((review_daten.get("felder") or {}).get("datum") or "")
         monat = datum[:7] if re.match(r"^\d{4}-\d{2}", datum) else None
+        # Gemma Vision liest das Original — das Foto kommt aus der Box.
+        datei = review_daten.get("datei") or ""
+        if datei.lower().endswith((".jpg", ".jpeg", ".png")):
+            roh_bild = git_show(datei)
+            if roh_bild:
+                mime = ("image/png" if datei.lower().endswith(".png")
+                        else "image/jpeg")
+                bild = (roh_bild, mime)
     except Exception:  # noqa: BLE001
         pass
     if monat:
@@ -3020,7 +3028,7 @@ async def api_buchungsfragen(stamm: str, request: Request) -> Response:
     try:
         ergebnis = await run_in_threadpool(
             gemma_buchung.runde, zeilen, db_einstellungen(salon_von(un)),
-            antworten, kontenrahmen_von(un), umsaetze, nachbarn)
+            antworten, kontenrahmen_von(un), umsaetze, nachbarn, None, bild)
     except Exception as ex:  # noqa: BLE001
         print(f"[buchungsfragen] {stamm}: {ex!r}", flush=True)
         return JSONResponse({"fehler": "Die Buchhaltung ist gerade nicht zu "

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Gemma bucht — und fragt so lange nach, bis es buchen kann.
 
-Der Prozess, wie er am 24.08.2026 entschieden wurde: PaddleOCR liest die
-Zeilen, dazu kommen Ladenprofil und Personenprofil als Kontext, und Gemma
-verbucht den Beleg. Was nur Nina wissen kann, wird gefragt — ALLE offenen
+Der Prozess, wie er am 24.08.2026 (letzte Fassung) entschieden wurde:
+Gemma 4 Vision liest den Beleg SELBST — das Foto geht direkt ans Modell,
+dazu Ladenprofil und Personenprofil als Kontext, und Gemma verbucht.
+Kein OCR-Dienst mehr im Buchungsweg; Textzeilen/Markdown bleiben nur als
+Rückfall, falls einmal kein Bild vorliegt. Was nur Nina wissen kann, wird gefragt — ALLE offenen
 Fragen auf einmal, jede als Multiple Choice. Nina tippt einmal durch, die
 Antworten kommen gesammelt zurück, dann wird gebucht. Der Server merkt
 sich nichts; der Zustand lebt im Telefon.
@@ -85,7 +87,8 @@ def katalog_text(rahmen: str = "SKR04") -> str:
 
 def prompt_bauen(profil: str, zeilen: list[str], antworten: list[dict],
                  rahmen: str = "SKR04", umsaetze: list[dict] | None = None,
-                 nachbarn: list[dict] | None = None) -> str:
+                 nachbarn: list[dict] | None = None,
+                 markdown: str | None = None, mit_bild: bool = False) -> str:
     beantwortet = ""
     if antworten:
         beantwortet = "\nNINA HAT BEREITS BEANTWORTET:\n" + "\n".join(
@@ -111,11 +114,18 @@ PROFIL: {profil}
 KATEGORIEN (wähle GENAU eine über ihren Code — Kontonummern vergibst nicht du):
 {katalog_text(rahmen)}
 
-DER BELEG — die erkannten Textzeilen in Lesereihenfolge:
-{chr(10).join('  ' + z for z in zeilen)}
+DER BELEG — {"liegt dir als FOTO bei. Lies ihn selbst, vollständig: Kopf, jede Einzelposition, Summen, Steuerzeilen, Währung, Zahlweise." if mit_bild else ("als strukturiertes Dokument (Layout-Lesung):" if markdown else "die erkannten Textzeilen in Lesereihenfolge:")}
+{"" if mit_bild else (markdown if markdown else chr(10).join('  ' + z for z in zeilen))}
 {konto_kontext}{beleg_kontext}{beantwortet}
 Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
 - Erfinde keine Umsatzsteuer, die nicht auf dem Beleg ausgewiesen ist.
+- Lies die EINZELPOSITIONEN aus dem Beleg: Bezeichnung, Betrag, Steuersatz
+  und Kategorie je Position. Buche das Ganze auf die Kategorie mit dem
+  größten Betragsanteil; jede Position behält daneben ihre eigene Kategorie.
+  Sind die Positionen fachlich gemischt und keine Kategorie trägt mindestens
+  80 % des Betrags, stell EINMAL die Frage, wie aufgeteilt werden soll —
+  hat Nina dazu schon geantwortet, buche nach ihrer Antwort und frag nicht
+  erneut.
 - Erkenne die Währung aus dem Beleg; bei Fremdwährung nimm betrag_eur aus
   einer passenden Kontobewegung, sonst schätze ihn.
 - Passt eine Kontobewegung exakt zu diesem Beleg, nenne sie in der
@@ -130,9 +140,12 @@ entweder {{"status": "fragen",
            "fragen": [{{"frage": "…", "optionen": ["…", "…"]}}]}}
 oder     {{"status": "gebucht",
            "kategorie": "<code aus der Liste>",
+           "lieferant": "…", "datum": "JJJJ-MM-TT",
            "buchungstext": "…",
            "betrag": 0.0, "waehrung": "EUR",
            "betrag_eur": 0.0, "ust_satz": 0,
+           "positionen": [{{"bezeichnung": "…", "betrag": 0.0,
+                           "ust_satz": 0, "kategorie": "<code>"}}],
            "begruendung": "ein Satz"}}"""
 
 
@@ -181,6 +194,8 @@ def buchung_pruefen(roh: dict, rahmen: str = "SKR04") -> dict:
     if satz not in (0, 7, 19):
         satz = 0
     return {"status": "gebucht", "buchung": {
+        "lieferant": str(roh.get("lieferant") or "")[:80] or None,
+        "datum": str(roh.get("datum") or "")[:10] or None,
         "kategorie": kat.code,
         "kategorie_name": kat.name,
         "konto": konto,
@@ -189,15 +204,63 @@ def buchung_pruefen(roh: dict, rahmen: str = "SKR04") -> dict:
         "waehrung": str(roh.get("waehrung") or "EUR")[:8].upper(),
         "betrag_eur": betrag_eur,
         "ust_satz": satz,
+        "positionen": _positionen(roh),
         "begruendung": str(roh.get("begruendung") or "")[:300],
     }}
 
 
+def _positionen(roh: dict) -> list[dict]:
+    """Die Einzelpositionen, gesäubert. Kategorien außerhalb des Katalogs
+    bleiben leer statt erfunden; mehr als 20 Positionen liest kein Bon."""
+    aus = []
+    for p in (roh.get("positionen") or [])[:20]:
+        if not isinstance(p, dict):
+            continue
+        try:
+            betrag = round(float(p.get("betrag") or 0), 2)
+        except (TypeError, ValueError):
+            continue
+        try:
+            satz = int(p.get("ust_satz") or 0)
+        except (TypeError, ValueError):
+            satz = 0
+        kat = str(p.get("kategorie") or "").strip()
+        aus.append({
+            "bezeichnung": str(p.get("bezeichnung") or "")[:80],
+            "betrag": betrag,
+            "ust_satz": satz if satz in (0, 7, 19) else 0,
+            "kategorie": kat if kat in kontierung.KATEGORIEN else None,
+        })
+    return aus
+
+
+def gemischt(buchung: dict) -> bool:
+    """Tragen die Positionen keine klare Hauptkategorie (≥ 80 % des
+    Betrags), soll niemand still buchen — dann wird gefragt."""
+    je_kat: dict[str, float] = {}
+    for p in buchung.get("positionen") or []:
+        if p.get("kategorie") and p.get("betrag"):
+            je_kat[p["kategorie"]] = je_kat.get(p["kategorie"], 0) + abs(p["betrag"])
+    if len(je_kat) <= 1:
+        return False
+    return max(je_kat.values()) / sum(je_kat.values()) < 0.8
+
+
 # ── Eine Runde ───────────────────────────────────────────────────────────────
 
-def _gemma(prompt: str) -> dict:
-    koerper = {"model": VLM_MODELL, "temperature": 0.1, "max_tokens": 400,
-               "messages": [{"role": "user", "content": prompt}]}
+def _gemma(prompt: str, bild: tuple[bytes, str] | None = None) -> dict:
+    if bild is not None:
+        import base64  # noqa: PLC0415
+        daten, mime = bild
+        inhalt = [
+            {"type": "image_url", "image_url":
+                {"url": f"data:{mime};base64,{base64.b64encode(daten).decode()}"}},
+            {"type": "text", "text": prompt},
+        ]
+    else:
+        inhalt = prompt
+    koerper = {"model": VLM_MODELL, "temperature": 0.1, "max_tokens": 1200,
+               "messages": [{"role": "user", "content": inhalt}]}
     req = urllib.request.Request(
         VLM_API, json.dumps(koerper).encode(),
         {"Content-Type": "application/json"})
@@ -214,7 +277,9 @@ def _gemma(prompt: str) -> dict:
 
 def runde(zeilen: list[str], einstellungen: dict, antworten: list[dict],
           rahmen: str = "SKR04", umsaetze: list[dict] | None = None,
-          nachbarn: list[dict] | None = None) -> dict:
+          nachbarn: list[dict] | None = None,
+          markdown: str | None = None,
+          bild: tuple[bytes, str] | None = None) -> dict:
     """Eine Frage-oder-Buchung-Runde. Wirft nichts Fachliches — Netzfehler
     reicht der Aufrufer als 502 weiter."""
     if len(antworten) >= ANTWORTEN_MAX:
@@ -222,7 +287,8 @@ def runde(zeilen: list[str], einstellungen: dict, antworten: list[dict],
                 "hinweis": "So viele Fragen löst kein Beleg — der gehört auf "
                            "den Schreibtisch."}
     roh = _gemma(prompt_bauen(profil_text(einstellungen), zeilen, antworten,
-                              rahmen, umsaetze, nachbarn))
+                              rahmen, umsaetze, nachbarn, markdown,
+                              mit_bild=bild is not None), bild)
     ergebnis = buchung_pruefen(roh, rahmen)
     if ergebnis["status"] == "unklar":
         return {"status": "fragen", "fragen": [{

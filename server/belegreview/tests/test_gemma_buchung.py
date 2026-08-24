@@ -105,6 +105,35 @@ def test_fremdwaehrung_bleibt_sichtbar():
     assert e["buchung"]["betrag_eur"] == 13.9
 
 
+# ————— Einzelpositionen —————
+
+def test_positionen_werden_gelesen_und_gesaeubert():
+    e = gemma_buchung.buchung_pruefen(
+        {"status": "gebucht", "kategorie": "buerobedarf", "betrag": 485.7,
+         "betrag_eur": 485.7, "ust_satz": 19, "positionen": [
+             {"bezeichnung": "Stifte", "betrag": 12.5, "ust_satz": 19,
+              "kategorie": "buerobedarf"},
+             {"bezeichnung": "Beistelltisch", "betrag": 299.0, "ust_satz": 19,
+              "kategorie": "erfundene_kategorie"},
+             {"bezeichnung": "kaputt", "betrag": "keine Zahl"},
+         ]})
+    p = e["buchung"]["positionen"]
+    assert len(p) == 2
+    assert p[0]["kategorie"] == "buerobedarf"
+    assert p[1]["kategorie"] is None            # erfunden → leer, nie geraten
+
+
+def test_gemischte_positionen_ohne_hauptkategorie_erkannt():
+    einheitlich = {"positionen": [
+        {"kategorie": "buerobedarf", "betrag": 400.0},
+        {"kategorie": "gwg", "betrag": 50.0}]}
+    gemischt = {"positionen": [
+        {"kategorie": "buerobedarf", "betrag": 200.0},
+        {"kategorie": "gwg", "betrag": 285.7}]}
+    assert gemma_buchung.gemischt(einheitlich) is False   # 89 % dominiert
+    assert gemma_buchung.gemischt(gemischt) is True       # 59 % — fragen!
+
+
 # ————— Das Fragenpaket —————
 
 def test_fragenpaket_wird_beschnitten_und_bereinigt():
@@ -120,13 +149,13 @@ def test_fragenpaket_wird_beschnitten_und_bereinigt():
 
 def test_zu_viele_antworten_heisst_schreibtisch(monkeypatch):
     monkeypatch.setattr(gemma_buchung, "_gemma",
-                        lambda p: pytest.fail("darf nicht mehr fragen"))
+                        lambda p, bild=None: pytest.fail("darf nicht mehr fragen"))
     e = gemma_buchung.runde(["x"], {}, [{"frage": "f", "antwort": "a"}] * 8)
     assert e["status"] == "aufgeben"
 
 
 def test_kauderwelsch_vom_modell_wird_zur_hoeflichen_frage(monkeypatch):
-    monkeypatch.setattr(gemma_buchung, "_gemma", lambda p: {"status": "??"})
+    monkeypatch.setattr(gemma_buchung, "_gemma", lambda p, bild=None: {"status": "??"})
     e = gemma_buchung.runde(["x"], {}, [])
     assert e["status"] == "fragen"
     assert e["fragen"][0]["frage"]
@@ -152,7 +181,7 @@ def test_route_reicht_zeilen_und_antworten_an_die_runde(klient, monkeypatch):
     gesehen = {}
 
     def falsche_runde(zeilen, einstellungen, antworten, rahmen,
-                      umsaetze=None, nachbarn=None):
+                      umsaetze=None, nachbarn=None, markdown=None, bild=None):
         gesehen.update(zeilen=zeilen, antworten=antworten, rahmen=rahmen)
         return {"status": "gebucht", "buchung": {"konto": "1460"}}
 
@@ -197,7 +226,7 @@ def test_route_gibt_gemma_die_kontobewegungen_des_monats(klient, monkeypatch):
     gesehen = {}
 
     def falsche_runde(zeilen, einstellungen, antworten, rahmen,
-                      umsaetze=None, nachbarn=None):
+                      umsaetze=None, nachbarn=None, markdown=None, bild=None):
         gesehen.update(umsaetze=umsaetze, nachbarn=nachbarn)
         return {"status": "gebucht", "buchung": {}}
 

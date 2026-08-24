@@ -352,6 +352,30 @@ PORTAL_DB = Path(os.environ.get(
 KONTENRAHMEN = kr.gewaehlt(PORTAL_DB, vorgabe=kr.vorgabe())
 
 
+def _salon_einstellungen() -> dict:
+    """Die Betriebsangaben des Salons — der Kontext, mit dem gebucht wird.
+
+    Eine Belegbox gehört genau einem Betrieb; genommen wird das Konto mit
+    gesetztem Betriebsnamen. Nur lesend — die DB gehört babu-web."""
+    import sqlite3  # noqa: PLC0415
+    try:
+        c = sqlite3.connect(f"file:{PORTAL_DB}?mode=ro", uri=True)
+        try:
+            paare = c.execute(
+                "SELECT un, schluessel, wert FROM einstellungen").fetchall()
+        finally:
+            c.close()
+    except Exception:  # noqa: BLE001
+        return {}
+    je_un: dict[str, dict] = {}
+    for un, k, w in paare:
+        je_un.setdefault(un, {})[k] = w
+    for e in je_un.values():
+        if e.get("betrieb_name"):
+            return e
+    return next(iter(je_un.values()), {})
+
+
 def kontenrahmen_auffrischen() -> str:
     """Den Rahmen aus den Betriebsangaben nachlesen; gibt den geltenden zurück."""
     global KONTENRAHMEN
@@ -1086,6 +1110,42 @@ def verarbeite(pfad: str) -> None:
             + "). Gültig ist die Lesung vom Beleg — bitte kurz ansehen.")
         f["offen"].append("Die Gegenprobe weicht ab — kurz prüfen.")
 
+    # ── Die Buchhaltung bucht: Gemma mit Profil, Katalog und Positionen ──
+    #
+    # Entschieden am 24.08.2026, nachdem die Semantik einen Laden namens
+    # „MAGAZIN" auf Fachliteratur gebucht hatte: Die Semantik schlägt nur
+    # noch vor, gebucht wird von Gemma (nur Text) — oder gar nicht, dann
+    # fragt die App nach. Gemischte Positionen ohne klare Hauptkategorie
+    # werden NICHT still auf ein Konto geklumpt.
+    buchung = None
+    try:
+        import gemma_buchung as gb  # noqa: PLC0415
+        mime = "image/png" if lokal.suffix.lower() == ".png" else "image/jpeg"
+        buchung = gb.runde([], _salon_einstellungen(), [], KONTENRAHMEN,
+                           bild=(lokal.read_bytes(), mime))
+    except Exception as ex:  # noqa: BLE001 — Gemma weg → Beleg bleibt offen
+        log(f"Gemma-Buchung nicht verfügbar: {ex!r}")
+    if buchung and buchung.get("status") == "gebucht" \
+            and not gb.gemischt(buchung["buchung"]):
+        b = buchung["buchung"]
+        e["kategorie"] = b["kategorie"]
+        e["konto"] = b["konto"]
+        if KONTENRAHMEN == "SKR04":
+            e["konto_skr04"] = b["konto"]
+        e["belegart"] = b["kategorie_name"]
+        e["steuerschluessel"] = ("8" if b["ust_satz"] == 7
+                                 else "0" if b["ust_satz"] == 0 else "9")
+        e["kontierung_grund"] = ("Gebucht von der Buchhaltung: "
+                                 + (b.get("begruendung") or b["kategorie_name"]))
+        e["rueckfrage"] = None
+    elif buchung is not None:
+        # Fragen offen oder gemischte Positionen: ehrlich offen lassen.
+        e["kategorie"] = None
+        e["konto"] = None
+        e["konto_skr04"] = None
+        e["rueckfrage"] = "Die Buchhaltung hat Fragen — in der App beantworten."
+        f["offen"].append("Noch nicht gebucht — babu hat Fragen an dich.")
+
     gelesen = datetime.now(timezone.utc).isoformat(timespec="seconds")
     review = {
         "datei": pfad,
@@ -1101,6 +1161,7 @@ def verarbeite(pfad: str) -> None:
         "aehnlich": aehnlich,
         "felder": f,
         "einschaetzung": e,
+        "buchung": buchung,
         "ocr_text": text[:8000],
     }
     if seiten > 1:
