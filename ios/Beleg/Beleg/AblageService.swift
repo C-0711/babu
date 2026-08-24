@@ -854,6 +854,7 @@ enum AblageService {
     struct GemmaBuchung {
         let lieferant: String?
         let datum: String?
+        let steuersaetze: [SteuerPosition]
         let kategorieName: String
         let konto: String
         let buchungstext: String
@@ -931,9 +932,18 @@ enum AblageService {
                   let konto = b["konto"] as? String else {
                 return .fehler("Das ging gerade nicht.")
             }
+            let tabelle: [SteuerPosition] = (b["steuersaetze"] as? [[String: Any]] ?? [])
+                .compactMap { z in
+                    guard let satz = z["satz"] as? Int,
+                          let brutto = z["brutto"] as? Double,
+                          let netto = z["netto"] as? Double,
+                          let ust = z["ust"] as? Double else { return nil }
+                    return SteuerPosition(satz: satz, netto: netto, ust: ust, brutto: brutto)
+                }
             return .gebucht(GemmaBuchung(
                 lieferant: b["lieferant"] as? String,
                 datum: b["datum"] as? String,
+                steuersaetze: tabelle,
                 kategorieName: b["kategorie_name"] as? String ?? "",
                 konto: konto,
                 buchungstext: b["buchungstext"] as? String ?? "",
@@ -1341,6 +1351,7 @@ struct BelegReviewDaten: Codable {
     struct BuchungsFelder: Codable {
         var lieferant: String?
         var datum: String?
+        var steuersaetze: [SteuerPosition]?
         var konto: String?
         var kategorieName: String?
         var buchungstext: String?

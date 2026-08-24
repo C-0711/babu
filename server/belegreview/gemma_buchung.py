@@ -220,6 +220,17 @@ def buchung_pruefen(roh: dict, rahmen: str = "SKR04") -> dict:
         satz = 0
     if satz not in (0, 7, 19):
         satz = 0
+    positionen = _positionen(roh)
+    waehrung = str(roh.get("waehrung") or "EUR")[:8].upper()
+    # Fremdwährung: die Positionsbeträge sind KEINE Euro, und ausländische
+    # Steuer ist keine abziehbare Vorsteuer — keine Steuertabelle, Satz 0.
+    steuersaetze = _steuertabelle(positionen) if waehrung == "EUR" else []
+    if waehrung != "EUR":
+        satz = 0
+    if steuersaetze:
+        # Bei Mischsätzen gibt es keinen „einen" Satz — auf Belegebene gilt
+        # der führende (größter Bruttoanteil), die Tabelle trägt den Rest.
+        satz = steuersaetze[0]["satz"]
     return {"status": "gebucht", "buchung": {
         "lieferant": str(roh.get("lieferant") or "")[:80] or None,
         "datum": str(roh.get("datum") or "")[:10] or None,
@@ -228,10 +239,11 @@ def buchung_pruefen(roh: dict, rahmen: str = "SKR04") -> dict:
         "konto": konto,
         "buchungstext": str(roh.get("buchungstext") or kat.name)[:120],
         "betrag": roh.get("betrag"),
-        "waehrung": str(roh.get("waehrung") or "EUR")[:8].upper(),
+        "waehrung": waehrung,
         "betrag_eur": betrag_eur,
         "ust_satz": satz,
-        "positionen": _positionen(roh),
+        "positionen": positionen,
+        "steuersaetze": steuersaetze,
         "begruendung": str(roh.get("begruendung") or "")[:300],
     }}
 
@@ -258,6 +270,25 @@ def _positionen(roh: dict) -> list[dict]:
             "ust_satz": satz if satz in (0, 7, 19) else 0,
             "kategorie": kat if kat in kontierung.KATEGORIEN else None,
         })
+    return aus
+
+
+def _steuertabelle(positionen: list[dict]) -> list[dict]:
+    """Die Steuertabelle des Belegs, aus den Positionen aggregiert —
+    je Satz Brutto, Netto und USt, absteigend nach Bruttoanteil. Das ist
+    genau die Form, die das Beleg-Modell der App (steuerPositionen) und
+    der Mehrsatz-Split im Export erwarten."""
+    je_satz: dict[int, float] = {}
+    for p in positionen:
+        satz, betrag = p.get("ust_satz"), p.get("betrag")
+        if satz in (0, 7, 19) and betrag:
+            je_satz[satz] = round(je_satz.get(satz, 0) + betrag, 2)
+    aus = []
+    for satz, brutto in je_satz.items():
+        netto = round(brutto / (1 + satz / 100), 2)
+        aus.append({"satz": satz, "brutto": brutto,
+                    "netto": netto, "ust": round(brutto - netto, 2)})
+    aus.sort(key=lambda z: -z["brutto"])
     return aus
 
 

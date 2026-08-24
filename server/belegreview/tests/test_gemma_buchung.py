@@ -344,3 +344,32 @@ def test_direktroute_gibt_gemma_vertraege_und_personal(direkt_klient, monkeypatc
     assert gesehen["vertraege"] == [{"art_name": "Miete Geschäftsräume",
                                      "partner": "Weber", "betrag_monat": 1076.95}]
     assert gesehen["personal"] == [{"name": "Jana", "kosten_monat": 2400.0}]
+
+
+# ————— Die Steuertabelle: Mischsätze je Position, Fremdwährung gesperrt —————
+
+def test_mischsatz_wird_zur_steuertabelle_mit_fuehrendem_satz():
+    e = gemma_buchung.buchung_pruefen(
+        {"status": "gebucht", "kategorie": "sonstiges", "betrag": 22.96,
+         "betrag_eur": 22.96, "ust_satz": 0, "positionen": [
+             {"bezeichnung": "Wasser", "betrag": 17.52, "ust_satz": 7,
+              "kategorie": "sonstiges"},
+             {"bezeichnung": "Spülmittel", "betrag": 5.44, "ust_satz": 19,
+              "kategorie": "verbrauchsmaterial"}]})
+    b = e["buchung"]
+    assert b["ust_satz"] == 7                       # führender Satz, nicht 0
+    tabelle = {z["satz"]: z for z in b["steuersaetze"]}
+    assert tabelle[7]["brutto"] == 17.52 and tabelle[7]["ust"] == 1.15
+    assert tabelle[19]["brutto"] == 5.44 and tabelle[19]["ust"] == 0.87
+    assert b["steuersaetze"][0]["satz"] == 7        # absteigend nach Anteil
+
+
+def test_fremdwaehrung_bekommt_keine_steuertabelle_und_satz_null():
+    e = gemma_buchung.buchung_pruefen(
+        {"status": "gebucht", "kategorie": "fahrt", "betrag": 55.74,
+         "waehrung": "AED", "betrag_eur": 14.2, "ust_satz": 19, "positionen": [
+             {"bezeichnung": "Fahrpreis", "betrag": 45.74, "ust_satz": 19,
+              "kategorie": "fahrt"}]})
+    b = e["buchung"]
+    assert b["steuersaetze"] == []
+    assert b["ust_satz"] == 0                       # keine deutsche Vorsteuer

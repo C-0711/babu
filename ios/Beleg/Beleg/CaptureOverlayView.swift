@@ -61,13 +61,19 @@ struct CaptureOverlayView: View {
             let punkte = quad.inView(groesse: groesse, buffer: model.bufferGroesse)
             let shape = KonturShape(p0: punkte[0], p1: punkte[1], p2: punkte[2], p3: punkte[3])
 
+            if istErkannt {
+                // Erkannt: der Kasten färbt sich leicht grün ein und schwebt
+                // mit dem Beleg mit — das „hab ihn"-Signal, bevor ausgelöst wird.
+                shape.fill(GC.ok.opacity(0.14))
+                    .animation(reduceMotion ? nil : .linear(duration: 0.08), value: punkte)
+            }
             shape.stroke(konturFarbe, lineWidth: 1.5)
                 .animation(reduceMotion ? nil : .linear(duration: 0.08), value: punkte)
 
             if case .erkannt(let fortschritt) = model.phase {
                 // Stabilitäts-Fortschritt als heller werdender Umlauf der Kontur.
                 shape.trim(from: 0, to: fortschritt)
-                    .stroke(GC.gold, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .stroke(GC.ok, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                     .animation(reduceMotion ? nil : .linear(duration: 0.1), value: fortschritt)
             }
             if model.phase == .ausgeloest {
@@ -80,7 +86,7 @@ struct CaptureOverlayView: View {
 
     private var konturFarbe: Color {
         switch model.phase {
-        case .erkannt, .ausgeloest: return GC.gold
+        case .erkannt, .ausgeloest: return GC.ok
         default: return GC.gold.opacity(0.45)
         }
     }

@@ -489,6 +489,10 @@ final class AppStore: ObservableObject {
             if let satz = g.ustSatz {
                 setz(\.steuerschluessel, satz == 19 ? "9" : satz == 7 ? "8" : "0")
             }
+            if let tabelle = g.steuersaetze, !tabelle.isEmpty {
+                steuertabelleAnwenden(&b, tabelle)
+                geaendert = true
+            }
         }
 
         if geaendert {
@@ -531,7 +535,8 @@ final class AppStore: ObservableObject {
     func gemmaBuchungAnwenden(id: UUID, konto: String, ustSatz: Int,
                               betragEur: Double, waehrung: String,
                               begruendung: String, lieferant: String? = nil,
-                              datum: String? = nil) {
+                              datum: String? = nil,
+                              steuersaetze: [SteuerPosition] = []) {
         guard let i = belege.firstIndex(where: { $0.id == id }),
               belege[i].status != .fixiert else { return }
         var b = belege[i]
@@ -550,11 +555,27 @@ final class AppStore: ObservableObject {
             b.summenprobeOK = true
         }
         if !begruendung.isEmpty { b.begruendung = begruendung }
+        steuertabelleAnwenden(&b, steuersaetze)
         b.herkunft = .ki
         b.offeneFrage = nil
         siegeln(&b, status: .automatisch)
         belege[i] = b
         geprueft += 1
+    }
+
+    /// Die Steuertabelle der Buchhaltung übernehmen — aber nur, wenn sie den
+    /// Beleg wirklich deckt (Summe ≈ Brutto). Bei Mischsätzen ersetzt sie die
+    /// eine Zahl, die es dann nicht mehr gibt.
+    private func steuertabelleAnwenden(_ b: inout Beleg,
+                                       _ tabelle: [SteuerPosition]) {
+        guard !tabelle.isEmpty else { return }
+        let summe = tabelle.reduce(0) { $0 + $1.brutto }
+        guard abs(summe - b.brutto) < 0.02 else { return }
+        b.netto = ((tabelle.reduce(0) { $0 + $1.netto }) * 100).rounded() / 100
+        b.ust = ((tabelle.reduce(0) { $0 + $1.ust }) * 100).rounded() / 100
+        b.ustSatz = tabelle.max(by: { $0.brutto < $1.brutto })?.satz ?? b.ustSatz
+        b.steuerPositionen = tabelle.count > 1 ? tabelle : nil
+        b.summenprobeOK = abs(b.netto + b.ust - b.brutto) < 0.011
     }
 
     /// Fragenpaket weggelegt: der Beleg bleibt liegen, aber ehrlich markiert.
