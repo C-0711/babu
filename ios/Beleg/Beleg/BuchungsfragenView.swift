@@ -11,7 +11,6 @@ struct BuchungsfragenView: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) private var schliessen
     let belegID: UUID
-    let stamm: String
 
     @State private var laedt = true
     @State private var fragen: [AblageService.BuchungsFrage] = []
@@ -158,9 +157,31 @@ struct BuchungsfragenView: View {
             laedt = false
             return
         }
+        guard let beleg = store.belege.first(where: { $0.id == belegID }) else {
+            meldung = "Der Beleg ist nicht mehr da."
+            laedt = false
+            return
+        }
+        let zeilen = beleg.ocrText.split(separator: "\n").map(String.init)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        guard !zeilen.isEmpty else {
+            meldung = "Zu diesem Beleg liegt keine Lesung vor — bitte neu fotografieren."
+            laedt = false
+            return
+        }
         laedt = true
-        let ergebnis = await AblageService.buchungsfragen(
-            stamm: stamm, antworten: antworten, basis: url, pat: pat)
+        // Das Profil liegt auf dem Telefon; beim allerersten Mal wird es
+        // einmal aus dem Konto geholt und dann hier gehalten.
+        if store.profil.isEmpty,
+           let frisch = await AblageService.stammdatenLaden(basis: url, pat: pat) {
+            store.profil = frisch
+        }
+        // „18.07.2026" → „2026-07" für den Kontobewegungs-Kontext.
+        let t = beleg.datumText.split(separator: ".")
+        let monat = t.count == 3 ? "\(t[2])-\(t[1])" : nil
+        let ergebnis = await AblageService.einschaetzung(
+            zeilen: zeilen, profil: store.profil, monat: monat,
+            antworten: antworten, basis: url, pat: pat)
         switch ergebnis {
         case .fragen(let neue):
             fragen = neue

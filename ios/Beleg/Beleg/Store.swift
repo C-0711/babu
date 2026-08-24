@@ -48,6 +48,11 @@ final class AppStore: ObservableObject {
     /// sichtbar ist, WOMIT man angemeldet ist, nicht nur DASS.
     @Published var verbundenRolle: String? { didSet { speichern() } }
 
+    /// Das Profil des Salons (Betriebsangaben) — liegt auf dem Telefon und
+    /// reist mit jeder Einschätzungs-Anfrage mit. Quelle: api/einstellungen,
+    /// beim ersten Bedarf geholt und hier gehalten.
+    @Published var profil: [String: String] = [:] { didSet { speichern() } }
+
     /// Testphase: zeigt Werkzeuge, die im Alltag nichts zu suchen haben.
     /// Hinter dem Schalter, weil ein Zurücksetzen sonst einen Fingerbreit
     /// neben „Verbindung testen" liegt.
@@ -79,6 +84,7 @@ final class AppStore: ObservableObject {
             verbundenAls = z.verbundenAls
             verbundenRolle = z.verbundenRolle
             testmodus = z.testmodus ?? false
+            profil = z.profil ?? [:]
             // Ältere Stände: Demo-Belege am festen Demo-Siegel nachträglich
             // markieren, damit sie nie im echten Stapel landen.
             let demoSiegel: Set<String> = ["77b2e0c4 9a11 f38d", "0d31f6a8 5be2 c974"]
@@ -113,6 +119,8 @@ final class AppStore: ObservableObject {
         // Neu ab 22.08.2026 — optional, damit ältere Stände weiter laden.
         var vorlagen: [Rechnungsvorlage]?
         var testmodus: Bool?
+        // Neu ab 24.08.2026: das Salon-Profil fürs Telefon.
+        var profil: [String: String]?
     }
 
     private var zustand: Zustand {
@@ -122,7 +130,7 @@ final class AppStore: ObservableObject {
                 kassenberichte: kassenberichte, chatVerlauf: chatVerlauf,
                 verbundenAls: verbundenAls, verbundenRolle: verbundenRolle,
                 vorlagen: vorlagen,
-                testmodus: testmodus)
+                testmodus: testmodus, profil: profil)
     }
 
     /// Entprellt auf ~0,25 s, damit Serien-Änderungen nicht pro Mutation schreiben.

@@ -884,6 +884,33 @@ enum AblageService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject:
             ["antworten": antworten.map { ["frage": $0.frage, "antwort": $0.antwort] }])
+        return await buchungsRunde(request)
+    }
+
+    /// Die Direkt-Runde: das Telefon schickt Profil und Vision-Lesung als
+    /// reines Text-JSON — noch bevor das Foto im Archiv liegt. Gemma
+    /// verifiziert, fragt oder bucht.
+    static func einschaetzung(zeilen: [String], profil: [String: String],
+                              monat: String?,
+                              antworten: [(frage: String, antwort: String)],
+                              basis: URL, pat: String) async -> BuchungsfragenErgebnis {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("api/buchung/einschaetzung"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 150
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var koerper: [String: Any] = [
+            "zeilen": zeilen,
+            "profil": profil,
+            "antworten": antworten.map { ["frage": $0.frage, "antwort": $0.antwort] },
+        ]
+        if let monat { koerper["monat"] = monat }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: koerper)
+        return await buchungsRunde(request)
+    }
+
+    private static func buchungsRunde(_ request: URLRequest) async -> BuchungsfragenErgebnis {
         guard let (daten, roh) = try? await URLSession.shared.data(for: request),
               let http = roh as? HTTPURLResponse,
               let json = (try? JSONSerialization.jsonObject(with: daten)) as? [String: Any]

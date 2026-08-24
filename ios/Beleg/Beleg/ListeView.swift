@@ -389,10 +389,8 @@ struct DetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await laden() }
         .sheet(isPresented: $zeigeBuchungsfragen) {
-            if let stamm = protokollStamm {
-                BuchungsfragenView(belegID: belegID, stamm: stamm)
-                    .environmentObject(store)
-            }
+            BuchungsfragenView(belegID: belegID)
+                .environmentObject(store)
         }
         .sheet(isPresented: $zeigeAlle) { alleAngabenSheet }
         .confirmationDialog("Diesen Beleg endgültig löschen?",
@@ -456,8 +454,7 @@ struct DetailView: View {
                     .font(.footnote)
                     .foregroundStyle(GC.muted)
             }
-        } else if b.status == .offen, b.zweitgeprueft || b.offeneFrage != nil,
-                  protokollStamm != nil {
+        } else if b.status == .offen, store.ablageAktiv, !b.ocrText.isEmpty {
             // Die Buchhaltung hat Fragen — der wichtigste Knopf der Seite,
             // deshalb so groß wie „Ins Kassenbuch eintragen".
             Button {

@@ -477,6 +477,7 @@ struct ErgebnisKarte: View {
     var fertig: () -> Void
 
     @State private var zeigeReview = false
+    @State private var zeigeBuchungsfragen = false
     @State private var zeigeBewirtung = false
 
     private var aktuell: Beleg { store.belege.first { $0.id == beleg.id } ?? beleg }
@@ -554,16 +555,19 @@ struct ErgebnisKarte: View {
                         .foregroundStyle(GC.warn)
                 }
                 if store.ablageAktiv {
-                    // Das Telefon hat nur eine Erstauswertung gemacht — es
-                    // beurteilt die Qualität, gebucht wird aus der Lesung
-                    // der Belegbox, sobald sie da ist. Kein Knopf, der so
-                    // tut, als stünde die Buchung schon fest.
-                    Label("Erstauswertung — babu liest den Beleg gerade "
-                          + "gründlich in deiner Belegbox. Gebucht wird, "
-                          + "sobald das Ergebnis da ist.",
-                          systemImage: "clock.arrow.circlepath")
-                        .font(.footnote)
-                        .foregroundStyle(GC.desc)
+                    // Das Telefon hat gelesen und beurteilt — die Buchung
+                    // holt sich Nina direkt: Profil + Lesung gehen als Text
+                    // an die Buchhaltung, die fragt oder bucht.
+                    Button {
+                        zeigeBuchungsfragen = true
+                    } label: {
+                        Label("Einschätzen & buchen", systemImage: "questionmark.bubble")
+                            .font(.title3.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
                     abschlussButtons
                 } else {
                     if aktuell.confidence >= 80 {
@@ -601,6 +605,10 @@ struct ErgebnisKarte: View {
         .gcCard()
         .sheet(isPresented: $zeigeReview) {
             ReviewSheet(belegID: beleg.id, startZeit: startZeit)
+        }
+        .sheet(isPresented: $zeigeBuchungsfragen) {
+            BuchungsfragenView(belegID: beleg.id)
+                .environmentObject(store)
         }
         .sheet(isPresented: $zeigeBewirtung) {
             BewirtungsangabenSheet(belegID: beleg.id) {

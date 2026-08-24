@@ -2953,6 +2953,71 @@ def api_monat(monat: str, request: Request) -> Response:
     return JSONResponse(daten)
 
 
+@app.post("/api/buchung/einschaetzung")
+async def api_buchung_einschaetzung(request: Request) -> Response:
+    """Das Telefon fragt direkt nach der steuerlichen Einschätzung.
+
+    Entschieden am 24.08.2026 (Abend): Das Telefon hält das Profil und die
+    Vision-Lesung — beides kommt als reines Text-JSON hierher, noch bevor
+    das Foto im Archiv liegt. Gemma verifiziert, interpretiert und bucht,
+    oder es schickt EIN Fragenpaket zurück. Nur Text über HTTP; das Bild
+    geht seinen eigenen Weg in die Belegbox (Archivpflicht).
+
+    Körper: {"profil": {...}, "zeilen": ["…"], "antworten": [...],
+             "monat": "JJJJ-MM"} — Antwortformen wie /review/…/buchungsfragen.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    import gemma_buchung  # noqa: PLC0415
+    zeilen = [str(z)[:200] for z in (body.get("zeilen") or [])[:250]
+              if str(z).strip()]
+    if not zeilen:
+        return JSONResponse({"fehler": "keine Lesung mitgeschickt"},
+                            status_code=422)
+    # Das Profil kommt vom Telefon — aber nur die Felder, die die
+    # Einschätzung wirklich braucht. Fehlt es, gilt der Serverstand.
+    roh_profil = body.get("profil") or {}
+    profil = {k: str(roh_profil[k])[:120]
+              for k in ("betrieb_name", "rechtsform", "abschluss_art",
+                        "kleinunternehmer")
+              if isinstance(roh_profil, dict) and roh_profil.get(k)}
+    if not profil:
+        profil = db_einstellungen(salon_von(un))
+    antworten = []
+    for a in (body.get("antworten") or [])[:gemma_buchung.ANTWORTEN_MAX]:
+        if isinstance(a, dict) and str(a.get("antwort", "")).strip():
+            antworten.append({"frage": str(a.get("frage", ""))[:200],
+                              "antwort": str(a.get("antwort", ""))[:200]})
+    monat = str(body.get("monat") or "")
+    umsaetze, nachbarn = [], []
+    if re.match(r"^\d{4}-\d{2}$", monat):
+        try:
+            idx = await run_in_threadpool(index_aktuell)
+            umsaetze = [{"datum": u.get("datum"), "betrag": u.get("betrag"),
+                         "text": u.get("text")}
+                        for u in idx["umsaetze"].get(monat, [])][:20]
+            nachbarn = [{"datum": b.get("datum"), "brutto": b.get("brutto"),
+                         "lieferant": b.get("lieferant")}
+                        for b in idx["belege"].values()
+                        if str(b.get("datum") or "").startswith(monat)][:15]
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        ergebnis = await run_in_threadpool(
+            gemma_buchung.runde, zeilen, profil, antworten,
+            kontenrahmen_von(un), umsaetze, nachbarn)
+    except Exception as ex:  # noqa: BLE001
+        print(f"[einschaetzung] {un}: {ex!r}", flush=True)
+        return JSONResponse({"fehler": "Die Buchhaltung ist gerade nicht zu "
+                             "erreichen — gleich noch einmal."}, status_code=502)
+    return JSONResponse(ergebnis)
+
+
 @app.post("/review/{stamm}/buchungsfragen")
 async def api_buchungsfragen(stamm: str, request: Request) -> Response:
     """Gemma bucht den Beleg mit Ninas Profil — oder schickt EIN Fragenpaket.

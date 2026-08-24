@@ -244,3 +244,58 @@ def test_route_ohne_leseprotokoll_sagt_es_ehrlich(klient, monkeypatch):
     r = c.post("/review/stamm-1/buchungsfragen", json={})
     assert r.status_code == 404
     assert "Leseprotokoll" in r.json()["fehler"]
+
+
+# ————— Die Direkt-Route: das Telefon schickt Profil und Lesung —————
+
+@pytest.fixture()
+def direkt_klient(monkeypatch):
+    import babu_web
+    monkeypatch.setattr(babu_web, "_box_wache", lambda request: ("nina@0711.io", None))
+    monkeypatch.setattr(babu_web, "db_einstellungen",
+                        lambda un: {"betrieb_name": "Serverstand"})
+    monkeypatch.setattr(babu_web, "kontenrahmen_von", lambda un: "SKR04")
+    return babu_web, TestClient(babu_web.app, base_url="https://testserver")
+
+
+def test_direktroute_nutzt_das_mitgeschickte_profil(direkt_klient, monkeypatch):
+    bw, c = direkt_klient
+    gesehen = {}
+
+    def falsche_runde(zeilen, einstellungen, antworten, rahmen,
+                      umsaetze=None, nachbarn=None, markdown=None, bild=None):
+        gesehen.update(zeilen=zeilen, profil=einstellungen, rahmen=rahmen)
+        return {"status": "gebucht", "buchung": {"konto": "6850"}}
+
+    monkeypatch.setattr(gemma_buchung, "runde", falsche_runde)
+    r = c.post("/api/buchung/einschaetzung", json={
+        "profil": {"betrieb_name": "Struwwelpeter", "kleinunternehmer": "Nein",
+                   "steuernummer": "geht niemanden an"},
+        "zeilen": ["Gesamtsumme 55,74 AED", "  ", "Uber"]})
+    assert r.status_code == 200, r.text
+    assert gesehen["zeilen"] == ["Gesamtsumme 55,74 AED", "Uber"]
+    # Nur die Einschätzungs-Felder reisen mit — nicht die Steuernummer.
+    assert gesehen["profil"] == {"betrieb_name": "Struwwelpeter",
+                                 "kleinunternehmer": "Nein"}
+    assert gesehen["rahmen"] == "SKR04"
+
+
+def test_direktroute_ohne_profil_faellt_auf_den_serverstand(direkt_klient, monkeypatch):
+    bw, c = direkt_klient
+    gesehen = {}
+
+    def falsche_runde(zeilen, einstellungen, antworten, rahmen, *rest, **_):
+        gesehen.update(profil=einstellungen)
+        return {"status": "gebucht", "buchung": {}}
+
+    monkeypatch.setattr(gemma_buchung, "runde", falsche_runde)
+    r = c.post("/api/buchung/einschaetzung", json={"zeilen": ["x"]})
+    assert r.status_code == 200, r.text
+    assert gesehen["profil"] == {"betrieb_name": "Serverstand"}
+
+
+def test_direktroute_ohne_lesung_sagt_es_ehrlich(direkt_klient):
+    bw, c = direkt_klient
+    r = c.post("/api/buchung/einschaetzung", json={"profil": {}})
+    assert r.status_code == 422
+    assert "Lesung" in r.json()["fehler"]
