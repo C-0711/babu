@@ -75,24 +75,28 @@ private struct Blatt: View {
 
     @ViewBuilder
     private var bild: some View {
-        Group {
-            if let daten = beleg.bildJpeg, let ui = UIImage(data: daten) {
-                Image(uiImage: ui)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                GC.desk.overlay(
-                    Image(systemName: Dokumentart.von(beleg).symbol)
-                        .font(.system(size: 26, weight: .light))
-                        .foregroundStyle(GC.muted))
+        // Erst der Rahmen im Papierformat, DANN das Bild als Füllung DARIN.
+        // Ein scaledToFill-Bild direkt zu rahmen lässt sehr hohe Bon-Fotos
+        // (900 × 4300 px sind normal) über die Kachel hinauswachsen und das
+        // ganze Raster übermalen. Ausrichtung oben: der Kopf mit dem Laden
+        // ist das, woran man einen Bon wiedererkennt.
+        Color.clear
+            .aspectRatio(1 / 1.35, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .overlay(alignment: .top) {
+                if let daten = beleg.bildJpeg, let ui = UIImage(data: daten) {
+                    Image(uiImage: ui)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    GC.desk.overlay(
+                        Image(systemName: Dokumentart.von(beleg).symbol)
+                            .font(.system(size: 26, weight: .light))
+                            .foregroundStyle(GC.muted))
+                }
             }
-        }
-        // Papierformat: höher als breit, damit ein Bon nicht wie ein Foto
-        // aussieht und die Reihen gleich hoch bleiben.
-        .aspectRatio(1 / 1.35, contentMode: .fill)
-        .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 9))
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(GC.linie, lineWidth: 1))
-        .shadow(color: Color(hex: 0x1F1E1A).opacity(0.10), radius: 5, y: 3)
+            .clipShape(RoundedRectangle(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(GC.linie, lineWidth: 1))
+            .shadow(color: Color(hex: 0x1F1E1A).opacity(0.10), radius: 5, y: 3)
     }
 }
