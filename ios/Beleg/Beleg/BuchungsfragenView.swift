@@ -169,7 +169,8 @@ struct BuchungsfragenView: View {
             store.gemmaBuchungAnwenden(id: belegID, konto: b.konto,
                                        ustSatz: b.ustSatz, betragEur: b.betragEur,
                                        waehrung: b.waehrung,
-                                       begruendung: b.begruendung)
+                                       begruendung: b.begruendung,
+                                       lieferant: b.lieferant, datum: b.datum)
             fertig = b
         case .aufgeben(let hinweis):
             store.offeneFrageSetzen(id: belegID, "Für den Schreibtisch: " + hinweis)

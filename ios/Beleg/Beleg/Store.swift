@@ -462,6 +462,27 @@ final class AppStore: ObservableObject {
         setz(\.konto, review.einschaetzung?.kontoSkr04)
         setz(\.steuerschluessel, review.einschaetzung?.steuerschluessel)
 
+        // Die Buchhaltung (Gemma Vision) hat den Beleg SELBST gelesen — ihre
+        // Lesung schlägt die Paddle-Felder, sonst zeigt die Übersicht alte
+        // Werte, während das Protokoll längst die richtigen kennt.
+        if review.buchung?.status == "gebucht", let g = review.buchung?.buchung {
+            setz(\.lieferant, g.lieferant?.trimmingCharacters(in: .whitespacesAndNewlines)
+                                 .isEmpty == false ? g.lieferant : nil)
+            setz(\.datumText, deutschesDatum(g.datum))
+            if let e = g.betragEur, e > 0 {
+                let satz = g.ustSatz ?? 0
+                setz(\.brutto, e)
+                setz(\.netto, (e / (1 + Double(satz) / 100) * 100).rounded() / 100)
+                setz(\.ust, ((e - e / (1 + Double(satz) / 100)) * 100).rounded() / 100)
+                setz(\.ustSatz, satz)
+            }
+            setz(\.konto, g.konto)
+            setz(\.begruendung, g.begruendung?.isEmpty == false ? g.begruendung : nil)
+            if let satz = g.ustSatz {
+                setz(\.steuerschluessel, satz == 19 ? "9" : satz == 7 ? "8" : "0")
+            }
+        }
+
         if geaendert {
             b.summenprobeOK = abs(b.netto + b.ust - b.brutto) < 0.011
             // Die Herkunft sagt jetzt die Wahrheit: das kam nicht vom Gerät.
@@ -501,13 +522,19 @@ final class AppStore: ObservableObject {
     /// wird der Euro-Betrag gebucht; der Originalbetrag bleibt am Beleg.
     func gemmaBuchungAnwenden(id: UUID, konto: String, ustSatz: Int,
                               betragEur: Double, waehrung: String,
-                              begruendung: String) {
+                              begruendung: String, lieferant: String? = nil,
+                              datum: String? = nil) {
         guard let i = belege.firstIndex(where: { $0.id == id }),
               belege[i].status != .fixiert else { return }
         var b = belege[i]
         b.konto = konto
         b.steuerschluessel = ustSatz == 19 ? "9" : (ustSatz == 7 ? "8" : "0")
-        if betragEur > 0, waehrung != "EUR" {
+        // Die Buchhaltung hat den Beleg selbst gelesen — ihre Felder gelten,
+        // sonst zeigt die Übersicht weiter die alte Telefon-Lesung.
+        if let l = lieferant?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !l.isEmpty { b.lieferant = l }
+        if let d = deutschesDatum(datum) { b.datumText = d }
+        if betragEur > 0 {
             b.brutto = betragEur
             b.netto = (betragEur / (1 + Double(ustSatz) / 100) * 100).rounded() / 100
             b.ust = ((b.brutto - b.netto) * 100).rounded() / 100

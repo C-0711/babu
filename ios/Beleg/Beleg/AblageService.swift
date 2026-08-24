@@ -852,6 +852,8 @@ enum AblageService {
     }
 
     struct GemmaBuchung {
+        let lieferant: String?
+        let datum: String?
         let kategorieName: String
         let konto: String
         let buchungstext: String
@@ -903,6 +905,8 @@ enum AblageService {
                 return .fehler("Das ging gerade nicht.")
             }
             return .gebucht(GemmaBuchung(
+                lieferant: b["lieferant"] as? String,
+                datum: b["datum"] as? String,
                 kategorieName: b["kategorie_name"] as? String ?? "",
                 konto: konto,
                 buchungstext: b["buchungstext"] as? String ?? "",
@@ -1301,6 +1305,25 @@ struct BelegReviewDaten: Codable {
         var steuerschluessel: String?
         var hinweise: [String]?
     }
+    /// Die Buchhaltung (Gemma Vision): was sie gelesen und entschieden hat.
+    /// Diese Lesung schlägt die Paddle-Felder — sie ist die, die bucht.
+    struct BuchungsLage: Codable {
+        var status: String?
+        var buchung: BuchungsFelder?
+    }
+    struct BuchungsFelder: Codable {
+        var lieferant: String?
+        var datum: String?
+        var konto: String?
+        var kategorieName: String?
+        var buchungstext: String?
+        var betrag: Double?
+        var waehrung: String?
+        var betragEur: Double?
+        var ustSatz: Int?
+        var begruendung: String?
+    }
+
     /// Bild-Lane: Gemma 4 liest das Beleg-Foto (Lane B).
     struct Vlm: Codable {
         var lieferant: String?
@@ -1342,6 +1365,7 @@ struct BelegReviewDaten: Codable {
     var status: String?
     var felder: Felder?
     var einschaetzung: Einschaetzung?
+    var buchung: BuchungsLage?
     var vlm: Vlm?
     /// Der Satz zum grünen Haken: worum es auf diesem Beleg geht, in einer
     /// Zeile. Kommt vom Bildmodell — es entscheidet keine Zahl mehr, aber es
