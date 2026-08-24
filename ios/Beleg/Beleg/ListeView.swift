@@ -30,6 +30,11 @@ struct ListeView: View {
         store.belege.filter { $0.status == .offen }.count
     }
 
+    /// Belege, bei denen die Buchhaltung auf Ninas Antwort wartet.
+    private var fragenBelege: [Beleg] {
+        store.belege.filter { $0.status == .offen && $0.offeneFrage != nil }
+    }
+
     enum Filter: String, CaseIterable, Identifiable {
         case alle = "Alle"
         case automatisch = "Automatisch"
@@ -93,6 +98,25 @@ struct ListeView: View {
                 MonatslaufKarte()
                 MeldungenAbschnitt()
                 BelegjagdAbschnitt()
+                if let erster = fragenBelege.first {
+                    // Die Fragen sind der schnellste Weg zum grünen Haken —
+                    // deshalb ganz oben und so groß wie der Kassenbuch-Knopf.
+                    Button {
+                        pfad.append(erster.id)
+                    } label: {
+                        Label(fragenBelege.count == 1
+                              ? "babu hat Fragen zu einem Beleg"
+                              : "babu hat Fragen zu \(fragenBelege.count) Belegen",
+                              systemImage: "questionmark.bubble")
+                            .font(.title3.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .listRowBackground(GC.canvas)
+                    .listRowSeparator(.hidden)
+                }
                 if offeneAnzahl > 0 {
                     Button {
                         zeigeAufraeumen = true
@@ -434,15 +458,19 @@ struct DetailView: View {
             }
         } else if b.status == .offen, b.zweitgeprueft || b.offeneFrage != nil,
                   protokollStamm != nil {
-            // Die Buchhaltung hat Fragen — eine pro Bildschirm, dann der Haken.
+            // Die Buchhaltung hat Fragen — der wichtigste Knopf der Seite,
+            // deshalb so groß wie „Ins Kassenbuch eintragen".
             Button {
                 zeigeBuchungsfragen = true
             } label: {
-                Label("babu hat noch Fragen — jetzt beantworten",
+                Label("babu hat Fragen — jetzt beantworten",
                       systemImage: "questionmark.bubble")
-                    .font(.footnote.weight(.medium))
-                    .foregroundStyle(GC.accent)
+                    .font(.title3.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
             }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
         } else if !b.zweitgeprueft, b.ablageStatus == .uebertragen, b.status != .fixiert {
             Text("Wird gerade noch einmal geprüft …")
                 .font(.footnote)
