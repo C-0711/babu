@@ -2993,6 +2993,27 @@ async def api_buchung_einschaetzung(request: Request) -> Response:
         if isinstance(a, dict) and str(a.get("antwort", "")).strip():
             antworten.append({"frage": str(a.get("frage", ""))[:200],
                               "antwort": str(a.get("antwort", ""))[:200]})
+    # Der stehende Kontext des Salons: laufende Verträge (Miete, Leasing,
+    # Versicherung) und das Personal — damit eine Mietzahlung gegen den
+    # bekannten Vertrag gebucht wird und eine Lohnzahlung als Lohn erkannt
+    # wird, statt als neuer Einzelaufwand.
+    vertraege_ktx, personal_ktx = [], []
+    try:
+        import vertraege as vt  # noqa: PLC0415
+        ueb = await run_in_threadpool(lambda: vt.uebersicht(vertraege_aktuell()))
+        vertraege_ktx = [{"art_name": z.get("art_name") or z.get("art"),
+                          "partner": z.get("partner"),
+                          "betrag_monat": z.get("betrag_monat")}
+                         for z in (ueb.get("vertraege") or [])][:10]
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        personal_ktx = [{"name": p.get("name"),
+                         "kosten_monat": p.get("kosten_monat")}
+                        for p in await run_in_threadpool(team_liste, un)
+                        if p.get("aktiv")][:10]
+    except Exception:  # noqa: BLE001
+        pass
     monat = str(body.get("monat") or "")
     umsaetze, nachbarn = [], []
     if re.match(r"^\d{4}-\d{2}$", monat):
@@ -3010,7 +3031,8 @@ async def api_buchung_einschaetzung(request: Request) -> Response:
     try:
         ergebnis = await run_in_threadpool(
             gemma_buchung.runde, zeilen, profil, antworten,
-            kontenrahmen_von(un), umsaetze, nachbarn)
+            kontenrahmen_von(un), umsaetze, nachbarn, None, None,
+            vertraege_ktx, personal_ktx)
     except Exception as ex:  # noqa: BLE001
         print(f"[einschaetzung] {un}: {ex!r}", flush=True)
         return JSONResponse({"fehler": "Die Buchhaltung ist gerade nicht zu "

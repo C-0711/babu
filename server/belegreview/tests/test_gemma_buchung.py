@@ -262,8 +262,7 @@ def test_direktroute_nutzt_das_mitgeschickte_profil(direkt_klient, monkeypatch):
     bw, c = direkt_klient
     gesehen = {}
 
-    def falsche_runde(zeilen, einstellungen, antworten, rahmen,
-                      umsaetze=None, nachbarn=None, markdown=None, bild=None):
+    def falsche_runde(zeilen, einstellungen, antworten, rahmen, *rest, **_):
         gesehen.update(zeilen=zeilen, profil=einstellungen, rahmen=rahmen)
         return {"status": "gebucht", "buchung": {"konto": "6850"}}
 
@@ -299,3 +298,49 @@ def test_direktroute_ohne_lesung_sagt_es_ehrlich(direkt_klient):
     r = c.post("/api/buchung/einschaetzung", json={"profil": {}})
     assert r.status_code == 422
     assert "Lesung" in r.json()["fehler"]
+
+
+# ————— Der stehende Kontext: Verträge und Personal —————
+
+def test_prompt_traegt_vertraege_und_personal():
+    p = gemma_buchung.prompt_bauen(
+        "P", ["Überweisung Miete Juli 1.076,95"], [],
+        vertraege=[{"art_name": "Miete Geschäftsräume",
+                    "partner": "Weber Immobilien", "betrag_monat": 1076.95}],
+        personal=[{"name": "Jana Allgaier", "kosten_monat": 2400.0}])
+    assert "LAUFENDE VERTRÄGE" in p and "Weber Immobilien" in p and "1076.95" in p
+    assert "PERSONAL" in p and "Jana Allgaier" in p and "LOHN" in p
+    leer = gemma_buchung.prompt_bauen("P", ["x"], [])
+    assert "LAUFENDE VERTRÄGE" not in leer and "PERSONAL" not in leer
+
+
+def test_lohn_wird_abgegeben_statt_gebucht():
+    e = gemma_buchung.buchung_pruefen(
+        {"status": "abgeben", "hinweis": "Das ist der Monatslohn von Jana — "
+         "Löhne bucht der Lohnlauf."})
+    assert e["status"] == "aufgeben"
+    assert "Lohnlauf" in e["hinweis"]
+
+
+def test_direktroute_gibt_gemma_vertraege_und_personal(direkt_klient, monkeypatch):
+    bw, c = direkt_klient
+    monkeypatch.setattr(bw, "vertraege_aktuell", lambda: [
+        {"art": "miete", "art_name": "Miete Geschäftsräume",
+         "partner": "Weber", "betrag_monat": 1076.95}])
+    monkeypatch.setattr(bw, "team_liste", lambda un: [
+        {"name": "Jana", "kosten_monat": 2400.0, "aktiv": True},
+        {"name": "Weg", "kosten_monat": 1.0, "aktiv": False}])
+    gesehen = {}
+
+    def falsche_runde(zeilen, einstellungen, antworten, rahmen,
+                      umsaetze=None, nachbarn=None, markdown=None, bild=None,
+                      vertraege=None, personal=None):
+        gesehen.update(vertraege=vertraege, personal=personal)
+        return {"status": "gebucht", "buchung": {}}
+
+    monkeypatch.setattr(gemma_buchung, "runde", falsche_runde)
+    r = c.post("/api/buchung/einschaetzung", json={"zeilen": ["Miete Juli"]})
+    assert r.status_code == 200, r.text
+    assert gesehen["vertraege"] == [{"art_name": "Miete Geschäftsräume",
+                                     "partner": "Weber", "betrag_monat": 1076.95}]
+    assert gesehen["personal"] == [{"name": "Jana", "kosten_monat": 2400.0}]

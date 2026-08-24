@@ -88,7 +88,9 @@ def katalog_text(rahmen: str = "SKR04") -> str:
 def prompt_bauen(profil: str, zeilen: list[str], antworten: list[dict],
                  rahmen: str = "SKR04", umsaetze: list[dict] | None = None,
                  nachbarn: list[dict] | None = None,
-                 markdown: str | None = None, mit_bild: bool = False) -> str:
+                 markdown: str | None = None, mit_bild: bool = False,
+                 vertraege: list[dict] | None = None,
+                 personal: list[dict] | None = None) -> str:
     beantwortet = ""
     if antworten:
         beantwortet = "\nNINA HAT BEREITS BEANTWORTET:\n" + "\n".join(
@@ -101,6 +103,25 @@ def prompt_bauen(profil: str, zeilen: list[str], antworten: list[dict],
                          "Euro-Betrag einer Fremdwährungszahlung:\n" + "\n".join(
             f"  {u.get('datum', '?')}  {u.get('betrag', '?')} €  {str(u.get('text', ''))[:70]}"
             for u in umsaetze))
+    vertrag_kontext = ""
+    if vertraege:
+        vertrag_kontext = ("\nLAUFENDE VERTRÄGE des Salons (Dauerkosten — eine "
+                           "Zahlung, die zu einem passt, gehört auf DESSEN "
+                           "Kategorie und ist kein neuer Einzelaufwand; weicht "
+                           "der Betrag vom Vertrag ab, frag nach):\n" + "\n".join(
+            f"  {v.get('art_name') or v.get('art') or 'Vertrag'} · "
+            f"{str(v.get('partner') or '?')[:40]} · "
+            f"{v.get('betrag_monat') if v.get('betrag_monat') is not None else '?'} €/Monat"
+            for v in vertraege))
+    personal_kontext = ""
+    if personal:
+        personal_kontext = ("\nPERSONAL des Salons (eine Zahlung an diese "
+                            "Person ist LOHN — Löhne bucht der Lohnlauf, nicht "
+                            "der Beleg. Erkennst du eine Lohnzahlung, antworte "
+                            "mit status \"abgeben\" und sag warum):\n" + "\n".join(
+            f"  {str(p.get('name') or '?')[:40]} · "
+            f"{p.get('kosten_monat') if p.get('kosten_monat') is not None else '?'} €/Monat"
+            for p in personal))
     beleg_kontext = ""
     if nachbarn:
         beleg_kontext = ("\nWEITERE BELEGE desselben Monats (für Dubletten und "
@@ -116,7 +137,7 @@ KATEGORIEN (wähle GENAU eine über ihren Code — Kontonummern vergibst nicht d
 
 DER BELEG — {"liegt dir als FOTO bei. Lies ihn selbst, vollständig: Kopf, jede Einzelposition, Summen, Steuerzeilen, Währung, Zahlweise." if mit_bild else ("als strukturiertes Dokument (Layout-Lesung):" if markdown else "die erkannten Textzeilen in Lesereihenfolge:")}
 {"" if mit_bild else (markdown if markdown else chr(10).join('  ' + z for z in zeilen))}
-{konto_kontext}{beleg_kontext}{beantwortet}
+{konto_kontext}{vertrag_kontext}{personal_kontext}{beleg_kontext}{beantwortet}
 Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
 - Erfinde keine Umsatzsteuer, die nicht auf dem Beleg ausgewiesen ist.
 - Lies die EINZELPOSITIONEN aus dem Beleg: Bezeichnung, Betrag, Steuersatz
@@ -136,7 +157,9 @@ Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
 - Frag nichts, was schon beantwortet wurde. Ist alles klar, buchst du sofort.
 
 Antworte NUR mit einem JSON-Objekt, ohne Text davor oder danach:
-entweder {{"status": "fragen",
+entweder {{"status": "abgeben", "hinweis": "…"}}  (nur für Lohn u. Ä. — Dinge,
+          die nicht über einen Beleg gebucht werden)
+oder     {{"status": "fragen",
            "fragen": [{{"frage": "…", "optionen": ["…", "…"]}}]}}
 oder     {{"status": "gebucht",
            "kategorie": "<code aus der Liste>",
@@ -158,6 +181,10 @@ def buchung_pruefen(roh: dict, rahmen: str = "SKR04") -> dict:
     Kategorie, die es nicht gibt, wird zur Rückfrage statt zur Buchung.
     """
     status = roh.get("status")
+    if status in ("abgeben", "aufgeben"):
+        return {"status": "aufgeben",
+                "hinweis": str(roh.get("hinweis") or "Das gehört auf den "
+                               "Schreibtisch, nicht auf einen Beleg.")[:300]}
     if status == "fragen":
         fragen = []
         for f in (roh.get("fragen") or [])[:4]:
@@ -279,7 +306,9 @@ def runde(zeilen: list[str], einstellungen: dict, antworten: list[dict],
           rahmen: str = "SKR04", umsaetze: list[dict] | None = None,
           nachbarn: list[dict] | None = None,
           markdown: str | None = None,
-          bild: tuple[bytes, str] | None = None) -> dict:
+          bild: tuple[bytes, str] | None = None,
+          vertraege: list[dict] | None = None,
+          personal: list[dict] | None = None) -> dict:
     """Eine Frage-oder-Buchung-Runde. Wirft nichts Fachliches — Netzfehler
     reicht der Aufrufer als 502 weiter."""
     if len(antworten) >= ANTWORTEN_MAX:
@@ -288,7 +317,8 @@ def runde(zeilen: list[str], einstellungen: dict, antworten: list[dict],
                            "den Schreibtisch."}
     roh = _gemma(prompt_bauen(profil_text(einstellungen), zeilen, antworten,
                               rahmen, umsaetze, nachbarn, markdown,
-                              mit_bild=bild is not None), bild)
+                              mit_bild=bild is not None,
+                              vertraege=vertraege, personal=personal), bild)
     ergebnis = buchung_pruefen(roh, rahmen)
     if ergebnis["status"] == "unklar":
         return {"status": "fragen", "fragen": [{
