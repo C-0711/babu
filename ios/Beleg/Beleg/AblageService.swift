@@ -843,6 +843,82 @@ enum AblageService {
                 json["monatlich"] as? Double ?? 0, anstehend)
     }
 
+    // MARK: - Buchungsfragen: Gemma bucht — oder schickt EIN Fragenpaket
+
+    struct BuchungsFrage: Identifiable, Equatable {
+        let frage: String
+        let optionen: [String]
+        var id: String { frage }
+    }
+
+    struct GemmaBuchung {
+        let kategorieName: String
+        let konto: String
+        let buchungstext: String
+        let betrag: Double?
+        let waehrung: String
+        let betragEur: Double
+        let ustSatz: Int
+        let begruendung: String
+    }
+
+    enum BuchungsfragenErgebnis {
+        case fragen([BuchungsFrage])
+        case gebucht(GemmaBuchung)
+        case aufgeben(String)
+        case fehler(String)
+    }
+
+    /// Eine Runde: die bisherigen Antworten hin, ein Fragenpaket oder die
+    /// fertige Buchung zurück. Der Server hält keinen Zustand.
+    static func buchungsfragen(stamm: String,
+                               antworten: [(frage: String, antwort: String)],
+                               basis: URL, pat: String) async -> BuchungsfragenErgebnis {
+        var request = URLRequest(
+            url: basis.appendingPathComponent("review/\(stamm)/buchungsfragen"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 150
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject:
+            ["antworten": antworten.map { ["frage": $0.frage, "antwort": $0.antwort] }])
+        guard let (daten, roh) = try? await URLSession.shared.data(for: request),
+              let http = roh as? HTTPURLResponse,
+              let json = (try? JSONSerialization.jsonObject(with: daten)) as? [String: Any]
+        else { return .fehler("Keine Verbindung — später noch einmal.") }
+        guard (200..<300).contains(http.statusCode) else {
+            return .fehler(json["fehler"] as? String ?? "Das ging gerade nicht.")
+        }
+        switch json["status"] as? String {
+        case "fragen":
+            let fragen = (json["fragen"] as? [[String: Any]] ?? []).compactMap { f -> BuchungsFrage? in
+                guard let frage = f["frage"] as? String, !frage.isEmpty else { return nil }
+                return BuchungsFrage(frage: frage,
+                                     optionen: f["optionen"] as? [String] ?? [])
+            }
+            return fragen.isEmpty ? .fehler("Das ging gerade nicht.") : .fragen(fragen)
+        case "gebucht":
+            guard let b = json["buchung"] as? [String: Any],
+                  let konto = b["konto"] as? String else {
+                return .fehler("Das ging gerade nicht.")
+            }
+            return .gebucht(GemmaBuchung(
+                kategorieName: b["kategorie_name"] as? String ?? "",
+                konto: konto,
+                buchungstext: b["buchungstext"] as? String ?? "",
+                betrag: b["betrag"] as? Double,
+                waehrung: (b["waehrung"] as? String ?? "EUR").uppercased(),
+                betragEur: b["betrag_eur"] as? Double ?? 0,
+                ustSatz: b["ust_satz"] as? Int ?? 0,
+                begruendung: b["begruendung"] as? String ?? ""))
+        case "aufgeben":
+            return .aufgeben(json["hinweis"] as? String
+                             ?? "Der Beleg gehört auf den Schreibtisch.")
+        default:
+            return .fehler("Das ging gerade nicht.")
+        }
+    }
+
     // MARK: - Kontoauszug
 
     /// Kontoauszug abgeben — der Server liest die Umsätze sofort und legt sie

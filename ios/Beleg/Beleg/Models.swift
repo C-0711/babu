@@ -164,6 +164,10 @@ struct Beleg: Identifiable, Codable {
     // Steuertabelle je Satz (Mehrsatz-Belege) und Gutschrift-Signal
     var steuerPositionen: [SteuerPosition]?
     var gutschriftSignal: Bool?
+    // Die Buchhaltung (Gemma) hat noch Fragen — der Beleg wartet auf Nina.
+    // Gesetzt, wenn die Zweitprüfung da ist, aber nicht gebucht werden
+    // konnte, oder wenn sie das Fragenpaket vorzeitig weggelegt hat.
+    var offeneFrage: String?
 
     /// Bewirtungsbeleg ohne erfasste Angaben? Dann fragt die App nach.
     var brauchtBewirtungsangaben: Bool {

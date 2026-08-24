@@ -2953,6 +2953,81 @@ def api_monat(monat: str, request: Request) -> Response:
     return JSONResponse(daten)
 
 
+@app.post("/review/{stamm}/buchungsfragen")
+async def api_buchungsfragen(stamm: str, request: Request) -> Response:
+    """Gemma bucht den Beleg mit Ninas Profil — oder schickt EIN Fragenpaket.
+
+    Körper: {"antworten": [{"frage": "…", "antwort": "…"}]} — leer beim ersten
+    Aufruf. Antwortformen (gemma_buchung.runde):
+      {"status": "fragen",  "fragen": [{"frage", "optionen"}]}  → App zeigt
+        eine Frage je Bildschirm, sammelt und ruft erneut auf.
+      {"status": "gebucht", "buchung": {…}}                     → grüner Haken.
+      {"status": "aufgeben", …}                                 → Schreibtisch.
+    Der Server hält keinen Zustand; die Antworten reisen mit jedem Aufruf mit.
+    """
+    un = wer(request)
+    if un is None:
+        return JSONResponse({"fehler": "Token fehlt oder ungültig"}, status_code=401)
+    if not (box_mitglied(un) or un in ERLAUBT):
+        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    if not NAME_RE.match(stamm):
+        return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
+    stamm = re.sub(r"\.(jpg|jpeg|png|pdf)$", "", stamm, flags=re.I)
+    pfad = review_pfad(stamm)
+    if pfad is None:
+        return JSONResponse({"fehler": "kein Review (noch in Arbeit?)"}, status_code=404)
+    protokoll = git_show(pfad[:-5] + ".md")
+    if protokoll is None:
+        return JSONResponse({"fehler": "kein Leseprotokoll zu diesem Beleg"},
+                            status_code=404)
+    import gemma_buchung  # noqa: PLC0415
+    zeilen = gemma_buchung.zeilen_aus_protokoll(protokoll.decode("utf-8", "replace"))
+    if not zeilen:
+        return JSONResponse({"fehler": "im Leseprotokoll stehen keine Zeilen"},
+                            status_code=422)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    antworten = []
+    for a in (body.get("antworten") or [])[:gemma_buchung.ANTWORTEN_MAX]:
+        if isinstance(a, dict) and str(a.get("antwort", "")).strip():
+            antworten.append({"frage": str(a.get("frage", ""))[:200],
+                              "antwort": str(a.get("antwort", ""))[:200]})
+    # Kontext für den Abgleich: die Kontobewegungen des Belegmonats (Bank/
+    # PayPal aus den Auszügen) und die Nachbar-Belege — damit Gemma den
+    # Euro-Betrag einer Fremdwährungszahlung findet und Dubletten sieht.
+    monat, umsaetze, nachbarn = None, [], []
+    try:
+        review_daten = json.loads(git_show(pfad) or b"{}")
+        datum = ((review_daten.get("felder") or {}).get("datum") or "")
+        monat = datum[:7] if re.match(r"^\d{4}-\d{2}", datum) else None
+    except Exception:  # noqa: BLE001
+        pass
+    if monat:
+        try:
+            idx = await run_in_threadpool(index_aktuell)
+            umsaetze = [{"datum": u.get("datum"), "betrag": u.get("betrag"),
+                         "text": u.get("text")}
+                        for u in idx["umsaetze"].get(monat, [])][:20]
+            nachbarn = [{"datum": b.get("datum"), "brutto": b.get("brutto"),
+                         "lieferant": b.get("lieferant")}
+                        for b in idx["belege"].values()
+                        if str(b.get("datum") or "").startswith(monat)
+                        and b.get("stamm") != stamm][:15]
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        ergebnis = await run_in_threadpool(
+            gemma_buchung.runde, zeilen, db_einstellungen(salon_von(un)),
+            antworten, kontenrahmen_von(un), umsaetze, nachbarn)
+    except Exception as ex:  # noqa: BLE001
+        print(f"[buchungsfragen] {stamm}: {ex!r}", flush=True)
+        return JSONResponse({"fehler": "Die Buchhaltung ist gerade nicht zu "
+                             "erreichen — gleich noch einmal."}, status_code=502)
+    return JSONResponse(ergebnis)
+
+
 @app.get("/review/{stamm}")
 def review(stamm: str, request: Request) -> Response:
     un = wer(request)

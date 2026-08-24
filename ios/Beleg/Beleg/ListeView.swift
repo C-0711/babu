@@ -230,6 +230,11 @@ struct BelegZeile: View {
                 Text("\(beleg.belegNr) · \(beleg.status.label)")
                     .font(.caption2.monospaced())
                     .foregroundStyle(GC.muted)
+                if beleg.status == .offen, beleg.offeneFrage != nil {
+                    Text("Noch nicht fertig — babu hat Fragen")
+                        .font(.caption2)
+                        .foregroundStyle(GC.warn)
+                }
                 if beleg.istDemo == true {
                     Text("BEISPIEL · GEHT NICHT AN DATEV")
                         .font(.system(size: 9, design: .monospaced))
@@ -285,6 +290,7 @@ struct DetailView: View {
     @State private var detailBild: UIImage?
     @State private var markierungen: [CGRect] = []
     @State private var zeigeLoeschen = false
+    @State private var zeigeBuchungsfragen = false
 
     /// Der Name, unter dem der Beleg in der Belegbox liegt — ohne ihn gibt
     /// es kein Protokoll abzuholen.
@@ -358,6 +364,12 @@ struct DetailView: View {
         .navigationTitle(beleg?.belegNr ?? "Beleg")
         .navigationBarTitleDisplayMode(.inline)
         .task { await laden() }
+        .sheet(isPresented: $zeigeBuchungsfragen) {
+            if let stamm = protokollStamm {
+                BuchungsfragenView(belegID: belegID, stamm: stamm)
+                    .environmentObject(store)
+            }
+        }
         .sheet(isPresented: $zeigeAlle) { alleAngabenSheet }
         .confirmationDialog("Diesen Beleg endgültig löschen?",
                             isPresented: $zeigeLoeschen, titleVisibility: .visible) {
@@ -419,6 +431,17 @@ struct DetailView: View {
                 Label("Ein Hinweis dazu", systemImage: "info.circle")
                     .font(.footnote)
                     .foregroundStyle(GC.muted)
+            }
+        } else if b.status == .offen, b.zweitgeprueft || b.offeneFrage != nil,
+                  protokollStamm != nil {
+            // Die Buchhaltung hat Fragen — eine pro Bildschirm, dann der Haken.
+            Button {
+                zeigeBuchungsfragen = true
+            } label: {
+                Label("babu hat noch Fragen — jetzt beantworten",
+                      systemImage: "questionmark.bubble")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(GC.accent)
             }
         } else if !b.zweitgeprueft, b.ablageStatus == .uebertragen, b.status != .fixiert {
             Text("Wird gerade noch einmal geprüft …")

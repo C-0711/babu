@@ -481,12 +481,52 @@ final class AppStore: ObservableObject {
            !b.brauchtBewirtungsangaben,
            b.brutto > 0 {
             siegeln(&b, status: .automatisch)
+            b.offeneFrage = nil
+            geaendert = true
+        } else if b.status == .offen, b.offeneFrage == nil {
+            // Nicht still gebucht — dann hat die Buchhaltung Fragen. Der
+            // Merker macht den Beleg in der Ablage als „noch nicht fertig"
+            // sichtbar; die eigentlichen Fragen holt das Fragen-Blatt live.
+            b.offeneFrage = "babu hat noch Fragen zu diesem Beleg."
             geaendert = true
         }
 
         guard geaendert else { return false }
         belege[i] = b
         return true
+    }
+
+    /// Die Buchung aus Gemmas Fragerunde übernehmen — die Belegbox hat
+    /// entschieden, samt Konto aus dem geprüften Katalog. Bei Fremdwährung
+    /// wird der Euro-Betrag gebucht; der Originalbetrag bleibt am Beleg.
+    func gemmaBuchungAnwenden(id: UUID, konto: String, ustSatz: Int,
+                              betragEur: Double, waehrung: String,
+                              begruendung: String) {
+        guard let i = belege.firstIndex(where: { $0.id == id }),
+              belege[i].status != .fixiert else { return }
+        var b = belege[i]
+        b.konto = konto
+        b.steuerschluessel = ustSatz == 19 ? "9" : (ustSatz == 7 ? "8" : "0")
+        if betragEur > 0, waehrung != "EUR" {
+            b.brutto = betragEur
+            b.netto = (betragEur / (1 + Double(ustSatz) / 100) * 100).rounded() / 100
+            b.ust = ((b.brutto - b.netto) * 100).rounded() / 100
+            b.ustSatz = ustSatz
+            b.summenprobeOK = true
+        }
+        if !begruendung.isEmpty { b.begruendung = begruendung }
+        b.herkunft = .ki
+        b.offeneFrage = nil
+        siegeln(&b, status: .automatisch)
+        belege[i] = b
+        geprueft += 1
+    }
+
+    /// Fragenpaket weggelegt: der Beleg bleibt liegen, aber ehrlich markiert.
+    func offeneFrageSetzen(id: UUID, _ text: String?) {
+        guard let i = belege.firstIndex(where: { $0.id == id }),
+              belege[i].status != .fixiert else { return }
+        belege[i].offeneFrage = text
     }
 
     /// Beleg entfernen — fixierte (exportierte) Belege sind unantastbar.
