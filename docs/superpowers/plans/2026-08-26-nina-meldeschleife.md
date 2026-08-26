@@ -27,7 +27,7 @@
 | Datei | Verantwortung |
 |---|---|
 | `server/belegreview/gitlab_meldungen.py` (neu) | Alles GitLab: Abbildung Meldung→Issue, Klient, Status-Abbildung, Puffer |
-| `server/belegreview/babu_web.py` (ändern) | Route `/api/rueckmeldung` umbauen (Fixit raus), Routen `/api/meldungen*` neu |
+| `server/belegreview/babu_web.py` (ändern) | Route `/api/rueckmeldung` umbauen (Fixit raus), Routen `/api/rueckmeldungen*` neu |
 | `server/belegreview/rueckmeldung.py` (bleibt) | Reines Formatieren (titel_aus/koerper_aus) — wird weiterverwendet |
 | `server/belegreview/tests/test_gitlab_meldungen.py` (neu) | Abbildung, Klient (requests gemockt), Puffer |
 | `server/belegreview/tests/test_rueckmeldung_route.py` (ersetzen) | Route mit GitLab-Fake statt Fixit/Belegbox |
@@ -531,7 +531,7 @@ async def api_rueckmeldung(request: Request) -> Response:
 
     Die eine Zusage: eine Meldung geht nie verloren. GitLab weg? Dann liegt
     sie in `meldung_puffer` (portal.db) und der nächste Aufruf hier oder von
-    /api/meldungen trägt sie nach. Nina liest in beiden Fällen „angekommen"."""
+    /api/rueckmeldungen trägt sie nach. Nina liest in beiden Fällen „angekommen"."""
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
@@ -602,7 +602,9 @@ git commit -m "Rückmeldeknopf legt GitLab-Issues an — Fixit-Draht gekappt"
 
 ---
 
-### Task 5: `/api/meldungen` — Liste, Freigeben, Beanstanden
+### Task 5: `/api/rueckmeldungen` — Liste, Freigeben, Beanstanden
+
+**Namenskorrektur (26.08., während der Umsetzung):** `GET /api/meldungen` existiert bereits (proaktive Erinnerungen aus melden.py, babu_web.py:7288, von der App konsumiert). Die neuen Routen heißen deshalb durchgängig `/api/rueckmeldungen…`.
 
 **Files:**
 - Modify: `server/belegreview/babu_web.py` (direkt unter der Rückmeldungs-Route)
@@ -611,9 +613,9 @@ git commit -m "Rückmeldeknopf legt GitLab-Issues an — Fixit-Draht gekappt"
 **Interfaces:**
 - Consumes: `gitlab_meldungen.issues_holen/issue_holen/notiz/issue_aendern/status_von/puffer_nachtragen`.
 - Produces:
-  - `GET /api/meldungen` → `{"meldungen": [{"iid": int, "titel": str, "status": str, "kommentar": str|null, "link": str}]}` — Sortierung: bitte-pruefen, in-arbeit, gemeldet, erledigt (nur die letzten 20 erledigten); 60 s Modul-Cache.
-  - `POST /api/meldungen/{iid}/freigeben` → nur bei Status `bitte-pruefen`; Notiz „fachlich freigegeben von <un>", `state_event="close"`. Sonst 409.
-  - `POST /api/meldungen/{iid}/beanstanden` mit `{"text": "…"}` (Pflicht) → Notiz „Beanstandung von <un>: <text>", `remove_labels="zur-abnahme"`, `assignee_ids=[]`. Sonst 409/400.
+  - `GET /api/rueckmeldungen` → `{"meldungen": [{"iid": int, "titel": str, "status": str, "kommentar": str|null, "link": str}]}` — Sortierung: bitte-pruefen, in-arbeit, gemeldet, erledigt (nur die letzten 20 erledigten); 60 s Modul-Cache.
+  - `POST /api/rueckmeldungen/{iid}/freigeben` → nur bei Status `bitte-pruefen`; Notiz „fachlich freigegeben von <un>", `state_event="close"`. Sonst 409.
+  - `POST /api/rueckmeldungen/{iid}/beanstanden` mit `{"text": "…"}` (Pflicht) → Notiz „Beanstandung von <un>: <text>", `remove_labels="zur-abnahme"`, `assignee_ids=[]`. Sonst 409/400.
 
 - [ ] **Step 1: Fehlschlagende Tests schreiben**
 
@@ -655,7 +657,7 @@ def test_liste_sortiert_pruefen_zuoberst(klient, monkeypatch):
     ])
     monkeypatch.setattr(gm, "puffer_nachtragen", lambda conn: 0)
     monkeypatch.setattr(bw, "_letzte_claude_notiz", lambda iid: "deployt, bitte prüfen")
-    r = c.get("/api/meldungen")
+    r = c.get("/api/rueckmeldungen")
     stati = [m["status"] for m in r.json()["meldungen"]]
     assert stati == ["bitte-pruefen", "in-arbeit", "gemeldet", "erledigt"]
     assert r.json()["meldungen"][0]["kommentar"] == "deployt, bitte prüfen"
@@ -667,12 +669,12 @@ def test_freigeben_nur_im_richtigen_zustand(klient, monkeypatch):
     protokoll = []
     monkeypatch.setattr(gm, "notiz", lambda iid, text: protokoll.append(("notiz", text)) or True)
     monkeypatch.setattr(gm, "issue_aendern", lambda iid, **f: protokoll.append(("put", f)) or True)
-    assert c.post("/api/meldungen/3/freigeben").status_code == 200
+    assert c.post("/api/rueckmeldungen/3/freigeben").status_code == 200
     assert protokoll[0] == ("notiz", "fachlich freigegeben von nina@0711.io")
     assert protokoll[1][1]["state_event"] == "close"
 
     monkeypatch.setattr(gm, "issue_holen", lambda iid: _issue(1, labels=["bug"]))
-    assert c.post("/api/meldungen/1/freigeben").status_code == 409
+    assert c.post("/api/rueckmeldungen/1/freigeben").status_code == 409
 
 
 def test_beanstanden_braucht_text_und_setzt_zurueck(klient, monkeypatch):
@@ -681,8 +683,8 @@ def test_beanstanden_braucht_text_und_setzt_zurueck(klient, monkeypatch):
     protokoll = []
     monkeypatch.setattr(gm, "notiz", lambda iid, text: protokoll.append(text) or True)
     monkeypatch.setattr(gm, "issue_aendern", lambda iid, **f: protokoll.append(f) or True)
-    assert c.post("/api/meldungen/3/beanstanden", json={}).status_code == 400
-    r = c.post("/api/meldungen/3/beanstanden", json={"text": "Farbe stimmt noch nicht"})
+    assert c.post("/api/rueckmeldungen/3/beanstanden", json={}).status_code == 400
+    r = c.post("/api/rueckmeldungen/3/beanstanden", json={"text": "Farbe stimmt noch nicht"})
     assert r.status_code == 200
     assert "Farbe stimmt noch nicht" in protokoll[0]
     assert protokoll[1]["remove_labels"] == "zur-abnahme"
@@ -719,8 +721,8 @@ def _letzte_claude_notiz(iid: int) -> str | None:
     return None
 
 
-@app.get("/api/meldungen")
-async def api_meldungen(request: Request) -> Response:
+@app.get("/api/rueckmeldungen")
+async def api_rueckmeldungen(request: Request) -> Response:
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
@@ -763,8 +765,8 @@ def _meldung_im_zustand(iid: int, erwartet: str):
     return issue, None
 
 
-@app.post("/api/meldungen/{iid}/freigeben")
-async def api_meldung_freigeben(iid: int, request: Request) -> Response:
+@app.post("/api/rueckmeldungen/{iid}/freigeben")
+async def api_rueckmeldung_freigeben(iid: int, request: Request) -> Response:
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
@@ -778,8 +780,8 @@ async def api_meldung_freigeben(iid: int, request: Request) -> Response:
     return JSONResponse({"ok": ok})
 
 
-@app.post("/api/meldungen/{iid}/beanstanden")
-async def api_meldung_beanstanden(iid: int, request: Request) -> Response:
+@app.post("/api/rueckmeldungen/{iid}/beanstanden")
+async def api_rueckmeldung_beanstanden(iid: int, request: Request) -> Response:
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
@@ -850,7 +852,7 @@ ssh h200v 'pm2 restart babu-web'
 ```bash
 ssh h200v "curl -s -H \"Authorization: Bearer \$(cat ~/gitchain-eingang/.pat_babu)\" http://127.0.0.1:7844/review/$STAMM | python3 -m json.tool --sort-keys > /tmp/golden-nachher.json; diff /tmp/golden-vorher.json /tmp/golden-nachher.json && echo BYTE-GLEICH"
 ssh h200v 'curl -s -X POST -H "Authorization: Bearer $(cat ~/gitchain-eingang/.pat_babu)" -H "Content-Type: application/json" http://127.0.0.1:7844/api/rueckmeldung -d "{\"text\":\"Probelauf Meldeschleife — bitte ignorieren\"}"'
-ssh h200v 'curl -s -H "Authorization: Bearer $(cat ~/gitchain-eingang/.pat_babu)" http://127.0.0.1:7844/api/meldungen | head -c 300'
+ssh h200v 'curl -s -H "Authorization: Bearer $(cat ~/gitchain-eingang/.pat_babu)" http://127.0.0.1:7844/api/rueckmeldungen | head -c 300'
 ```
 
 Erwartet: `BYTE-GLEICH`; Rückmeldung antwortet `{"ok": true, "issue": "<iid>"}`; Liste enthält den Probelauf mit Status `gemeldet`. Danach aufräumen: das Probelauf-Issue in GitLab schließen (`issue_aendern` per curl oder Web).
@@ -947,7 +949,7 @@ git commit -m "Rückmeldung nimmt den Bildschirm mit — ein Foto sagt, wo es kl
 - Modify: `ios/Beleg/Beleg/KontoMenu.swift` (Eintrag in der ersten `Section`, Zeile ~46)
 
 **Interfaces:**
-- Consumes: `GET /api/meldungen`, `POST /api/meldungen/{iid}/freigeben`, `POST /api/meldungen/{iid}/beanstanden` (Task 5); Muster `werBinIch` (AblageService) für Bearer-Aufrufe.
+- Consumes: `GET /api/rueckmeldungen`, `POST /api/rueckmeldungen/{iid}/freigeben`, `POST /api/rueckmeldungen/{iid}/beanstanden` (Task 5); Muster `werBinIch` (AblageService) für Bearer-Aufrufe.
 - Produces: `AblageService.meldungenHolen(basis:pat:) async -> [Meldungszeile]`, `meldungFreigeben(iid:basis:pat:)`, `meldungBeanstanden(iid:text:basis:pat:)`; `struct Meldungszeile: Identifiable, Decodable { let iid: Int; let titel: String; let status: String; let kommentar: String?; var id: Int { iid } }`.
 
 - [ ] **Step 1: Service-Funktionen** (AblageService.swift, unter `rueckmeldenSenden`)
@@ -962,9 +964,9 @@ struct Meldungszeile: Identifiable, Decodable {
 }
 
 extension AblageService {
-    /// Ninas Meldungen samt Stand (`GET /api/meldungen`).
+    /// Ninas Meldungen samt Stand (`GET /api/rueckmeldungen`).
     static func meldungenHolen(basis: URL, pat: String) async -> [Meldungszeile]? {
-        var request = URLRequest(url: basis.appendingPathComponent("api/meldungen"))
+        var request = URLRequest(url: basis.appendingPathComponent("api/rueckmeldungen"))
         request.timeoutInterval = 15
         request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
         struct Antwort: Decodable { let meldungen: [Meldungszeile] }
@@ -992,14 +994,14 @@ extension AblageService {
 
     /// „Passt ✓" — schließt den Vorgang mit Ninas Freigabe.
     static func meldungFreigeben(iid: Int, basis: URL, pat: String) async -> Bool {
-        await _meldungPost(pfad: "api/meldungen/\(iid)/freigeben",
+        await _meldungPost(pfad: "api/rueckmeldungen/\(iid)/freigeben",
                            koerper: nil, basis: basis, pat: pat)
     }
 
     /// „Stimmt noch nicht" — mit einem Satz zurück in die Runde.
     static func meldungBeanstanden(iid: Int, text: String,
                                    basis: URL, pat: String) async -> Bool {
-        await _meldungPost(pfad: "api/meldungen/\(iid)/beanstanden",
+        await _meldungPost(pfad: "api/rueckmeldungen/\(iid)/beanstanden",
                            koerper: ["text": text], basis: basis, pat: pat)
     }
 }
@@ -1484,5 +1486,5 @@ git commit -m "Fix-Lauf im 30-Minuten-Takt: launchd-Vorlage"
 - Baustein 2 (Sehen/Freigeben): Tasks 5, 8. Statusabbildung inkl. „braucht-christoph → in Arbeit für Nina": Task 2. ✓
 - Baustein 3 (Fix-Lauf): Tasks 9, 10. Leitplanke, Verwaisten-Übernahme, Max-3, Ritual, Rollback: Task 9. ✓
 - Baustein 4 (Doku): Notizen/Labels in Tasks 4, 5, 9; `#iid` in Commits: auftrag.md. ✓
-- Abweichung von der Spec, bewusst: `puffer_nachtragen` läuft server-seitig (bei /api/rueckmeldung und /api/meldungen) statt im Fix-Lauf — gleicher Effekt, kein Mac-Umweg zur portal.db.
+- Abweichung von der Spec, bewusst: `puffer_nachtragen` läuft server-seitig (bei /api/rueckmeldung und /api/rueckmeldungen) statt im Fix-Lauf — gleicher Effekt, kein Mac-Umweg zur portal.db.
 - Nicht-Ziele respektiert: kein Push an Nina, `wunsch` unangetastet (Task 9 filtert auf `bug`), kein Fixit-Rückkanal (Task 4 baut ihn aus).
