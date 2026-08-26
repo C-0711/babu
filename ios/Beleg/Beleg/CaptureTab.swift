@@ -435,11 +435,10 @@ struct CaptureTab: View {
         schritte = 0
         startZeit = Date()
 
+        // Zielbild: keine Zeremonie. Vision liest, der Beleg entsteht, und
+        // sofort öffnet die Buchhaltung — JSON zu Gemma, Antwort zurück.
         schritte = 1
         let ocr = await OCRService.erkenne(bild)
-
-        try? await Task.sleep(nanoseconds: 350_000_000)
-        schritte = 2
         let felder = FeldParser.parse(zeilen: ocr.parserZeilen)
 
         // Komplett unlesbares Foto: keinen 0,00-€-Beleg anlegen.
@@ -448,18 +447,10 @@ struct CaptureTab: View {
             return
         }
 
-        // Für die Ergebnis-Ansicht: Foto + Positionen der erkannten Felder.
         ergebnisBild = bild
-        markierungen = FeldMarker.markierungen(zeilen: ocr.zeilen, felder: felder)
-
-        try? await Task.sleep(nanoseconds: 350_000_000)
-        schritte = 3
+        markierungen = []
         let jpeg = bild.jpegData(compressionQuality: 0.6)
         let neu = store.routen(felder: felder, bildJpeg: jpeg, ocrText: ocr.text)
-
-        try? await Task.sleep(nanoseconds: 350_000_000)
-        schritte = 4
-        try? await Task.sleep(nanoseconds: 300_000_000)
 
         // Abgebrochen (X während der Verarbeitung)? Der Beleg ist trotzdem
         // aufgenommen und liegt in der Belegliste — nur nicht mehr aufdrängen.

@@ -41,7 +41,7 @@ final class CaptureViewModel: ObservableObject {
         case .kandidat(let hinweis): return hinweis
         case .zuDunkel: return "Zu dunkel — Licht einschalten?"
         case .blendung: return "Blendung — Beleg leicht kippen"
-        case .erkannt: return "Beleg erkannt — ruhig halten"
+        case .erkannt: return "Beleg erkannt — auslösen"
         case .ausgeloest: return ""
         }
     }
@@ -147,9 +147,12 @@ final class CaptureViewModel: ObservableObject {
             belichtungGesetzt = false
         }
 
-        phase = neuePhase
-        if neuePhase == .ausgeloest {
-            loeseAus()
+        // Zielbild (26.08.2026): ausgelöst wird per KLICK, nicht von der
+        // Zustandsmaschine — „Beleg erkannt" bleibt als grüner Hinweis stehen.
+        if case .ausgeloest = neuePhase {
+            phase = .erkannt(fortschritt: 1.0)
+        } else {
+            phase = neuePhase
         }
     }
 
@@ -174,21 +177,15 @@ final class CaptureViewModel: ObservableObject {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         let quad = rohQuad
 
+        _ = quad
         ausloeseTask = Task {
             do {
-                let foto = try await kamera.fotoAufnehmen()
-                let bild = await Task.detached(priority: .userInitiated) {
-                    Dewarper.entzerre(foto, liveQuad: quad)
-                }.value
-
-                let reduziert = UIAccessibility.isReduceMotionEnabled
-                if reduziert {
-                    eingefroren = bild
-                } else {
-                    withAnimation(.spring(duration: 0.45)) { eingefroren = bild }
-                }
-                // Snap-Moment kurz stehen lassen, dann übernimmt die Pipeline.
-                try? await Task.sleep(nanoseconds: reduziert ? 120_000_000 : 550_000_000)
+                // Zielbild: KEIN Zuschneiden, KEIN Entzerren — die Verzerrung
+                // hat Belege kaputtgeschnitten, und Vision liest das rohe
+                // Foto ohnehin. Klick → Foto → sofort weiter.
+                let bild = try await kamera.fotoAufnehmen()
+                eingefroren = bild
+                try? await Task.sleep(nanoseconds: 120_000_000)
                 guard !Task.isCancelled else { return }
                 onScan?(bild)
             } catch {
