@@ -29,6 +29,13 @@ RISKANT = {
     "box_mitglied": "schreibt in die Belegbox",
     "create table": "Schema von portal.db",
     "alter table": "Schema von portal.db",
+    "_api_wache": "Auth/Session",
+    "angemeldet": "Auth/Session",
+    "zugelassen": "Auth/Session",
+    "_signieren": "Auth/Session",
+    "wer_token": "Auth/Session",
+    "leitplanke": "das Tor selbst — darf sich nicht ohne Christoph ändern",
+    "fixlauf": "der Fix-Lauf selbst — darf sein eigenes Tor nicht umschreiben",
 }
 
 

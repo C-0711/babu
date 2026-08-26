@@ -48,6 +48,27 @@ index 1111111..2222222 100644
     assert leitplanke.riskant(["server/belegreview/babu_web.py"], diff) is None
 
 
+def test_leitplanke_erkennt_wache_und_session_ueber_diff_inhalt():
+    # `def angemeldet` trifft keinen Pfad-Muster (babu_web.py klingt harmlos),
+    # aber Auth/Session-Code darf ohne Christoph nicht durch.
+    diff = """diff --git a/server/belegreview/babu_web.py b/server/belegreview/babu_web.py
+index 1111111..2222222 100644
+--- a/server/belegreview/babu_web.py
++++ b/server/belegreview/babu_web.py
+@@ -10,6 +10,9 @@
++def angemeldet(request):
++    return wer(request)
+"""
+    assert leitplanke.riskant(["server/belegreview/babu_web.py"], diff) is not None
+
+
+def test_leitplanke_stoppt_sich_selbst():
+    # Der Fix-Lauf darf sein eigenes Tor nicht umschreiben — weder die
+    # Leitplanke selbst noch den Taktgeber, der sie aufruft.
+    assert leitplanke.riskant(["werkzeuge/fixlauf/leitplanke.py"])
+    assert leitplanke.riskant(["werkzeuge/fixlauf/fixlauf.py"])
+
+
 def _i(iid, labels, updated="2026-08-26T10:00:00Z"):
     return {"iid": iid, "labels": labels, "updated_at": updated}
 

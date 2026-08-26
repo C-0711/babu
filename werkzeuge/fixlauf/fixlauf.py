@@ -59,7 +59,10 @@ def kandidaten(issues: list[dict], jetzt_iso: str) -> list[dict]:
 
 
 def main() -> int:
-    issues = _api("/issues?state=opened&labels=bug&per_page=50")
+    # Nur Meldungen aus Ninas Meldeschleife (als_issue() setzt "bug,von-nina")
+    # — sonst holt sich der Fix-Lauf jedes andere "bug"-Issue im Projekt mit,
+    # auch eines, das gar nicht über die App/Portal-Rückmeldung kam.
+    issues = _api("/issues?state=opened&labels=bug,von-nina&per_page=50")
     dran = kandidaten(issues, dt.datetime.now(dt.timezone.utc).isoformat())
     if not dran:
         print("fixlauf: nichts zu tun")
