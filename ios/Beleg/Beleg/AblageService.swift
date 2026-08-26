@@ -1041,7 +1041,8 @@ enum AblageService {
     /// Der Abgleich eines Monats: welche Abbuchung hat ihren Beleg, welche nicht.
     static func abgleichLaden(monat: String, basis: URL, pat: String) async
             -> (auszugDa: Bool, gedeckt: Int, fehlend: Int, fehlendSumme: Double,
-                bankgebuehren: Int, einnahmenSumme: Double)? {
+                bankgebuehren: Int, einnahmenSumme: Double,
+                positionen: [AbgleichPosition])? {
         var request = URLRequest(
             url: basis.appendingPathComponent("api/abgleich/\(monat)"))
         request.timeoutInterval = 30
@@ -1049,15 +1050,41 @@ enum AblageService {
         guard let (daten, _) = try? await URLSession.shared.data(for: request),
               let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
               let da = json["auszug_da"] as? Bool else { return nil }
+        let positionen = ((json["positionen"] as? [[String: Any]]) ?? [])
+            .enumerated().map { AbgleichPosition(json: $1, nr: $0) }
         return (da,
                 (json["gedeckt"] as? [[String: Any]])?.count ?? 0,
                 (json["fehlend"] as? [[String: Any]])?.count ?? 0,
                 json["fehlend_summe"] as? Double ?? 0,
                 (json["bankgebuehren"] as? [[String: Any]])?.count ?? 0,
-                json["einnahmen_summe"] as? Double ?? 0)
+                json["einnahmen_summe"] as? Double ?? 0,
+                positionen)
     }
 
     // MARK: - Dein Team
+}
+
+/// Eine Position des Kontoauszugs, wie der Abgleich sie sieht — mit Haken.
+struct AbgleichPosition: Identifiable {
+    let id: Int
+    let datum: String
+    let gegenpartei: String
+    let betrag: Double
+    let status: String       // gedeckt | fehlt | bank | einnahme
+    let stamm: String?
+
+    init(json: [String: Any], nr: Int) {
+        id = nr
+        datum = json["datum"] as? String ?? ""
+        gegenpartei = (json["gegenpartei"] as? String)
+            ?? (json["typ"] as? String) ?? "Position"
+        betrag = json["betrag"] as? Double ?? 0
+        status = json["status"] as? String ?? "einnahme"
+        stamm = json["stamm"] as? String
+    }
+}
+
+extension AblageService {
 
     static func teamLaden(basis: URL, pat: String) async -> (leute: [TeamPerson],
                                                              kosten: Double)? {

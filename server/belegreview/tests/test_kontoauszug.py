@@ -89,3 +89,20 @@ Kontoführung
     d = ka.parse_text(text)
     assert d["monat"] == "2026-02"
     assert len(d["umsaetze"]) == 3
+
+
+def test_positionen_tragen_status_in_originalreihenfolge():
+    """Die Checkliste der Bank-Ansicht: jede Position des Auszugs, in der
+    Reihenfolge des Papiers, mit Haken-Status — gedeckte kennen ihren Beleg."""
+    import kontoauszug
+    d = kontoauszug.parse_text(SYNTHETISCH)
+    belege = [{"stamm": "b1", "brutto": 952.58, "datum": "03.01.2025"}]
+    a = kontoauszug.abgleich(d["umsaetze"], belege)
+    p = a["positionen"]
+    assert len(p) == len(d["umsaetze"]), "keine Position fällt unter den Tisch"
+    assert [x["datum"] for x in p] == [u["datum"] for u in d["umsaetze"]]
+    stati = {x["status"] for x in p}
+    assert stati <= {"gedeckt", "fehlt", "bank", "einnahme"}
+    gedeckt = [x for x in p if x["status"] == "gedeckt"]
+    assert gedeckt and gedeckt[0]["stamm"] == "b1"
+    assert all(x["stamm"] is None for x in p if x["status"] != "gedeckt")

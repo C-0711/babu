@@ -2422,7 +2422,37 @@ async function ladeBank(){
         }).join("") + `</div>`;
   }
 
-  if (fehlend.length){
+  /* Jede Position des Auszugs, in der Reihenfolge des Papiers: gedeckte
+     tragen den Haken und führen zum Beleg, fehlende stehen offen da,
+     Bankentgelte und Eingänge laufen dezent mit. */
+  const positionen = Array.isArray(ab.positionen) ? ab.positionen : [];
+  if (positionen.length){
+    if (!fehlend.length){
+      html += `<div class="karte" style="border-left:3px solid var(--gc-ok)">
+        Alle Zahlungen vom Konto haben ihren Beleg ✓</div>`;
+    }
+    html += `<div class="sektion lbl">Alle Positionen des Auszugs</div>`;
+    for (const p of positionen){
+      const name = (p.gegenpartei || p.typ || "Position").split(" ").slice(0,5).join(" ");
+      const zeileInhalt = p.status === "gedeckt"
+        ? `<div class="zstatus" style="color:var(--gc-ok)">✓ Beleg liegt vor — ansehen</div>`
+        : p.status === "fehlt"
+        ? `<div class="zstatus frage">Beleg fehlt — einfach oben rechts hochladen</div>`
+        : `<div class="zstatus">${p.status === "bank" ? "Bankentgelt — der Auszug ist der Beleg" : "Eingang"}</div>`;
+      const marke = p.status === "gedeckt" ? "✓"
+                  : p.status === "fehlt" ? "○" : "·";
+      const farbe = p.status === "gedeckt" ? "var(--gc-ok)"
+                  : p.status === "fehlt" ? "var(--gc-warn)" : "var(--gc-muted)";
+      const zeile = `<div class="zeile">
+        <div class="thumb doc" style="color:${farbe};font:700 17px/1 var(--gc-serif)">${marke}</div>
+        <div class="zmitte"><div class="zname">${esc(name)}</div>${zeileInhalt}</div>
+        <div class="zrechts"><div class="zbetrag">${euro(Math.abs(p.betrag||0))}</div>
+          <div class="wann">${p.datum || ""}</div></div></div>`;
+      html += p.status === "gedeckt" && p.stamm
+        ? `<a href="#detail/${p.stamm}" style="color:inherit;text-decoration:none">${zeile}</a>`
+        : zeile;
+    }
+  } else if (fehlend.length){
     html += `<div class="sektion lbl">Diese Zahlungen haben noch keinen Beleg</div>`;
     for (const u of fehlend){
       html += `<div class="zeile"><div class="thumb doc"><svg class="ik" viewBox="0 0 24 24"><use href="#ik-euro"/></svg></div>

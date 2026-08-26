@@ -17,7 +17,11 @@ struct KontoauszugView: View {
     @State private var umsaetze = 0
     @State private var abgleich: (auszugDa: Bool, gedeckt: Int, fehlend: Int,
                                   fehlendSumme: Double, bankgebuehren: Int,
-                                  einnahmenSumme: Double)?
+                                  einnahmenSumme: Double,
+                                  positionen: [AbgleichPosition])?
+    /// Der lokale Beleg zu einer gedeckten Position, falls er auf DIESEM
+    /// Gerät liegt — dann öffnet der Tipp die Beleg-Ansicht.
+    @State private var zeigeBeleg: Beleg?
 
     var body: some View {
         List {
@@ -87,9 +91,20 @@ struct KontoauszugView: View {
                              + "Zahl runter.")
                     }
                 }
+
+                if !a.positionen.isEmpty {
+                    Section("Alle Positionen") {
+                        ForEach(a.positionen) { p in
+                            positionsZeile(p)
+                        }
+                    }
+                }
             }
         }
         .warmerGrund()
+        .sheet(item: $zeigeBeleg) { b in
+            BelegGrossView(beleg: b).environmentObject(store)
+        }
         .navigationTitle("Kontoauszug")
         .navigationBarTitleDisplayMode(.inline)
         .fileImporter(isPresented: $zeigeDateien,
@@ -147,6 +162,40 @@ struct KontoauszugView: View {
                 abgleich = a
                 return
             }
+        }
+    }
+
+    /// Eine Zeile der Checkliste: Haken für gedeckte, offener Kreis für
+    /// fehlende, dezenter Punkt für Bankentgelte und Eingänge.
+    @ViewBuilder
+    private func positionsZeile(_ p: AbgleichPosition) -> some View {
+        let inhalt = HStack(spacing: 10) {
+            Image(systemName: p.status == "gedeckt" ? "checkmark.circle.fill"
+                  : p.status == "fehlt" ? "circle" : "minus.circle")
+                .foregroundStyle(p.status == "gedeckt" ? GC.ok
+                                 : p.status == "fehlt" ? GC.warn : GC.muted)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(p.gegenpartei).font(.subheadline).lineLimit(1)
+                Text(p.status == "gedeckt" ? "Beleg liegt vor"
+                     : p.status == "fehlt" ? "Beleg fehlt — einfach fotografieren"
+                     : p.status == "bank" ? "Bankentgelt — der Auszug ist der Beleg"
+                     : "Eingang")
+                    .font(.caption)
+                    .foregroundStyle(p.status == "fehlt" ? GC.warn : GC.desc)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(fmtEur(abs(p.betrag))).font(.subheadline.monospacedDigit())
+                Text(p.datum).font(.caption2).foregroundStyle(GC.muted)
+            }
+        }
+        if p.status == "gedeckt", let stamm = p.stamm,
+           let beleg = store.belege.first(where: {
+               $0.ablageDateiname?.contains(stamm) == true }) {
+            Button { zeigeBeleg = beleg } label: { inhalt }
+                .buttonStyle(.plain)
+        } else {
+            inhalt
         }
     }
 

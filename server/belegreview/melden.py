@@ -146,15 +146,16 @@ def belegjagd_meldung(fragen: list[dict], heute: dt.date) -> list[dict]:
     Jahresende wirklich Geld kostet."""
     if heute.day != ABSCHLUSS_TAG or not fragen:
         return []
-    summe = sum(float(f.get("betrag") or 0) for f in fragen)
+    # Abbuchungen kommen mit negativem Vorzeichen — die Mahnsumme ist der Betrag.
+    summe = sum(abs(float(f.get("betrag") or 0)) for f in fragen)
     anzahl = len(fragen)
     return [{
         "schluessel": f"belegjagd:{heute.isoformat()}",
         "art": "beleg",
         "titel": f"{anzahl} Abbuchung{'en' if anzahl > 1 else ''} ohne Beleg",
         "text": (f"Zusammen {summe:.2f} €".replace(".", ",")
-                 + " — ohne Beleg zählt das steuerlich nicht. "
-                   "Weißt du noch, was das war?"),
+                 + " — ohne Beleg zählt das steuerlich nicht. Die Liste steht "
+                   "unter Konto → Kontoauszug; fotografieren genügt."),
         "am": heute.isoformat(),
         "dringend": False,
     }]

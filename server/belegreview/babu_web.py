@@ -7635,11 +7635,22 @@ def api_meldungen(request: Request) -> Response:
     except Exception:  # noqa: BLE001
         termine = []
 
+    # Die Belegjagd braucht den ABGESCHLOSSENEN Monat: welche Abbuchungen des
+    # Vormonats haben keinen Beleg? Der laufende Monat ist naturgemäß
+    # unvollständig — dazu zu mahnen wäre Lärm. Ohne Auszug: keine Jagd.
+    import kontoauszug as ka  # noqa: PLC0415
+    vormonat = (heute.replace(day=1) - dt.timedelta(days=1)).strftime("%Y-%m")
+    fehlende = []
+    umsaetze_vm = idx["umsaetze"].get(vormonat) or []
+    if umsaetze_vm:
+        fehlende = ka.abgleich(umsaetze_vm,
+                               list(idx["belege"].values()))["fehlend"]
     welt = {
         "fristen": termine,
         "vertraege": vt.uebersicht(vertraege_aktuell(), heute)["vertraege"],
         "rechnungen": list(idx.get("rechnungen", {}).values()),
         "belege": list(idx["belege"].values()),
+        "fehlende_belege": fehlende,
     }
     return JSONResponse({"meldungen": melden.meldungen(welt, heute),
                          "stand": heute.isoformat()})

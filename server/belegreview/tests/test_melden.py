@@ -228,3 +228,12 @@ def test_ohne_fehlende_belege_keine_meldung():
 
 def test_belegjagd_nur_am_dritten():
     assert melden.belegjagd_meldung([{"betrag": 141.0}], dt.date(2026, 9, 7)) == []
+
+
+def test_belegjagd_summe_ist_positiv_trotz_soll_vorzeichen():
+    """Die Route reicht die fehlend-Umsätze des Abgleichs durch — Abbuchungen
+    tragen ein Minus. Die Mahnung nennt trotzdem den Betrag, kein Minus."""
+    fragen = [{"betrag": -141.0}, {"betrag": -89.0}]
+    m = melden.belegjagd_meldung(fragen, HEUTE)
+    assert "230,00" in m[0]["text"]
+    assert "-" not in m[0]["text"].split("€")[0]

@@ -96,14 +96,19 @@ def abgleich(umsaetze: list[dict], belege: list[dict],
             return None
 
     fehlend, gedeckt, bank, einnahmen = [], [], [], []
+    # Zusätzlich JEDE Position in Originalreihenfolge des Auszugs, mit
+    # Status — daraus wird die Checkliste, auf der Nina abhakt.
+    positionen: list[dict] = []
     frei = [dict(z) for z in belege if z.get("brutto") is not None]
     for u in umsaetze:
         if u["betrag"] >= 0:
             if any(w in (u.get("text") or "") + u.get("typ", "") for w in EINNAHME_WOERTER):
                 einnahmen.append(u)
+            positionen.append(dict(u, status="einnahme", stamm=None))
             continue
         if BANK_RE.search(u.get("text", "")):
             bank.append(u)
+            positionen.append(dict(u, status="bank", stamm=None))
             continue
         soll = round(-u["betrag"], 2)
         utag = _tag(u["datum"])
@@ -119,13 +124,16 @@ def abgleich(umsaetze: list[dict], belege: list[dict],
         if treffer is not None:
             frei.remove(treffer)
             gedeckt.append({"umsatz": u, "stamm": treffer.get("stamm")})
+            positionen.append(dict(u, status="gedeckt", stamm=treffer.get("stamm")))
         else:
             fehlend.append(u)
+            positionen.append(dict(u, status="fehlt", stamm=None))
     return {
         "gedeckt": gedeckt,
         "fehlend": fehlend,
         "bankgebuehren": bank,
         "einnahmen": einnahmen,
+        "positionen": positionen,
         "einnahmen_summe": round(sum(u["betrag"] for u in einnahmen), 2),
         "fehlend_summe": round(sum(-u["betrag"] for u in fehlend), 2),
     }
