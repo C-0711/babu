@@ -288,8 +288,9 @@ def test_die_app_erfaehrt_warum(welt):
     assert r.json()["sicher"] is True
     assert r.json()["grund"]
 
+    # Andere Bytes als oben — sonst greift (zu Recht) die Dublettenwache.
     r2 = client.post("/api/aufnahme", params={"name": "foto.jpg", "text": "Zettel"},
-                     content=b"\xff\xd8\xff\xe0bild")
+                     content=b"\xff\xd8\xff\xe0anderesbild")
     assert r2.json()["sicher"] is False
 
 

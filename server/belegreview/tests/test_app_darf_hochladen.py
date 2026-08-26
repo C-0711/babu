@@ -136,3 +136,21 @@ def test_der_beleg_gehoert_der_hochladenden(welt):
     autor = subprocess.run(["git", "-C", str(bw.STORE), "log", "-1", "--format=%an"],
                            capture_output=True, text=True).stdout.strip()
     assert autor == "nina@0711.io"
+
+
+def test_dasselbe_foto_landet_nur_einmal_in_der_box(welt):
+    """Doppeltipp oder zweiter Versuch nach Funkloch: byte-gleich = schon da.
+    Die App bekommt trotzdem ein „ok" — für Nina IST es abgelegt."""
+    bw, tmp = welt
+    c = _konto(bw)
+    r1 = c.post("/ablage", files={"file": ("beleg.jpg", JPEG, "image/jpeg")})
+    assert r1.status_code == 200 and not r1.json().get("dublette")
+    r2 = c.post("/ablage", files={"file": ("nochmal.jpg", JPEG, "image/jpeg")})
+    assert r2.status_code == 200, r2.json()
+    assert r2.json()["dublette"] is True
+    assert r2.json()["datei"] == r1.json()["datei"], "verweist auf das Original"
+    import subprocess
+    baum = subprocess.run(["git", "-C", str(tmp / "babu.git"), "ls-tree", "-r",
+                           "--name-only", "HEAD"],
+                          capture_output=True, text=True).stdout
+    assert baum.count(".jpg") == 1, "nur ein Foto in der Box"

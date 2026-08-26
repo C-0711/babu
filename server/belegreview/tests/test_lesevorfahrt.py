@@ -163,3 +163,35 @@ def test_gegenprobe_mit_null_werten_stoert_nicht(rw):
     w = rw.gegenprobe_abgleichen(
         f, {"brutto": None, "lieferant": None, "datum": None, "beleg_nr": ""})
     assert w == [] and f["brutto"] == 40.00
+
+
+# ————— Doppelgänger: derselbe Beleg, zweimal fotografiert —————
+
+def _review_datei(ordner, name, **felder):
+    import json
+    (ordner / f"{name}.json").write_text(json.dumps({"felder": felder}),
+                                         encoding="utf-8")
+
+
+def test_gleiche_rechnungsnummer_ist_ein_doppelgaenger(rw, tmp_path):
+    """Der Fall INV-DE057821 vom 26.08.: zweimal fotografiert, zweimal gebucht."""
+    _review_datei(tmp_path, "alter-beleg", beleg_nr="INV-DE057821", brutto=40.0)
+    f = {"beleg_nr": "INV-DE057821", "datum": "2026-02-28", "brutto": 40.0}
+    assert rw.doppelgaenger_von(f, "neuer-beleg", tmp_path) == "alter-beleg"
+
+
+def test_gleicher_tag_und_betrag_wird_gefragt(rw, tmp_path):
+    _review_datei(tmp_path, "alter-beleg", datum="2026-02-28", brutto=40.0)
+    f = {"beleg_nr": None, "datum": "2026-02-28", "brutto": 40.0}
+    assert rw.doppelgaenger_von(f, "neuer-beleg", tmp_path) == "alter-beleg"
+
+
+def test_kurze_nummern_und_eigene_datei_zaehlen_nicht(rw, tmp_path):
+    """„1" als Beleg-Nr. trifft alles — und man ist nicht sein eigener
+    Doppelgänger."""
+    _review_datei(tmp_path, "alter-beleg", beleg_nr="1", brutto=9.0)
+    f = {"beleg_nr": "1", "datum": None, "brutto": None}
+    assert rw.doppelgaenger_von(f, "neuer-beleg", tmp_path) is None
+    _review_datei(tmp_path, "neuer-beleg", beleg_nr="INV-4711", brutto=9.0)
+    f2 = {"beleg_nr": "INV-4711", "datum": None, "brutto": None}
+    assert rw.doppelgaenger_von(f2, "neuer-beleg", tmp_path) is None

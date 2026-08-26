@@ -683,8 +683,12 @@ def _offen_nach_angaben(offen: list, angaben: dict | None) -> list:
     # kurz prüfen." ohne Feldbezug — der war mit keiner Angabe zu beantworten
     # und blieb für immer stehen (Nina hat am 26.08. sechsmal gespeichert).
     # Wer irgendetwas nachgetragen hat, HAT kurz geprüft: der Satz ist damit
-    # erledigt. Neue Reviews nennen stattdessen das konkrete Feld.
-    return [o for o in uebrig if "gegenprobe weicht ab" not in str(o).lower()]
+    # erledigt. Neue Reviews nennen stattdessen das konkrete Feld. Dasselbe
+    # gilt für die Doppelgänger-Frage: sie ist beantwortet, indem jemand den
+    # Beleg angesehen hat — gelöscht oder bewusst behalten.
+    return [o for o in uebrig
+            if "gegenprobe weicht ab" not in str(o).lower()
+            and "doppelgänger" not in str(o).lower()]
 
 
 def _beleg_abgeschlossen(offen: list, bewirtung: bool, bewirtung_da: bool) -> bool:
@@ -1622,6 +1626,15 @@ async def ablage(request: Request) -> Response:
         return JSONResponse({"fehler": "leer"}, status_code=400)
     if len(daten) > HOCHLADEN_MAX:
         return JSONResponse({"fehler": "zu groß"}, status_code=413)
+    # Zweimal dasselbe Foto (Doppeltipp, zweiter Versuch nach Funkloch) soll
+    # nicht zweimal in der Buchhaltung landen. Byte-gleich = schon da.
+    schon = await run_in_threadpool(_blob_schon_da, daten)
+    if schon:
+        return JSONResponse({"ok": True, "dublette": True, "commit": None,
+                             "ref": os.environ.get(
+                                 "BABU_REF", "inspektor/ws-christoph0711.io/babu"),
+                             "datei": schon,
+                             "hinweis": "War schon da — nichts doppelt abgelegt."})
     notiz = str(form.get("notiz") or "").strip()[:200]
     import boxschreiber  # noqa: PLC0415
     dateiname = boxschreiber.beleg_dateiname(name)
@@ -1774,6 +1787,14 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
                 gelesen = "\n".join(abschluss_lesen.seiten_text(tf.name)[:3])
         except Exception:  # noqa: BLE001
             gelesen = ""
+    schon = await run_in_threadpool(_blob_schon_da, daten)
+    if schon:
+        return JSONResponse({"ok": True, "dublette": True, "commit": None,
+                             "datei": schon, "art": "beleg", "sicher": True,
+                             "grund": "Byte für Byte identisch mit dem, was "
+                                      "schon da liegt.",
+                             "wohin": "War schon da — nichts doppelt abgelegt."})
+
     entscheidung = einsortieren.entscheiden(gelesen)
     # Ins Auszugsfach führt nur noch der sprechende Dateiname („…Auszug….pdf").
     # Die Stichwortdeutung hat dort zu oft Rechnungen einsortiert (IBAN/BIC
@@ -1976,6 +1997,11 @@ async def api_dokument_hochladen(request: Request, name: str = "dokument.pdf",
         return JSONResponse({"fehler": "zu groß"}, status_code=413)
     if not daten:
         return JSONResponse({"fehler": "leer"}, status_code=400)
+    schon = await run_in_threadpool(_blob_schon_da, daten)
+    if schon:
+        return JSONResponse({"ok": True, "dublette": True, "pfad": schon,
+                             "hinweis": "Genau diese Datei liegt schon in der "
+                                        "Box — nichts doppelt abgelegt."})
     import boxschreiber  # noqa: PLC0415
     dateiname = boxschreiber.beleg_dateiname(name)
     monat = time.strftime("%Y-%m")
@@ -2077,6 +2103,13 @@ async def api_kontoauszug(request: Request, name: str = "auszug.pdf") -> Respons
         return JSONResponse({"fehler": "zu groß"}, status_code=413)
     if not daten:
         return JSONResponse({"fehler": "leer"}, status_code=400)
+    # Derselbe Auszug lag am 21.08. FÜNFMAL in der Box — und seine Umsätze
+    # zählten im Abgleich fünffach. Byte-gleich heißt: schon da, fertig.
+    schon = await run_in_threadpool(_blob_schon_da, daten)
+    if schon:
+        return JSONResponse({"ok": True, "dublette": True, "pfad": schon,
+                             "hinweis": "Genau dieser Auszug liegt schon in "
+                                        "der Box — nichts doppelt abgelegt."})
     import tempfile
     import kontoauszug as ka  # noqa: PLC0415
     with tempfile.NamedTemporaryFile(suffix=".pdf") as tf:
@@ -5333,6 +5366,35 @@ def _ablage_eintraege() -> list[dict]:
                           "loeschbar": False,
                           "seiten": _pdf_seiten(oids.get(pfad), pfad)})
     return eintraege
+
+
+# Blob-Kennung → Pfad im aktuellen Stand. Je HEAD einmal gebaut. Ein Upload
+# mit denselben Bytes ist eine Dublette, egal unter welchem Dateinamen er
+# kommt — derselbe Auszug lag sonst fünfmal in der Box.
+_BLOB_STAND: dict = {"kopf": None, "pfade": {}}
+
+
+def _blob_schon_da(daten: bytes) -> str | None:
+    """Liegt genau diese Datei schon in der Box? Dann ihr Pfad, sonst None."""
+    import hashlib  # noqa: PLC0415
+    oid = hashlib.sha1(b"blob %d\x00" % len(daten) + daten).hexdigest()
+    kopf = (_git(["rev-parse", "HEAD"]) or "").strip()
+    if kopf and _BLOB_STAND["kopf"] != kopf:
+        pfade: dict[str, str] = {}
+        for zeile in (_git(["ls-tree", "-r", kopf]) or "").splitlines():
+            try:
+                meta_, pfad_ = zeile.split("\t", 1)
+                pfade.setdefault(meta_.split()[2], pfad_)
+            except (ValueError, IndexError):
+                continue
+        _BLOB_STAND.update(kopf=kopf, pfade=pfade)
+    pfad = _BLOB_STAND["pfade"].get(oid)
+    # Beiwerk zählt nicht — eine Nutzdatei, die zufällig einer meta.json
+    # gleicht, gibt es nicht, aber sicher ist sicher.
+    if pfad and not pfad.endswith((".meta.json", ".umsaetze.json",
+                                   ".erklaerung.json", ".text.json")):
+        return pfad
+    return None
 
 
 # Blob-Kennung → Seitenzahl. Ein Blob ändert sich nie; einmal gezählt

@@ -608,6 +608,35 @@ def gegenprobe_abgleichen(f: dict, vlm: dict | None) -> list[str]:
     return widerspruch
 
 
+def doppelgaenger_von(f: dict, eigener_name: str,
+                      review_ordner: Path | None = None) -> str | None:
+    """Ein anderer Beleg mit derselben Rechnungsnummer — oder demselben
+    Datum und Betrag. Dann wurde vermutlich zweimal fotografiert.
+
+    Die Rechnungsnummer ist der harte Beweis (ab 4 Zeichen, sonst trifft
+    „1" alles). Datum+Betrag ist der weiche: zweimal derselbe Einkauf am
+    selben Tag kommt vor, deshalb wird gefragt, nicht gelöscht."""
+    ordner = review_ordner if review_ordner is not None else ARBEIT / "review"
+    nr = str(f.get("beleg_nr") or "").strip()
+    datum, brutto = f.get("datum"), f.get("brutto")
+    if not ordner.is_dir() or not (len(nr) >= 4 or (datum and brutto)):
+        return None
+    for p in sorted(ordner.glob("*.json")):
+        if p.stem == eigener_name or p.name.endswith((".embedding.json",
+                                                      ".bewirtung.json")):
+            continue
+        try:
+            andere = json.loads(p.read_text(encoding="utf-8")).get("felder") or {}
+        except Exception:  # noqa: BLE001
+            continue
+        if len(nr) >= 4 and str(andere.get("beleg_nr") or "").strip() == nr:
+            return p.stem
+        if (datum and brutto and andere.get("datum") == datum
+                and andere.get("brutto") == brutto):
+            return p.stem
+    return None
+
+
 def vlm_zusammenfassung(bildpfad: Path, felder: dict) -> str | None:
     """Ein Satz, den ein Mensch liest — die Zusammenfassung zum grünen Haken.
 
@@ -1141,6 +1170,12 @@ def verarbeite(pfad: str) -> None:
         # Hinweis, sonst stünde wieder eine unbeantwortbare Frage da.
         f["offen"].extend(f"{w} — bitte kurz prüfen." for w in widerspruch
                           if not w.startswith("Beleg-Nr"))
+
+    doppel = doppelgaenger_von(f, name)
+    if doppel:
+        f["offen"].append(
+            f"Sieht aus wie ein Doppelgänger von {doppel} — bitte prüfen, "
+            "ob derselbe Beleg zweimal fotografiert wurde.")
 
     # ── Die Buchhaltung bucht: Gemma mit Profil, Katalog und Positionen ──
     #
