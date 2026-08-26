@@ -1358,8 +1358,9 @@ extension AblageService {
     }
 }
 
-/// Ergebnis der Server-Verifikation (BelegReview auf der H200V):
-/// PaddleOCR-Lane + steuerliche Ersteinschätzung, aus `review/<name>.json`.
+/// Das archivierte Ergebnis aus `review/<name>.json`. Heute schreibt es
+/// der Server aus Ninas eigener Buchung (Vision + Gemma); die vielen
+/// optionalen Felder stammen aus älteren Reviews und bleiben dekodierbar.
 struct BelegReviewDaten: Codable {
     struct Felder: Codable {
         var lieferant: String?
@@ -1391,8 +1392,8 @@ struct BelegReviewDaten: Codable {
         var steuerschluessel: String?
         var hinweise: [String]?
     }
-    /// Die Buchhaltung (Gemma Vision): was sie gelesen und entschieden hat.
-    /// Diese Lesung schlägt die Paddle-Felder — sie ist die, die bucht.
+    /// Die Buchung: was die Buchhaltung entschieden hat — sie ist das,
+    /// was zählt; die Einzelfelder daneben sind nur Archiv.
     struct BuchungsLage: Codable {
         var status: String?
         var buchung: BuchungsFelder?

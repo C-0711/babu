@@ -5,8 +5,8 @@ Blätter zeigen und Bericht schreiben standen — dazwischen fehlte alles:
 
 · Ein gescanntes Blatt hat keine Textebene. Der Klartext für die Ernte kam
   aus `seiten_text()`, und der ist bei einem Scan leer — ein fotografierter
-  Bescheid gab also nichts her, obwohl alles darauf steht. Jetzt geht ein
-  Blatt ohne Text durch Paddle.
+  Bescheid gab also nichts her, obwohl alles darauf steht. Jetzt liest ein
+  Blatt ohne Text Gemma (multimodal) ab.
 · Eingeordnet wurde nur nach dem Abschluss-Vokabular (euer/bwa/bescheid).
   Ein Mietvertrag, ein Kontoauszug, eine Rechnung landeten als „sonstiges"
   — und für „sonstiges" ist die Positivliste leer, es wurde also nichts
@@ -87,9 +87,9 @@ def welt(tmp_path, monkeypatch):
     return client, bare, babu_web
 
 
-# ————— Klartext: Textebene, sonst Paddle —————
+# ————— Klartext: Textebene, sonst Gemma —————
 
-def test_ein_text_pdf_braucht_kein_paddle(welt, monkeypatch, tmp_path):
+def test_ein_text_pdf_braucht_keine_blattlesung(welt, monkeypatch, tmp_path):
     """Wo eine Textebene liegt, ist sie die bessere Quelle — und kostenlos."""
     client, _, bw = welt
     import abschluss_lesen
@@ -100,10 +100,10 @@ def test_ein_text_pdf_braucht_kein_paddle(welt, monkeypatch, tmp_path):
     pfad = tmp_path / "bescheid.pdf"
     pfad.write_bytes(b"%PDF-1.4")
     assert "93815/12345" in bw.klartext_der_unterlage(pfad)
-    assert gerufen == [], "Paddle wurde gerufen, obwohl Text dastand"
+    assert gerufen == [], "die Blatt-Lesung wurde gerufen, obwohl Text dastand"
 
 
-def test_ein_gescanntes_blatt_geht_durch_paddle(welt, monkeypatch, tmp_path):
+def test_ein_gescanntes_blatt_liest_gemma(welt, monkeypatch, tmp_path):
     """Der Fall, an dem die Ernte hing: Scan ohne Textebene."""
     client, _, bw = welt
     import abschluss_lesen
@@ -120,7 +120,7 @@ def test_ein_gescanntes_blatt_geht_durch_paddle(welt, monkeypatch, tmp_path):
     assert "Seite 2" in text, "auch die Folgeseiten gehören dazu"
 
 
-def test_ein_foto_geht_auch_durch_paddle(welt, monkeypatch, tmp_path):
+def test_ein_foto_liest_gemma_auch(welt, monkeypatch, tmp_path):
     """Ein JPEG hat gar keine Textebene — `seiten_text` warf dort einen Fehler."""
     client, _, bw = welt
     import abschluss_lesen
@@ -133,7 +133,7 @@ def test_ein_foto_geht_auch_durch_paddle(welt, monkeypatch, tmp_path):
     assert "Mietvertrag" in bw.klartext_der_unterlage(pfad)
 
 
-def test_ein_stummer_ocr_dienst_kippt_nichts(welt, monkeypatch, tmp_path):
+def test_eine_stumme_blattlesung_kippt_nichts(welt, monkeypatch, tmp_path):
     """Ohne Dienst gibt es weniger im Bericht — aber keinen Abbruch."""
     client, _, bw = welt
     import abschluss_lesen

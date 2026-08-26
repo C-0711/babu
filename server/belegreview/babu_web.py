@@ -4161,7 +4161,8 @@ def _abschluss_job(un: str, jahr: int, pfade: list[Path]) -> None:
             # Zahlenauswertung. Die ersten Seiten genügen: Steuernummer,
             # Finanzamt und Anschrift stehen im Kopf, nicht im Anhang.
             #
-            # Der Klartext kommt jetzt auch aus einem Scan (Paddle), und die
+            # Der Klartext kommt jetzt auch aus einem Scan (Gemma liest das
+            # Blatt ab), und die
             # Art aus dem genaueren der beiden Vokabulare — sonst hieß Ninas
             # Mietvertrag „sonstiges", und für sonstiges wird nichts geerntet.
             text = klartext_der_unterlage(pfad)
