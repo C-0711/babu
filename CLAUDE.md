@@ -16,8 +16,8 @@ Bild fasst kein System mehr an.
 **Nicht wieder einbauen** (gelöscht 27.08., main `d5f0d5f`):
 review_watcher, belegdeutung, leseprotokoll, doc_classify, die Routen
 `neu-lesen`/`buchungsfragen`, der App-FeldParser im Buchungsweg, das
-Kontierung-Enum. Paddle-OCR (:7833) ruft babu nur noch für die
-Abschluss-Lane der Salonprüfung — sonst gehört der Dienst ctax.
+Kontierung-Enum. **Paddle-OCR (:7833) ruft babu gar nicht mehr** — der
+Dienst gehört ctax; Scan-Blätter der Salonprüfung liest Gemma (multimodal).
 
 **UI-Sprachregel:** kein Technik-Vokabular, keine Systemnamen, kein
 „Erst-/Zweitlesung". Vertrauen = ein grüner Haken. Kein Hex-Hash.

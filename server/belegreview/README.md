@@ -14,8 +14,8 @@ dort via pm2:
 Apple Vision auf dem iPhone, Gemma bucht über `/api/buchung/einschaetzung`,
 und `/api/aufnahme` archiviert Foto + Ergebnis. Der frühere Watcher
 (`review_watcher.py`, pm2 `belegreview`) ist gelöscht — **nicht neu starten,
-nicht neu erfinden**. Der Paddle-OCR-Dienst :7833 läuft nur noch für ctax und
-für die Abschluss-Lane der Salonprüfung (`abschluss_lesen.py`).
+nicht neu erfinden**. Der Paddle-OCR-Dienst :7833 gehört vollständig ctax;
+babu ruft ihn nirgends mehr (Scan-Blätter der Salonprüfung liest Gemma).
 
 Neustart nach einem H200V-Reboot:
 

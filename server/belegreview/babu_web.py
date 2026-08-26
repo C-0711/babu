@@ -3808,7 +3808,7 @@ _ABSCHLUSS_JOBS: dict[str, dict] = {}
 _ABSCHLUSS_LOCK = threading.Lock()
 
 
-# ── Klartext einer Unterlage: Textebene, sonst Paddle ───────────────────────
+# ── Klartext einer Unterlage: Textebene, sonst Gemma ────────────────────────
 #
 # Hier hing die Salonprüfung. Der Klartext für die Ernte kam aus
 # `abschluss_lesen.seiten_text()` — der Textebene des PDF. Ein Scan hat
@@ -3816,14 +3816,10 @@ _ABSCHLUSS_LOCK = threading.Lock()
 # und aus einem leeren String erntet man nichts. Nina lud ihre abfotografierten
 # Unterlagen hoch, und im Bericht stand weniger, als auf ihnen steht.
 #
-# Der Weg dafür: der Paddle-Dienst auf der H200V (:7833). Belege gehen seit
-# dem Zielbild NICHT mehr durch ihn — nur diese Abschluss-Lane (und ctax)
-# rufen ihn noch. Was hier steht, ist der Aufruf, nicht das Modell.
-#
-# `doc_ori=1` dreht schief fotografierte Blätter gerade und kostet laut /caps
-# nichts. `unwarp` bleibt aus: der Dienst meldet es selbst als schädlich.
-OCR_DIENST = os.environ.get("OCR_DIENST", "http://10.42.0.101:7833")
-OCR_DIENST_FRIST = float(os.environ.get("OCR_DIENST_FRIST", "60"))
+# Seit 27.08.2026 liest solche Blätter Gemma selbst (gemma4-mm am vLLM ist
+# multimodal) — der Paddle-Dienst :7833 gehört damit vollständig ctax, babu
+# ruft ihn nirgends mehr.
+OCR_LESE_FRIST = float(os.environ.get("OCR_LESE_FRIST", "120"))
 # Steuernummer, Finanzamt, Anschrift und IBAN stehen im Kopf, nicht im
 # Anhang. Acht Blätter sind der Bereich, den die Ernte ohnehin ansieht.
 OCR_SEITEN_MAX = 8
@@ -3837,26 +3833,28 @@ ABSCHLUSS_TEXT_MAX = 20000
 
 
 def _ocr_seite(jpeg: bytes, name: str) -> str:
-    """Ein Blatt durch den Paddle-Dienst — Zeilen in Lesereihenfolge."""
+    """Ein Blatt liest Gemma (multimodal) — abschreiben, nicht deuten."""
+    import base64  # noqa: PLC0415
     import requests  # noqa: PLC0415
-    grenze = "----babu-abschluss"
-    kopf = (f"--{grenze}\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="{name}"\r\n'
-            f"Content-Type: image/jpeg\r\n\r\n").encode()
-    r = requests.post(
-        f"{OCR_DIENST}/ocr?doc_ori=1",
-        data=kopf + jpeg + f"\r\n--{grenze}--\r\n".encode(),
-        headers={"Content-Type": f"multipart/form-data; boundary={grenze}"},
-        timeout=OCR_DIENST_FRIST)
+    import abschluss_lesen  # noqa: PLC0415
+    b64 = base64.b64encode(jpeg).decode()
+    r = requests.post(abschluss_lesen.LLM_API, timeout=OCR_LESE_FRIST, json={
+        "model": abschluss_lesen.LLM_MODELL,
+        "temperature": 0, "max_tokens": 3000,
+        "messages": [
+            {"role": "system", "content":
+                "Schreibe den gesamten Text dieses Blatts wortgetreu ab, "
+                "Zeile für Zeile in Lesereihenfolge. Nichts zusammenfassen, "
+                "nichts erklären, nichts auslassen — nur der abgeschriebene "
+                "Text."},
+            {"role": "user", "content": [
+                {"type": "text", "text": f"Blatt: {name}"},
+                {"type": "image_url",
+                 "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+            ]},
+        ]})
     r.raise_for_status()
-    antwort = r.json()
-    if antwort.get("errorCode"):
-        raise RuntimeError(f"OCR-Dienst: {antwort.get('errorMsg')}")
-    seiten = (antwort.get("result") or {}).get("ocrResults") or []
-    if not seiten:
-        raise RuntimeError("OCR-Dienst lieferte keine Seite")
-    texte = (seiten[0].get("prunedResult") or {}).get("rec_texts") or []
-    return "\n".join(str(t) for t in texte)
+    return str(r.json()["choices"][0]["message"]["content"] or "").strip()
 
 
 def klartext_der_unterlage(pfad) -> str:

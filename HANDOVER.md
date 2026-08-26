@@ -27,8 +27,9 @@ Kamera (eigener Sucher, Auto-Auslösung mit Plausibilitäts-Gates, Entzerrung)
 `review_watcher.py` (pm2 `belegreview`), `belegdeutung.py`,
 `leseprotokoll.py`, `doc_classify.py`, der App-FeldParser im Buchungsweg,
 das Kontierung-Enum, `POST /review/<stamm>/neu-lesen` und
-`POST /review/<stamm>/buchungsfragen`. Paddle-OCR (:7833) ruft babu nur noch
-für die Abschluss-Lane der Salonprüfung; sonst gehört der Dienst ctax.
+`POST /review/<stamm>/buchungsfragen`. Paddle-OCR (:7833) ruft babu gar
+nicht mehr (seit 27.08. liest auch die Abschluss-Lane Scans über Gemma) —
+der Dienst gehört ctax.
 
 **UI-Sprachregel (verbindlich):** Kein Technik-Vokabular, keine Systemnamen,
 keine Geräte-/Server-Behauptungen, kein „Erst-/Zweitlesung"-Vokabular.
