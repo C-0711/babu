@@ -154,6 +154,8 @@ struct Beleg: Identifiable, Codable {
     // beim Upload mit — daraus wird Fach und archivierte Lesung.
     var dokumentklasse: String?
     var ergebnisJson: String?
+    /// Visions Zeilen mit Ort und Konfidenz, serialisiert — die eine Lesung.
+    var ocrGeoJson: String?
     var ablageZeit: Date?
     // Audit-Stempel: GitChain-Commits der vollständigen Kette
     var auditAufnahme: String?

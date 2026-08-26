@@ -166,8 +166,17 @@ struct BuchungsfragenView: View {
             laedt = false
             return
         }
-        let zeilen = beleg.ocrText.split(separator: "\n").map(String.init)
-            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        // Seit 27.08.: Visions Rohausgabe mit Ort und Konfidenz, wenn sie da
+        // ist — Gemma sieht damit Spalten. Altbestand fällt auf Text zurück.
+        let zeilen: [Any]
+        if let geo = beleg.ocrGeoJson?.data(using: .utf8),
+           let objekte = (try? JSONSerialization.jsonObject(with: geo)) as? [[String: Any]],
+           !objekte.isEmpty {
+            zeilen = objekte
+        } else {
+            zeilen = beleg.ocrText.split(separator: "\n").map(String.init)
+                .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        }
         guard !zeilen.isEmpty else {
             meldung = "Zu diesem Beleg liegt keine Lesung vor — bitte neu fotografieren."
             laedt = false

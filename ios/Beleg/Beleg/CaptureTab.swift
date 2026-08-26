@@ -453,7 +453,8 @@ struct CaptureTab: View {
         try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 3
         let jpeg = bild.jpegData(compressionQuality: 0.6)
-        let neu = store.routen(bildJpeg: jpeg, ocrText: ocr.text)
+        let neu = store.routen(bildJpeg: jpeg, ocrText: ocr.text,
+                               ocrGeoJson: ocr.geoJson)
 
         try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 4

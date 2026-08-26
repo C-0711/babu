@@ -436,3 +436,41 @@ def test_die_klasse_steht_in_der_buchung():
          "betrag_eur": 10, "ust_satz": 0, "dokumentklasse": "beleg"})
     assert e["status"] == "gebucht"
     assert e["buchung"]["dokumentklasse"] == "beleg"
+
+
+# ————— Visions Geometrie: Zeilen mit Ort, Müll fliegt über conf —————
+
+def test_zeilen_normalisieren_rendert_ort_und_filtert_muell():
+    """Der Kalugahair-Fall vom 27.08.: das „^"-Müllzeichen kam mit conf 0.3,
+    KALUGAHAIR mit 1.0 — und der Ort macht aus Zeilen Spalten."""
+    import babu_web
+    roh = [
+        {"text": "^", "conf": 0.3, "box": [1.8, 7.7, 1.4, 1.0]},
+        {"text": "KALUGAHAIR", "conf": 1.0, "box": [13.1, 8.0, 18.9, 3.0]},
+        {"text": "$173.50", "conf": 0.98, "box": [70.2, 31.6, 8.0, 1.4]},
+        "Altformat-Zeile bleibt Altformat",
+    ]
+    zeilen = babu_web._zeilen_normalisieren(roh)
+    assert zeilen == ["[x13 y8] KALUGAHAIR",
+                      "[x70 y32] $173.50",
+                      "Altformat-Zeile bleibt Altformat"]
+
+
+def test_einschaetzung_nimmt_beide_zeilenformate(direkt_klient, monkeypatch):
+    bw, c = direkt_klient
+    gesehen = {}
+
+    def falsche_runde(zeilen, einstellungen, antworten, rahmen,
+                      umsaetze=None, nachbarn=None, markdown=None, bild=None,
+                      vertraege=None, personal=None, offene_abbuchungen=None):
+        gesehen["zeilen"] = zeilen
+        return {"status": "gebucht", "buchung": {}}
+
+    monkeypatch.setattr(gemma_buchung, "runde", falsche_runde)
+    r = c.post("/api/buchung/einschaetzung", json={
+        "zeilen": [{"text": "Miete Juli", "conf": 0.99, "box": [10.0, 20.0, 30.0, 2.0]}]})
+    assert r.status_code == 200, r.text
+    assert gesehen["zeilen"] == ["[x10 y20] Miete Juli"]
+    r2 = c.post("/api/buchung/einschaetzung", json={"zeilen": ["Miete Juli"]})
+    assert r2.status_code == 200
+    assert gesehen["zeilen"] == ["Miete Juli"]

@@ -965,7 +965,7 @@ enum AblageService {
     /// Die Direkt-Runde: das Telefon schickt Profil und Vision-Lesung als
     /// reines Text-JSON — noch bevor das Foto im Archiv liegt. Gemma
     /// verifiziert, fragt oder bucht.
-    static func einschaetzung(zeilen: [String], profil: [String: String],
+    static func einschaetzung(zeilen: [Any], profil: [String: String],
                               monat: String?,
                               antworten: [(frage: String, antwort: String)],
                               basis: URL, pat: String) async -> BuchungsfragenErgebnis {

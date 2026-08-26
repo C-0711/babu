@@ -19,6 +19,25 @@ enum OCRService {
         var parserZeilen: [(text: String, conf: Double)] {
             zeilen.map { ($0.text, $0.conf) }
         }
+        /// Das Übergabeformat an die Buchhaltung (seit 27.08.): Visions
+        /// Rohausgabe als {text, conf, box} — box in Prozent des Blatts,
+        /// y von oben. Kein Parser, keine Deutung: nur Serialisierung.
+        var geoZeilen: [[String: Any]] {
+            zeilen.map { z in
+                let x: Double = (Double(z.box.origin.x) * 1000).rounded() / 10
+                let yOben: Double = 1 - Double(z.box.origin.y) - Double(z.box.height)
+                let y: Double = (yOben * 1000).rounded() / 10
+                let breite: Double = (Double(z.box.width) * 1000).rounded() / 10
+                let hoehe: Double = (Double(z.box.height) * 1000).rounded() / 10
+                let konf: Double = (z.conf * 100).rounded() / 100
+                return ["text": z.text, "conf": konf,
+                        "box": [x, y, breite, hoehe]]
+            }
+        }
+        var geoJson: String? {
+            (try? JSONSerialization.data(withJSONObject: geoZeilen))
+                .flatMap { String(data: $0, encoding: .utf8) }
+        }
     }
 
     static func erkenne(_ image: UIImage) async -> Ergebnis {

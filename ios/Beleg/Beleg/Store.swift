@@ -158,7 +158,8 @@ final class AppStore: ObservableObject {
     }
 
     /// OCR-Felder → geroutete Buchung (auto / bestätigen / prüfen).
-    func routen(bildJpeg: Data?, ocrText: String) -> Beleg {
+    func routen(bildJpeg: Data?, ocrText: String,
+                ocrGeoJson: String? = nil) -> Beleg {
         // Der Parser ist raus aus dem Buchungsweg (26.08.2026, Kalugahair-
         // Beweis: Vision las alles, der Parser machte nil daraus). Der Beleg
         // entsteht als Hülle — Zahlen, Lieferant und Datum setzt Gemma über
@@ -182,6 +183,7 @@ final class AppStore: ObservableObject {
         )
         beleg.bildJpeg = bildJpeg
         beleg.ocrText = ocrText
+        beleg.ocrGeoJson = ocrGeoJson
         if ablageAktiv, bildJpeg != nil {
             beleg.ablageStatus = .ausstehend
             beleg.ablageDateiname = ablageDateiname(fuer: beleg)
@@ -199,10 +201,15 @@ final class AppStore: ObservableObject {
         guard let i = belege.firstIndex(where: { $0.id == id }) else { return }
         belege[i].dokumentklasse = klasse
         if let buchungJson {
-            let zeilen = belege[i].ocrText
-                .split(separator: "\n").map { String($0) }
-            let zeilenJson = (try? JSONSerialization.data(withJSONObject: zeilen))
-                .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+            let zeilenJson: String
+            if let geo = belege[i].ocrGeoJson {
+                zeilenJson = geo
+            } else {
+                let zeilen = belege[i].ocrText
+                    .split(separator: "\n").map { String($0) }
+                zeilenJson = (try? JSONSerialization.data(withJSONObject: zeilen))
+                    .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+            }
             belege[i].ergebnisJson = "{\"klasse\": \"\(klasse ?? "beleg")\", "
                 + "\"buchung\": \(buchungJson), \"zeilen\": \(zeilenJson)}"
         }

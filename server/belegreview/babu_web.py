@@ -1929,6 +1929,36 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
                          "wohin": WOHIN_TEXT.get(art, WOHIN_TEXT["beleg"])})
 
 
+def _zeilen_normalisieren(roh) -> list[str]:
+    """Beide Zeilenformate der App: Strings (Altformat) oder Visions
+    Rohausgabe {text, conf, box} (seit 27.08.). Beim neuen Format fliegen
+    Müllzeilen über die Konfidenz raus (das „^" auf dem Kalugahair-Beleg
+    kam mit 0.3), und der Ort wandert als kurzes Kürzel vor den Text —
+    „[x70 y32]" — damit Gemma Spalten und Tabellen sieht."""
+    aus: list[str] = []
+    for z in (roh or [])[:400]:
+        if isinstance(z, dict):
+            try:
+                if float(z.get("conf", 1)) < 0.4:
+                    continue
+            except (TypeError, ValueError):
+                pass
+            text = str(z.get("text") or "").strip()[:200]
+            if not text:
+                continue
+            box = z.get("box") or []
+            try:
+                aus.append(f"[x{round(float(box[0]))} "
+                           f"y{round(float(box[1]))}] {text}")
+            except (TypeError, ValueError, IndexError):
+                aus.append(text)
+        else:
+            s = str(z).strip()[:200]
+            if s:
+                aus.append(s)
+    return aus[:250]
+
+
 def _review_aus_einschaetzung(pfad: str, buchung: dict, zeilen: list,
                               klasse: str) -> tuple[dict, str]:
     """Das Review zum Zielbild-Weg: EINE Lesung (Vision, Gerät) + Gemmas
@@ -1950,7 +1980,11 @@ def _review_aus_einschaetzung(pfad: str, buchung: dict, zeilen: list,
         "engine": "Vision (Gerät) + Gemma",
         "dokumentklasse": klasse,
         "gelesen": len(zeilen),
-        "ocr_text": "\n".join(str(z) for z in zeilen),
+        "ocr_text": "\n".join(
+            str(z.get("text") or "") if isinstance(z, dict) else str(z)
+            for z in zeilen),
+        # Visions Rohausgabe mit Ort und Konfidenz — das Archiv verliert nichts.
+        "zeilen_geo": ([z for z in zeilen if isinstance(z, dict)] or None),
         "zeilen": len(zeilen),
         "felder": {
             "lieferant": buchung.get("lieferant"),
@@ -3216,8 +3250,7 @@ async def api_buchung_einschaetzung(request: Request) -> Response:
     except Exception:  # noqa: BLE001
         return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
     import gemma_buchung  # noqa: PLC0415
-    zeilen = [str(z)[:200] for z in (body.get("zeilen") or [])[:250]
-              if str(z).strip()]
+    zeilen = _zeilen_normalisieren(body.get("zeilen"))
     if not zeilen:
         return JSONResponse({"fehler": "keine Lesung mitgeschickt"},
                             status_code=422)
