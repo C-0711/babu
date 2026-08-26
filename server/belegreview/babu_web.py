@@ -54,7 +54,11 @@ _DB_LOCK = threading.Lock()
 
 def _db() -> sqlite3.Connection:
     PORTAL_DB.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(PORTAL_DB)
+    # check_same_thread=False: /api/rueckmeldung öffnet die Verbindung im
+    # Event-Loop-Thread und reicht sie an run_in_threadpool weiter (für
+    # gitlab_meldungen.puffer_nachtragen) — anderer Thread, gleiche Verbindung.
+    # Alle übrigen Aufrufer bleiben synchron in einem Thread, unverändert.
+    conn = sqlite3.connect(PORTAL_DB, check_same_thread=False)
     conn.execute("""CREATE TABLE IF NOT EXISTS lesestatus
         (un TEXT NOT NULL, dokument TEXT NOT NULL, zeit TEXT NOT NULL,
          PRIMARY KEY (un, dokument))""")
@@ -4176,76 +4180,8 @@ def api_abschluss_vorschau(jahr: int, datei: str, request: Request) -> Response:
                     headers={"Cache-Control": "private, max-age=86400"})
 
 
-# ── Ninas Rückmeldeknopf ─────────────────────────────────────────────────
-#
-# Was Nina auffällt, soll ein Vorgang werden, ohne dass sie etwas dafür tut.
-#
-# Der Weg dorthin hat eine Klippe: Fixit nimmt für Maschinen einen
-# GitChain-PAT an, aber nur einen mit Zugang zum Kanal `workspace/0711/babu`.
-# Der PAT, mit dem babu in seine Belegbox schreibt, hat den nicht — er sieht
-# 131 Repos, keines davon unter `workspace/`.
-#
-# Deshalb zwei Schritte, in dieser Reihenfolge:
-#
-#   1. Die Meldung wird IMMER in der Belegbox festgehalten. Damit ist sie
-#      versioniert, überlebt jeden Neustart und geht auch dann nicht
-#      verloren, wenn Fixit gerade nicht erreichbar ist.
-#   2. Danach wird versucht, sie an Fixit weiterzureichen.
-#
-# Nina bekommt in beiden Fällen dieselbe Antwort: „ist angekommen". Für sie
-# ist es angekommen — der Rest ist unsere Sache.
-
-# Nicht die Weboberfläche von Fixit, sondern der Dienst darunter — und zwar der
-# LOKALE. Das ist am 23.08.2026 teuer gelernt worden, deshalb steht es hier:
-#
-#   · fixit.0711.io/api/* nimmt ausschliesslich den Sitzungs-Keks. Ein Bearer
-#     bekommt dort 401, egal wie gültig er ist (server.mjs: `sitzungVon(req)`
-#     ohne `patVon`).
-#   · Es gibt ZWEI GitChain-Instanzen. gitchain.de kennt unsere Token, aber
-#     nicht den Kanal `workspace/0711/babu` (404). Der Container auf :3361
-#     kennt den Kanal — und führt eine eigene Nutzer- und Tokentabelle.
-#
-# Ein Token muss also von :3361 stammen (`gitchain-eingang/pat_lokal.py`), und
-# wir sprechen diesen Dienst direkt an. babu-web läuft auf derselben Maschine;
-# der Umweg über die Weboberfläche brächte nur deren Keks-Zwang mit.
-FIXIT = os.environ.get("BABU_FIXIT", "http://127.0.0.1:3361").rstrip("/")
-FIXIT_PAT_PFAD = Path(os.environ.get(
-    "BABU_FIXIT_PAT", str(Path.home() / "gitchain-eingang" / ".pat_fixit")))
-# Der Kanal steht im PFAD (`/git/<typ>/<gruppe>/<kennung>/issues`), nicht im
-# Körper — ein `channel`-Feld in der Nutzlast wird stillschweigend verworfen.
-FIXIT_KANAL = os.environ.get("BABU_FIXIT_KANAL", "workspace/0711/babu")
 RUECKMELDUNG_MAX = 8000
-
-
-def _fixit_pat() -> str | None:
-    """Der Token für Fixit — bewusst ein eigener, nicht der der Belegbox."""
-    try:
-        t = FIXIT_PAT_PFAD.read_text(encoding="utf-8").strip()
-    except OSError:
-        return None
-    return t if t.startswith("gcpat-") else None
-
-
-def _an_fixit(vorgang: dict) -> tuple[bool, str]:
-    """Versuchen weiterzureichen. Scheitern ist erlaubt, Schweigen nicht."""
-    pat = _fixit_pat()
-    if not pat:
-        return False, ("kein Fixit-Token hinterlegt — die Meldung liegt in "
-                       "der Belegbox und wartet")
-    try:
-        r = requests.post(f"{FIXIT}/git/{FIXIT_KANAL}/issues",
-                          json=vorgang, timeout=15,
-                          headers={"Authorization": f"Bearer {pat}"})
-    except Exception as ex:  # noqa: BLE001
-        return False, f"Fixit nicht erreichbar: {ex!r}"[:160]
-    if r.status_code not in (200, 201):
-        return False, f"Fixit antwortete {r.status_code}: {r.text[:120]}"
-    try:
-        d = r.json()
-        v = d.get("issue") if isinstance(d.get("issue"), dict) else d
-        return True, str(v.get("key") or v.get("number") or "angelegt")
-    except Exception:  # noqa: BLE001
-        return True, "angelegt"
+BILD_MAX = 3 * 1024 * 1024
 
 
 # ── Der Trichter: von der Startseite bis ins Profil ──────────────────────────
@@ -4676,7 +4612,11 @@ async def api_auswertung_uebernehmen(request: Request) -> Response:
 
 @app.post("/api/rueckmeldung")
 async def api_rueckmeldung(request: Request) -> Response:
-    """Was Nina auffällt — ein Feld, ein Knopf, fertig."""
+    """Was Nina auffällt — ein Feld, ein Knopf, ein GitLab-Issue.
+
+    Die eine Zusage: eine Meldung geht nie verloren. GitLab weg? Dann liegt
+    sie in `meldung_puffer` (portal.db) und der nächste Aufruf hier oder von
+    /api/meldungen trägt sie nach. Nina liest in beiden Fällen „angekommen"."""
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
@@ -4690,6 +4630,16 @@ async def api_rueckmeldung(request: Request) -> Response:
         return JSONResponse({"fehler": "Schreib kurz, was los ist — ein Satz "
                              "genügt."}, status_code=400)
 
+    bild: bytes | None = None
+    if body.get("bild"):
+        try:
+            bild = base64.b64decode(str(body["bild"]), validate=True)
+        except Exception:  # noqa: BLE001
+            return JSONResponse({"fehler": "Bild nicht lesbar"}, status_code=400)
+        if len(bild) > BILD_MAX:
+            return JSONResponse({"fehler": "Bild zu groß"}, status_code=400)
+
+    import gitlab_meldungen as gm  # noqa: PLC0415
     import rueckmeldung as rm  # noqa: PLC0415
     meldung = rm.Meldung(
         text=text,
@@ -4702,35 +4652,23 @@ async def api_rueckmeldung(request: Request) -> Response:
         fassung=str(body.get("fassung") or "")[:40] or None,
     )
     try:
-        vorgang = rm.als_vorgang(meldung, autor=un.split("@")[0][:40])
+        issue = gm.als_issue(meldung)
     except ValueError as ex:
         return JSONResponse({"fehler": str(ex)}, status_code=400)
 
-    # Schritt 1: festhalten. Das darf nicht scheitern, ohne dass Nina es merkt.
-    import boxschreiber  # noqa: PLC0415
-    stempel = time.strftime("%Y%m%d-%H%M%S")
-    pfad = f"rueckmeldungen/{time.strftime('%Y-%m')}/{stempel}-{_un_ordner(un)}.json"
-    gesichert = True
-    try:
-        await run_in_threadpool(
-            boxschreiber.schreiben, pfad,
-            json.dumps({"meldung": vars(meldung), "vorgang": vorgang},
-                       ensure_ascii=False, indent=1).encode(),
-            f"rückmeldung: {vorgang['title'][:60]}", un)
-    except Exception as ex:  # noqa: BLE001
-        gesichert = False
-        print(f"[rückmeldung] konnte nicht abgelegt werden: {ex!r}", flush=True)
-
-    # Schritt 2: weiterreichen.
-    weiter, hinweis = await run_in_threadpool(_an_fixit, vorgang)
-    print(f"[rückmeldung] {un}: {vorgang['title'][:60]} — "
-          f"abgelegt={gesichert} weitergereicht={weiter} ({hinweis})", flush=True)
-
-    if not gesichert and not weiter:
-        return JSONResponse({"fehler": "Das ging gerade nicht — bitte gleich "
-                             "noch einmal."}, status_code=503)
-    return JSONResponse({"ok": True, "titel": vorgang["title"],
-                         "weitergereicht": weiter, "hinweis": hinweis})
+    ok, was = await run_in_threadpool(gm.issue_anlegen, issue, bild)
+    if not ok:
+        with _db() as conn:
+            gm.puffer_ablegen(conn, {"issue": issue,
+                                     "bild_b64": body.get("bild") or None})
+    else:
+        # Wenn GitLab wieder da ist, gleich Liegengebliebenes mitnehmen.
+        with _db() as conn:
+            await run_in_threadpool(gm.puffer_nachtragen, conn)
+    print(f"[rückmeldung] {un}: {issue['title'][:60]} — "
+          f"{'issue ' + was if ok else 'gepuffert (' + was + ')'}", flush=True)
+    return JSONResponse({"ok": True, "titel": issue["title"],
+                         "issue": was if ok else None})
 
 
 @app.get("/api/salon-check/bericht")
