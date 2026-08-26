@@ -241,12 +241,12 @@ struct BelegZeile: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Grüner Haken = alles gut (gebucht + abgelegt + Zweitprüfung OK).
+            // Grüner Haken = alles gut (gebucht + abgelegt + Archiv bestätigt).
             Image(systemName: beleg.status == .offen ? "circle.dotted" :
-                    (beleg.zweitgeprueft || beleg.status == .fixiert)
+                    (beleg.archivBestaetigt || beleg.status == .fixiert)
                     ? "checkmark.seal.fill" : "checkmark.seal")
                 .foregroundStyle(beleg.status == .offen ? GC.muted :
-                    beleg.zweitgeprueft ? GC.ok : GC.accent)
+                    beleg.archivBestaetigt ? GC.ok : GC.accent)
             VStack(alignment: .leading, spacing: 2) {
                 Text(beleg.lieferant)
                     .font(.subheadline.weight(.semibold))
@@ -342,7 +342,7 @@ struct DetailView: View {
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.7)
                             // Haken an der Seite — bestätigt, ohne den Beleg zu verdecken.
-                            if b.zweitgeprueft || b.status == .fixiert {
+                            if b.archivBestaetigt || b.status == .fixiert {
                                 Image(systemName: "checkmark.circle.fill")
                                     .font(.system(size: 22))
                                     .foregroundStyle(GC.ok)
@@ -462,7 +462,7 @@ struct DetailView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-        } else if !b.zweitgeprueft, b.ablageStatus == .uebertragen, b.status != .fixiert {
+        } else if !b.archivBestaetigt, b.ablageStatus == .uebertragen, b.status != .fixiert {
             Text("Wird gerade noch einmal geprüft …")
                 .font(.footnote)
                 .foregroundStyle(GC.muted)
@@ -804,8 +804,7 @@ struct DetailView: View {
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(GC.linie, lineWidth: 1))
     }
 
-    /// Abgleich Gerät ↔ Server: ✓ bei Übereinstimmung, sonst beide Werte.
-    /// Ein Wert aus der Zweitprüfung.
+    /// Ein Wert aus dem archivierten Ergebnis.
     ///
     /// Hier stand einmal „Prüfung: X · Aufnahme: Y" — ein Vergleich zwischen
     /// dem, was das Gerät gelesen hatte, und dem, was der Server las. Seit

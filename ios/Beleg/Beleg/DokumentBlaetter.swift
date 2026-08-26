@@ -42,7 +42,7 @@ struct DokumentBlaetter: View {
 private struct Blatt: View {
     let beleg: Beleg
 
-    private var fertig: Bool { beleg.zweitgeprueft || beleg.status == .fixiert }
+    private var fertig: Bool { beleg.archivBestaetigt || beleg.status == .fixiert }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {

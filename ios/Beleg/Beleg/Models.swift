@@ -160,7 +160,7 @@ struct Beleg: Identifiable, Codable {
     // Audit-Stempel: GitChain-Commits der vollständigen Kette
     var auditAufnahme: String?
     var auditReview: String?
-    // Ergebnis der Zweitprüfung: "ok" oder "fehlgeschlagen" (nil = unbekannt)
+    // Ergebnis der Archiv-Ablage: "ok" oder "fehlgeschlagen" (nil = unbekannt)
     var reviewStatus: String?
     // Bewirtungsangaben (§4 Abs. 5 Nr. 2 EStG): Pflicht bei Konto 6640
     var bewirtungAnlass: String?
@@ -175,8 +175,8 @@ struct Beleg: Identifiable, Codable {
     var fremdBetrag: Double?
     var fremdWaehrung: String?
     // Die Buchhaltung (Gemma) hat noch Fragen — der Beleg wartet auf Nina.
-    // Gesetzt, wenn die Zweitprüfung da ist, aber nicht gebucht werden
-    // konnte, oder wenn sie das Fragenpaket vorzeitig weggelegt hat.
+    // Gesetzt, wenn nicht gebucht werden konnte oder sie das Fragenpaket
+    // vorzeitig weggelegt hat.
     var offeneFrage: String?
 
     /// Bewirtungsbeleg ohne erfasste Angaben? Dann fragt die App nach.
@@ -184,8 +184,9 @@ struct Beleg: Identifiable, Codable {
         konto == "6640" && (bewirtungPersonen ?? "").trimmingCharacters(in: .whitespaces).isEmpty
     }
 
-    /// Grüner Haken nur, wenn die Zweitprüfung da ist UND nicht gescheitert.
-    var zweitgeprueft: Bool {
+    /// Grüner Haken nur, wenn das Archiv den Beleg bestätigt hat (Review-
+    /// Commit da) UND die Ablage nicht gescheitert ist.
+    var archivBestaetigt: Bool {
         auditReview != nil && reviewStatus != "fehlgeschlagen"
     }
 

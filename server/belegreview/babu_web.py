@@ -1697,7 +1697,7 @@ async def api_hochladen(request: Request, name: str = "beleg.jpg") -> Response:
     return JSONResponse({"ok": True, "commit": commit, "datei": f"docs/{monat}/{dateiname}"})
 
 
-# Beiakten eines Belegs: die Zweitprüfung und alles, was später dazukam.
+# Beiakten eines Belegs: das Lese-Ergebnis und alles, was später dazukam.
 # Beim Löschen gehen sie mit — sonst bliebe eine Prüfung ohne Beleg zurück.
 BELEG_BEIAKTEN = (".json", ".md", ".embedding.json", ".angaben.json",
                   ".bewirtung.json", ".korrektur.json")

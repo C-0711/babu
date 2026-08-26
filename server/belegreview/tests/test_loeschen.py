@@ -34,7 +34,7 @@ def welt(tmp_path, monkeypatch):
     (arbeit / "docs" / "2026-08").mkdir(parents=True)
     (arbeit / "docs" / "2026-08" / f"{STAMM}.jpg").write_bytes(b"\xff\xd8x")
     (arbeit / "review").mkdir()
-    # Beleg mit vollem Gefolge: Zweitprüfung, Angaben, Bewirtung, Korrektur.
+    # Beleg mit vollem Gefolge: Lesung, Angaben, Bewirtung, Korrektur.
     (arbeit / "review" / f"{STAMM}.json").write_text(
         json.dumps(gespeichert, ensure_ascii=False))
     (arbeit / "review" / f"{STAMM}.md").write_text("# BelegReview\n")

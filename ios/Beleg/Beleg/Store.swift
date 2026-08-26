@@ -320,17 +320,9 @@ final class AppStore: ObservableObject {
         }
     }
 
-    /// Die Serverlesung holen — und ANWENDEN.
-    ///
-    /// Bis 23.08.2026 holte diese Stelle nur die Prüfstempel. Übernommen
-    /// wurde die Lesung erst, wenn jemand den Beleg von Hand aufmachte
-    /// (ListeView.reviewLaden). Bis dahin stand überall — in der Liste, in
-    /// der Ergebniskarte, im Export — das, was das Telefon geraten hatte.
-    ///
-    /// Das Gerät liest mit Vision auf einem Foto; der Server liest mit
-    /// Paddle und deutet mit Geometrie. Wenn die beiden sich unterscheiden,
-    /// hat der Server recht. Also gilt seine Lesung, sobald sie da ist —
-    /// nicht, sobald jemand hinsieht.
+    /// Die Archiv-Bestätigung holen: die Prüfstempel (GitChain-Commits)
+    /// des abgelegten Belegs. Die Lesung selbst entsteht auf dem Telefon
+    /// und wird nur archiviert — nichts überschreibt Ninas Ergebnis.
     func auditLaden(_ id: UUID) async {
         guard let url = URL(string: ablageURL),
               let pat = KeychainHelfer.ladePAT(),
