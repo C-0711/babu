@@ -828,7 +828,9 @@ def _index_bauen(head: str) -> None:
             # Und wer alles beantwortet hat, ist fertig. Vorher stand der
             # Beleg danach auf „erfasst" — im Portal heißt das „wird noch
             # gelesen", und gelesen wurde er längst.
-            if eintrag.get("status") == "nachfrage" and _beleg_abgeschlossen(
+            # Issue #67: auch „erfasst" (kein review.json) wird zu „geprüft",
+            # wenn die Nutzerin alle offenen Fragen beantwortet hat.
+            if eintrag.get("status") in ("nachfrage", "erfasst") and _beleg_abgeschlossen(
                     eintrag["offen"], eintrag["bewirtung"], bewirtung_da):
                 eintrag["status"] = "geprüft"
             if review is not None:
@@ -1406,6 +1408,16 @@ def api_beleg(stamm: str, request: Request) -> Response:
             d["ergaenzt"] = True
             d["angaben"] = ang
             d["buchungssatz"] = datev_buchungssatz(d) if d else None
+            # Status neu ableiten: wenn die Nutzerin Angaben nachgetragen hat,
+            # ist der Beleg nicht mehr „erfasst", sondern zeigt die Daten.
+            # Ohne diese Neuberechnung bleibt Status „erfasst", und die
+            # Frontend-Detailansicht versteckt alles hinter „wird gelesen".
+            f_nach_angaben = d.get("felder") or {}
+            offen_nach_angaben = f_nach_angaben.get("offen") or []
+            bewirtung_signal = bool(f_nach_angaben.get("bewirtungssignal"))
+            if d["status"] == "erfasst" and _beleg_abgeschlossen(
+                    offen_nach_angaben, bewirtung_signal, eintrag["bewirtung_beantwortet"]):
+                d["status"] = "geprüft"
     d["bewirtung_beantwortet"] = eintrag["bewirtung_beantwortet"]
     if eintrag["bewirtung_beantwortet"]:
         roh = git_show(f"review/{stamm}.bewirtung.json")

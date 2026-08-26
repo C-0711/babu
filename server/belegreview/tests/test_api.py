@@ -68,6 +68,27 @@ def store(tmp_path_factory) -> Path:
     _git(arbeit, "commit", "-q", "-m", f"review: {STAMM}.jpg",
          "--author", "belegreview <review@gitchain.local>")
 
+    # Issue #67: Beleg mit Status „erfasst" (kein review.json), aber mit
+    # nachgetragenen Angaben (.angaben.json) — sollte die Daten zeigen.
+    (arbeit / "docs" / "2026-02").mkdir(parents=True)
+    (arbeit / "docs" / "2026-02" / "20260824-092514-1142bc-beleg_2026-02-23_delil_b1fc4bf5.jpg").write_bytes(b"\xff\xd8\xff\xe0delil")
+    _git(arbeit, "add", "-A")
+    _git(arbeit, "commit", "-q", "-m", "aufnahme: delil beleg",
+         "--author", "christoph0711.io <aufnahme@gitchain.local>")
+    # Nutzerin trägt Angaben nach — kein review.json, nur .angaben.json
+    (arbeit / "review" / "20260824-092514-1142bc-beleg_2026-02-23_delil_b1fc4bf5.angaben.json").write_text(json.dumps({
+        "von": "nina@0711.io",
+        "am": "2026-08-26T18:25:46Z",
+        "beantwortet": ["brutto", "lieferant", "datum"],
+        "brutto": 667.32,
+        "lieferant": "delilà GmbH",
+        "datum": "2026-02-23",
+        "kategorie": "verbrauchsmaterial"
+    }, ensure_ascii=False))
+    _git(arbeit, "add", "-A")
+    _git(arbeit, "commit", "-q", "-m", "angaben: delil beleg",
+         "--author", "nina@0711.io <nina@0711.io>")
+
     bare = tmp_path_factory.mktemp("store") / "babu.git"
     subprocess.run(["git", "clone", "-q", "--bare", str(arbeit), str(bare)], check=True)
     return bare
@@ -128,8 +149,8 @@ def test_belege_liste_und_etag(client):
     r = client.get("/api/belege")
     assert r.status_code == 200
     d = r.json()
-    assert d["gesamt"] == 3                      # JPG (Review) + PDF (erfasst) + Stub
-    assert d["monate"] == ["2026-08"]
+    assert d["gesamt"] == 4                      # JPG (Review) + PDF (erfasst) + Stub + delil
+    assert set(d["monate"]) == {"2026-08", "2026-02"}
     stati = {z["stamm"]: z["status"] for z in d["belege"]}
     assert stati[STAMM] == "nachfrage"           # offen: Trinkgeld-Differenz
     assert stati["20260812-211943-99b8fb-beleg-test"] == "erfasst"
@@ -315,3 +336,31 @@ def test_am_entwicklungsserver_gilt_beide_schleifennamen(monkeypatch):
     # Ein anderer Port bleibt draußen, auch auf der Schleife.
     assert bw._origin_ok(R("http://localhost:9999")) is False
     assert bw._origin_ok(R("https://boese.example")) is False
+
+
+def test_beleg_mit_angaben_zeigt_daten_nicht_erfasst(client):
+    """Issue #67: Beleg ohne review.json, aber mit .angaben.json sollte
+    Status „geprüft" haben und die Daten im Frontend zeigen.
+
+    Vorher: Status blieb „erfasst", Frontend zeigte „wird gelesen".
+    Nachher: API rechnet Status neu, wenn Nutzerin alles beantwortet hat.
+    """
+    _anmelden(client)
+    stamm = "20260824-092514-1142bc-beleg_2026-02-23_delil_b1fc4bf5"
+
+    # Index sollte ergaenzt=true haben
+    liste = client.get("/api/belege").json()
+    eintrag = next(z for z in liste["belege"] if z["stamm"] == stamm)
+    assert eintrag["ergaenzt"] is True
+    assert eintrag["status"] == "geprüft"   # Neu: nicht mehr „erfasst"
+
+    # Detail-API
+    detail = client.get(f"/api/beleg/{stamm}").json()
+    assert detail["status"] == "geprüft"    # ← der eigentliche Fix
+    assert detail["audit"]["review"] is None  # kein review.json
+    assert detail["ergaenzt"] is True
+    assert detail["felder"]["lieferant"] == "delilà GmbH"
+    assert detail["felder"]["brutto"] == 667.32
+    assert detail["felder"]["datum"] == "2026-02-23"
+    # Frontend prüft: if (status !== "erfasst") → zeigt Felder.
+    # Ohne den Fix wäre status="erfasst", und alles bliebe versteckt.
