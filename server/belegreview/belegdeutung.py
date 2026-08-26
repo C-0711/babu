@@ -181,7 +181,12 @@ KEINE_SUMME = ("zwischensumme", "zw.summe", "zwsumme", "nettosumme",
                "umsatzsteuer", "steuer", "rabatt", "skonto", "trinkgeld",
                "rückgeld", "rueckgeld", "zurück", "zurueck", "gegeben",
                "gutschein", "anzahlung", "guthaben", "pfand", "einzelpreis",
-               "stückpreis", "stueckpreis", "preis/stk")
+               "stückpreis", "stueckpreis", "preis/stk",
+               # Eine bezahlte Rechnung druckt unten „Offener Betrag 0,00" —
+               # das ist der REST, nicht die Summe. Auch ein Teilrest (50,00)
+               # darf nie gegen den Gesamtbetrag darüber gewinnen.
+               "offener betrag", "restbetrag", "bereits gezahlt",
+               "bereits bezahlt")
 
 # Fußzeile: was hier steht, ist juristisches Beiwerk, kein Rechnungsbetrag.
 FUSSZEILE = ("stammkapital", "handelsregister", "amtsgericht", "hrb", "hra",
@@ -418,6 +423,10 @@ def deute_summe(zeilen: list[Zeile], spalte: float | None,
                     ("gesamtbetrag", "gesamtsumme", "rechnungsbetrag",
                      "zahlbetrag", "endbetrag", "zu zahlen")):
                 continue
+        # Eine Rechnung über 0 € gibt es nicht — eine Null-Zeile ist kein
+        # Kandidat. Bleibt gar nichts übrig, füllt später die Gegenprobe.
+        if max(b.wert for b in bs) <= 0:
+            continue
         kandidaten.append((z, bs, wort))
     if kandidaten:
         z, bs, wort = kandidaten[-1]
@@ -439,6 +448,8 @@ def deute_summe(zeilen: list[Zeile], spalte: float | None,
         if _enthaelt(z.text, KEINE_SUMME) or _enthaelt(z.text, FUSSZEILE):
             continue
         for b in bs:
+            if b.wert <= 0:
+                continue  # eine Null ist nie „das, was zu zahlen war"
             if spalte is None or abs(b.x1 - spalte) <= blattbreite * 0.04:
                 frei.append((z, b))
     if fussab is not None:

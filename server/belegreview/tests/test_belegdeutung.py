@@ -270,6 +270,41 @@ def test_gesamtbetrag_brutto_ist_eine_summe():
     assert l.wert("brutto") == 15.00
 
 
+def test_offener_betrag_null_gewinnt_nicht():
+    """Der Delila-Fall vom 26.08.2026: die Rechnung war bezahlt, unten stand
+    „Offener Betrag 0,00 €" — und die Null gewann als unterste Betragszeile
+    gegen den Gesamtbetrag darüber."""
+    l = deuten([
+        k("delilà Hair Extensions", 40, 20, hoehe=22),
+        k("Gesamtbetrag netto", 40, 160), rechts("687,71", 300, 160),
+        k("zzgl. MwSt (19,00 %)", 40, 190), rechts("130,67", 300, 190),
+        k("Gesamtbetrag", 40, 220), rechts("818,38", 300, 220),
+        k("Bereits gezahlt", 40, 250), rechts("818,38", 300, 250),
+        k("Offener Betrag", 40, 280), rechts("0,00 €", 300, 280),
+    ], heute=date(2026, 8, 26))
+    assert l.wert("brutto") == 818.38
+
+
+def test_offener_restbetrag_gewinnt_nicht():
+    """Auch ein Teilrest ist der Rest, nicht die Summe."""
+    l = deuten([
+        k("delilà Hair Extensions", 40, 20, hoehe=22),
+        k("Gesamtbetrag", 40, 160), rechts("818,38", 300, 160),
+        k("Offener Betrag", 40, 220), rechts("50,00", 300, 220),
+    ], heute=date(2026, 8, 26))
+    assert l.wert("brutto") == 818.38
+
+
+def test_lauter_nullen_ergeben_keinen_betrag():
+    """Steht nirgends mehr als 0,00, ist nichts gelesen — None statt 0,
+    damit die Gegenprobe die Lücke füllen darf."""
+    l = deuten([
+        k("Laden GmbH", 40, 20, hoehe=22),
+        k("Noch zu zahlen", 40, 160), rechts("0,00", 300, 160),
+    ], heute=date(2026, 8, 22))
+    assert l.wert("brutto") is None
+
+
 def test_ohne_summenwort_gewinnt_der_groesste_ueber_der_fusszeile():
     l = deuten([
         k("Laden GmbH", 40, 20, hoehe=22),

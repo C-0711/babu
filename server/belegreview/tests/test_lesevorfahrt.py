@@ -127,6 +127,15 @@ def test_fehlender_betrag_aus_der_gegenprobe_wird_zur_nachfrage(rw):
     assert any("ansehen" in o for o in f["offen"])
 
 
+def test_eine_null_der_gegenprobe_fuellt_keine_luecke(rw):
+    """Liest auch das zweite Modell nur 0, wurde nichts gelesen —
+    die Lücke bleibt Lücke statt zur falschen Gewissheit zu werden."""
+    f = feld()
+    rw.gegenprobe_abgleichen(f, {"brutto": 0.0})
+    assert f["brutto"] is None
+    assert "brutto" not in f["herkunft"]
+
+
 def test_unbrauchbares_datum_fuellt_keine_luecke(rw):
     f = feld()
     rw.gegenprobe_abgleichen(f, {"datum": "neulich"})

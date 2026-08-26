@@ -594,7 +594,9 @@ def gegenprobe_abgleichen(f: dict, vlm: dict | None) -> list[str]:
         if iso:
             f["datum"] = iso
             herkunft["datum"] = dict(aus_gegenprobe)
-    if f.get("brutto") is None and gegen_brutto is not None:
+    # Eine 0 der Gegenprobe füllt keine Lücke — sie hieße nur, dass auch
+    # das zweite Modell nichts Belastbares gesehen hat.
+    if f.get("brutto") is None and gegen_brutto is not None and gegen_brutto > 0:
         f["brutto"] = gegen_brutto
         herkunft["brutto"] = dict(aus_gegenprobe)
         f.setdefault("offen", []).append(
