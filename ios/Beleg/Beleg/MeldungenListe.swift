@@ -11,6 +11,7 @@ struct MeldungenListe: View {
     @State private var zeilen: [Meldungszeile]?
     @State private var beanstandung: Meldungszeile?
     @State private var beanstandungsText = ""
+    @State private var beanstandungZuKurz = false
     @State private var laeuft = false
 
     private static let statusText = [
@@ -66,9 +67,30 @@ struct MeldungenListe: View {
             get: { beanstandung != nil },
             set: { if !$0 { beanstandung = nil } })) {
             TextField("Ein Satz genügt", text: $beanstandungsText)
-            Button("Abschicken") { Task { await beanstanden() } }
-                .disabled(beanstandungsText.trimmingCharacters(in: .whitespaces).count < 3)
+            // `.disabled` auf Alert-Buttons ignoriert SwiftUI (Apple lässt den
+            // Knopf trotzdem tippbar) — die Längenprüfung muss also IM Knopf
+            // selbst passieren, nicht über einen Modifier. Der Alert schließt
+            // sich immer, sobald irgendein Button getippt wird; darum wird
+            // `z` VOR dem Task gebunden (der Schließen-Handler oben setzt
+            // `beanstandung = nil`, bevor der Task überhaupt anläuft — sonst
+            // bricht der guard in beanstanden() still ab, ohne dass Nina
+            // etwas davon merkt).
+            Button("Abschicken") {
+                let z = beanstandung
+                let text = beanstandungsText.trimmingCharacters(in: .whitespaces)
+                if text.count < 3 {
+                    // Serverkompatibel (babu_web verlangt ebenfalls >= 3
+                    // Zeichen) — und sichtbar statt still verschluckt.
+                    beanstandungZuKurz = true
+                } else {
+                    Task { await beanstanden(z: z, text: text) }
+                }
+            }
             Button("Abbrechen", role: .cancel) {}
+        }
+        .alert("Schreib noch etwas mehr — ein ganzer Satz genügt.",
+               isPresented: $beanstandungZuKurz) {
+            Button("OK", role: .cancel) {}
         }
     }
 
@@ -88,16 +110,15 @@ struct MeldungenListe: View {
         }
     }
 
-    private func beanstanden() async {
-        guard let z = beanstandung, let url = URL(string: store.ablageURL),
-              let pat = KeychainHelfer.ladePAT(),
-              beanstandungsText.trimmingCharacters(in: .whitespaces).count >= 3
+    private func beanstanden(z: Meldungszeile?, text: String) async {
+        guard let z, let url = URL(string: store.ablageURL),
+              let pat = KeychainHelfer.ladePAT()
         else { return }
         laeuft = true
         defer { laeuft = false }
-        if await AblageService.meldungBeanstanden(iid: z.iid, text: beanstandungsText,
+        if await AblageService.meldungBeanstanden(iid: z.iid, text: text,
                                                   basis: url, pat: pat) {
-            beanstandung = nil
+            beanstandungsText = ""
             await laden()
         }
     }
