@@ -440,22 +440,20 @@ struct CaptureTab: View {
 
         try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 2
-        let felder = FeldParser.parse(zeilen: ocr.parserZeilen)
-
-        // Komplett unlesbares Foto: keinen 0,00-€-Beleg anlegen.
-        if felder.brutto == nil && felder.lieferant == nil {
+        // Kein Parser mehr: Vision liefert die Zeilen, Gemma liest sie.
+        // Unlesbar ist ein Foto nur, wenn Vision praktisch nichts erkennt.
+        if ocr.text.trimmingCharacters(in: .whitespacesAndNewlines).count < 12 {
             if lauf == verarbeitungsLauf { phase = .nichtsErkannt }
             return
         }
 
-        // Für die Ergebnis-Ansicht: Foto + Positionen der erkannten Felder.
         ergebnisBild = bild
-        markierungen = FeldMarker.markierungen(zeilen: ocr.zeilen, felder: felder)
+        markierungen = []
 
         try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 3
         let jpeg = bild.jpegData(compressionQuality: 0.6)
-        let neu = store.routen(felder: felder, bildJpeg: jpeg, ocrText: ocr.text)
+        let neu = store.routen(bildJpeg: jpeg, ocrText: ocr.text)
 
         try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 4

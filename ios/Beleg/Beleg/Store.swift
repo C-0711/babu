@@ -158,48 +158,30 @@ final class AppStore: ObservableObject {
     }
 
     /// OCR-Felder → geroutete Buchung (auto / bestätigen / prüfen).
-    func routen(felder: Felder, bildJpeg: Data?, ocrText: String) -> Beleg {
-        let v = Kontierung.vorschlag(felder: felder)
+    func routen(bildJpeg: Data?, ocrText: String) -> Beleg {
+        // Der Parser ist raus aus dem Buchungsweg (26.08.2026, Kalugahair-
+        // Beweis: Vision las alles, der Parser machte nil daraus). Der Beleg
+        // entsteht als Hülle — Zahlen, Lieferant und Datum setzt Gemma über
+        // die Einschätzung. Die erste Vision-Zeile dient nur als Anzeigename.
+        let kopf = ocrText.split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { $0.count >= 3 } ?? "Beleg"
         var beleg = Beleg(
-            lieferant: felder.lieferant ?? "Unbekannter Lieferant",
-            belegNr: felder.belegNr ?? "ohne Nr.",
-            datumText: felder.datumText ?? DateFormatter.kurz.string(from: Date()),
-            netto: felder.netto ?? 0,
-            ust: felder.ust ?? 0,
-            brutto: felder.brutto ?? 0,
-            ustSatz: felder.ustSatz,
-            konto: v.konto,
-            steuerschluessel: v.steuerschluessel,
-            kreditor: v.kreditor,
-            herkunft: v.herkunft,
-            confidence: v.confidence,
+            lieferant: String(kopf.prefix(40)),
+            belegNr: "ohne Nr.",
+            datumText: DateFormatter.kurz.string(from: Date()),
+            netto: 0, ust: 0, brutto: 0, ustSatz: 0,
+            konto: nil,
+            steuerschluessel: "0",
+            kreditor: "70000",
+            herkunft: .ki,
+            confidence: 0,
             status: .offen,
-            begruendung: v.begruendung,
-            summenprobeOK: felder.summenprobeOK
+            begruendung: "Wird von der Buchhaltung gelesen.",
+            summenprobeOK: false
         )
         beleg.bildJpeg = bildJpeg
         beleg.ocrText = ocrText
-        beleg.steuerPositionen = felder.steuerPositionen.isEmpty ? nil : felder.steuerPositionen
-        beleg.gutschriftSignal = felder.gutschriftSignal ? true : nil
-        if let w = felder.waehrung {
-            // Fremdwährung: die gelesenen Zahlen sind KEINE Euro. Original
-            // festhalten, Steuerfelder neutralisieren — den Euro-Wert setzt
-            // die Buchhaltung (Kontoauszug-Abgleich oder Kurs).
-            beleg.fremdBetrag = felder.brutto
-            beleg.fremdWaehrung = w
-            beleg.ust = 0
-            beleg.netto = beleg.brutto
-            beleg.ustSatz = 0
-            beleg.steuerschluessel = "0"
-        }
-
-        // Das Telefon beurteilt die Qualität und liefert eine Erstauswertung —
-        // verbindlich gebucht wird aus der Lesung der Belegbox (PaddleOCR),
-        // sobald sie da ist (ausZweitpruefungUebernehmen). Nur OHNE Belegbox
-        // bleibt der alte Sofort-Weg, sonst gäbe es gar keinen.
-        if !ablageAktiv, beleg.confidence >= 95, beleg.fremdWaehrung == nil {
-            siegeln(&beleg, status: .automatisch)
-        }
         if ablageAktiv, bildJpeg != nil {
             beleg.ablageStatus = .ausstehend
             beleg.ablageDateiname = ablageDateiname(fuer: beleg)
