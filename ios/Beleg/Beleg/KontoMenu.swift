@@ -61,6 +61,12 @@ struct KontoMenuView: View {
                         }
                     }
                     .padding(.vertical, 4)
+
+                    NavigationLink {
+                        MeldungenListe()
+                    } label: {
+                        Label("Meine Meldungen", systemImage: "exclamationmark.bubble")
+                    }
                 }
 
                 // Was zusammengehört, steht zusammen: was die Zahlen angeht,

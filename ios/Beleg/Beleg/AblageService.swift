@@ -33,6 +33,15 @@ struct ChatFehler: Error {
     let meldung: String
 }
 
+/// Eine Zeile aus „Meine Meldungen" (`GET /api/rueckmeldungen`).
+struct Meldungszeile: Identifiable, Decodable {
+    let iid: Int
+    let titel: String
+    let status: String      // gemeldet | in-arbeit | bitte-pruefen | erledigt
+    let kommentar: String?
+    var id: Int { iid }
+}
+
 /// Client für die GitChain-Ablage auf der H200V:
 /// `POST <basis>/ablage`, Multipart-Feld `file`, `Authorization: Bearer <PAT>`.
 /// Jeder erfolgreiche Upload wird serverseitig ein Commit `aufnahme: …` in babu.git.
@@ -556,6 +565,47 @@ enum AblageService {
         let json = (try? JSONSerialization.jsonObject(with: daten)) as? [String: Any]
         return (false, json?["fehler"] as? String
                 ?? "Das hat gerade nicht geklappt.")
+    }
+
+    /// Ninas Meldungen samt Stand (`GET /api/rueckmeldungen`).
+    static func meldungenHolen(basis: URL, pat: String) async -> [Meldungszeile]? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/rueckmeldungen"))
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        struct Antwort: Decodable { let meldungen: [Meldungszeile] }
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              (antwort as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONDecoder().decode(Antwort.self, from: daten)
+        else { return nil }
+        return json.meldungen
+    }
+
+    private static func _meldungPost(pfad: String, koerper: [String: Any]?,
+                                     basis: URL, pat: String) async -> Bool {
+        var request = URLRequest(url: basis.appendingPathComponent(pfad))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        if let koerper {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try? JSONSerialization.data(withJSONObject: koerper)
+        }
+        guard let (_, antwort) = try? await URLSession.shared.data(for: request)
+        else { return false }
+        return (antwort as? HTTPURLResponse)?.statusCode == 200
+    }
+
+    /// „Passt ✓" — schließt den Vorgang mit Ninas Freigabe.
+    static func meldungFreigeben(iid: Int, basis: URL, pat: String) async -> Bool {
+        await _meldungPost(pfad: "api/rueckmeldungen/\(iid)/freigeben",
+                           koerper: nil, basis: basis, pat: pat)
+    }
+
+    /// „Stimmt noch nicht" — mit einem Satz zurück in die Runde.
+    static func meldungBeanstanden(iid: Int, text: String,
+                                   basis: URL, pat: String) async -> Bool {
+        await _meldungPost(pfad: "api/rueckmeldungen/\(iid)/beanstanden",
+                           koerper: ["text": text], basis: basis, pat: pat)
     }
 
     /// Wer bin ich? (`GET /api/ich`, Bearer-Geräteschlüssel)
