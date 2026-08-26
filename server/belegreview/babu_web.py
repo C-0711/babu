@@ -3136,7 +3136,7 @@ async def api_buchung_einschaetzung(request: Request) -> Response:
     except Exception:  # noqa: BLE001
         pass
     monat = str(body.get("monat") or "")
-    umsaetze, nachbarn = [], []
+    umsaetze, nachbarn, offene_abbuchungen = [], [], []
     if re.match(r"^\d{4}-\d{2}$", monat):
         try:
             idx = await run_in_threadpool(index_aktuell)
@@ -3147,13 +3147,23 @@ async def api_buchung_einschaetzung(request: Request) -> Response:
                          "lieferant": b.get("lieferant")}
                         for b in idx["belege"].values()
                         if str(b.get("datum") or "").startswith(monat)][:15]
+            # Das Abgleich-RESULTAT in den Prompt: welche Abbuchungen des
+            # Monats haben noch keinen Beleg? Deckt dieser eine davon, soll
+            # Gemma das sagen — der Haken in der Bank-Checkliste beginnt hier.
+            import kontoauszug as ka  # noqa: PLC0415
+            offene_abbuchungen = [
+                {"datum": u.get("datum"), "betrag": u.get("betrag"),
+                 "text": u.get("text"), "gegenpartei": u.get("gegenpartei")}
+                for u in ka.abgleich(idx["umsaetze"].get(monat, []),
+                                     list(idx["belege"].values()))["fehlend"]
+            ][:10]
         except Exception:  # noqa: BLE001
             pass
     try:
         ergebnis = await run_in_threadpool(
             gemma_buchung.runde, zeilen, profil, antworten,
             kontenrahmen_von(un), umsaetze, nachbarn, None, None,
-            vertraege_ktx, personal_ktx)
+            vertraege_ktx, personal_ktx, offene_abbuchungen)
     except Exception as ex:  # noqa: BLE001
         print(f"[einschaetzung] {un}: {ex!r}", flush=True)
         return JSONResponse({"fehler": "Die Buchhaltung ist gerade nicht zu "

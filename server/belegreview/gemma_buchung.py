@@ -31,6 +31,9 @@ VLM_API = os.environ.get("VLM_API", "http://127.0.0.1:11435/v1/chat/completions"
 VLM_MODELL = os.environ.get("VLM_MODELL", "gemma4-mm")
 VLM_FRIST = float(os.environ.get("VLM_FRIST", "120"))
 
+# Die Fächer der Ablage — Gemmas Klassifizierung muss eines davon treffen.
+DOKUMENTKLASSEN = ("beleg", "vertrag", "behoerde", "kontoauszug")
+
 # Normal ist EIN Fragenpaket. Wer nach so vielen Antworten immer noch
 # fragt, bucht nicht mehr — der Beleg gehört auf den Schreibtisch.
 ANTWORTEN_MAX = 8
@@ -90,12 +93,23 @@ def prompt_bauen(profil: str, zeilen: list[str], antworten: list[dict],
                  nachbarn: list[dict] | None = None,
                  markdown: str | None = None, mit_bild: bool = False,
                  vertraege: list[dict] | None = None,
-                 personal: list[dict] | None = None) -> str:
+                 personal: list[dict] | None = None,
+                 offene_abbuchungen: list[dict] | None = None) -> str:
     beantwortet = ""
     if antworten:
         beantwortet = "\nNINA HAT BEREITS BEANTWORTET:\n" + "\n".join(
             f"  Frage: {a.get('frage', '')}\n  Antwort: {a.get('antwort', '')}"
             for a in antworten)
+    abgleich_kontext = ""
+    if offene_abbuchungen:
+        abgleich_kontext = ("\nNOCH UNGEDECKTE ABBUCHUNGEN vom Konto (der "
+                            "Abgleich fand dafür noch keinen Beleg — deckt "
+                            "DIESER Beleg eine davon, nenne sie in der "
+                            "Begründung; deckt er keine, ist auch das eine "
+                            "Antwort):\n" + "\n".join(
+            f"  {u.get('datum', '?')}  {u.get('betrag', '?')} €  "
+            f"{str(u.get('text') or u.get('gegenpartei') or '')[:60]}"
+            for u in offene_abbuchungen))
     konto_kontext = ""
     if umsaetze:
         konto_kontext = ("\nKONTOBEWEGUNGEN im Umfeld (Bank/PayPal aus den "
@@ -137,7 +151,7 @@ KATEGORIEN (wähle GENAU eine über ihren Code — Kontonummern vergibst nicht d
 
 DER BELEG — {"liegt dir als FOTO bei. Lies ihn selbst, vollständig: Kopf, jede Einzelposition, Summen, Steuerzeilen, Währung, Zahlweise." if mit_bild else ("als strukturiertes Dokument (Layout-Lesung):" if markdown else "die erkannten Textzeilen in Lesereihenfolge:")}
 {"" if mit_bild else (markdown if markdown else chr(10).join('  ' + z for z in zeilen))}
-{konto_kontext}{vertrag_kontext}{personal_kontext}{beleg_kontext}{beantwortet}
+{konto_kontext}{abgleich_kontext}{vertrag_kontext}{personal_kontext}{beleg_kontext}{beantwortet}
 Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
 - Erfinde keine Umsatzsteuer, die nicht auf dem Beleg ausgewiesen ist.
 - Lies die EINZELPOSITIONEN aus dem Beleg: Bezeichnung, Betrag, Steuersatz
@@ -155,6 +169,9 @@ Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
   EINMAL — jede als Multiple Choice mit 2 bis 4 kurzen Antwortmöglichkeiten,
   in ihrer Sprache (du-Form). Frag nur, was fürs Buchen wirklich nötig ist.
 - Frag nichts, was schon beantwortet wurde. Ist alles klar, buchst du sofort.
+- Sag außerdem, WAS das Dokument ist (dokumentklasse): "beleg" (Bon oder
+  Rechnung über einen Kauf — der Regelfall), "vertrag", "behoerde" (Post vom
+  Amt) oder "kontoauszug". Danach richtet sich, in welches Fach es kommt.
 
 Antworte NUR mit einem JSON-Objekt, ohne Text davor oder danach:
 entweder {{"status": "abgeben", "hinweis": "…"}}  (nur für Lohn u. Ä. — Dinge,
@@ -163,6 +180,7 @@ oder     {{"status": "fragen",
            "fragen": [{{"frage": "…", "optionen": ["…", "…"]}}]}}
 oder     {{"status": "gebucht",
            "kategorie": "<code aus der Liste>",
+           "dokumentklasse": "beleg | vertrag | behoerde | kontoauszug",
            "lieferant": "…", "datum": "JJJJ-MM-TT",
            "buchungstext": "…",
            "betrag": 0.0, "waehrung": "EUR",
@@ -198,6 +216,14 @@ def buchung_pruefen(roh: dict, rahmen: str = "SKR04") -> dict:
         return {"status": "unklar", "roh": roh}
     if status != "gebucht":
         return {"status": "unklar", "roh": roh}
+    # Ohne gültige Dokumentklasse kann die Ablage kein Fach wählen — dann
+    # wird gefragt statt geraten. Die Antwort fließt als `antworten` zurück.
+    klasse = str(roh.get("dokumentklasse") or "").strip().lower()
+    if klasse not in DOKUMENTKLASSEN:
+        return {"status": "fragen", "fragen": [{
+            "frage": "Was für ein Dokument ist das?",
+            "optionen": ["Ein Beleg (Kauf oder Rechnung)", "Ein Vertrag",
+                         "Post vom Amt", "Ein Kontoauszug"]}]}
     kat = kontierung.KATEGORIEN.get(str(roh.get("kategorie", "")).strip())
     konto = None
     if kat is not None:
@@ -232,6 +258,7 @@ def buchung_pruefen(roh: dict, rahmen: str = "SKR04") -> dict:
         # der führende (größter Bruttoanteil), die Tabelle trägt den Rest.
         satz = steuersaetze[0]["satz"]
     return {"status": "gebucht", "buchung": {
+        "dokumentklasse": klasse,
         "lieferant": str(roh.get("lieferant") or "")[:80] or None,
         "datum": str(roh.get("datum") or "")[:10] or None,
         "kategorie": kat.code,
@@ -339,7 +366,8 @@ def runde(zeilen: list[str], einstellungen: dict, antworten: list[dict],
           markdown: str | None = None,
           bild: tuple[bytes, str] | None = None,
           vertraege: list[dict] | None = None,
-          personal: list[dict] | None = None) -> dict:
+          personal: list[dict] | None = None,
+          offene_abbuchungen: list[dict] | None = None) -> dict:
     """Eine Frage-oder-Buchung-Runde. Wirft nichts Fachliches — Netzfehler
     reicht der Aufrufer als 502 weiter."""
     if len(antworten) >= ANTWORTEN_MAX:
@@ -349,7 +377,8 @@ def runde(zeilen: list[str], einstellungen: dict, antworten: list[dict],
     roh = _gemma(prompt_bauen(profil_text(einstellungen), zeilen, antworten,
                               rahmen, umsaetze, nachbarn, markdown,
                               mit_bild=bild is not None,
-                              vertraege=vertraege, personal=personal), bild)
+                              vertraege=vertraege, personal=personal,
+                              offene_abbuchungen=offene_abbuchungen), bild)
     ergebnis = buchung_pruefen(roh, rahmen)
     if ergebnis["status"] == "unklar":
         return {"status": "fragen", "fragen": [{

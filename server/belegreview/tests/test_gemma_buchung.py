@@ -76,7 +76,7 @@ def test_prompt_traegt_beleg_profil_und_alte_antworten():
 
 def test_kategorie_wird_zur_kontonummer_aus_dem_katalog():
     e = gemma_buchung.buchung_pruefen(
-        {"status": "gebucht", "kategorie": "geldtransit", "betrag": 650,
+        {"status": "gebucht", "dokumentklasse": "beleg", "kategorie": "geldtransit", "betrag": 650,
          "betrag_eur": 650, "ust_satz": 0, "buchungstext": "Kasse an Bank"})
     assert e["status"] == "gebucht"
     assert e["buchung"]["konto"] == "1460"       # SKR04, aus kontierung.py
@@ -85,21 +85,21 @@ def test_kategorie_wird_zur_kontonummer_aus_dem_katalog():
 
 def test_erfundene_kategorie_wird_zur_rueckfrage_nicht_zur_buchung():
     e = gemma_buchung.buchung_pruefen(
-        {"status": "gebucht", "kategorie": "wellness-oase", "betrag": 799})
+        {"status": "gebucht", "dokumentklasse": "beleg", "kategorie": "wellness-oase", "betrag": 799})
     assert e["status"] == "fragen"
     assert e["fragen"][0]["optionen"]            # Multiple Choice, nicht offen
 
 
 def test_unmoeglicher_steuersatz_faellt_auf_null():
     e = gemma_buchung.buchung_pruefen(
-        {"status": "gebucht", "kategorie": "sonstiges", "betrag": 10,
+        {"status": "gebucht", "dokumentklasse": "beleg", "kategorie": "sonstiges", "betrag": 10,
          "betrag_eur": 10, "ust_satz": 16})
     assert e["buchung"]["ust_satz"] == 0
 
 
 def test_fremdwaehrung_bleibt_sichtbar():
     e = gemma_buchung.buchung_pruefen(
-        {"status": "gebucht", "kategorie": "fahrt", "betrag": 55.74,
+        {"status": "gebucht", "dokumentklasse": "beleg", "kategorie": "fahrt", "betrag": 55.74,
          "waehrung": "aed", "betrag_eur": 13.9, "ust_satz": 0})
     assert e["buchung"]["waehrung"] == "AED"
     assert e["buchung"]["betrag_eur"] == 13.9
@@ -109,7 +109,7 @@ def test_fremdwaehrung_bleibt_sichtbar():
 
 def test_positionen_werden_gelesen_und_gesaeubert():
     e = gemma_buchung.buchung_pruefen(
-        {"status": "gebucht", "kategorie": "buerobedarf", "betrag": 485.7,
+        {"status": "gebucht", "dokumentklasse": "beleg", "kategorie": "buerobedarf", "betrag": 485.7,
          "betrag_eur": 485.7, "ust_satz": 19, "positionen": [
              {"bezeichnung": "Stifte", "betrag": 12.5, "ust_satz": 19,
               "kategorie": "buerobedarf"},
@@ -334,7 +334,7 @@ def test_direktroute_gibt_gemma_vertraege_und_personal(direkt_klient, monkeypatc
 
     def falsche_runde(zeilen, einstellungen, antworten, rahmen,
                       umsaetze=None, nachbarn=None, markdown=None, bild=None,
-                      vertraege=None, personal=None):
+                      vertraege=None, personal=None, offene_abbuchungen=None):
         gesehen.update(vertraege=vertraege, personal=personal)
         return {"status": "gebucht", "buchung": {}}
 
@@ -350,7 +350,7 @@ def test_direktroute_gibt_gemma_vertraege_und_personal(direkt_klient, monkeypatc
 
 def test_mischsatz_wird_zur_steuertabelle_mit_fuehrendem_satz():
     e = gemma_buchung.buchung_pruefen(
-        {"status": "gebucht", "kategorie": "sonstiges", "betrag": 22.96,
+        {"status": "gebucht", "dokumentklasse": "beleg", "kategorie": "sonstiges", "betrag": 22.96,
          "betrag_eur": 22.96, "ust_satz": 0, "positionen": [
              {"bezeichnung": "Wasser", "betrag": 17.52, "ust_satz": 7,
               "kategorie": "sonstiges"},
@@ -366,7 +366,7 @@ def test_mischsatz_wird_zur_steuertabelle_mit_fuehrendem_satz():
 
 def test_fremdwaehrung_bekommt_keine_steuertabelle_und_satz_null():
     e = gemma_buchung.buchung_pruefen(
-        {"status": "gebucht", "kategorie": "fahrt", "betrag": 55.74,
+        {"status": "gebucht", "dokumentklasse": "beleg", "kategorie": "fahrt", "betrag": 55.74,
          "waehrung": "AED", "betrag_eur": 14.2, "ust_satz": 19, "positionen": [
              {"bezeichnung": "Fahrpreis", "betrag": 45.74, "ust_satz": 19,
               "kategorie": "fahrt"}]})
@@ -383,7 +383,7 @@ def test_fortbildung_und_porto_stehen_im_katalog():
     assert "porto: Porto und Versand" in text
     # Der Kurs über 799 € landete ohne diese Kategorie auf „Fachliteratur".
     e = gemma_buchung.buchung_pruefen(
-        {"status": "gebucht", "kategorie": "fortbildung", "betrag": 799,
+        {"status": "gebucht", "dokumentklasse": "beleg", "kategorie": "fortbildung", "betrag": 799,
          "betrag_eur": 799, "ust_satz": 0})
     assert e["buchung"]["konto"] == "6821"
     assert e["buchung"]["kategorie_name"] == "Fortbildung und Seminare"
@@ -393,3 +393,46 @@ def test_beide_kategorien_kennen_auch_skr03():
     import kontierung as kt
     assert kt.KATEGORIEN["fortbildung"].konto("SKR03") == "4945"
     assert kt.KATEGORIEN["porto"].konto("SKR03") == "4910"
+
+
+# ————— Zielbild: Klassifizierungsfrage und Kontoabgleich im Prompt —————
+
+def test_prompt_fragt_die_dokumentklasse_ab():
+    p = gemma_buchung.prompt_bauen("P", ["Zeile"], [])
+    assert "dokumentklasse" in p
+    assert "kontoauszug" in p and "behoerde" in p
+
+
+def test_prompt_traegt_die_ungedeckten_abbuchungen():
+    p = gemma_buchung.prompt_bauen(
+        "P", ["Zeile"], [],
+        offene_abbuchungen=[{"datum": "11.02.2026", "betrag": -818.38,
+                             "text": "DELILA GMBH RG 34572"}])
+    assert "UNGEDECKTE ABBUCHUNGEN" in p
+    assert "818.38" in p or "818,38" in p
+    assert "DELILA" in p
+
+
+def test_buchung_ohne_dokumentklasse_wird_abgewiesen():
+    """Ohne Klasse kann die Ablage kein Fach wählen — dann wird gefragt,
+    nicht geraten."""
+    e = gemma_buchung.buchung_pruefen(
+        {"status": "gebucht", "kategorie": "sonstiges", "betrag": 10,
+         "betrag_eur": 10, "ust_satz": 0})
+    assert e["status"] == "fragen"
+    assert any("Dokument" in f["frage"] for f in e["fragen"])
+
+
+def test_erfundene_dokumentklasse_wird_abgewiesen():
+    e = gemma_buchung.buchung_pruefen(
+        {"status": "gebucht", "kategorie": "sonstiges", "betrag": 10,
+         "betrag_eur": 10, "ust_satz": 0, "dokumentklasse": "liebesbrief"})
+    assert e["status"] == "fragen"
+
+
+def test_die_klasse_steht_in_der_buchung():
+    e = gemma_buchung.buchung_pruefen(
+        {"status": "gebucht", "kategorie": "sonstiges", "betrag": 10,
+         "betrag_eur": 10, "ust_satz": 0, "dokumentklasse": "beleg"})
+    assert e["status"] == "gebucht"
+    assert e["buchung"]["dokumentklasse"] == "beleg"
