@@ -4709,6 +4709,8 @@ async def api_rueckmeldung(request: Request) -> Response:
     else:
         # Wenn GitLab wieder da ist, gleich Liegengebliebenes mitnehmen.
         await run_in_threadpool(_rueckmeldung_nachtragen)
+        # Cache ungültig machen, damit die neue Meldung sofort in der Liste erscheint.
+        _MELDUNGEN_CACHE.update(stand=0.0)
     print(f"[rückmeldung] {un}: {issue['title'][:60]} — "
           f"{'issue ' + was if ok else 'gepuffert (' + was + ')'}", flush=True)
     return JSONResponse({"ok": True, "titel": issue["title"],

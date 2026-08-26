@@ -97,3 +97,31 @@ def test_nachtragen_laeuft_nie_doppelt(klient, monkeypatch):
     with bw._db() as conn:
         n = conn.execute("select count(*) from meldung_puffer").fetchone()[0]
     assert n == 0
+
+
+def test_erfolgreiche_meldung_invalidiert_cache(klient, monkeypatch):
+    """Neue Meldung soll sofort in der Liste erscheinen — dazu muss der Cache
+    ungültig gemacht werden, sobald GitLab die Meldung angenommen hat."""
+    c, bw, gm = klient
+    monkeypatch.setattr(gm, "issue_anlegen", lambda *a, **k: (True, "64"))
+    # Cache vorher füllen — simuliert den Fall, dass Nina kurz vor dem Melden
+    # die Liste aufgerufen hat (und dort ihre neue Meldung noch nicht sieht).
+    bw._MELDUNGEN_CACHE.update(stand=999999.0, daten=[{"iid": 1, "titel": "alt"}])
+    r = c.post("/api/rueckmeldung", json={"text": "Neue Meldung fehlt in der Liste."})
+    assert r.status_code == 200
+    # Cache muss ungültig sein (stand=0.0), damit der nächste GET frisch holt.
+    assert bw._MELDUNGEN_CACHE["stand"] == 0.0
+
+
+def test_gepufferte_meldung_invalidiert_cache_nicht(klient, monkeypatch):
+    """Wenn GitLab weg ist und die Meldung nur gepuffert wird, darf der Cache
+    NICHT ungültig gemacht werden — sonst würde die App beim nächsten Öffnen
+    der Liste versuchen, GitLab zu erreichen (das gerade weg ist), statt den
+    noch gültigen Cache zu verwenden."""
+    c, bw, gm = klient
+    monkeypatch.setattr(gm, "issue_anlegen", lambda *a, **k: (False, "weg"))
+    bw._MELDUNGEN_CACHE.update(stand=999999.0, daten=[{"iid": 1, "titel": "alt"}])
+    r = c.post("/api/rueckmeldung", json={"text": "GitLab ist weg."})
+    assert r.status_code == 200
+    # Cache muss unverändert bleiben (stand immer noch 999999.0).
+    assert bw._MELDUNGEN_CACHE["stand"] == 999999.0
