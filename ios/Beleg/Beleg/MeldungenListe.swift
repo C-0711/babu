@@ -67,6 +67,7 @@ struct MeldungenListe: View {
             set: { if !$0 { beanstandung = nil } })) {
             TextField("Ein Satz genügt", text: $beanstandungsText)
             Button("Abschicken") { Task { await beanstanden() } }
+                .disabled(beanstandungsText.trimmingCharacters(in: .whitespaces).count < 3)
             Button("Abbrechen", role: .cancel) {}
         }
     }

@@ -61,12 +61,6 @@ struct KontoMenuView: View {
                         }
                     }
                     .padding(.vertical, 4)
-
-                    NavigationLink {
-                        MeldungenListe()
-                    } label: {
-                        Label("Meine Meldungen", systemImage: "exclamationmark.bubble")
-                    }
                 }
 
                 // Was zusammengehört, steht zusammen: was die Zahlen angeht,
@@ -153,6 +147,11 @@ struct KontoMenuView: View {
                         WasBabuKannView { zurueck() }
                     } label: {
                         Label("Was babu alles kann", systemImage: "list.bullet.rectangle")
+                    }
+                    NavigationLink {
+                        MeldungenListe()
+                    } label: {
+                        Label("Meine Meldungen", systemImage: "exclamationmark.bubble")
                     }
                     NavigationLink {
                         EinstellungenView()

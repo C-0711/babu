@@ -580,7 +580,7 @@ enum AblageService {
         return json.meldungen
     }
 
-    private static func _meldungPost(pfad: String, koerper: [String: Any]?,
+    private static func meldungPost(pfad: String, koerper: [String: Any]?,
                                      basis: URL, pat: String) async -> Bool {
         var request = URLRequest(url: basis.appendingPathComponent(pfad))
         request.httpMethod = "POST"
@@ -597,14 +597,14 @@ enum AblageService {
 
     /// „Passt ✓" — schließt den Vorgang mit Ninas Freigabe.
     static func meldungFreigeben(iid: Int, basis: URL, pat: String) async -> Bool {
-        await _meldungPost(pfad: "api/rueckmeldungen/\(iid)/freigeben",
+        await meldungPost(pfad: "api/rueckmeldungen/\(iid)/freigeben",
                            koerper: nil, basis: basis, pat: pat)
     }
 
     /// „Stimmt noch nicht" — mit einem Satz zurück in die Runde.
     static func meldungBeanstanden(iid: Int, text: String,
                                    basis: URL, pat: String) async -> Bool {
-        await _meldungPost(pfad: "api/rueckmeldungen/\(iid)/beanstanden",
+        await meldungPost(pfad: "api/rueckmeldungen/\(iid)/beanstanden",
                            koerper: ["text": text], basis: basis, pat: pat)
     }
 
