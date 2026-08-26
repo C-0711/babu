@@ -21,7 +21,7 @@ def klient(tmp_path, monkeypatch):
     import gitlab_meldungen as gm
     babu_web.PORTAL_DB = tmp_path / "portal.db"
     # Wache: jede Anfrage ist nina.
-    monkeypatch.setattr(babu_web, "_api_wache", lambda request: ("nina@0711.io", None))
+    monkeypatch.setattr(babu_web, "_box_wache", lambda request: ("nina@0711.io", None))
     return TestClient(babu_web.app), babu_web, gm
 
 

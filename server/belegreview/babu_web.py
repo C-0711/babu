@@ -4657,8 +4657,12 @@ async def api_rueckmeldung(request: Request) -> Response:
 
     Die eine Zusage: eine Meldung geht nie verloren. GitLab weg? Dann liegt
     sie in `meldung_puffer` (portal.db) und der nächste Aufruf hier oder von
-    /api/rueckmeldungen trägt sie nach. Nina liest in beiden Fällen „angekommen"."""
-    un, fehler = _api_wache(request)
+    /api/rueckmeldungen trägt sie nach. Nina liest in beiden Fällen „angekommen".
+
+    Belegbox-Wache statt der bloßen Konto-Wache: eine Meldung hängt an einem
+    Salon/einer Belegbox, kein beliebiges aktives Konto (z. B. frisch über
+    /api/signup) soll hier mitlesen oder -schreiben dürfen."""
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     try:
@@ -4736,7 +4740,7 @@ def _letzte_claude_notiz(iid: int) -> str | None:
 
 @app.get("/api/rueckmeldungen")
 async def api_rueckmeldungen(request: Request) -> Response:
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     import gitlab_meldungen as gm  # noqa: PLC0415
@@ -4779,7 +4783,7 @@ def _meldung_im_zustand(iid: int, erwartet: str):
 
 @app.post("/api/rueckmeldungen/{iid}/freigeben")
 async def api_rueckmeldung_freigeben(iid: int, request: Request) -> Response:
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     import gitlab_meldungen as gm  # noqa: PLC0415
@@ -4788,13 +4792,19 @@ async def api_rueckmeldung_freigeben(iid: int, request: Request) -> Response:
         return fehler
     await run_in_threadpool(gm.notiz, iid, f"fachlich freigegeben von {un}")
     ok = await run_in_threadpool(gm.issue_aendern, iid, state_event="close")
+    if not ok:
+        # Stiller 200-mit-ok:false hätte die App einfach weiterklicken lassen,
+        # als wäre die Freigabe angekommen — war sie aber nicht.
+        return JSONResponse(
+            {"fehler": "GitLab hat die Freigabe gerade nicht angenommen — "
+                       "bitte gleich noch einmal."}, status_code=503)
     _MELDUNGEN_CACHE.update(stand=0.0)
-    return JSONResponse({"ok": ok})
+    return JSONResponse({"ok": True})
 
 
 @app.post("/api/rueckmeldungen/{iid}/beanstanden")
 async def api_rueckmeldung_beanstanden(iid: int, request: Request) -> Response:
-    un, fehler = _api_wache(request)
+    un, fehler = _box_wache(request)
     if fehler:
         return fehler
     try:
@@ -4809,11 +4819,23 @@ async def api_rueckmeldung_beanstanden(iid: int, request: Request) -> Response:
     _, fehler = await run_in_threadpool(_meldung_im_zustand, iid, "bitte-pruefen")
     if fehler:
         return fehler
-    await run_in_threadpool(gm.notiz, iid, f"Beanstandung von {un}: {text[:2000]}")
+    notiz_ok = await run_in_threadpool(
+        gm.notiz, iid, f"Beanstandung von {un}: {text[:2000]}")
+    if not notiz_ok:
+        # Erst hier abbrechen, VOR remove_labels: sonst geht das Issue ohne
+        # Ninas Begründung zurück auf "gemeldet" — die Beanstandung wäre
+        # spurlos verloren, nur die App hätte "ok" gemeldet.
+        return JSONResponse(
+            {"fehler": "GitLab hat die Beanstandung gerade nicht angenommen "
+                       "— bitte gleich noch einmal."}, status_code=503)
     ok = await run_in_threadpool(gm.issue_aendern, iid,
                                  remove_labels="zur-abnahme", assignee_ids=[])
+    if not ok:
+        return JSONResponse(
+            {"fehler": "GitLab hat die Beanstandung gerade nicht angenommen "
+                       "— bitte gleich noch einmal."}, status_code=503)
     _MELDUNGEN_CACHE.update(stand=0.0)
-    return JSONResponse({"ok": ok})
+    return JSONResponse({"ok": True})
 
 
 @app.get("/api/salon-check/bericht")

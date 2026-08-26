@@ -20,7 +20,7 @@ def klient(tmp_path, monkeypatch):
     import gitlab_meldungen as gm
     babu_web.PORTAL_DB = tmp_path / "portal.db"
     babu_web._MELDUNGEN_CACHE.update(stand=0.0, daten=None)  # Cache leeren
-    monkeypatch.setattr(babu_web, "_api_wache", lambda request: ("nina@0711.io", None))
+    monkeypatch.setattr(babu_web, "_box_wache", lambda request: ("nina@0711.io", None))
     monkeypatch.setattr(babu_web, "_rueckmeldung_nachtragen", lambda: 0)
     return TestClient(babu_web.app), babu_web, gm
 

@@ -265,6 +265,33 @@ def test_der_pat_zwischenspeicher_schluesselt_auf_sha256(welt, monkeypatch):
         bw._CACHE.clear()
 
 
+# ————— Die vier Meldungen-Routen sind ebenfalls belegbox-gebunden —————
+#
+# Vorher hingen sie an `_api_wache` (Allowlist ODER bloß aktives Konto) —
+# ein frisches /api/signup-Konto ohne jede Belegbox kam durch. Diese Tests
+# wären der fehlende Fall gewesen, der das damals hätte auffangen müssen:
+# ein fremdes, aktives Konto OHNE Box muss hier draußen bleiben, genau wie
+# bei /ablage und den übrigen box-gebundenen Routen oben.
+
+MELDUNGEN_SCHREIBEN = [
+    ("post", "/api/rueckmeldung", {"json": {"text": "Etwas stimmt nicht."}}),
+    ("post", "/api/rueckmeldungen/1/freigeben", {}),
+    ("post", "/api/rueckmeldungen/1/beanstanden", {"json": {"text": "Passt so nicht."}}),
+]
+
+
+@pytest.mark.parametrize("methode,pfad,kwargs", MELDUNGEN_SCHREIBEN)
+def test_fremdes_konto_ohne_box_kommt_nicht_an_die_meldungen(welt, methode, pfad, kwargs):
+    client = _fremde(welt)
+    r = getattr(client, methode)(pfad, **kwargs)
+    assert r.status_code in (401, 403), f"{pfad} lässt ein boxloses Konto durch"
+
+
+def test_fremdes_konto_ohne_box_sieht_die_meldungsliste_nicht(welt):
+    client = _fremde(welt)
+    assert client.get("/api/rueckmeldungen").status_code in (401, 403)
+
+
 def test_von_der_verwaltung_angelegte_konten_haben_die_box(welt):
     bw = welt
     verwaltung = _inhaberin(bw)
