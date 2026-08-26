@@ -17,6 +17,8 @@ struct MeldenSheet: View {
     let ansicht: String
     /// Welcher Beleg gerade offen war, falls einer.
     var beleg: String?
+    /// Bildschirmfoto im Moment des Knopfdrucks, falls eines entstand.
+    var foto: UIImage?
 
     @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) private var zurueck
@@ -26,6 +28,7 @@ struct MeldenSheet: View {
     @State private var laeuft = false
     @State private var stand: String?
     @State private var fertig = false
+    @State private var fotoMitschicken = true
     @FocusState private var imFeld: Bool
 
     var body: some View {
@@ -61,6 +64,19 @@ struct MeldenSheet: View {
                                 .allowsHitTesting(false)
                         }
                     }
+
+                if let foto {
+                    Toggle(isOn: $fotoMitschicken) {
+                        HStack(spacing: 10) {
+                            Image(uiImage: foto)
+                                .resizable().scaledToFill()
+                                .frame(width: 34, height: 60).clipped()
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                            Text("Bildschirmfoto mitschicken").font(.footnote)
+                        }
+                    }
+                    .tint(GC.ok)
+                }
 
                 if let stand {
                     Text(stand)
@@ -106,10 +122,14 @@ struct MeldenSheet: View {
         defer { laeuft = false }
         let geraet = "\(UIDevice.current.model), iOS \(UIDevice.current.systemVersion)"
         let fassung = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        let bildB64: String? = (fotoMitschicken ? foto : nil)
+            .flatMap { $0.jpegData(compressionQuality: 0.6) }
+            .map { $0.base64EncodedString() }
         let antwort = await AblageService.rueckmeldenSenden(
             text: text.trimmingCharacters(in: .whitespacesAndNewlines),
             art: art, ansicht: ansicht, beleg: beleg,
-            geraet: geraet, fassung: fassung, basis: url, pat: pat)
+            geraet: geraet, fassung: fassung, basis: url, pat: pat,
+            bildB64: bildB64)
         if antwort.ok {
             fertig = true
             stand = "Angekommen ✓ — danke."
@@ -127,19 +147,34 @@ struct MeldenKnopf: ViewModifier {
     let ansicht: String
     var beleg: String?
     @State private var offen = false
+    @State private var foto: UIImage?
+
+    /// Das Foto entsteht im Moment des Knopfdrucks — was Nina sah, nicht das Blatt.
+    private func bildschirmfoto() -> UIImage? {
+        guard let szene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene }).first,
+              let fenster = szene.windows.first(where: { $0.isKeyWindow }) else { return nil }
+        let maler = UIGraphicsImageRenderer(bounds: fenster.bounds)
+        return maler.image { _ in
+            fenster.drawHierarchy(in: fenster.bounds, afterScreenUpdates: false)
+        }
+    }
 
     func body(content: Content) -> some View {
         content
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { offen = true } label: {
+                    Button {
+                        foto = bildschirmfoto()
+                        offen = true
+                    } label: {
                         Image(systemName: "exclamationmark.bubble")
                     }
                     .accessibilityLabel("Ist dir was aufgefallen?")
                 }
             }
             .sheet(isPresented: $offen) {
-                MeldenSheet(ansicht: ansicht, beleg: beleg)
+                MeldenSheet(ansicht: ansicht, beleg: beleg, foto: foto)
             }
     }
 }

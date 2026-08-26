@@ -535,7 +535,7 @@ enum AblageService {
     static func rueckmeldenSenden(text: String, art: String, ansicht: String,
                                   beleg: String?, geraet: String?,
                                   fassung: String?, basis: URL,
-                                  pat: String) async -> (ok: Bool, fehler: String?) {
+                                  pat: String, bildB64: String? = nil) async -> (ok: Bool, fehler: String?) {
         var request = URLRequest(url: basis.appendingPathComponent("api/rueckmeldung"))
         request.httpMethod = "POST"
         request.timeoutInterval = 30
@@ -546,6 +546,7 @@ enum AblageService {
         if let beleg { koerper["beleg"] = beleg }
         if let geraet { koerper["geraet"] = geraet }
         if let fassung { koerper["fassung"] = fassung }
+        if let bildB64 { koerper["bild"] = bildB64 }
         request.httpBody = try? JSONSerialization.data(withJSONObject: koerper)
         guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
               let http = antwort as? HTTPURLResponse else {
