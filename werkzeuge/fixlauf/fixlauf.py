@@ -50,7 +50,7 @@ def kandidaten(issues: list[dict], jetzt_iso: str) -> list[dict]:
             continue
         if not (labels & PROZESS_LABELS):
             dran.append(i)
-        elif "in-arbeit" in labels and not (labels - {"bug", "von-nina", "in-arbeit"}):
+        elif "in-arbeit" in labels and not (labels & {"zur-abnahme", "braucht-christoph"}):
             stand = dt.datetime.fromisoformat(
                 str(i["updated_at"]).replace("Z", "+00:00"))
             if (jetzt - stand).total_seconds() > VERWAIST_NACH_H * 3600:
@@ -67,27 +67,55 @@ def main() -> int:
     auftrag = (HIER / "auftrag.md").read_text(encoding="utf-8")
     for issue in dran:
         iid = issue["iid"]
-        war_verwaist = "in-arbeit" in (issue.get("labels") or [])
-        _api(f"/issues/{iid}", {"add_labels": "in-arbeit"}, "PUT")
-        _api(f"/issues/{iid}/notes",
-             {"body": "vorheriger Lauf verwaist, übernehme neu"
-              if war_verwaist else "übernehme"}, "POST")
-        print(f"fixlauf: starte Claude für #{iid}: {issue['title'][:60]}")
-        lauf = subprocess.run(
-            ["claude", "-p", "--dangerously-skip-permissions",
-             auftrag.replace("{{IID}}", str(iid))
-                    .replace("{{TITEL}}", issue["title"])],
-            cwd=REPO, capture_output=True, text=True, timeout=45 * 60)
-        print(lauf.stdout[-2000:])
-        if lauf.returncode != 0:
-            # Der Lauf ist gestorben, ohne aufzuräumen — Christoph muss ran.
-            # Form-Encoding: GitLab erwartet Arrays als `assignee_ids[]`.
-            _api(f"/issues/{iid}", {"add_labels": "braucht-christoph",
-                                    "remove_labels": "in-arbeit",
-                                    "assignee_ids[]": 15}, "PUT")
+        try:
+            war_verwaist = "in-arbeit" in (issue.get("labels") or [])
+            _api(f"/issues/{iid}", {"add_labels": "in-arbeit"}, "PUT")
             _api(f"/issues/{iid}/notes",
-                 {"body": f"Fix-Lauf abgebrochen (Exit {lauf.returncode}):\n\n"
-                  f"```\n{lauf.stderr[-1200:]}\n```"}, "POST")
+                 {"body": "vorheriger Lauf verwaist, übernehme neu"
+                  if war_verwaist else "übernehme"}, "POST")
+            print(f"fixlauf: starte Claude für #{iid}: {issue['title'][:60]}")
+            try:
+                lauf = subprocess.run(
+                    ["claude", "-p", "--dangerously-skip-permissions",
+                     auftrag.replace("{{IID}}", str(iid))
+                            .replace("{{TITEL}}", issue["title"])],
+                    cwd=REPO, capture_output=True, text=True, timeout=45 * 60)
+            except subprocess.TimeoutExpired as e:
+                # subprocess.run wirft bei Timeout, statt returncode != 0 zu
+                # liefern — dieselbe Behandlung wie ein gescheiterter Lauf.
+                stdout = e.stdout or ""
+                stderr = e.stderr or ""
+                if stdout:
+                    print(stdout[-2000:])
+                _api(f"/issues/{iid}", {"add_labels": "braucht-christoph",
+                                        "remove_labels": "in-arbeit",
+                                        "assignee_ids[]": 15}, "PUT")
+                _api(f"/issues/{iid}/notes",
+                     {"body": "Fix-Lauf nach 45 min abgebrochen (Timeout):\n\n"
+                      f"```\n{(stderr or stdout)[-1200:]}\n```"}, "POST")
+                continue
+
+            print(lauf.stdout[-2000:])
+            if lauf.returncode != 0:
+                # Der Lauf ist gestorben, ohne aufzuräumen — Christoph muss ran.
+                # Form-Encoding: GitLab erwartet Arrays als `assignee_ids[]`.
+                _api(f"/issues/{iid}", {"add_labels": "braucht-christoph",
+                                        "remove_labels": "in-arbeit",
+                                        "assignee_ids[]": 15}, "PUT")
+                _api(f"/issues/{iid}/notes",
+                     {"body": f"Fix-Lauf abgebrochen (Exit {lauf.returncode}):\n\n"
+                      f"```\n{lauf.stderr[-1200:]}\n```"}, "POST")
+        except Exception as exc:
+            # Ein Issue darf nicht die ganze Schleife mitreißen — mit dem
+            # nächsten Kandidaten weitermachen, Christoph best effort holen.
+            print(f"fixlauf: Fehler bei #{iid}: {exc}")
+            try:
+                _api(f"/issues/{iid}", {"add_labels": "braucht-christoph",
+                                        "remove_labels": "in-arbeit",
+                                        "assignee_ids[]": 15}, "PUT")
+            except Exception as exc2:
+                print(f"fixlauf: konnte #{iid} nicht auf "
+                      f"braucht-christoph setzen: {exc2}")
     return 0
 
 

@@ -20,6 +20,34 @@ def test_leitplanke_laesst_ui_durch():
                                "server/belegreview/portal.html"]) is None
 
 
+def test_leitplanke_erkennt_babu_web_ueber_diff_inhalt():
+    # babu_web.py trifft keinen Pfad-Muster, aber die geänderte Zeile
+    # enthält app_schluessel — Auth/Session, Christoph muss ran.
+    diff = """diff --git a/server/belegreview/babu_web.py b/server/belegreview/babu_web.py
+index 1111111..2222222 100644
+--- a/server/belegreview/babu_web.py
++++ b/server/belegreview/babu_web.py
+@@ -10,7 +10,7 @@ def pruefe_zugang(anfrage):
+-    if anfrage.header.get("X-Alt") != erwarteter_wert:
++    if anfrage.header.get("X-App-Schluessel") != app_schluessel(anfrage):
+         return False
+     return True
+"""
+    assert leitplanke.riskant(["server/belegreview/babu_web.py"], diff) is not None
+
+
+def test_leitplanke_babu_web_harmloser_ui_text_bleibt_frei():
+    diff = """diff --git a/server/belegreview/babu_web.py b/server/belegreview/babu_web.py
+index 1111111..2222222 100644
+--- a/server/belegreview/babu_web.py
++++ b/server/belegreview/babu_web.py
+@@ -40,7 +40,7 @@ def render_titel():
+-    return "Willkommen"
++    return "Willkommen zurück"
+"""
+    assert leitplanke.riskant(["server/belegreview/babu_web.py"], diff) is None
+
+
 def _i(iid, labels, updated="2026-08-26T10:00:00Z"):
     return {"iid": iid, "labels": labels, "updated_at": updated}
 
@@ -40,3 +68,13 @@ def test_verwaiste_in_arbeit_wird_nach_zwei_stunden_wieder_kandidat():
     iids = [k["iid"] for k in fixlauf.kandidaten([frisch, verwaist],
                                                  "2026-08-26T10:30:00Z")]
     assert iids == [9]
+
+
+def test_verwaiste_in_arbeit_mit_fremdlabel_bleibt_kandidat():
+    # Ein zusätzliches, nicht prozessrelevantes Label (z.B. "performance")
+    # darf die Verwaisten-Erkennung nicht blockieren.
+    verwaist = _i(10, ["bug", "in-arbeit", "performance"],
+                  updated="2026-08-26T07:00:00Z")
+    iids = [k["iid"] for k in fixlauf.kandidaten([verwaist],
+                                                 "2026-08-26T10:30:00Z")]
+    assert iids == [10]

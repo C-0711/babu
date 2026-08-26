@@ -13,10 +13,10 @@ API-Zugang: Header `PRIVATE-TOKEN: $(cat ~/.babu-fixlauf.token)`, immer mit
 3. Ursache finden (superpowers:systematic-debugging), Fix schreiben, Test dazu.
    Tests: venv nach Memory babu-testumgebung, `python -m pytest server/belegreview/tests/ -x -q`.
 4. **Leitplanke — hartes Tor:**
-   `git diff --name-only origin/main | xargs python3 ~/babu/werkzeuge/fixlauf/leitplanke.py`
+   `git diff origin/main | python3 ~/babu/werkzeuge/fixlauf/leitplanke.py $(git diff --name-only origin/main)`
    Exit 1 → NICHT deployen. Stattdessen: Branch `fix/{{IID}}` pushen, Issue-Notiz
    mit Begründung + Branch, Labels `braucht-christoph` setzen / `in-arbeit` entfernen,
-   `assignee_ids=15`, Worktree aufräumen, ENDE.
+   `assignee_ids[]=15`, Worktree aufräumen, ENDE.
 5. Deploy nach dem Ritual (Memory babu-salon-portal, alles per ssh h200v):
    Golden-Diff vorher ziehen → `tar`-Sicherung → `scp` der geänderten
    Server-Dateien nach `~/belegreview/` → `pm2 restart babu-web` → Golden-Diff
@@ -31,7 +31,7 @@ API-Zugang: Header `PRIVATE-TOKEN: $(cat ~/.babu-fixlauf.token)`, immer mit
    Worktree aufräumen (`git worktree remove /tmp/fix-{{IID}}`).
 7. Abschluss-Notiz ins Issue — Ursache, Änderung, Commit-SHA, wie getestet,
    deployt ja/nein. Dann Labels: `zur-abnahme` setzen, `in-arbeit` entfernen,
-   `assignee_ids=14` (Nina).
+   `assignee_ids[]=14` (Nina).
 
 ## Grenzen
 
