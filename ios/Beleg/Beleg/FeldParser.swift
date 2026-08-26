@@ -104,15 +104,24 @@ enum FeldParser {
         f.gutschriftSignal = matcht(klein, #"gutschrift|storno|retoure|erstattung"#)
             || matcht(gesamt, #"(^|\s)[-−]\d{1,6},\d{2}\b"#)
 
-        // Beträge (deutsches Format). Zeilen mit Gegeben/Rückgeld sind
-        // Zahlungsverkehr, kein Rechnungsbetrag — sonst „besteht" auf einem
-        // Barbon 44,50 + 5,50 = 50,00 fälschlich die Summenprobe.
-        let zahlungsZeile = #"gegeben|r(ü|ue)ckgeld|wechselgeld|zur(ü|ue)ck\b"#
+        // Beträge (deutsches Format). Beträge, die direkt bei Gegeben/Rückgeld
+        // stehen, sind Zahlungsverkehr, kein Rechnungsbetrag — sonst „besteht"
+        // auf einem Barbon 44,50 + 5,50 = 50,00 fälschlich die Summenprobe.
+        // Kritisch: auf EINER Zeile können mehrere Beträge stehen (OCR-Fehler) —
+        // nur jene direkt neben Zahlungsworten ausschließen, nicht die ganze Zeile.
+        let zahlungsUmfeld = #"(?:\b(?:gegeben|r(ü|ue)ckgeld|wechselgeld|zur(ü|ue)ck)\b\s*(?:"# + betragMuster + #")\b|\b(?:"# + betragMuster + #")\s*(?:gegeben|r(ü|ue)ckgeld|wechselgeld|zur(ü|ue)ck)\b)"#
         let betragRegex = #"\b(?:"# + betragMuster + #")\b"#
-        let betraege = alleZeilen
-            .filter { !matcht($0, zahlungsZeile, caseInsensitive: true) }
-            .flatMap { alleTreffer($0, betragRegex) }
-            .compactMap { parseBetrag($0) }
+        let betraege = alleZeilen.flatMap { zeile -> [Double] in
+            let kleinZeile = zeile.lowercased()
+            // Beträge direkt neben Zahlungsworten (vor oder nach) — in Kleinschrift suchen
+            let zahlungsBetraege = Set(alleTreffer(kleinZeile, zahlungsUmfeld)
+                .flatMap { alleTreffer($0, betragRegex) }
+                .compactMap { parseBetrag($0) })
+            // Alle Beträge auf dieser Zeile, Zahlungsbeträge ausfiltern
+            return alleTreffer(zeile, betragRegex)
+                .compactMap { parseBetrag($0) }
+                .filter { !zahlungsBetraege.contains($0) }
+        }
         let tabelle = steuerTabelle(gesamt)
         let tabellenBrutto = tabelle.reduce(0) { $0 + $1.brutto }
 

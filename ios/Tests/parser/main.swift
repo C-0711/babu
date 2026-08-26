@@ -81,6 +81,10 @@ let f12 = parse(["Presse Müller", "Zeitschrift 7,00 %", "Netto 4,67",
                  "MwSt 0,33", "Summe 5,00"])
 pruefe(f12.ustSatz == 7, "7,00 % wird als 7 gelesen")
 
+// 13. Summe und Gegeben auf EINER Zeile (OCR-Lesefehler): nur Summe zählt
+let f13 = parse(["Kiosk Weber", "Summe 66,70 / bar gegeben 70,00"])
+pruefe(gleich(f13.brutto, 66.70), "Summe 66,70 trotz Gegeben auf derselben Zeile")
+
 print(fehler == 0 ? "\nAlle Prüfungen bestanden." : "\n\(fehler) Prüfung(en) fehlgeschlagen.")
 exit(fehler == 0 ? 0 : 1)
 
