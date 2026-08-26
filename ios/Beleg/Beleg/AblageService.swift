@@ -47,31 +47,8 @@ struct Meldungszeile: Identifiable, Decodable {
 /// Jeder erfolgreiche Upload wird serverseitig ein Commit `aufnahme: …` in babu.git.
 enum AblageService {
 
-    /// Upload; liefert bei Erfolg auch den serverseitigen Dateinamen aus der
-    /// Antwort (`{ok, ref, commit, datei}`) — der ist der Schlüssel zum Review.
-    static func lade(bildJpeg: Data, dateiname: String, basis: URL,
-                     pat: String) async -> (ergebnis: AblageErgebnis, serverDatei: String?) {
-        let (body, contentType) = multipartBody(feld: "file", dateiname: dateiname,
-                                                mime: "image/jpeg", daten: bildJpeg)
-        var request = URLRequest(url: basis.appendingPathComponent("ablage"))
-        request.httpMethod = "POST"
-        request.timeoutInterval = 30
-        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
-        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
-        request.httpBody = body
-        let (ergebnis, daten) = await ausfuehrenMitDaten(request)
-        var serverDatei: String?
-        if ergebnis == .uebertragen, let daten,
-           let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
-           let pfad = json["datei"] as? String {
-            serverDatei = (pfad as NSString).lastPathComponent
-        }
-        return (ergebnis, serverDatei)
-    }
-
     /// Aufnahme mit Einsortierung: egal was fotografiert wurde — der Server
     /// entscheidet aus dem gelesenen Text, wohin es gehört, und sagt es zurück.
-    /// Der alte Weg (`lade`) bleibt für den Fall, dass kein Text vorliegt.
     static func aufnahme(daten: Data, dateiname: String, gelesenerText: String,
                          ergebnis ergebnisJson: String? = nil,
                          basis: URL, pat: String) async
@@ -946,22 +923,6 @@ enum AblageService {
         case fehler(String)
     }
 
-    /// Eine Runde: die bisherigen Antworten hin, ein Fragenpaket oder die
-    /// fertige Buchung zurück. Der Server hält keinen Zustand.
-    static func buchungsfragen(stamm: String,
-                               antworten: [(frage: String, antwort: String)],
-                               basis: URL, pat: String) async -> BuchungsfragenErgebnis {
-        var request = URLRequest(
-            url: basis.appendingPathComponent("review/\(stamm)/buchungsfragen"))
-        request.httpMethod = "POST"
-        request.timeoutInterval = 150
-        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject:
-            ["antworten": antworten.map { ["frage": $0.frage, "antwort": $0.antwort] }])
-        return await buchungsRunde(request)
-    }
-
     /// Die Direkt-Runde: das Telefon schickt Profil und Vision-Lesung als
     /// reines Text-JSON — noch bevor das Foto im Archiv liegt. Gemma
     /// verifiziert, fragt oder bucht.
@@ -1344,22 +1305,6 @@ extension AblageService {
         case 401, 403: return .zugangFehlt
         default: return .serverProblem
         }
-    }
-
-    /// Den Beleg noch einmal lesen lassen (`POST /review/<stamm>/neu-lesen`).
-    ///
-    /// Gelöscht wird dabei nur das Ergebnis — der Beleg selbst bleibt liegen.
-    /// Das ist der Weg für Belege, die vor einer Verbesserung gelesen wurden:
-    /// niemand muss sie noch einmal fotografieren.
-    static func neuLesenAnstossen(stamm: String, basis: URL, pat: String) async -> Bool {
-        var request = URLRequest(url: basis.appendingPathComponent("review")
-            .appendingPathComponent(stamm).appendingPathComponent("neu-lesen"))
-        request.httpMethod = "POST"
-        request.timeoutInterval = 20
-        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
-        guard let (_, antwort) = try? await URLSession.shared.data(for: request),
-              let http = antwort as? HTTPURLResponse else { return false }
-        return http.statusCode == 200
     }
 
     /// Verbindungs- und Token-Test OHNE Müll-Commit: eine Mini-txt-Datei senden.

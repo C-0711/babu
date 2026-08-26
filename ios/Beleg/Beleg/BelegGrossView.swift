@@ -1,21 +1,11 @@
 import SwiftUI
 
-/// Einen Beleg groß ansehen — und, wenn er falsch gelesen wurde, gleich
-/// noch einmal lesen lassen.
-///
-/// Beim Aufräumen entscheidet man in Sekunden über jeden Beleg. Genau dort
-/// fällt auf, wenn eine Zahl nicht stimmt — und genau dort war bisher nichts
-/// zu machen: das Bild war beschnitten und nicht vergrößerbar, und die
-/// einzige Möglichkeit, eine neue Lesung zu bekommen, wäre gewesen, den
-/// Beleg noch einmal zu fotografieren. Beides ist hier behoben.
+/// Einen Beleg groß ansehen — das Bild war zuvor beschnitten und nicht
+/// vergrößerbar; hier ist das behoben.
 struct BelegGrossView: View {
     let beleg: Beleg
     @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) private var dismiss
-
-    @State private var neuGelesen = false
-    @State private var meldung: String?
-    @State private var laeuft = false
 
     private var stamm: String? {
         guard let name = beleg.ablageDateiname else { return nil }
@@ -49,37 +39,15 @@ struct BelegGrossView: View {
                     }
                     .foregroundStyle(GC.fg)
 
-                    if let meldung {
-                        Text(meldung)
-                            .font(.footnote)
-                            .foregroundStyle(neuGelesen ? GC.accent : GC.warn)
-                    }
-
                     if let stamm {
-                        HStack(spacing: 10) {
-                            NavigationLink {
-                                ProtokollView(stamm: stamm).environmentObject(store)
-                            } label: {
-                                Label("Was babu gelesen hat", systemImage: "text.magnifyingglass")
-                                    .font(.footnote)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-
-                            Button {
-                                Task { await neuLesen(stamm) }
-                            } label: {
-                                if laeuft {
-                                    ProgressView().controlSize(.mini)
-                                } else {
-                                    Label("Noch einmal lesen", systemImage: "arrow.clockwise")
-                                        .font(.footnote)
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .disabled(laeuft || neuGelesen)
+                        NavigationLink {
+                            ProtokollView(stamm: stamm).environmentObject(store)
+                        } label: {
+                            Label("Was babu gelesen hat", systemImage: "text.magnifyingglass")
+                                .font(.footnote)
                         }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     } else {
                         Text("Dieser Beleg ist noch nicht in der Belegbox — sobald er "
                              + "abgelegt ist, kann babu ihn lesen.")
@@ -99,23 +67,6 @@ struct BelegGrossView: View {
                     Button("Fertig") { dismiss() }
                 }
             }
-        }
-    }
-
-    private func neuLesen(_ stamm: String) async {
-        guard let url = URL(string: store.ablageURL),
-              let pat = KeychainHelfer.ladePAT() else {
-            meldung = "Dafür muss die Belegbox verbunden sein (Export → Zahnrad)."
-            return
-        }
-        laeuft = true
-        defer { laeuft = false }
-        if await AblageService.neuLesenAnstossen(stamm: stamm, basis: url, pat: pat) {
-            neuGelesen = true
-            meldung = "babu liest den Beleg noch einmal — in etwa einer halben "
-                + "Minute steht das Ergebnis hier."
-        } else {
-            meldung = "Das hat gerade nicht geklappt. Später noch einmal versuchen."
         }
     }
 }

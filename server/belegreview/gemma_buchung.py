@@ -39,22 +39,6 @@ DOKUMENTKLASSEN = ("beleg", "vertrag", "behoerde", "kontoauszug")
 ANTWORTEN_MAX = 8
 
 
-# ── Die OCR-Zeilen aus dem Leseprotokoll ─────────────────────────────────────
-#
-# Der Watcher schreibt jede erkannte Zeile in die Protokoll-Tabelle. Das ist
-# unser eigenes Format — hier zu parsen ist kein Scraping, sondern Lesen der
-# eigenen Ablage.
-
-_ZEILE = re.compile(r"\|\s*\d+\s*\|[^|]*\|\s*(.+?)\s*\|\s*\S+\s*\(\d+%\)")
-
-
-def zeilen_aus_protokoll(md: str) -> list[str]:
-    teil = md.split("## Jede erkannte Zeile", 1)
-    if len(teil) < 2:
-        return []
-    return [m.group(1) for z in teil[1].splitlines() if (m := _ZEILE.match(z))]
-
-
 # ── Profil und Katalog als Prompt-Bausteine ──────────────────────────────────
 
 def profil_text(e: dict) -> str:

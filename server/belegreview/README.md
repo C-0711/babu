@@ -1,24 +1,26 @@
 # BelegReview — Serverseite (H200V)
 
 Deployment-Kopie der Bausteine auf der H200V (`~/belegreview/`, `~/babu-web/`),
-dort via pm2 (bewusst ohne `pm2 save`, siehe Spec-Nachtrag):
+dort via pm2:
 
 | pm2-Name | Datei | Zweck |
 |---|---|---|
-| `belegreview` | `review_watcher.py` | beobachtet babu.git, PaddleOCR (PP-OCRv5 german, CPU), Feld-Extraktion + steuerliche Einschätzung, `review:`-Commit via Gateway |
-| `babu-web` | `babu_web.py` | Upload-Seite, **Salon-Portal** (`/portal` + `/api/*`, Session-Cookie) und `GET /review/<stamm>` / `POST /chat` (whoami-Auth, liest read-only aus dem Bare-Store) |
+| `babu-web` | `babu_web.py` | der ganze Dienst: Upload-Seite, **Salon-Portal** (`/portal` + `/api/*`, Session-Cookie), App-API (`/api/aufnahme`, `/api/buchung/einschaetzung`, `GET /review/<stamm>`, `/chat`) |
+| `babu-eingang` | `babu_eingang.py` | GitChain-Gateway (Push in den Bare-Store) |
 | `babu-tunnel` | — | Cloudflare-Tunnel `babu-0711` → babu.0711.io (`~/.cloudflared/babu-0711.yml`) |
+| `insp-app` | — | Belegbox-Gateway :7808 — **nie anfassen**, ohne ihn kommt nichts in die Box |
 
-Zusätzlich liegt dort `doc_classify.py` (Kopie aus `~/OCR`, standalone).
-Venvs: `~/paddle-ocr-env` (PaddleOCR 3.7, CUDA-fähig — läuft auf CPU, weil
-beide H200 dauerhaft von vLLM belegt sind) bzw. `~/belegreview/.venv`
-(FastAPI/uvicorn/requests).
+**Es gibt keine zweite Lesung mehr.** Seit dem Zielbild (26.08.2026) liest
+Apple Vision auf dem iPhone, Gemma bucht über `/api/buchung/einschaetzung`,
+und `/api/aufnahme` archiviert Foto + Ergebnis. Der frühere Watcher
+(`review_watcher.py`, pm2 `belegreview`) ist gelöscht — **nicht neu starten,
+nicht neu erfinden**. Der Paddle-OCR-Dienst :7833 läuft nur noch für ctax und
+für die Abschluss-Lane der Salonprüfung (`abschluss_lesen.py`).
 
-Neustart nach einem H200V-Reboot (bis `pm2 save` nachgeholt ist):
+Neustart nach einem H200V-Reboot:
 
 ```bash
 pm2 start ~/gitchain-eingang/babu_eingang.py --name babu-eingang --interpreter ~/gitchain-eingang/.venv/bin/python
-pm2 start ~/belegreview/review_watcher.py --name belegreview --interpreter ~/paddle-ocr-env/bin/python
 BABU_ERLAUBT="christoph0711.io,nina0711.io" BABU_ROLLEN="christoph0711.io:kanzlei" \
   pm2 start ~/belegreview/.venv/bin/python --name babu-web -- ~/belegreview/babu_web.py
 pm2 start /usr/bin/cloudflared --name babu-tunnel -- tunnel --config ~/.cloudflared/babu-0711.yml run babu-0711

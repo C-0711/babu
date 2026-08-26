@@ -1,5 +1,10 @@
 # Löschen — und die Ablage wird wieder Übersicht
 
+> **Hinweis (27.08.2026):** Dieses Dokument beschreibt den Stand seiner
+> Entstehung. Der Watcher / die zweite Lesung existiert seit dem Zielbild
+> nicht mehr — was heute gilt, steht in `HANDOVER.md`.
+
+
 Stand 21.08.2026. Zwei Dinge, die zusammengehören: man muss einen falschen
 Beleg wieder loswerden können, und die Ablage soll zeigen, was da ist, statt
 zum vierten Upload-Ort zu werden.

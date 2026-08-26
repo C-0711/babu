@@ -15,7 +15,6 @@ struct CaptureTab: View {
     @State private var schritte = 0
     @State private var startZeit = Date()
     @State private var ergebnisBild: UIImage?
-    @State private var markierungen: [CGRect] = []
     // Abbruch-Marke: ein X während der Verarbeitung entwertet den laufenden
     // Durchlauf, damit er die Ansicht nicht später doch noch umschaltet.
     @State private var verarbeitungsLauf = UUID()
@@ -351,8 +350,7 @@ struct CaptureTab: View {
         // Der Beleg kann inzwischen gelöscht sein (Belegliste) — dann darf
         // hier keine leere Sackgasse stehen, sondern ein Weg zurück.
         if let b = beleg, store.belege.contains(where: { $0.id == b.id }) {
-            ErgebnisUebersicht(belegID: b.id, bild: ergebnisBild,
-                               markierungen: markierungen, startZeit: startZeit) {
+            ErgebnisUebersicht(belegID: b.id, bild: ergebnisBild, startZeit: startZeit) {
                 phase = .bereit
             }
         } else {
@@ -448,7 +446,6 @@ struct CaptureTab: View {
         }
 
         ergebnisBild = bild
-        markierungen = []
 
         try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 3
@@ -528,13 +525,6 @@ struct ErgebnisKarte: View {
                     .foregroundStyle(GC.warn)
             }
 
-            if aktuell.gutschriftSignal == true {
-                Label("Sieht nach Gutschrift oder Erstattung aus — bitte vor dem Buchen prüfen.",
-                      systemImage: "arrow.uturn.left.circle")
-                    .font(.footnote)
-                    .foregroundStyle(GC.warn)
-            }
-
             if moeglichesDuplikat != nil {
                 Label("Sieht aus wie ein Beleg, den du schon hast — gleicher Betrag, gleicher Tag. Doppelt erfasst? Einen davon unter „Dokumente“ nach links wischen und löschen.",
                       systemImage: "doc.on.doc")
@@ -569,26 +559,12 @@ struct ErgebnisKarte: View {
                     .controlSize(.large)
                     abschlussButtons
                 } else {
-                    if aktuell.confidence >= 80 {
-                        Button {
-                            if aktuell.brauchtBewirtungsangaben {
-                                zeigeBewirtung = true
-                            } else {
-                                store.buchen(id: aktuell.id, konto: nil, steuerschluessel: nil,
-                                             dauer: Date().timeIntervalSince(startZeit))
-                            }
-                        } label: {
-                            Text("Buchung bestätigen").frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                    } else {
-                        Button {
-                            zeigeReview = true
-                        } label: {
-                            Text("Kontierung prüfen").frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
+                    Button {
+                        zeigeReview = true
+                    } label: {
+                        Text("Kontierung prüfen").frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.borderedProminent)
                     Button("Später — zu den Dokumenten") {
                         fertig()
                         store.tab = .belege

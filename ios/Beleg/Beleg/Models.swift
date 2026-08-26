@@ -167,9 +167,8 @@ struct Beleg: Identifiable, Codable {
     var bewirtungPersonen: String?
     // Beispiel-Beleg (Erststart/Simulator) — niemals exportieren
     var istDemo: Bool?
-    // Steuertabelle je Satz (Mehrsatz-Belege) und Gutschrift-Signal
+    // Steuertabelle je Satz (Mehrsatz-Belege)
     var steuerPositionen: [SteuerPosition]?
-    var gutschriftSignal: Bool?
     // Fremdwährung: der Originalbetrag und seine Währung (z. B. 55,74 AED).
     // brutto/netto/ust sind dann der EURO-Wert aus der Buchhaltung — bis er
     // da ist, bleibt der Beleg offen statt falsch in Euro gebucht.

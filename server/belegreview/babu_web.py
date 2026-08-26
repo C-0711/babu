@@ -656,7 +656,7 @@ def _status_ableiten(review: dict | None, bewirtung_da: bool) -> str:
 
 # Welche offene Frage eine nachgetragene Angabe beantwortet.
 #
-# Die offenen Punkte sind ganze Sätze aus `belegdeutung` — „Der
+# Die offenen Punkte sind ganze Sätze aus der Lesung — „Der
 # Rechnungsbetrag ist nicht sicher zu lesen." Verglichen wurde bisher gegen
 # die Feldnamen der Angaben („brutto"), und das kann nie zusammenpassen: die
 # Nutzerin trug den Betrag nach, und die Frage danach blieb trotzdem stehen.
@@ -3165,7 +3165,11 @@ def kennzahlen_monat(monat: str) -> dict:
     fertig = [z for z in zeilen if z["status"] in ("geprüft", "exportiert")]
     unlesbar = [z for z in mit_review if z["dokumentklasse"] == "unlesbar"]
     fallback = [z for z in mit_review if z["konto_skr04"] == "6850"]
-    summenprobe = [z for z in mit_review if z["summenprobe_ok"]]
+    # Zielbild-Reviews tragen summenprobe_ok = None (die Probe stammte aus
+    # der abgeschalteten Zweitlesung). None zählt weder als bestanden noch
+    # als gerissen — sonst liefe die Quote strukturell gegen 0.
+    mit_probe = [z for z in mit_review if z["summenprobe_ok"] is not None]
+    summenprobe = [z for z in mit_probe if z["summenprobe_ok"]]
     return {
         "monat": monat,
         "belege": len(zeilen),
@@ -3178,7 +3182,7 @@ def kennzahlen_monat(monat: str) -> dict:
                            "ziel": 0.03},
         "fallback_6850_quote": {"wert": round(len(fallback) / len(mit_review), 3) if mit_review else None,
                                 "ziel": 0.15},
-        "summenprobe_quote": {"wert": round(len(summenprobe) / len(mit_review), 3) if mit_review else None,
+        "summenprobe_quote": {"wert": round(len(summenprobe) / len(mit_probe), 3) if mit_probe else None,
                               "ziel": 0.9},
         "offen_zur_frist": {"wert": sum(1 for z in zeilen if z["status"] in ("nachfrage", "erfasst")),
                             "ziel": 0},
@@ -3239,8 +3243,12 @@ async def api_buchung_einschaetzung(request: Request) -> Response:
     oder es schickt EIN Fragenpaket zurück. Nur Text über HTTP; das Bild
     geht seinen eigenen Weg in die Belegbox (Archivpflicht).
 
-    Körper: {"profil": {...}, "zeilen": ["…"], "antworten": [...],
-             "monat": "JJJJ-MM"} — Antwortformen wie /review/…/buchungsfragen.
+    Körper: {"profil": {...}, "zeilen": ["…"] oder [{"text","conf","box"}],
+             "antworten": [...], "monat": "JJJJ-MM"}.
+    Antwortformen (gemma_buchung.runde):
+      {"status": "fragen",  "fragen": [...]}   → App fragt und ruft erneut auf.
+      {"status": "gebucht", "buchung": {...}}  → grüner Haken.
+      {"status": "aufgeben", ...}              → Schreibtisch.
     """
     un, fehler = _box_wache(request)
     if fehler:
@@ -3325,89 +3333,6 @@ async def api_buchung_einschaetzung(request: Request) -> Response:
     return JSONResponse(ergebnis)
 
 
-@app.post("/review/{stamm}/buchungsfragen")
-async def api_buchungsfragen(stamm: str, request: Request) -> Response:
-    """Gemma bucht den Beleg mit Ninas Profil — oder schickt EIN Fragenpaket.
-
-    Körper: {"antworten": [{"frage": "…", "antwort": "…"}]} — leer beim ersten
-    Aufruf. Antwortformen (gemma_buchung.runde):
-      {"status": "fragen",  "fragen": [{"frage", "optionen"}]}  → App zeigt
-        eine Frage je Bildschirm, sammelt und ruft erneut auf.
-      {"status": "gebucht", "buchung": {…}}                     → grüner Haken.
-      {"status": "aufgeben", …}                                 → Schreibtisch.
-    Der Server hält keinen Zustand; die Antworten reisen mit jedem Aufruf mit.
-    """
-    un = wer(request)
-    if un is None:
-        return JSONResponse({"fehler": "Token fehlt oder ungültig"}, status_code=401)
-    if not (box_mitglied(un) or un in ERLAUBT):
-        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
-    if not NAME_RE.match(stamm):
-        return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
-    stamm = re.sub(r"\.(jpg|jpeg|png|pdf)$", "", stamm, flags=re.I)
-    pfad = review_pfad(stamm)
-    if pfad is None:
-        return JSONResponse({"fehler": "kein Review (noch in Arbeit?)"}, status_code=404)
-    protokoll = git_show(pfad[:-5] + ".md")
-    if protokoll is None:
-        return JSONResponse({"fehler": "kein Leseprotokoll zu diesem Beleg"},
-                            status_code=404)
-    import gemma_buchung  # noqa: PLC0415
-    zeilen = gemma_buchung.zeilen_aus_protokoll(protokoll.decode("utf-8", "replace"))
-    if not zeilen:
-        return JSONResponse({"fehler": "im Leseprotokoll stehen keine Zeilen"},
-                            status_code=422)
-    try:
-        body = await request.json()
-    except Exception:  # noqa: BLE001
-        body = {}
-    antworten = []
-    for a in (body.get("antworten") or [])[:gemma_buchung.ANTWORTEN_MAX]:
-        if isinstance(a, dict) and str(a.get("antwort", "")).strip():
-            antworten.append({"frage": str(a.get("frage", ""))[:200],
-                              "antwort": str(a.get("antwort", ""))[:200]})
-    # Kontext für den Abgleich: die Kontobewegungen des Belegmonats (Bank/
-    # PayPal aus den Auszügen) und die Nachbar-Belege — damit Gemma den
-    # Euro-Betrag einer Fremdwährungszahlung findet und Dubletten sieht.
-    monat, umsaetze, nachbarn, bild = None, [], [], None
-    try:
-        review_daten = json.loads(git_show(pfad) or b"{}")
-        datum = ((review_daten.get("felder") or {}).get("datum") or "")
-        monat = datum[:7] if re.match(r"^\d{4}-\d{2}", datum) else None
-        # Gemma Vision liest das Original — das Foto kommt aus der Box.
-        datei = review_daten.get("datei") or ""
-        if datei.lower().endswith((".jpg", ".jpeg", ".png")):
-            roh_bild = git_show(datei)
-            if roh_bild:
-                mime = ("image/png" if datei.lower().endswith(".png")
-                        else "image/jpeg")
-                bild = (roh_bild, mime)
-    except Exception:  # noqa: BLE001
-        pass
-    if monat:
-        try:
-            idx = await run_in_threadpool(index_aktuell)
-            umsaetze = [{"datum": u.get("datum"), "betrag": u.get("betrag"),
-                         "text": u.get("text")}
-                        for u in idx["umsaetze"].get(monat, [])][:20]
-            nachbarn = [{"datum": b.get("datum"), "brutto": b.get("brutto"),
-                         "lieferant": b.get("lieferant")}
-                        for b in idx["belege"].values()
-                        if str(b.get("datum") or "").startswith(monat)
-                        and b.get("stamm") != stamm][:15]
-        except Exception:  # noqa: BLE001
-            pass
-    try:
-        ergebnis = await run_in_threadpool(
-            gemma_buchung.runde, zeilen, db_einstellungen(salon_von(un)),
-            antworten, kontenrahmen_von(un), umsaetze, nachbarn, None, bild)
-    except Exception as ex:  # noqa: BLE001
-        print(f"[buchungsfragen] {stamm}: {ex!r}", flush=True)
-        return JSONResponse({"fehler": "Die Buchhaltung ist gerade nicht zu "
-                             "erreichen — gleich noch einmal."}, status_code=502)
-    return JSONResponse(ergebnis)
-
-
 @app.get("/review/{stamm}")
 def review(stamm: str, request: Request) -> Response:
     un = wer(request)
@@ -3463,49 +3388,10 @@ def review_protokoll(stamm: str, request: Request) -> Response:
         return JSONResponse({"fehler": "kein Review (noch in Arbeit?)"}, status_code=404)
     daten = git_show(pfad[:-len(".json")] + ".md")
     if daten is None:
-        return JSONResponse({"fehler": "Für diesen Beleg gibt es noch kein "
-                             "Leseprotokoll. Einmal neu lesen lassen legt eines an."},
+        return JSONResponse({"fehler": "Für diesen Beleg gibt es kein Leseprotokoll "
+                             "— neue Belege tragen ihre Zeilen direkt im Ergebnis."},
                             status_code=404)
     return Response(content=daten, media_type="text/markdown; charset=utf-8")
-
-
-@app.post("/review/{stamm}/neu-lesen")
-def review_neu_lesen(stamm: str, request: Request) -> Response:
-    """Den Beleg noch einmal durch die Lesung schicken.
-
-    Gelöscht wird nur das Ergebnis, nie der Beleg. Der Watcher sucht Belege
-    ohne Review und nimmt ihn beim nächsten Takt von selbst wieder auf — so
-    bekommt ein Beleg, der vor einer Verbesserung gelesen wurde, die neue
-    Lesung, ohne dass jemand ihn noch einmal fotografieren muss.
-    """
-    # Cookie oder Bearer: das Protokoll gehört ins Portal genauso wie in die
-    # App — es ist dieselbe Frage („was hat babu da gelesen?“), nur an einem
-    # anderen Bildschirm gestellt.
-    un = angemeldet(request)
-    if un is None:
-        return JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
-    if not (box_mitglied(un) or un in ERLAUBT):
-        return JSONResponse({"fehler": BOX_GESPERRT}, status_code=403)
-    if not NAME_RE.match(stamm):
-        return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
-    stamm = re.sub(r"\.(jpg|jpeg|png|pdf)$", "", stamm, flags=re.I)
-    pfad = review_pfad(stamm)
-    if pfad is None:
-        return JSONResponse({"fehler": "Zu diesem Beleg gibt es noch keine Lesung — "
-                             "er ist vermutlich gerade in Arbeit."}, status_code=404)
-    rumpf = pfad[:-len(".json")]
-    weg = [p for p in (f"{rumpf}.json", f"{rumpf}.md", f"{rumpf}.embedding.json",
-                       f"{rumpf}.bewirtung.json")
-           if git_show(p) is not None]
-    import boxschreiber  # noqa: PLC0415 — erst beim ersten Schreiben laden
-    try:
-        commit = boxschreiber.loeschen(weg, f"neu lesen: {Path(rumpf).name}", un)
-    except Exception as ex:  # noqa: BLE001
-        return JSONResponse({"fehler": f"Konnte nicht neu angestoßen werden: {ex}"},
-                            status_code=500)
-    return JSONResponse({"ok": True, "commit": commit, "geloescht": weg,
-                         "hinweis": "Der Beleg wird in den nächsten Sekunden neu "
-                                    "gelesen."})
 
 
 def commit_info(pfad: str) -> dict | None:
@@ -3930,10 +3816,9 @@ _ABSCHLUSS_LOCK = threading.Lock()
 # und aus einem leeren String erntet man nichts. Nina lud ihre abfotografierten
 # Unterlagen hoch, und im Bericht stand weniger, als auf ihnen steht.
 #
-# Der Weg dafür existiert: derselbe Paddle-Dienst, durch den jeder Beleg geht
-# (`review_watcher.ocr_dienst_kaesten`). Importiert wird er NICHT — der
-# Modulzustand dort gehört dem pm2-Prozess, und `abschluss_lesen` hält sich
-# aus demselben Grund fern. Was hier steht, ist der Aufruf, nicht das Modell.
+# Der Weg dafür: der Paddle-Dienst auf der H200V (:7833). Belege gehen seit
+# dem Zielbild NICHT mehr durch ihn — nur diese Abschluss-Lane (und ctax)
+# rufen ihn noch. Was hier steht, ist der Aufruf, nicht das Modell.
 #
 # `doc_ori=1` dreht schief fotografierte Blätter gerade und kostet laut /caps
 # nichts. `unwarp` bleibt aus: der Dienst meldet es selbst als schädlich.

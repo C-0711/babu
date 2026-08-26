@@ -841,9 +841,6 @@ struct DetailView: View {
         case .fertig(let r):
             review = r
             reviewHinweis = nil
-            // Was der Server gelesen hat, gilt — siehe
-            // AppStore.ausZweitpruefungUebernehmen.
-            store.ausZweitpruefungUebernehmen(id: b.id, review: r)
             // Audit-Stempel am Beleg persistieren — sichtbar in der Belegliste.
             if let audit = r.audit {
                 store.auditSetzen(id: b.id, aufnahme: audit.aufnahme?.commit,

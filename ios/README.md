@@ -9,9 +9,9 @@ SF Mono für Werte).
 | Baustein | Umsetzung |
 |---|---|
 | Capture | Eigener AVFoundation-Sucher im Unlimited-OCR-Design: Vision-Dokument-Segmentierung (`VNDetectDocumentSegmentationRequest`), Eck-Marker + Konturlinie, Auto-Auslösung mit Plausibilitäts-Gates (kein Auto-Fire auf Bildschirme), Live-Felder im Sucher, Perspektiv-Entzerrung |
-| Instant Reading | On-Device-OCR mit dem Vision-Framework (`VNRecognizeTextRequest`, de-DE); mit aktivierter Belegbox werden Belege zusätzlich auf den eigenen Server (H200V) übertragen |
-| Feld-Extraktion | Heuristischer Parser (`FeldParser.swift`): Lieferant, Belegnummer, Datum, Netto/USt/Brutto inkl. Summenprobe auf deutschen Beträgen |
-| Kontierung | Engine deterministisch vor generativ: Kreditor-Historie → Regeln → Fallback, mit Confidence-Routing (≥ 95 automatisch, 80–94 bestätigen, < 80 prüfen) |
+| Lesung | On-Device-OCR mit dem Vision-Framework (`VNRecognizeTextRequest`, de-DE), inkl. Geometrie je Zeile ({text, conf, box}) |
+| Buchung | Die Zeilen gehen als JSON an `/api/buchung/einschaetzung`; Gemma bucht strict (Fragen ↔ Antworten), danach archiviert `/api/aufnahme` Foto + Ergebnis |
+| Live-Chips | Heuristischer Parser (`FeldParser.swift`) NUR für die Anzeige im Sucher und den Feld-Editor — er kontiert nicht |
 | Siegel | Echte SHA-256-Hashes über CryptoKit, Zeitstempel, kopierbar im Provenance-Panel |
 | Export | EXTF-Stapel als **CP1252-kodierte** Datei über das Share-Sheet (vereinfachtes Format — der v13-Writer ist Phase 5 des Bauplans) |
 
@@ -37,8 +37,8 @@ Beleg/
   BelegApp.swift      App-Einstieg, Tabs
   Theme.swift         GC-Design-Tokens (Unlimited-OCR)
   Models.swift        Beleg, Kontenplan (SKR04), Siegel (SHA-256), Demo-Archiv
-  FeldParser.swift    OCR-Zeilen → Felder + Kontierungs-Engine
-  OCRService.swift    Vision-OCR + Simulator-Demo-Beleg
+  FeldParser.swift    OCR-Zeilen → Felder (nur Anzeige-Helfer)
+  OCRService.swift    Vision-OCR inkl. Geometrie + Simulator-Demo-Beleg
   ScannerView.swift   Eigener Capture-Screen (Sucher + Overlay + Berechtigung)
   CameraController.swift  AVCaptureSession, Torch, Belichtung, Foto
   DocumentDetector.swift  Dokument-Segmentierung + Luma-Metriken pro Frame
@@ -49,7 +49,7 @@ Beleg/
   LiveFieldsView.swift    Chip-Anzeige der live gelesenen Felder
   CameraPreviewView.swift AVCaptureVideoPreviewLayer-Wrapper
   Dewarper.swift      Perspektiv-Entzerrung mit Foto-Neu-Detektion
-  CaptureTab.swift    Erfassen → Prüfschritte → Ergebnis-Karte mit Routing
+  CaptureTab.swift    Erfassen → Prüfschritte → Ergebnis-Karte
   ReviewSheet.swift   Kontierungs-Editor (Fuzzy-Suche, Steuerschlüssel)
   ListeView.swift     Belegliste, Filter, Detail mit Provenance
   ExportView.swift    EXTF-Vorschau, Share, Fixierung

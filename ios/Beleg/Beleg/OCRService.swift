@@ -15,10 +15,6 @@ enum OCRService {
         }
         let zeilen: [Zeile]
         var text: String { zeilen.map { $0.text }.joined(separator: "\n") }
-        /// Für den FeldParser (der nur Text + Konfidenz braucht).
-        var parserZeilen: [(text: String, conf: Double)] {
-            zeilen.map { ($0.text, $0.conf) }
-        }
         /// Das Übergabeformat an die Buchhaltung (seit 27.08.): Visions
         /// Rohausgabe als {text, conf, box} — box in Prozent des Blatts,
         /// y von oben. Kein Parser, keine Deutung: nur Serialisierung.

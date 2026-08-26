@@ -18,7 +18,6 @@ struct ProtokollView: View {
     @State private var text: String?
     @State private var hinweis: String?
     @State private var laedt = false
-    @State private var neuGelesen = false
 
     var body: some View {
         NavigationStack {
@@ -40,24 +39,6 @@ struct ProtokollView: View {
                         Text(hinweis)
                             .font(.footnote)
                             .foregroundStyle(GC.desc)
-                    }
-
-                    if neuGelesen {
-                        Label("babu liest den Beleg gerade noch einmal. In etwa "
-                              + "einer halben Minute ist das neue Protokoll da.",
-                              systemImage: "arrow.clockwise")
-                            .font(.footnote)
-                            .foregroundStyle(GC.accent)
-                    } else if text != nil || hinweis != nil {
-                        Button {
-                            Task { await neuLesen() }
-                        } label: {
-                            Label("Noch einmal lesen lassen", systemImage: "arrow.clockwise")
-                                .font(.footnote)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .padding(.top, 4)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -185,25 +166,11 @@ struct ProtokollView: View {
             hinweis = nil
         case .nochNicht:
             hinweis = "Zu diesem Beleg gibt es noch kein Protokoll — er wurde "
-                + "gelesen, bevor es das gab. Einmal neu lesen lassen legt eines an."
+                + "gelesen, bevor es das gab."
         case .zugangFehlt:
             hinweis = "Der Zugang zur Belegbox ist abgelaufen — einmal neu verbinden."
         default:
             hinweis = "Gerade keine Verbindung — später noch einmal versuchen."
-        }
-    }
-
-    private func neuLesen() async {
-        guard let url = URL(string: store.ablageURL),
-              let pat = KeychainHelfer.ladePAT() else { return }
-        laedt = true
-        defer { laedt = false }
-        if await AblageService.neuLesenAnstossen(stamm: stamm, basis: url, pat: pat) {
-            neuGelesen = true
-            text = nil
-            hinweis = nil
-        } else {
-            hinweis = "Das hat gerade nicht geklappt — später noch einmal versuchen."
         }
     }
 }

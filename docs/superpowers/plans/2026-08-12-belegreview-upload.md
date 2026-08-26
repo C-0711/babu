@@ -1,5 +1,10 @@
 # BelegReview Stufe 1a — App-Upload: Implementierungsplan
 
+> **Hinweis (27.08.2026):** Dieses Dokument beschreibt den Stand seiner
+> Entstehung. Der Watcher / die zweite Lesung existiert seit dem Zielbild
+> nicht mehr — was heute gilt, steht in `HANDOVER.md`.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans
 > to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax.
 

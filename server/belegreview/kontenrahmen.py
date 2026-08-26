@@ -39,9 +39,7 @@ begründet die Antwort; wer speichert, ist der Aufrufer.
 from __future__ import annotations
 
 import os
-import sqlite3
 from dataclasses import dataclass
-from pathlib import Path
 
 from kontierung import RAHMEN
 
@@ -208,50 +206,3 @@ def wechsel_pruefen(*, alt: str | None, neu: str, heute_jahr: int,
         True, ziel_jahr,
         f"Wechsel von {alt_rahmen} auf {ziel_rahmen} zum 1. Januar "
         f"{ziel_jahr}. Belege bis dahin bleiben im {alt_rahmen}.")
-
-
-# ── Was der Watcher liest ────────────────────────────────────────────────────
-
-def gewaehlt(db_pfad, un: str | None = None, vorgabe: str | None = None) -> str:
-    """Der Rahmen des Betriebs, direkt aus `portal.db` — für den Watcher.
-
-    Der Watcher ist ein eigener Prozess ohne FastAPI; er importiert babu_web
-    nicht (das zöge den halben Server mit). Deshalb liest er die eine Zeile
-    selbst, nur lesend und fehlertolerant: gibt es die Datei nicht, ist sie
-    gesperrt oder fehlt die Tabelle, bleibt es bei der Vorgabe. Ein
-    unerreichbares Portal darf die Belegverarbeitung nicht anhalten.
-
-    Ohne `un` gilt „eine Belegbox je Server": steht genau ein Rahmen in der
-    Tabelle, ist das der des Betriebs. Stehen zwei verschiedene da, wird nicht
-    gewürfelt — dann bleibt es bei der Vorgabe.
-    """
-    fallback = _sauber(vorgabe) or HAUSSTAND
-    pfad = Path(db_pfad)
-    if not pfad.exists():
-        return fallback
-    schluessel = (SCHLUESSEL, SCHLUESSEL_AB, SCHLUESSEL_KOMMT)
-    platzhalter = ",".join("?" * len(schluessel))
-    try:
-        # Nur lesend öffnen: der Watcher darf die Portal-Datenbank unter
-        # keinen Umständen anlegen oder verändern.
-        conn = sqlite3.connect(f"file:{pfad}?mode=ro", uri=True, timeout=2)
-        try:
-            zeilen = list(conn.execute(
-                f"SELECT un, schluessel, wert FROM einstellungen "
-                f"WHERE schluessel IN ({platzhalter})"
-                + (" AND un=?" if un else ""),
-                (*schluessel, un) if un else schluessel))
-        finally:
-            conn.close()
-    except sqlite3.Error:
-        return fallback
-
-    # Nach Betrieb sortieren, dann den Rahmen je Betrieb ausrechnen — der
-    # vorgemerkte Wechsel gehört zu seinem Betrieb, nicht in einen Topf.
-    je_betrieb: dict[str, dict] = {}
-    for betrieb, schluessel_, wert in zeilen:
-        je_betrieb.setdefault(betrieb, {})[schluessel_] = wert
-    gefunden = {aus_einstellungen(e, vorgabe=fallback) for e in je_betrieb.values()}
-    if len(gefunden) == 1:
-        return gefunden.pop()
-    return fallback

@@ -120,7 +120,7 @@ def test_ein_altes_review_ohne_protokoll_sagt_was_zu_tun_ist(welt):
     }, None, "aufnahme: alt", "nina@0711.io")
     r = c.get("/review/alt/protokoll")
     assert r.status_code == 404
-    assert "neu lesen" in r.json()["fehler"]
+    assert "Leseprotokoll" in r.json()["fehler"]
 
 
 def test_unbekannter_beleg_ergibt_404(welt):
@@ -129,80 +129,8 @@ def test_unbekannter_beleg_ergibt_404(welt):
     assert c.get("/review/gibtsnicht/protokoll").status_code == 404
 
 
-# ————— Neu lesen —————
-
-def test_neu_lesen_entfernt_die_lesung(welt):
-    bw, bare = welt
-    c = konto(bw)
-    stamm = beleg_mit_review(bw, bare)
-    r = c.post(f"/review/{stamm}/neu-lesen")
-    assert r.status_code == 200, r.text
-    assert r.json()["ok"] is True
-    dateien = in_der_box(bare)
-    assert f"review/{stamm}.json" not in dateien
-    assert f"review/{stamm}.md" not in dateien
-    assert f"review/{stamm}.embedding.json" not in dateien
-
-
-def test_neu_lesen_laesst_den_beleg_unangetastet(welt):
-    """Die wichtigste Zusage: das Original bleibt liegen."""
-    bw, bare = welt
-    c = konto(bw)
-    stamm = beleg_mit_review(bw, bare)
-    c.post(f"/review/{stamm}/neu-lesen")
-    assert f"docs/{stamm}.jpg" in in_der_box(bare)
-    assert bw.git_show(f"docs/{stamm}.jpg") == JPEG
-
-
-def test_nach_dem_neu_lesen_findet_der_watcher_den_beleg_wieder(welt):
-    """Der Watcher sucht Belege ohne Lesung — genau das ist jetzt der Fall."""
-    bw, bare = welt
-    c = konto(bw)
-    stamm = beleg_mit_review(bw, bare)
-    c.post(f"/review/{stamm}/neu-lesen")
-    dateien = in_der_box(bare)
-    offen = [d for d in dateien if d.startswith("docs/")
-             and f"review/{Path(d).stem}.json" not in dateien]
-    assert f"docs/{stamm}.jpg" in offen
-
-
-def test_neu_lesen_braucht_eine_freischaltung(welt):
-    bw, bare = welt
-    stamm = beleg_mit_review(bw, bare)
-    c = konto(bw, "fremd@x.de")
-    with bw._DB_LOCK, bw._db() as v:
-        v.execute("UPDATE nutzer SET box=0 WHERE email=?", ("fremd@x.de",))
-    assert c.post(f"/review/{stamm}/neu-lesen").status_code == 403
-    assert f"review/{stamm}.json" in in_der_box(bare)
-
-
-def test_neu_lesen_ohne_anmeldung(welt):
-    bw, bare = welt
-    stamm = beleg_mit_review(bw, bare)
-    c = TestClient(bw.app, base_url="https://testserver")
-    assert c.post(f"/review/{stamm}/neu-lesen").status_code == 401
-
-
-def test_neu_lesen_ohne_lesung_sagt_das(welt):
-    bw, _ = welt
-    c = konto(bw)
-    r = c.post("/review/gibtsnicht/neu-lesen")
-    assert r.status_code == 404
-    assert "in Arbeit" in r.json()["fehler"]
-
-
-def test_zweimal_neu_lesen_geht_auch(welt):
-    """Der zweite Anlauf darf nicht mit einem Serverfehler enden."""
-    bw, bare = welt
-    c = konto(bw)
-    stamm = beleg_mit_review(bw, bare)
-    assert c.post(f"/review/{stamm}/neu-lesen").status_code == 200
-    assert c.post(f"/review/{stamm}/neu-lesen").status_code == 404
-
-
 @pytest.mark.parametrize("boeser", ["../../etc/passwd", "a/b", "..", "a b"])
 def test_kein_ausbruch_aus_dem_review_ordner(welt, boeser):
     bw, _ = welt
     c = konto(bw)
     assert c.get(f"/review/{boeser}/protokoll").status_code in (400, 404)
-    assert c.post(f"/review/{boeser}/neu-lesen").status_code in (400, 404)

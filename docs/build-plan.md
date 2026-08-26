@@ -1,5 +1,11 @@
 # Bauplan: „Beleg" — vom Prototyp zum Produktivsystem
 
+> **HISTORISCH (Stand vor dem Zielbild vom 26.08.2026).** Die Zwei-Lane-
+> Architektur (PaddleOCR-Lane, Confidence-Routing, Watcher-Zweitlesung) ist
+> nicht mehr gebaut worden bzw. wieder ausgebaut. Was heute gilt, steht in
+> `HANDOVER.md`: Vision liest auf dem iPhone, Gemma bucht, die Belegbox
+> archiviert. Dieses Dokument bleibt als Entstehungsgeschichte stehen.
+
 > Ziel dieses Dokuments: der vollständige Plan, um aus dem Klick-Prototyp
 > (`app/belegapp.html`) und dem Design-Prompt (`prompts/design-prompt-kontierung-app.md`)
 > die echte Anwendung zu bauen — Capture → Extraktion → Kontierung →

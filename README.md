@@ -1,7 +1,8 @@
 # babu — Beleg App
 
 Automatische Belegkontierung für den deutschen Mittelstand.
-Capture → Instant Reading → Kontierung (SKR03/04) → Confidence-Routing → Merkle-Siegel → DATEV EXTF-Export.
+Foto → Vision liest auf dem iPhone → Gemma bucht (strict JSON, SKR03/04) → Ablage/Einsortierung → DATEV EXTF-Export.
+Aktueller Einstieg: `HANDOVER.md`.
 
 ## Struktur
 - `app/belegapp.html` — lauffähiger Prototyp (self-contained, einfach im Browser öffnen); Umsetzung des Designs „Unlimited-OCR Mobile“ ([Claude Design](https://claude.ai/design/p/19608eb7-6194-41ad-8d9a-316889231908?file=Unlimited-OCR+Mobile.dc.html&via=share))

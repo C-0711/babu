@@ -16,37 +16,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import gemma_buchung  # noqa: E402
 
 
-PROTOKOLL = """# beleg.jpg
-
-## Das Ergebnis
-
-| Feld | Wert | Woher |
-|---|---|---|
-| Rechnungsbetrag | 55,74 € | Zeile 7 |
-
-## Jede erkannte Zeile
-
-| # | | Text | Erkennung |
-|---:|---|---|---|
-| 1 | › | 21.02.2026 | sicher (100%) |
-| 2 |  | Uber 13:30 | sicher (99%) |
-| 7 | › | Gesamtsumme 55,74 AED | sicher (100%) |
-
-## Technik
-"""
-
-
-# ————— Zeilen aus dem eigenen Protokoll —————
-
-def test_zeilen_kommen_vollstaendig_und_ohne_tabellenreste():
-    zeilen = gemma_buchung.zeilen_aus_protokoll(PROTOKOLL)
-    assert zeilen == ["21.02.2026", "Uber 13:30", "Gesamtsumme 55,74 AED"]
-
-
-def test_ohne_zeilenabschnitt_kommt_nichts():
-    assert gemma_buchung.zeilen_aus_protokoll("# nur Kopf") == []
-
-
 # ————— Profil und Katalog —————
 
 def test_profil_nennt_kleinunternehmerin_nur_wenn_sie_eine_ist():
@@ -161,42 +130,6 @@ def test_kauderwelsch_vom_modell_wird_zur_hoeflichen_frage(monkeypatch):
     assert e["fragen"][0]["frage"]
 
 
-# ————— Die Route: Zeilen aus der Box, Antworten validiert —————
-
-@pytest.fixture()
-def klient(monkeypatch):
-    import babu_web
-    monkeypatch.setattr(babu_web, "wer", lambda request: "nina@0711.io")
-    monkeypatch.setattr(babu_web, "box_mitglied", lambda un: True)
-    monkeypatch.setattr(babu_web, "review_pfad", lambda stamm: "review/x.json")
-    monkeypatch.setattr(babu_web, "git_show",
-                        lambda pfad: PROTOKOLL.encode() if pfad.endswith(".md") else b"{}")
-    monkeypatch.setattr(babu_web, "db_einstellungen", lambda un: {})
-    monkeypatch.setattr(babu_web, "kontenrahmen_von", lambda un: "SKR04")
-    return babu_web, TestClient(babu_web.app, base_url="https://testserver")
-
-
-def test_route_reicht_zeilen_und_antworten_an_die_runde(klient, monkeypatch):
-    bw, c = klient
-    gesehen = {}
-
-    def falsche_runde(zeilen, einstellungen, antworten, rahmen,
-                      umsaetze=None, nachbarn=None, markdown=None, bild=None):
-        gesehen.update(zeilen=zeilen, antworten=antworten, rahmen=rahmen)
-        return {"status": "gebucht", "buchung": {"konto": "1460"}}
-
-    monkeypatch.setattr(gemma_buchung, "runde", falsche_runde)
-    r = c.post("/review/stamm-1/buchungsfragen",
-               json={"antworten": [{"frage": "F", "antwort": "A"},
-                                   {"frage": "leer", "antwort": "  "}]})
-    assert r.status_code == 200, r.text
-    assert r.json()["status"] == "gebucht"
-    assert gesehen["zeilen"] == ["21.02.2026", "Uber 13:30", "Gesamtsumme 55,74 AED"]
-    # Leere Antworten reisen nicht mit — sie wären nur Prompt-Ballast.
-    assert gesehen["antworten"] == [{"frage": "F", "antwort": "A"}]
-    assert gesehen["rahmen"] == "SKR04"
-
-
 def test_prompt_traegt_kontobewegungen_und_nachbarbelege():
     p = gemma_buchung.prompt_bauen(
         "P", ["Gesamtsumme 55,74 AED"], [],
@@ -209,41 +142,6 @@ def test_prompt_traegt_kontobewegungen_und_nachbarbelege():
     # Ohne Kontext tauchen die Abschnitte gar nicht erst auf.
     leer = gemma_buchung.prompt_bauen("P", ["x"], [])
     assert "KONTOBEWEGUNGEN" not in leer and "WEITERE BELEGE" not in leer
-
-
-def test_route_gibt_gemma_die_kontobewegungen_des_monats(klient, monkeypatch):
-    bw, c = klient
-    monkeypatch.setattr(bw, "git_show", lambda pfad:
-        PROTOKOLL.encode() if pfad.endswith(".md")
-        else b'{"felder": {"datum": "2026-02-21"}}')
-    monkeypatch.setattr(bw, "index_aktuell", lambda: {
-        "umsaetze": {"2026-02": [{"datum": "21.02.2026", "betrag": -13.9,
-                                  "text": "PayPal Uber BV", "typ": "Karte"}]},
-        "belege": {"a": {"datum": "2026-02-21", "brutto": 55.74,
-                         "lieferant": "Uber", "stamm": "anderer"},
-                   "b": {"datum": "2026-03-01", "brutto": 9.9,
-                         "lieferant": "falscher Monat", "stamm": "b"}}})
-    gesehen = {}
-
-    def falsche_runde(zeilen, einstellungen, antworten, rahmen,
-                      umsaetze=None, nachbarn=None, markdown=None, bild=None):
-        gesehen.update(umsaetze=umsaetze, nachbarn=nachbarn)
-        return {"status": "gebucht", "buchung": {}}
-
-    monkeypatch.setattr(gemma_buchung, "runde", falsche_runde)
-    r = c.post("/review/stamm-1/buchungsfragen", json={})
-    assert r.status_code == 200, r.text
-    assert gesehen["umsaetze"] == [{"datum": "21.02.2026", "betrag": -13.9,
-                                    "text": "PayPal Uber BV"}]
-    assert [n["lieferant"] for n in gesehen["nachbarn"]] == ["Uber"]
-
-
-def test_route_ohne_leseprotokoll_sagt_es_ehrlich(klient, monkeypatch):
-    bw, c = klient
-    monkeypatch.setattr(bw, "git_show", lambda pfad: None)
-    r = c.post("/review/stamm-1/buchungsfragen", json={})
-    assert r.status_code == 404
-    assert "Leseprotokoll" in r.json()["fehler"]
 
 
 # ————— Die Direkt-Route: das Telefon schickt Profil und Lesung —————

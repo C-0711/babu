@@ -1,5 +1,10 @@
 # Rechnungen stellen — und die Vertragskiste
 
+> **Hinweis (27.08.2026):** Dieses Dokument beschreibt den Stand seiner
+> Entstehung. Der Watcher / die zweite Lesung existiert seit dem Zielbild
+> nicht mehr — was heute gilt, steht in `HANDOVER.md`.
+
+
 Stand 21.08.2026. Zwei Ergänzungen an derselben Stelle: babu kennt bisher nur
 Geld, das rausgeht (Belege) und Geld, das über die Ladenkasse reinkommt
 (Kassenbuch). Was fehlt, ist die dritte Sorte — Geld, das der Salon jemandem

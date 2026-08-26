@@ -1,8 +1,7 @@
 """boxschreiber — Schreibpfad des Portals in die GitChain-Belegbox.
 
-Eigener Clone (~/babu-web/box), NIE die Arbeitskopie des Watchers
-(~/belegreview/babu — dessen `reset --hard` frisst lokale Commits) und nie
-der Bare-Store direkt. Muster wie review_watcher.py: fetch + reset --hard →
+Eigener Clone (~/babu-web/box), nie der Bare-Store direkt.
+Muster: fetch + reset --hard →
 Datei schreiben → Commit mit Autor = angemeldete Nutzerin → Push via Gateway
 mit Service-PAT im Header (Wert ohne Newline — bekannte Falle Nr. 2).
 Push-Rennen mit dem Watcher (15-s-Takt): genau ein Retry, sonst Fehler.

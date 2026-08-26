@@ -1,5 +1,10 @@
 # Einsortieren nach der Lesung + „Zweitprüfung"-Wording verschwindet
 
+> **Hinweis (27.08.2026):** Dieses Dokument beschreibt den Stand seiner
+> Entstehung. Der Watcher / die zweite Lesung existiert seit dem Zielbild
+> nicht mehr — was heute gilt, steht in `HANDOVER.md`.
+
+
 Auftrag Christoph, 26.08.2026 abends: (1) Der Stichwort-Einsortierer soll nicht mehr
 beim Hochladen über das Fach entscheiden — 32 Beleg-Fotos lagen dadurch unlesbar in
 `auszuege/`. Die Entscheidung fällt künftig nach der echten Lesung im Watcher; der

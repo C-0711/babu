@@ -793,7 +793,6 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <g id="ik-schluessel"><circle cx="8" cy="8" r="4"/><path d="M11 11l9 9"/><path d="M17.5 17.5 20 15"/></g>
     <g id="ik-abmelden"><path d="M14.5 4.5h4A1.5 1.5 0 0 1 20 6v12a1.5 1.5 0 0 1-1.5 1.5h-4"/><path d="M13 12H4"/><path d="M7.5 8.5 4 12l3.5 3.5"/></g>
     <g id="ik-lupe-text"><circle cx="10.5" cy="10.5" r="6.2"/><path d="M15.2 15.2 20.5 20.5"/><path d="M7.8 8.8h5.4"/><path d="M7.8 12.2h3.4"/></g>
-    <g id="ik-neu-lesen"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 3.6V8h-4.4"/></g>
     <g id="ik-amt"><path d="M3.5 20.5h17"/><path d="M4.5 9.5h15"/><path d="M12 3.2 20 8H4z"/><path d="M7 12v6M12 12v6M17 12v6"/></g>
     <g id="ik-bank"><rect x="3.5" y="6.5" width="17" height="13" rx="2"/><path d="M3.5 10.5h17"/><path d="M7.5 15h4"/></g>
     <g id="ik-kasse"><rect x="2.8" y="6.5" width="18.4" height="11" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M6 12h.01M18 12h.01"/></g>
@@ -1978,9 +1977,6 @@ async function ladeDetail(stamm){
           <button class="chip mit-ik" onclick="protokollZeigen('${d.stamm}')">
             <svg class="ik klein" viewBox="0 0 24 24"><use href="#ik-lupe-text"/></svg>
             Protokoll ansehen</button>
-          <button class="chip mit-ik" onclick="neuLesen('${d.stamm}')">
-            <svg class="ik klein" viewBox="0 0 24 24"><use href="#ik-neu-lesen"/></svg>
-            Noch einmal lesen</button>
         </div>
         <div id="prot-${d.stamm}" class="prot" style="margin-top:12px"></div>
       </div></div>`;
@@ -2169,24 +2165,6 @@ async function protokollZeigen(stamm){
     if (!r.ok){ ziel.innerHTML = `<p>Das Protokoll ließ sich gerade nicht holen.</p>`; return; }
     ziel.innerHTML = protokollHtml(await r.text());
   }catch{ ziel.innerHTML = `<p>Gerade keine Verbindung.</p>`; }
-}
-
-async function neuLesen(stamm){
-  const ziel = document.getElementById("prot-" + stamm);
-  if (ziel) ziel.innerHTML = `<p>babu liest den Beleg noch einmal …</p>`;
-  try{
-    const r = await api("/review/" + stamm + "/neu-lesen", {method: "POST"});
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok){
-      if (ziel) ziel.innerHTML = `<p>${esc(d.fehler || "Das ging gerade nicht.")}</p>`;
-      return;
-    }
-    if (ziel) ziel.innerHTML = `<p>babu liest den Beleg noch einmal. In etwa einer
-      halben Minute steht das neue Ergebnis hier — die Seite lädt sich dann selbst neu.</p>`;
-    setTimeout(() => ladeDetail(stamm), 35000);
-  }catch{
-    if (ziel) ziel.innerHTML = `<p>Gerade keine Verbindung.</p>`;
-  }
 }
 
 /* ————— FRAGEN ————— */

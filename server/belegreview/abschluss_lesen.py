@@ -2,8 +2,7 @@
 
 Eigenständige Pipeline neben dem Beleg-Weg: EÜR, BWA, Steuerbescheide,
 Anlagenverzeichnis und Summen-/Saldenlisten, als Text-PDF oder Scan, in
-beliebiger Reihenfolge. Kein Import aus review_watcher (dessen Modulzustand
-gehört dem pm2-Prozess); der LLM-Zugang ist hier bewusst dupliziert.
+beliebiger Reihenfolge. Der LLM-Zugang ist hier bewusst eigenständig.
 
 Der Aufrufer reicht ein `melden(feld)`-Callback herein — darüber erscheinen
 extrahierte Werte einzeln im Portal („Zuschauen statt Abtippen").

@@ -49,11 +49,9 @@ pruefe(f5.steuerPositionen.contains { $0.satz == 7 && abs($0.brutto - 85.40) < 0
 let f6 = parse(["Weingärtle", "79,81 85,40", "7% 5,59"])
 pruefe(gleich(f6.brutto, 85.40), "gesplittete 7-%-Zeile aufgelöst")
 
-// 7. Gutschrift/Storno: erkennen und nie automatisch siegeln
+// 7. Gutschrift/Storno: erkennen (Buchungsentscheidung liegt beim Server)
 let f7 = parse(["Friseurbedarf Groß GmbH", "GUTSCHRIFT", "Betrag -25,00"])
 pruefe(f7.gutschriftSignal, "Gutschrift erkannt")
-pruefe(Kontierung.vorschlag(felder: f7).confidence <= 70,
-       "Gutschrift bleibt unter der Auto-Siegel-Schwelle")
 
 // 8. Normalfall bleibt normal (keine Regression)
 let f8 = parse(["Blumen Riedle", "Bon 5512", "03.08.2026", "19% MwSt", "12,61", "2,39", "15,00"])

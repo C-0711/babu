@@ -1,5 +1,10 @@
 # Spec: Salon-Check — Abschluss hochladen, zuschauen, Ampel-Report
 
+> **Hinweis (27.08.2026):** Dieses Dokument beschreibt den Stand seiner
+> Entstehung. Der Watcher / die zweite Lesung existiert seit dem Zielbild
+> nicht mehr — was heute gilt, steht in `HANDOVER.md`.
+
+
 Stand 19.08.2026 · Auftraggeber-Branch: `claude/project-understanding-f6f4ff` ·
 Umsetzung Server/Portal: Portal-Branch `claude/project-handover-context-7bfaa2`
 (Commit `b26af87`) · Landing: dieser Branch. **Alle Aufträge sind umgesetzt

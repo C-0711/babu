@@ -1,5 +1,10 @@
 # Next-Gen Tax App für Beauty-Salons — babu-Portal unter babu.0711.io
 
+> **Hinweis (27.08.2026):** Dieses Dokument beschreibt den Stand seiner
+> Entstehung. Der Watcher / die zweite Lesung existiert seit dem Zielbild
+> nicht mehr — was heute gilt, steht in `HANDOVER.md`.
+
+
 ## Context
 
 babu läuft produktiv: iPhone-App (Scan → On-Device-Lesung → Kontierung → Siegel → Upload) + BelegReview auf der H200V (PaddleOCR, embeddinggemma-Semantik, Gemma-4-Bild-Lane, `review:`-Commits) + GitChain-Belegbox unter babu.0711.io. Die Screenshots des Wolters-Kluwer-Portals (ADDISON OneClick) der Steuerkanzlei sind die Funktionsreferenz: Beleghub (Kategorienbaum + Upload + „übermitteln"), Dokumente (Kanzlei→Mandant mit eSignatur/Freigabe), Kommunikation (Themen-Threads), Einstellungs-Matrix, Mobile-App (Kamera/Import/Belege/Gesendet).

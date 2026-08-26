@@ -11,13 +11,11 @@ struct ErgebnisUebersicht: View {
 
     let belegID: UUID
     let bild: UIImage?
-    let markierungen: [CGRect]   // Vision-normiert, Ursprung unten links
     let startZeit: Date
     var fertig: () -> Void
 
     @State private var hakenDa = false
     @State private var hakenGeparkt = false   // nach dem Moment: klein neben den Namen
-    @State private var markierungenDa = false
     @State private var zeigeInfo = false
     @State private var zeigeBewirtung = false
     @Namespace private var hakenNS
@@ -26,7 +24,7 @@ struct ErgebnisUebersicht: View {
 
     private var hatHinweis: Bool {
         guard let b = aktuell else { return false }
-        return !b.summenprobeOK || b.gutschriftSignal == true || b.brauchtBewirtungsangaben
+        return !b.summenprobeOK || b.brauchtBewirtungsangaben
     }
 
     var body: some View {
@@ -106,23 +104,6 @@ struct ErgebnisUebersicht: View {
                 Image(uiImage: bild)
                     .resizable()
                     .scaledToFit()
-                    .overlay {
-                        GeometryReader { geo in
-                            ZStack {
-                                ForEach(Array(markierungen.enumerated()), id: \.offset) { _, r in
-                                    RoundedRectangle(cornerRadius: 5)
-                                        .fill(GC.ok.opacity(0.16))
-                                        .overlay(RoundedRectangle(cornerRadius: 5)
-                                            .stroke(GC.ok, lineWidth: 1.6))
-                                        .frame(width: r.width * geo.size.width + 10,
-                                               height: r.height * geo.size.height + 8)
-                                        .position(x: r.midX * geo.size.width,
-                                                  y: (1 - r.midY) * geo.size.height)
-                                }
-                            }
-                            .opacity(markierungenDa ? 1 : 0)
-                        }
-                    }
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                     .shadow(color: Color(hex: 0x1F1E1A).opacity(0.22), radius: 14, y: 7)
             } else {
@@ -140,7 +121,7 @@ struct ErgebnisUebersicht: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Beleg erfolgreich gelesen — die erkannten Angaben sind markiert")
+        .accessibilityLabel("Beleg erfolgreich gelesen")
     }
 
     private var grosserHaken: some View {
@@ -161,15 +142,11 @@ struct ErgebnisUebersicht: View {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         if reduceMotion {
             hakenDa = true
-            markierungenDa = true
             hakenGeparkt = true
             return
         }
         withAnimation(.spring(response: 0.45, dampingFraction: 0.62).delay(0.05)) {
             hakenDa = true
-        }
-        withAnimation(.easeIn(duration: 0.35).delay(0.3)) {
-            markierungenDa = true
         }
         Task {
             try? await Task.sleep(nanoseconds: 1_400_000_000)
