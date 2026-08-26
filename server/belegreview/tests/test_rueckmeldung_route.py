@@ -5,6 +5,7 @@ GitLab da → Issue. GitLab weg → Puffer in portal.db, Antwort trotzdem „ok"
 """
 import base64
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -57,3 +58,42 @@ def test_zu_grosses_bild_wird_abgelehnt(klient, monkeypatch):
     riesig = base64.b64encode(b"x" * (3 * 1024 * 1024 + 1)).decode()
     r = c.post("/api/rueckmeldung", json={"text": "Bild zu groß.", "bild": riesig})
     assert r.status_code == 400
+
+
+def test_nachtragen_laeuft_nie_doppelt(klient, monkeypatch):
+    """Zwei gleichzeitige Nachtrag-Läufe dürfen nicht denselben Puffer-Eintrag
+    beide an GitLab melden. Deterministisch mit zwei Events: der erste Lauf
+    blockiert mitten in issue_anlegen, bis wir ihn freigeben — währenddessen
+    muss ein zweiter Lauf sofort überspringen (kein zweiter issue_anlegen-Ruf)."""
+    c, bw, gm = klient
+    laeuft = threading.Event()
+    weiter = threading.Event()
+    aufrufe = []
+
+    def _blockierend(issue, bild_jpeg=None):
+        aufrufe.append(issue)
+        laeuft.set()
+        assert weiter.wait(2), "zweiter Lauf hat nicht rechtzeitig freigegeben"
+        return True, "1"
+
+    monkeypatch.setattr(gm, "issue_anlegen", _blockierend)
+    with bw._db() as conn:
+        gm.puffer_ablegen(conn, {"issue": {"title": "t", "description": "d",
+                                           "labels": "bug"}, "bild_b64": None})
+
+    t = threading.Thread(target=bw._rueckmeldung_nachtragen)
+    t.start()
+    assert laeuft.wait(2), "erster Lauf kam nicht in Gang"
+
+    # Zweiter Lauf trifft das Mutex besetzt an — überspringt sofort, statt
+    # den Eintrag ein zweites Mal an GitLab zu melden.
+    bw._rueckmeldung_nachtragen()
+    assert len(aufrufe) == 1
+
+    weiter.set()
+    t.join(2)
+    assert not t.is_alive()
+    assert len(aufrufe) == 1
+    with bw._db() as conn:
+        n = conn.execute("select count(*) from meldung_puffer").fetchone()[0]
+    assert n == 0

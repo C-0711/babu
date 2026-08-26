@@ -4626,12 +4626,29 @@ def _rueckmeldung_puffern(nutzlast: dict) -> None:
         gm.puffer_ablegen(conn, nutzlast)
 
 
+_NACHTRAG_LOCK = threading.Lock()
+
+
 def _rueckmeldung_nachtragen() -> None:
     """Wie oben, ganz im Worker-Thread — aber `_DB_LOCK` bleibt kurz: die
     GitLab-Roundtrips in `puffer_nachtragen` laufen dazwischen ungeschützt,
-    nur Lesen und Löschen nehmen `_db_gesperrt`."""
-    import gitlab_meldungen as gm  # noqa: PLC0415
-    gm.puffer_nachtragen(_db_gesperrt)
+    nur Lesen und Löschen nehmen `_db_gesperrt`.
+
+    `_NACHTRAG_LOCK` ist ein eigenes, zweites Schloss — nur für diesen einen
+    Zweck, von sonst niemandem genommen. Ohne es könnten zwei gleichzeitige
+    Aufrufe (zwei erfolgreiche /api/rueckmeldung kurz hintereinander) denselben
+    noch nicht gelöschten Puffer-Eintrag beide lesen und beide an GitLab
+    melden — ein Eintrag, zwei Issues. Mit `blocking=False`: läuft schon ein
+    Nachtrag, überspringt der zweite sofort. Das ist kein Datenverlust — der
+    laufende Durchlauf arbeitet den Eintrag ja gerade ab — und hält keinen
+    Threadpool-Worker unnötig in einer Warteschlange fest."""
+    if not _NACHTRAG_LOCK.acquire(blocking=False):
+        return
+    try:
+        import gitlab_meldungen as gm  # noqa: PLC0415
+        gm.puffer_nachtragen(_db_gesperrt)
+    finally:
+        _NACHTRAG_LOCK.release()
 
 
 @app.post("/api/rueckmeldung")
