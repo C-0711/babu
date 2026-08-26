@@ -85,7 +85,7 @@ def test_kategorie_wird_zur_kontonummer_aus_dem_katalog():
 
 def test_erfundene_kategorie_wird_zur_rueckfrage_nicht_zur_buchung():
     e = gemma_buchung.buchung_pruefen(
-        {"status": "gebucht", "kategorie": "fortbildung", "betrag": 799})
+        {"status": "gebucht", "kategorie": "wellness-oase", "betrag": 799})
     assert e["status"] == "fragen"
     assert e["fragen"][0]["optionen"]            # Multiple Choice, nicht offen
 
@@ -373,3 +373,23 @@ def test_fremdwaehrung_bekommt_keine_steuertabelle_und_satz_null():
     b = e["buchung"]
     assert b["steuersaetze"] == []
     assert b["ust_satz"] == 0                       # keine deutsche Vorsteuer
+
+
+# ————— Die Katalog-Lücken vom Prüflauf: Fortbildung und Porto —————
+
+def test_fortbildung_und_porto_stehen_im_katalog():
+    text = gemma_buchung.katalog_text("SKR04")
+    assert "fortbildung: Fortbildung und Seminare" in text
+    assert "porto: Porto und Versand" in text
+    # Der Kurs über 799 € landete ohne diese Kategorie auf „Fachliteratur".
+    e = gemma_buchung.buchung_pruefen(
+        {"status": "gebucht", "kategorie": "fortbildung", "betrag": 799,
+         "betrag_eur": 799, "ust_satz": 0})
+    assert e["buchung"]["konto"] == "6821"
+    assert e["buchung"]["kategorie_name"] == "Fortbildung und Seminare"
+
+
+def test_beide_kategorien_kennen_auch_skr03():
+    import kontierung as kt
+    assert kt.KATEGORIEN["fortbildung"].konto("SKR03") == "4945"
+    assert kt.KATEGORIEN["porto"].konto("SKR03") == "4910"

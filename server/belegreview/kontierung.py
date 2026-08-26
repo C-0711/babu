@@ -108,7 +108,16 @@ _K = [
                       "abgebildet — die Konten unterscheiden sich dort."),
     Kategorie("telekom", "Telefon und Internet", "4920", "6805", geprueft=True),
     Kategorie("buerobedarf", "Bürobedarf", "4930", "6815", geprueft=True),
+    Kategorie("porto", "Porto und Versand", "4910", "6800",
+              hinweis="Briefmarken, Frankierung, Paketversand, Zollgebühren "
+                      "des Versenders. Briefmarken tragen keine Umsatzsteuer, "
+                      "Expressdienste schon — was der Beleg ausweist, gilt."),
     Kategorie("literatur", "Fachliteratur", "4940", "6820", geprueft=True),
+    # Ohne diese Kategorie landete der Haarverlängerungskurs über 799 € auf
+    # „Fachliteratur" — der Katalog kannte nichts Näheres (Prüflauf 24.08.2026).
+    Kategorie("fortbildung", "Fortbildung und Seminare", "4945", "6821",
+              hinweis="Kurse, Seminare, Schulungen, Meisterkurse — auch im "
+                      "Ausland und auch, wenn Reisekosten getrennt anfallen."),
     Kategorie("it", "IT, Hosting, Software", None, "6837",
               hinweis="SKR03-Gegenstück noch nicht bestätigt."),
     Kategorie("sonstiges", "Sonstiger Betriebsbedarf",
