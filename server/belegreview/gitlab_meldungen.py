@@ -87,8 +87,8 @@ def issue_anlegen(issue: dict, bild_jpeg: bytes | None = None) -> tuple[bool, st
                       files={"file": ("bildschirm.jpg", bild_jpeg, "image/jpeg")})
             if r.status_code == 201:
                 beschreibung += "\n\n" + r.json()["markdown"]
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as ex:  # noqa: BLE001
+            print(f"[gitlab] Bild-Upload fehlgeschlagen: {ex!r}", flush=True)
     try:
         r = _http("POST", _api("/issues"),
                   json={**issue, "description": beschreibung})
@@ -103,7 +103,8 @@ def issues_holen(labels: str = "von-nina") -> list[dict] | None:
     try:
         r = _http("GET", _api(f"/issues?labels={labels}&per_page=50"
                               "&order_by=updated_at&sort=desc"))
-    except Exception:  # noqa: BLE001
+    except Exception as ex:  # noqa: BLE001
+        print(f"[gitlab] issues_holen({labels!r}): {ex!r}", flush=True)
         return None
     return r.json() if r.status_code == 200 else None
 
@@ -111,7 +112,8 @@ def issues_holen(labels: str = "von-nina") -> list[dict] | None:
 def issue_holen(iid: int) -> dict | None:
     try:
         r = _http("GET", _api(f"/issues/{iid}"))
-    except Exception:  # noqa: BLE001
+    except Exception as ex:  # noqa: BLE001
+        print(f"[gitlab] issue_holen({iid}): {ex!r}", flush=True)
         return None
     return r.json() if r.status_code == 200 else None
 
@@ -119,7 +121,8 @@ def issue_holen(iid: int) -> dict | None:
 def notiz(iid: int, text: str) -> bool:
     try:
         r = _http("POST", _api(f"/issues/{iid}/notes"), json={"body": text})
-    except Exception:  # noqa: BLE001
+    except Exception as ex:  # noqa: BLE001
+        print(f"[gitlab] notiz({iid}): {ex!r}", flush=True)
         return False
     return r.status_code == 201
 
@@ -127,7 +130,8 @@ def notiz(iid: int, text: str) -> bool:
 def issue_aendern(iid: int, **felder) -> bool:
     try:
         r = _http("PUT", _api(f"/issues/{iid}"), json=felder)
-    except Exception:  # noqa: BLE001
+    except Exception as ex:  # noqa: BLE001
+        print(f"[gitlab] issue_aendern({iid}, {felder!r}): {ex!r}", flush=True)
         return False
     return r.status_code == 200
 
