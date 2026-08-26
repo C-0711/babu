@@ -1079,7 +1079,16 @@ def verarbeite(pfad: str) -> None:
     import einsortieren  # noqa: PLC0415
     urteil = einsortieren.entscheiden(text)
     if urteil["art"] == "kontoauszug" and urteil["sicher"]:
-        monat = pfad.split("/")[1] if pfad.count("/") >= 2 else time.strftime("%Y-%m")
+        # Der Monat des AUSZUGS, nicht der des Hochladens — er steht im
+        # gelesenen Text („Kontoauszug N/JJJJ" oder die Umsatzdaten selbst).
+        import kontoauszug as ka  # noqa: PLC0415
+        try:
+            monat = ka.parse_text(text).get("monat")
+        except Exception:  # noqa: BLE001
+            monat = None
+        if not monat:
+            monat = (pfad.split("/")[1] if pfad.count("/") >= 2
+                     else time.strftime("%Y-%m"))
         ziel = f"auszuege/{monat}/{Path(pfad).name}"
         git("mv", pfad, ziel)
         c = git("commit", "--author", AUTOR, "-m",

@@ -53,6 +53,18 @@ def parse_text(text: str) -> dict:
             continue
         if zeile.strip():
             beschreibung.append(zeile.strip())
+    if monat is None and umsaetze:
+        # Keine „Kontoauszug N/JJJJ"-Zeile gelesen (Foto, andere Bank) —
+        # dann sagt es der Inhalt: der Monat, in dem die meisten Umsätze
+        # liegen, ist der Monat des Auszugs.
+        haeufig: dict[str, int] = {}
+        for u in umsaetze:
+            m = re.match(r"\d{2}\.(\d{2})\.(\d{4})", u.get("datum") or "")
+            if m:
+                schluessel = f"{m.group(2)}-{m.group(1)}"
+                haeufig[schluessel] = haeufig.get(schluessel, 0) + 1
+        if haeufig:
+            monat = max(haeufig, key=lambda k: (haeufig[k], k))
     return {"konto": konto, "monat": monat, "umsaetze": umsaetze}
 
 

@@ -69,3 +69,23 @@ def test_abgleich_datumsfenster():
     zu_alt = [{"stamm": "alt", "brutto": 952.58, "datum": "20.11.2024"}]
     a = kontoauszug.abgleich(d["umsaetze"], zu_alt)
     assert not a["gedeckt"]                            # 6 Wochen daneben → kein Match
+
+
+def test_monat_kommt_notfalls_aus_den_umsatzdaten():
+    """Fotografierte oder fremde Auszüge haben keine „Kontoauszug N/JJJJ"-
+    Zeile — dann sagt es der Inhalt: der Monat der meisten Umsätze."""
+    import kontoauszug as ka
+    text = """Musterbank Geschäftskonto
+01.02.2026 Lastschrift
+Miete Salon
+-1.200,00
+15.02.2026 Gutschrift
+SUMUP Tagesumsatz
+340,50
+28.01.2026 Entgelt
+Kontoführung
+-8,90
+"""
+    d = ka.parse_text(text)
+    assert d["monat"] == "2026-02"
+    assert len(d["umsaetze"]) == 3

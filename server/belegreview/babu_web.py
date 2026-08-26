@@ -1813,9 +1813,28 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
     import boxschreiber  # noqa: PLC0415
     dateiname = boxschreiber.beleg_dateiname(name)
     monat = time.strftime("%Y-%m")
+    geparst = None
+    if entscheidung["art"] == "kontoauszug":
+        # Der Auszug gehört in SEINEN Monat, nicht in den des Hochladens —
+        # und seine Umsätze in den Zahlungsabgleich, wie beim eigenen
+        # Kontoauszug-Knopf. Der Monat steht im PDF.
+        import tempfile  # noqa: PLC0415
+        import kontoauszug as ka  # noqa: PLC0415
+        with tempfile.NamedTemporaryFile(suffix=".pdf") as tf:
+            tf.write(daten)
+            tf.flush()
+            try:
+                geparst = await run_in_threadpool(ka.parse_pdf, tf.name)
+            except Exception:  # noqa: BLE001
+                geparst = None
+        if geparst and geparst.get("monat"):
+            monat = geparst["monat"]
     pfad = einsortieren.pfad_fuer(entscheidung["art"], dateiname, monat)
 
     dateien: dict[str, bytes] = {pfad: daten}
+    if geparst and geparst.get("umsaetze") and geparst.get("monat"):
+        dateien[pfad + ".umsaetze.json"] = json.dumps(
+            geparst, ensure_ascii=False, indent=1).encode()
     art = entscheidung["art"]
     if art in ("vertrag", "behoerde"):
         # Dokumente tragen ihren Zettel mit: sonst weiß die Ablage nicht,
