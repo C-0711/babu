@@ -1861,6 +1861,45 @@ def api_dokumente(request: Request) -> Response:
                          "ungelesen": sum(1 for d in dokumente if not d["gelesen"])})
 
 
+@app.get("/api/vorschau/{pfad:path}")
+def api_vorschau(pfad: str, request: Request) -> Response:
+    """Ein kleines Bild der ERSTEN Seite — für jede Unterlage in der Box.
+
+    Ein Kontoauszug lag bisher als graues Dokumentsymbol im Fach; man
+    erkennt seine Unterlagen aber am Blatt, nicht am Dateinamen. Eigener
+    Pfadpräfix (nicht /api/dokument/…/vorschau), weil dessen {pfad:path}
+    den Zusatz sonst verschluckt. Breite 320, wie die Abschluss-Vorschau."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if not ABLAGE_PFAD_RE.match(pfad) or ".." in pfad:
+        return JSONResponse({"fehler": "ungültiger Pfad"}, status_code=400)
+    roh = git_show(pfad)
+    if roh is None:
+        return JSONResponse({"fehler": "unbekanntes Dokument"}, status_code=404)
+    endung = Path(pfad).suffix.lower()
+    if endung in {".jpg", ".jpeg", ".png"}:
+        return Response(content=roh, media_type="image/png" if endung == ".png"
+                        else "image/jpeg",
+                        headers={"Cache-Control": "private, max-age=86400"})
+    if endung != ".pdf":
+        return JSONResponse({"fehler": "kein Bildformat"}, status_code=415)
+    try:
+        import io  # noqa: PLC0415
+        import pypdfium2 as pdfium  # noqa: PLC0415
+        d = pdfium.PdfDocument(io.BytesIO(roh))
+        seite = d[0]
+        bild = seite.render(scale=320 / max(seite.get_width(), 1)).to_pil()
+        d.close()
+        puffer = io.BytesIO()
+        bild.convert("RGB").save(puffer, "JPEG", quality=72)
+    except Exception as ex:  # noqa: BLE001
+        print(f"[vorschau] {pfad}: {ex!r}", flush=True)
+        return JSONResponse({"fehler": "nicht darstellbar"}, status_code=422)
+    return Response(content=puffer.getvalue(), media_type="image/jpeg",
+                    headers={"Cache-Control": "private, max-age=86400"})
+
+
 @app.get("/api/dokument/{pfad:path}")
 def api_dokument(pfad: str, request: Request) -> Response:
     un, fehler = _box_wache(request)
@@ -2083,6 +2122,16 @@ def api_abgleich(monat: str, request: Request) -> Response:
     ergebnis = ka.abgleich(umsaetze, list(idx["belege"].values()))
     ergebnis["monat"] = monat
     ergebnis["auszug_da"] = True
+    # Die abgelegten Auszüge selbst — damit die Bank-Ansicht das Blatt
+    # zeigen kann, nicht nur die Zahlen daraus.
+    baum = _git(["ls-tree", "-r", "--name-only", "HEAD"]) or ""
+    ergebnis["auszuege"] = [
+        {"pfad": p,
+         "seiten": _pdf_seiten((_git(["rev-parse", f"HEAD:{p}"]) or "").strip()
+                               or None, p)}
+        for p in baum.splitlines()
+        if p.startswith(f"auszuege/{monat}/")
+        and not p.endswith((".umsaetze.json", ".meta.json"))]
     return JSONResponse(ergebnis)
 
 
@@ -5239,9 +5288,20 @@ def _ablage_eintraege() -> list[dict]:
 
     beiakten = _abschluss_beiakten()
 
-    # Kontoauszüge, Abschlüsse, Stapel und Kassenblätter direkt aus dem Baum.
+    # Kontoauszüge, Abschlüsse, Stapel und Kassenblätter direkt aus dem Baum —
+    # MIT Blob-Kennungen, denn an denen hängt die gemerkte Seitenzahl.
     kopf = _git(["rev-parse", "HEAD"])
-    baum = _git(["ls-tree", "-r", "--name-only", (kopf or "HEAD").strip()]) or ""
+    voll = _git(["ls-tree", "-r", (kopf or "HEAD").strip()]) or ""
+    oids: dict[str, str] = {}
+    for zeile_ in voll.splitlines():
+        try:
+            meta_, pfad_ = zeile_.split("\t", 1)
+            oids[pfad_] = meta_.split()[2]
+        except (ValueError, IndexError):
+            continue
+    for e in eintraege:
+        e["seiten"] = _pdf_seiten(oids.get(e["pfad"]), e["pfad"])
+    baum = "\n".join(oids)
     for pfad in baum.splitlines():
         if pfad.endswith((".umsaetze.json", ".meta.json", ".erklaerung.json",
                           ".text.json")):
@@ -5270,8 +5330,38 @@ def _ablage_eintraege() -> list[dict]:
         eintraege.append({"pfad": pfad, "titel": titel, "art": art,
                           "zeit": (zeiten.get(pfad) or {}).get("zeit"),
                           "gelesen": None, "erklaerung": None, "vertrag": None,
-                          "loeschbar": False})
+                          "loeschbar": False,
+                          "seiten": _pdf_seiten(oids.get(pfad), pfad)})
     return eintraege
+
+
+# Blob-Kennung → Seitenzahl. Ein Blob ändert sich nie; einmal gezählt
+# reicht für die Lebensdauer des Prozesses.
+_SEITEN_CACHE: dict[str, int] = {}
+
+
+def _pdf_seiten(oid: str | None, pfad: str) -> int | None:
+    """Wie viele Seiten eine Unterlage hat — Fotos eine, PDFs so viele wie drin."""
+    endung = Path(pfad).suffix.lower()
+    if endung in (".jpg", ".jpeg", ".png", ".heic"):
+        return 1
+    if endung != ".pdf" or not oid:
+        return None
+    if oid in _SEITEN_CACHE:
+        return _SEITEN_CACHE[oid]
+    roh = git_show(pfad)
+    if roh is None:
+        return None
+    try:
+        import io  # noqa: PLC0415
+        import pypdfium2 as pdfium  # noqa: PLC0415
+        d = pdfium.PdfDocument(io.BytesIO(roh))
+        n = len(d)
+        d.close()
+    except Exception:  # noqa: BLE001
+        return None
+    _SEITEN_CACHE[oid] = n
+    return n
 
 
 @app.get("/api/ablage")

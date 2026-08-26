@@ -234,3 +234,53 @@ def test_das_portal_sucht_ueber_die_neue_route():
 def test_das_portal_kann_umbenennen_und_verschieben():
     assert "/api/ablage/umbenennen" in PORTAL
     assert "/api/ablage/verschieben" in PORTAL
+
+
+# ————— Vorschau und Seitenzahl: das Blatt, nicht der Dateiname —————
+
+def _zweiseiter() -> bytes:
+    """Ein echtes Zwei-Seiten-PDF, von pypdfium selbst gebaut."""
+    import pypdfium2 as pdfium
+    d = pdfium.PdfDocument.new()
+    d.new_page(595, 842)
+    d.new_page(595, 842)
+    import io
+    puffer = io.BytesIO()
+    d.save(puffer)
+    d.close()
+    return puffer.getvalue()
+
+
+def test_ein_pdf_traegt_seine_seitenzahl(welt, tmp_path):
+    """Ein Kontoauszug über zwei Seiten zeigt sich als Stapel — dafür muss
+    die Ablage wissen, wie viele Seiten er hat. Fotos haben eine."""
+    client, bare, bw = welt
+    import boxschreiber
+    boxschreiber.schreiben({"auszuege/2026-01/auszug.pdf": _zweiseiter()},
+                           None, "auszug", "t@l")
+    bw._INDEX.update(geprueft=0.0)
+    fach = _faecher(client)["kontoauszug"]
+    stueck = next(s for s in fach["stuecke"] if s["pfad"].endswith("auszug.pdf"))
+    assert stueck["seiten"] == 2
+    beleg = _faecher(client)["beleg"]["stuecke"][0]
+    assert beleg["seiten"] == 1
+
+
+def test_die_vorschau_liefert_die_erste_seite_als_bild(welt):
+    client, _, bw = welt
+    import boxschreiber
+    boxschreiber.schreiben({"auszuege/2026-01/auszug.pdf": _zweiseiter()},
+                           None, "auszug", "t@l")
+    bw._INDEX.update(geprueft=0.0)
+    r = client.get("/api/vorschau/auszuege/2026-01/auszug.pdf")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/jpeg"
+    assert len(r.content) > 500
+
+
+def test_ein_kaputtes_pdf_bringt_die_ablage_nicht_um(welt):
+    """Die Wegwerf-PDFs der Fixtures sind kein gültiges PDF — die Seitenzahl
+    ist dann eben unbekannt, aber der Baum steht."""
+    client, _, _ = welt
+    fach = _faecher(client).get("vertrag") or _faecher(client)["kanzlei"]
+    assert all("seiten" in s for s in fach["stuecke"])

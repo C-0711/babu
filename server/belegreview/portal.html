@@ -202,6 +202,16 @@ main p, .leer, .karte > p{max-width:78ch}
    und nicht wie ein vergessener Punkt. */
 .kachel .blatt .ik{width:40px;height:40px}
 .kachel:hover .blatt{border-color:var(--gc-accent)}
+/* Mehr als eine Seite: das Blatt liegt sichtbar auf einem Stapel. Zwei
+   versetzte Kanten hinter der Kachel — Papier, nicht Ornament. */
+.kachel .blatt.stapel{box-shadow:3px 3px 0 var(--gc-canvas),
+  3.5px 3.5px 0 0.5px var(--gc-border),6px 6px 0 var(--gc-canvas),
+  6.5px 6.5px 0 0.5px var(--gc-border)}
+.kachel .blatt{position:relative}
+.kachel .blatt .seitenzahl{position:absolute;right:6px;bottom:6px;
+  font:600 10.5px/1 var(--gc-sans,sans-serif);color:var(--gc-fg);
+  background:var(--gc-canvas);border:1px solid var(--gc-border);
+  border-radius:99px;padding:3px 7px;pointer-events:none}
 .kachel .name{font:600 13.5px/1.35 var(--gc-serif);color:var(--gc-fg);
   margin:8px 2px 1px;overflow-wrap:anywhere}
 .kachel .wann{font:10.5px var(--gc-mono);color:var(--gc-muted);margin:0 2px}
@@ -2396,6 +2406,22 @@ async function ladeBank(){
     ${ab.einnahmen_summe ? `<div class="box"><i>Eingegangen</i><b>${euro(ab.einnahmen_summe)}</b></div>` : ""}
   </div></div>`;
 
+  /* Der Auszug selbst, als Blatt — man erkennt seine Bank wieder. */
+  if (Array.isArray(ab.auszuege) && ab.auszuege.length){
+    html += `<div class="kacheln" style="grid-template-columns:repeat(auto-fill,minmax(128px,1fr));margin:14px 0">`
+      + ab.auszuege.map(a => {
+          const stapel = (a.seiten || 0) > 1;
+          return `<div><a class="kachel" href="#unterlage/${encodeURI(a.pfad)}">
+            <div class="blatt${stapel ? " stapel" : ""}">
+              <img alt="" loading="lazy" src="/api/vorschau/${encodeURI(a.pfad)}"
+                onerror="this.closest('.blatt').innerHTML=ikoneKnoten().outerHTML">${
+              stapel ? `<span class="seitenzahl">${a.seiten} Seiten</span>` : ""}
+            </div>
+            <div class="name">${esc(a.pfad.split("/").pop().replace(/^\d{8}-\d{6}-\w+-/, ""))}</div>
+          </a></div>`;
+        }).join("") + `</div>`;
+  }
+
   if (fehlend.length){
     html += `<div class="sektion lbl">Diese Zahlungen haben noch keinen Beleg</div>`;
     for (const u of fehlend){
@@ -2490,6 +2516,13 @@ function ablageVorschau(s){
   if (/\.(jpg|jpeg|png)$/i.test(s.pfad)){
     return `<img alt="" loading="lazy" src="/api/dokument/${encodeURI(s.pfad)}">`;
   }
+  if (/\.pdf$/i.test(s.pfad)){
+    /* Die erste Seite als Bild — ein Kontoauszug ist wiedererkennbar,
+       ein graues Dokumentsymbol nicht. Scheitert das Rendern, bleibt
+       das Symbol als Rückfall. */
+    return `<img alt="" loading="lazy" src="/api/vorschau/${encodeURI(s.pfad)}"
+      onerror="this.closest('.blatt').innerHTML=ikoneKnoten().outerHTML">`;
+  }
   return ikone("dokument", "gross");
 }
 
@@ -2502,9 +2535,11 @@ function ablageKachel(s){
     : s.erklaerung ? `<span class="marke ok">erklärt</span>`
     : s.vertrag && s.vertrag.betrag_monat
       ? `<span class="marke akzent">${euro(s.vertrag.betrag_monat)}/Monat</span>` : "";
+  const stapel = (s.seiten || 0) > 1;
   return `<div>
     <a class="kachel" href="${ablageZiel(s)}">
-      <div class="blatt">${ablageVorschau(s)}</div>
+      <div class="blatt${stapel ? " stapel" : ""}">${ablageVorschau(s)}${
+        stapel ? `<span class="seitenzahl">${s.seiten} Seiten</span>` : ""}</div>
       ${marke}
       <div class="name">${esc(s.titel)}</div>
       <div class="wann">${s.zeit ? zeitKurz(s.zeit) : ""}</div>
