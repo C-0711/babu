@@ -3872,6 +3872,17 @@ async function hochladenMitBalken(datei, url, elternteil,
 }
 
 async function hochladen(dateien){
+  /* Zielbild: Beleg-FOTOS kommen nur noch über das Telefon herein — dort
+     liest Vision und Gemma bucht sofort. Der Schreibtisch behält PDFs
+     (Verträge, Bescheide); ein Foto hier wäre eine Lesung zweiter Klasse. */
+  const fotos = dateien.filter(d => d.type.startsWith("image/"));
+  if (fotos.length){
+    alert("Beleg-Fotos bitte mit dem Telefon aufnehmen — dort liest babu "
+      + "sofort und bucht mit dir zusammen. Hier am Schreibtisch nehme ich "
+      + "PDFs (Verträge, Bescheide, Kontoauszüge).");
+    dateien = dateien.filter(d => !d.type.startsWith("image/"));
+    if (!dateien.length) return;
+  }
   location.hash = "#belege";
   for (const datei of dateien){
     const a = await hochladenMitBalken(datei,

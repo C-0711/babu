@@ -977,6 +977,11 @@ def einschaetzung(f: dict, sem: dict | None, dokumentklasse: str) -> dict:
 # ── Verarbeitung ─────────────────────────────────────────────────────────────
 
 def offene_belege() -> list[str]:
+    # Zielbild (26.08.2026): die Lesung entsteht auf dem Telefon und kommt
+    # fertig ins Archiv — die Belegbox liest NICHT mehr nach. Der Schalter
+    # ist der saubere Aus-Knopf; danach kann der Prozess ganz gestoppt werden.
+    if os.environ.get("REVIEW_LESEN", "1") == "0":
+        return []
     r = git("ls-tree", "-r", "--name-only", "HEAD")
     if r.returncode != 0:
         return []

@@ -205,11 +205,25 @@ final class AppStore: ObservableObject {
             beleg.ablageDateiname = ablageDateiname(fuer: beleg)
         }
         belege.insert(beleg, at: 0)
-        if beleg.ablageStatus == .ausstehend {
-            let id = beleg.id
-            Task { await self.uebertrage(id) }
-        }
+        // Zielbild: hochgeladen wird erst NACH der Einschätzung — mit Gemmas
+        // Buchung und Dokumentklasse im Gepäck (ablageErgebnisSetzen →
+        // uebertrage). ablageRetry() bleibt das Netz für alles, was hängt.
         return beleg
+    }
+
+    /// Das Ergebnis der Einschätzung an den Beleg heften — Fach (Klasse) und
+    /// Buchung reisen beim Upload mit und werden zur archivierten Lesung.
+    func ablageErgebnisSetzen(id: UUID, klasse: String?, buchungJson: String?) {
+        guard let i = belege.firstIndex(where: { $0.id == id }) else { return }
+        belege[i].dokumentklasse = klasse
+        if let buchungJson {
+            let zeilen = belege[i].ocrText
+                .split(separator: "\n").map { String($0) }
+            let zeilenJson = (try? JSONSerialization.data(withJSONObject: zeilen))
+                .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+            belege[i].ergebnisJson = "{\"klasse\": \"\(klasse ?? "beleg")\", "
+                + "\"buchung\": \(buchungJson), \"zeilen\": \(zeilenJson)}"
+        }
     }
 
     // MARK: - Belegbox-Übertragung
@@ -283,7 +297,7 @@ final class AppStore: ObservableObject {
         // Kontoauszug ist — die Nutzerin muss nichts auswählen.
         let (ergebnis, serverDatei, art, wohin, _) = await AblageService.aufnahme(
             daten: jpeg, dateiname: dateiname, gelesenerText: belege[i].ocrText,
-            basis: url, pat: pat)
+            ergebnis: belege[i].ergebnisJson, basis: url, pat: pat)
         pruefeZugang(ergebnis)
         guard let j = belege.firstIndex(where: { $0.id == id }) else { return }
         switch ergebnis {
@@ -295,17 +309,11 @@ final class AppStore: ObservableObject {
             // Serverseitiger Name (mit Zeitstempel-Präfix) ist der Schlüssel
             // zum BelegReview-Ergebnis.
             if let serverDatei { belege[j].ablageDateiname = serverDatei }
-            // Die Serverlesung nachholen — Backoff statt Einmal-Schuss: die
-            // Prüfung braucht je nach Rückstau Sekunden bis Minuten. Der
-            // erste Versuch kommt bewusst früh (3 s statt 10 s): im Regelfall
-            // ist die Lesung dann schon da, und Nina sieht gar nicht erst die
-            // Zahlen vom Gerät.
+            // Die Lesung liegt im SELBEN Commit wie das Foto (Zielbild:
+            // keine zweite Lesung) — einmal die Prüfstempel holen genügt.
             Task {
-                for wartezeit: UInt64 in [3, 6, 12, 25, 50, 100] {
-                    try? await Task.sleep(nanoseconds: wartezeit * 1_000_000_000)
-                    await self.auditLaden(id)
-                    if self.belege.first(where: { $0.id == id })?.auditReview != nil { break }
-                }
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                await self.auditLaden(id)
             }
         default:
             belege[j].ablageStatus = .fehlgeschlagen
@@ -343,9 +351,9 @@ final class AppStore: ObservableObject {
         let stamm = (dateiname as NSString).deletingPathExtension
         guard case .fertig(let review) = await AblageService.reviewAbrufen(
             stamm: stamm, basis: url, pat: pat) else { return }
-        // Zuerst die Zahlen, dann die Stempel: schlägt das Setzen fehl (weil
-        // der Beleg fixiert ist), sollen die Stempel trotzdem stehen.
-        ausZweitpruefungUebernehmen(id: id, review: review)
+        // Zielbild: die Lesung entsteht auf dem Telefon und wird archiviert —
+        // NICHTS überschreibt Ninas Ergebnis nachträglich. Hier zählen nur
+        // noch die Prüfstempel des Archivs.
         guard let audit = review.audit else { return }
         auditSetzen(id: id, aufnahme: audit.aufnahme?.commit, review: audit.review?.commit,
                     status: review.fehlgeschlagen ? "fehlgeschlagen" : "ok")

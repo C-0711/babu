@@ -150,6 +150,10 @@ struct Beleg: Identifiable, Codable {
     // Belegbox-Übertragung (alle optional — ältere zustand.json lädt weiter)
     var ablageStatus: AblageStatus?
     var ablageDateiname: String?
+    // Zielbild: Gemmas Dokumentklasse und das Einschätzungs-Ergebnis reisen
+    // beim Upload mit — daraus wird Fach und archivierte Lesung.
+    var dokumentklasse: String?
+    var ergebnisJson: String?
     var ablageZeit: Date?
     // Audit-Stempel: GitChain-Commits der vollständigen Kette
     var auditAufnahme: String?

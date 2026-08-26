@@ -300,3 +300,78 @@ def test_ohne_zugang_kein_ablegen(welt):
     import babu_web
     fremd = TestClient(babu_web.app, base_url="https://testserver")
     assert fremd.post("/api/aufnahme", content=b"x").status_code == 401
+
+
+# ————— Zielbild: die Einschätzung liefert Klasse und Buchung mit —————
+
+def _ergebnis(klasse="beleg", **buchung):
+    import json
+    b = {"dokumentklasse": klasse, "lieferant": "delilà GmbH",
+         "datum": "2026-02-11", "kategorie": "verbrauchsmaterial",
+         "kategorie_name": "Verbrauchsmaterial Salon", "konto": "6850",
+         "buchungstext": "Extensions", "betrag": 818.38, "waehrung": "EUR",
+         "betrag_eur": 818.38, "ust_satz": 19, "positionen": [],
+         "steuersaetze": [], "begruendung": "passt"}
+    b.update(buchung)
+    return json.dumps({"klasse": klasse, "buchung": b,
+                       "zeilen": ["delilà Hair Extensions",
+                                  "Zahlbetrag 818,38 €"]})
+
+
+def test_gemmas_klasse_entscheidet_das_fach(welt):
+    """Kommt das Einschätzungs-Ergebnis mit, wird nicht mehr geraten."""
+    client, bw = welt
+    r = client.post("/api/aufnahme", params={"name": "foto.jpg"},
+                    files={"file": (b"\xff\xd8\xff\xe0belegbild")},
+                    data={"ergebnis": _ergebnis("vertrag")})
+    assert r.status_code == 200, r.text
+    assert r.json()["art"] == "vertrag"
+    assert r.json()["datei"].startswith("dokumente/")
+
+
+def test_die_einschaetzung_wird_zum_review(welt):
+    """Die Belegbox archiviert Foto UND Ergebnis — Index, Liste und
+    Bank-Checkliste leben von den Review-Feldern weiter."""
+    client, bw = welt
+    r = client.post("/api/aufnahme", params={"name": "beleg.jpg"},
+                    files={"file": (b"\xff\xd8\xff\xe0belegbild2")},
+                    data={"ergebnis": _ergebnis()})
+    assert r.status_code == 200, r.text
+    stamm = r.json()["datei"].rsplit("/", 1)[-1].rsplit(".", 1)[0]
+    import json as _json
+    lauf = subprocess.run(["git", "-C", str(bw), "show",
+                           f"HEAD:review/{stamm}.json"],
+                          capture_output=True, text=True)
+    assert lauf.returncode == 0, "Review liegt in der Box"
+    d = _json.loads(lauf.stdout)
+    assert d["felder"]["brutto"] == 818.38
+    assert d["felder"]["lieferant"] == "delilà GmbH"
+    assert d["felder"]["datum"] == "2026-02-11"
+    assert d["buchung"]["status"] == "gebucht"
+    assert d["dokumentklasse"] == "beleg"
+    assert "Gemma" in d["engine"]
+
+
+def test_doppelgaenger_beim_ablegen_wird_gemeldet(welt):
+    """Gleicher Tag, gleicher Betrag wie ein Beleg im Index → Hinweis."""
+    client, bw = welt
+    r1 = client.post("/api/aufnahme", params={"name": "a.jpg"},
+                     files={"file": (b"\xff\xd8\xff\xe0erstes")},
+                     data={"ergebnis": _ergebnis()})
+    assert r1.status_code == 200
+    r2 = client.post("/api/aufnahme", params={"name": "b.jpg"},
+                     files={"file": (b"\xff\xd8\xff\xe0zweites")},
+                     data={"ergebnis": _ergebnis()})
+    assert r2.status_code == 200
+    assert "Doppelgänger" in (r2.json().get("hinweis") or "")
+
+
+def test_ohne_ergebnis_bleibt_der_alte_weg(welt):
+    """Übergang: Uploads ohne Einschätzung (Portal, alte App) sortieren
+    weiter per Stichwort ein."""
+    client, bw = welt
+    r = client.post("/api/aufnahme", params={"name": "foto.jpg",
+                                             "text": MIETVERTRAG},
+                    content=b"\xff\xd8\xff\xe0altbild")
+    assert r.status_code == 200
+    assert r.json()["art"] == "vertrag"

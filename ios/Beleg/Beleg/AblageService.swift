@@ -73,15 +73,14 @@ enum AblageService {
     /// entscheidet aus dem gelesenen Text, wohin es gehört, und sagt es zurück.
     /// Der alte Weg (`lade`) bleibt für den Fall, dass kein Text vorliegt.
     static func aufnahme(daten: Data, dateiname: String, gelesenerText: String,
+                         ergebnis ergebnisJson: String? = nil,
                          basis: URL, pat: String) async
             -> (ergebnis: AblageErgebnis, serverDatei: String?,
                 art: String?, wohin: String?, sicher: Bool) {
         var teile = URLComponents(
             url: basis.appendingPathComponent("api/aufnahme"),
             resolvingAgainstBaseURL: false)
-        teile?.queryItems = [URLQueryItem(name: "name", value: dateiname),
-                             URLQueryItem(name: "text",
-                                          value: String(gelesenerText.prefix(4000)))]
+        teile?.queryItems = [URLQueryItem(name: "name", value: dateiname)]
         guard let url = teile?.url else {
             return (.nichtErreichbar, nil, nil, nil, false)
         }
@@ -89,9 +88,29 @@ enum AblageService {
         request.httpMethod = "POST"
         request.timeoutInterval = 45
         request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
-        request.setValue(dateiname.hasSuffix(".pdf") ? "application/pdf" : "image/jpeg",
+        // Multipart: Foto plus Text plus (wenn vorhanden) das Ergebnis der
+        // Einschätzung — Gemmas Buchung samt Dokumentklasse. Der Server legt
+        // dann nach der Klasse ab und archiviert das Ergebnis als Lesung.
+        let grenze = "babu-" + UUID().uuidString
+        request.setValue("multipart/form-data; boundary=\(grenze)",
                          forHTTPHeaderField: "Content-Type")
-        request.httpBody = daten
+        var koerper = Data()
+        func feld(_ name: String, _ wert: String) {
+            let teil = "--\(grenze)\r\nContent-Disposition: form-data; "
+                + "name=\"\(name)\"\r\n\r\n\(wert)\r\n"
+            koerper.append(teil.data(using: .utf8)!)
+        }
+        feld("text", String(gelesenerText.prefix(4000)))
+        if let ergebnisJson { feld("ergebnis", ergebnisJson) }
+        koerper.append(("--\(grenze)\r\nContent-Disposition: form-data; "
+                        + "name=\"file\"; filename=\"\(dateiname)\"\r\n"
+                        + "Content-Type: "
+                        + (dateiname.hasSuffix(".pdf") ? "application/pdf"
+                                                       : "image/jpeg")
+                        + "\r\n\r\n").data(using: .utf8)!)
+        koerper.append(daten)
+        koerper.append("\r\n--\(grenze)--\r\n".data(using: .utf8)!)
+        request.httpBody = koerper
         let (ergebnis, antwort) = await ausfuehrenMitDaten(request)
         guard ergebnis == .uebertragen, let antwort,
               let json = try? JSONSerialization.jsonObject(with: antwort) as? [String: Any]
@@ -914,6 +933,10 @@ enum AblageService {
         let betragEur: Double
         let ustSatz: Int
         let begruendung: String
+        /// Gemmas Antwort auf die Klassifizierungsfrage — sie bestimmt das Fach.
+        let dokumentklasse: String?
+        /// Die Buchung, wie sie vom Server kam — geht beim Ablegen mit ins Archiv.
+        let rohJson: String?
     }
 
     enum BuchungsfragenErgebnis {
@@ -1002,7 +1025,10 @@ enum AblageService {
                 waehrung: (b["waehrung"] as? String ?? "EUR").uppercased(),
                 betragEur: b["betrag_eur"] as? Double ?? 0,
                 ustSatz: b["ust_satz"] as? Int ?? 0,
-                begruendung: b["begruendung"] as? String ?? ""))
+                begruendung: b["begruendung"] as? String ?? "",
+                dokumentklasse: b["dokumentklasse"] as? String,
+                rohJson: (try? JSONSerialization.data(withJSONObject: b))
+                    .flatMap { String(data: $0, encoding: .utf8) }))
         case "aufgeben":
             return .aufgeben(json["hinweis"] as? String
                              ?? "Der Beleg gehört auf den Schreibtisch.")

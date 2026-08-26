@@ -57,10 +57,14 @@ struct BuchungsfragenView: View {
             }
             .task { await runde() }
             .onDisappear {
-                // Vorzeitig weggelegt? Dann bleibt der Beleg ehrlich markiert.
+                // Vorzeitig weggelegt? Dann bleibt der Beleg ehrlich markiert —
+                // und wird trotzdem archiviert (ohne Buchung), damit nichts
+                // nur auf dem Telefon liegt.
                 if fertig == nil {
                     store.offeneFrageSetzen(id: belegID,
                         "babu hat noch Fragen zu diesem Beleg.")
+                    let id = belegID
+                    Task { await store.uebertrage(id) }
                 }
             }
         }
@@ -193,9 +197,19 @@ struct BuchungsfragenView: View {
                                        begruendung: b.begruendung,
                                        lieferant: b.lieferant, datum: b.datum,
                                        steuersaetze: b.steuersaetze)
+            // Buchung steht — JETZT wird abgelegt: Foto + Ergebnis in einem
+            // Zug, das Fach folgt Gemmas Dokumentklasse.
+            store.ablageErgebnisSetzen(id: belegID, klasse: b.dokumentklasse,
+                                       buchungJson: b.rohJson)
+            let id = belegID
+            Task { await store.uebertrage(id) }
             fertig = b
         case .aufgeben(let hinweis):
             store.offeneFrageSetzen(id: belegID, "Für den Schreibtisch: " + hinweis)
+            // Auch der Schreibtisch-Fall wird archiviert — ohne Buchung,
+            // damit nichts nur auf dem Telefon liegt.
+            let id = belegID
+            Task { await store.uebertrage(id) }
             meldung = hinweis
         case .fehler(let text):
             meldung = text

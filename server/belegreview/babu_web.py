@@ -1767,10 +1767,31 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
     endung = Path(name).suffix.lower()
     if endung not in HOCHLADEN_ENDUNGEN:
         return JSONResponse({"fehler": "kein Beleg-Format"}, status_code=400)
-    try:
-        daten = await koerper_lesen(request, HOCHLADEN_MAX)
-    except KoerperZuGross:
-        return JSONResponse({"fehler": "zu groß"}, status_code=413)
+    # Zielbild-Weg: die App schickt multipart — Foto PLUS das Ergebnis der
+    # Einschätzung (Gemmas Buchung samt Dokumentklasse und die Vision-Zeilen).
+    # Dann wird nicht mehr geraten: das Fach ist Gemmas Klasse, und das
+    # Ergebnis wandert als Review mit ins Archiv. Roh-Body bleibt als
+    # Übergangsweg für Uploads ohne Einschätzung.
+    ergebnis = None
+    if request.headers.get("content-type", "").startswith("multipart/"):
+        form = await request.form()
+        datei = form.get("file")
+        daten = await datei.read() if datei is not None else b""
+        if len(daten) > HOCHLADEN_MAX:
+            return JSONResponse({"fehler": "zu groß"}, status_code=413)
+        text = str(form.get("text") or text or "")
+        roh_ergebnis = form.get("ergebnis")
+        if roh_ergebnis:
+            try:
+                ergebnis = json.loads(str(roh_ergebnis))
+            except Exception:  # noqa: BLE001
+                return JSONResponse({"fehler": "Ergebnis nicht lesbar"},
+                                    status_code=400)
+    else:
+        try:
+            daten = await koerper_lesen(request, HOCHLADEN_MAX)
+        except KoerperZuGross:
+            return JSONResponse({"fehler": "zu groß"}, status_code=413)
     if not daten:
         return JSONResponse({"fehler": "leer"}, status_code=400)
 
@@ -1795,7 +1816,20 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
                                       "schon da liegt.",
                              "wohin": "War schon da — nichts doppelt abgelegt."})
 
+    klasse = None
+    if isinstance(ergebnis, dict):
+        k = str(ergebnis.get("klasse")
+                or (ergebnis.get("buchung") or {}).get("dokumentklasse")
+                or "").strip().lower()
+        if k in ("beleg", "vertrag", "behoerde", "kontoauszug"):
+            klasse = k
+
     entscheidung = einsortieren.entscheiden(gelesen)
+    if klasse:
+        # Gemmas Antwort auf die Klassifizierungsfrage — kein Stichwort-Raten.
+        entscheidung = {"art": klasse, "ziel": einsortieren.ZIELE[klasse],
+                        "punkte": 99, "sicher": True,
+                        "grund": "Klassifiziert von der Buchhaltung (Gemma)."}
     # Ins Auszugsfach führt nur noch der sprechende Dateiname („…Auszug….pdf").
     # Die Stichwortdeutung hat dort zu oft Rechnungen einsortiert (IBAN/BIC
     # stehen auf jeder Rechnung mit Zahlungsziel) — und was im Auszugsfach
@@ -1804,7 +1838,7 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
     if endung == ".pdf" and re.search(r"auszug", name or "", re.I):
         entscheidung = {"art": "kontoauszug", "ziel": "auszuege", "punkte": 99,
                         "sicher": True, "grund": "Dateiname nennt „Auszug“."}
-    elif entscheidung["art"] == "kontoauszug":
+    elif entscheidung["art"] == "kontoauszug" and not klasse:
         entscheidung = {"art": "beleg", "ziel": "docs",
                         "punkte": entscheidung["punkte"], "sicher": False,
                         "grund": "Sieht nach Kontoauszug aus — der Leser "
@@ -1845,6 +1879,33 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
              "erkannt": entscheidung["grund"]},
             ensure_ascii=False, indent=1).encode()
 
+    hinweis = None
+    if isinstance(ergebnis, dict) and isinstance(ergebnis.get("buchung"), dict):
+        stamm_neu = Path(pfad).name.rsplit(".", 1)[0]
+        review, md = _review_aus_einschaetzung(
+            pfad, ergebnis["buchung"], ergebnis.get("zeilen") or [],
+            klasse or "beleg")
+        # Doppelgänger: gleicher Tag, gleicher Betrag wie ein Beleg im Index —
+        # fragen, nicht blocken (zweimal derselbe Einkauf kommt vor).
+        try:
+            idx_d = await run_in_threadpool(index_aktuell)
+            b = ergebnis["buchung"]
+            for z in idx_d["belege"].values():
+                if (b.get("datum") and b.get("betrag_eur")
+                        and z.get("datum") == b["datum"]
+                        and z.get("brutto") == b["betrag_eur"]):
+                    hinweis = (f"Sieht aus wie ein Doppelgänger von "
+                               f"{z.get('lieferant') or z['stamm']} vom "
+                               f"{b['datum']} — bitte prüfen, ob derselbe "
+                               "Beleg zweimal fotografiert wurde.")
+                    review["felder"]["offen"].append(hinweis)
+                    break
+        except Exception:  # noqa: BLE001
+            pass
+        dateien[f"review/{stamm_neu}.json"] = json.dumps(
+            review, ensure_ascii=False, indent=1).encode()
+        dateien[f"review/{stamm_neu}.md"] = md.encode()
+
     try:
         commit = await run_in_threadpool(boxschreiber.schreiben, dateien, None,
                                          f"aufnahme: {dateiname}", un)
@@ -1864,8 +1925,68 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
 
     return JSONResponse({"ok": True, "commit": commit, "datei": pfad,
                          "art": art, "sicher": entscheidung["sicher"],
-                         "grund": entscheidung["grund"],
+                         "grund": entscheidung["grund"], "hinweis": hinweis,
                          "wohin": WOHIN_TEXT.get(art, WOHIN_TEXT["beleg"])})
+
+
+def _review_aus_einschaetzung(pfad: str, buchung: dict, zeilen: list,
+                              klasse: str) -> tuple[dict, str]:
+    """Das Review zum Zielbild-Weg: EINE Lesung (Vision, Gerät) + Gemmas
+    Buchung, beim Ablegen archiviert. Trägt genau die Felder, von denen
+    Index, Beleg-Liste und Bank-Checkliste leben — es liest niemand nach."""
+    brutto = buchung.get("betrag_eur")
+    try:
+        satz = int(buchung.get("ust_satz") or 0)
+    except (TypeError, ValueError):
+        satz = 0
+    netto = ust = None
+    if isinstance(brutto, (int, float)) and satz in (7, 19):
+        netto = round(brutto / (1 + satz / 100), 2)
+        ust = round(brutto - netto, 2)
+    elif isinstance(brutto, (int, float)):
+        netto, ust = round(float(brutto), 2), 0.0
+    review = {
+        "datei": pfad,
+        "engine": "Vision (Gerät) + Gemma",
+        "dokumentklasse": klasse,
+        "gelesen": len(zeilen),
+        "ocr_text": "\n".join(str(z) for z in zeilen),
+        "zeilen": len(zeilen),
+        "felder": {
+            "lieferant": buchung.get("lieferant"),
+            "beleg_nr": None,
+            "datum": buchung.get("datum"),
+            "netto": netto, "ust": ust, "brutto": brutto,
+            "ust_satz": satz,
+            "summenprobe_ok": None,
+            "bewirtungssignal": False,
+            "offen": [],
+            "herkunft": {"quelle": "Einschätzung auf dem Telefon — "
+                                   "Vision-Zeilen, von Gemma gebucht"},
+        },
+        "buchung": {"status": "gebucht", "buchung": buchung},
+        "einschaetzung": {
+            "kategorie": buchung.get("kategorie"),
+            "konto": buchung.get("konto"),
+            "konto_skr04": buchung.get("konto"),
+            "belegart": buchung.get("kategorie_name"),
+            "steuerschluessel": ("8" if satz == 7 else "0" if satz == 0
+                                 else "9"),
+            "kontierung_grund": "Gebucht von der Buchhaltung (Einschätzung): "
+                                + (buchung.get("begruendung")
+                                   or buchung.get("kategorie_name") or ""),
+            "hinweise": [],
+        },
+        "semantik": None,
+        "vlm": None,
+        "zusammenfassung": buchung.get("buchungstext"),
+    }
+    md = ("# Lesung vom Telefon\n\n"
+          f"Gebucht von Gemma über die Einschätzung — {klasse}, "
+          f"{buchung.get('kategorie_name') or ''}.\n\n"
+          "## Jede erkannte Zeile\n\n"
+          + "\n".join(f"  {z}" for z in zeilen) + "\n")
+    return review, md
 
 
 # Was die App der Nutzerin sagt — ohne Ordnernamen und ohne Technik.
