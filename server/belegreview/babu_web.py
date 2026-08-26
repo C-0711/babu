@@ -54,11 +54,7 @@ _DB_LOCK = threading.Lock()
 
 def _db() -> sqlite3.Connection:
     PORTAL_DB.parent.mkdir(parents=True, exist_ok=True)
-    # check_same_thread=False: /api/rueckmeldung öffnet die Verbindung im
-    # Event-Loop-Thread und reicht sie an run_in_threadpool weiter (für
-    # gitlab_meldungen.puffer_nachtragen) — anderer Thread, gleiche Verbindung.
-    # Alle übrigen Aufrufer bleiben synchron in einem Thread, unverändert.
-    conn = sqlite3.connect(PORTAL_DB, check_same_thread=False)
+    conn = sqlite3.connect(PORTAL_DB)
     conn.execute("""CREATE TABLE IF NOT EXISTS lesestatus
         (un TEXT NOT NULL, dokument TEXT NOT NULL, zeit TEXT NOT NULL,
          PRIMARY KEY (un, dokument))""")
@@ -4610,6 +4606,22 @@ async def api_auswertung_uebernehmen(request: Request) -> Response:
     return JSONResponse({"ok": True, "gesetzt": gesetzt})
 
 
+def _rueckmeldung_puffern(nutzlast: dict) -> None:
+    """Synchron, komplett im Worker-Thread: Verbindung auf, Schloss zu, ab.
+    So hält _DB_LOCK nie über ein `await` hinweg (GitLab-Roundtrips laufen
+    außerhalb dieser Funktion)."""
+    import gitlab_meldungen as gm  # noqa: PLC0415
+    with _DB_LOCK, _db() as conn:
+        gm.puffer_ablegen(conn, nutzlast)
+
+
+def _rueckmeldung_nachtragen() -> None:
+    """Wie oben — Liegengebliebenes nachtragen, ganz im Worker-Thread."""
+    import gitlab_meldungen as gm  # noqa: PLC0415
+    with _DB_LOCK, _db() as conn:
+        gm.puffer_nachtragen(conn)
+
+
 @app.post("/api/rueckmeldung")
 async def api_rueckmeldung(request: Request) -> Response:
     """Was Nina auffällt — ein Feld, ein Knopf, ein GitLab-Issue.
@@ -4658,13 +4670,12 @@ async def api_rueckmeldung(request: Request) -> Response:
 
     ok, was = await run_in_threadpool(gm.issue_anlegen, issue, bild)
     if not ok:
-        with _db() as conn:
-            gm.puffer_ablegen(conn, {"issue": issue,
-                                     "bild_b64": body.get("bild") or None})
+        await run_in_threadpool(
+            _rueckmeldung_puffern,
+            {"issue": issue, "bild_b64": body.get("bild") or None})
     else:
         # Wenn GitLab wieder da ist, gleich Liegengebliebenes mitnehmen.
-        with _db() as conn:
-            await run_in_threadpool(gm.puffer_nachtragen, conn)
+        await run_in_threadpool(_rueckmeldung_nachtragen)
     print(f"[rückmeldung] {un}: {issue['title'][:60]} — "
           f"{'issue ' + was if ok else 'gepuffert (' + was + ')'}", flush=True)
     return JSONResponse({"ok": True, "titel": issue["title"],
