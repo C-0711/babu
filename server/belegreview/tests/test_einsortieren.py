@@ -108,6 +108,32 @@ def test_ein_kontoauszug_ist_ein_kontoauszug():
     assert d["ziel"] == "auszuege"
 
 
+def test_rechnung_mit_bankverbindung_ist_kein_kontoauszug():
+    """Der Fall vom 23.08.2026: 32 Rechnungsfotos lagen im Auszugsfach,
+    weil IBAN/BIC im Rechnungsfuß als Auszugssignal zählten — und was dort
+    liegt, liest nie wieder jemand."""
+    text = """slavic hair GmbH
+Rechnung Nr. 2026-0312
+Extensions blond 60cm      184,00
+Netto                      154,62
+MwSt 19 %                   29,38
+Gesamtbetrag               184,00
+Bitte überweisen Sie per Lastschrift oder auf:
+IBAN DE44 5001 0517 5407 3249 31
+BIC INGDDEFFXXX"""
+    d = es.entscheiden(text)
+    assert d["art"] == "beleg"
+    assert d["ziel"] == "docs"
+
+
+def test_ein_echter_auszug_bleibt_trotz_haertung_ein_auszug():
+    """Die Härtung darf echte Auszüge nicht kosten — die tragen Kernwörter
+    wie Kontostand und Buchungstag, die keine Rechnung druckt."""
+    d = es.entscheiden(AUSZUG)
+    assert d["art"] == "kontoauszug"
+    assert d["sicher"] is True
+
+
 # ————— Die schwierigen Fälle —————
 
 def test_rechnung_vom_finanzamt_ist_trotzdem_post():

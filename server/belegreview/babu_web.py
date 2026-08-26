@@ -677,8 +677,14 @@ def _offen_nach_angaben(offen: list, angaben: dict | None) -> list:
                     for w in ANGABE_STICHWORT.get(feld, ()))
     if not woerter:
         return list(offen or [])
-    return [o for o in (offen or [])
-            if not any(w in str(o).lower() for w in woerter)]
+    uebrig = [o for o in (offen or [])
+              if not any(w in str(o).lower() for w in woerter)]
+    # Alt-Reviews tragen noch den Pauschalsatz „Die Gegenprobe weicht ab —
+    # kurz prüfen." ohne Feldbezug — der war mit keiner Angabe zu beantworten
+    # und blieb für immer stehen (Nina hat am 26.08. sechsmal gespeichert).
+    # Wer irgendetwas nachgetragen hat, HAT kurz geprüft: der Satz ist damit
+    # erledigt. Neue Reviews nennen stattdessen das konkrete Feld.
+    return [o for o in uebrig if "gegenprobe weicht ab" not in str(o).lower()]
 
 
 def _beleg_abgeschlossen(offen: list, bewirtung: bool, bewirtung_da: bool) -> bool:
@@ -1769,6 +1775,19 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
         except Exception:  # noqa: BLE001
             gelesen = ""
     entscheidung = einsortieren.entscheiden(gelesen)
+    # Ins Auszugsfach führt nur noch der sprechende Dateiname („…Auszug….pdf").
+    # Die Stichwortdeutung hat dort zu oft Rechnungen einsortiert (IBAN/BIC
+    # stehen auf jeder Rechnung mit Zahlungsziel) — und was im Auszugsfach
+    # liegt, liest nie wieder jemand. Zweifel gehen nach docs/, wo der
+    # Watcher mit dem vollen OCR-Text nachsortiert.
+    if endung == ".pdf" and re.search(r"auszug", name or "", re.I):
+        entscheidung = {"art": "kontoauszug", "ziel": "auszuege", "punkte": 99,
+                        "sicher": True, "grund": "Dateiname nennt „Auszug“."}
+    elif entscheidung["art"] == "kontoauszug":
+        entscheidung = {"art": "beleg", "ziel": "docs",
+                        "punkte": entscheidung["punkte"], "sicher": False,
+                        "grund": "Sieht nach Kontoauszug aus — der Leser "
+                                 "prüft das nach."}
 
     import boxschreiber  # noqa: PLC0415
     dateiname = boxschreiber.beleg_dateiname(name)

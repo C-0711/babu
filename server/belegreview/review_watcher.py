@@ -1041,6 +1041,28 @@ def verarbeite(pfad: str) -> None:
     dauer = time.time() - t0
     zeilen = [(k.text, k.konf) for k in kaesten]
     text = "\n".join(t for t, _ in zeilen)
+
+    # ── Nachsortierung: ein Kontoauszug gehört nicht in die Beleg-Pipeline ──
+    # Der Upload legt Zweifelsfälle bewusst in docs/ ab, denn dort gibt es
+    # nur den dünnen Telefon-Text. HIER liegt der volle OCR-Text vor: sagt
+    # der (gehärtete) Einsortierer jetzt sicher „Kontoauszug", zieht die
+    # Datei ins Auszugsfach um — ohne Beleg-Review, ohne Index-Eintrag.
+    import einsortieren  # noqa: PLC0415
+    urteil = einsortieren.entscheiden(text)
+    if urteil["art"] == "kontoauszug" and urteil["sicher"]:
+        monat = pfad.split("/")[1] if pfad.count("/") >= 2 else time.strftime("%Y-%m")
+        ziel = f"auszuege/{monat}/{Path(pfad).name}"
+        git("mv", pfad, ziel)
+        c = git("commit", "--author", AUTOR, "-m",
+                f"einsortiert: {Path(pfad).name} ist ein Kontoauszug")
+        if c.returncode == 0:
+            p = git("push", "origin", "main")
+            if p.returncode != 0:
+                git("fetch", "origin")
+                git("reset", "--hard", "origin/main")
+        log(f"einsortiert: {Path(pfad).name} → auszuege ({urteil['grund']})")
+        return
+
     dokumentklasse = classify_doc(text, name=Path(pfad).name, pages=seiten)
 
     # ── Wer entscheidet ──────────────────────────────────────────────────
@@ -1110,7 +1132,15 @@ def verarbeite(pfad: str) -> None:
         e["hinweise"].append(
             "Die Gegenprobe liest etwas anderes (" + "; ".join(widerspruch)
             + "). Gültig ist die Lesung vom Beleg — bitte kurz ansehen.")
-        f["offen"].append("Die Gegenprobe weicht ab — kurz prüfen.")
+        # Als offene Frage stehen die KONKRETEN Widersprüche da („Lieferant:
+        # die Gegenprobe liest …"), nicht ein pauschaler Satz. Nur so weiß
+        # die Nutzerin, was sie ansehen soll — und nur so erkennt
+        # `_offen_nach_angaben` am Feldnamen, dass ihre Angabe die Frage
+        # beantwortet hat. Der alte Pauschalsatz blieb für immer stehen.
+        # Die Beleg-Nr. kann im Formular niemand nachtragen — sie bleibt
+        # Hinweis, sonst stünde wieder eine unbeantwortbare Frage da.
+        f["offen"].extend(f"{w} — bitte kurz prüfen." for w in widerspruch
+                          if not w.startswith("Beleg-Nr"))
 
     # ── Die Buchhaltung bucht: Gemma mit Profil, Katalog und Positionen ──
     #

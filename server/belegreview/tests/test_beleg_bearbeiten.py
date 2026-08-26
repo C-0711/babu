@@ -161,6 +161,45 @@ def test_eine_offene_bewirtungsfrage_bleibt_offen(welt):
     assert _beleg(client, STAMM_B)["status"] == "nachfrage"
 
 
+def test_der_pauschale_gegenprobe_satz_verschwindet_mit_jeder_angabe(welt):
+    """Alt-Reviews tragen „Die Gegenprobe weicht ab — kurz prüfen." ohne
+    Feldbezug. Der Satz war mit keiner Angabe zu beantworten — Nina hat am
+    26.08.2026 sechsmal gespeichert und die Frage blieb stehen. Wer etwas
+    nachträgt, hat geprüft: der Satz ist damit erledigt."""
+    client, bw, _ = welt
+    import boxschreiber
+    boxschreiber.schreiben(
+        {f"review/{STAMM}.json": _review(
+            brutto=None, lieferant=None,
+            offen=["Die Gegenprobe weicht ab — kurz prüfen."],
+            bewirtungssignal=False, summenprobe_ok=True).encode()},
+        None, "review mit pauschalsatz", "t@l")
+    client.post(f"/api/angaben/{STAMM}", json={"brutto": "4,20"})
+    d = _beleg(client)
+    assert d["felder"]["offen"] == []
+    assert d["status"] == "geprüft"
+
+
+def test_konkrete_widersprueche_werden_durch_die_passende_angabe_beantwortet(welt):
+    """Neue Reviews nennen das Feld — „Lieferant: die Gegenprobe liest …".
+    Die Lieferanten-Angabe beantwortet genau diese Frage, andere bleiben."""
+    client, bw, _ = welt
+    import boxschreiber
+    offen = ["Lieferant: die Gegenprobe liest „delilà Hair Extensions“, "
+             "gelesen wurde „service@delila.de“ — bitte kurz prüfen.",
+             "Rechnungsbetrag: die Gegenprobe liest 818,38 €, gelesen "
+             "wurden 0,00 € — bitte kurz prüfen."]
+    boxschreiber.schreiben(
+        {f"review/{STAMM}.json": _review(
+            brutto=None, lieferant=None, offen=offen,
+            bewirtungssignal=False, summenprobe_ok=True).encode()},
+        None, "review mit widerspruechen", "t@l")
+    client.post(f"/api/angaben/{STAMM}", json={"lieferant": "delilà GmbH"})
+    uebrig = _beleg(client)["felder"]["offen"]
+    assert len(uebrig) == 1
+    assert uebrig[0].startswith("Rechnungsbetrag")
+
+
 # ————— Das Portal muss die Wege auch anbieten —————
 
 PORTAL = (HIER.parent / "portal.html").read_text()

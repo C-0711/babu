@@ -1870,8 +1870,8 @@ async function ladeDetail(stamm){
   const weg = [
     {t:"Foto erhalten", s: aufn ? zeitKurz(aufn.zeit) + " — sicher abgelegt" : "sicher abgelegt", klasse:""},
     {t:"Gelesen", s: rev ? "Betrag, Datum und mehr erkannt" : "dauert einen Moment …", klasse: rev ? "" : "offen"},
-    frage ? {t:"Zweitprüfung", s:"eine Frage ist offen — siehe unten", klasse:"frage"}
-          : {t:"Zweitprüfung " + (geprueft||b ? "✓" : ""), s: rev ? "alles stimmig" : "kommt gleich", klasse: rev ? "" : "offen"},
+    frage ? {t:"Geprüft", s:"eine Frage ist offen — siehe unten", klasse:"frage"}
+          : {t:"Geprüft" + (geprueft||b ? " ✓" : ""), s: rev ? "alles stimmig" : "kommt gleich", klasse: rev ? "" : "offen"},
     {t:"Liegt für DATEV bereit", s: b ? "im " + monatName(d.monat||jetztMonat()).split(" ")[0] + "-Stapel deiner Kanzlei" : "sobald alles klar ist", klasse: b ? "" : "offen"},
     d.status === "exportiert"
       ? {t:"Bei der Kanzlei ✓", s:"der Stapel wurde abgeholt", klasse:""}
@@ -1904,7 +1904,7 @@ async function ladeDetail(stamm){
     html += `</div></div>`;
 
     const bewirtungOffen = f.bewirtungssignal && !d.bewirtung_beantwortet;
-    html += `<div class="sekt"><span class="lbl">Zweitprüfung</span>
+    html += `<div class="sekt"><span class="lbl">Prüfung</span>
       <div class="haken ${geprueft||b ? "" : "warte"}">
         <div class="kreis ${geprueft ? "stempel" : ""}">${frage ? "?" : "✓"}</div>
         <div class="txt"><b>${frage ? (bewirtungOffen ? "Mit wem warst du essen?" : offenSatz((f.offen||[])[0])) : "Alles stimmig"}</b>

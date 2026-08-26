@@ -43,8 +43,15 @@ MERKMALE: dict[str, tuple[tuple[str, int], ...]] = {
         ("rückgeld", 4), ("gegeben", 2), ("bar", 1), ("ec-cash", 3),
         ("kassenbon", 5), ("quittung", 4), ("beleg-nr", 3), ("netto", 2),
         ("brutto", 2), ("stk", 2), ("terminal", 2), ("trinkgeld", 2),
+        ("rechnung", 3), ("rechnungs-nr", 3), ("zahlbar", 2),
     ),
 }
+
+# Bankdaten stehen auf jeder Rechnung mit Zahlungsziel („bitte überweisen Sie
+# auf IBAN …"). Als Kontoauszug zählen sie nur, wenn auch ein Wort dabei ist,
+# das wirklich nur ein Auszug druckt — sonst wanderten am 23.08.2026
+# zweiunddreißig Rechnungsfotos ungelesen ins Auszugsfach.
+AUSZUG_KERN = ("kontoauszug", "kontostand", "buchungstag", "valuta", "auszug nr")
 
 # Ein Bescheid nennt oft Beträge und „Rechnung" — trotzdem ist er Post vom
 # Amt. Diese Reihenfolge entscheidet bei Gleichstand.
@@ -69,6 +76,10 @@ def _punkte(text: str) -> dict[str, int]:
             elif wort in klein:
                 punkte += gewicht
         ergebnis[art] = punkte
+    if ergebnis.get("kontoauszug") and not any(
+            (re.search(rf"\b{re.escape(w)}\b", klein) if len(w) <= 3 else w in klein)
+            for w in AUSZUG_KERN):
+        ergebnis["kontoauszug"] = 0
     return ergebnis
 
 

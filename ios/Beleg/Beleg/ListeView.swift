@@ -266,7 +266,7 @@ struct BelegZeile: View {
                         .foregroundStyle(GC.muted)
                 }
                 if beleg.reviewStatus == "fehlgeschlagen" {
-                    Text("ZWEITPRÜFUNG NICHT MÖGLICH — FOTO PRÜFEN")
+                    Text("NICHT LESBAR — FOTO PRÜFEN")
                         .font(.system(size: 9, design: .monospaced))
                         .kerning(0.5)
                         .foregroundStyle(GC.warn)
@@ -661,7 +661,7 @@ struct DetailView: View {
     private func reviewBereich(fuer b: Beleg) -> some View {
         Divider().padding(.vertical, 2)
         HStack {
-            Text("ZWEITPRÜFUNG")
+            Text("PRÜFUNG")
                 .font(.caption2.monospaced())
                 .kerning(1)
                 .foregroundStyle(GC.muted)
@@ -676,7 +676,7 @@ struct DetailView: View {
                         .font(.caption2)
                 }
             }
-            .accessibilityLabel("Zweitprüfung aktualisieren")
+            .accessibilityLabel("Prüfung aktualisieren")
         }
 
         if let r = review, r.fehlgeschlagen {
@@ -831,7 +831,7 @@ struct DetailView: View {
         guard let dateiname = b.ablageDateiname,
               let url = URL(string: store.ablageURL),
               let pat = KeychainHelfer.ladePAT() else {
-            reviewHinweis = "Für die Zweitprüfung bitte die Belegbox verbinden (Export → Zahnrad)."
+            reviewHinweis = "Für die Prüfung bitte die Belegbox verbinden (Export → Zahnrad)."
             return
         }
         reviewLaedt = true
@@ -851,7 +851,7 @@ struct DetailView: View {
                                   status: r.fehlgeschlagen ? "fehlgeschlagen" : "ok")
             }
         case .nochNicht where review == nil:
-            reviewHinweis = "Zweitprüfung läuft — gleich verfügbar (↻ zum Aktualisieren)."
+            reviewHinweis = "Wird noch gelesen — gleich verfügbar (↻ zum Aktualisieren)."
         case .zugangFehlt:
             reviewHinweis = "Der Zugang zur Belegbox ist abgelaufen — einmal neu verbinden (Export → Zahnrad)."
         case .keineVerbindung where review == nil:
