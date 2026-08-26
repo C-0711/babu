@@ -1,14 +1,23 @@
 # BelegReview — Serverseite (H200V)
 
-Deployment-Kopie der Bausteine auf der H200V (`~/belegreview/`, `~/babu-web/`),
-dort via pm2:
+Läuft auf der H200V. **`babu-web` ist seit 27.08.2026 ein Docker-Container**
+(Quelle `../docker/`, Build-Kopie `~/babu-docker/` auf dem Server): host
+network, User 1001:1000, `restart: unless-stopped`. Volumes: `~/babu-web`
+(rw — portal.db, Box-Klon, Session-Geheimnis, Logos), `~/inspektor-store`
+(ro), der Push-PAT und die Gemini-Env (beide ro). Deploy = `rsync server/
+h200v:~/babu-docker/` + `docker compose build && up -d` — mit Golden-Diff
+davor und danach.
 
-| pm2-Name | Datei | Zweck |
+| Dienst | Wo | Zweck |
 |---|---|---|
-| `babu-web` | `babu_web.py` | der ganze Dienst: Upload-Seite, **Salon-Portal** (`/portal` + `/api/*`, Session-Cookie), App-API (`/api/aufnahme`, `/api/buchung/einschaetzung`, `GET /review/<stamm>`, `/chat`) |
-| `babu-eingang` | `babu_eingang.py` | GitChain-Gateway (Push in den Bare-Store) |
-| `babu-tunnel` | — | Cloudflare-Tunnel `babu-0711` → babu.0711.io (`~/.cloudflared/babu-0711.yml`) |
-| `insp-app` | — | Belegbox-Gateway :7808 — **nie anfassen**, ohne ihn kommt nichts in die Box |
+| `babu-web` | **Docker** | der ganze Dienst: Upload-Seite, **Salon-Portal** (`/portal` + `/api/*`, Session-Cookie), App-API (`/api/aufnahme`, `/api/buchung/einschaetzung`, `GET /review/<stamm>`, `/chat`) |
+| `babu-eingang` | pm2 | GitChain-Gateway (Push in den Bare-Store) |
+| `babu-tunnel` | pm2 | Cloudflare-Tunnel `babu-0711` → babu.0711.io (`~/.cloudflared/babu-0711.yml`) |
+| `insp-app` | pm2 | Belegbox-Gateway :7808 — **nie anfassen**, ohne ihn kommt nichts in die Box |
+
+Der gestoppte pm2-Eintrag `babu-web` ist der Rückweg: `docker compose down`
+(in `~/babu-docker/docker`) + `pm2 start babu-web`. Das alte `~/belegreview/`
+auf dem Server ist nur noch die letzte Vor-Docker-Kopie.
 
 **Es gibt keine zweite Lesung mehr.** Seit dem Zielbild (26.08.2026) liest
 Apple Vision auf dem iPhone, Gemma bucht über `/api/buchung/einschaetzung`,
@@ -17,12 +26,13 @@ und `/api/aufnahme` archiviert Foto + Ergebnis. Der frühere Watcher
 nicht neu erfinden**. Der Paddle-OCR-Dienst :7833 gehört vollständig ctax;
 babu ruft ihn nirgends mehr (Scan-Blätter der Salonprüfung liest Gemma).
 
-Neustart nach einem H200V-Reboot:
+Nach einem H200V-Reboot startet alles von selbst: der Container über Docker
+(`restart: unless-stopped`, dockerd ist enabled), pm2 über seine
+systemd-Unit. Falls doch einmal von Hand:
 
 ```bash
+cd ~/babu-docker/docker && docker compose up -d
 pm2 start ~/gitchain-eingang/babu_eingang.py --name babu-eingang --interpreter ~/gitchain-eingang/.venv/bin/python
-BABU_ERLAUBT="christoph0711.io,nina0711.io" BABU_ROLLEN="christoph0711.io:kanzlei" \
-  pm2 start ~/belegreview/.venv/bin/python --name babu-web -- ~/belegreview/babu_web.py
 pm2 start /usr/bin/cloudflared --name babu-tunnel -- tunnel --config ~/.cloudflared/babu-0711.yml run babu-0711
 ```
 

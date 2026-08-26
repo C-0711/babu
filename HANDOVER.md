@@ -37,13 +37,16 @@ Vertrauen = **ein grüner Haken**. Kein Hex-Hash in der Oberfläche.
 
 ## 2. ⚠️ Betrieb: dieser Branch ist die Quelle
 
-Produktiv auf der H200V ist **`claude/project-handover-context-7bfaa2`**
-(bzw. `main` nach ff-Merge). Deploy-Ritual (Memory `babu-salon-portal`):
-Backup-Tar → `scp` nach `h200v:~/belegreview/` → `pm2 restart babu-web` →
-Golden-Diff (`/api/belege` + `/api/abgleich/<monat>` vor/nach) → Live-Rauchtest.
-pm2-Prozesse: `babu-web`, `babu-eingang`, `babu-tunnel` — und `insp-app`
-(Belegbox-Gateway :7808, **nie anfassen**). Der pm2-Prozess `belege-review`
-gehört einem ANDEREN Projekt.
+Produktiv auf der H200V ist `main`. **babu-web läuft seit 27.08.2026 als
+Docker-Container** (Quelle `server/docker/`: host network, User 1001:1000,
+Volumes `~/babu-web` rw + `~/inspektor-store` ro + PAT ro + Gemini-Env ro;
+Build-Kopie `~/babu-docker/`). Deploy-Ritual: Golden vorher (`/api/belege` +
+`/api/abgleich/<monat>`) → `rsync server/ h200v:~/babu-docker/` →
+`docker compose build && up -d` → Golden nachher byte-diffen →
+Live-Rauchtest. In pm2 bleiben `babu-eingang` und `babu-tunnel`; der
+pm2-Eintrag `babu-web` ist gestoppt und dient nur als Rückweg
+(`docker compose down` + `pm2 start babu-web`). **Nie anfassen:** `insp-app`
+(Belegbox-Gateway :7808) und `belege-review` (ANDERES Projekt).
 
 - Unlesbar entscheidet die App selbst (zu wenig Vision-Text → „bitte neu
   fotografieren"); es gibt keinen Server-Stub mehr für neue Belege.

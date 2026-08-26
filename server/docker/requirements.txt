@@ -1,0 +1,8 @@
+# Stand des Server-venv vom 27.08.2026 (~/belegreview/.venv) — gepinnt,
+# damit das Image reproduzierbar ist. Beim Heben einer Version: Suite fahren.
+fastapi==0.141.1
+uvicorn==0.52.1
+requests==2.34.2
+python-multipart==0.0.32
+pypdfium2==5.12.1
+pillow==12.3.0

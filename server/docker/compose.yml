@@ -1,0 +1,36 @@
+# babu-web als Container auf der H200V.
+#
+# network_mode: host — bewusst: babu-web bindet wie bisher 127.0.0.1:7844
+# (der Cloudflare-Tunnel zeigt dorthin) und erreicht seine Host-Dienste
+# unverändert: Belegbox-Gateway :7808 (insp-app) und vLLM/Gemma :11435.
+# Die Isolation liegt im Dateisystem: der Container sieht NUR die vier
+# gemounteten Pfade, nichts sonst vom Home.
+#
+# Betrieb: docker compose build && docker compose up -d
+# Rückweg: docker compose down && pm2 start babu-web
+services:
+  babu-web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: babu-web
+    container_name: babu-web
+    network_mode: host
+    # christoph.bertsch auf der H200V — Dateien in den Volumes behalten
+    # ihren Besitzer, Backups und Handgriffe auf dem Host funktionieren weiter.
+    user: "1001:1000"
+    environment:
+      HOME: /data
+      BABU_ERLAUBT: "christoph0711.io,nina0711.io"
+      BABU_ROLLEN: "christoph0711.io:kanzlei"
+      # Gürtel und Hosenträger: falls ein gemountetes Repo einem anderen
+      # Besitzer gehört, soll git lesen statt verweigern.
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: "safe.directory"
+      GIT_CONFIG_VALUE_0: "*"
+    volumes:
+      - ~/babu-web:/data/babu-web                                   # portal.db, Box-Klon, Session-Geheimnis, Logos, index.html
+      - ~/inspektor-store:/data/inspektor-store:ro                  # Bare-Store, nur lesen (Schreiben geht über :7808)
+      - ~/gitchain-eingang/.pat_babu:/data/gitchain-eingang/.pat_babu:ro
+      - ~/Youtube/.env:/data/Youtube/.env:ro                        # Gemini-Schlüssel für die Bild-Generierung
+    restart: unless-stopped

@@ -24,13 +24,18 @@ Dienst gehört ctax; Scan-Blätter der Salonprüfung liest Gemma (multimodal).
 
 ## Betrieb H200V — Finger weg / Ritual
 
-- pm2: `babu-web`, `babu-eingang`, `babu-tunnel`. **Nie anfassen:**
+- **babu-web läuft seit 27.08.2026 als Docker-Container** (host network,
+  `restart: unless-stopped`; Quelle `server/docker/`, Build-Kopie auf der
+  H200V unter `~/babu-docker/`). In pm2 bleiben nur `babu-eingang` und
+  `babu-tunnel`; der pm2-Eintrag `babu-web` ist gestoppt und NUR Rückweg
+  (`docker compose down` + `pm2 start babu-web`). **Nie anfassen:**
   `insp-app` (Belegbox-Gateway :7808) und `belege-review` (ANDERES Projekt).
-- Deploy-Ritual (immer vollständig): Backup-Tar → `scp` nach
-  `h200v:~/belegreview/` → Golden vorher (`/api/belege` +
+- Deploy-Ritual (immer vollständig): Golden vorher (`/api/belege` +
   `/api/abgleich/<monat>` als `python3 -m json.tool --sort-keys`) →
-  `pm2 restart babu-web` → Golden nachher byte-diffen → geänderte Routen
-  live durchrufen. Golden-Diff allein genügt nicht.
+  `rsync server/ h200v:~/babu-docker/` → `cd ~/babu-docker/docker &&
+  docker compose build && docker compose up -d` → Golden nachher
+  byte-diffen → geänderte Routen live durchrufen. Golden-Diff allein
+  genügt nicht.
 - H200V nur über OpenVPN (`ssh h200v`). Kein sqlite3-CLI auf dem Server.
 - Vor schreibenden Rauchtests erst den Ist-Wert lesen — oder Testkonto.
 
