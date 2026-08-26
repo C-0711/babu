@@ -151,11 +151,21 @@ def puffer_ablegen(conn, nutzlast: dict) -> None:
     conn.commit()
 
 
-def puffer_nachtragen(conn) -> int:
+def puffer_nachtragen(conn_factory) -> int:
     """Jeden Eintrag genau einmal versuchen; was durchgeht, wird gelöscht.
-    Was nicht durchgeht, bleibt liegen und wartet auf den nächsten Anlass."""
-    _puffer_tabelle(conn)
-    zeilen = conn.execute("select id, nutzlast from meldung_puffer order by id").fetchall()
+    Was nicht durchgeht, bleibt liegen und wartet auf den nächsten Anlass.
+
+    `conn_factory` ist ein Context-Manager-Fabrikat (`with conn_factory() as
+    conn: ...`), keine fertige Verbindung — absichtlich, denn der Aufrufer
+    hält seinen Schreibschutz (bei babu-web `_DB_LOCK`) nur um die kurzen
+    SQLite-Zugriffe: einmal ums Lesen der offenen Einträge, dann je einmal
+    ums Löschen eines erledigten. Der GitLab-Roundtrip in `issue_anlegen`
+    dazwischen — Sekunden, nicht Millisekunden — läuft bewusst OHNE Schutz;
+    er würde sonst jeden anderen Schreiber im Modul ausbremsen."""
+    with conn_factory() as conn:
+        _puffer_tabelle(conn)
+        zeilen = conn.execute(
+            "select id, nutzlast from meldung_puffer order by id").fetchall()
     geschafft = 0
     for zid, roh in zeilen:
         d = json.loads(roh)
@@ -163,7 +173,8 @@ def puffer_nachtragen(conn) -> int:
         ok, _ = issue_anlegen(d["issue"], bild_jpeg=bild)
         if not ok:
             break  # GitLab ist weg — der Rest scheitert genauso.
-        conn.execute("delete from meldung_puffer where id = ?", (zid,))
-        conn.commit()
+        with conn_factory() as conn:
+            conn.execute("delete from meldung_puffer where id = ?", (zid,))
+            conn.commit()
         geschafft += 1
     return geschafft

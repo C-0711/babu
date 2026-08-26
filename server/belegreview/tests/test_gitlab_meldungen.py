@@ -2,6 +2,7 @@
 import json
 import sqlite3
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -83,11 +84,43 @@ def test_issue_anlegen_meldet_ausfall(monkeypatch, tmp_path):
     assert ok is False and "Verbindung" in grund
 
 
+def _conn_factory(pfad):
+    """Wie babu_web._db_gesperrt, ohne das Lock — genau die Form, die
+    puffer_nachtragen erwartet: ein Fabrikat, kein fertiges conn."""
+    @contextmanager
+    def _fabrik():
+        conn = sqlite3.connect(pfad)
+        try:
+            yield conn
+        finally:
+            conn.commit()
+    return _fabrik
+
+
 def test_puffer_haelt_und_traegt_nach(monkeypatch, tmp_path):
-    conn = sqlite3.connect(tmp_path / "portal.db")
-    gm.puffer_ablegen(conn, {"issue": {"title": "t", "description": "d", "labels": "bug"},
-                             "bild_b64": None})
+    pfad = tmp_path / "portal.db"
+    with sqlite3.connect(pfad) as conn:
+        gm.puffer_ablegen(conn, {"issue": {"title": "t", "description": "d", "labels": "bug"},
+                                 "bild_b64": None})
     _klient(monkeypatch, tmp_path, [_Antwort(201, {"iid": 5})])
-    assert gm.puffer_nachtragen(conn) == 1
-    rest = conn.execute("select count(*) from meldung_puffer").fetchone()[0]
+    assert gm.puffer_nachtragen(_conn_factory(pfad)) == 1
+    with sqlite3.connect(pfad) as conn:
+        rest = conn.execute("select count(*) from meldung_puffer").fetchone()[0]
     assert rest == 0
+
+
+def test_puffer_bricht_beim_ersten_fehlschlag_ab(monkeypatch, tmp_path):
+    """Zwei Einträge, GitLab antwortet einmal gut und dann kaputt: der erste
+    ist weg, der zweite bleibt liegen — kein Weiterversuchen ins Blaue."""
+    pfad = tmp_path / "portal.db"
+    with sqlite3.connect(pfad) as conn:
+        gm.puffer_ablegen(conn, {"issue": {"title": "eins", "description": "d",
+                                           "labels": "bug"}, "bild_b64": None})
+        gm.puffer_ablegen(conn, {"issue": {"title": "zwei", "description": "d",
+                                           "labels": "bug"}, "bild_b64": None})
+    _klient(monkeypatch, tmp_path, [_Antwort(201, {"iid": 5}), _Antwort(500, {})])
+    assert gm.puffer_nachtragen(_conn_factory(pfad)) == 1
+    with sqlite3.connect(pfad) as conn:
+        rest = [json.loads(r)["issue"]["title"]
+                for (r,) in conn.execute("select nutzlast from meldung_puffer")]
+    assert rest == ["zwei"]

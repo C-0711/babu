@@ -21,6 +21,7 @@ import sqlite3
 import subprocess
 import sys
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import time
 from pathlib import Path
@@ -4606,6 +4607,16 @@ async def api_auswertung_uebernehmen(request: Request) -> Response:
     return JSONResponse({"ok": True, "gesetzt": gesetzt})
 
 
+@contextmanager
+def _db_gesperrt():
+    """`_DB_LOCK` + `_db()` als eine kurze, wiederholt aufrufbare Einheit —
+    die Fabrik, die `gitlab_meldungen.puffer_nachtragen` je einmal fürs Lesen
+    und je einmal je gelöschtem Eintrag nimmt. Nie über den GitLab-Roundtrip
+    hinweg gehalten, der dazwischen ohne Schutz läuft."""
+    with _DB_LOCK, _db() as conn:
+        yield conn
+
+
 def _rueckmeldung_puffern(nutzlast: dict) -> None:
     """Synchron, komplett im Worker-Thread: Verbindung auf, Schloss zu, ab.
     So hält _DB_LOCK nie über ein `await` hinweg (GitLab-Roundtrips laufen
@@ -4616,10 +4627,11 @@ def _rueckmeldung_puffern(nutzlast: dict) -> None:
 
 
 def _rueckmeldung_nachtragen() -> None:
-    """Wie oben — Liegengebliebenes nachtragen, ganz im Worker-Thread."""
+    """Wie oben, ganz im Worker-Thread — aber `_DB_LOCK` bleibt kurz: die
+    GitLab-Roundtrips in `puffer_nachtragen` laufen dazwischen ungeschützt,
+    nur Lesen und Löschen nehmen `_db_gesperrt`."""
     import gitlab_meldungen as gm  # noqa: PLC0415
-    with _DB_LOCK, _db() as conn:
-        gm.puffer_nachtragen(conn)
+    gm.puffer_nachtragen(_db_gesperrt)
 
 
 @app.post("/api/rueckmeldung")
