@@ -28,7 +28,7 @@ html{background:var(--gc-canvas)}
    auf einer Tischfläche gesetzt — schön, aber es ist eine Webanwendung, und
    auf einem Bildschirm bleibt daneben die Hälfte leer. Jetzt füllt es das
    Fenster; die Ränder wachsen mit, damit es nicht am Rahmen klebt. */
-body{font:14px/1.5 var(--gc-sans);color:var(--gc-body);background:var(--gc-canvas);
+body{font:15px/1.5 var(--gc-sans);color:var(--gc-body);background:var(--gc-canvas);
   min-height:100dvh;margin:0}
 .num{font-family:var(--gc-mono);font-variant-numeric:tabular-nums}
 
@@ -39,13 +39,13 @@ body{font:14px/1.5 var(--gc-sans);color:var(--gc-body);background:var(--gc-canva
    stehen wie gestempelt, der Fließtext bleibt der Serifenschrift
    vorbehalten. Das Portal hatte dafür serifenlose Fettschrift, und genau
    daran sah man, dass es ein anderes Programm ist. */
-.lbl{font:9.5px/1 var(--gc-mono);letter-spacing:.11em;text-transform:uppercase;
+.lbl{font:10.5px/1 var(--gc-mono);letter-spacing:.11em;text-transform:uppercase;
   color:var(--gc-muted)}
 
 /* Die Marke: das umrandete Kapsel-Label der App (BadgeView) — 9 px
    Schreibmaschine, Rand in der eigenen Farbe auf halber Deckkraft. */
-.marke{display:inline-block;font:9px/1.5 var(--gc-mono);letter-spacing:.055em;
-  text-transform:uppercase;padding:2px 7px;border-radius:999px;
+.marke{display:inline-block;font:10px/1.5 var(--gc-mono);letter-spacing:.055em;
+  text-transform:uppercase;padding:3px 9px;border-radius:999px;
   border:1px solid currentColor;color:var(--gc-muted);white-space:nowrap}
 .marke.ok{color:var(--gc-ok)} .marke.warn{color:var(--gc-warn)}
 .marke.akzent{color:var(--gc-accent)} .marke.gefahr{color:var(--gc-danger)}
@@ -63,11 +63,15 @@ header h1{font:600 21px/1 var(--gc-serif);letter-spacing:-.02em;color:var(--gc-f
 nav{display:flex;gap:2px;margin-left:6px;min-width:0;overflow-x:auto;
   -webkit-overflow-scrolling:touch;scrollbar-width:none}
 nav::-webkit-scrollbar{display:none}
-nav button{padding:7px 13px;border-radius:999px;font-weight:550;color:var(--gc-desc);flex:none}
-nav button.an{background:#eae7de;color:var(--gc-fg)}
+nav button{padding:10px 18px;border-radius:999px;font-weight:550;font-size:15px;
+  color:var(--gc-desc);flex:none}
+nav button.an{background:#eae7de;color:var(--gc-fg);font-weight:600}
 /* Der eine Knopf, der etwas anstößt, trägt Tinte — alles andere bleibt leise. */
-#hochladen-knopf{background:var(--gc-fg);border-color:var(--gc-fg);color:#fff;font-weight:600}
+#hochladen-knopf{background:var(--gc-fg);border-color:var(--gc-fg);color:#fff;
+  font-weight:600;padding:11px 22px;font-size:14px}
 #hochladen-knopf:hover{background:#000}
+/* Die Uhrzeit ist Technik-Telemetrie — im Premium-Portal unsichtbar. */
+#stand{display:none}
 #kopf-recht{margin-left:auto;display:flex;align-items:center;gap:12px;flex:none}
 #stand{font:11px var(--gc-mono);color:var(--gc-muted)}
 /* Auf schmalen Fenstern verdrängt die Standanzeige sonst die Navigation,
@@ -307,35 +311,35 @@ main p, .leer, .karte > p{max-width:78ch}
 .dmeta{font:12.5px var(--gc-mono);letter-spacing:.02em;color:var(--gc-muted)}
 .sektion{margin:26px 0 10px}
 
-/* ————— HEUTE als Editorial-Hero (Vorbild: Portal-Markup vom 27.08.) —————
-   Links der Satz des Monats in Serifen, rechts die eine Zahl, die zählt.
+/* ————— HEUTE als Editorial-Hero (v2 vom 27.08.: vereinfacht für Nina) —————
+   Der Gruß, darunter die EINE Zahl des Monats, dann die Fragen.
    Keine Karte, kein Kasten — die Seite selbst ist das Papier. */
 #a-heute .gruss{font:500 clamp(32px,4.6vw,46px)/1.12 var(--gc-serif);
-  letter-spacing:-.02em;margin:10px 0 26px}
-.hero{display:flex;justify-content:space-between;gap:40px;align-items:flex-start;
-  margin:0 0 10px}
-.hero-links{max-width:620px}
-.hero-satz{font:400 clamp(20px,2.4vw,26px)/1.3 var(--gc-serif);
-  letter-spacing:-.01em;color:var(--gc-fg)}
-.hero-detail{font-size:13.5px;color:var(--gc-desc);margin-top:8px}
-.hero-links .chip{margin-top:18px;background:var(--gc-bg);
-  border:1px solid var(--gc-border);color:var(--gc-fg);font-weight:550}
-#heute-bleibt{text-align:right;flex:none}
-.bleibt-zahl{font:500 clamp(34px,4.2vw,52px)/1.05 var(--gc-serif);
+  letter-spacing:-.02em;margin:10px 0 34px}
+#heute-bleibt{display:flex;flex-direction:column;gap:6px;margin-bottom:34px}
+.bleibt-zahl{font:500 clamp(40px,5vw,60px)/1.05 var(--gc-serif);
   letter-spacing:-.02em;color:var(--gc-fg);font-variant-numeric:tabular-nums;
-  margin-top:6px;white-space:nowrap}
-.bleibt-zahl.minus{color:var(--gc-fg)}
+  white-space:nowrap}
+.hero-detail{font-size:15px;color:var(--gc-desc);margin-top:4px}
 /* Hinweise ohne Kartenrahmen: ein Punkt, ein Satz, eine Haarlinie. */
-.punktzeile{display:flex;align-items:baseline;gap:12px;padding:15px 2px;
-  border-top:1px solid var(--gc-border);font-size:13.5px;color:var(--gc-body);
+.punktzeile{display:flex;align-items:baseline;gap:14px;padding:18px 2px;
+  border-top:1px solid var(--gc-border);font-size:15px;color:var(--gc-body);
   width:100%;text-align:left}
 .punktzeile:last-of-type{border-bottom:1px solid var(--gc-border)}
-.punktzeile::before{content:"";width:6px;height:6px;border-radius:50%;
+.punktzeile::before{content:"";width:7px;height:7px;border-radius:50%;
   background:var(--gc-accent);flex:none;align-self:center}
-@media (max-width:760px){
-  .hero{flex-direction:column;gap:18px}
-  #heute-bleibt{text-align:left}
-}
+/* Eine Frage der Buchhaltung: weiße Karte, Goldpunkt, Serifen-Frage. */
+.fragekarte{display:flex;align-items:center;gap:18px;background:var(--gc-bg);
+  border:1px solid var(--gc-border);border-radius:var(--r);padding:22px 24px;
+  width:100%;text-align:left;cursor:pointer}
+.fragekarte:hover{border-color:var(--gc-accent)}
+.fragekarte::before{content:"";width:9px;height:9px;border-radius:50%;
+  background:var(--gc-gold);flex:none}
+.fragekarte .fk-frage{font:600 19px var(--gc-serif);letter-spacing:-.01em;
+  color:var(--gc-fg)}
+.fragekarte .fk-meta{font-size:14px;color:var(--gc-desc);margin-top:3px}
+.fragekarte .fk-hin{margin-left:auto;font-size:15px;font-weight:550;
+  color:var(--gc-accent);flex:none}
 
 /* Die Diagnose des Kartenfelds, das hier bis zum 23.08.2026 stand, war
    richtig: eine Flex-Zeile über 2400 px ist keine Vollbreite, sondern links
@@ -347,9 +351,24 @@ main p, .leer, .karte > p{max-width:78ch}
    Beträgen hinunter. Deshalb bleibt es eine Spalte, und die ZEILE wird
    breit — als Tabelle mit ausgerichteten Feldern (Regel weiter unten, ab
    1180 px). Das füllt die Breite mit Angaben statt mit Kacheln. */
-#belege-liste{display:grid;grid-template-columns:1fr;gap:9px;align-items:start}
+#belege-liste{display:grid;gap:14px;align-items:start;
+  grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
 #belege-liste > .gruppe-kopf{grid-column:1/-1;margin-top:6px}
 #belege-liste > .leer{grid-column:1/-1}
+/* Foto-Karte (v2): das Blatt zuerst — Nina erkennt Belege am Bild. */
+.belegkarte{display:block;background:var(--gc-bg);border:1px solid var(--gc-border);
+  border-radius:var(--r);overflow:hidden;text-align:left;padding:0;width:100%}
+.belegkarte:hover{border-color:var(--gc-accent)}
+.bk-foto{height:170px;background:var(--gc-desk);display:grid;place-items:center;
+  border-bottom:1px solid var(--gc-border-l);overflow:hidden}
+.bk-foto img{width:100%;height:100%;object-fit:cover;object-position:top}
+.bk-rumpf{padding:14px 16px}
+.bk-name{font:600 16px var(--gc-serif);line-height:1.25;letter-spacing:-.01em;
+  color:var(--gc-fg);min-height:40px}
+.bk-betrag{font-weight:600;font-size:15px;color:var(--gc-fg);margin-top:4px}
+.bk-fuss{display:flex;align-items:center;gap:10px;margin-top:8px;
+  font-size:12px;color:var(--gc-muted)}
+.bk-fuss .marke{margin-left:auto}
 .zeile{display:flex;align-items:center;gap:14px;background:var(--gc-bg);
   border:1px solid var(--gc-border);border-radius:var(--r);padding:12px 16px;
   margin-bottom:9px;width:100%;text-align:left}
@@ -360,7 +379,7 @@ main p, .leer, .karte > p{max-width:78ch}
 .zmitte{flex:1;min-width:0}
 /* Eine Belegzeile ist in der App zweistimmig: der Name in der Serifen-
    schrift, alles Technische darunter in Schreibmaschine. Genau so hier. */
-.zname{font:600 15px var(--gc-serif);letter-spacing:-.01em;color:var(--gc-fg);
+.zname{font:600 17px var(--gc-serif);letter-spacing:-.01em;color:var(--gc-fg);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .zstatus{font:11.5px var(--gc-mono);letter-spacing:.01em;margin-top:2px;
   color:var(--gc-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -376,36 +395,24 @@ main p, .leer, .karte > p{max-width:78ch}
    Angaben in Spalten, die untereinander fluchten: Bild, Name, Datum, Betrag,
    Konto. Bewusst nur in der Belegliste: `.zeile` wird anderswo mit anderer
    Kindfolge benutzt, und ein Raster würde die verschieben. */
-@media (min-width:1180px){
-  #belege-liste .zeile, #heute-zuletzt .zeile{display:grid;align-items:center;column-gap:24px;
-    grid-template-columns:44px minmax(200px,2fr) minmax(180px,2fr) 110px
-                          minmax(110px,1fr) minmax(140px,1fr)}
-  /* Der Status steht sonst als zweite Zeile unter dem Namen und lässt die
-     Namensspalte auf 1400 px wachsen — dieselbe Leere, nur verschoben. Als
-     eigene Spalte trägt er Breite mit Inhalt. */
-  #belege-liste .zeile > .zmitte, #heute-zuletzt .zeile > .zmitte,
-  #belege-liste .zeile > .zrechts,
-  #heute-zuletzt .zeile > .zrechts{display:contents}
-  #belege-liste .zstatus, #heute-zuletzt .zstatus{margin-top:0}
-  #belege-liste .zdatum, #heute-zuletzt .zdatum{display:block;font:12.5px var(--gc-mono);
-    color:var(--gc-muted);white-space:nowrap}
-  #belege-liste .zbetrag, #belege-liste .zkonto,
-  #heute-zuletzt .zbetrag, #heute-zuletzt .zkonto{text-align:right}
+/* Die Belegzeile bleibt auf jeder Breite dieselbe: Name, Datum, Marke,
+   Betrag. (Die Tabellenform mit Konto-Spalte ging mit v2 vom 27.08.) */
 }
 .zrechts{text-align:right;flex:none}
-.zbetrag{font:15px var(--gc-mono);font-variant-numeric:tabular-nums;color:var(--gc-fg)}
+.zbetrag{font:600 16px var(--gc-mono);font-variant-numeric:tabular-nums;color:var(--gc-fg);min-width:110px}
 .zunten{font:11.5px var(--gc-mono);color:var(--gc-muted);margin-top:2px}
 .zkonto{font:11px var(--gc-mono);color:var(--gc-muted);margin-top:1px}
 
 /* Chips & Schalter */
 .chips{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 16px}
-.chip{padding:7px 15px;border-radius:999px;border:1px solid transparent;
-  background:var(--gc-accent-subtle);color:var(--gc-accent);white-space:nowrap;
-  background:var(--gc-bg);font-size:12.5px;color:var(--gc-desc)}
-.chip.an{background:var(--gc-fg);border-color:var(--gc-fg);color:#fff}
+.chip{padding:10px 18px;border-radius:999px;border:1px solid var(--gc-border);
+  white-space:nowrap;background:var(--gc-bg);font-size:14px;font-weight:550;
+  color:var(--gc-fg)}
+.chip.an{background:var(--gc-fg);border-color:var(--gc-fg);color:#fff;font-weight:600}
 .mon-schalter{display:flex;align-items:center;gap:10px;margin-left:auto}
-.mon-schalter button{width:28px;height:28px;border-radius:8px;border:1px solid var(--gc-border);background:var(--gc-bg)}
-.mon-schalter b{font:600 13px var(--gc-sans);color:var(--gc-fg);min-width:110px;text-align:center}
+.mon-schalter button{width:44px;height:44px;border-radius:999px;font-size:18px;
+  border:1px solid var(--gc-border);background:var(--gc-bg);color:var(--gc-fg)}
+.mon-schalter b{font:500 20px var(--gc-serif);letter-spacing:-.01em;color:var(--gc-fg);min-width:130px;text-align:center}
 
 /* Nachfrage-Karte */
 .nachfrage{border-left:3px solid var(--gc-warn)}
@@ -431,7 +438,7 @@ main p, .leer, .karte > p{max-width:78ch}
 .balken{height:6px;background:var(--gc-accent-subtle);border-radius:3px;margin-top:7px;overflow:hidden}
 .balken i{display:block;height:100%;background:var(--gc-accent);border-radius:3px}
 .gruppe-kopf{margin:20px 0 8px}
-.suchfeld{width:100%;min-width:0;padding:10px 14px;border:1px solid var(--gc-border);
+.suchfeld{width:100%;min-width:0;padding:14px 22px;border:1px solid var(--gc-border);
   border-radius:999px;font:inherit;background:var(--gc-bg);margin:4px 0 10px}
 
 /* Eingaben. Die gab es bisher nur als Inline-Stil an jedem einzelnen Feld —
@@ -727,6 +734,24 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   main{padding:20px 14px 60px}
   #stand{display:none}
 }
+
+/* ————— Mobile Tab-Leiste ————— */
+#tab-leiste{display:none}
+@media (max-width:700px){
+  header nav{display:none}
+  main{padding-bottom:96px}
+  #tab-leiste{display:flex;position:fixed;bottom:0;left:0;right:0;z-index:30;
+    margin:0;background:#fbfaf7;border-top:1px solid var(--gc-border);
+    padding:6px 8px calc(10px + env(safe-area-inset-bottom))}
+  #tab-leiste button{flex:1;display:flex;flex-direction:column;align-items:center;
+    gap:3px;padding:8px 0;color:var(--gc-muted);border-radius:10px}
+  #tab-leiste button[hidden]{display:none}
+  #tab-leiste button.an{color:var(--gc-fg)}
+  #tab-leiste svg{width:20px;height:20px;fill:none;stroke:currentColor;
+    stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  #tab-leiste span{font-size:10.5px;font-weight:550}
+  #tab-leiste button.an span{font-weight:600}
+}
 </style>
 </head>
 <body>
@@ -842,7 +867,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   <h1>babu</h1>
   <nav>
     <button data-ziel="heute">Heute</button>
-    <button data-ziel="belege">Buchhaltung</button>
+    <button data-ziel="belege">Belege</button>
     <button data-ziel="zahlen">Auswertung</button>
     <button data-ziel="ablage" style="position:relative">Ablage<span id="post-punkt" hidden
       style="position:absolute;top:4px;right:2px;width:7px;height:7px;border-radius:50%;background:var(--gc-accent)"></span></button>
@@ -919,17 +944,18 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 
   <!-- HEUTE -->
   <section class="ansicht" id="a-heute">
+    <div style="max-width:880px">
     <div class="lbl" id="heute-eyebrow">DEIN MONAT</div>
     <div class="gruss" id="heute-gruss">Guten Tag</div>
-    <div class="hero">
-      <div class="hero-links" id="heute-monatslauf"></div>
-      <div id="heute-bleibt" hidden>
-        <div class="lbl">Bleibt dir</div>
-        <div class="bleibt-zahl" id="heute-bleibt-zahl"></div>
-      </div>
+    <div id="heute-bleibt" hidden>
+      <div class="lbl">Bleibt dir diesen Monat</div>
+      <div class="bleibt-zahl" id="heute-bleibt-zahl"></div>
+      <div class="hero-detail" id="heute-bleibt-satz"></div>
     </div>
+    <div id="heute-monatslauf"></div>
     <div id="heute-meldungen"></div>
-    <div id="heute-inhalt" class="spalten"><div class="skelett"></div><div class="skelett"></div></div>
+    <div id="heute-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+    </div>
   </section>
 
   <!-- BUCHHALTUNG: Belege -->
@@ -949,8 +975,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     </div>
     <div class="chips" id="filter-chips">
       <button class="chip an" data-f="">Alle</button>
-      <button class="chip" data-f="nachfrage">Braucht dich</button>
-      <button class="chip" data-f="erfasst">In Prüfung</button>
+      <button class="chip" data-f="nachfrage">Braucht dich<b class="num" id="chip-nachfrage-zahl" style="margin-left:6px" hidden></b></button>
       <button class="chip" data-f="geprüft">Fertig</button>
     </div>
     <div id="belege-liste"><div class="skelett"></div><div class="skelett"></div><div class="skelett"></div></div>
@@ -1055,6 +1080,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
         <button data-ansicht="liste">Liste</button>
       </div>
     </div>
+    <div id="ablage-post-hinweis"></div>
     <div id="ablage-hochladen"></div>
     <div class="ablage-flaeche">
       <aside class="ablage-baum" id="ablage-baum"><div class="skelett"></div></aside>
@@ -1405,6 +1431,17 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     </form>
   </section>
 </main>
+
+<!-- Mobile Tab-Leiste (v2 vom 27.08.): auf dem Telefon wandert die
+     Navigation nach unten, wie in einer App. Ein <nav>, damit die ganze
+     Verdrahtung (Klick, Aktiv-Zustand, Box-Sperre) von selbst greift. -->
+<nav id="tab-leiste" aria-label="Bereiche">
+  <button data-ziel="heute"><svg viewBox="0 0 24 24"><path d="M4 11.5 12 4.5l8 7"/><path d="M6 10v9h12v-9"/></svg><span>Heute</span></button>
+  <button data-ziel="belege"><svg viewBox="0 0 24 24"><path d="M6 3.5h9l3 3v14H6z"/><path d="M9 9.5h6M9 13h6"/></svg><span>Belege</span></button>
+  <button data-ziel="zahlen"><svg viewBox="0 0 24 24"><path d="M4 19.5h16"/><path d="M6.5 19.5v-7M12 19.5V6.5M17.5 19.5V11"/></svg><span>Zahlen</span></button>
+  <button data-ziel="ablage"><svg viewBox="0 0 24 24"><path d="M4 7a2 2 0 0 1 2-2h3.5l2 2.5H18a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg><span>Ablage</span></button>
+  <button data-ziel="fragen"><svg viewBox="0 0 24 24"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9l-4 3.5V6z"/></svg><span>Fragen</span></button>
+</nav>
 </div>
 
 <div id="drop"><b>Ablegen — ich kümmere mich drum</b></div>
@@ -1602,30 +1639,39 @@ async function ladeAnstehendes(){
 
   try{
     const l = await (await api("/api/monatslauf")).json();
-    if (!l.faellig){
-      $("#heute-monatslauf").innerHTML = "";
-      $("#heute-bleibt").hidden = true;
-      return;
-    }
+    if (!l.faellig){ $("#heute-monatslauf").innerHTML = ""; return; }
     const offen = l.offen || [];
     $("#heute-monatslauf").innerHTML = `
-      <div class="hero-satz">${esc(l.satz || "")}</div>
-      ${offen.length ? `<div class="hero-detail">${offen.map(o => esc(o.text)).join(" · ")}</div>` : ""}
-      <button class="chip" onclick="location.hash='#abschluss'">
-        ${l.bereit ? "Anschauen und freigeben" : "Was fehlt noch?"}</button>`;
-    const ergebnis = l.zahlen && l.zahlen.ergebnis;
-    if (ergebnis != null){
-      $("#heute-bleibt-zahl").textContent = euro(ergebnis);
-      $("#heute-bleibt").hidden = false;
-    } else {
-      $("#heute-bleibt").hidden = true;
-    }
-  }catch{ $("#heute-monatslauf").innerHTML = ""; $("#heute-bleibt").hidden = true; }
+      <button class="punktzeile voll" onclick="location.hash='#abschluss'"
+        style="border-bottom:1px solid var(--gc-border);margin-bottom:28px">
+        <span><b style="color:var(--gc-fg)">${esc(l.satz || "")}</b>
+        ${offen.length ? " " + offen.map(o => esc(o.text)).join(" · ") + " —" : " —"}
+        <span style="color:var(--gc-accent);font-weight:550">
+        ${l.bereit ? "anschauen und freigeben ›" : "was fehlt noch? ›"}</span></span>
+      </button>`;
+  }catch{ $("#heute-monatslauf").innerHTML = ""; }
+}
+
+/* Die eine Zahl des Monats — „Bleibt dir diesen Monat", aus dem laufenden
+   Monatsabschluss-Entwurf. Die Mitarbeit sieht sie nicht (403) — dann
+   bleibt der Block einfach weg. */
+async function ladeBleibtDir(monat){
+  try{
+    const r = await api("/api/monatsabschluss/" + monat);
+    if (!r.ok){ $("#heute-bleibt").hidden = true; return; }
+    const d = await r.json();
+    const ergebnis = (d.bwa || {}).ergebnis;
+    if (ergebnis == null){ $("#heute-bleibt").hidden = true; return; }
+    $("#heute-bleibt-zahl").textContent = euro(ergebnis);
+    $("#heute-bleibt-satz").textContent = "vor Steuern — der Monat läuft noch";
+    $("#heute-bleibt").hidden = false;
+  }catch{ $("#heute-bleibt").hidden = true; }
 }
 
 async function ladeHeute(){
   ladeAnstehendes();
   const monat = jetztMonat();
+  ladeBleibtDir(monat);
   $("#heute-eyebrow").textContent = "DEIN " + monatName(monat).split(" ")[0].toUpperCase();
   const stunde = new Date().getHours();
   const gruss = stunde < 11 ? "Guten Morgen"
@@ -1653,33 +1699,23 @@ async function ladeHeute(){
 
   const fragen = (d.offene||[]).filter(o => o.status === "nachfrage");
   if (fragen.length){
-    html += `<div class="sektion lbl" style="display:flex;justify-content:space-between">Braucht dich
-      ${fragen.length > 1 ? '<a href="#aufraeumen" style="letter-spacing:normal;text-transform:none;font-size:12px">Alle nacheinander ›</a>' : ""}</div>`;
+    html += `<div class="sektion lbl" style="display:flex;justify-content:space-between">
+      babu hat ${fragen.length === 1 ? "eine Frage" : fragen.length + " Fragen"} an dich
+      ${fragen.length > 1 ? '<a href="#aufraeumen" style="letter-spacing:normal;text-transform:none;font-size:13px">Alle nacheinander ›</a>' : ""}</div>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px">`;
     for (const o of fragen){
       const bewirtungOffen = o.bewirtung && !o.bewirtung_beantwortet;
       const frage = bewirtungOffen ? "Mit wem warst du essen?" : offenSatz((o.offen||[])[0]);
       const klick = bewirtungOffen
         ? `bewirtungSheet('${o.stamm}','${(o.lieferant||"Beleg")} · ${euro(o.brutto)}')`
         : `location.hash='#detail/${o.stamm}'`;
-      html += `<button class="karte nachfrage einflug zeile" style="display:block" onclick="${klick}">
-        <h3>${frage}</h3><p>${o.lieferant||"Beleg"} · ${euro(o.brutto)}</p>
-        <span class="hin">Kurz klären ›</span></button>`;
+      html += `<button class="fragekarte einflug" onclick="${klick}">
+        <span><span class="fk-frage">${frage}</span>
+        <span class="fk-meta" style="display:block">${o.lieferant||"Beleg"} · ${euro(o.brutto)}</span></span>
+        <span class="fk-hin">Beantworten ›</span></button>`;
     }
+    html += `</div>`;
   }
-
-  html += `<div class="sektion lbl">Dein Monat in Zahlen</div><div class="karte">`;
-  if (!d.anzahl){
-    html += `<div class="leer"><b>Noch keine Belege in diesem Monat.</b>
-      Der erste dauert keine fünf Sekunden — einfach mit dem Handy fotografieren.</div>`;
-  } else {
-    for (const a of d.belegarten)
-      html += `<div class="mrow"><span class="art">${a.belegart}</span>
-        <span class="wer">${(a.lieferanten||[]).slice(0,3).join(" · ")}</span>
-        <span class="summe">${euro(a.brutto)}</span></div>`;
-    html += `<div class="mrow"><span class="art">Zusammen</span><span class="wer">${d.anzahl} Beleg${d.anzahl===1?"":"e"}</span>
-      <span class="summe">${euro(d.brutto)}</span></div>`;
-  }
-  html += `</div>`;
 
   html += `<div class="punktzeile voll"><span>
     Deine Kanzlei braucht die ${monatName(monat).split(" ")[0]}-Belege bis <b>5. ${fristMonat}</b>.</span></div>`;
@@ -1730,9 +1766,9 @@ async function ladeHeute(){
   try{
     const l = await (await api("/api/belege?limit=3")).json();
     if (l.belege.length){
-      html += `<div class="sektion lbl">Zuletzt</div><div class="voll" id="heute-zuletzt">`;
+      html += `<div class="sektion lbl">Deine letzten Belege</div><div class="voll" id="heute-zuletzt">`;
       for (const z of l.belege) html += belegZeile(z);
-      html += `</div>`;
+      html += `</div><div style="margin-top:14px"><a href="#belege" style="font-size:14.5px">Alle Belege ansehen ›</a></div>`;
     }
   }catch{}
   ziel.innerHTML = html;
@@ -1757,18 +1793,25 @@ async function ladeHeute(){
 
 /* ————— BELEGE ————— */
 let aktMonat = jetztMonat(), aktFilter = "", etag = null;
-function belegZeile(z){
+/* Kurzform des Status für die Marke — die Frage selbst steht im Detail.
+   Kein Buchhalter-Vokabular in der Liste (v2 vom 27.08.): keine
+   Kontonummern, keine USt-Spalte. */
+function statusMarke(z){
   const [satz, art] = statusSatz(z);
+  if (art === "ok") return [satz, "ok"];
+  if (art === "laeuft") return ["wird gelesen", ""];
+  return ["frage offen", "warn"];
+}
+function belegZeile(z){
+  const [marke, art] = statusMarke(z);
   const bild = z.datei && /\.(jpg|jpeg|png)$/i.test(z.datei)
     ? `<img class="thumb" loading="lazy" alt="" src="/api/beleg/${z.stamm}/bild?v=${z.bild_oid}">`
     : `<div class="thumb doc"><svg class="ik" viewBox="0 0 24 24"><use href="#ik-dokument"/></svg></div>`;
-  const konto = z.konto || z.konto_skr04;
   return `<button class="zeile einflug" onclick="location.hash='#detail/${z.stamm}'">
     ${bild}<div class="zmitte"><div class="zname">${z.lieferant || "Beleg vom " + (z.datum || zeitKurz(z.hochgeladen))}</div>
-    <div class="zstatus ${art}">${satz}</div></div>
-    <div class="zdatum">${z.datum ? datumKurz(z.datum) : ""}</div>
-    <div class="zrechts"><div class="zbetrag">${euro(z.brutto)}</div>
-    <div class="zkonto">${konto ? konto + (z.ust_satz!=null ? " · " + z.ust_satz + " %" : "") : ""}</div></div>
+    <div class="zunten">${z.datum ? datumKurz(z.datum) : ""}</div></div>
+    <span class="marke ${art}">${marke}</span>
+    <div class="zrechts"><div class="zbetrag">${euro(z.brutto)}</div></div>
   </button>`;
 }
 /* Zeitraum-Gruppen wie im Kanzlei-Standard: Diese Woche / Letzte Woche / Früher */
@@ -1801,9 +1844,34 @@ async function ladeBelege(){
   for (const z of d.belege){
     const g = wochenGruppe(z.hochgeladen);
     if (g !== gruppe){ gruppe = g; html += `<div class="lbl gruppe-kopf">${g}</div>`; }
-    html += belegZeile(z);
+    html += belegKarte(z);
   }
   $("#belege-liste").innerHTML = html;
+  // Der Zähler am Filter: wie viele warten gerade auf Nina?
+  if (!aktFilter){
+    const n = d.belege.filter(z => statusMarke(z)[1] === "warn").length;
+    const zael = $("#chip-nachfrage-zahl");
+    zael.textContent = n || "";
+    zael.hidden = !n;
+  }
+}
+
+/* Ein Beleg als Foto-Karte (v2 vom 27.08.): das Blatt zuerst, darunter
+   Name, Betrag, Datum und die Marke. Keine Kontonummer, keine USt. */
+function belegKarte(z){
+  const [marke, art] = statusMarke(z);
+  const bild = z.datei && /\.(jpg|jpeg|png)$/i.test(z.datei)
+    ? `<img loading="lazy" alt="" src="/api/beleg/${z.stamm}/bild?v=${z.bild_oid}">`
+    : `<svg class="ik" viewBox="0 0 24 24" style="width:28px;height:28px;color:var(--gc-muted)"><use href="#ik-dokument"/></svg>`;
+  return `<button class="belegkarte einflug" onclick="location.hash='#detail/${z.stamm}'">
+    <div class="bk-foto">${bild}</div>
+    <div class="bk-rumpf">
+      <div class="bk-name">${z.lieferant || "Beleg vom " + (z.datum || zeitKurz(z.hochgeladen))}</div>
+      <div class="bk-betrag num">${euro(z.brutto)}</div>
+      <div class="bk-fuss"><span class="num">${z.datum ? datumKurz(z.datum) : ""}</span>
+      <span class="marke ${art}">${marke}</span></div>
+    </div>
+  </button>`;
 }
 $("#mon-zurueck").addEventListener("click", () => { aktMonat = monatSchieben(aktMonat,-1); ladeBelege(); });
 $("#mon-vor").addEventListener("click", () => { aktMonat = monatSchieben(aktMonat, 1); ladeBelege(); });
@@ -1933,12 +2001,17 @@ async function ladeDetail(stamm){
   ];
 
   let html = `<div id="detail-grid"><div><div id="buehne">${bildTag}</div></div><div>`;
-  html += `<div class="gruss" style="font-size:22px;margin-bottom:2px">${lieferant}</div>
+  const [dMarke, dArt] = statusMarke(d);
+  html += `<span class="marke ${dArt}">${dMarke}</span>
+    <div class="gruss" style="font:500 clamp(26px,3vw,36px)/1.15 var(--gc-serif);margin:12px 0 4px">${lieferant}</div>
     <div class="dmeta" style="margin-bottom:${d.zusammenfassung ? "8px" : "18px"}">${
-      [f.beleg_nr, datumDeutsch(f.datum), f.brutto!=null ? euro(f.brutto) : null]
-        .filter(Boolean).map(esc).join(" · ")}</div>`;
+      [f.beleg_nr, datumDeutsch(f.datum)].filter(Boolean).map(esc).join(" · ")}</div>`;
   if (d.zusammenfassung){
-    html += `<div style="color:var(--gc-body);font-size:13px;margin-bottom:18px">${esc(d.zusammenfassung)}</div>`;
+    html += `<div style="color:var(--gc-body);font-size:14px;margin-bottom:14px">${esc(d.zusammenfassung)}</div>`;
+  }
+  if (f.brutto != null){
+    html += `<div style="margin:6px 0 22px"><div class="lbl">Du hast bezahlt</div>
+      <div style="font:500 clamp(36px,4vw,52px)/1.05 var(--gc-serif);letter-spacing:-.02em;color:var(--gc-fg);font-variant-numeric:tabular-nums;margin-top:4px">${euro(f.brutto)}</div></div>`;
   }
 
   html += `<div class="sekt"><span class="lbl">Beleg-Weg</span><ul class="weg">` +
@@ -1949,8 +2022,8 @@ async function ladeDetail(stamm){
     html += `<div class="sekt"><span class="lbl">Aus dem Foto</span><div class="karte" style="margin:0">`;
     if (f.lieferant || v.lieferant) html += feld("Wer", lieferant);
     if (f.datum) html += feld("Wann", datumDeutsch(f.datum));
-    if (f.netto != null) html += feld("Netto", euro(f.netto));
-    if (f.ust != null) html += feld(`Umsatzsteuer${f.ust_satz!=null ? " ("+f.ust_satz+" %)" : ""}`, euro(f.ust));
+    if (f.netto != null) html += feld("Ohne Steuer", euro(f.netto));
+    if (f.ust != null) html += feld(`Steuer${f.ust_satz!=null ? " ("+f.ust_satz+" %)" : ""}`, euro(f.ust));
     if (f.brutto != null) html += feld("Gesamt", euro(f.brutto));
     if (v.trinkgeld) html += feld("Trinkgeld", euro(v.trinkgeld));
     if (f.beleg_nr) html += feld("Beleg-Nr.", f.beleg_nr);
@@ -1987,7 +2060,9 @@ async function ladeDetail(stamm){
 
     html += rechenproben(f.proben);
 
-    if (b){
+    // Kontonummern und Buchungsschlüssel sind Kanzlei-Vokabular — Nina
+    // sieht stattdessen den einen Satz, dass es erledigt ist.
+    if (b && meineRolle === "kanzlei"){
       html += `<div class="sekt"><span class="lbl">Das geht an DATEV</span><div class="datev">
         <div class="box"><i>Betrag</i><b>${b.umsatz} €</b></div>
         <div class="box"><i>Konto</i><b>${b.konto}</b></div>
@@ -2000,11 +2075,12 @@ async function ladeDetail(stamm){
 
     const siegelZeit = rev ? rev.zeit : (aufn ? aufn.zeit : null);
     if (aufn){
-      html += `<div class="sekt"><span class="lbl">Unverändert seit</span>
+      html += `<div class="sekt">
         <div class="siegel"><svg class="ik rosette" viewBox="0 0 24 24"><use href="#ik-siegel"/></svg>
-        <div><span class="code">${aufn.commit}${rev ? " · " + rev.commit : ""}</span>
-        <small>Seit ${zeitKurz(siegelZeit)} unverändert — jederzeit nachweisbar.</small></div>
-        <button onclick="navigator.clipboard.writeText('${aufn.commit}${rev ? " "+rev.commit : ""}');this.textContent='Kopiert ✓'">Kopieren</button>
+        <div><b style="color:var(--gc-fg);font-size:14px">Sicher im Archiv abgelegt — für immer auffindbar.</b>
+        <small style="display:block">Seit ${zeitKurz(siegelZeit)} unverändert, jederzeit nachweisbar.</small></div>
+        <button onclick="navigator.clipboard.writeText('${aufn.commit}${rev ? " "+rev.commit : ""}');this.textContent='Kopiert ✓'"
+          title="Den Nachweis in die Zwischenablage kopieren">Nachweis kopieren</button>
         </div></div>`;
     }
   } else {
@@ -2281,13 +2357,6 @@ $("#chatform").addEventListener("submit", async ev => {
 
 /* ————— ZAHLEN (Auswertung mit Vormonats-Vergleich + DATEV-Stapel) ————— */
 let zMonat = jetztMonat();
-function deltaHtml(jetzt, vorher){
-  if (vorher == null || vorher === 0) return `<span class="delta neu">neu</span>`;
-  const p = Math.round((jetzt - vorher) / vorher * 100);
-  if (Math.abs(p) < 1) return `<span class="delta neu">wie im Vormonat</span>`;
-  return p > 0 ? `<span class="delta hoch">▲ ${p} %</span>`
-               : `<span class="delta runter">▼ ${Math.abs(p)} %</span>`;
-}
 /* Wie der Monat gelaufen ist — eine Kachel je Zahl.
 
    Gerechnet wurde das längst (es hängt am Monatsabschluss), gesehen hat es
@@ -2336,10 +2405,15 @@ async function ladeZahlen(){
   // Die Kennzahlen hängen an der Monatsauswertung. Die sieht nur die
   // Inhaberin (für die Mitarbeit kommt eine Absage) — dann bleibt der
   // Abschnitt einfach weg, statt dass die ganze Ansicht hängt.
-  let lauf = null;
+  let lauf = null, erloese = null, ergebnis = null;
   try{
     const r = await api("/api/monatsabschluss/" + zMonat);
-    if (r.ok) lauf = (await r.json()).kennzahlen;
+    if (r.ok){
+      const ab = await r.json();
+      lauf = ab.kennzahlen;
+      erloese = (ab.erloese || {}).brutto_gesamt;
+      ergebnis = (ab.bwa || {}).ergebnis;
+    }
   }catch{}
   const ziel = $("#zahlen-inhalt");
   if (!d.anzahl){
@@ -2347,44 +2421,39 @@ async function ladeZahlen(){
       Sobald welche da sind, siehst du hier, wohin dein Geld geht.</div>`;
     return;
   }
-  const vor = d.vormonat || {};
-  const vorArten = {};
-  (vor.belegarten || []).forEach(a => { vorArten[a.belegart] = a.brutto; });
   const max = Math.max(...(d.belegarten || []).map(a => a.brutto || 0), 1);
 
-  let html = `<div class="sektion lbl">Ausgaben nach Art</div><div class="karte">`;
-  for (const a of (d.belegarten || [])){
-    html += `<div class="arow"><div class="kopfz">
-        <span class="art">${a.belegart}</span>
-        ${deltaHtml(a.brutto, vorArten[a.belegart])}
-        <span class="summe num">${euro(a.brutto)}</span></div>
-      <div class="balken"><i style="width:${Math.max(3, Math.round((a.brutto||0)/max*100))}%"></i></div>
-      <div style="font-size:11.5px;color:var(--gc-muted);margin-top:4px">
-        ${a.anzahl} Beleg${a.anzahl===1?"":"e"}${(a.lieferanten||[]).length ? " · " + a.lieferanten.slice(0,3).join(" · ") : ""}</div>
+  // Die eine Zahl zuerst (v2 vom 27.08.), darunter das Paar zwischen
+  // Haarlinien — kein Buchhalter-Vokabular, keine Kontonummern.
+  let html = "";
+  if (ergebnis != null){
+    html += `<div style="margin-bottom:36px">
+      <div class="lbl">Bleibt dir diesen Monat</div>
+      <div class="bleibt-zahl">${euro(ergebnis)}</div>
+      <div class="hero-detail">vor Steuern — der Monat läuft noch</div></div>`;
+  }
+  if (erloese != null || d.brutto != null){
+    html += `<div style="display:flex;gap:72px;flex-wrap:wrap;padding:24px 0;
+        border-top:1px solid var(--gc-border);border-bottom:1px solid var(--gc-border);margin-bottom:36px">
+      ${erloese != null ? `<div><div class="lbl">Eingenommen</div>
+        <div style="font:500 30px var(--gc-serif);letter-spacing:-.02em;color:var(--gc-fg);margin-top:6px;font-variant-numeric:tabular-nums">${euro(erloese)}</div>
+        <div style="font-size:13px;color:var(--gc-muted);margin-top:3px">Kasse, Karte und Überweisung</div></div>` : ""}
+      <div><div class="lbl">Ausgegeben</div>
+        <div style="font:500 30px var(--gc-serif);letter-spacing:-.02em;color:var(--gc-fg);margin-top:6px;font-variant-numeric:tabular-nums">${euro(d.brutto)}</div>
+        <div style="font-size:13px;color:var(--gc-muted);margin-top:3px">${d.anzahl} Beleg${d.anzahl===1?"":"e"}</div></div>
     </div>`;
   }
-  html += `<div class="arow"><div class="kopfz"><span class="art">Zusammen</span>
-      ${deltaHtml(d.brutto, vor.brutto)}
-      <span class="summe num">${euro(d.brutto)}</span></div></div></div>`;
 
-  if (d.groesste_position && d.groesste_position.brutto != null){
-    const g = d.groesste_position;
-    html += `<div class="sektion lbl">Größter Posten</div><div class="karte">
-      <div class="mrow"><span class="art">${g.lieferant || g.belegart || "Beleg"}</span>
-      <span class="wer">${g.datum || ""}</span>
-      <span class="summe">${euro(g.brutto)}</span></div></div>`;
+  html += `<div class="sektion lbl">Wohin dein Geld geht</div><div style="max-width:760px;margin-bottom:12px">`;
+  for (const a of (d.belegarten || [])){
+    html += `<div style="display:flex;align-items:center;gap:18px;padding:11px 0">
+      <span style="width:110px;font-weight:600;color:var(--gc-fg)">${a.belegart}</span>
+      <div style="flex:1;height:8px;border-radius:4px;background:#eae7de;overflow:hidden">
+        <div style="width:${Math.max(3, Math.round((a.brutto||0)/max*100))}%;height:8px;border-radius:4px;background:var(--gc-fg)"></div></div>
+      <span class="num" style="font-weight:600;color:var(--gc-fg);width:120px;text-align:right">${euro(a.brutto)}</span>
+    </div>`;
   }
-
-  if ((d.konten || []).length){
-    html += `<div class="sektion lbl">Nach Konto (für deine Kanzlei)</div><div class="karte">`;
-    for (const k of d.konten){
-      const nr = k.konto || k.konto_skr04 || k.nr || "";
-      html += `<div class="mrow"><span class="art num">${nr}</span>
-        <span class="wer">${k.bez || k.label || ""}${k.anzahl ? " · " + k.anzahl + " Beleg" + (k.anzahl===1?"":"e") : ""}</span>
-        <span class="summe">${euro(k.brutto)}</span></div>`;
-    }
-    html += `</div>`;
-  }
+  html += `</div>`;
 
   html += kennzahlKacheln(lauf);
 
@@ -2531,6 +2600,14 @@ let ablageSuche = "", ablageTreffer = null, ablageSuchTakt = null;
 
 async function ladeAblage(){
   const baum = $("#ablage-baum"), mappe = $("#ablage-mappe");
+  // Neue Post als Punktzeile (v2 vom 27.08.) — Nina sieht sie auch hier.
+  postPunktAktualisieren().then(n => {
+    $("#ablage-post-hinweis").innerHTML = !n ? "" :
+      `<button class="punktzeile voll einflug" style="border-bottom:1px solid var(--gc-border);margin-bottom:16px"
+        onclick="location.hash='#post'"><span><b style="color:var(--gc-fg)">${
+        n === 1 ? "Ein neues Dokument" : n + " neue Dokumente"}</b>
+        von deiner Kanzlei — <span style="color:var(--gc-accent)">ansehen ›</span></span></button>`;
+  }).catch(() => {});
   try{ ablageDaten = await (await api("/api/ablage")).json(); }
   catch{ mappe.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
   if (!ablageDaten.gesamt){
