@@ -1464,6 +1464,9 @@ function statusSatz(z){
 function offenSatz(o){
   const m = /Differenz Zahlbetrag ([\d.,]+) vs\. Brutto ([\d.,]+)/.exec(o||"");
   if (m) return `Gezahlt ${m[1]} € bei ${m[2]} € Rechnung — Trinkgeld?`;
+  // Generische Backend-Texte in etwas Verständlicheres übersetzen
+  if (/noch nicht gebucht|fragen an dich/i.test(o||""))
+    return "Kurz ansehen und einordnen";
   return o || "eine Frage ist offen";
 }
 
@@ -1955,10 +1958,14 @@ async function ladeDetail(stamm){
     html += `</div></div>`;
 
     const bewirtungOffen = f.bewirtungssignal && !d.bewirtung_beantwortet;
+    // Strukturierte Fragen aus buchung.fragen haben Vorrang vor generischen offen-Texten
+    const buchungFrage = (d.buchung && d.buchung.fragen && d.buchung.fragen[0]) ? d.buchung.fragen[0] : null;
+    const frageText = bewirtungOffen ? "Mit wem warst du essen?"
+      : (buchungFrage ? buchungFrage.frage : offenSatz((f.offen||[])[0]));
     html += `<div class="sekt"><span class="lbl">Prüfung</span>
       <div class="haken ${geprueft||b ? "" : "warte"}">
         <div class="kreis ${geprueft ? "stempel" : ""}">${frage ? "?" : "✓"}</div>
-        <div class="txt"><b>${frage ? (bewirtungOffen ? "Mit wem warst du essen?" : offenSatz((f.offen||[])[0])) : "Alles stimmig"}</b>
+        <div class="txt"><b>${frage ? frageText : "Alles stimmig"}</b>
         <span>${b && b.buchungstext ? esc(b.buchungstext) : ""}</span>
         ${e.belegart ? `<span class="marke akzent" style="margin-top:4px">${
           esc(String(e.belegart).split("(")[0].trim())}</span>` : ""}</div>
@@ -1967,6 +1974,12 @@ async function ladeDetail(stamm){
         onclick="bewirtungSheet('${d.stamm}','${lieferant} · ${euro(f.brutto)}')">
         <h3>Mit wem warst du essen?</h3><p>Kurz notiert, und der Beleg zählt voll.</p>
         <span class="hin">Kurz klären ›</span></button>` : ""}
+      ${buchungFrage && buchungFrage.optionen && buchungFrage.optionen.length
+        ? `<div class="karte nachfrage" style="margin-top:10px">
+          <h3>${esc(buchungFrage.frage)}</h3>
+          <p style="font-size:13px;color:var(--gc-desc);margin-top:6px">Wähle unten im Feld „Wofür war das?" die passende Antwort:</p>
+          ${buchungFrage.optionen.map(opt => `<p style="margin:4px 0 0 16px;font-size:13px">• ${esc(opt)}</p>`).join("")}
+          </div>` : ""}
       ${aenderungsFormular(d.stamm, f, e, (frage && !bewirtungOffen) || !f.brutto)}
       ${d.bewirtung ? `<div class="feld" style="margin-top:8px"><span>Anlass</span><b style="font-family:var(--gc-sans)">${d.bewirtung.anlass}</b></div>
         <div class="feld"><span>Dabei waren</span><b style="font-family:var(--gc-sans)">${(d.bewirtung.teilnehmer||[]).join(", ")}</b></div>` : ""}
