@@ -149,3 +149,13 @@ def test_monatsausgaben_stehen_im_fallwissen():
     assert "AUSGABEN JE MONAT" in text
     assert "2026-01" in text and "1.234,56" in text and "17 Belege" in text
     assert "zahlen" in wissen.themen("Wie viel habe ich im Januar ausgegeben?")
+
+
+def test_konto_steht_im_beleg_register():
+    """Issue #75: Nina fragt „Bei dem Beleg von dm über 43,40 €. Was hast du da
+    verbucht?" — Gemma braucht das Konto im weltblock, um antworten zu können."""
+    welt = {"belege": [beleg("dm Drogeriemarkt", 43.40, konto_skr04="6850")]}
+    text = wissen.weltblock(welt)
+    assert "dm Drogeriemarkt" in text
+    assert "43,40" in text
+    assert "Konto 6850" in text

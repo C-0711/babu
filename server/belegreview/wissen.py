@@ -108,6 +108,8 @@ def _belege(welt: dict, grenze: int) -> str:
         teil = (f"  {b.get('datum') or b.get('monat') or '—'} · "
                 f"{b.get('lieferant') or 'unbekannt'} · {_euro(b.get('brutto'))}"
                 f" · {b.get('belegart') or ''}")
+        if b.get("konto_skr04"):
+            teil += f" · Konto {b['konto_skr04']}"
         if b.get("offen"):
             teil += " · offen: " + "; ".join(str(o) for o in b["offen"][:2])
         if sum(len(z) for z in zeilen) + len(teil) > grenze:
@@ -269,6 +271,8 @@ def weltblock(welt: dict) -> str:
             teil = (f"  {b.get('datum') or b.get('monat') or '—'} · "
                     f"{b.get('lieferant') or 'unbekannt'} · {_euro(b.get('brutto'))}"
                     f" · {b.get('belegart') or ''}")
+            if b.get("konto_skr04"):
+                teil += f" · Konto {b['konto_skr04']}"
             if b.get("offen"):
                 teil += " · offen: " + "; ".join(str(o) for o in b["offen"][:2])
             zeilen.append(teil)
