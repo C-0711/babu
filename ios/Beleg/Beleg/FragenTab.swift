@@ -97,6 +97,12 @@ struct FragenTab: View {
                 }
                 ToolbarItemGroup(placement: .keyboard) {
                     Spacer()
+                    Button {
+                        senden()
+                    } label: {
+                        Label("Senden", systemImage: "arrow.up.circle.fill")
+                    }
+                    .disabled(eingabe.trimmingCharacters(in: .whitespaces).isEmpty || laeuft)
                     Button("Fertig") { feldAktiv = false }
                 }
             }
