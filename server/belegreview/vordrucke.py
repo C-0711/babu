@@ -23,6 +23,7 @@ Backend, und jedes Blatt sagt das selbst.
 """
 from __future__ import annotations
 
+import re
 import time
 import zlib
 
@@ -297,6 +298,19 @@ class _Blatt:
         return bytes(out)
 
 
+def _beleg_name(eintrag: dict) -> str:
+    """Wie ein Beleg auf dem Blatt heißt — Lieferant, notfalls lesbar aus
+    dem Dateistamm (nie der rohe Hex-Stamm; das Blatt liest ein Mensch)."""
+    if eintrag.get("lieferant"):
+        return str(eintrag["lieferant"])
+    kurz = re.sub(r"^\d{8}-\d{6}-[0-9a-f]+-", "", str(eintrag.get("stamm") or ""))
+    kurz = re.sub(r"_[0-9a-f]{6,}$", "", kurz)
+    teile = kurz.split("_")
+    if len(teile) >= 3:
+        return f"{teile[2].capitalize()} · {teile[1]}"
+    return kurz.replace("_", " ") or "Beleg"
+
+
 def _eur(wert: float | None) -> str:
     if wert is None:
         return ""
@@ -371,12 +385,11 @@ def ustva_pdf(entwurf: dict, betrieb: dict, befunde: list[dict]) -> bytes:
         b.frei(10)
         b.zeile("Prüfliste (SKR04-Prüfung der Buchungen)", fett=True, size=9.5)
         for f in relevant:
-            wer = f.get("lieferant") or f.get("stamm") or "Beleg"
-            b.zeile(f"· {wer}: {f['befund']}", size=8, einzug=8, abstand=11)
+            b.zeile(f"· {_beleg_name(f)}: {f['befund']}", size=8, einzug=8,
+                    abstand=11)
         for p in entwurf.get("pruefliste") or []:
-            wer = p.get("lieferant") or p.get("stamm") or "Beleg"
-            b.zeile(f"· {wer}: {p['hinweis']} — nicht in Kz 66 enthalten.",
-                    size=8, einzug=8, abstand=11)
+            b.zeile(f"· {_beleg_name(p)}: {p['hinweis']} — nicht in Kz 66 "
+                    "enthalten.", size=8, einzug=8, abstand=11)
 
     _fuss(b, ["Entwurf aus deinen Zahlen — geprüft und ans Finanzamt "
               "übermittelt wird über ELSTER durch das steuerliche Backend "
