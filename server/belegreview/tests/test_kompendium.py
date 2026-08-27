@@ -38,7 +38,7 @@ def mini_kompendium(tmp_path, monkeypatch):
     monkeypatch.setattr(kompendium, "VERZEICHNIS", tmp_path)
     monkeypatch.setattr(kompendium, "_VEKTOREN", None)
     monkeypatch.setattr(kompendium, "_OFFSETS", [])
-    monkeypatch.setattr(kompendium, "_GRUNDWISSEN", None)
+    monkeypatch.setattr(kompendium, "_TEXTE", {})
     return kompendium
 
 
@@ -59,7 +59,7 @@ def test_ohne_verzeichnis_bleibt_alles_still(tmp_path, monkeypatch):
     monkeypatch.setattr(kompendium, "VERZEICHNIS", tmp_path / "gibtsnicht")
     monkeypatch.setattr(kompendium, "_VEKTOREN", None)
     monkeypatch.setattr(kompendium, "_OFFSETS", [])
-    monkeypatch.setattr(kompendium, "_GRUNDWISSEN", None)
+    monkeypatch.setattr(kompendium, "_TEXTE", {})
     assert kompendium.suchen([1.0, 0.0], k=3) == []
     assert kompendium.grundwissen() == ""
 
@@ -123,3 +123,76 @@ def test_recherche_ohne_embedding_dienst_ist_leer(monkeypatch):
     monkeypatch.setattr(bw, "embedding_rechnen",
                         lambda text, als_dokument=True: None)
     assert bw._recherche("egal") == ""
+
+
+# ————— Der Buchungs-Prompt: stehender Vorspann, variabler Beleg —————
+#
+# Der Chat kontiert erkennbar besser, seit sein Wissen byte-stabil im
+# System-Teil liegt und vLLMs Prefix-Cache ihn nur einmal rechnet. Der
+# Buchungsweg hat seit dem 28.08.2026 dieselbe Bauart.
+
+def test_der_vorspann_ist_fuer_jeden_beleg_byte_gleich():
+    import gemma_buchung as gb
+    profil = gb.profil_text({"betrieb_name": "Salon Nina"})
+    a = gb.system_text(profil)
+    b = gb.system_text(profil)
+    assert a == b
+    # Zwei verschiedene Belege ändern am Vorspann nichts.
+    gb.prompt_bauen(profil, ["Edeka 12,90"], [])
+    gb.prompt_bauen(profil, ["Wella 340,00"], [{"frage": "?", "antwort": "ja"}])
+    assert gb.system_text(profil) == a
+
+
+def test_die_regeln_stehen_vor_dem_beleg_nicht_dahinter():
+    """Der eigentliche Fund: bis zum 28.08. standen rund 1.400 Token
+    Regeln HINTER dem Beleg und wurden bei jeder Buchung neu gerechnet."""
+    import gemma_buchung as gb
+    profil = gb.profil_text({})
+    vorspann = gb.system_text(profil)
+    beleg = gb.prompt_bauen(profil, ["Edeka 12,90"], [])
+    assert "Regeln:" in vorspann and "Antworte NUR mit" in vorspann
+    assert "Regeln:" not in beleg
+    # Der Beleg-Teil ist ein Bruchteil des Ganzen.
+    assert len(beleg) < len(vorspann) / 10
+
+
+def test_das_kontierungswissen_steht_im_vorspann(mini_kompendium, monkeypatch):
+    import gemma_buchung as gb
+    (mini_kompendium.VERZEICHNIS / "kontierung-grundwissen.md").write_text(
+        "# Kontierungswissen\n\n- Bedienungsstühle: 10 Jahre")
+    monkeypatch.setattr(mini_kompendium, "_TEXTE", {})
+    text = gb.system_text(gb.profil_text({}))
+    assert "Bedienungsstühle: 10 Jahre" in text
+    assert "NACHSCHLAGEWISSEN" in text
+
+
+def test_ohne_kompendium_bucht_babu_trotzdem(tmp_path, monkeypatch):
+    import gemma_buchung as gb
+    import kompendium
+    monkeypatch.setattr(kompendium, "VERZEICHNIS", tmp_path / "weg")
+    monkeypatch.setattr(kompendium, "_TEXTE", {})
+    text = gb.system_text(gb.profil_text({}))
+    assert "NACHSCHLAGEWISSEN" not in text
+    assert "KATEGORIEN" in text and "Regeln:" in text
+
+
+def test_der_vorspann_geht_als_eigene_system_nachricht_raus(monkeypatch):
+    import gemma_buchung as gb
+    gesehen = {}
+
+    class Antwort:
+        def read(self): return b'{"choices":[{"message":{"content":"{}"}}]}'
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+
+    def falsches_urlopen(req, timeout=None):
+        gesehen.update(json.loads(req.data))
+        import io
+        return io.BytesIO(b'{"choices":[{"message":{"content":"{}"}}]}')
+
+    monkeypatch.setattr(gb.urllib.request, "urlopen", falsches_urlopen)
+    gb.runde(["Edeka 12,90"], {"betrieb_name": "Salon Nina"}, [])
+    rollen = [m["role"] for m in gesehen["messages"]]
+    assert rollen == ["system", "user"], rollen
+    assert "Regeln:" in gesehen["messages"][0]["content"]
+    assert "Edeka 12,90" in gesehen["messages"][1]["content"]

@@ -70,73 +70,11 @@ def katalog_text(rahmen: str = "SKR04") -> str:
     return "\n".join(zeilen)
 
 
-# ── Der Prompt ───────────────────────────────────────────────────────────────
-
-def prompt_bauen(profil: str, zeilen: list[str], antworten: list[dict],
-                 rahmen: str = "SKR04", umsaetze: list[dict] | None = None,
-                 nachbarn: list[dict] | None = None,
-                 markdown: str | None = None, mit_bild: bool = False,
-                 vertraege: list[dict] | None = None,
-                 personal: list[dict] | None = None,
-                 offene_abbuchungen: list[dict] | None = None) -> str:
-    beantwortet = ""
-    if antworten:
-        beantwortet = "\nNINA HAT BEREITS BEANTWORTET:\n" + "\n".join(
-            f"  Frage: {a.get('frage', '')}\n  Antwort: {a.get('antwort', '')}"
-            for a in antworten)
-    abgleich_kontext = ""
-    if offene_abbuchungen:
-        abgleich_kontext = ("\nNOCH UNGEDECKTE ABBUCHUNGEN vom Konto (der "
-                            "Abgleich fand dafür noch keinen Beleg — deckt "
-                            "DIESER Beleg eine davon, nenne sie in der "
-                            "Begründung; deckt er keine, ist auch das eine "
-                            "Antwort):\n" + "\n".join(
-            f"  {u.get('datum', '?')}  {u.get('betrag', '?')} €  "
-            f"{str(u.get('text') or u.get('gegenpartei') or '')[:60]}"
-            for u in offene_abbuchungen))
-    konto_kontext = ""
-    if umsaetze:
-        konto_kontext = ("\nKONTOBEWEGUNGEN im Umfeld (Bank/PayPal aus den "
-                         "Kontoauszügen) — nutze sie zum Abgleich, z. B. für den "
-                         "Euro-Betrag einer Fremdwährungszahlung:\n" + "\n".join(
-            f"  {u.get('datum', '?')}  {u.get('betrag', '?')} €  {str(u.get('text', ''))[:70]}"
-            for u in umsaetze))
-    vertrag_kontext = ""
-    if vertraege:
-        vertrag_kontext = ("\nLAUFENDE VERTRÄGE des Salons (Dauerkosten — eine "
-                           "Zahlung, die zu einem passt, gehört auf DESSEN "
-                           "Kategorie und ist kein neuer Einzelaufwand; weicht "
-                           "der Betrag vom Vertrag ab, frag nach):\n" + "\n".join(
-            f"  {v.get('art_name') or v.get('art') or 'Vertrag'} · "
-            f"{str(v.get('partner') or '?')[:40]} · "
-            f"{v.get('betrag_monat') if v.get('betrag_monat') is not None else '?'} €/Monat"
-            for v in vertraege))
-    personal_kontext = ""
-    if personal:
-        personal_kontext = ("\nPERSONAL des Salons (eine Zahlung an diese "
-                            "Person ist LOHN — Löhne bucht der Lohnlauf, nicht "
-                            "der Beleg. Erkennst du eine Lohnzahlung, antworte "
-                            "mit status \"abgeben\" und sag warum):\n" + "\n".join(
-            f"  {str(p.get('name') or '?')[:40]} · "
-            f"{p.get('kosten_monat') if p.get('kosten_monat') is not None else '?'} €/Monat"
-            for p in personal))
-    beleg_kontext = ""
-    if nachbarn:
-        beleg_kontext = ("\nWEITERE BELEGE desselben Monats (für Dubletten und "
-                         "Zusammenhänge — NICHT mitbuchen):\n" + "\n".join(
-            f"  {b.get('datum', '?')}  {b.get('brutto', '?')} €  {str(b.get('lieferant', ''))[:50]}"
-            for b in nachbarn))
-    return f"""Du bist die Buchhaltung eines Friseursalons und verbuchst genau EINEN Beleg.
-
-PROFIL: {profil}
-
-KATEGORIEN (wähle GENAU eine über ihren Code — Kontonummern vergibst nicht du):
-{katalog_text(rahmen)}
-
-DER BELEG — {"liegt dir als FOTO bei. Lies ihn selbst, vollständig: Kopf, jede Einzelposition, Summen, Steuerzeilen, Währung, Zahlweise." if mit_bild else ("als strukturiertes Dokument (Layout-Lesung):" if markdown else "die erkannten Textzeilen in Lesereihenfolge:")}
-{"" if mit_bild else (markdown if markdown else chr(10).join('  ' + z for z in zeilen))}
-{konto_kontext}{abgleich_kontext}{vertrag_kontext}{personal_kontext}{beleg_kontext}{beantwortet}
-Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
+# Die Regeln und das Antwortschema — der TEIL, DER SICH NIE ÄNDERT.
+# Sie stehen als eigene Konstanten hier oben, weil sie in den stehenden
+# Prompt-Anfang gehören (siehe system_text): hinter dem Beleg würden sie
+# bei jeder Buchung neu gerechnet.
+REGELN = """Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
 - Erfinde keine Umsatzsteuer, die nicht auf dem Beleg ausgewiesen ist.
 - Lies die EINZELPOSITIONEN aus dem Beleg: Bezeichnung, Betrag, Steuersatz
   und Kategorie je Position. Buche das Ganze auf die Kategorie mit dem
@@ -208,23 +146,142 @@ Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
 - Frag nichts, was schon beantwortet wurde. Ist alles klar, buchst du sofort.
 - Sag außerdem, WAS das Dokument ist (dokumentklasse): "beleg" (Bon oder
   Rechnung über einen Kauf — der Regelfall), "vertrag", "behoerde" (Post vom
-  Amt) oder "kontoauszug". Danach richtet sich, in welches Fach es kommt.
+  Amt) oder "kontoauszug". Danach richtet sich, in welches Fach es kommt."""
 
-Antworte NUR mit einem JSON-Objekt, ohne Text davor oder danach:
-entweder {{"status": "abgeben", "hinweis": "…"}}  (nur für Lohn u. Ä. — Dinge,
+SCHEMA = """Antworte NUR mit einem JSON-Objekt, ohne Text davor oder danach:
+entweder {"status": "abgeben", "hinweis": "…"}  (nur für Lohn u. Ä. — Dinge,
           die nicht über einen Beleg gebucht werden)
-oder     {{"status": "fragen",
-           "fragen": [{{"frage": "…", "optionen": ["…", "…"]}}]}}
-oder     {{"status": "gebucht",
+oder     {"status": "fragen",
+           "fragen": [{"frage": "…", "optionen": ["…", "…"]}]}
+oder     {"status": "gebucht",
            "kategorie": "<code aus der Liste>",
            "dokumentklasse": "beleg | vertrag | behoerde | kontoauszug",
            "lieferant": "…", "datum": "JJJJ-MM-TT",
            "buchungstext": "…",
            "betrag": 0.0, "waehrung": "EUR",
            "betrag_eur": 0.0, "ust_satz": 0, "gutschrift": false,
-           "positionen": [{{"bezeichnung": "…", "betrag": 0.0,
-                           "ust_satz": 0, "kategorie": "<code>"}}],
-           "begruendung": "ein Satz"}}"""
+           "positionen": [{"bezeichnung": "…", "betrag": 0.0,
+                           "ust_satz": 0, "kategorie": "<code>"}],
+           "begruendung": "ein Satz"}"""
+
+
+# ── Der Prompt ───────────────────────────────────────────────────────────────
+
+def voller_prompt(*args, **kw) -> str:
+    """Alles, was das Modell zu einem Beleg zu sehen bekommt — stehender
+    Teil und Beleg-Teil hintereinander. Für Tests und zum Nachlesen; im
+    Betrieb gehen die beiden Teile getrennt als System- und
+    Nutzer-Nachricht raus, damit der stehende Teil im Cache bleibt.
+
+    Nimmt dieselben Argumente wie `prompt_bauen`."""
+    profil = args[0] if args else kw.get("profil", "")
+    rahmen = args[3] if len(args) >= 4 else kw.get("rahmen", "SKR04")
+    return (system_text(profil, rahmen) + "\n\n"
+            + prompt_bauen(*args, **kw))
+
+
+def system_text(profil: str, rahmen: str = "SKR04") -> str:
+    """Der STEHENDE Teil des Buchungs-Prompts — alles, was für jeden Beleg
+    dieses Salons gleich ist: Auftrag, Profil, Kontierungswissen,
+    Kategorienkatalog, Regeln und Antwortschema.
+
+    Warum das ein eigener Block ist: gemma4 läuft mit Prefix-Caching. Was
+    byte-stabil vorn steht, wird EINMAL vorgerechnet und ist danach
+    kostenlos — was hinter dem Beleg steht, zahlt jede Buchung neu. Bis
+    zum 28.08.2026 standen die Regeln (rund 1.400 Token, und sie wachsen
+    mit jeder Anmerkung von Nina) HINTER dem Beleg und wurden deshalb bei
+    jeder einzelnen Buchung erneut gerechnet.
+
+    Dass es sich lohnt, war am Chat zu sehen: der kontiert erkennbar
+    besser, seit Grundwissen und Weltblock stehend im System-Teil liegen.
+    Der Buchungsweg bekommt hier dieselbe Bauart — und dazu das
+    Kontierungswissen (AfA-Nutzungsdauern, GWG-Grenzen, Salon-Konten),
+    das ihm bisher ganz fehlte."""
+    wissen = ""
+    try:
+        import kompendium  # noqa: PLC0415
+        wissen = kompendium.kontierungswissen()
+    except Exception:  # noqa: BLE001
+        wissen = ""
+    return (
+        "Du bist die Buchhaltung eines Friseursalons und verbuchst genau "
+        "EINEN Beleg.\n\n"
+        f"PROFIL: {profil}\n\n"
+        + (f"NACHSCHLAGEWISSEN (gilt für jeden Beleg dieses Salons):\n\n"
+           f"{wissen}\n\n" if wissen else "")
+        + "KATEGORIEN (wähle GENAU eine über ihren Code — Kontonummern "
+          "vergibst nicht du):\n"
+        + katalog_text(rahmen) + "\n\n"
+        + REGELN + "\n\n" + SCHEMA)
+
+
+def prompt_bauen(profil: str, zeilen: list[str], antworten: list[dict],
+                 rahmen: str = "SKR04", umsaetze: list[dict] | None = None,
+                 nachbarn: list[dict] | None = None,
+                 markdown: str | None = None, mit_bild: bool = False,
+                 vertraege: list[dict] | None = None,
+                 personal: list[dict] | None = None,
+                 offene_abbuchungen: list[dict] | None = None) -> str:
+    beantwortet = ""
+    if antworten:
+        beantwortet = "\nNINA HAT BEREITS BEANTWORTET:\n" + "\n".join(
+            f"  Frage: {a.get('frage', '')}\n  Antwort: {a.get('antwort', '')}"
+            for a in antworten)
+    abgleich_kontext = ""
+    if offene_abbuchungen:
+        abgleich_kontext = ("\nNOCH UNGEDECKTE ABBUCHUNGEN vom Konto (der "
+                            "Abgleich fand dafür noch keinen Beleg — deckt "
+                            "DIESER Beleg eine davon, nenne sie in der "
+                            "Begründung; deckt er keine, ist auch das eine "
+                            "Antwort):\n" + "\n".join(
+            f"  {u.get('datum', '?')}  {u.get('betrag', '?')} €  "
+            f"{str(u.get('text') or u.get('gegenpartei') or '')[:60]}"
+            for u in offene_abbuchungen))
+    konto_kontext = ""
+    if umsaetze:
+        konto_kontext = ("\nKONTOBEWEGUNGEN im Umfeld (Bank/PayPal aus den "
+                         "Kontoauszügen) — nutze sie zum Abgleich, z. B. für den "
+                         "Euro-Betrag einer Fremdwährungszahlung:\n" + "\n".join(
+            f"  {u.get('datum', '?')}  {u.get('betrag', '?')} €  {str(u.get('text', ''))[:70]}"
+            for u in umsaetze))
+    vertrag_kontext = ""
+    if vertraege:
+        vertrag_kontext = ("\nLAUFENDE VERTRÄGE des Salons (Dauerkosten — eine "
+                           "Zahlung, die zu einem passt, gehört auf DESSEN "
+                           "Kategorie und ist kein neuer Einzelaufwand; weicht "
+                           "der Betrag vom Vertrag ab, frag nach):\n" + "\n".join(
+            f"  {v.get('art_name') or v.get('art') or 'Vertrag'} · "
+            f"{str(v.get('partner') or '?')[:40]} · "
+            f"{v.get('betrag_monat') if v.get('betrag_monat') is not None else '?'} €/Monat"
+            for v in vertraege))
+    personal_kontext = ""
+    if personal:
+        personal_kontext = ("\nPERSONAL des Salons (eine Zahlung an diese "
+                            "Person ist LOHN — Löhne bucht der Lohnlauf, nicht "
+                            "der Beleg. Erkennst du eine Lohnzahlung, antworte "
+                            "mit status \"abgeben\" und sag warum):\n" + "\n".join(
+            f"  {str(p.get('name') or '?')[:40]} · "
+            f"{p.get('kosten_monat') if p.get('kosten_monat') is not None else '?'} €/Monat"
+            for p in personal))
+    beleg_kontext = ""
+    if nachbarn:
+        beleg_kontext = ("\nWEITERE BELEGE desselben Monats (für Dubletten und "
+                         "Zusammenhänge — NICHT mitbuchen):\n" + "\n".join(
+            f"  {b.get('datum', '?')}  {b.get('brutto', '?')} €  {str(b.get('lieferant', ''))[:50]}"
+            for b in nachbarn))
+    kopf = ("liegt dir als FOTO bei. Lies ihn selbst, vollständig: Kopf, "
+            "jede Einzelposition, Summen, Steuerzeilen, Währung, Zahlweise."
+            if mit_bild else
+            "als strukturiertes Dokument (Layout-Lesung):" if markdown else
+            "die erkannten Textzeilen in Lesereihenfolge:")
+    inhalt = ("" if mit_bild else
+              (markdown or "\n".join("  " + z for z in zeilen)))
+    return (f"DER BELEG — {kopf}\n{inhalt}\n"
+            f"{konto_kontext}{abgleich_kontext}{vertrag_kontext}"
+            f"{personal_kontext}{beleg_kontext}{beantwortet}\n"
+            "Verbuche ihn jetzt nach den Regeln oben. Antworte NUR mit "
+            "dem JSON-Objekt.")
+
 
 
 # ── Antwort prüfen: der Katalog hat das letzte Wort ──────────────────────────
@@ -381,7 +438,8 @@ def gemischt(buchung: dict) -> bool:
 
 # ── Eine Runde ───────────────────────────────────────────────────────────────
 
-def _gemma(prompt: str, bild: tuple[bytes, str] | None = None) -> dict:
+def _gemma(prompt: str, bild: tuple[bytes, str] | None = None,
+           system: str | None = None) -> dict:
     if bild is not None:
         import base64  # noqa: PLC0415
         daten, mime = bild
@@ -392,8 +450,14 @@ def _gemma(prompt: str, bild: tuple[bytes, str] | None = None) -> dict:
         ]
     else:
         inhalt = prompt
+    # Der stehende Teil als eigene System-Nachricht: sie steht bei jedem
+    # Beleg byte-gleich vorn und wird von vLLMs Prefix-Cache nur einmal
+    # gerechnet. Das Foto kommt erst danach — es zerschneidet den
+    # gemeinsamen Anfang also nicht.
+    nachrichten = ([{"role": "system", "content": system}] if system else [])
+    nachrichten.append({"role": "user", "content": inhalt})
     koerper = {"model": VLM_MODELL, "temperature": 0.1, "max_tokens": 1200,
-               "messages": [{"role": "user", "content": inhalt}]}
+               "messages": nachrichten}
     req = urllib.request.Request(
         VLM_API, json.dumps(koerper).encode(),
         {"Content-Type": "application/json"})
@@ -422,11 +486,13 @@ def runde(zeilen: list[str], einstellungen: dict, antworten: list[dict],
         return {"status": "aufgeben",
                 "hinweis": "So viele Fragen löst kein Beleg — der gehört auf "
                            "den Schreibtisch."}
-    roh = _gemma(prompt_bauen(profil_text(einstellungen), zeilen, antworten,
+    profil = profil_text(einstellungen)
+    roh = _gemma(prompt_bauen(profil, zeilen, antworten,
                               rahmen, umsaetze, nachbarn, markdown,
                               mit_bild=bild is not None,
                               vertraege=vertraege, personal=personal,
-                              offene_abbuchungen=offene_abbuchungen), bild)
+                              offene_abbuchungen=offene_abbuchungen),
+                 bild, system=system_text(profil, rahmen))
     ergebnis = buchung_pruefen(roh, rahmen)
     if ergebnis["status"] == "unklar":
         return {"status": "fragen", "fragen": [{

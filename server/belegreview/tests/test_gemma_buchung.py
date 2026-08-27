@@ -33,7 +33,7 @@ def test_katalog_traegt_nur_bestaetigte_konten():
 
 
 def test_prompt_traegt_beleg_profil_und_alte_antworten():
-    p = gemma_buchung.prompt_bauen(
+    p = gemma_buchung.voller_prompt(
         "PROFILTEXT", ["Zeile eins"],
         [{"frage": "Privat oder Salon?", "antwort": "Salon"}])
     assert "PROFILTEXT" in p and "Zeile eins" in p
@@ -124,7 +124,8 @@ def test_zu_viele_antworten_heisst_schreibtisch(monkeypatch):
 
 
 def test_kauderwelsch_vom_modell_wird_zur_hoeflichen_frage(monkeypatch):
-    monkeypatch.setattr(gemma_buchung, "_gemma", lambda p, bild=None: {"status": "??"})
+    monkeypatch.setattr(gemma_buchung, "_gemma",
+                        lambda p, bild=None, system=None: {"status": "??"})
     e = gemma_buchung.runde(["x"], {}, [])
     assert e["status"] == "fragen"
     assert e["fragen"][0]["frage"]
@@ -133,13 +134,13 @@ def test_kauderwelsch_vom_modell_wird_zur_hoeflichen_frage(monkeypatch):
 def test_prompt_kennt_mehrseitige_belege():
     """Die Endsumme eines Bündels steht auf dem letzten Blatt — die Regel
     steht immer im Prompt und konditioniert sich selbst auf Seiten-Marker."""
-    p = gemma_buchung.prompt_bauen("P", ["— Seite 1 von 2 —", "Übertrag 120,00",
+    p = gemma_buchung.voller_prompt("P", ["— Seite 1 von 2 —", "Übertrag 120,00",
                                          "— Seite 2 von 2 —", "Gesamt 189,61"], [])
     assert "Seiten-Marker" in p and "LETZTEN" in p
 
 
 def test_prompt_traegt_kontobewegungen_und_nachbarbelege():
-    p = gemma_buchung.prompt_bauen(
+    p = gemma_buchung.voller_prompt(
         "P", ["Gesamtsumme 55,74 AED"], [],
         umsaetze=[{"datum": "21.02.2026", "betrag": -13.9,
                    "text": "PayPal Uber BV"}],
@@ -148,7 +149,7 @@ def test_prompt_traegt_kontobewegungen_und_nachbarbelege():
     assert "KONTOBEWEGUNGEN" in p and "PayPal Uber BV" in p
     assert "WEITERE BELEGE" in p and "Uber" in p
     # Ohne Kontext tauchen die Abschnitte gar nicht erst auf.
-    leer = gemma_buchung.prompt_bauen("P", ["x"], [])
+    leer = gemma_buchung.voller_prompt("P", ["x"], [])
     assert "KONTOBEWEGUNGEN" not in leer and "WEITERE BELEGE" not in leer
 
 
@@ -209,14 +210,14 @@ def test_direktroute_ohne_lesung_sagt_es_ehrlich(direkt_klient):
 # ————— Der stehende Kontext: Verträge und Personal —————
 
 def test_prompt_traegt_vertraege_und_personal():
-    p = gemma_buchung.prompt_bauen(
+    p = gemma_buchung.voller_prompt(
         "P", ["Überweisung Miete Juli 1.076,95"], [],
         vertraege=[{"art_name": "Miete Geschäftsräume",
                     "partner": "Weber Immobilien", "betrag_monat": 1076.95}],
         personal=[{"name": "Jana Allgaier", "kosten_monat": 2400.0}])
     assert "LAUFENDE VERTRÄGE" in p and "Weber Immobilien" in p and "1076.95" in p
     assert "PERSONAL" in p and "Jana Allgaier" in p and "LOHN" in p
-    leer = gemma_buchung.prompt_bauen("P", ["x"], [])
+    leer = gemma_buchung.voller_prompt("P", ["x"], [])
     assert "LAUFENDE VERTRÄGE" not in leer and "PERSONAL" not in leer
 
 
@@ -304,13 +305,13 @@ def test_beide_kategorien_kennen_auch_skr03():
 # ————— Zielbild: Klassifizierungsfrage und Kontoabgleich im Prompt —————
 
 def test_prompt_fragt_die_dokumentklasse_ab():
-    p = gemma_buchung.prompt_bauen("P", ["Zeile"], [])
+    p = gemma_buchung.voller_prompt("P", ["Zeile"], [])
     assert "dokumentklasse" in p
     assert "kontoauszug" in p and "behoerde" in p
 
 
 def test_prompt_traegt_die_ungedeckten_abbuchungen():
-    p = gemma_buchung.prompt_bauen(
+    p = gemma_buchung.voller_prompt(
         "P", ["Zeile"], [],
         offene_abbuchungen=[{"datum": "11.02.2026", "betrag": -818.38,
                              "text": "DELILA GMBH RG 34572"}])
@@ -385,7 +386,7 @@ def test_einschaetzung_nimmt_beide_zeilenformate(direkt_klient, monkeypatch):
 def test_prompt_kennt_die_neuen_fachregeln():
     """Ninas Anmerkungen vom 27.08.: Geldtransit, FA-Bescheide positionsweise,
     Bewirtung/Aufmerksamkeit/Geschenk, Summen-Plausibilität."""
-    p = gemma_buchung.prompt_bauen("P", ["x"], [])
+    p = gemma_buchung.voller_prompt("P", ["x"], [])
     assert "geldtransit" in p and "SumUp" in p
     assert "ust_zahlung" in p and "POSITIONSWEISE" in p
     assert "aufmerksamkeit" in p and "70/30" in p

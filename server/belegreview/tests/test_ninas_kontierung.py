@@ -197,7 +197,7 @@ def test_ein_normaler_beleg_bleibt_positiv():
     "kammerbeitrag",                  # P1-20/P1-29 Kammerbeitrag
 ])
 def test_die_regel_steht_im_prompt(kern):
-    prompt = gb.prompt_bauen("Profil", ["Zeile"], [])
+    prompt = gb.voller_prompt("Profil", ["Zeile"], [])
     assert kern in prompt, kern
 
 

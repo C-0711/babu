@@ -25,7 +25,7 @@ VERZEICHNIS = Path(os.environ.get("KOMPENDIUM_DIR",
 _LOCK = threading.Lock()
 _VEKTOREN = None          # numpy-Memmap (n, d), L2-normalisiert
 _OFFSETS: list[int] = []  # Byte-Offset je Atom-Zeile in atome.jsonl
-_GRUNDWISSEN: str | None = None
+_TEXTE: dict[str, str] = {}     # Dateiname → Inhalt, einmal je Prozess
 
 
 def _laden() -> bool:
@@ -89,15 +89,29 @@ def suchen(frage_vektor: list[float], k: int = 5) -> list[dict]:
     return treffer
 
 
+def _datei(name: str, grenze: int) -> str:
+    if name not in _TEXTE:
+        try:
+            _TEXTE[name] = (VERZEICHNIS / name).read_text()[:grenze]
+        except OSError:
+            _TEXTE[name] = ""
+    return _TEXTE[name]
+
+
 def grundwissen() -> str:
     """Der destillierte Branchen-Block für den stehenden Prompt-Anfang.
 
     Eine Datei, einmal gelesen, nie neu — Byte-Stabilität ist hier der
     Zweck: derselbe Anfang trifft bei jeder Frage den Prefix-Cache."""
-    global _GRUNDWISSEN
-    if _GRUNDWISSEN is None:
-        try:
-            _GRUNDWISSEN = (VERZEICHNIS / "grundwissen.md").read_text()[:60000]
-        except OSError:
-            _GRUNDWISSEN = ""
-    return _GRUNDWISSEN
+    return _datei("grundwissen.md", 60000)
+
+
+def kontierungswissen() -> str:
+    """Was beim BUCHEN nachgeschlagen werden muss: Nutzungsdauern aus der
+    AfA-Tabelle Nr. 94, die GWG-Grenzen und der Salon-Kontenplan.
+
+    Steht im stehenden Teil des Buchungs-Prompts — damit weiß Gemma beim
+    Buchen dasselbe wie der Chat, ohne dass es je Beleg neu gerechnet
+    wird. Genau daran scheiterten die Anschaffungs-Fälle: ohne die
+    Nutzungsdauer ist „Gerät oder GWG?" nicht zu entscheiden."""
+    return _datei("kontierung-grundwissen.md", 30000)
