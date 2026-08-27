@@ -158,7 +158,7 @@ def test_route_legt_ustva_ins_neue_fach(berichtswelt):
     assert c.get("/api/dokument/ustva/2026-02-ustva.pdf").status_code == 200
 
 
-def test_route_legt_bwa_und_susa_ins_bwa_fach(berichtswelt):
+def test_route_legt_bwa_susa_und_jahresauflauf_ins_bwa_fach(berichtswelt):
     bw, bare = berichtswelt
     assert _hochladen(bw).status_code == 200
     from fastapi.testclient import TestClient
@@ -166,11 +166,43 @@ def test_route_legt_bwa_und_susa_ins_bwa_fach(berichtswelt):
     r = c.post("/api/bwa/2026-02")
     assert r.status_code == 200, r.text
     dateien = _im_stand(bare)
-    assert "bwa/2026-02-bwa.pdf" in dateien
-    assert "bwa/2026-02-susa.pdf" in dateien
+    for p in ("bwa/2026-02-bwa.pdf", "bwa/2026-02-susa.pdf",
+              "bwa/2026-ytd-bwa.pdf", "bwa/2026-ytd-susa.pdf"):
+        assert p in dateien, p
     ablage = c.get("/api/ablage").json()
     arten = {a["art"]: a for j in ablage["jahre"] for a in j["arten"]}
-    assert arten["bwa"]["anzahl"] == 2
+    assert arten["bwa"]["anzahl"] == 4
+    titel = {s["titel"] for s in arten["bwa"]["stuecke"]}
+    assert "BWA Jahresauflauf 2026" in titel
+    assert "Summen und Salden Jahresauflauf 2026" in titel
+    # Der Jahresauflauf trägt den Zeitraum in Worten.
+    import subprocess as sp
+    roh = sp.run(["git", "--git-dir", str(bare), "show",
+                  "HEAD:bwa/2026-ytd-bwa.pdf"], capture_output=True).stdout
+    assert "Januar bis Februar" in _pdf_text(roh)
+
+
+def test_bwa_summe_addiert_monate():
+    import monatsabschluss as ma
+    e1 = ma.erloese_monat([{"einnahmenBar": 1190.0}])
+    e2 = ma.erloese_monat([{"einnahmenBar": 2380.0}])
+    b1 = ma.bwa("2026-01", e1, [_beleg()])
+    b2 = ma.bwa("2026-02", e2, [_beleg(stamm="s2", brutto=238.0,
+                                       netto=200.0, ust=38.0)])
+    ytd = vordrucke.bwa_summe([b1, b2], "Jahresauflauf 2026 (Januar bis Februar)")
+    assert ytd["umsatz_netto"] == b1["umsatz_netto"] + b2["umsatz_netto"]
+    assert ytd["ergebnis"] == vordrucke._rund(b1["ergebnis"] + b2["ergebnis"])
+    gruppe = {g["schluessel"]: g for g in ytd["gruppen"]}["sonstiges"]
+    assert gruppe["netto"] == 300.0 and gruppe["anzahl"] == 2
+
+
+def test_erloese_summe_addiert_betraege_aber_nicht_offen():
+    import monatsabschluss as ma
+    e1 = dict(ma.erloese_monat([{"einnahmenBar": 100.0}]), offen=50.0)
+    e2 = dict(ma.erloese_monat([{"einnahmenBar": 200.0}]), offen=50.0)
+    s = vordrucke.erloese_summe([e1, e2])
+    assert s["bar"] == 300.0 and s["tage"] == 2
+    assert s["offen"] == 50.0        # Bestandsgröße, nicht additiv
 
 
 def test_kleinunternehmerin_bekommt_keine_ustva(berichtswelt, monkeypatch):

@@ -127,6 +127,63 @@ def vorsteuer_geprueft(belege: list[dict]) -> tuple[dict, list[dict]]:
     return ma.vorsteuer_monat(bereinigt), befunde
 
 
+def erloese_summe(monate: list[dict]) -> dict:
+    """Erlöse mehrerer Monate zum Jahresauflauf addiert.
+
+    Alle Beträge und die Tage sind additiv; `offen` nicht — jeder
+    Monatslauf zählt dort ALLE offenen Rechnungen, deshalb gilt der
+    letzte Stand."""
+    if not monate:
+        return ma.erloese_monat([])
+    summe = dict(monate[0])
+    for e in monate[1:]:
+        for k, v in e.items():
+            if k != "offen" and isinstance(v, (int, float)):
+                summe[k] = summe.get(k, 0) + v
+    summe["offen"] = monate[-1].get("offen", 0.0)
+    return {k: (_rund(v) if isinstance(v, float) else v)
+            for k, v in summe.items()}
+
+
+def bwa_summe(monats_bwas: list[dict], zeitraum: str) -> dict:
+    """Der Jahresauflauf als Summe der Monats-BWAs — wie die kumulierte
+    Spalte der DATEV-BWA: jeder Monat mit seinen eigenen Verträgen und
+    Personalkosten, dann addiert."""
+    gruppen: dict[str, dict] = {}
+    umsatz = kosten = tage = 0.0
+    fehlt: list[str] = []
+    for b in monats_bwas:
+        umsatz += b["umsatz_netto"]
+        kosten += b["kosten_netto"]
+        tage += b.get("tage_erfasst") or 0
+        for g in b["gruppen"]:
+            e = gruppen.setdefault(g["schluessel"],
+                                   {"schluessel": g["schluessel"],
+                                    "name": g["name"], "netto": 0.0,
+                                    "anzahl": 0})
+            e["netto"] += g["netto"]
+            e["anzahl"] += g["anzahl"]
+        for f in b.get("fehlt") or []:
+            if f not in fehlt:
+                fehlt.append(f)
+    umsatz = _rund(umsatz)
+    geordnet = []
+    for schluessel, _, _ in ma.KOSTENGRUPPEN:
+        if schluessel in gruppen:
+            g = gruppen[schluessel]
+            g["netto"] = _rund(g["netto"])
+            g["anteil"] = _rund(100 * g["netto"] / umsatz) if umsatz else None
+            geordnet.append(g)
+    ergebnis = _rund(umsatz - kosten)
+    return {"monat": zeitraum, "stand": "entwurf",
+            "umsatz_netto": umsatz, "kosten_netto": _rund(kosten),
+            "ergebnis": ergebnis,
+            "ergebnis_anteil": _rund(100 * ergebnis / umsatz) if umsatz else None,
+            "gruppen": geordnet, "tage_erfasst": int(tage), "fehlt": fehlt,
+            "hinweis": "Jahresauflauf — Summe der Monatsauswertungen, "
+                       "vorläufig und nicht von der Buchhaltung geprüft."}
+
+
 def susa(monat: str, erloese: dict, belege: list[dict]) -> dict:
     """Summen- und Saldenliste des Monats aus Kasse, Erlösen und Belegen.
 

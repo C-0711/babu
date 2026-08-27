@@ -5626,9 +5626,11 @@ def _ablage_eintraege() -> list[dict]:
             titel = "Voranmeldung " + name.removesuffix("-ustva.pdf")
         elif pfad.startswith("bwa/") and pfad.endswith(".pdf"):
             art = "bwa"
-            titel = (("Summen und Salden " + name.removesuffix("-susa.pdf"))
-                     if name.endswith("-susa.pdf")
-                     else "BWA " + name.removesuffix("-bwa.pdf"))
+            was = ("Summen und Salden " if name.endswith("-susa.pdf")
+                   else "BWA ")
+            rest = name.removesuffix("-susa.pdf").removesuffix("-bwa.pdf")
+            titel = (was + "Jahresauflauf " + rest.removesuffix("-ytd")
+                     if rest.endswith("-ytd") else was + rest)
         else:
             continue
         # Kassenbuch, Stapel und Abschluss sind aufbewahrungspflichtig — kein
@@ -8881,16 +8883,51 @@ def api_bwa_erstellen(monat: str, request: Request) -> Response:
     import monatsabschluss as ma  # noqa: PLC0415
     import vordrucke  # noqa: PLC0415
     erloese, profil, belege, einstellungen = _berichtsdaten(un, monat)
+    personal = (team_personalkosten(un)
+                or _zahl(einstellungen.get("personal_monat")))
+    vertraege = vertraege_aktuell()
     bwa = ma.bwa(monat, erloese, belege, None,
-                 personal_monat=(team_personalkosten(un)
-                                 or _zahl(einstellungen.get("personal_monat"))),
-                 vertraege=vertraege_aktuell())
+                 personal_monat=personal, vertraege=vertraege)
     saldenliste = vordrucke.susa(monat, erloese, belege)
+
+    # Dazu immer der Jahresauflauf (year to date): jeder Monat des Jahres
+    # bis hierher einzeln gerechnet — mit seinen eigenen Verträgen und
+    # Personalkosten — und dann addiert, wie die kumulierte Spalte der
+    # DATEV-BWA. Ein Blatt je Jahr, das sich mit jedem Lauf erneuert.
+    idx = index_aktuell()
+    jahr = monat[:4]
+    rechnungen = list(idx.get("rechnungen", {}).values())
+    monats_bwas, erloese_monate, belege_ytd = [], [], []
+    for m in range(1, int(monat[5:7]) + 1):
+        mm = f"{jahr}-{m:02d}"
+        blaetter_m = [b for tag, b in idx["kassenblaetter"].items()
+                      if tag.startswith(mm)]
+        belege_m = [z for z in idx["belege"].values() if z["monat"] == mm]
+        if not blaetter_m and not belege_m:
+            continue
+        erl_m = ma.erloese_monat(blaetter_m, monat=mm, rechnungen=rechnungen,
+                                 versteuerung=_versteuerung(un))
+        monats_bwas.append(ma.bwa(mm, erl_m, belege_m, None,
+                                  personal_monat=personal,
+                                  vertraege=vertraege))
+        erloese_monate.append(erl_m)
+        belege_ytd += belege_m
+    monatsname = ("Januar", "Februar", "März", "April", "Mai", "Juni", "Juli",
+                  "August", "September", "Oktober", "November",
+                  "Dezember")[int(monat[5:7]) - 1]
+    zeitraum = f"Jahresauflauf {jahr} (Januar bis {monatsname})"
+    ytd_bwa = vordrucke.bwa_summe(monats_bwas, zeitraum)
+    ytd_susa = vordrucke.susa(zeitraum, vordrucke.erloese_summe(erloese_monate),
+                              belege_ytd)
+
     dateien = {
         f"bwa/{monat}-bwa.pdf": vordrucke.bwa_pdf(bwa, einstellungen),
         f"bwa/{monat}-susa.pdf": vordrucke.susa_pdf(saldenliste, einstellungen),
+        f"bwa/{jahr}-ytd-bwa.pdf": vordrucke.bwa_pdf(ytd_bwa, einstellungen),
+        f"bwa/{jahr}-ytd-susa.pdf": vordrucke.susa_pdf(ytd_susa, einstellungen),
         f"bwa/{monat}.json": json.dumps(
             {"bwa": bwa, "susa": saldenliste,
+             "ytd": {"bwa": ytd_bwa, "susa": ytd_susa},
              "erstellt": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "von": un},
             ensure_ascii=False, indent=1).encode(),
     }
@@ -8904,9 +8941,9 @@ def api_bwa_erstellen(monat: str, request: Request) -> Response:
     with _INDEX_LOCK:
         _INDEX["geprueft"] = 0.0
     return JSONResponse({"ok": True, "commit": commit,
-                         "dateien": [f"bwa/{monat}-bwa.pdf",
-                                     f"bwa/{monat}-susa.pdf"],
+                         "dateien": [p for p in dateien if p.endswith(".pdf")],
                          "ergebnis": bwa.get("ergebnis"),
+                         "ergebnis_ytd": ytd_bwa.get("ergebnis"),
                          "wohin": "In deiner Ablage unter BWA und Summen/Salden"})
 
 
