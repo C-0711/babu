@@ -2062,9 +2062,11 @@ def beleg_markdown(review: dict) -> str:
             + "\n".join(f"  {z}" for z in zeilen) + "\n")
 
 
-def embedding_rechnen(text: str) -> dict | None:
-    """Der Vektor zum Beleg — EmbeddingGemma mit Dokument-Präfix, dieselbe
-    Konvention, mit der eine spätere Suche ihre Frage einbettet.
+def embedding_rechnen(text: str, als_dokument: bool = True) -> dict | None:
+    """Der Vektor zu einem Text — EmbeddingGemma mit den zwei Präfixen des
+    Modells: Dokumente beim Ablegen, Fragen beim Suchen. Beide Seiten
+    (Beleg-Beiakten UND das Branchen-Kompendium) sind mit genau dieser
+    Konvention eingebettet.
 
     Der Dienst nimmt höchstens 2048 Token; ohne truncate_prompt_tokens
     antwortet er mit 400 statt zu kürzen. Fehler sind erlaubt: die
@@ -2072,7 +2074,8 @@ def embedding_rechnen(text: str) -> dict | None:
     try:
         r = requests.post(EMBED_API, json={
             "model": EMBED_MODELL,
-            "input": f"title: none | text: {text[:6000]}",
+            "input": (f"title: none | text: {text[:6000]}" if als_dokument
+                      else f"task: search result | query: {text[:2000]}"),
             "truncate_prompt_tokens": 2040,
         }, timeout=15)
         r.raise_for_status()
@@ -2080,6 +2083,85 @@ def embedding_rechnen(text: str) -> dict | None:
         return {"modell": EMBED_MODELL, "dim": len(vektor), "vektor": vektor}
     except Exception:  # noqa: BLE001
         return None
+
+
+# (HEAD der Box, Beleg-Stämme, normalisierte Vektor-Matrix) — ein Tupel, das
+# atomar getauscht wird: /chat läuft im Threadpool, ein Rennen baut schlimm-
+# stenfalls doppelt, liest aber nie einen halben Stand.
+_BELEG_VEKTOREN: tuple[str | None, list[str], object] = (None, [], None)
+
+
+def _beleg_vektoren() -> tuple[list[str], object]:
+    """Alle Beleg-Vektoren der Box als Matrix — je Box-Stand einmal gebaut."""
+    global _BELEG_VEKTOREN
+    r = subprocess.run(["git", "-C", str(STORE), "rev-parse", "HEAD"],
+                       capture_output=True, text=True, timeout=10)
+    head = r.stdout.strip() or None
+    if head and _BELEG_VEKTOREN[0] == head:
+        return _BELEG_VEKTOREN[1], _BELEG_VEKTOREN[2]
+    import numpy as np  # noqa: PLC0415
+    ls = subprocess.run(["git", "-C", str(STORE), "ls-tree", "--name-only",
+                         "HEAD:review"], capture_output=True, text=True, timeout=20)
+    staemme: list[str] = []
+    vektoren = []
+    for name in (ls.stdout.splitlines() if ls.returncode == 0 else []):
+        if not name.endswith(".embedding.json"):
+            continue
+        try:
+            v = np.asarray(json.loads(git_show(f"review/{name}"))["vektor"],
+                           dtype=np.float32)
+            norm = float(np.linalg.norm(v))
+        except Exception:  # noqa: BLE001
+            continue
+        if norm > 0:
+            staemme.append(name[:-len(".embedding.json")])
+            vektoren.append(v / norm)
+    matrix = np.vstack(vektoren) if vektoren else None
+    _BELEG_VEKTOREN = (head, staemme, matrix)
+    return staemme, matrix
+
+
+def _recherche(frage: str) -> str:
+    """Was zur Frage nachgeschlagen wird — Branchen-Kompendium und eigene
+    Belege, beide über denselben Frage-Vektor.
+
+    Das ist der VARIABLE Teil des Prompts und steht deshalb hinten, nach
+    dem stehenden Weltblock: er ändert sich mit jeder Frage und darf den
+    Prefix-Cache nicht zerschneiden. Ohne Embedding-Dienst: leer, der Chat
+    antwortet dann wie bisher aus Weltblock und Grundwissen."""
+    emb = embedding_rechnen(frage, als_dokument=False)
+    if not emb:
+        return ""
+    import kompendium  # noqa: PLC0415
+    bloecke: list[str] = []
+    treffer = [t for t in kompendium.suchen(emb["vektor"], k=5)
+               if t["score"] >= 0.30]
+    if treffer:
+        zeilen = ["NACHGESCHLAGEN im Branchen- und Rechtswissen (mit Quelle):"]
+        for t in treffer:
+            zeilen.append(f"  [{t['quelle']} · {t['loc']}] "
+                          + " ".join(t["text"].split())[:600])
+        bloecke.append("\n".join(zeilen))
+    try:
+        staemme, matrix = _beleg_vektoren()
+    except Exception:  # noqa: BLE001
+        staemme, matrix = [], None
+    if matrix is not None:
+        import numpy as np  # noqa: PLC0415
+        q = np.asarray(emb["vektor"], dtype=np.float32)
+        q /= np.linalg.norm(q)
+        scores = matrix @ q
+        volle = []
+        for i in np.argsort(-scores)[:3]:
+            if scores[i] < 0.35:
+                break
+            md = git_show(f"review/{staemme[i]}.md")
+            if md:
+                volle.append(md.decode(errors="replace")[:900])
+        if volle:
+            bloecke.append("ZUR FRAGE PASSENDE EIGENE BELEGE (im Wortlaut):\n\n"
+                           + "\n\n".join(volle))
+    return "\n\n".join(bloecke)
 
 
 # Was die App der Nutzerin sagt — ohne Ordnernamen und ohne Technik.
@@ -3780,18 +3862,23 @@ def chat(body: dict, request: Request) -> Response:
     # Allgemeine Frage oder Frage nach dem eigenen Bestand? Davon hängt ab,
     # wie viel Fallwissen mitgeht und was das Modell damit tun soll.
     art = frage_art(frage)
+    import kompendium  # noqa: PLC0415
     import wissen  # noqa: PLC0415
-    # Zu „Was ist eine Umsatzsteuervoranmeldung?" sind sechzig Belege nur
-    # Ballast — der Rahmen (wer ist dieser Betrieb) reicht als Hintergrund.
-    kontext = wissen.kontext(frage, _welt_fuer(un),
-                             budget=2000 if art == "allgemein" else wissen.BUDGET)
+    # EIN stehender Prompt-Anfang für ALLE Fragen: Anleitung, Grundwissen
+    # und Weltblock sind byte-stabil, solange sich die Box nicht ändert —
+    # gemma4 läuft mit Prefix-Caching, und derselbe Anfang wird nur einmal
+    # vorgerechnet. Deshalb wird hier nichts mehr nach der Frage
+    # ausgewählt; alles Variable (Recherche + Frage) steht hinten.
+    weltblock = wissen.weltblock(_welt_fuer(un))
+    grund = kompendium.grundwissen()
+    recherche = _recherche(frage)
     glossar = begriffe_erklaeren(frage)
     auftrag = (
         "ALLGEMEINE FRAGE — beantworte sie aus deinem Wissen, nicht aus ihren "
         "Unterlagen. Sie hat kein Steuerbüro mehr, das sie kurz anrufen kann; "
         "erklär jedes Fachwort in einem Nebensatz. Schreib NICHT, dass die "
         "Antwort nicht in ihren Unterlagen steht — danach ist nicht gefragt. "
-        "Die Angaben unten sind nur Hintergrund.\n\n"
+        "Die Salon-Angaben oben sind nur Hintergrund.\n\n"
         if art == "allgemein" else "")
     if beratungsfall(frage):
         auftrag += (
@@ -3799,6 +3886,8 @@ def chat(body: dict, request: Request) -> Response:
             "das nicht abschließend beurteilen darfst, nenne trotzdem alles, "
             "was du zur Sache weißt, und schließ mit einem konkreten nächsten "
             "Schritt. Weise die Frage nicht ab.\n\n")
+    if recherche:
+        auftrag += recherche + "\n\n"
     if glossar:
         auftrag += glossar + "\n\n"
     payload = {
@@ -3841,11 +3930,15 @@ def chat(body: dict, request: Request) -> Response:
                 "Fristen laufen, verweist du auf ihre Ansprechperson — und "
                 "sagst trotzdem, was du zur Sache weißt, damit sie "
                 "vorbereitet ins Gespräch geht. Erfinde nie Zahlen, Paragrafen "
-                "oder Fristen. Was du nicht weißt, sagst du."},
+                "oder Fristen. Was du nicht weißt, sagst du.\n\n"
+                "Wenn bei der Frage etwas NACHGESCHLAGEN mitkommt, stützt du "
+                "dich darauf und nennst die Quelle in Klammern."
+                + (("\n\nGRUNDWISSEN ZUR BRANCHE (Friseur und Beauty — "
+                    "destilliert, erste Einordnung):\n\n" + grund)
+                   if grund else "")
+                + "\n\nWAS BABU ÜBER DIESEN SALON WEISS:\n\n" + weltblock},
             *verlauf,
-            {"role": "user", "content":
-                f"{auftrag}WAS BABU ÜBER DIESEN SALON WEISS:\n{kontext}"
-                f"\n\nFRAGE: {frage}"},
+            {"role": "user", "content": f"{auftrag}FRAGE: {frage}"},
         ],
     }
 

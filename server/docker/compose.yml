@@ -33,4 +33,5 @@ services:
       - ~/inspektor-store:/data/inspektor-store:ro                  # Bare-Store, nur lesen (Schreiben geht über :7808)
       - ~/gitchain-eingang/.pat_babu:/data/gitchain-eingang/.pat_babu:ro
       - ~/Youtube/.env:/data/Youtube/.env:ro                        # Gemini-Schlüssel für die Bild-Generierung
+      - ~/kompendium:/data/kompendium:ro                            # Branchen-Kompendium: Vektoren + Atome + Grundwissen
     restart: unless-stopped

@@ -113,15 +113,20 @@ def test_allgemeine_frage_bekommt_den_auftrag_zu_antworten(welt):
         "dem Modell muss verboten werden, auf die Unterlagen auszuweichen"
 
 
-def test_allgemeine_frage_schleppt_nicht_alle_belege_mit(welt):
-    """Sechzig Belege sind zu „Was ist eine Voranmeldung?" nur Ballast —
-    und drängen die eigentliche Antwort aus dem Fenster."""
+def test_der_prompt_anfang_ist_fuer_jede_frage_derselbe(welt):
+    """Seit dem KV-Cache-Umbau wird nichts mehr nach der Frage ausgewählt:
+    der Weltblock steht byte-stabil im System-Teil, damit vLLMs
+    Prefix-Cache ihn nur einmal rechnet. Sechzig Belege sind kein Ballast
+    mehr — sie kosten nach der ersten Frage nichts."""
     client, _, gesagt, _ = welt
     client.post("/chat", json={"frage": "Was ist eine Umsatzsteuervoranmeldung?"})
-    allgemein = gesagt[-1]["messages"][-1]["content"]
+    system_a = gesagt[-1]["messages"][0]["content"]
+    nutzer_a = gesagt[-1]["messages"][-1]["content"]
     client.post("/chat", json={"frage": "Wie viel habe ich diesen Monat ausgegeben?"})
-    bestand = gesagt[-1]["messages"][-1]["content"]
-    assert len(allgemein) < len(bestand) / 2
+    assert gesagt[-1]["messages"][0]["content"] == system_a
+    assert "BELEG-REGISTER (60" in system_a
+    # Die Nutzer-Nachricht trägt das Register nicht mehr je Frage mit.
+    assert "Friseur Großhandel Wagner" not in nutzer_a
 
 
 def test_fachwort_wird_in_ninas_sprache_mitgeliefert(welt):

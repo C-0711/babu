@@ -204,7 +204,9 @@ def test_fremde_gespraeche_bleiben_fremd(welt):
 def test_der_chat_bekommt_mehr_als_belege(welt):
     client, _, gesagt = welt
     client.post("/chat", json={"frage": "Wie läuft mein Salon?"})
-    inhalt = gesagt[-1]["messages"][-1]["content"]
+    # Der Weltblock steht seit dem KV-Cache-Umbau im System-Teil (stabiler
+    # Prompt-Anfang), nicht mehr in der Nutzer-Nachricht.
+    inhalt = gesagt[-1]["messages"][0]["content"]
     assert "DER BETRIEB" in inhalt
     assert "Salon Nina" in inhalt
 

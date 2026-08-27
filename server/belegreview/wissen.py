@@ -245,6 +245,37 @@ GRUNDORDNUNG = ("zahlen", "kasse", "beleg", "rechnung", "frist", "vertrag",
                 "team", "post")
 
 
+def weltblock(welt: dict) -> str:
+    """ALLES über diesen Salon, unabhängig von der Frage — für den
+    stehenden Anfang des Chat-Prompts.
+
+    Byte-stabil, solange sich die Box nicht ändert: dieselben Daten ergeben
+    denselben Text, und der trifft bei jeder Frage den Prefix-Cache von
+    vLLM. Deshalb wird hier nichts nach der Frage ausgewählt und das
+    Beleg-Register steht ganz hinten, älteste zuerst — ein neuer Beleg
+    verlängert den Text nur am Ende, statt ihn vorn umzusortieren."""
+    teile = [_betrieb(welt)]
+    for bereich in GRUNDORDNUNG:
+        if bereich == "beleg":
+            continue
+        teile.append(BEREICHE[bereich](welt, 8000))
+
+    belege = welt.get("belege") or []
+    if belege:
+        zeilen = [f"BELEG-REGISTER ({len(belege)} in der Box, älteste zuerst):"]
+        for b in sorted(belege, key=lambda x: (x.get("monat") or "",
+                                               x.get("datum") or "",
+                                               x.get("lieferant") or "")):
+            teil = (f"  {b.get('datum') or b.get('monat') or '—'} · "
+                    f"{b.get('lieferant') or 'unbekannt'} · {_euro(b.get('brutto'))}"
+                    f" · {b.get('belegart') or ''}")
+            if b.get("offen"):
+                teil += " · offen: " + "; ".join(str(o) for o in b["offen"][:2])
+            zeilen.append(teil)
+        teile.append("\n".join(zeilen))
+    return "\n\n".join(t for t in teile if t) or "Zu diesem Salon ist noch nichts erfasst."
+
+
 def kontext(frage: str, welt: dict, budget: int = BUDGET) -> str:
     """Das Wissen zu dieser Frage — ausgewählt, nicht abgeschnitten.
 
