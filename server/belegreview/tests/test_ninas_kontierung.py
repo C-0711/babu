@@ -281,3 +281,29 @@ def test_guthaben_steht_im_fallwissen_des_chats():
     })
     assert "GUTSCHRIFTEN VON LIEFERANTEN" in text
     assert "Wella" in text and "70,00" in text
+
+
+def test_die_belegarten_aus_ninas_beschwerde_haben_alle_eine_kategorie():
+    """P2-23 nennt die Fälle beim Namen: Kammerbeiträge, Gebühren,
+    Steuerberatung, Kundenbewirtung, Verbrauchsmaterial. Für jeden gibt
+    es jetzt eine eigene Kategorie mit eigenem Konto — keiner landet mehr
+    im Auffangkonto 6850."""
+    erwartet = {"kammerbeitrag": "6420", "abgaben": "6430",
+                "steuerberatung": "6830", "aufmerksamkeit": "6605",
+                "verbrauchsmaterial": "5100"}
+    for code, konto in erwartet.items():
+        k = kt.KATEGORIEN[code]
+        assert k.konto("SKR04") == konto, code
+        assert k.konto("SKR04") != "6850"
+        assert f"  {code}:" in gb.katalog_text("SKR04")
+
+
+def test_der_export_enthaelt_nur_belege_keine_kassenblaetter():
+    """Ninas Frage 5-2 — die Antwort steht im Code: der Buchungsstapel
+    baut ausschließlich auf den Belegen des Monats auf."""
+    import inspect
+
+    import babu_web as bw
+    quelle = inspect.getsource(bw.api_export)
+    assert 'idx["belege"]' in quelle
+    assert "kassenblaetter" not in quelle
