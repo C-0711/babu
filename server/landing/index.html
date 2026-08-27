@@ -423,101 +423,10 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
       trägt sich selbst ein — mit grünem Haken.</p>
     </figure>
   </div>
-  <!-- Der Trichter: E-Mail und Unterlagen, mehr braucht es nicht. Ein Konto
-       entsteht erst, wenn jemand den Link aus der Mail öffnet — wer hier eine
-       fremde Adresse einträgt, soll damit kein Konto erzeugen können. -->
-  <div id="sc-trichter" style="margin-top:34px;max-width:640px;margin-inline:auto;text-align:left">
-    <form id="sc-form">
-      <label class="lbl" for="sc-mail" style="display:block;margin-bottom:6px">Deine E-Mail</label>
-      <input id="sc-mail" type="email" required autocomplete="email"
-             placeholder="du@deinsalon.de"
-             style="width:100%;padding:13px 14px;border:1px solid var(--gc-border);
-                    border-radius:10px;font:16px var(--gc-sans);background:#fff">
-
-      <label class="lbl" for="sc-dateien" style="display:block;margin:16px 0 6px">
-        Deine Unterlagen vom letzten Jahr</label>
-      <input id="sc-dateien" type="file" multiple accept=".pdf,.jpg,.jpeg,.png"
-             style="width:100%;padding:12px;border:1px dashed var(--gc-border);
-                    border-radius:10px;background:#fff">
-      <p style="font-size:12.5px;color:var(--gc-muted);margin-top:6px">
-        Gewinnrechnung, Steuerbescheid, Anlagenliste — als PDF oder Foto.
-        Höchstens zwölf Stück.</p>
-
-      <button class="knopf voll" type="submit" id="sc-los" style="margin-top:18px;width:100%">
-        Auswertung anfordern</button>
-    </form>
-    <div id="sc-stand" style="margin-top:14px;font-size:14px;color:var(--gc-desc)"></div>
+  <div class="cta" style="margin-top:34px">
+    <a class="knopf voll" href="/portal">Salon-Check starten</a>
   </div>
 </section>
-
-<script>
-(function(){
-  var form = document.getElementById("sc-form");
-  if (!form) return;
-  var stand = document.getElementById("sc-stand"),
-      knopf = document.getElementById("sc-los");
-  var sagen = function(t){ stand.textContent = t; };
-
-  /* Vor dem Senden verkleinern: ein Telefonfoto sind schnell 5 MB, und die
-     Erkennung braucht die Auflösung nicht — gemessen halten Beträge bis
-     620 px Seitenbreite durch. PDFs bleiben unangetastet. */
-  function verkleinern(datei){
-    if (!/^image\//.test(datei.type)) return Promise.resolve(datei);
-    return new Promise(function(fertig){
-      var bild = new Image(), url = URL.createObjectURL(datei);
-      bild.onload = function(){
-        var kante = 1654, s = Math.min(1, kante / Math.max(bild.width, bild.height));
-        if (s >= 1){ URL.revokeObjectURL(url); return fertig(datei); }
-        var c = document.createElement("canvas");
-        c.width = Math.round(bild.width * s); c.height = Math.round(bild.height * s);
-        c.getContext("2d").drawImage(bild, 0, 0, c.width, c.height);
-        c.toBlob(function(b){ URL.revokeObjectURL(url); fertig(b || datei); },
-                 "image/jpeg", 0.86);
-      };
-      bild.onerror = function(){ URL.revokeObjectURL(url); fertig(datei); };
-      bild.src = url;
-    });
-  }
-
-  form.addEventListener("submit", function(ev){
-    ev.preventDefault();
-    var mail = document.getElementById("sc-mail").value.trim();
-    var dateien = Array.prototype.slice.call(
-      document.getElementById("sc-dateien").files || []);
-    if (!dateien.length){ sagen("Bitte leg mindestens eine Unterlage dazu."); return; }
-    knopf.disabled = true;
-    sagen("Einen Moment …");
-
-    fetch("/api/auswertung/anfordern", {method:"POST",
-      headers:{"content-type":"application/json"},
-      body: JSON.stringify({email: mail})})
-    .then(function(r){ return r.json().then(function(d){ return {r:r, d:d}; }); })
-    .then(function(a){
-      if (!a.r.ok || !a.d.korb) throw new Error(a.d.fehler || "Das ging gerade nicht.");
-      var korb = a.d.korb, i = 0;
-      function naechste(){
-        if (i >= dateien.length){
-          return fetch("/api/auswertung/lesen?korb=" + encodeURIComponent(korb),
-                       {method:"POST"}).then(function(){
-            sagen("Danke — wir lesen deine Unterlagen. Der Link zu deiner "
-                + "Auswertung kommt per E-Mail, das dauert ein paar Minuten.");
-            form.hidden = true;
-          });
-        }
-        var d = dateien[i++];
-        sagen("Lade " + i + " von " + dateien.length + " …");
-        return verkleinern(d).then(function(klein){
-          return fetch("/api/auswertung/unterlage?korb=" + encodeURIComponent(korb)
-                       + "&name=" + encodeURIComponent(d.name),
-                       {method:"POST", body: klein});
-        }).then(naechste);
-      }
-      return naechste();
-    })
-    .catch(function(e){ sagen(e.message || "Das ging gerade nicht."); knopf.disabled = false; });
-  });
-})();
-</script>
 
 <!-- ── 4 · Kostenvergleich ──────────────────────────────────────────── -->
 <section>
@@ -537,7 +446,7 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
     </div>
     <div class="karte spalte" style="border-color:var(--gc-ok)">
       <h3 class="gruen">Mit babu</h3>
-      <div class="preis">ab 49 €<small> / Monat*</small></div>
+      <div class="preis">ab 39 €<small> / Monat*</small></div>
       <ul>
         <li>Belege fotografieren — 10 Sekunden pro Beleg</li>
         <li>Kassenbuch in der App — 2 Minuten am Abend</li>
@@ -548,7 +457,7 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
   </div>
   <div class="karte" style="margin-top:18px;overflow-x:auto">
     <table class="sparen-tab">
-      <tr><th></th><th>Steuerberater</th><th class="gruen">Mit babu (79 €)</th><th>Du sparst</th></tr>
+      <tr><th></th><th>Steuerberater</th><th class="gruen">Mit babu (Paket Salon, 79 €)</th><th>Du sparst</th></tr>
       <tr><td>Im Monat</td><td>250–400 €</td><td class="gruen">79 €</td><td><b>171–321 €</b></td></tr>
       <tr><td>Im Jahr</td><td>3.000–4.800 €</td><td class="gruen">948 €</td><td><b>2.052–3.852 €</b></td></tr>
       <tr><td>In 5 Jahren</td><td>15.000–24.000 €</td><td class="gruen">4.740 €</td><td><b>10.260–19.260 €</b></td></tr>
@@ -615,7 +524,7 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
 
   <div class="karte" id="paket-quiz" style="margin-top:26px;max-width:560px;margin-left:auto;margin-right:auto;padding:26px 22px;text-align:center">
     <h3 style="font-family:var(--gc-serif)">Welches Paket passt zu dir?</h3>
-    <p style="color:var(--gc-desc);font-size:14px;margin:6px 0 16px" id="quiz-zaehler">Sieben kurze Fragen — dann weißt du es.</p>
+    <p style="color:var(--gc-desc);font-size:14px;margin:6px 0 16px" id="quiz-zaehler">Neun kurze Fragen — dann weißt du es.</p>
     <div id="quiz-frage" style="font:600 18px var(--gc-serif);margin-bottom:14px"></div>
     <div id="quiz-antworten" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"></div>
     <div id="quiz-ergebnis" hidden></div>
@@ -1016,7 +925,9 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
     {k:'steuerbuero', f:'Soll babu alles machen — oder hast du ein Steuerbüro, dem wir nur zuarbeiten?', a:['Alles über babu','Eigenes Steuerbüro']},
     {k:'filialen', f:'Hat dein Salon mehr als einen Standort?', a:['Ja','Nein']},
     {k:'firmen', f:'Hast du mehrere Firmen?', a:['Ja','Nein']},
-    {k:'abschluss', f:'Machst du eine Bilanz — oder die einfache Gewinnrechnung (EÜR)?', a:['Bilanz','Einfache Gewinnrechnung','Weiß nicht']}
+    {k:'abschluss', f:'Machst du eine Bilanz — oder die einfache Gewinnrechnung (EÜR)?', a:['Bilanz','Einfache Gewinnrechnung','Weiß nicht']},
+    {k:'rechtsform', f:'Welche Rechtsform hat dein Salon?', a:['Einzelunternehmen','GbR','GmbH','Weiß nicht']},
+    {k:'belegmenge', f:'Wie viele Belege kommen bei dir ungefähr im Monat zusammen?', a:['Bis 50','50 bis 200','Mehr als 200']}
   ];
   var antworten={}, i=0;
   function zeige(){
@@ -1034,15 +945,19 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
   }
   function fertig(){
     frageEl.textContent=''; antwortenEl.innerHTML='';
-    var plus=antworten.filialen==='Ja'||antworten.firmen==='Ja'||antworten.abschluss==='Bilanz';
-    var solo=antworten.team==='Allein'&&antworten.klein==='Ja';
+    var plus=antworten.filialen==='Ja'||antworten.firmen==='Ja'||antworten.abschluss==='Bilanz'||antworten.rechtsform==='GmbH';
+    var solo=antworten.team==='Allein'&&antworten.klein==='Ja'&&antworten.belegmenge!=='Mehr als 200';
     var paket=plus?['Salon Plus','149 €']:(solo?['Solo','39 €']:['Salon','79 €']);
     var extra=[];
     if(antworten.steuerbuero==='Eigenes Steuerbüro')
       extra.push('Du behältst dein Steuerbüro und babu arbeitet nur zu — das wird günstiger. Sag uns kurz Bescheid.');
     if(antworten.medizinisch==='Ja')
       extra.push('Deine medizinischen Behandlungen bleiben ohne Umsatzsteuer — babu stellt das richtig ein.');
-    if(antworten.klein==='Weiß nicht'||antworten.abschluss==='Weiß nicht')
+    if(antworten.rechtsform==='GmbH')
+      extra.push('Eine GmbH macht eine Bilanz — deshalb Salon Plus.');
+    if(antworten.belegmenge==='Mehr als 200'&&!plus)
+      extra.push('Bei so vielen Belegen bist du im Paket Salon richtig aufgehoben — das Fotografieren bleibt trotzdem bei 10 Sekunden pro Beleg.');
+    if(antworten.klein==='Weiß nicht'||antworten.abschluss==='Weiß nicht'||antworten.rechtsform==='Weiß nicht')
       extra.push('Nicht sicher? Kein Problem — der Salon-Check liest es einfach aus deinen Unterlagen heraus.');
     try{ sessionStorage.setItem('babu-paket', JSON.stringify(antworten)); }catch(e){}
     zaehler.textContent='Unsere Empfehlung für dich';
