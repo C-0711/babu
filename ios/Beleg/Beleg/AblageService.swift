@@ -1158,7 +1158,8 @@ extension AblageService {
     }
 
     /// Tagesblatt des Kassenbuchs in die Belegbox legen (POST /api/kassenbuch).
-    static func kassenblattSenden(_ b: Kassenbericht, basis: URL, pat: String) async -> Bool {
+    static func kassenblattSenden(_ b: Kassenbericht, basis: URL,
+                                  pat: String) async -> KassenblattAntwort {
         var request = URLRequest(url: basis.appendingPathComponent("api/kassenbuch"))
         request.httpMethod = "POST"
         request.timeoutInterval = 30
@@ -1197,9 +1198,33 @@ extension AblageService {
                 ] as [String: Any]
             }
         }
+        if let grund = b.korrekturen?.last?.grund, !grund.isEmpty {
+            // Der Server verlangt für einen Tag, der schon in der Belegbox
+            // liegt, eine Begründung — er liest sie sonst aus der
+            // Korrekturspur. Sie hier auch als eigenes Feld zu schicken,
+            // macht die Absicht eindeutig.
+            blatt["grund"] = grund
+        }
         request.httpBody = try? JSONSerialization.data(withJSONObject: blatt)
-        let (ergebnis, _) = await ausfuehrenMitDaten(request)
-        return ergebnis == .uebertragen
+        let (ergebnis, daten) = await ausfuehrenMitDaten(request)
+        if case .abgelehnt = ergebnis {
+            // Eine Ablehnung ist keine Störung, die sich von selbst legt:
+            // der Monat ist abgeschlossen, oder die Begründung fehlt. Der
+            // Grund muss zu Nina durch, sonst versucht die App es ewig
+            // weiter und niemand erfährt, warum nichts ankommt.
+            let text = (try? JSONSerialization.jsonObject(with: daten ?? Data()))
+                .flatMap { ($0 as? [String: Any])?["fehler"] as? String }
+            return .abgelehnt(text ?? "Die Belegbox hat das Blatt nicht angenommen.")
+        }
+        return ergebnis == .uebertragen ? .ok : .spaeterNochmal
+    }
+
+    /// Wie es dem Tagesblatt ergangen ist. `abgelehnt` trägt den Satz, den
+    /// der Server geschickt hat — er ist für Nina geschrieben.
+    enum KassenblattAntwort: Equatable {
+        case ok
+        case spaeterNochmal
+        case abgelehnt(String)
     }
 
     /// Frage an den Belegbox-Assistenten — gestreamt (SSE): liefert Text-Stücke,

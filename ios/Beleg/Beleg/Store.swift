@@ -612,9 +612,20 @@ final class AppStore: ObservableObject {
               let pat = KeychainHelfer.ladePAT(),
               let bericht = kassenbericht(fuer: tag),
               bericht.uebermittelt == nil else { return }
-        let ok = await AblageService.kassenblattSenden(bericht, basis: url, pat: pat)
-        if ok, let i = kassenberichte.firstIndex(where: { $0.datum == tag }) {
+        let antwort = await AblageService.kassenblattSenden(bericht, basis: url,
+                                                           pat: pat)
+        guard let i = kassenberichte.firstIndex(where: { $0.datum == tag })
+        else { return }
+        switch antwort {
+        case .ok:
             kassenberichte[i].uebermittelt = Date()
+            kassenberichte[i].abgelehnt = nil
+        case .abgelehnt(let warum):
+            // Nicht erneut versuchen: der Monat ist abgeschlossen oder es
+            // fehlt eine Begründung. Beides löst sich nicht von allein.
+            kassenberichte[i].abgelehnt = warum
+        case .spaeterNochmal:
+            break               // Netz weg — beim nächsten Start noch mal
         }
     }
 

@@ -173,6 +173,12 @@ struct Kassenbericht: Codable, Identifiable, Equatable {
     /// Ab da ist er ein Beleg, kein Entwurf mehr.
     var festgeschrieben: Bool { uebermittelt != nil }
 
+    /// Warum die Belegbox das Blatt nicht angenommen hat — in dem Satz, den
+    /// sie geschickt hat. Steht hier etwas, wird nicht weiter versucht: der
+    /// Monat ist abgeschlossen oder es fehlt eine Begründung, und beides
+    /// löst sich nicht dadurch, dass man es noch einmal schickt.
+    var abgelehnt: String?
+
     init(datum: String) {
         self.datum = datum
     }
@@ -212,6 +218,7 @@ struct Kassenbericht: Codable, Identifiable, Equatable {
         uebermittelt = try c.decodeIfPresent(Date.self, forKey: .uebermittelt)
         korrekturen = try c.decodeIfPresent([Kassenkorrektur].self,
                                             forKey: .korrekturen)
+        abgelehnt = try c.decodeIfPresent(String.self, forKey: .abgelehnt)
     }
 }
 
@@ -225,9 +232,16 @@ enum Uebermittlung: Equatable {
     case offen
     /// Liegt seit diesem Zeitpunkt in der Belegbox.
     case inBelegbox(Date)
+    /// Die Belegbox hat es nicht angenommen — mit ihrem eigenen Satz. Das
+    /// wiederholt sich nicht von selbst: der Monat ist abgeschlossen, oder
+    /// es fehlt eine Begründung.
+    case abgelehnt(String)
 
     static func fuer(_ bericht: Kassenbericht) -> Uebermittlung {
-        bericht.uebermittelt.map { .inBelegbox($0) } ?? .offen
+        if let warum = bericht.abgelehnt, bericht.uebermittelt == nil {
+            return .abgelehnt(warum)
+        }
+        return bericht.uebermittelt.map { .inBelegbox($0) } ?? .offen
     }
 
     private static let zeitpunkt: DateFormatter = {
@@ -246,6 +260,8 @@ enum Uebermittlung: Equatable {
         case .inBelegbox(let wann):
             return "Am \(Uebermittlung.zeitpunkt.string(from: wann)) in "
                  + "deiner Belegbox abgelegt — dort liegt es sicher."
+        case .abgelehnt(let warum):
+            return warum
         }
     }
 

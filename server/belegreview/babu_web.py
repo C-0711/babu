@@ -936,7 +936,8 @@ def _index_bauen(head: str) -> None:
 
     # Kassenbuch: kassenbuch/<JJJJ-MM>/<JJJJ-MM-TT>.json — die Erlösseite.
     kassen_pfade = {p_: oid for p_, oid in pfade.items()
-                    if p_.startswith("kassenbuch/") and p_.endswith(".json")}
+                    if p_.startswith("kassenbuch/") and p_.endswith(".json")
+                    and not p_.endswith(".aenderungen.json")}
     fehlend_ka = [oid for oid in kassen_pfade.values() if oid not in oid_cache]
     for oid, roh in _blobs_lesen(fehlend_ka).items():
         try:
@@ -5606,7 +5607,7 @@ def _ablage_eintraege() -> list[dict]:
     baum = "\n".join(oids)
     for pfad in baum.splitlines():
         if pfad.endswith((".umsaetze.json", ".meta.json", ".erklaerung.json",
-                          ".text.json")):
+                          ".text.json", ".aenderungen.json")):
             continue
         name = pfad.rsplit("/", 1)[-1]
         titel = name
@@ -8978,6 +8979,56 @@ def api_fristen(jahr: str, request: Request) -> Response:
     })
 
 
+def _monat_festgeschrieben(monat: str) -> bool:
+    """Sind die Zahlen dieses Monats schon erklärt?
+
+    Zwei Ereignisse schreiben fest, und beide sind derselbe Moment aus
+    zwei Wegen: die Voranmeldung ist erstellt, oder der Monatsabschluss
+    ist zur Prüfung freigegeben. Ab da liegen die Zahlen draußen — was
+    dann noch geändert würde, stimmte mit dem Erklärten nicht mehr
+    überein (§ 146 Abs. 4 AO)."""
+    return (git_show(f"ustva/{monat}-ustva.pdf") is not None
+            or git_show(f"abschluss/{monat}/ustva.json") is not None)
+
+
+def _kassenblatt_stand(datum: str) -> tuple[dict | None, list[dict]]:
+    """Der aktuelle Stand eines Tages und sein Änderungsprotokoll."""
+    blatt = protokoll = None
+    roh = git_show(f"kassenbuch/{datum[:7]}/{datum}.json")
+    if roh:
+        try:
+            blatt = json.loads(roh)
+        except ValueError:
+            blatt = None
+    roh_p = git_show(f"kassenbuch/{datum[:7]}/{datum}.aenderungen.json")
+    if roh_p:
+        try:
+            protokoll = json.loads(roh_p)
+        except ValueError:
+            protokoll = None
+    return blatt, (protokoll if isinstance(protokoll, list) else [])
+
+
+@app.get("/api/kassenbuch/{datum}")
+def api_kassenblatt(datum: str, request: Request) -> Response:
+    """Ein Kassentag mit seinem Zustand — eingetragen, geändert, zu.
+
+    Die App braucht das, bevor sie ein Feld zum Ändern freigibt: nach der
+    Voranmeldung ist der Monat zu, und das soll sie sagen können, statt
+    die Nutzerin ins Leere tippen zu lassen."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if not _KASSEN_DATUM_RE.match(datum):
+        return JSONResponse({"fehler": "Datum als JJJJ-MM-TT"}, status_code=400)
+    import kassenfest  # noqa: PLC0415
+    blatt, protokoll = _kassenblatt_stand(datum)
+    zu = _monat_festgeschrieben(datum[:7])
+    return JSONResponse({"datum": datum, "blatt": blatt,
+                         "aenderungen": protokoll,
+                         "zustand": kassenfest.zustand(blatt, protokoll, zu)})
+
+
 @app.post("/api/kassenbuch")
 async def api_kassenbuch(request: Request) -> Response:
     un, fehler = _box_wache(request)
@@ -9015,16 +9066,54 @@ async def api_kassenbuch(request: Request) -> Response:
     if (korrekturen := _korrekturen_lesen(body.get("korrekturen"))):
         blatt["korrekturen"] = korrekturen
     blatt["von"] = un                     # wer es eingetragen hat
+
+    # GoBD: ein Tag, der schon eingetragen ist, wird nicht still
+    # überschrieben. Er braucht eine Begründung, der alte Stand wird
+    # protokolliert — und nach der Voranmeldung geht gar nichts mehr.
+    import kassenfest  # noqa: PLC0415
+    vorher, protokoll = await run_in_threadpool(_kassenblatt_stand, datum)
+    zu = await run_in_threadpool(_monat_festgeschrieben, datum[:7])
+    # Die App führt seit Längerem eine eigene Korrekturspur und schickt sie
+    # als `korrekturen` mit. Ihr jüngster Eintrag ist eine Begründung wie
+    # jede andere — sonst müsste eine schon installierte App erst
+    # aktualisiert werden, bevor Nina ihr Kassenbuch wieder führen kann.
+    grund = str(body.get("grund") or "").strip()
+    if not grund and korrekturen:
+        grund = str((korrekturen[-1] or {}).get("grund") or "").strip()
+    grund = grund[:kassenfest.GRUND_MAX]
+    erlaubt, warum = kassenfest.darf_schreiben(vorher, grund, zu)
+    if not erlaubt:
+        return JSONResponse({"fehler": warum, "datum": datum,
+                             "abgeschlossen": zu},
+                            status_code=409 if zu else 400)
+    if vorher is not None:
+        blatt["geaendert_am"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+        blatt["geaendert_von"] = un
+        blatt["grund"] = grund
+
+    dateien = {f"kassenbuch/{datum[:7]}/{datum}.json":
+               json.dumps(blatt, ensure_ascii=False, indent=1).encode()}
+    neu = (kassenfest.protokoll_fortschreiben(
+               protokoll, vorher, blatt, un, grund,
+               time.strftime("%Y-%m-%dT%H:%M:%S%z"))
+           if vorher is not None else protokoll)
+    if neu != protokoll:
+        dateien[f"kassenbuch/{datum[:7]}/{datum}.aenderungen.json"] = \
+            json.dumps(neu, ensure_ascii=False, indent=1).encode()
+
     import boxschreiber  # noqa: PLC0415
     try:
-        commit = await run_in_threadpool(boxschreiber.schreiben,
-            f"kassenbuch/{datum[:7]}/{datum}.json",
-            json.dumps(blatt, ensure_ascii=False, indent=1).encode(),
-            f"kassenbuch: {datum}", un)
+        commit = await run_in_threadpool(
+            boxschreiber.schreiben, dateien, None,
+            (f"kassenbuch: {datum} geändert ({grund})" if vorher is not None
+             else f"kassenbuch: {datum}"), un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    return JSONResponse({"ok": True, "commit": commit, "datum": datum})
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit, "datum": datum,
+                         "zustand": kassenfest.zustand(blatt, neu, zu)})
 
 
 # ---------------------------------------------------------------------------

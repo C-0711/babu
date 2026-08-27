@@ -208,6 +208,25 @@ do {
            Uebermittlung.monatsende.contains("Monatsende"))
 }
 
+// ————— Ninas 6-6/6-7: die Belegbox nimmt ein Blatt auch mal nicht an —————
+
+do {
+    var b = Kassenbericht(datum: "2026-08-20")
+    b.abgelehnt = "Dieser Monat ist abgeschlossen — die Zahlen sind schon "
+                + "beim Finanzamt."
+    pruefe("eine Ablehnung ist ein eigener Zustand",
+           Uebermittlung.fuer(b) == .abgelehnt(b.abgelehnt!))
+    pruefe("und Nina liest den Satz der Belegbox, nicht einen eigenen",
+           Uebermittlung.fuer(b).satz.contains("beim Finanzamt"))
+    pruefe("abgelehnt ist nicht erledigt",
+           !Uebermittlung.fuer(b).erledigt)
+
+    // Kommt es doch durch, gilt der Zeitpunkt — die alte Ablehnung nicht mehr.
+    b.uebermittelt = Date(timeIntervalSince1970: 1_787_227_200)
+    pruefe("nach dem Ablegen zaehlt der Zeitpunkt",
+           Uebermittlung.fuer(b).erledigt)
+}
+
 do {
     // Ein Name für die Sache: die App führt das KASSENBUCH. „Kasse" ist
     // die Schublade und bleibt dafür reserviert.
