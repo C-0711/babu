@@ -9,6 +9,9 @@ struct ListeView: View {
     /// Welche Art gerade gezeigt wird. Belege sind die Voreinstellung —
     /// das ist der häufigste Fall und der Grund, warum es die App gibt.
     @State private var art: Dokumentart = .beleg
+    // Server-Ablage des gewählten Fachs (Portal-Uploads, Kanzlei-Post).
+    @State private var serverStuecke: [AblageService.AblageStueck] = []
+    @State private var serverLaedt = false
     @State private var grossAnsehen: Grossansicht?
     /// Der Weg des Stapels. Die Liste schiebt über NavigationLink, die
     /// Blätter schieben selbst — ein Link in einer Listenzeile bekommt vom
@@ -53,6 +56,25 @@ struct ListeView: View {
             case .korrigiert: return b.status == .korrigiert
             case .offen: return b.status == .offen
             }
+        }
+    }
+
+    /// Die Server-Ablage des Fachs holen — lokale Aufnahmen, die schon
+    /// übertragen sind, stehen dort ebenfalls; die lokale Liste oben zeigt
+    /// sie mit Status, hier geht es um das, was NUR auf dem Server liegt.
+    private func serverStueckeLaden() async {
+        serverStuecke = []
+        guard art != .beleg, store.ablageAktiv,
+              let url = URL(string: store.ablageURL),
+              let pat = KeychainHelfer.ladePAT() else { return }
+        serverLaedt = true
+        defer { serverLaedt = false }
+        let alle = await AblageService.ablageStuecke(art: art.rawValue, basis: url, pat: pat)
+        // Was die App selbst hochgeladen hat, steht schon oben in der
+        // lokalen Liste — nicht doppelt zeigen.
+        let lokaleNamen = Set(store.belege.compactMap(\.ablageDateiname))
+        serverStuecke = alle.filter { s in
+            !lokaleNamen.contains((s.pfad as NSString).lastPathComponent)
         }
     }
 
@@ -177,14 +199,34 @@ struct ListeView: View {
                     }
                   }
                 }
-                if gefiltert.isEmpty {
+                if gefiltert.isEmpty && (art == .beleg || serverStuecke.isEmpty) {
                     Text(filter == .alle ? art.leerSatz
                                          : "Kein \(art.einzahl) entspricht diesem Filter.")
                         .font(.footnote)
                         .foregroundStyle(GC.muted)
                         .listRowBackground(GC.canvas)
                 }
+                // Kontoauszüge, Verträge und Post kommen oft übers Portal
+                // herein und liegen dann NUR in der Server-Ablage — bis
+                // 27.08.2026 zeigte die App sie gar nicht („warum kommen
+                // die Kontoauszüge nicht in der App?").
+                if art != .beleg {
+                    if serverLaedt && serverStuecke.isEmpty {
+                        HStack { ProgressView(); Text("Deine Ablage wird geholt …") }
+                            .font(.footnote)
+                            .foregroundStyle(GC.muted)
+                            .listRowBackground(GC.canvas)
+                    }
+                    if !serverStuecke.isEmpty {
+                        Section("In deiner Ablage") {
+                            ForEach(serverStuecke) { s in
+                                AblageStueckZeile(stueck: s)
+                            }
+                        }
+                    }
+                }
             }
+            .task(id: art) { await serverStueckeLaden() }
             .warmerGrund()
             .navigationTitle("Dokumente")
             .mitMeldenKnopf("Dokumente")
@@ -856,6 +898,95 @@ struct DetailView: View {
             reviewHinweis = "Die Belegbox meldet einen Fehler — später noch einmal versuchen."
         default:
             break   // Es gibt schon ein Ergebnis — das behalten wir.
+        }
+    }
+}
+
+/// Eine Zeile der Server-Ablage: Vorschau, Name, Datum, Seitenzahl.
+/// Tippen öffnet das Blatt groß (Seite 1 — mehr Seiten zeigt das Portal).
+private struct AblageStueckZeile: View {
+    @EnvironmentObject var store: AppStore
+    let stueck: AblageService.AblageStueck
+
+    @State private var vorschau: UIImage?
+    @State private var gross = false
+
+    private var datumText: String {
+        guard let zeit = stueck.zeit, zeit.count >= 10 else { return "" }
+        let teile = zeit.prefix(10).split(separator: "-")
+        guard teile.count == 3 else { return String(zeit.prefix(10)) }
+        return "\(teile[2]).\(teile[1]).\(teile[0])"
+    }
+
+    var body: some View {
+        Button {
+            gross = true
+        } label: {
+            HStack(spacing: 12) {
+                Group {
+                    if let vorschau {
+                        Image(uiImage: vorschau)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        GC.desk.overlay(
+                            Image(systemName: "doc.text")
+                                .font(.system(size: 16, weight: .light))
+                                .foregroundStyle(GC.muted))
+                    }
+                }
+                .frame(width: 42, height: 54)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(stueck.name)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(GC.fg)
+                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        if !datumText.isEmpty {
+                            Text(datumText)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(GC.muted)
+                        }
+                        if let seiten = stueck.seiten, seiten > 1 {
+                            Text("\(seiten) Seiten")
+                                .font(.caption.monospaced())
+                                .foregroundStyle(GC.accent)
+                        }
+                    }
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(GC.muted)
+            }
+        }
+        .task {
+            guard vorschau == nil, store.ablageAktiv,
+                  let url = URL(string: store.ablageURL),
+                  let pat = KeychainHelfer.ladePAT() else { return }
+            vorschau = await AblageService.vorschauLaden(pfad: stueck.pfad,
+                                                         basis: url, pat: pat)
+        }
+        .sheet(isPresented: $gross) {
+            NavigationStack {
+                Group {
+                    if let vorschau {
+                        ZoombaresBild(bild: vorschau)
+                    } else {
+                        ProgressView()
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(GC.canvas)
+                .navigationTitle(stueck.name)
+                .toolbarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Fertig") { gross = false }
+                    }
+                }
+            }
         }
     }
 }

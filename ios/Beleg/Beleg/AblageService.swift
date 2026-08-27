@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import UIKit
 
 /// Ergebnis eines Ablage-Aufrufs (Upload oder Verbindungstest).
 enum AblageErgebnis: Equatable {
@@ -1262,6 +1263,62 @@ extension AblageService {
             return nil
         }
         return json["antwort"] as? String
+    }
+
+    /// Ein Stück aus der Server-Ablage — Kontoauszüge, Verträge und Post,
+    /// die übers Portal (oder von der Kanzlei) hereinkamen und deshalb
+    /// nicht im lokalen Bestand liegen.
+    struct AblageStueck: Identifiable {
+        let pfad: String
+        let titel: String
+        let zeit: String?
+        let seiten: Int?
+        var id: String { pfad }
+        /// Anzeigename ohne Zeitstempel-Präfix des Servers.
+        var name: String {
+            let datei = (pfad as NSString).lastPathComponent
+            let kurz = datei.replacingOccurrences(
+                of: #"^\d{8}-\d{6}-\w+-"#, with: "", options: .regularExpression)
+            return kurz.isEmpty ? datei : kurz
+        }
+    }
+
+    /// Die Server-Ablage eines Fachs (`GET /api/ablage`), neueste zuerst.
+    static func ablageStuecke(art: String, basis: URL, pat: String) async -> [AblageStueck] {
+        var request = URLRequest(url: basis.appendingPathComponent("api/ablage"))
+        request.timeoutInterval = 12
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              (antwort as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+              let jahre = json["jahre"] as? [[String: Any]] else { return [] }
+        var stuecke: [AblageStueck] = []
+        for jahr in jahre {
+            for fach in (jahr["arten"] as? [[String: Any]]) ?? [] where (fach["art"] as? String) == art {
+                for s in (fach["stuecke"] as? [[String: Any]]) ?? [] {
+                    guard let pfad = s["pfad"] as? String else { continue }
+                    stuecke.append(AblageStueck(pfad: pfad,
+                                                titel: s["titel"] as? String ?? pfad,
+                                                zeit: s["zeit"] as? String,
+                                                seiten: s["seiten"] as? Int))
+                }
+            }
+        }
+        return stuecke.sorted { ($0.zeit ?? "") > ($1.zeit ?? "") }
+    }
+
+    /// Die Server-Vorschau eines Ablage-Stücks (Seite 1 als Bild).
+    static func vorschauLaden(pfad: String, basis: URL, pat: String) async -> UIImage? {
+        var teil = URLComponents(url: basis.appendingPathComponent("api/vorschau"),
+                                 resolvingAgainstBaseURL: false)
+        teil?.path += "/" + pfad
+        guard let url = teil?.url else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              (antwort as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return UIImage(data: daten)
     }
 
     /// BelegReview-Ergebnis abrufen (`GET /review/<stamm>`, Bearer-PAT).
