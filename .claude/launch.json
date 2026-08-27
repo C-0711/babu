@@ -2,22 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "landing",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": [
-        "-m",
-        "http.server",
-        "8731",
-        "--directory",
-        "server/babu-web"
-      ],
-      "port": 8731
-    },
-    {
-      "name": "babu",
-      "runtimeExecutable": "server/belegreview/.start-dev.sh",
-      "runtimeArgs": [],
-      "port": 8791
+      "name": "portal-vorschau",
+      "runtimeExecutable": "/tmp/babu-venv/bin/python",
+      "runtimeArgs": ["werkzeuge/portal-vorschau/portal_vorschau.py"],
+      "port": 7899
     }
   ]
 }

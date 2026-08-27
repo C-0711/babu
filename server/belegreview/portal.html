@@ -11,13 +11,13 @@
    System-Stacks (kein CDN, DSGVO). Genau drei Motion-Momente: Stempel,
    Zeitleisten-Schritt, Karten-Einflug. */
 :root{
-  --gc-bg:#fff; --gc-canvas:#fdfcf9; --gc-desk:#f7f3eb; --gc-chrome:#fbf8f2;
-  --gc-fg:#2e2a22; --gc-body:#4a4234; --gc-desc:#6b6151; --gc-muted:#8f8574;
-  --gc-accent:#8a7c5c; --gc-accent-hover:#736950; --gc-accent-subtle:#f7f1e6;
-  --gc-border:#ebe4d8; --gc-border-l:#efefef;
+  --gc-bg:#fff; --gc-canvas:#f7f5f0; --gc-desk:#efece4; --gc-chrome:#f7f5f0;
+  --gc-fg:#1d1913; --gc-body:#453e31; --gc-desc:#6b6151; --gc-muted:#8f8574;
+  --gc-accent:#8a7c5c; --gc-accent-hover:#736950; --gc-accent-subtle:#f1ede3;
+  --gc-border:#e6e0d4; --gc-border-l:#ece7dc;
   --gc-ok:#6f8a6e; --gc-warn:#a8791c; --gc-danger:#a8433a;
   --gc-gold:#b9a574; --gc-scan:#2a2620;
-  --gc-serif:'Playfair Display',Georgia,serif;
+  --gc-serif:'Playfair Display',ui-serif,Georgia,serif;
   --gc-sans:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
   --gc-mono:'SF Mono',ui-monospace,Menlo,monospace;
   --r:12px;
@@ -59,12 +59,15 @@ a{color:var(--gc-accent)}
 header{position:sticky;top:0;z-index:20;background:var(--gc-chrome);
   border-bottom:1px solid var(--gc-border);padding:10px clamp(14px,3.2vw,64px);
   display:flex;align-items:center;gap:18px}
-header h1{font:600 17px var(--gc-serif);letter-spacing:-.015em;color:var(--gc-fg)}
+header h1{font:600 21px/1 var(--gc-serif);letter-spacing:-.02em;color:var(--gc-fg)}
 nav{display:flex;gap:2px;margin-left:6px;min-width:0;overflow-x:auto;
   -webkit-overflow-scrolling:touch;scrollbar-width:none}
 nav::-webkit-scrollbar{display:none}
 nav button{padding:7px 13px;border-radius:999px;font-weight:550;color:var(--gc-desc);flex:none}
-nav button.an{background:var(--gc-accent-subtle);color:var(--gc-fg)}
+nav button.an{background:#eae7de;color:var(--gc-fg)}
+/* Der eine Knopf, der etwas anstößt, trägt Tinte — alles andere bleibt leise. */
+#hochladen-knopf{background:var(--gc-fg);border-color:var(--gc-fg);color:#fff;font-weight:600}
+#hochladen-knopf:hover{background:#000}
 #kopf-recht{margin-left:auto;display:flex;align-items:center;gap:12px;flex:none}
 #stand{font:11px var(--gc-mono);color:var(--gc-muted)}
 /* Auf schmalen Fenstern verdrängt die Standanzeige sonst die Navigation,
@@ -303,6 +306,36 @@ main p, .leer, .karte > p{max-width:78ch}
 .gruss{font:600 26px var(--gc-serif);letter-spacing:-.015em;color:var(--gc-fg);margin:4px 0 2px}
 .dmeta{font:12.5px var(--gc-mono);letter-spacing:.02em;color:var(--gc-muted)}
 .sektion{margin:26px 0 10px}
+
+/* ————— HEUTE als Editorial-Hero (Vorbild: Portal-Markup vom 27.08.) —————
+   Links der Satz des Monats in Serifen, rechts die eine Zahl, die zählt.
+   Keine Karte, kein Kasten — die Seite selbst ist das Papier. */
+#a-heute .gruss{font:500 clamp(32px,4.6vw,46px)/1.12 var(--gc-serif);
+  letter-spacing:-.02em;margin:10px 0 26px}
+.hero{display:flex;justify-content:space-between;gap:40px;align-items:flex-start;
+  margin:0 0 10px}
+.hero-links{max-width:620px}
+.hero-satz{font:400 clamp(20px,2.4vw,26px)/1.3 var(--gc-serif);
+  letter-spacing:-.01em;color:var(--gc-fg)}
+.hero-detail{font-size:13.5px;color:var(--gc-desc);margin-top:8px}
+.hero-links .chip{margin-top:18px;background:var(--gc-bg);
+  border:1px solid var(--gc-border);color:var(--gc-fg);font-weight:550}
+#heute-bleibt{text-align:right;flex:none}
+.bleibt-zahl{font:500 clamp(34px,4.2vw,52px)/1.05 var(--gc-serif);
+  letter-spacing:-.02em;color:var(--gc-fg);font-variant-numeric:tabular-nums;
+  margin-top:6px;white-space:nowrap}
+.bleibt-zahl.minus{color:var(--gc-fg)}
+/* Hinweise ohne Kartenrahmen: ein Punkt, ein Satz, eine Haarlinie. */
+.punktzeile{display:flex;align-items:baseline;gap:12px;padding:15px 2px;
+  border-top:1px solid var(--gc-border);font-size:13.5px;color:var(--gc-body);
+  width:100%;text-align:left}
+.punktzeile:last-of-type{border-bottom:1px solid var(--gc-border)}
+.punktzeile::before{content:"";width:6px;height:6px;border-radius:50%;
+  background:var(--gc-accent);flex:none;align-self:center}
+@media (max-width:760px){
+  .hero{flex-direction:column;gap:18px}
+  #heute-bleibt{text-align:left}
+}
 
 /* Die Diagnose des Kartenfelds, das hier bis zum 23.08.2026 stand, war
    richtig: eine Flex-Zeile über 2400 px ist keine Vollbreite, sondern links
@@ -887,8 +920,14 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   <!-- HEUTE -->
   <section class="ansicht" id="a-heute">
     <div class="lbl" id="heute-eyebrow">DEIN MONAT</div>
-    <div class="gruss" id="heute-gruss">Guten Tag <svg class="ik klein funke" viewBox="0 0 24 24"><use href="#ik-funke"/></svg></div>
-    <div id="heute-monatslauf"></div>
+    <div class="gruss" id="heute-gruss">Guten Tag</div>
+    <div class="hero">
+      <div class="hero-links" id="heute-monatslauf"></div>
+      <div id="heute-bleibt" hidden>
+        <div class="lbl">Bleibt dir</div>
+        <div class="bleibt-zahl" id="heute-bleibt-zahl"></div>
+      </div>
+    </div>
     <div id="heute-meldungen"></div>
     <div id="heute-inhalt" class="spalten"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
@@ -1560,21 +1599,25 @@ async function ladeAnstehendes(){
 
   try{
     const l = await (await api("/api/monatslauf")).json();
-    if (!l.faellig){ $("#heute-monatslauf").innerHTML = ""; return; }
+    if (!l.faellig){
+      $("#heute-monatslauf").innerHTML = "";
+      $("#heute-bleibt").hidden = true;
+      return;
+    }
     const offen = l.offen || [];
-    $("#heute-monatslauf").innerHTML = `<div class="karte" style="margin-bottom:10px">
-      <b>${esc(l.satz || "")}</b>
-      ${l.zahlen && l.zahlen.ergebnis != null
-        ? `<div style="display:flex;justify-content:space-between;margin-top:6px">
-             <span style="color:var(--gc-desc);font-size:13px">Bleibt dir</span>
-             <b>${euro(l.zahlen.ergebnis)}</b></div>` : ""}
-      ${offen.map(o => `<div style="font-size:12px;color:var(--gc-desc);margin-top:4px">
-          · ${esc(o.text)}</div>`).join("")}
-      <button class="chip" style="margin-top:10px"
-        onclick="location.hash='#abschluss'">
-        ${l.bereit ? "Anschauen und freigeben" : "Was fehlt noch?"}</button>
-    </div>`;
-  }catch{ $("#heute-monatslauf").innerHTML = ""; }
+    $("#heute-monatslauf").innerHTML = `
+      <div class="hero-satz">${esc(l.satz || "")}</div>
+      ${offen.length ? `<div class="hero-detail">${offen.map(o => esc(o.text)).join(" · ")}</div>` : ""}
+      <button class="chip" onclick="location.hash='#abschluss'">
+        ${l.bereit ? "Anschauen und freigeben" : "Was fehlt noch?"}</button>`;
+    const ergebnis = l.zahlen && l.zahlen.ergebnis;
+    if (ergebnis != null){
+      $("#heute-bleibt-zahl").textContent = euro(ergebnis);
+      $("#heute-bleibt").hidden = false;
+    } else {
+      $("#heute-bleibt").hidden = true;
+    }
+  }catch{ $("#heute-monatslauf").innerHTML = ""; $("#heute-bleibt").hidden = true; }
 }
 
 async function ladeHeute(){
@@ -1584,7 +1627,7 @@ async function ladeHeute(){
   const stunde = new Date().getHours();
   const gruss = stunde < 11 ? "Guten Morgen"
               : stunde < 18 ? "Schön, dass du da bist" : "Guten Abend";
-  $("#heute-gruss").innerHTML = esc(gruss) + " " + ikone("funke", "klein funke");
+  $("#heute-gruss").textContent = gruss;
   let d;
   try{ d = await (await api("/api/monat/" + monat)).json(); }
   catch{ return; }
@@ -1635,8 +1678,8 @@ async function ladeHeute(){
   }
   html += `</div>`;
 
-  html += `<div class="karte" style="background:var(--gc-accent-subtle);border:none">
-    Deine Kanzlei braucht die ${monatName(monat).split(" ")[0]}-Belege bis <b>5. ${fristMonat}</b>.</div>`;
+  html += `<div class="punktzeile voll"><span>
+    Deine Kanzlei braucht die ${monatName(monat).split(" ")[0]}-Belege bis <b>5. ${fristMonat}</b>.</span></div>`;
 
   try{
     const ab = await (await api("/api/abgleich/" + monat)).json();
@@ -1654,10 +1697,9 @@ async function ladeHeute(){
 
   const ungelesen = await postPunktAktualisieren();
   if (ungelesen){
-    html += `<button class="karte zeile einflug" style="display:block;width:100%;text-align:left"
-      onclick="location.hash='#post'">
-      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--gc-accent);margin-right:8px"></span>
-      <b>${ungelesen === 1 ? "Ein neues Dokument" : ungelesen + " neue Dokumente"} von deiner Kanzlei</b> — zur Post ›</button>`;
+    html += `<button class="punktzeile voll einflug" onclick="location.hash='#post'">
+      <span><b>${ungelesen === 1 ? "Ein neues Dokument" : ungelesen + " neue Dokumente"}</b>
+      von deiner Kanzlei — <span style="color:var(--gc-accent)">zur Post ›</span></span></button>`;
   }
 
   /* Wer über den Trichter hereinkam, hat einen Bericht — und Angaben, die
