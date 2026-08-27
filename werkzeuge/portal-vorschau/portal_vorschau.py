@@ -79,6 +79,14 @@ os.environ["BABU_COOKIE_SECURE"] = "0"
 os.environ["BABU_ORIGIN"] = "http://localhost:7899"
 sys.path.insert(0, str(REPO))
 import babu_web  # noqa: E402
+import boxschreiber  # noqa: E402
+
+# Der Schreibweg zeigt IMMER auf die Wegwerf-Box dieses Laufs — niemals auf
+# einen echten Klon. Damit funktionieren auch Aufnahme/Loeschen im
+# Anschau-Server, und ein Fehlgriff kann nichts Echtes treffen.
+boxschreiber.KLON = TMP / "klon"
+boxschreiber.REMOTE = str(bare)
+boxschreiber.PAT_PFAD = TMP / "kein-pat"
 
 babu_web.wer_token = lambda token: "christoph0711.io" if token == "test-pat" else None
 # Fuer Screenshot-Werkzeuge (Headless-Chrome ohne Cookie): immer angemeldet.

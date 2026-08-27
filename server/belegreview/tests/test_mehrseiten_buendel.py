@@ -99,6 +99,13 @@ def test_buendel_pdf_wird_ein_beleg_mit_review(welt):
     assert review["dokumentklasse"] == "beleg"
     # Beide Seiten stehen in der archivierten Lesung.
     assert "Seite 2 von 2" in review["ocr_text"]
+    # Gebucht ohne offene Fragen = geprüft. Zielbild-Reviews tragen
+    # summenprobe_ok = None (keine Probe mehr) — das darf den grünen
+    # Zustand nicht aufhalten (Abnahme-Fund vom 27.08.).
+    from fastapi.testclient import TestClient
+    c = TestClient(bw.app, base_url="https://testserver")
+    d = c.get(f"/api/beleg/{stamm}").json()
+    assert d["status"] == "geprüft", d["status"]
 
 
 def test_auszug_im_namen_schlaegt_die_buchhaltung_nicht(welt):

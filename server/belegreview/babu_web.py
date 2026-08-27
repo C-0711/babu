@@ -649,7 +649,11 @@ def _status_ableiten(review: dict | None, bewirtung_da: bool) -> str:
     # (§4 Abs. 5: Anlass + Teilnehmer), bis sie beantwortet ist.
     echte_offen = [o for o in (f.get("offen") or []) if "trinkgeld" not in str(o).lower()]
     braucht_bewirtung = bool(f.get("bewirtungssignal")) and not bewirtung_da
-    if not echte_offen and not braucht_bewirtung and f.get("summenprobe_ok"):
+    # Zielbild-Reviews tragen summenprobe_ok = None — es GIBT keine Probe
+    # mehr (die Buchhaltung liest, kein Parser rechnet nach). Nur eine
+    # GERISSENE Probe (False, Alt-Reviews) hält den Beleg auf; sonst stand
+    # jeder sauber gebuchte Beleg für immer auf „nachfrage".
+    if not echte_offen and not braucht_bewirtung and f.get("summenprobe_ok") is not False:
         return "geprüft"
     return "nachfrage"
 
