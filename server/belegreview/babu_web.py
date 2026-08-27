@@ -654,41 +654,30 @@ def _status_ableiten(review: dict | None, bewirtung_da: bool) -> str:
     return "nachfrage"
 
 
-# Welche offene Frage eine nachgetragene Angabe beantwortet.
-#
-# Die offenen Punkte sind ganze Sätze aus der Lesung — „Der
-# Rechnungsbetrag ist nicht sicher zu lesen." Verglichen wurde bisher gegen
-# die Feldnamen der Angaben („brutto"), und das kann nie zusammenpassen: die
-# Nutzerin trug den Betrag nach, und die Frage danach blieb trotzdem stehen.
-# Deshalb Stichwörter statt Gleichheit — großzügig, aber je Feld nur die
-# Wörter, die wirklich nach diesem Feld fragen.
-ANGABE_STICHWORT = {
-    "brutto": ("rechnungsbetrag", "brutto", "gesamtbetrag", "der betrag",
-               "betrag nicht"),
-    "lieferant": ("ausgestellt", "lieferant", "aussteller"),
-    "datum": ("belegdatum", "datum"),
-}
-
-
 def _offen_nach_angaben(offen: list, angaben: dict | None) -> list:
-    """Welche Fragen nach den nachgetragenen Angaben noch offen sind."""
-    beantwortet = set((angaben or {}).get("beantwortet") or [])
-    woerter = tuple(w for feld in beantwortet
-                    for w in ANGABE_STICHWORT.get(feld, ()))
-    if not woerter:
-        return list(offen or [])
-    uebrig = [o for o in (offen or [])
-              if not any(w in str(o).lower() for w in woerter)]
-    # Alt-Reviews tragen noch den Pauschalsatz „Die Gegenprobe weicht ab —
-    # kurz prüfen." ohne Feldbezug — der war mit keiner Angabe zu beantworten
-    # und blieb für immer stehen (Nina hat am 26.08. sechsmal gespeichert).
-    # Wer irgendetwas nachgetragen hat, HAT kurz geprüft: der Satz ist damit
-    # erledigt. Neue Reviews nennen stattdessen das konkrete Feld. Dasselbe
-    # gilt für die Doppelgänger-Frage: sie ist beantwortet, indem jemand den
-    # Beleg angesehen hat — gelöscht oder bewusst behalten.
-    return [o for o in uebrig
-            if "gegenprobe weicht ab" not in str(o).lower()
-            and "doppelgänger" not in str(o).lower()]
+    """Welche Fragen nach den nachgetragenen Angaben noch offen sind.
+
+    Bis 27.08.2026 wurde per Stichwort-Tabelle geraten, welche Frage eine
+    Angabe beantwortet — und jede Frage, deren Wortlaut die Tabelle nicht
+    kannte („Der Steuersatz ist nicht sicher zu lesen."), blieb für immer
+    stehen, egal wie oft Nina speicherte. Seit dem Zielbild formuliert die
+    Buchhaltung ihre Fragen frei; eine Wortliste kann da nie vollständig
+    sein.
+
+    Deshalb gilt jetzt die Regel, die vorher schon für die Gegenprobe- und
+    die Doppelgänger-Frage galt, für ALLE Lese-Fragen: Das Formular steht
+    genau deshalb da — wer darin etwas nachträgt oder bestätigt und
+    speichert, hat die offenen Punkte angesehen. Damit sind sie erledigt.
+    Nur die Bewirtungsfrage (Anlass + Teilnehmer) hat ihren eigenen Weg und
+    bleibt hiervon unberührt — sie hängt am `bewirtung`-Merker, nicht an
+    dieser Liste.
+    """
+    a = angaben or {}
+    etwas_gespeichert = bool(a.get("beantwortet") or a.get("kategorie")
+                             or a.get("notiz"))
+    if etwas_gespeichert:
+        return []
+    return list(offen or [])
 
 
 def _beleg_abgeschlossen(offen: list, bewirtung: bool, bewirtung_da: bool) -> bool:
@@ -1415,7 +1404,7 @@ def api_beleg(stamm: str, request: Request) -> Response:
             f_nach_angaben = d.get("felder") or {}
             offen_nach_angaben = f_nach_angaben.get("offen") or []
             bewirtung_signal = bool(f_nach_angaben.get("bewirtungssignal"))
-            if d["status"] == "erfasst" and _beleg_abgeschlossen(
+            if d["status"] in ("erfasst", "nachfrage") and _beleg_abgeschlossen(
                     offen_nach_angaben, bewirtung_signal, eintrag["bewirtung_beantwortet"]):
                 d["status"] = "geprüft"
     d["bewirtung_beantwortet"] = eintrag["bewirtung_beantwortet"]

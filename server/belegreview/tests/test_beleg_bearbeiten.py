@@ -180,24 +180,26 @@ def test_der_pauschale_gegenprobe_satz_verschwindet_mit_jeder_angabe(welt):
     assert d["status"] == "geprüft"
 
 
-def test_konkrete_widersprueche_werden_durch_die_passende_angabe_beantwortet(welt):
-    """Neue Reviews nennen das Feld — „Lieferant: die Gegenprobe liest …".
-    Die Lieferanten-Angabe beantwortet genau diese Frage, andere bleiben."""
+def test_speichern_beantwortet_alle_lesefragen(welt):
+    """Seit 27.08.2026: Das Formular steht da, um die offenen Fragen zu
+    klären — wer etwas nachträgt und speichert, hat ALLE angesehen. Vorher
+    beantwortete eine Angabe nur die per Stichwort passende Frage, und jede
+    frei formulierte („Der Steuersatz ist nicht sicher zu lesen.") blieb
+    für immer stehen, egal wie oft Nina speicherte."""
     client, bw, _ = welt
     import boxschreiber
     offen = ["Lieferant: die Gegenprobe liest „delilà Hair Extensions“, "
              "gelesen wurde „service@delila.de“ — bitte kurz prüfen.",
-             "Rechnungsbetrag: die Gegenprobe liest 818,38 €, gelesen "
-             "wurden 0,00 € — bitte kurz prüfen."]
+             "Der Steuersatz ist nicht sicher zu lesen."]
     boxschreiber.schreiben(
         {f"review/{STAMM}.json": _review(
             brutto=None, lieferant=None, offen=offen,
             bewirtungssignal=False, summenprobe_ok=True).encode()},
         None, "review mit widerspruechen", "t@l")
     client.post(f"/api/angaben/{STAMM}", json={"lieferant": "delilà GmbH"})
-    uebrig = _beleg(client)["felder"]["offen"]
-    assert len(uebrig) == 1
-    assert uebrig[0].startswith("Rechnungsbetrag")
+    d = _beleg(client)
+    assert d["felder"]["offen"] == []
+    assert d["status"] == "geprüft"
 
 
 # ————— Das Portal muss die Wege auch anbieten —————
