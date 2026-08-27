@@ -219,29 +219,64 @@ def system_text(profil: str, rahmen: str = "SKR04") -> str:
         + REGELN + "\n\n" + SCHEMA)
 
 
+# Quellen, die eine BUCHUNGSFRAGE beantworten können. Der Filter ist
+# nötig, nicht kosmetisch: am 28.08.2026 gemessen hebt die Frageform
+# („Nutzungsdauer und Kontierung im Friseursalon: …") ALLE Ähnlichkeiten
+# gleichmäßig an, sodass jeder Beleg bei rund 0,42 auf dieselben
+# Branchenstatistiken trifft. Über einen Schwellwert allein ist Signal
+# von Rauschen darum nicht zu trennen — über die Quelle schon.
+NACHSCHLAG_QUELLEN = ("afa", "kontenplan", "skr04", "skr03", "bmf",
+                      "ustg", "estg", "kontenrahmen", "steuerschluessel")
+NACHSCHLAG_SCHWELLE = 0.40
+
+
+def _sachwoerter(zeilen: list[str], markdown: str | None) -> str:
+    """Wonach gesucht wird: WAS gekauft wurde, ohne Beträge und Mengen.
+
+    Preise, Stückzahlen und Belegnummern sagen nichts darüber, welche
+    Nutzungsdauer ein Gerät hat — sie verwässern die Suche nur."""
+    aus = []
+    for z in (markdown or "\n".join(zeilen)).splitlines():
+        z = re.sub(r"[0-9][0-9.,]*\s*(EUR|€|%|ml|l|St(ü|ue)ck|St|x)?\b", " ", z)
+        z = re.sub(r"\b(netto|brutto|gesamt|summe|ust|mwst|rechnung|beleg|"
+                   r"datum|nr|betrag|zahlung)\b", " ", z, flags=re.I)
+        wort = " ".join(z.split())
+        if len(wort) > 2:
+            aus.append(wort)
+    return " ".join(aus)[:200]
+
+
 def nachschlagen(zeilen: list[str], markdown: str | None = None,
-                 k: int = 3) -> str:
+                 k: int = 6) -> str:
     """Was im Kompendium zu DIESEM Beleg steht — Vektorsuche über die
     89.760 Atome aus AfA-Tabellen, BMF-Schreiben und Kontenrahmen.
 
     Der feste Digest im Vorspann deckt die Salonfälle ab; ein Gerät, das
-    dort nicht steht, findet Gemma nur hier. Das Ergebnis gehört zum
-    VARIABLEN Teil und steht deshalb beim Beleg, nicht im Vorspann —
-    sonst wäre der stehende Anfang für jeden Beleg ein anderer und der
-    Prefix-Cache dahin.
+    dort nicht steht (eine Motortrockenhaube etwa), findet Gemma nur
+    hier. Gefragt wird bei jedem Beleg, übernommen wird nur, was aus
+    einer Quelle stammt, die Buchungsfragen beantwortet — sonst stünde
+    neben einer Tankquittung die Kostenstruktur des Friseurhandwerks.
+
+    Das Ergebnis gehört zum VARIABLEN Teil und steht deshalb beim Beleg,
+    nicht im Vorspann — sonst wäre der stehende Anfang für jeden Beleg
+    ein anderer und der Prefix-Cache dahin.
 
     Schweigt still, wenn Embedding-Dienst oder Kompendium fehlen."""
-    text = " ".join((markdown or "\n".join(zeilen)).split())[:1200]
-    if not text:
+    sache = _sachwoerter(zeilen, markdown)
+    if not sache:
         return ""
     try:
         import babu_web  # noqa: PLC0415
         import kompendium  # noqa: PLC0415
-        emb = babu_web.embedding_rechnen(text, als_dokument=False)
+        emb = babu_web.embedding_rechnen(
+            "Nutzungsdauer und Kontierung im Friseursalon: " + sache,
+            als_dokument=False)
         if not emb:
             return ""
         treffer = [t for t in kompendium.suchen(emb["vektor"], k=k)
-                   if t["score"] >= 0.35]
+                   if t["score"] >= NACHSCHLAG_SCHWELLE
+                   and any(q in (t["quelle"] or "").lower()
+                           for q in NACHSCHLAG_QUELLEN)][:2]
     except Exception:  # noqa: BLE001
         return ""
     if not treffer:

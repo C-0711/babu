@@ -210,6 +210,28 @@ def test_nachschlagen_findet_zum_beleg_passende_stellen(mini_kompendium, monkeyp
     assert "Nutzungsdauer 10 Jahre" in text
 
 
+def test_nachschlagen_nimmt_nur_quellen_die_buchungsfragen_beantworten(
+        mini_kompendium, monkeypatch):
+    """Gemessen am 28.08.2026: die Frageform hebt ALLE Ähnlichkeiten auf
+    rund 0,42, sodass jeder Beleg dieselbe Branchenstatistik trifft. Ein
+    Schwellwert trennt das nicht — die Quelle schon."""
+    import babu_web as bw
+    import gemma_buchung as gb
+    # Der Vektor zeigt auf Atom 2 (statistik.md) — kein Buchungswissen.
+    monkeypatch.setattr(bw, "embedding_rechnen",
+                        lambda text, als_dokument=True: {
+                            "modell": "e", "dim": 4, "vektor": [0, 0, 1.0, 0]})
+    assert gb.nachschlagen(["Wella", "Koleston Perfect"]) == ""
+
+
+def test_die_suche_laesst_betraege_und_mengen_weg():
+    import gemma_buchung as gb
+    sache = gb._sachwoerter(["Moebel Mayer", "Bedienungsstuhl Hydraulik Holz",
+                             "Netto 630,25", "Gesamt 750,00 EUR"], None)
+    assert "Bedienungsstuhl Hydraulik Holz" in sache
+    assert "630" not in sache and "750" not in sache
+
+
 def test_nachschlagen_schweigt_ohne_dienst(monkeypatch):
     import babu_web as bw
     import gemma_buchung as gb
