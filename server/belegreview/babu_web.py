@@ -245,6 +245,8 @@ def db_einstellung_setzen(un: str, schluessel: str, wert: str) -> None:
 GITCHAIN_ID = os.environ.get("GITCHAIN_ID_HOST", "https://gitchain.de").rstrip("/")
 GEMMA_API = os.environ.get("GEMMA_API", "http://127.0.0.1:11435/v1/chat/completions")
 GEMMA_MODELL = os.environ.get("GEMMA_MODELL", "gemma4-mm")
+EMBED_API = os.environ.get("EMBED_API", "http://127.0.0.1:11436/v1/embeddings")
+EMBED_MODELL = os.environ.get("EMBED_MODELL", "embeddinggemma")
 ERLAUBT = {u.strip().lower() for u in os.environ.get("BABU_ERLAUBT", "christoph0711.io").split(",") if u.strip()}
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,120}$")
 
@@ -1912,6 +1914,13 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
         dateien[f"review/{stamm_neu}.json"] = json.dumps(
             review, ensure_ascii=False, indent=1).encode()
         dateien[f"review/{stamm_neu}.md"] = md.encode()
+        # Der Beleg wird sofort auffindbar: Vektor über das Markdown, als
+        # Beiakte im selben Commit. Schlägt der Dienst fehl, fehlt nur die
+        # Beiakte — der Backfill (backfill_embeddings.py) holt sie nach.
+        semantik = await run_in_threadpool(embedding_rechnen, md)
+        if semantik:
+            dateien[f"review/{stamm_neu}.embedding.json"] = json.dumps(
+                semantik).encode()
 
     try:
         commit = await run_in_threadpool(boxschreiber.schreiben, dateien, None,
@@ -2022,12 +2031,55 @@ def _review_aus_einschaetzung(pfad: str, buchung: dict, zeilen: list,
         "vlm": None,
         "zusammenfassung": buchung.get("buchungstext"),
     }
-    md = ("# Lesung vom Telefon\n\n"
-          f"Gebucht von Gemma über die Einschätzung — {klasse}, "
-          f"{buchung.get('kategorie_name') or ''}.\n\n"
-          "## Jede erkannte Zeile\n\n"
-          + "\n".join(f"  {z}" for z in zeilen) + "\n")
-    return review, md
+    return review, beleg_markdown(review)
+
+
+def beleg_markdown(review: dict) -> str:
+    """Die kanonische Text-Fassung eines Belegs: Kopf (Lieferant, Datum,
+    Betrag, Kategorie, Dokumentklasse) plus jede gelesene Zeile.
+
+    EIN Text für zwei Leser — er liegt als review/<stamm>.md hinter dem ⓘ
+    und ist zugleich der Text, aus dem das Embedding gerechnet wird. Was
+    die Suche findet, ist damit exakt das, was ein Mensch nachlesen kann."""
+    f = review.get("felder") or {}
+    b = (review.get("buchung") or {}).get("buchung") or {}
+    e = review.get("einschaetzung") or {}
+    betrag = f.get("brutto")
+    betrag_text = ("—" if not isinstance(betrag, (int, float))
+                   else f"{betrag:.2f} € brutto".replace(".", ","))
+    if isinstance(betrag, (int, float)) and f.get("ust_satz"):
+        betrag_text += f" ({f['ust_satz']} % USt)"
+    kopf = [f"# {f.get('lieferant') or 'Beleg'}", "",
+            f"- Datum: {f.get('datum') or '—'}",
+            f"- Betrag: {betrag_text}",
+            f"- Kategorie: {b.get('kategorie_name') or e.get('belegart') or b.get('kategorie') or '—'}",
+            f"- Dokumentklasse: {review.get('dokumentklasse') or 'beleg'}"]
+    text = str(review.get("zusammenfassung") or b.get("buchungstext") or "").strip()
+    if text:
+        kopf += ["", text]
+    zeilen = (review.get("ocr_text") or "").splitlines()
+    return ("\n".join(kopf) + "\n\n## Jede erkannte Zeile\n\n"
+            + "\n".join(f"  {z}" for z in zeilen) + "\n")
+
+
+def embedding_rechnen(text: str) -> dict | None:
+    """Der Vektor zum Beleg — EmbeddingGemma mit Dokument-Präfix, dieselbe
+    Konvention, mit der eine spätere Suche ihre Frage einbettet.
+
+    Der Dienst nimmt höchstens 2048 Token; ohne truncate_prompt_tokens
+    antwortet er mit 400 statt zu kürzen. Fehler sind erlaubt: die
+    Aufnahme darf nie daran scheitern, dass der Embedding-Dienst schläft."""
+    try:
+        r = requests.post(EMBED_API, json={
+            "model": EMBED_MODELL,
+            "input": f"title: none | text: {text[:6000]}",
+            "truncate_prompt_tokens": 2040,
+        }, timeout=15)
+        r.raise_for_status()
+        vektor = r.json()["data"][0]["embedding"]
+        return {"modell": EMBED_MODELL, "dim": len(vektor), "vektor": vektor}
+    except Exception:  # noqa: BLE001
+        return None
 
 
 # Was die App der Nutzerin sagt — ohne Ordnernamen und ohne Technik.
