@@ -166,6 +166,13 @@ def bwa_summe(monats_bwas: list[dict], zeitraum: str) -> dict:
         for f in b.get("fehlt") or []:
             if f not in fehlt:
                 fehlt.append(f)
+    ohne_kasse = sum(1 for b in monats_bwas
+                     if not b.get("tage_erfasst") and b["kosten_netto"] > 0)
+    if ohne_kasse:
+        fehlt.insert(0, f"Für {ohne_kasse} "
+                     + ("Monat" if ohne_kasse == 1 else "Monate")
+                     + " mit Belegen fehlen die Tageseinnahmen im Kassenbuch "
+                     "— der Umsatz hier ist entsprechend zu niedrig.")
     umsatz = _rund(umsatz)
     geordnet = []
     for schluessel, _, _ in ma.KOSTENGRUPPEN:
