@@ -8785,8 +8785,22 @@ def _welt_fuer(un: str) -> dict:
     except Exception:  # noqa: BLE001
         zahlen = {}
 
+    # Ausgaben je Monat, aus den Belegen — damit der Chat „Wie viel habe
+    # ich im Januar ausgegeben?" beantworten kann, statt 121 Einzelbelege
+    # addieren zu müssen (Ninas Frage vom 27.08., #72).
+    monate: dict[str, dict] = {}
+    for z in idx["belege"].values():
+        m = z.get("monat")
+        if not m or z.get("brutto") is None:
+            continue
+        eintrag = monate.setdefault(m, {"ausgaben_brutto": 0.0, "belege": 0})
+        eintrag["ausgaben_brutto"] = round(eintrag["ausgaben_brutto"] + z["brutto"], 2)
+        eintrag["belege"] += 1
+    zahlen_monate = dict(sorted(monate.items(), reverse=True)[:12])
+
     return {
         "einstellungen": einstellungen,
+        "zahlen_monate": zahlen_monate,
         "belege": list(idx["belege"].values()),
         "kassenblaetter": list(idx["kassenblaetter"].values()),
         "vertraege": vertraege_aktuell(),

@@ -35,7 +35,8 @@ STICHWORTE: dict[str, tuple[str, ...]] = {
     "frist": ("frist", "termin", "fällig", "abgabe", "voranmeldung", "wann muss",
               "bis wann", "verspätet", "säumnis", "kalender"),
     "zahlen": ("gewinn", "verdient", "bwa", "auswertung", "bleibt", "übrig",
-               "rentabel", "lohnt", "zahlen", "monatsabschluss", "steuerlast"),
+               "rentabel", "lohnt", "zahlen", "monatsabschluss", "steuerlast",
+               "ausgegeben", "ausgaben", "gekauft", "kosten", "wie viel"),
     "post": ("finanzamt", "amt", "brief", "bescheid", "schreiben", "behörde",
              "prüfung", "post", "kanzlei", "steuerberater"),
 }
@@ -194,14 +195,22 @@ def _fristen(welt: dict, grenze: int) -> str:
 
 def _zahlen(welt: dict, grenze: int) -> str:
     z = welt.get("zahlen") or {}
-    if not z:
+    monate = welt.get("zahlen_monate") or {}
+    if not z and not monate:
         return ""
-    zeilen = ["DIE ZAHLEN DIESES MONATS:"]
-    for schluessel, name in (("einnahmen", "Eingenommen (ohne Steuer)"),
-                             ("ausgaben", "Ausgegeben (ohne Steuer)"),
-                             ("ergebnis", "Bleibt")):
-        if z.get(schluessel) is not None:
-            zeilen.append(f"  {name}: {_euro(z[schluessel])}")
+    zeilen = []
+    if z:
+        zeilen.append("DIE ZAHLEN DIESES MONATS:")
+        for schluessel, name in (("einnahmen", "Eingenommen (ohne Steuer)"),
+                                 ("ausgaben", "Ausgegeben (ohne Steuer)"),
+                                 ("ergebnis", "Bleibt")):
+            if z.get(schluessel) is not None:
+                zeilen.append(f"  {name}: {_euro(z[schluessel])}")
+    if monate:
+        zeilen.append("AUSGABEN JE MONAT (brutto, aus den Belegen):")
+        for monat, m in monate.items():
+            zeilen.append(f"  {monat}: {_euro(m['ausgaben_brutto'])} "
+                          f"({m['belege']} Belege)")
     return "\n".join(zeilen)[:grenze]
 
 

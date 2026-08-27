@@ -137,3 +137,15 @@ def test_alltagsfrage_gilt_nicht_als_belegfrage():
     """Nicht jede Frage ist eine Steuerfrage — der Chat soll auch beraten."""
     t = wissen.themen("Wie sage ich einer Kundin ab, ohne sie zu verlieren?")
     assert "beleg" not in t and "frist" not in t
+
+
+def test_monatsausgaben_stehen_im_fallwissen():
+    """Ninas Frage vom 27.08. (#72): „Wie viel habe ich im Januar
+    ausgegeben?" — der Chat braucht die Summen je Monat, nicht 121
+    Einzelbelege zum Selbst-Addieren."""
+    welt = {"zahlen_monate": {"2026-01": {"ausgaben_brutto": 1234.56,
+                                          "belege": 17}}}
+    text = wissen.kontext("Wie viel habe ich im Januar ausgegeben?", welt)
+    assert "AUSGABEN JE MONAT" in text
+    assert "2026-01" in text and "1.234,56" in text and "17 Belege" in text
+    assert "zahlen" in wissen.themen("Wie viel habe ich im Januar ausgegeben?")
