@@ -16,6 +16,10 @@ enum Dokumentart: String, CaseIterable, Identifiable {
     case kontoauszug
     case vertrag
     case behoerde
+    // Von babu erzeugte Monatsberichte — sie entstehen im Portal
+    // („Auswertung") und liegen dann hier zum Nachlesen.
+    case ustva
+    case bwa
 
     var id: String { rawValue }
 
@@ -26,6 +30,8 @@ enum Dokumentart: String, CaseIterable, Identifiable {
         case .kontoauszug: return "Kontoauszüge"
         case .vertrag:     return "Verträge"
         case .behoerde:    return "Post vom Amt"
+        case .ustva:       return "Umsatzsteuer"
+        case .bwa:         return "BWA"
         }
     }
 
@@ -36,6 +42,8 @@ enum Dokumentart: String, CaseIterable, Identifiable {
         case .kontoauszug: return "Kontoauszug"
         case .vertrag:     return "Vertrag"
         case .behoerde:    return "Brief vom Amt"
+        case .ustva:       return "Voranmeldung"
+        case .bwa:         return "Auswertung"
         }
     }
 
@@ -45,6 +53,8 @@ enum Dokumentart: String, CaseIterable, Identifiable {
         case .kontoauszug: return "building.columns"
         case .vertrag:     return "doc.plaintext"
         case .behoerde:    return "envelope"
+        case .ustva:       return "percent"
+        case .bwa:         return "chart.bar.doc.horizontal"
         }
     }
 
@@ -62,6 +72,12 @@ enum Dokumentart: String, CaseIterable, Identifiable {
         case .behoerde:
             return "Noch keine Post vom Amt. Bescheide und Schreiben landen "
                  + "hier, sobald du sie fotografierst."
+        case .ustva:
+            return "Noch keine Voranmeldung. Erstell sie im Portal unter "
+                 + "Auswertung — sie landet dann hier."
+        case .bwa:
+            return "Noch keine Auswertung. Erstell BWA und Saldenliste im "
+                 + "Portal unter Auswertung — sie landen dann hier."
         }
     }
 

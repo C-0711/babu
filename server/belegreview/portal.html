@@ -3680,10 +3680,41 @@ async function ladeAbschluss(){
     </div>`;
   }
 
+  // ————— Berichte als Dokument (UStVA nach USt 1 A, BWA + SuSa nach DATEV) —————
+  html += `<div class="karte" style="margin-top:10px">
+    <b>Berichte für deine Ablage</b>
+    <p style="color:var(--gc-desc);font-size:13px;margin:4px 0 10px">
+      Als PDF, wie deine Buchhaltung sie kennt: die Voranmeldung nach dem
+      amtlichen Formular, Auswertung und Saldenliste nach DATEV-Schema.
+      Sie landen in deiner Ablage.</p>
+    ${u.stand === "entwurf" ? `<button class="chip" id="ustva-knopf">Umsatzsteuer-Voranmeldung erstellen</button>` : ""}
+    <button class="chip" id="bwa-knopf">BWA + Summen/Salden erstellen</button>
+    <span id="bericht-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>
+  </div>`;
+
   ziel.innerHTML = html;
   const fk = $("#freigabe-knopf");
   if (fk) fk.addEventListener("click", () => abschlussFreigeben(fk));
+  const uk = $("#ustva-knopf");
+  if (uk) uk.addEventListener("click", () => berichtErstellen("ustva", uk));
+  const bk = $("#bwa-knopf");
+  if (bk) bk.addEventListener("click", () => berichtErstellen("bwa", bk));
   ladeFristen();
+}
+
+async function berichtErstellen(art, knopf){
+  const status = $("#bericht-status");
+  knopf.disabled = true;
+  status.textContent = "Wird erstellt …";
+  try{
+    const r = await api("/api/" + art + "/" + abMonat, {method:"POST"});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.fehler || "");
+    status.textContent = (d.wohin || "Abgelegt") + " ✓";
+  }catch(e){
+    status.textContent = e.message || "Gerade nicht möglich — später nochmal.";
+    knopf.disabled = false;
+  }
 }
 
 async function abschlussFreigeben(knopf){

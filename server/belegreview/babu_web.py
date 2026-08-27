@@ -2181,7 +2181,7 @@ DOKUMENT_PFAD_RE = re.compile(r"^dokumente/[A-Za-z0-9._/ -]{1,200}$")
 # gehören sie dazu. Gelöscht werden sie weiter nur über ihre eigene Route,
 # die den Beleg samt Beiakten wegnimmt.
 ABLAGE_PFAD_RE = re.compile(
-    r"^(dokumente|auszuege|abschluss|export|kassenbuch|rechnungen|docs)/"
+    r"^(dokumente|auszuege|abschluss|export|kassenbuch|rechnungen|docs|ustva|bwa)/"
     r"[A-Za-z0-9._/ -]{1,200}$")
 
 
@@ -5497,6 +5497,10 @@ ABLAGE_ARTEN = {
     "export": ("Buchungsstapel", "Übergaben an die Buchhaltung"),
     "kassenbuch": ("Kassenbuch", "Deine Tagesblätter"),
     "rechnung": ("Rechnungen", "Was du anderen in Rechnung gestellt hast"),
+    "ustva": ("Umsatzsteuervoranmeldung",
+              "Deine monatlichen Voranmeldungs-Entwürfe (USt 1 A)"),
+    "bwa": ("BWA und Summen/Salden",
+            "Monatliche Auswertung und Saldenliste nach DATEV-Schema"),
 }
 
 # Welche erkannte Art in welches Fach gehört.
@@ -5617,6 +5621,14 @@ def _ablage_eintraege() -> list[dict]:
             art, titel = "kassenbuch", "Kassenbuch " + name.removesuffix(".json")
         elif pfad.startswith("rechnungen/") and pfad.endswith(".pdf"):
             art, titel = "rechnung", "Rechnung " + name.removesuffix(".pdf")
+        elif pfad.startswith("ustva/") and pfad.endswith(".pdf"):
+            art = "ustva"
+            titel = "Voranmeldung " + name.removesuffix("-ustva.pdf")
+        elif pfad.startswith("bwa/") and pfad.endswith(".pdf"):
+            art = "bwa"
+            titel = (("Summen und Salden " + name.removesuffix("-susa.pdf"))
+                     if name.endswith("-susa.pdf")
+                     else "BWA " + name.removesuffix("-bwa.pdf"))
         else:
             continue
         # Kassenbuch, Stapel und Abschluss sind aufbewahrungspflichtig — kein
@@ -8784,6 +8796,118 @@ def api_monatsabschluss_freigeben(monat: str, request: Request) -> Response:
         _INDEX["geprueft"] = 0.0
     return JSONResponse({"ok": True, "commit": commit, "monat": monat,
                          "offene_punkte": len(offen)})
+
+
+def _berichtsdaten(un: str, monat: str) -> tuple[dict, dict, list, dict]:
+    """Erlöse, Belege, Profil und Betriebskopf eines Monats — die gemeinsame
+    Grundlage der Monats-Vordrucke (UStVA, BWA, SuSa)."""
+    import monatsabschluss as ma  # noqa: PLC0415
+    idx = index_aktuell()
+    blaetter = [b for tag, b in idx["kassenblaetter"].items()
+                if tag.startswith(monat)]
+    belege = [z for z in idx["belege"].values() if z["monat"] == monat]
+    einstellungen = db_einstellungen(salon_von(un))
+    erloese = ma.erloese_monat(blaetter, monat=monat,
+                               rechnungen=list(idx.get("rechnungen", {}).values()),
+                               versteuerung=_versteuerung(un))
+    return erloese, ma.umsatz_profil(einstellungen), belege, einstellungen
+
+
+@app.post("/api/ustva/{monat}")
+def api_ustva_erstellen(monat: str, request: Request) -> Response:
+    """Die Umsatzsteuer-Voranmeldung als Dokument — gerechnet, mit SKR04
+    geprüft und im Fach „Umsatzsteuervoranmeldung" abgelegt.
+
+    Layout nach dem amtlichen Vordruckmuster USt 1 A 2026; die Buchungen
+    des Monats laufen vorher durch die SKR04-Prüfung (vordrucke.py):
+    Privatentnahmen, Geldtransit und Versicherungen liefern keine
+    Vorsteuer, was nicht aufgeht, steht in der Prüfliste auf dem Blatt."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if not re.fullmatch(r"\d{4}-\d{2}", monat):
+        return JSONResponse({"fehler": "Monat als JJJJ-MM"}, status_code=400)
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das darf nur die Inhaberin."},
+                            status_code=403)
+    import monatsabschluss as ma  # noqa: PLC0415
+    import vordrucke  # noqa: PLC0415
+    erloese, profil, belege, einstellungen = _berichtsdaten(un, monat)
+    if not profil.get("braucht_ustva"):
+        return JSONResponse({"fehler": "Als Kleinunternehmerin (§ 19 UStG) "
+                             "gibst du keine Umsatzsteuer-Voranmeldung ab."},
+                            status_code=400)
+    vorsteuer, befunde = vordrucke.vorsteuer_geprueft(belege)
+    entwurf = ma.ustva_entwurf(monat, erloese, vorsteuer, profil)
+    pdf = vordrucke.ustva_pdf(entwurf, einstellungen, befunde)
+    beiakte = json.dumps({"entwurf": entwurf, "befunde": befunde,
+                          "erstellt": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                          "von": un}, ensure_ascii=False, indent=1).encode()
+    import boxschreiber  # noqa: PLC0415
+    try:
+        commit = boxschreiber.schreiben(
+            {f"ustva/{monat}-ustva.pdf": pdf,
+             f"ustva/{monat}-ustva.json": beiakte},
+            None, f"ustva: Voranmeldung {monat}", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit,
+                         "datei": f"ustva/{monat}-ustva.pdf",
+                         "zahllast": entwurf["zahllast"],
+                         "satz": entwurf.get("satz"),
+                         "befunde": len([x for x in befunde
+                                         if x["folge"] != "info"]),
+                         "wohin": "In deiner Ablage unter Umsatzsteuervoranmeldung"})
+
+
+@app.post("/api/bwa/{monat}")
+def api_bwa_erstellen(monat: str, request: Request) -> Response:
+    """BWA und Summen-/Saldenliste als Dokumente im Fach „BWA".
+
+    Die BWA folgt dem Zeilenschema der DATEV-BWA Nr. 1, die SuSa dem
+    SKR04 (DATEV Art.-Nr. 11175) — beides Entwürfe aus Kassenbuch,
+    Rechnungen und den Belegen des Monats."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if not re.fullmatch(r"\d{4}-\d{2}", monat):
+        return JSONResponse({"fehler": "Monat als JJJJ-MM"}, status_code=400)
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das darf nur die Inhaberin."},
+                            status_code=403)
+    import monatsabschluss as ma  # noqa: PLC0415
+    import vordrucke  # noqa: PLC0415
+    erloese, profil, belege, einstellungen = _berichtsdaten(un, monat)
+    bwa = ma.bwa(monat, erloese, belege, None,
+                 personal_monat=(team_personalkosten(un)
+                                 or _zahl(einstellungen.get("personal_monat"))),
+                 vertraege=vertraege_aktuell())
+    saldenliste = vordrucke.susa(monat, erloese, belege)
+    dateien = {
+        f"bwa/{monat}-bwa.pdf": vordrucke.bwa_pdf(bwa, einstellungen),
+        f"bwa/{monat}-susa.pdf": vordrucke.susa_pdf(saldenliste, einstellungen),
+        f"bwa/{monat}.json": json.dumps(
+            {"bwa": bwa, "susa": saldenliste,
+             "erstellt": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "von": un},
+            ensure_ascii=False, indent=1).encode(),
+    }
+    import boxschreiber  # noqa: PLC0415
+    try:
+        commit = boxschreiber.schreiben(dateien, None,
+                                        f"bwa: Auswertung {monat}", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit,
+                         "dateien": [f"bwa/{monat}-bwa.pdf",
+                                     f"bwa/{monat}-susa.pdf"],
+                         "ergebnis": bwa.get("ergebnis"),
+                         "wohin": "In deiner Ablage unter BWA und Summen/Salden"})
 
 
 @app.get("/api/fristen/{jahr}")
