@@ -1307,6 +1307,30 @@ extension AblageService {
         return stuecke.sorted { ($0.zeit ?? "") > ($1.zeit ?? "") }
     }
 
+    /// Der Buchungs-Kontenkatalog des Servers (`GET /api/kategorien`) —
+    /// Ninas Wörter samt Kontonummer im Rahmen des Betriebs. Der Server
+    /// führt die Liste, die App führt keine zweite (Ninas Anmerkung #73:
+    /// die eingebaute Auswahl war zu klein).
+    static func kategorien(basis: URL, pat: String) async -> [Konto] {
+        var request = URLRequest(url: basis.appendingPathComponent("api/kategorien"))
+        request.timeoutInterval = 10
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              (antwort as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+              let liste = json["kategorien"] as? [[String: Any]] else { return [] }
+        var gesehen = Set<String>()
+        var konten: [Konto] = []
+        for k in liste {
+            guard let konto = k["konto"] as? String,
+                  let name = k["name"] as? String,
+                  !gesehen.contains(konto) else { continue }
+            gesehen.insert(konto)
+            konten.append(Konto(nr: konto, bez: name, individuell: false))
+        }
+        return konten
+    }
+
     /// Die Server-Vorschau eines Ablage-Stücks (Seite 1 als Bild).
     static func vorschauLaden(pfad: String, basis: URL, pat: String) async -> UIImage? {
         var teil = URLComponents(url: basis.appendingPathComponent("api/vorschau"),

@@ -113,3 +113,17 @@ def test_der_bescheid_sagt_immer_warum():
                            (None, "SKR03", False), ("SKR04", "SKR04", False)):
         b = kr.wechsel_pruefen(alt=alt, neu=neu, heute_jahr=2026, bestaetigt=best)
         assert b.begruendung, (alt, neu, best)
+
+
+def test_neue_kategorien_kennen_beide_rahmen():
+    """Ninas Anmerkungen (27.08.): Materialeinsatz am Kunden, Kunden-
+    aufmerksamkeiten und USt-Zahlungen ans Finanzamt — mit Standardkonten
+    in SKR03 und SKR04."""
+    import kontierung as kt
+    for code, skr03, skr04 in (("materialeinsatz", "3000", "5100"),
+                               ("aufmerksamkeit", "4605", "6605"),
+                               ("ust_zahlung", "1780", "3820")):
+        k = kt.KATEGORIEN[code]
+        assert k.geprueft, code
+        assert k.konto("SKR03") == skr03, code
+        assert k.konto("SKR04") == skr04, code

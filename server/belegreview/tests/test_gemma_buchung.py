@@ -380,3 +380,22 @@ def test_einschaetzung_nimmt_beide_zeilenformate(direkt_klient, monkeypatch):
     r2 = c.post("/api/buchung/einschaetzung", json={"zeilen": ["Miete Juli"]})
     assert r2.status_code == 200
     assert gesehen["zeilen"] == ["Miete Juli"]
+
+
+def test_prompt_kennt_die_neuen_fachregeln():
+    """Ninas Anmerkungen vom 27.08.: Geldtransit, FA-Bescheide positionsweise,
+    Bewirtung/Aufmerksamkeit/Geschenk, Summen-Plausibilität."""
+    p = gemma_buchung.prompt_bauen("P", ["x"], [])
+    assert "geldtransit" in p and "SumUp" in p
+    assert "ust_zahlung" in p and "POSITIONSWEISE" in p
+    assert "aufmerksamkeit" in p and "70/30" in p
+    assert "Netto + USt = Brutto" in p
+
+
+def test_katalog_traegt_die_neuen_kategorien():
+    text = gemma_buchung.katalog_text("SKR04")
+    assert "materialeinsatz" in text and "Extensions" in text
+    assert "aufmerksamkeit" in text
+    assert "ust_zahlung" in text
+    text03 = gemma_buchung.katalog_text("SKR03")
+    assert "materialeinsatz" in text03

@@ -149,6 +149,22 @@ Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
   mehrseitiger Beleg: der Rechnungsbetrag ist die Endsumme der LETZTEN
   Seite; Zwischensummen und Überträge der Seiten davor zählst du nicht
   doppelt.
+- Weist der Beleg Netto, Umsatzsteuer UND Brutto aus, prüfe die Probe
+  Netto + USt = Brutto. Geht sie nicht auf, buche NICHT — stell EINE Frage
+  und nenne beide Werte („Auf dem Beleg stehen … — welcher gilt?").
+- Geldbewegungen sind NIE Umsatz und NIE Ausgabe: Bareinzahlung aufs Konto,
+  Abhebung, Überweisung zwischen eigenen Konten, Auszahlungen von SumUp/
+  PayPal aufs Bankkonto → kategorie geldtransit.
+- Bescheide und Zahlungen ans Finanzamt POSITIONSWEISE ansehen:
+  Umsatzsteuer (Vorauszahlung/Nachzahlung) → ust_zahlung (Betriebsausgabe);
+  Einkommensteuer und Solidaritätszuschlag der Inhaberin samt ihrer
+  Säumniszuschläge → privat. Ein gemischter Bescheid wird nach Positionen
+  aufgeteilt, nicht pauschal privat gebucht.
+- Bewirtung, Aufmerksamkeit oder Geschenk — drei verschiedene Dinge:
+  Essen gehen mit Anlass und Teilnehmern → bewirtung (70 %). Kaffee, Sekt,
+  Kekse für Kundinnen IM Salon → aufmerksamkeit (voll abziehbar, kein 70/30).
+  Etwas, das eine Kundin geschenkt bekommt und behält → geschenk (bis 50 €
+  je Person und Jahr).
 - Erkenne die Währung aus dem Beleg; bei Fremdwährung nimm betrag_eur aus
   einer passenden Kontobewegung, sonst schätze ihn.
 - Passt eine Kontobewegung exakt zu diesem Beleg, nenne sie in der

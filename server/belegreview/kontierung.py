@@ -75,6 +75,14 @@ _K = [
     Kategorie("verbrauchsmaterial", "Verbrauchsmaterial Salon",
               "4980", "6850", geprueft=True,
               hinweis="Wird im Salon aufgebraucht: Farbe, Folie, Handschuhe."),
+    # Ninas Anmerkung (#73, 27.08.2026): Extensions/Bondings, die am Kunden
+    # verarbeitet werden, sind Wareneinsatz der Dienstleistung — nicht
+    # „Sonstiger Betriebsbedarf" und auch kein Weiterverkaufs-Wareneinkauf.
+    Kategorie("materialeinsatz", "Materialeinsatz am Kunden",
+              "3000", "5100", geprueft=True,
+              hinweis="Wird in der Dienstleistung verarbeitet und geht mit "
+                      "der Kundin mit: Extensions, Bondings, Strähnensets. "
+                      "Vergleichbar mit Haarfarbe, aber Wareneinsatz."),
     Kategorie("fremdleistung", "Fremdleistungen",
               "3100", "5900", geprueft=True,
               hinweis="Stuhlmiete, freie Kosmetikerin, Subunternehmerin."),
@@ -100,8 +108,18 @@ _K = [
                       "Betrieben über Fremdleistung — einmal festlegen."),
     Kategorie("versicherung", "Versicherungen", "4360", "6400", geprueft=True),
     Kategorie("werbung", "Werbung", "4600", "6600", geprueft=True),
-    Kategorie("geschenk", "Geschenke", "4630", "6610", geprueft=True),
-    Kategorie("bewirtung", "Bewirtung", "4650", "6640", geprueft=True),
+    Kategorie("geschenk", "Geschenke", "4630", "6610", geprueft=True,
+              hinweis="Zugewendetes, das die Beschenkte behält — bis 50 € "
+                      "je Person und Jahr abziehbar."),
+    Kategorie("bewirtung", "Bewirtung", "4650", "6640", geprueft=True,
+              hinweis="Echte Bewirtung außer Haus oder mit Anlass und "
+                      "Teilnehmern (70 % abziehbar). Kaffee und Sekt für "
+                      "Kundinnen im Salon sind KEINE Bewirtung — das ist "
+                      "aufmerksamkeit."),
+    Kategorie("aufmerksamkeit", "Kundenaufmerksamkeiten",
+              "4605", "6605", geprueft=True,
+              hinweis="Kaffee, Getränke, Kekse, kleine Proben für Kundinnen "
+                      "im Salon — voll abziehbar, kein 70/30."),
     Kategorie("kfz", "Kfz-Kosten", "4530", "6530", geprueft=True),
     Kategorie("fahrt", "Reise- und Fahrtkosten", "4670", "6673",
               hinweis="Trennung Unternehmerin/Arbeitnehmerin noch nicht "
@@ -134,7 +152,16 @@ _K = [
                       "Einlösen der Erlös. Konten noch nicht bestätigt."),
     Kategorie("privat", "Privatentnahme",
               "1800", "2100", geprueft=True,
-              hinweis="Keine Betriebsausgabe, mindert nur den Bestand."),
+              hinweis="Keine Betriebsausgabe, mindert nur den Bestand. "
+                      "Einkommensteuer und Soli der Inhaberin gehören "
+                      "hierher — Umsatzsteuer ans Finanzamt NICHT."),
+    # Finanzamt-Bescheide positionsweise (Ninas Anmerkung, 27.08.2026):
+    # USt-Zahlungen des Betriebs sind bei der EÜR Betriebsausgabe.
+    Kategorie("ust_zahlung", "Umsatzsteuer ans Finanzamt",
+              "1780", "3820", geprueft=True,
+              hinweis="Umsatzsteuer-Vorauszahlung oder -Nachzahlung an das "
+                      "Finanzamt. Einkommensteuer/Soli dagegen = privat; "
+                      "gemischte Bescheide positionsweise trennen."),
     Kategorie("darlehen_personal", "Vorschuss an Mitarbeitende",
               None, None,
               hinweis="Forderung, kein Aufwand — wird mit dem Lohn "

@@ -11,13 +11,20 @@ struct ReviewSheet: View {
     @State private var suche = ""
     @State private var gewaehlt: Konto?
     @State private var steuerschluessel = "9"
+    /// Der Katalog des Servers — die eingebaute Kurzliste ist nur noch
+    /// Fallback, wenn keine Verbindung besteht (Ninas Anmerkung #73).
+    @State private var serverKonten: [Konto] = []
 
     private var beleg: Beleg? { store.belege.first { $0.id == belegID } }
 
+    private var alleKonten: [Konto] {
+        serverKonten.isEmpty ? Kontenplan.konten : serverKonten
+    }
+
     private var treffer: [Konto] {
         let q = suche.lowercased().trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return Kontenplan.konten }
-        return Kontenplan.konten.filter {
+        guard !q.isEmpty else { return alleKonten }
+        return alleKonten.filter {
             $0.nr.hasPrefix(q) || $0.bez.lowercased().contains(q)
         }
     }
@@ -96,9 +103,16 @@ struct ReviewSheet: View {
                 if let b = beleg {
                     steuerschluessel = b.steuerschluessel
                     if let k = b.konto {
-                        gewaehlt = Kontenplan.konten.first { $0.nr == k }
+                        gewaehlt = alleKonten.first { $0.nr == k }
+                            ?? Konto(nr: k, bez: Kontenplan.bezeichnung(k), individuell: false)
                     }
                 }
+            }
+            .task {
+                guard store.ablageAktiv, let url = URL(string: store.ablageURL),
+                      let pat = KeychainHelfer.ladePAT() else { return }
+                let geladen = await AblageService.kategorien(basis: url, pat: pat)
+                if !geladen.isEmpty { serverKonten = geladen }
             }
         }
     }
