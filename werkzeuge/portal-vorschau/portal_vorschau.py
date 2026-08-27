@@ -3,7 +3,8 @@
 Start: /tmp/babu-venv/bin/python werkzeuge/portal-vorschau/portal_vorschau.py
 Dann http://localhost:7899 oeffnen und einmal per JS anmelden:
   fetch("/api/anmelden",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pat:"test-pat"})}).then(()=>location.href="/portal")
-Echte Zugaenge funktionieren hier NICHT (wer_token ist gestubbt), es fliesst
+Echte Zugaenge funktionieren hier NICHT (Anmeldung ist gestubbt, jeder
+Besucher gilt als angemeldet — nur fuer Screenshots gedacht), es fliesst
 nichts nach aussen — reiner Anschau-Server auf 127.0.0.1.
 """
 import json
@@ -39,7 +40,11 @@ belege = [
 for monat, stamm, lieferant, brutto, datum, offen in belege:
     d = arbeit / "docs" / monat
     d.mkdir(parents=True, exist_ok=True)
-    (d / f"{stamm}.jpg").write_bytes(b"\xff\xd8\xff\xe0demo" + stamm.encode())
+    foto = os.environ.get("BABU_VORSCHAU_FOTO")
+    if foto and Path(foto).exists():
+        (d / f"{stamm}.jpg").write_bytes(Path(foto).read_bytes())
+    else:
+        (d / f"{stamm}.jpg").write_bytes(b"\xff\xd8\xff\xe0demo" + stamm.encode())
 _git(arbeit, "add", "-A")
 _git(arbeit, "commit", "-q", "-m", "aufnahme: demo",
      "--author", "christoph0711.io <aufnahme@gitchain.local>")
@@ -76,6 +81,9 @@ sys.path.insert(0, str(REPO))
 import babu_web  # noqa: E402
 
 babu_web.wer_token = lambda token: "christoph0711.io" if token == "test-pat" else None
+# Fuer Screenshot-Werkzeuge (Headless-Chrome ohne Cookie): immer angemeldet.
+# Nur hier im lokalen Anschau-Server — der Produktivcode bleibt unberuehrt.
+babu_web.angemeldet = lambda request: "christoph0711.io"
 
 import uvicorn  # noqa: E402
 uvicorn.run(babu_web.app, host="127.0.0.1", port=7899, workers=1)
