@@ -166,7 +166,8 @@ final class AppStore: ObservableObject {
         // die Einschätzung. Die erste Vision-Zeile dient nur als Anzeigename.
         let kopf = ocrText.split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
-            .first { $0.count >= 3 } ?? "Beleg"
+            // Seiten-Marker der Mehrseiter sind kein Name („— Seite 1 von 2 —").
+            .first { $0.count >= 3 && !$0.hasPrefix("— Seite") } ?? "Beleg"
         var beleg = Beleg(
             lieferant: String(kopf.prefix(40)),
             belegNr: "ohne Nr.",
