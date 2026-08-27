@@ -191,21 +191,19 @@ final class CaptureViewModel: ObservableObject {
                     Dewarper.entzerre(foto, liveQuad: quad)
                 }.value
 
-                let reduziert = UIAccessibility.isReduceMotionEnabled
-                if reduziert {
-                    eingefroren = bild
-                } else {
-                    withAnimation(.spring(duration: 0.45)) { eingefroren = bild }
-                }
-                // Snap-Moment kurz stehen lassen, dann übernimmt die Pipeline.
-                try? await Task.sleep(nanoseconds: reduziert ? 120_000_000 : 550_000_000)
                 guard !Task.isCancelled else { return }
                 if mehrseiten {
-                    // Mehrseiten-Modus: Seite in den Stapel, zurück in den
-                    // Sucher — die Aufnahme endet erst mit „Fertig".
+                    // Mehrseiten-Modus: kurzes Standbild als Rückmeldung
+                    // („die Seite ist im Kasten"), dann zurück in den Sucher —
+                    // die Aufnahme endet erst mit „Fertig".
+                    eingefroren = bild
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    guard !Task.isCancelled else { return }
                     seiten.append(bild)
                     weiterImSucher()
                 } else {
+                    // Einseiter: KEINE Vorschau mehr — direkt verarbeiten
+                    // und das Ergebnis zeigen (Wunsch vom 27.08.).
                     onScan?(bild)
                 }
             } catch {

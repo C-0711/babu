@@ -6,6 +6,9 @@ import SwiftUI
 /// alles im Unlimited-OCR-Design. API-kompatibel zum bisherigen Wrapper:
 /// `CaptureTab` bleibt unverändert.
 struct ScannerView: View {
+    /// Direkt im Mehrseiten-Modus öffnen (Knopf „Mehrseitigen Beleg
+    /// erfassen" auf dem Erfassen-Tab).
+    var startMehrseitig: Bool = false
     var onScan: (UIImage) -> Void
     var onCancel: () -> Void
     /// Mehrseiten-Modus: „Fertig (n Seiten)" liefert alle Seiten als EINEN
@@ -33,7 +36,10 @@ struct ScannerView: View {
                 ProgressView().tint(.white)
             }
         }
-        .task { await model.starte(onScan: onScan, onCancel: onCancel, onFertig: onFertig) }
+        .task {
+            model.mehrseiten = startMehrseitig
+            await model.starte(onScan: onScan, onCancel: onCancel, onFertig: onFertig)
+        }
         .onDisappear { model.stoppe() }
     }
 }

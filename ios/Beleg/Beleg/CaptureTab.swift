@@ -7,6 +7,7 @@ import PDFKit
 struct CaptureTab: View {
     @EnvironmentObject var store: AppStore
     @State private var zeigeScanner = false
+    @State private var startMehrseitig = false
     /// Nur beim ersten Öffnen von selbst aufmachen — wer die Kamera schließt,
     /// will sie nicht sofort wieder im Gesicht haben.
     @State private var kameraGezeigt = false
@@ -112,6 +113,7 @@ struct CaptureTab: View {
             }
             .fullScreenCover(isPresented: $zeigeScanner) {
                 ScannerView(
+                    startMehrseitig: startMehrseitig,
                     onScan: { bild in
                         zeigeScanner = false
                         Task { await verarbeite(bild) }
@@ -231,12 +233,24 @@ struct CaptureTab: View {
             VStack(spacing: 10) {
                 if ScannerView.verfuegbar {
                     Button {
+                        startMehrseitig = false
                         zeigeScanner = true
                     } label: {
                         Label("Beleg scannen", systemImage: "doc.viewfinder")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    // Mehrseitige Rechnung: sichtbarer Einstieg direkt hier —
+                    // der ⧉-Umschalter im Sucher allein war zu versteckt.
+                    Button {
+                        startMehrseitig = true
+                        zeigeScanner = true
+                    } label: {
+                        Label("Mehrseitigen Beleg erfassen", systemImage: "doc.on.doc")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
                     .controlSize(.large)
                 }
                 Menu {
@@ -449,7 +463,6 @@ struct CaptureTab: View {
         schritte = 1
         let ocr = await OCRService.erkenne(bild)
 
-        try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 2
         // Kein Parser mehr: Vision liefert die Zeilen, Gemma liest sie.
         // Unlesbar ist ein Foto nur, wenn Vision praktisch nichts erkennt.
@@ -460,15 +473,12 @@ struct CaptureTab: View {
 
         ergebnisBild = bild
 
-        try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 3
         let jpeg = bild.jpegData(compressionQuality: 0.6)
         let neu = store.routen(bildJpeg: jpeg, ocrText: ocr.text,
                                ocrGeoJson: ocr.geoJson)
 
-        try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 4
-        try? await Task.sleep(nanoseconds: 300_000_000)
 
         // Abgebrochen (X während der Verarbeitung)? Der Beleg ist trotzdem
         // aufgenommen und liegt in der Belegliste — nur nicht mehr aufdrängen.
@@ -504,7 +514,6 @@ struct CaptureTab: View {
         }
         let gesamtText = texte.joined(separator: "\n")
 
-        try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 2
         if gesamtText.trimmingCharacters(in: .whitespacesAndNewlines).count < 12 * seiten.count {
             if lauf == verarbeitungsLauf { phase = .nichtsErkannt }
@@ -513,7 +522,6 @@ struct CaptureTab: View {
 
         ergebnisBild = seiten[0]
 
-        try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 3
         let geoJson = (try? JSONSerialization.data(withJSONObject: geo))
             .flatMap { String(data: $0, encoding: .utf8) }
@@ -521,9 +529,7 @@ struct CaptureTab: View {
         let neu = store.routen(bildJpeg: jpegs.first, ocrText: gesamtText,
                                ocrGeoJson: geoJson, seitenJpeg: jpegs)
 
-        try? await Task.sleep(nanoseconds: 350_000_000)
         schritte = 4
-        try? await Task.sleep(nanoseconds: 300_000_000)
 
         guard lauf == verarbeitungsLauf else { return }
         beleg = store.belege.first { $0.id == neu.id } ?? neu
