@@ -219,13 +219,47 @@ def system_text(profil: str, rahmen: str = "SKR04") -> str:
         + REGELN + "\n\n" + SCHEMA)
 
 
+def nachschlagen(zeilen: list[str], markdown: str | None = None,
+                 k: int = 3) -> str:
+    """Was im Kompendium zu DIESEM Beleg steht — Vektorsuche über die
+    89.760 Atome aus AfA-Tabellen, BMF-Schreiben und Kontenrahmen.
+
+    Der feste Digest im Vorspann deckt die Salonfälle ab; ein Gerät, das
+    dort nicht steht, findet Gemma nur hier. Das Ergebnis gehört zum
+    VARIABLEN Teil und steht deshalb beim Beleg, nicht im Vorspann —
+    sonst wäre der stehende Anfang für jeden Beleg ein anderer und der
+    Prefix-Cache dahin.
+
+    Schweigt still, wenn Embedding-Dienst oder Kompendium fehlen."""
+    text = " ".join((markdown or "\n".join(zeilen)).split())[:1200]
+    if not text:
+        return ""
+    try:
+        import babu_web  # noqa: PLC0415
+        import kompendium  # noqa: PLC0415
+        emb = babu_web.embedding_rechnen(text, als_dokument=False)
+        if not emb:
+            return ""
+        treffer = [t for t in kompendium.suchen(emb["vektor"], k=k)
+                   if t["score"] >= 0.35]
+    except Exception:  # noqa: BLE001
+        return ""
+    if not treffer:
+        return ""
+    return ("\nNACHGESCHLAGEN zu diesem Beleg (Quelle in Klammern — nutze es "
+            "nur, wenn es wirklich passt):\n" + "\n".join(
+                f"  [{t['quelle']} · {t['loc']}] "
+                + " ".join(t["text"].split())[:400] for t in treffer))
+
+
 def prompt_bauen(profil: str, zeilen: list[str], antworten: list[dict],
                  rahmen: str = "SKR04", umsaetze: list[dict] | None = None,
                  nachbarn: list[dict] | None = None,
                  markdown: str | None = None, mit_bild: bool = False,
                  vertraege: list[dict] | None = None,
                  personal: list[dict] | None = None,
-                 offene_abbuchungen: list[dict] | None = None) -> str:
+                 offene_abbuchungen: list[dict] | None = None,
+                 nachschlag: str = "") -> str:
     beantwortet = ""
     if antworten:
         beantwortet = "\nNINA HAT BEREITS BEANTWORTET:\n" + "\n".join(
@@ -282,7 +316,7 @@ def prompt_bauen(profil: str, zeilen: list[str], antworten: list[dict],
               (markdown or "\n".join("  " + z for z in zeilen)))
     return (f"DER BELEG — {kopf}\n{inhalt}\n"
             f"{konto_kontext}{abgleich_kontext}{vertrag_kontext}"
-            f"{personal_kontext}{beleg_kontext}{beantwortet}\n"
+            f"{personal_kontext}{beleg_kontext}{nachschlag}{beantwortet}\n"
             "Verbuche ihn jetzt nach den Regeln oben. Antworte NUR mit "
             "dem JSON-Objekt.")
 
@@ -495,7 +529,8 @@ def runde(zeilen: list[str], einstellungen: dict, antworten: list[dict],
                               rahmen, umsaetze, nachbarn, markdown,
                               mit_bild=bild is not None,
                               vertraege=vertraege, personal=personal,
-                              offene_abbuchungen=offene_abbuchungen),
+                              offene_abbuchungen=offene_abbuchungen,
+                              nachschlag=nachschlagen(zeilen, markdown)),
                  bild, system=system_text(profil, rahmen))
     ergebnis = buchung_pruefen(roh, rahmen)
     if ergebnis["status"] == "unklar":

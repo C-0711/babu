@@ -196,3 +196,33 @@ def test_der_vorspann_geht_als_eigene_system_nachricht_raus(monkeypatch):
     assert rollen == ["system", "user"], rollen
     assert "Regeln:" in gesehen["messages"][0]["content"]
     assert "Edeka 12,90" in gesehen["messages"][1]["content"]
+
+
+def test_nachschlagen_findet_zum_beleg_passende_stellen(mini_kompendium, monkeypatch):
+    import babu_web as bw
+    import gemma_buchung as gb
+    monkeypatch.setattr(bw, "embedding_rechnen",
+                        lambda text, als_dokument=True: {
+                            "modell": "e", "dim": 4, "vektor": [1.0, 0, 0, 0]})
+    text = gb.nachschlagen(["Moebel Mayer", "Bedienungsstuhl 750,00"])
+    assert "NACHGESCHLAGEN" in text
+    assert "[afa.pdf · S1#0]" in text
+    assert "Nutzungsdauer 10 Jahre" in text
+
+
+def test_nachschlagen_schweigt_ohne_dienst(monkeypatch):
+    import babu_web as bw
+    import gemma_buchung as gb
+    monkeypatch.setattr(bw, "embedding_rechnen",
+                        lambda text, als_dokument=True: None)
+    assert gb.nachschlagen(["irgendwas"]) == ""
+
+
+def test_das_nachgeschlagene_steht_beim_beleg_nicht_im_vorspann():
+    """Es ändert sich mit jedem Beleg — im Vorspann würde es den
+    Prefix-Cache für jede Buchung zerschneiden."""
+    import gemma_buchung as gb
+    profil = gb.profil_text({})
+    beleg = gb.prompt_bauen(profil, ["x"], [], nachschlag="\nNACHGESCHLAGEN: A")
+    assert "NACHGESCHLAGEN: A" in beleg
+    assert "NACHGESCHLAGEN: A" not in gb.system_text(profil)

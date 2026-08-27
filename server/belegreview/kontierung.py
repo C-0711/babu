@@ -72,8 +72,14 @@ _K = [
     Kategorie("wareneinkauf", "Wareneinkauf (Weiterverkauf)",
               "3400", "5400", geprueft=True,
               hinweis="Ware, die die Kundin mitnimmt: Shampoo, Pflege, Styling."),
+    # Bis 28.08.2026 lag das Verbrauchsmaterial auf 6850 — demselben Konto
+    # wie das Auffangkonto „Sonstiger Betriebsbedarf". In der Auswertung war
+    # damit nicht mehr zu unterscheiden, was echter Salonverbrauch ist und
+    # was nur nirgends einzuordnen war; „Sonstige Kosten" wurde dadurch der
+    # größte Posten (Ninas Anmerkung P2-22). Farbe, Folie und Handschuhe
+    # sind Hilfs- und Betriebsstoffe und gehören zum Wareneinsatz.
     Kategorie("verbrauchsmaterial", "Verbrauchsmaterial Salon",
-              "4980", "6850", geprueft=True,
+              "3000", "5100", geprueft=True,
               hinweis="Wird im Salon aufgebraucht: Farbe, Folie, Handschuhe."),
     # Ninas Anmerkung (#73, 27.08.2026): Extensions/Bondings, die am Kunden
     # verarbeitet werden, sind Wareneinsatz der Dienstleistung — nicht
