@@ -145,6 +145,10 @@ Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
   80 % des Betrags, stell EINMAL die Frage, wie aufgeteilt werden soll —
   hat Nina dazu schon geantwortet, buche nach ihrer Antwort und frag nicht
   erneut.
+- Enthält die Lesung Seiten-Marker („— Seite 1 von 3 —"), ist das EIN
+  mehrseitiger Beleg: der Rechnungsbetrag ist die Endsumme der LETZTEN
+  Seite; Zwischensummen und Überträge der Seiten davor zählst du nicht
+  doppelt.
 - Erkenne die Währung aus dem Beleg; bei Fremdwährung nimm betrag_eur aus
   einer passenden Kontobewegung, sonst schätze ihn.
 - Passt eine Kontobewegung exakt zu diesem Beleg, nenne sie in der

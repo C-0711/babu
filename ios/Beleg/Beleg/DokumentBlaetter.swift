@@ -97,6 +97,18 @@ private struct Blatt: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 9))
             .overlay(RoundedRectangle(cornerRadius: 9).stroke(GC.linie, lineWidth: 1))
+            .overlay(alignment: .bottomTrailing) {
+                // Mehrseitiger Beleg: die Kachel sagt es (Prior Art: „2 S.").
+                if let n = beleg.seitenJpeg?.count, n > 1 {
+                    Text("\(n) S.")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(GC.fg)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.thinMaterial, in: Capsule())
+                        .padding(5)
+                }
+            }
             .shadow(color: Color(hex: 0x1F1E1A).opacity(0.10), radius: 5, y: 3)
     }
 }

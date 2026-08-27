@@ -6,6 +6,7 @@ import SwiftUI
 struct CaptureOverlayView: View {
     @ObservedObject var model: CaptureViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var verwerfenFrage = false
 
     var body: some View {
         GeometryReader { geo in
@@ -26,10 +27,25 @@ struct CaptureOverlayView: View {
                         statuszeile
                         ausloeser
                             .padding(.top, 14)
+                        // Mehrseiten-Modus mit Stapel: hier endet die
+                        // Aufnahme — alle Seiten werden EIN Beleg.
+                        if model.mehrseiten && !model.seiten.isEmpty {
+                            Button {
+                                model.mehrseitenFertig()
+                            } label: {
+                                Text("Fertig (\(model.seiten.count) \(model.seiten.count == 1 ? "Seite" : "Seiten"))")
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(GC.scan)
+                                    .padding(.horizontal, 26)
+                                    .padding(.vertical, 11)
+                                    .background(GC.gold, in: Capsule())
+                            }
+                            .padding(.top, 14)
+                        }
                         // Zweiter Ausweg: oben kann je nach Gerät etwas
                         // verdeckt sein — hier ist der Weg zurück immer da.
                         Button {
-                            model.abbrechen()
+                            abbrechenGewuenscht()
                         } label: {
                             Text("Abbrechen")
                                 .font(.body.weight(.medium))
@@ -112,9 +128,26 @@ struct CaptureOverlayView: View {
 
     private var kopfleiste: some View {
         HStack {
-            rundKnopf(symbol: "xmark", label: "Abbrechen") { model.abbrechen() }
+            rundKnopf(symbol: "xmark", label: "Abbrechen") { abbrechenGewuenscht() }
             Spacer()
             if model.eingefroren == nil {
+                // Mehrseiten-Umschalter: mehrere Blätter werden EIN Beleg.
+                // Mit gefülltem Stapel wird er zum Zähler.
+                if model.mehrseiten && !model.seiten.isEmpty {
+                    Text("\(model.seiten.count) \(model.seiten.count == 1 ? "Seite" : "Seiten")")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(GC.gold)
+                        .padding(.horizontal, 14)
+                        .frame(height: 44)
+                        .background(GC.scan.opacity(0.55), in: Capsule())
+                        .accessibilityLabel("\(model.seiten.count) Seiten aufgenommen")
+                } else {
+                    rundKnopf(symbol: "doc.on.doc",
+                              label: model.mehrseiten ? "Mehrseitig: an" : "Mehrseitiger Beleg",
+                              tint: model.mehrseiten ? GC.gold : .white) {
+                        model.mehrseitenUmschalten()
+                    }
+                }
                 rundKnopf(symbol: model.torchAn ? "bolt.fill" : "bolt.slash",
                           label: model.torchAn ? "Licht ausschalten" : "Licht einschalten",
                           tint: model.torchAn ? GC.gold : .white) {
@@ -125,6 +158,24 @@ struct CaptureOverlayView: View {
         }
         .padding(.horizontal, 18)
         .padding(.top, 10)
+        .confirmationDialog("\(model.seiten.count) aufgenommene Seiten verwerfen?",
+                            isPresented: $verwerfenFrage, titleVisibility: .visible) {
+            Button("Seiten verwerfen", role: .destructive) {
+                model.mehrseitenVerwerfen()
+                model.abbrechen()
+            }
+            Button("Weiter fotografieren", role: .cancel) {}
+        }
+    }
+
+    /// Abbrechen mit gefülltem Seitenstapel fragt nach — sonst wären die
+    /// schon fotografierten Blätter wortlos weg.
+    private func abbrechenGewuenscht() {
+        if model.mehrseiten && !model.seiten.isEmpty {
+            verwerfenFrage = true
+        } else {
+            model.abbrechen()
+        }
     }
 
     private func rundKnopf(symbol: String, label: String,

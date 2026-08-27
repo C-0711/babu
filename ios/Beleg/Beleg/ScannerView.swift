@@ -8,6 +8,10 @@ import SwiftUI
 struct ScannerView: View {
     var onScan: (UIImage) -> Void
     var onCancel: () -> Void
+    /// Mehrseiten-Modus: „Fertig (n Seiten)" liefert alle Seiten als EINEN
+    /// Beleg. Ohne Callback gibt es den Modus nicht — Bestandsaufrufer
+    /// bleiben unverändert.
+    var onFertig: (([UIImage]) -> Void)? = nil
 
     static var verfuegbar: Bool { CameraController.kameraVerfuegbar }
 
@@ -29,7 +33,7 @@ struct ScannerView: View {
                 ProgressView().tint(.white)
             }
         }
-        .task { await model.starte(onScan: onScan, onCancel: onCancel) }
+        .task { await model.starte(onScan: onScan, onCancel: onCancel, onFertig: onFertig) }
         .onDisappear { model.stoppe() }
     }
 }

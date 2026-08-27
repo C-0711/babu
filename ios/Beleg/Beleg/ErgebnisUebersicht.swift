@@ -41,6 +41,11 @@ struct ErgebnisUebersicht: View {
                             .foregroundStyle(GC.fg)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
+                        if let n = b.seitenJpeg?.count, n > 1 {
+                            Text("\(n) Seiten — ein Beleg")
+                                .font(.footnote)
+                                .foregroundStyle(GC.muted)
+                        }
                         if hakenGeparkt {
                             // Der Haken landet hier — bestätigt, ohne zu verdecken.
                             Image(systemName: "checkmark.circle.fill")

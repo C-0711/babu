@@ -130,6 +130,14 @@ def test_kauderwelsch_vom_modell_wird_zur_hoeflichen_frage(monkeypatch):
     assert e["fragen"][0]["frage"]
 
 
+def test_prompt_kennt_mehrseitige_belege():
+    """Die Endsumme eines Bündels steht auf dem letzten Blatt — die Regel
+    steht immer im Prompt und konditioniert sich selbst auf Seiten-Marker."""
+    p = gemma_buchung.prompt_bauen("P", ["— Seite 1 von 2 —", "Übertrag 120,00",
+                                         "— Seite 2 von 2 —", "Gesamt 189,61"], [])
+    assert "Seiten-Marker" in p and "LETZTEN" in p
+
+
 def test_prompt_traegt_kontobewegungen_und_nachbarbelege():
     p = gemma_buchung.prompt_bauen(
         "P", ["Gesamtsumme 55,74 AED"], [],

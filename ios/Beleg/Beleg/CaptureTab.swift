@@ -116,7 +116,11 @@ struct CaptureTab: View {
                         zeigeScanner = false
                         Task { await verarbeite(bild) }
                     },
-                    onCancel: { zeigeScanner = false }
+                    onCancel: { zeigeScanner = false },
+                    onFertig: { seiten in
+                        zeigeScanner = false
+                        Task { await verarbeiteSeiten(seiten) }
+                    }
                 )
             }
             .fileImporter(isPresented: $zeigeDateien,
@@ -468,6 +472,59 @@ struct CaptureTab: View {
 
         // Abgebrochen (X während der Verarbeitung)? Der Beleg ist trotzdem
         // aufgenommen und liegt in der Belegliste — nur nicht mehr aufdrängen.
+        guard lauf == verarbeitungsLauf else { return }
+        beleg = store.belege.first { $0.id == neu.id } ?? neu
+        phase = .ergebnis
+    }
+
+    /// Mehrseiten-Modus: alle Seiten werden EIN Beleg. Vision liest jede
+    /// Seite; zwischen den Seiten reisen Marker-ZEILEN mit (als {text, conf}-
+    /// Objekte — `BuchungsfragenView` erwartet ein homogenes Objekt-Array),
+    /// damit die Buchhaltung weiß, dass die Endsumme auf dem letzten Blatt
+    /// steht. Hochgeladen wird später EIN PDF aus allen Seiten.
+    private func verarbeiteSeiten(_ seiten: [UIImage]) async {
+        guard seiten.count > 1 else {
+            if let einzige = seiten.first { await verarbeite(einzige) }
+            return
+        }
+        let lauf = verarbeitungsLauf
+        phase = .verarbeitet
+        schritte = 0
+        startZeit = Date()
+
+        schritte = 1
+        var texte: [String] = []
+        var geo: [[String: Any]] = []
+        for (i, seite) in seiten.enumerated() {
+            let marker = "— Seite \(i + 1) von \(seiten.count) —"
+            let ocr = await OCRService.erkenne(seite)
+            texte.append(marker + "\n" + ocr.text)
+            geo.append(["text": marker, "conf": 1])
+            geo.append(contentsOf: ocr.geoZeilen)
+        }
+        let gesamtText = texte.joined(separator: "\n")
+
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        schritte = 2
+        if gesamtText.trimmingCharacters(in: .whitespacesAndNewlines).count < 12 * seiten.count {
+            if lauf == verarbeitungsLauf { phase = .nichtsErkannt }
+            return
+        }
+
+        ergebnisBild = seiten[0]
+
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        schritte = 3
+        let geoJson = (try? JSONSerialization.data(withJSONObject: geo))
+            .flatMap { String(data: $0, encoding: .utf8) }
+        let jpegs = seiten.compactMap { $0.jpegData(compressionQuality: 0.6) }
+        let neu = store.routen(bildJpeg: jpegs.first, ocrText: gesamtText,
+                               ocrGeoJson: geoJson, seitenJpeg: jpegs)
+
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        schritte = 4
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
         guard lauf == verarbeitungsLauf else { return }
         beleg = store.belege.first { $0.id == neu.id } ?? neu
         phase = .ergebnis

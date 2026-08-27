@@ -1836,7 +1836,9 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
     # stehen auf jeder Rechnung mit Zahlungsziel) — und was im Auszugsfach
     # liegt, liest nie wieder jemand. Zweifel gehen nach docs/, wo der
     # Watcher mit dem vollen OCR-Text nachsortiert.
-    if endung == ".pdf" and re.search(r"auszug", name or "", re.I):
+    # `not klasse`: hat die Buchhaltung schon entschieden (Zielbild-Upload,
+    # auch mehrseitige Beleg-PDFs), schlägt der Dateiname sie nicht mehr.
+    if endung == ".pdf" and re.search(r"auszug", name or "", re.I) and not klasse:
         entscheidung = {"art": "kontoauszug", "ziel": "auszuege", "punkte": 99,
                         "sicher": True, "grund": "Dateiname nennt „Auszug“."}
     elif entscheidung["art"] == "kontoauszug" and not klasse:

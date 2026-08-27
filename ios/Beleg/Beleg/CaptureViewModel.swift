@@ -17,6 +17,10 @@ final class CaptureViewModel: ObservableObject {
     @Published var liveFelder: LiveTextBefund?
     @Published var torchAn = false
     @Published var eingefroren: UIImage?         // entzerrtes Bild im Snap-Moment
+    // Mehrseiten-Modus: mehrere Blätter werden EIN Beleg. Der Umschalter
+    // steht im Sucher; ohne ihn läuft exakt der bisherige Ein-Seiten-Weg.
+    @Published var mehrseiten = false
+    @Published var seiten: [UIImage] = []
 
     let kamera = CameraController()
 
@@ -33,9 +37,13 @@ final class CaptureViewModel: ObservableObject {
     private var ausloeseTask: Task<Void, Never>?
 
     private var onScan: ((UIImage) -> Void)?
+    private var onFertig: (([UIImage]) -> Void)?
     private var onCancel: (() -> Void)?
 
     var statusText: String {
+        if mehrseiten, case .suchen = phase {
+            return "Seite \(seiten.count + 1) in den Rahmen halten"
+        }
         switch phase {
         case .suchen: return "Beleg in den Rahmen halten"
         case .kandidat(let hinweis): return hinweis
@@ -48,9 +56,11 @@ final class CaptureViewModel: ObservableObject {
 
     // MARK: - Lebenszyklus
 
-    func starte(onScan: @escaping (UIImage) -> Void, onCancel: @escaping () -> Void) async {
+    func starte(onScan: @escaping (UIImage) -> Void, onCancel: @escaping () -> Void,
+                onFertig: (([UIImage]) -> Void)? = nil) async {
         self.onScan = onScan
         self.onCancel = onCancel
+        self.onFertig = onFertig
 
         guard CameraController.kameraVerfuegbar else {
             berechtigung = .verweigert
@@ -190,7 +200,14 @@ final class CaptureViewModel: ObservableObject {
                 // Snap-Moment kurz stehen lassen, dann übernimmt die Pipeline.
                 try? await Task.sleep(nanoseconds: reduziert ? 120_000_000 : 550_000_000)
                 guard !Task.isCancelled else { return }
-                onScan?(bild)
+                if mehrseiten {
+                    // Mehrseiten-Modus: Seite in den Stapel, zurück in den
+                    // Sucher — die Aufnahme endet erst mit „Fertig".
+                    seiten.append(bild)
+                    weiterImSucher()
+                } else {
+                    onScan?(bild)
+                }
             } catch {
                 // Foto fehlgeschlagen (z. B. Unterbrechung): zurück in den Sucher.
                 nimmtAuf = false
@@ -198,5 +215,40 @@ final class CaptureViewModel: ObservableObject {
                 phase = .suchen
             }
         }
+    }
+
+    // MARK: - Mehrseiten-Modus
+
+    /// Umschalten geht nur, solange noch keine Seite im Stapel liegt —
+    /// mittendrin die Bedeutung der schon gemachten Fotos zu ändern wäre
+    /// eine Falle.
+    func mehrseitenUmschalten() {
+        guard seiten.isEmpty, eingefroren == nil, !nimmtAuf else { return }
+        mehrseiten.toggle()
+    }
+
+    /// Nach einem Seiten-Snap wieder aufnahmebereit werden. Dasselbe Rezept
+    /// wie der Fehlerpfad in `loeseAus` — die Gate-Sperre verhindert, dass
+    /// das noch aufgelegte Blatt sofort erneut auslöst.
+    private func weiterImSucher() {
+        eingefroren = nil
+        nimmtAuf = false
+        gate.sperren(fuer: CaptureTuning.nachAbbruchSperre)
+        phase = .suchen
+    }
+
+    /// „Fertig (n Seiten)": der Stapel wird EIN Beleg.
+    func mehrseitenFertig() {
+        guard mehrseiten, !seiten.isEmpty, eingefroren == nil, !nimmtAuf else { return }
+        let stapel = seiten
+        seiten = []
+        mehrseiten = false
+        onFertig?(stapel)
+    }
+
+    /// Abbrechen im Mehrseiten-Modus: gesammelte Seiten verwerfen.
+    func mehrseitenVerwerfen() {
+        seiten = []
+        mehrseiten = false
     }
 }

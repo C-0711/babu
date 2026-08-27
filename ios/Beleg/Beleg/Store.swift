@@ -159,7 +159,7 @@ final class AppStore: ObservableObject {
 
     /// OCR-Felder → geroutete Buchung (auto / bestätigen / prüfen).
     func routen(bildJpeg: Data?, ocrText: String,
-                ocrGeoJson: String? = nil) -> Beleg {
+                ocrGeoJson: String? = nil, seitenJpeg: [Data]? = nil) -> Beleg {
         // Der Parser ist raus aus dem Buchungsweg (26.08.2026, Kalugahair-
         // Beweis: Vision las alles, der Parser machte nil daraus). Der Beleg
         // entsteht als Hülle — Zahlen, Lieferant und Datum setzt Gemma über
@@ -184,6 +184,8 @@ final class AppStore: ObservableObject {
         beleg.bildJpeg = bildJpeg
         beleg.ocrText = ocrText
         beleg.ocrGeoJson = ocrGeoJson
+        // VOR dem Dateinamen setzen: Bündel bekommen die Endung .pdf.
+        beleg.seitenJpeg = seitenJpeg
         if ablageAktiv, bildJpeg != nil {
             beleg.ablageStatus = .ausstehend
             beleg.ablageDateiname = ablageDateiname(fuer: beleg)
@@ -281,11 +283,25 @@ final class AppStore: ObservableObject {
         belege[i].ablageDateiname = dateiname
         belege[i].ablageStatus = .ausstehend
 
+        // Mehrseitige Belege reisen als EIN PDF aus allen Seiten — gebaut
+        // erst hier, damit zustand.json nur die JPEGs trägt. Schlägt der
+        // PDF-Bau fehl, geht wenigstens Seite 1 — dann aber unter .jpg,
+        // damit Endung und Inhalt zusammenpassen.
+        var daten = jpeg
+        var uploadName = dateiname
+        if let seiten = belege[i].seitenJpeg, seiten.count > 1 {
+            if let pdf = BelegBuendelPDF.bauen(seitenJpeg: seiten) {
+                daten = pdf
+            } else if uploadName.hasSuffix(".pdf") {
+                uploadName = String(uploadName.dropLast(4)) + ".jpg"
+                belege[i].ablageDateiname = uploadName
+            }
+        }
         // Der auf dem Gerät gelesene Text geht mit: daraus entscheidet der
         // Server, ob das ein Bon, ein Vertrag, ein Brief vom Amt oder ein
         // Kontoauszug ist — die Nutzerin muss nichts auswählen.
         let (ergebnis, serverDatei, art, wohin, _) = await AblageService.aufnahme(
-            daten: jpeg, dateiname: dateiname, gelesenerText: belege[i].ocrText,
+            daten: daten, dateiname: uploadName, gelesenerText: belege[i].ocrText,
             ergebnis: belege[i].ergebnisJson, basis: url, pat: pat)
         pruefeZugang(ergebnis)
         guard let j = belege.firstIndex(where: { $0.id == id }) else { return }

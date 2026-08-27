@@ -15,7 +15,21 @@ struct BelegGrossView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if let daten = beleg.bildJpeg, let bild = UIImage(data: daten) {
+                if let seiten = beleg.seitenJpeg, seiten.count > 1 {
+                    // Mehrseitiger Beleg: durch die Seiten blättern.
+                    TabView {
+                        ForEach(Array(seiten.enumerated()), id: \.offset) { paar in
+                            if let bild = UIImage(data: paar.element) {
+                                ZoombaresBild(bild: bild)
+                                    .padding(12)
+                                    .accessibilityLabel("Seite \(paar.offset + 1) von \(seiten.count)")
+                            }
+                        }
+                    }
+                    .tabViewStyle(.page)
+                    .indexViewStyle(.page(backgroundDisplayMode: .always))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let daten = beleg.bildJpeg, let bild = UIImage(data: daten) {
                     ZoombaresBild(bild: bild)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .padding(12)

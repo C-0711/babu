@@ -45,6 +45,18 @@ echo "— Parser-Harness —"
 swiftc -o "$ZIEL/parser" ../Beleg/Beleg/Models.swift ../Beleg/Beleg/FeldParser.swift parser/main.swift
 "$ZIEL/parser"
 
+echo "— Bündel-Harness —"
+# Mehrseitige Belege: PDF-Bau braucht UIKit/PDFKit — wie der Karten-Harness
+# gegen das iOS-Simulator-SDK gebaut und im Simulator ausgeführt.
+swiftc -target arm64-apple-ios17.0-simulator \
+  -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
+  -o "$ZIEL/buendel" ../Beleg/Beleg/Models.swift \
+  ../Beleg/Beleg/BelegBuendelPDF.swift buendel/main.swift
+xcrun simctl spawn --standalone "$(xcrun simctl list devices available -j \
+  | python3 -c "import json,sys
+d=json.load(sys.stdin)['devices']
+print([g[0]['udid'] for k,g in d.items() if g and 'iOS' in k][0])")" "$ZIEL/buendel"
+
 # Bis hierher gekommen heißt: kein Harness ist abgebrochen (set -e oben) und
 # keiner hat mit != 0 geendet. Ohne diese Zeile sah ein Übersetzungsfehler
 # aus wie „keine Fehlschläge" — wer nur ✗ zählt, zählt bei einem gar nicht

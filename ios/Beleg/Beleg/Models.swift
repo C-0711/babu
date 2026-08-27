@@ -98,7 +98,13 @@ func ablageDateiname(fuer beleg: Beleg) -> String {
         datum = "0000-00-00"
     }
     let id8 = beleg.id.uuidString.replacingOccurrences(of: "-", with: "").prefix(8).lowercased()
-    return "beleg_\(datum)_\(slug(beleg.lieferant))_\(id8).jpg"
+    // Mehrseitige Bündel reisen als EIN PDF. Der Slug darf dabei nie
+    // „auszug" tragen — der Server sortiert PDFs mit „auszug" im Namen ins
+    // Kontoauszugsfach, egal was die Buchhaltung entschieden hat.
+    let endung = (beleg.seitenJpeg?.count ?? 0) > 1 ? "pdf" : "jpg"
+    var name = slug(beleg.lieferant)
+    if endung == "pdf" { name = name.replacingOccurrences(of: "auszug", with: "beleg") }
+    return "beleg_\(datum)_\(name)_\(id8).\(endung)"
 }
 
 /// ASCII-Slug: Umlaute transliteriert, alles außer [a-z0-9] wird zu Bindestrichen.
@@ -156,6 +162,10 @@ struct Beleg: Identifiable, Codable {
     var ergebnisJson: String?
     /// Visions Zeilen mit Ort und Konfidenz, serialisiert — die eine Lesung.
     var ocrGeoJson: String?
+    /// Mehrseitiger Beleg: ALLE Seiten als JPEG (bildJpeg bleibt Seite 1,
+    /// damit jede bestehende Anzeige weiterlebt). Optional — alte
+    /// zustand.json laden unverändert. Hochgeladen wird daraus EIN PDF.
+    var seitenJpeg: [Data]?
     var ablageZeit: Date?
     // Audit-Stempel: GitChain-Commits der vollständigen Kette
     var auditAufnahme: String?
@@ -204,7 +214,13 @@ struct Beleg: Identifiable, Codable {
 /// Datum/Bild konnten sich unbemerkt ändern.
 func siegelHash(_ beleg: Beleg, zeit: Date) -> String {
     var bildHash = "-"
-    if let bild = beleg.bildJpeg {
+    if let seiten = beleg.seitenJpeg, seiten.count > 1 {
+        // Bündel: das Siegel deckt JEDE Seite — eine Kette aus Seiten-Hashes.
+        bildHash = seiten.map { seite in
+            String(SHA256.hash(data: seite)
+                .map { String(format: "%02x", $0) }.joined().prefix(16))
+        }.joined(separator: "+")
+    } else if let bild = beleg.bildJpeg {
         bildHash = String(SHA256.hash(data: bild)
             .map { String(format: "%02x", $0) }.joined().prefix(16))
     }
