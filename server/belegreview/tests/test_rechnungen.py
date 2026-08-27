@@ -17,8 +17,14 @@ STAMM = {"betrieb_name": "Salon Nina", "anschrift": "Hauptstraße 5, 70173 Stutt
 EMPF = {"name": "Jana Allgaier", "anschrift": "Blumenweg 2, 70199 Stuttgart"}
 
 
-def pos(text="Stuhlmiete August 2026", betrag=450.0, satz=19, menge=1):
-    return {"text": text, "einzelpreis": betrag, "menge": menge, "ust_satz": satz}
+def pos(text="Stuhlmiete August 2026", betrag=450.0, satz=19, menge=1,
+        brutto=False):
+    """Eine Rechnungsposition. `brutto=False`, weil die Tests unten die
+    Netto-Arithmetik prüfen — seit dem 28.08.2026 ist die VORGABE der
+    Rechnung dagegen brutto (die Zahl, die die Kundin zahlt); dafür gibt
+    es einen eigenen Abschnitt am Ende."""
+    return {"text": text, "einzelpreis": betrag, "menge": menge,
+            "ust_satz": satz, "brutto": brutto}
 
 
 # ————— Nummernfolge —————
@@ -210,3 +216,66 @@ def test_glatte_betraege_bleiben_wie_sie_waren():
     assert r["netto"] == 469.9
     assert r["ust"] == 86.89          # 85,50 + 1,39
     assert r["brutto"] == 556.79
+
+
+# ————— Brutto ist die Vorgabe (Ninas Anmerkung, 27.08.2026) —————
+#
+# „Der Schnitt kostet 45 €" ist ein Bruttopreis. Bis zum 28.08. galt der
+# eingegebene Betrag als netto, und aus 45 € wurden auf der Rechnung 53,55 €.
+
+def test_eingegebener_preis_ist_der_preis_auf_der_rechnung():
+    r = re_.aufbauen("2026-0001", "2026-08-28", EMPF,
+                     [{"text": "Haarschnitt", "einzelpreis": 45.0, "ust_satz": 19},
+                      {"text": "Shampoo", "einzelpreis": 12.90, "menge": 2,
+                       "ust_satz": 19}],
+                     STAMM)
+    assert r["brutto"] == 70.80          # 45,00 + 2 x 12,90
+    assert r["netto"] == 59.50
+    assert r["ust"] == 11.30
+    assert r["netto"] + r["ust"] == r["brutto"]
+
+
+def test_die_zeilensummen_ergeben_die_endsumme_ohne_rundungsrest():
+    """Aus dem Brutto abwärts zu rechnen ist kein Stil, sondern nötig:
+    andersherum fehlt je Zeile ein Cent."""
+    r = re_.aufbauen("2026-0001", "2026-08-28", EMPF,
+                     [{"text": f"Position {i}", "einzelpreis": 33.33,
+                       "ust_satz": 19} for i in range(7)], STAMM)
+    assert r["brutto"] == 233.31
+    assert sum(z["gesamt_brutto"] for z in r["positionen"]) == r["brutto"]
+    assert r["netto"] + r["ust"] == r["brutto"]
+
+
+def test_eine_einzelne_position_darf_netto_sein():
+    r = re_.aufbauen("2026-0001", "2026-08-28", EMPF,
+                     [{"text": "Miete netto vereinbart", "einzelpreis": 100.0,
+                       "ust_satz": 19, "brutto": False}], STAMM)
+    assert r["netto"] == 100.0 and r["brutto"] == 119.0
+
+
+def test_wer_netto_rechnen_will_kann_das_weiter():
+    r = re_.aufbauen("2026-0001", "2026-08-28", EMPF,
+                     [{"text": "Stuhlmiete", "einzelpreis": 450.0, "ust_satz": 19}],
+                     STAMM, preise_brutto=False)
+    assert r["netto"] == 450.0 and r["brutto"] == 535.50
+
+
+def test_kleinunternehmerin_bekommt_ihren_preis_unveraendert():
+    """Ohne Umsatzsteuer gibt es nichts herauszurechnen — der eingegebene
+    Betrag IST der Rechnungsbetrag."""
+    r = re_.aufbauen("2026-0001", "2026-08-28", EMPF,
+                     [{"text": "Schnitt", "einzelpreis": 45.0, "ust_satz": 19}],
+                     dict(STAMM, kleinunternehmer="Ja"))
+    assert r["netto"] == 45.0 and r["brutto"] == 45.0 and r["ust"] == 0.0
+
+
+def test_ein_storno_hebt_die_rechnung_genau_auf():
+    """Auch bei Bruttopreisen — sonst bleibt ein Rundungscent stehen."""
+    r = re_.aufbauen("2026-0001", "2026-08-28", EMPF,
+                     [{"text": "Haarschnitt", "einzelpreis": 45.0, "ust_satz": 19},
+                      {"text": "Föhnen", "einzelpreis": 33.33, "ust_satz": 19}],
+                     STAMM)
+    s = re_.storno(r, nummer="2026-0002", datum="2026-08-29")
+    assert s["brutto"] == -r["brutto"]
+    assert s["netto"] == -r["netto"]
+    assert s["ust"] == -r["ust"]

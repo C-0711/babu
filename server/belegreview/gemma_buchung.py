@@ -143,6 +143,11 @@ REGELN = """Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
 - Wenn Angaben fehlen, die nur Nina kennt, stell ALLE offenen Fragen AUF
   EINMAL — jede als Multiple Choice mit 2 bis 4 kurzen Antwortmöglichkeiten,
   in ihrer Sprache (du-Form). Frag nur, was fürs Buchen wirklich nötig ist.
+- Bei Reisekosten (Flug, Bahn, Hotel, Mietwagen — kategorie fahrt) frag
+  nach dem ANLASS der Reise, wenn er nicht auf dem Beleg steht: „Wozu war
+  die Reise?" mit Antworten wie Messe, Seminar, Lieferant, privat. Ohne
+  Anlass ist eine Reise steuerlich nicht zu beurteilen; er gehört in den
+  Buchungstext. War sie privat, ist es kategorie privat.
 - Frag nichts, was schon beantwortet wurde. Ist alles klar, buchst du sofort.
 - Nenne in der Begründung KEINE Kontonummer. Die Nummer setzt babu aus dem
   Katalog; eine selbst genannte steht sonst falsch vor der Nutzerin.

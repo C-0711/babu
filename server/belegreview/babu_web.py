@@ -1476,6 +1476,49 @@ def _zahl(wert) -> float | None:
         return None
 
 
+def guthaben_je_lieferant(belege: list[dict] | None = None) -> list[dict]:
+    """Offene Gutschriften je Lieferant — was noch zu verrechnen ist.
+
+    Eine Gutschrift wird selten ausgezahlt; sie wird mit der nächsten
+    Rechnung verrechnet, manchmal über mehrere hinweg. Bisher stand sie
+    als einzelner Beleg mit Minus da, und niemand sah, dass bei Wella noch
+    120 € gut sind (Ninas Anmerkung: Gutschriften über Folgerechnungen
+    nachverfolgen).
+
+    Verrechnet wird hier NICHT automatisch: welche Rechnung ein Guthaben
+    aufgezehrt hat, weiß nur der Kontoauszug — und zu raten wäre schlimmer
+    als zu zeigen. babu rechnet den Stand und sagt ihn; anrechnen tut die
+    Buchhaltung."""
+    zeilen = belege if belege is not None else list(
+        index_aktuell()["belege"].values())
+    je: dict[str, dict] = {}
+    for z in zeilen:
+        name = (z.get("lieferant") or "").strip()
+        brutto = z.get("brutto")
+        if not name or not isinstance(brutto, (int, float)):
+            continue
+        e = je.setdefault(name, {"lieferant": name, "guthaben": 0.0,
+                                 "bezahlt": 0.0, "gutschriften": 0})
+        if z.get("gutschrift") or brutto < 0:
+            e["guthaben"] += abs(brutto)
+            e["gutschriften"] += 1
+        else:
+            e["bezahlt"] += brutto
+    aus = []
+    for e in je.values():
+        if not e["gutschriften"]:
+            continue
+        # Was seit der Gutschrift schon an denselben Lieferanten ging, ist
+        # der wahrscheinlichste Ort, an dem sie verrechnet wurde.
+        offen = round(max(0.0, e["guthaben"] - e["bezahlt"]), 2)
+        aus.append({"lieferant": e["lieferant"],
+                    "gutschriften": e["gutschriften"],
+                    "guthaben": round(e["guthaben"], 2),
+                    "seither_bezahlt": round(e["bezahlt"], 2),
+                    "vermutlich_offen": offen})
+    return sorted(aus, key=lambda x: -x["guthaben"])
+
+
 def _monat_summen(monat: str) -> dict:
     zeilen = [z for z in index_aktuell()["belege"].values() if z["monat"] == monat]
     arten: dict[str, dict] = {}
@@ -5542,7 +5585,8 @@ def _abschluss_beiakten() -> dict[str, dict]:
     for zeile in out.splitlines():
         vorn, _, pfad = zeile.partition("\t")
         teile = vorn.split()
-        if pfad.startswith("abschluss/") and pfad.endswith(".meta.json") \
+        if pfad.startswith(("abschluss/", "auszuege/")) \
+                and pfad.endswith(".meta.json") \
                 and len(teile) == 3 and teile[1] == "blob":
             oids[pfad.removesuffix(".meta.json")] = teile[2]
     raus: dict[str, dict] = {}
@@ -5612,7 +5656,14 @@ def _ablage_eintraege() -> list[dict]:
         name = pfad.rsplit("/", 1)[-1]
         titel = name
         if pfad.startswith("auszuege/"):
-            art = "kontoauszug"
+            # Ein Auszug darf heißen, wie Nina ihn wiedererkennt, und ins
+            # richtige Fach wandern — wie Verträge und Post vom Amt auch.
+            # Die Datei selbst bleibt unangetastet, nur die Beiakte sagt es.
+            beiakte = beiakten.get(pfad) or {}
+            art = beiakte.get("fach") or "kontoauszug"
+            if art not in ABLAGE_ARTEN:
+                art = "kontoauszug"
+            titel = beiakte.get("titel") or name
         elif pfad.startswith("abschluss/") and not name.startswith("kennzahlen") \
                 and not name.startswith("bericht"):
             beiakte = beiakten.get(pfad) or {}
@@ -5838,7 +5889,8 @@ def api_ablage_suche(request: Request, q: str = "") -> Response:
 # wo sie liegt. Das ist keine Bequemlichkeit, sondern die Bedingung dafür,
 # dass das Siegel („unverändert seit") weiter gilt: eine umbenannte Datei
 # wäre in der Historie ein anderes Stück Papier.
-ABLAGE_BEIAKTE_RE = re.compile(r"^(dokumente|abschluss)/[A-Za-z0-9._/ -]{1,200}$")
+ABLAGE_BEIAKTE_RE = re.compile(
+    r"^(dokumente|abschluss|auszuege)/[A-Za-z0-9._/ -]{1,200}$")
 
 
 def _beiakte_aendern(un: str, pfad: str, **felder) -> Response | None:
@@ -5850,8 +5902,8 @@ def _beiakte_aendern(un: str, pfad: str, **felder) -> Response | None:
             or pfad.endswith((".meta.json", ".text.json")):
         return JSONResponse(
             {"fehler": "Belege heißen nach dem, was auf ihnen steht — ändere sie "
-                       "im Beleg selbst. Kassenbuch, Kontoauszüge und Stapel "
-                       "bleiben, wie sie sind."}, status_code=400)
+                       "im Beleg selbst. Kassenbuch und Stapel bleiben, wie "
+                       "sie sind."}, status_code=400)
     if git_show(pfad) is None:
         return JSONResponse({"fehler": "unbekannte Unterlage"}, status_code=404)
     alt = {}
@@ -5995,7 +6047,10 @@ async def api_rechnung_stellen(request: Request) -> Response:
                 positionen=(body or {}).get("positionen") or [],
                 stammdaten=einstellungen,
                 leistungszeitpunkt=(body or {}).get("leistungszeitpunkt"),
-                hinweis_frei=str((body or {}).get("hinweis") or ""))
+                hinweis_frei=str((body or {}).get("hinweis") or ""),
+                # Vorgabe brutto — die Zahl, die die Kundin zahlt. Wer
+                # netto rechnen will, schickt preise_brutto: false.
+                preise_brutto=(body or {}).get("preise_brutto") is not False)
         except re_.RechnungFehler as e:
             return JSONResponse({"fehler": str(e)}, status_code=400)
 
@@ -9211,6 +9266,7 @@ def _welt_fuer(un: str) -> dict:
         "team": team_liste(inhaber, nur_aktive=True),
         "fristen": fristen,
         "zahlen": zahlen,
+        "guthaben": guthaben_je_lieferant(list(idx["belege"].values())),
         "dokumente": idx["dokumente"],
     }
 

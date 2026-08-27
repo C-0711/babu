@@ -181,8 +181,25 @@ _K = [
     Kategorie("rechtsberatung", "Rechts- und Beratungskosten",
               "4950", "6825", geprueft=True,
               hinweis="Anwältin, Notar, Unternehmensberatung."),
+    # Vier Fälle, die vorher alle „Sonstiger Betriebsbedarf" hießen und die
+    # Auswertung unlesbar machten (Ninas Anmerkung P2-22: das Auffangkonto
+    # wird zu häufig verwendet). Konten aus dem Salon-Kontenplan SKR04.
+    Kategorie("werkzeug", "Werkzeug und Kleingeräte",
+              "4985", "6845", geprueft=True,
+              hinweis="Scheren, Clipper, Föhn, Bürsten — unter der "
+                      "GWG-Grenze sofort Aufwand, darüber Anlagevermögen."),
+    Kategorie("wartung", "Wartung Hard- und Software",
+              None, "6495", geprueft=True,
+              hinweis="Wartungsverträge für Kasse, Rechner, Software. "
+                      "SKR03-Gegenstück noch nicht bestätigt."),
+    Kategorie("bankgebuehren", "Bankgebühren und Kartenentgelte",
+              "4970", "6855", geprueft=True,
+              hinweis="Kontoführung, Kartenlesegerät, Entgelte von SumUp "
+                      "oder PayPal. Zinsen gehören NICHT hierher."),
     Kategorie("sonstiges", "Sonstiger Betriebsbedarf",
-              "4980", "6850", geprueft=True),
+              "4980", "6850", geprueft=True,
+              hinweis="Das Auffangkonto — nimm es erst, wenn wirklich "
+                      "keine der Kategorien oben passt."),
 
     # ── Kein Aufwand — die drei, an denen es heute schiefgeht ─────────────
     Kategorie("geldtransit", "Geldtransit",

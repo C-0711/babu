@@ -213,3 +213,71 @@ def test_gemma_nennt_keine_kontonummern_in_der_begruendung():
     nicht aus dem Modell — in der Begründung hat sie nichts zu suchen."""
     prompt = gb.voller_prompt(gb.profil_text({}), ["Zeile"], [])
     assert "KEINE Kontonummer" in prompt
+
+
+# ————— Runde 2: die nächsten sieben Punkte —————
+
+@pytest.mark.parametrize("art,text", [
+    ("beleg", "Allianz Versicherung — Beitragsrechnung zum Versicherungsschein "
+              "4711. Jahresbeitrag 2026. Laufzeit 01.01. bis 31.12.2026. "
+              "Beitrag 486,00 EUR. Bitte überweisen Sie den Betrag."),
+    ("beleg", "Leasingvertrag Nr. 88123 — Monatliche Rate August 2026. "
+              "Vertragslaufzeit 48 Monate. Rate netto 210,00 EUR. "
+              "Zu zahlen 249,90 EUR."),
+    ("vertrag", "Mietvertrag zwischen Herrn Müller und Frau Nina. "
+                "Mietgegenstand: Ladenlokal. Vertragsbeginn 01.01.2026, "
+                "Kündigungsfrist drei Monate. Es wird vereinbart, dass ..."),
+    ("vertrag", "Versicherungsschein Nr. 4711. Vertragsbeginn 01.01.2026. "
+                "Kündigungsfrist drei Monate. Es wird vereinbart, dass der "
+                "Versicherungsschutz ..."),
+])
+def test_die_rechnung_zu_einem_vertrag_ist_ein_beleg(art, text):
+    """Eine Beitrags- oder Leasingrechnung nennt Versicherungsschein,
+    Laufzeit und Vertragsnummer — und landete deshalb im Vertragsfach,
+    wo sie in der Auswertung fehlte."""
+    assert einsortieren.entscheiden(text)["art"] == art, text[:50]
+
+
+def test_das_auffangkonto_bekommt_konkurrenz():
+    """Ninas P2-22: „Sonstiger Betriebsbedarf" wurde zu oft gewählt, weil
+    es für Werkzeug, Wartung und Bankgebühren nichts Näheres gab."""
+    for code, skr04 in (("werkzeug", "6845"), ("wartung", "6495"),
+                        ("bankgebuehren", "6855")):
+        assert kt.KATEGORIEN[code].konto("SKR04") == skr04
+        assert f"  {code}:" in gb.katalog_text("SKR04")
+
+
+def test_der_reisezweck_wird_erfragt():
+    prompt = " ".join(gb.voller_prompt(gb.profil_text({}), ["Lufthansa"],
+                                       []).split())
+    assert "nach dem ANLASS der Reise" in prompt
+    assert "Wozu war die Reise?" in prompt
+    assert "War sie privat, ist es kategorie privat." in prompt
+
+
+def test_guthaben_je_lieferant_wird_gerechnet():
+    import babu_web as bw
+    belege = [
+        {"lieferant": "Wella", "brutto": -120.0, "gutschrift": True},
+        {"lieferant": "Wella", "brutto": 50.0},
+        {"lieferant": "Edeka", "brutto": 30.0},
+    ]
+    g = {x["lieferant"]: x for x in bw.guthaben_je_lieferant(belege)}
+    assert "Edeka" not in g, "ohne Gutschrift kein Eintrag"
+    assert g["Wella"]["guthaben"] == 120.0
+    assert g["Wella"]["seither_bezahlt"] == 50.0
+    assert g["Wella"]["vermutlich_offen"] == 70.0
+
+
+def test_guthaben_steht_im_fallwissen_des_chats():
+    import wissen
+    text = wissen.kontext("Habe ich noch Guthaben bei Wella?", {
+        "einstellungen": {"betrieb_name": "Salon Nina"},
+        "guthaben": [{"lieferant": "Wella", "gutschriften": 1,
+                      "guthaben": 120.0, "seither_bezahlt": 50.0,
+                      "vermutlich_offen": 70.0}],
+        "belege": [], "kassenblaetter": [], "vertraege": [], "rechnungen": [],
+        "team": [], "fristen": [], "zahlen": {}, "dokumente": [],
+    })
+    assert "GUTSCHRIFTEN VON LIEFERANTEN" in text
+    assert "Wella" in text and "70,00" in text

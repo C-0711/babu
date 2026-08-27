@@ -43,7 +43,23 @@ def naechste_nummer(vorhandene: list[str | None], jahr: int) -> str:
     return f"{jahr}-{hoechste + 1:04d}"
 
 
-def _positionen_rechnen(positionen: list[dict]) -> list[dict]:
+def _positionen_rechnen(positionen: list[dict], preise_brutto: bool = True,
+                        klein: bool = False) -> list[dict]:
+    """Die Positionen einer Rechnung, fertig gerechnet.
+
+    Preise sind standardmäßig BRUTTO — das ist die Zahl, die Nina im Kopf
+    hat und die ihre Kundin zahlt („der Schnitt kostet 45 €"). Bis zum
+    28.08.2026 galt der eingegebene Preis als Netto, und aus 45 € wurden
+    auf der Rechnung 53,55 € (Ninas Anmerkung, Brutto als Vorgabe).
+
+    Gerechnet wird vom Brutto abwärts: erst die Zeilensumme brutto, dann
+    das Netto daraus. So steht am Ende exakt der Betrag auf der Rechnung,
+    den sie eingetippt hat — bei der umgekehrten Richtung fehlt sonst je
+    Zeile ein Cent.
+
+    Eine einzelne Position darf abweichen (`brutto: false`), falls ein
+    Posten wirklich netto vereinbart ist.
+    """
     fertig = []
     for p in positionen or []:
         text = str((p or {}).get("text") or "").strip()[:200]
@@ -58,10 +74,34 @@ def _positionen_rechnen(positionen: list[dict]) -> list[dict]:
             menge = 1.0
         satz = p.get("ust_satz")
         satz = int(satz) if satz in (0, 7, 19, "0", "7", "19") else 19
+        # § 19 UStG: keine Umsatzsteuer. Dann ist der eingegebene Preis der
+        # Preis — es gibt nichts herauszurechnen, egal was als Satz kam.
+        if klein:
+            satz = 0
         if not text:
             raise RechnungFehler("Jede Position braucht eine Bezeichnung.")
-        fertig.append({"text": text, "menge": menge, "einzelpreis": _rund(einzel),
-                       "ust_satz": satz, "gesamt": _rund(einzel * menge)})
+        # `brutto_eingegeben` steht in einer schon gerechneten Position —
+        # ein Storno baut aus ihr eine neue Rechnung, und die muss dieselbe
+        # Seite meinen, sonst wird ein zweites Mal Steuer herausgerechnet.
+        ist_brutto = p.get("brutto")
+        if ist_brutto is None:
+            ist_brutto = p.get("brutto_eingegeben")
+        ist_brutto = preise_brutto if ist_brutto is None else bool(ist_brutto)
+        if ist_brutto and satz:
+            gesamt_brutto = _rund(einzel * menge)
+            gesamt = _rund(gesamt_brutto / (1 + satz / 100))
+            einzel_netto = _rund(einzel / (1 + satz / 100))
+        else:
+            einzel_netto = _rund(einzel)
+            gesamt = _rund(einzel * menge)
+            gesamt_brutto = _rund(gesamt * (1 + satz / 100))
+        fertig.append({"text": text, "menge": menge,
+                       "einzelpreis": einzel_netto,
+                       "einzelpreis_brutto": _rund(einzel) if ist_brutto
+                       else _rund(einzel * (1 + satz / 100)),
+                       "brutto_eingegeben": ist_brutto,
+                       "ust_satz": satz, "gesamt": gesamt,
+                       "gesamt_brutto": gesamt_brutto})
     if not fertig:
         raise RechnungFehler("Ohne Position ist es keine Rechnung.")
     return fertig
@@ -69,29 +109,60 @@ def _positionen_rechnen(positionen: list[dict]) -> list[dict]:
 
 def aufbauen(nummer: str, datum: str, empfaenger: dict, positionen: list[dict],
              stammdaten: dict, leistungszeitpunkt: str | None = None,
-             hinweis_frei: str = "") -> dict:
-    """Aus Eingaben eine vollständige Rechnung bauen (ohne sie festzuschreiben)."""
-    zeilen = _positionen_rechnen(positionen)
+             hinweis_frei: str = "", preise_brutto: bool = True) -> dict:
+    """Aus Eingaben eine vollständige Rechnung bauen (ohne sie festzuschreiben).
+
+    `preise_brutto` sagt, wie die eingegebenen Preise gemeint sind —
+    Vorgabe ist brutto, weil das die Zahl ist, die Nina und ihre Kundin
+    kennen."""
     stamm = {k: str((stammdaten or {}).get(k) or "").strip()
              for k in ("betrieb_name", "anschrift", "steuernummer",
                        "ust_id", "kleinunternehmer", "telefon", "email",
                        "iban", "bank")}
     klein = stamm.get("kleinunternehmer") == "Ja"
+    zeilen = _positionen_rechnen(positionen, preise_brutto, klein)
 
-    netto = _rund(sum(z["gesamt"] for z in zeilen))
     if klein:
         # § 19: keine Umsatzsteuer, kein Ausweis, kein Satz in der Tabelle.
         saetze: list[dict] = []
-        ust = 0.0
+        netto = _rund(sum(z["gesamt"] for z in zeilen))
+        ust, brutto = 0.0, netto
     else:
-        je_satz: dict[int, float] = {}
+        # Je Steuersatz EINMAL rechnen — und zwar von der Seite, die
+        # eingegeben wurde. Bei Bruttopreisen aus dem Brutto zurück (sonst
+        # steht am Ende ein anderer Betrag als getippt), bei Nettopreisen
+        # wie bisher aufgeschlagen. Netto, Steuer und Endsumme kommen
+        # danach aus DIESEN Zahlen, nie aus zwei verschiedenen Quellen —
+        # sonst ergibt Netto + Steuer nicht die Endsumme.
+        je_satz: dict[int, dict] = {}
         for z in zeilen:
-            je_satz[z["ust_satz"]] = je_satz.get(z["ust_satz"], 0.0) + z["gesamt"]
-        saetze = [{"satz": s, "netto": _rund(b), "ust": _rund(b * s / 100)}
-                  for s, b in sorted(je_satz.items()) if s]
+            e = je_satz.setdefault(z["ust_satz"],
+                                   {"netto": 0.0, "brutto": 0.0, "aus_brutto": True})
+            e["netto"] += z["gesamt"]
+            e["brutto"] += z["gesamt_brutto"]
+            if not z["brutto_eingegeben"]:
+                e["aus_brutto"] = False
+        saetze = []
+        for s, e in sorted(je_satz.items()):
+            if not s:
+                continue
+            if e["aus_brutto"]:
+                b = _rund(e["brutto"])
+                n = _rund(b / (1 + s / 100))
+                st = _rund(b - n)
+            else:
+                # Nettopreise: die Steuer direkt aus dem Netto runden. Über
+                # den Umweg Brutto ginge der halbe Cent verloren (2,50 € zu
+                # 19 % sind 0,475 € und damit 0,48 €, nicht 0,47 €).
+                n = _rund(e["netto"])
+                st = _rund(n * s / 100)
+            saetze.append({"satz": s, "netto": n, "ust": st})
+        # Steuerfreie Zeilen (Satz 0) tragen kein Steuerfeld, gehören aber
+        # in die Summe.
+        frei = _rund(sum(z["gesamt"] for z in zeilen if not z["ust_satz"]))
+        netto = _rund(sum(s["netto"] for s in saetze) + frei)
         ust = _rund(sum(s["ust"] for s in saetze))
-
-    brutto = _rund(netto + ust)
+        brutto = _rund(netto + ust)
     return {
         "nummer": nummer,
         "datum": str(datum)[:10],
@@ -143,9 +214,17 @@ def storno(rechnung: dict, nummer: str, datum: str) -> dict:
     """
     if (rechnung or {}).get("storniert"):
         return _nicht_nochmal()
-    zeilen = [dict(z, einzelpreis=-z["einzelpreis"], gesamt=-z["gesamt"],
-                   text=f"Storno zu Rechnung {rechnung['nummer']}: {z['text']}")
-              for z in rechnung["positionen"]]
+    # Die Gegenposition muss von DERSELBEN Seite gerechnet werden wie das
+    # Original — bei einem Bruttopreis also vom Brutto, sonst weicht das
+    # Storno um Rundungscents von der Rechnung ab, die es aufhebt.
+    zeilen = []
+    for z in rechnung["positionen"]:
+        aus_brutto = z.get("brutto_eingegeben", False)
+        preis = z.get("einzelpreis_brutto") if aus_brutto else z["einzelpreis"]
+        zeilen.append(dict(
+            z, brutto=aus_brutto, einzelpreis=-_rund(preis or 0.0),
+            gesamt=-z["gesamt"],
+            text=f"Storno zu Rechnung {rechnung['nummer']}: {z['text']}"))
     s = aufbauen(nummer=nummer, datum=datum,
                  empfaenger=rechnung["empfaenger"], positionen=zeilen,
                  stammdaten=rechnung["aussteller"],

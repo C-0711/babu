@@ -198,7 +198,7 @@ def _fristen(welt: dict, grenze: int) -> str:
 def _zahlen(welt: dict, grenze: int) -> str:
     z = welt.get("zahlen") or {}
     monate = welt.get("zahlen_monate") or {}
-    if not z and not monate:
+    if not z and not monate and not welt.get("guthaben"):
         return ""
     zeilen = []
     if z:
@@ -213,6 +213,23 @@ def _zahlen(welt: dict, grenze: int) -> str:
         for monat, m in monate.items():
             zeilen.append(f"  {monat}: {_euro(m['ausgaben_brutto'])} "
                           f"({m['belege']} Belege)")
+    # Gutschriften werden selten ausgezahlt — sie werden mit der nächsten
+    # Rechnung verrechnet. Wer nicht weiß, dass da noch etwas gut ist,
+    # zahlt zweimal.
+    guthaben = welt.get("guthaben") or []
+    if guthaben:
+        zeilen.append("GUTSCHRIFTEN VON LIEFERANTEN (zum Verrechnen):")
+        for g in guthaben[:8]:
+            teil = (f"  {g['lieferant']}: {_euro(g['guthaben'])} gutgeschrieben"
+                    f" ({g['gutschriften']} "
+                    + ("Gutschrift" if g["gutschriften"] == 1 else "Gutschriften")
+                    + ")")
+            if g["vermutlich_offen"]:
+                teil += (f" — davon vermutlich noch "
+                         f"{_euro(g['vermutlich_offen'])} offen")
+            else:
+                teil += " — seither wieder mehr bezahlt, wohl verrechnet"
+            zeilen.append(teil)
     return "\n".join(zeilen)[:grenze]
 
 

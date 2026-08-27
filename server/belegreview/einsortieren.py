@@ -71,6 +71,30 @@ ZAHLPFLICHT = (
 def _zahlpflicht(klein: str) -> list[str]:
     return [w for w in ZAHLPFLICHT if w in klein]
 
+
+# Die Rechnung ZU einem Vertrag ist keine Vertragsurkunde.
+#
+# Eine Beitragsrechnung der Versicherung oder die Monatsrate des Leasings
+# nennt Versicherungsschein, Laufzeit und Vertragsnummer — und sammelt damit
+# mehr Vertragspunkte als Belegpunkte. Sie landete im Vertragsfach und fehlte
+# in der Auswertung, obwohl sie bezahlt wird (Ninas Anmerkung: „Rechnung
+# fälschlich als Dokument statt Eingangsbeleg erkannt").
+#
+# Der Unterschied ist nicht das Vokabular, sondern die Frage: WIRD HIER
+# GELD GEFORDERT? Eine Urkunde vereinbart etwas, eine Rechnung verlangt
+# eine Zahlung zu einem Termin.
+FORDERUNG = ("rechnung nr", "rechnungs-nr", "rechnungsnummer",
+             "beitragsrechnung", "rechnungsbetrag", "zu zahlen",
+             "zahlbar", "bitte überweisen", "bitte zahlen",
+             "zahlungsziel", "fällig am", "monatliche rate", "rate august")
+# Was eine Urkunde ausmacht und in keiner Rechnung steht: die Willenserklärung.
+URKUNDE = ("wird vereinbart", "vertragsbeginn", "mietgegenstand",
+           "kündigungsfrist", "unterschrift", "vertragspartner sind")
+
+
+def _fordert_zahlung(klein: str) -> list[str]:
+    return [w for w in FORDERUNG if w in klein]
+
 # Ein Bescheid nennt oft Beträge und „Rechnung" — trotzdem ist er Post vom
 # Amt. Diese Reihenfolge entscheidet bei Gleichstand.
 VORRANG = ("behoerde", "kontoauszug", "vertrag", "beleg")
@@ -103,6 +127,11 @@ def _punkte(text: str) -> dict[str, int]:
     # er den Beleg nicht überstimmt.
     if _zahlpflicht(klein):
         ergebnis["behoerde"] = 0
+        ergebnis["beleg"] = ergebnis.get("beleg", 0) + SICHER_AB
+    # Fordert das Blatt Geld, ohne die Sprache einer Urkunde zu sprechen,
+    # ist es die Rechnung ZU einem Vertrag — nicht der Vertrag.
+    if _fordert_zahlung(klein) and not any(w in klein for w in URKUNDE):
+        ergebnis["vertrag"] = 0
         ergebnis["beleg"] = ergebnis.get("beleg", 0) + SICHER_AB
     return ergebnis
 

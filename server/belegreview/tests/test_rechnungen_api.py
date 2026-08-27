@@ -20,7 +20,9 @@ EMPF = {"name": "Jana Allgaier", "anschrift": "Blumenweg 2, Stuttgart"}
 
 
 def pos(text="Stuhlmiete August", betrag=450.0, satz=19):
-    return {"text": text, "einzelpreis": betrag, "ust_satz": satz}
+    # Netto — diese Tests prüfen die Route, nicht die Preis-Vorgabe.
+    return {"text": text, "einzelpreis": betrag, "ust_satz": satz,
+            "brutto": False}
 
 
 @pytest.fixture()

@@ -29,6 +29,7 @@ def rechnung(nummer="2026-0001", datum="2026-08-21", betrag=450.0, satz=19,
     r = re_.aufbauen(nummer=nummer, datum=datum,
                      empfaenger={"name": "Jana", "anschrift": "Blumenweg 2"},
                      positionen=[{"text": "Stuhlmiete", "einzelpreis": betrag,
+                                  "brutto": False,
                                   "ust_satz": satz}],
                      stammdaten=STAMM)
     r["bezahlt_am"] = bezahlt

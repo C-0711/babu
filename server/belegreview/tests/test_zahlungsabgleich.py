@@ -159,7 +159,8 @@ def test_vorschlag_bestaetigen_macht_die_rechnung_bezahlt(tmp_path, monkeypatch)
     r = client.post("/api/rechnungen", json={
         "datum": "2026-08-21",
         "empfaenger": {"name": "Jana Allgaier", "anschrift": "Blumenweg 2"},
-        "positionen": [{"text": "Stuhlmiete", "einzelpreis": 450.0, "ust_satz": 19}]})
+        "positionen": [{"text": "Stuhlmiete", "einzelpreis": 450.0,
+                        "ust_satz": 19, "brutto": False}]})
     assert r.status_code == 200
     nummer = r.json()["nummer"]
 
