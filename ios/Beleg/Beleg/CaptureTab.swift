@@ -8,6 +8,8 @@ struct CaptureTab: View {
     @EnvironmentObject var store: AppStore
     @State private var zeigeScanner = false
     @State private var startMehrseitig = false
+    /// Gemmas Ergebnis direkt nach der Aufnahme — ohne Zwischenkarte.
+    @State private var zeigeFragenDirekt = false
     /// Nur beim ersten Öffnen von selbst aufmachen — wer die Kamera schließt,
     /// will sie nicht sofort wieder im Gesicht haben.
     @State private var kameraGezeigt = false
@@ -110,6 +112,15 @@ struct CaptureTab: View {
                 // Nach dem Ausfüllen den Stand neu holen, sonst zählt die
                 // Karte weiter „3 von 7".
                 if offen == nil { Task { await angabenHolen() } }
+            }
+            .fullScreenCover(isPresented: $zeigeFragenDirekt, onDismiss: {
+                // Nach der Buchhaltung die ruhige Bestätigung zeigen.
+                phase = .ergebnis
+            }) {
+                if let b = beleg {
+                    BuchungsfragenView(belegID: b.id)
+                        .environmentObject(store)
+                }
             }
             .fullScreenCover(isPresented: $zeigeScanner) {
                 ScannerView(
@@ -355,17 +366,29 @@ struct CaptureTab: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
-            // Kein Schritt-für-Schritt-Theater: das Lesen dauert Sekunden,
-            // und eine Liste, die vier Haken setzt, macht es nicht schneller.
-            VStack(spacing: 14) {
+            // Nur der Beleg und eine Uhr (Wunsch vom 27.08.): das Foto
+            // bleibt sichtbar, während babu liest — kein Schrittzähler,
+            // keine Zwischenkarte. Danach kommt direkt Gemmas Ergebnis.
+            if let bild = ergebnisBild {
+                Image(uiImage: bild)
+                    .resizable()
+                    .scaledToFit()
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .shadow(color: .black.opacity(0.15), radius: 12, y: 6)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.horizontal, 36)
+                    .padding(.top, 12)
+            } else {
+                Spacer()
+            }
+            VStack(spacing: 12) {
                 ProgressView()
-                Text("Einen Moment …")
+                Text("babu liest den Beleg …")
                     .font(.footnote)
                     .foregroundStyle(GC.desc)
             }
             .frame(maxWidth: .infinity)
-            .padding(.top, 60)
-            Spacer()
+            .padding(.vertical, 26)
         }
     }
 
@@ -459,6 +482,7 @@ struct CaptureTab: View {
         phase = .verarbeitet
         schritte = 0
         startZeit = Date()
+        ergebnisBild = bild
 
         schritte = 1
         let ocr = await OCRService.erkenne(bild)
@@ -484,7 +508,18 @@ struct CaptureTab: View {
         // aufgenommen und liegt in der Belegliste — nur nicht mehr aufdrängen.
         guard lauf == verarbeitungsLauf else { return }
         beleg = store.belege.first { $0.id == neu.id } ?? neu
-        phase = .ergebnis
+        ergebnisZeigen()
+    }
+
+    /// Direkt zu Gemmas Ergebnis (Wunsch vom 27.08.): keine Zwischenkarte
+    /// mehr — die Buchhaltung öffnet sofort, die Übersicht kommt danach
+    /// als Bestätigung. Ohne Belegbox bleibt die Übersicht der Weg.
+    private func ergebnisZeigen() {
+        if store.ablageAktiv, beleg?.status == .offen {
+            zeigeFragenDirekt = true
+        } else {
+            phase = .ergebnis
+        }
     }
 
     /// Mehrseiten-Modus: alle Seiten werden EIN Beleg. Vision liest jede
@@ -501,6 +536,7 @@ struct CaptureTab: View {
         phase = .verarbeitet
         schritte = 0
         startZeit = Date()
+        ergebnisBild = seiten.first
 
         schritte = 1
         var texte: [String] = []
@@ -533,7 +569,7 @@ struct CaptureTab: View {
 
         guard lauf == verarbeitungsLauf else { return }
         beleg = store.belege.first { $0.id == neu.id } ?? neu
-        phase = .ergebnis
+        ergebnisZeigen()
     }
 }
 
