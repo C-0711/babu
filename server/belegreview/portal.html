@@ -57,10 +57,10 @@ a{color:var(--gc-accent)}
 
 /* Kopf */
 header{position:sticky;top:0;z-index:20;background:var(--gc-chrome);
-  border-bottom:1px solid var(--gc-border);padding:10px clamp(14px,3.2vw,64px);
-  display:flex;align-items:center;gap:18px}
-header h1{font:600 21px/1 var(--gc-serif);letter-spacing:-.02em;color:var(--gc-fg)}
-nav{display:flex;gap:2px;margin-left:6px;min-width:0;overflow-x:auto;
+  border-bottom:1px solid var(--gc-border);padding:14px clamp(14px,4.7vw,56px);
+  display:flex;align-items:center;gap:20px}
+header h1{font:600 22px/1 var(--gc-serif);letter-spacing:-.02em;color:var(--gc-fg)}
+nav{display:flex;gap:4px;margin-left:10px;min-width:0;overflow-x:auto;
   -webkit-overflow-scrolling:touch;scrollbar-width:none}
 nav::-webkit-scrollbar{display:none}
 nav button{padding:10px 18px;border-radius:999px;font-weight:550;font-size:15px;
@@ -68,7 +68,7 @@ nav button{padding:10px 18px;border-radius:999px;font-weight:550;font-size:15px;
 nav button.an{background:#eae7de;color:var(--gc-fg);font-weight:600}
 /* Der eine Knopf, der etwas anstößt, trägt Tinte — alles andere bleibt leise. */
 #hochladen-knopf{background:var(--gc-fg);border-color:var(--gc-fg);color:#fff;
-  font-weight:600;padding:11px 22px;font-size:14px}
+  font-weight:600;padding:12px 24px;font-size:14.5px}
 #hochladen-knopf:hover{background:#000}
 /* Die Uhrzeit ist Technik-Telemetrie — im Premium-Portal unsichtbar. */
 #stand{display:none}
@@ -85,10 +85,10 @@ nav button.an{background:#eae7de;color:var(--gc-fg);font-weight:600}
   #hochladen-knopf::before{content:"+";font:600 17px var(--gc-sans);line-height:1}
   header{gap:10px;padding:10px 14px}
 }
-#avatar{width:30px;height:30px;border-radius:50%;background:var(--gc-accent);
-  color:#fff;font:600 12px var(--gc-sans);display:grid;place-items:center}
+#avatar{width:34px;height:34px;border-radius:50%;background:var(--gc-accent);
+  color:#fff;font:600 13px var(--gc-sans);display:grid;place-items:center}
 
-main{padding:26px clamp(18px,3.2vw,64px) 60px;min-height:70dvh}
+main{padding:34px clamp(18px,4.7vw,56px) 60px;min-height:70dvh}
 
 /* Fließtext bleibt lesbar, auch wenn das Fenster breit ist: eine Zeile über
    die ganze Breite eines Monitors kann man nicht mehr zurückfinden. Für
@@ -316,7 +316,8 @@ main p, .leer, .karte > p{max-width:78ch}
    Keine Karte, kein Kasten — die Seite selbst ist das Papier. */
 #a-heute .gruss{font:500 clamp(32px,4.6vw,46px)/1.12 var(--gc-serif);
   letter-spacing:-.02em;margin:10px 0 34px}
-#heute-bleibt{display:flex;flex-direction:column;gap:6px;margin-bottom:34px}
+#a-heute .sektion{margin:44px 0 12px}
+#heute-bleibt{display:flex;flex-direction:column;gap:6px;margin-bottom:44px}
 .bleibt-zahl{font:500 clamp(40px,5vw,60px)/1.05 var(--gc-serif);
   letter-spacing:-.02em;color:var(--gc-fg);font-variant-numeric:tabular-nums;
   white-space:nowrap}
@@ -369,11 +370,11 @@ main p, .leer, .karte > p{max-width:78ch}
 .bk-fuss{display:flex;align-items:center;gap:10px;margin-top:8px;
   font-size:12px;color:var(--gc-muted)}
 .bk-fuss .marke{margin-left:auto}
-.zeile{display:flex;align-items:center;gap:14px;background:var(--gc-bg);
-  border:1px solid var(--gc-border);border-radius:var(--r);padding:12px 16px;
+.zeile{display:flex;align-items:center;gap:18px;background:var(--gc-bg);
+  border:1px solid var(--gc-border);border-radius:var(--r);padding:16px 20px;
   margin-bottom:9px;width:100%;text-align:left}
 .zeile:hover{border-color:var(--gc-accent)}
-.thumb{width:44px;height:56px;object-fit:cover;border-radius:4px;background:var(--gc-desk);
+.thumb{width:42px;height:54px;object-fit:cover;border-radius:4px;background:var(--gc-desk);
   box-shadow:0 1px 4px rgba(0,0,0,.12);flex:none}
 .thumb.doc{display:grid;place-items:center;color:var(--gc-muted);font-size:20px}
 .zmitte{flex:1;min-width:0}
@@ -399,20 +400,24 @@ main p, .leer, .karte > p{max-width:78ch}
    Betrag. (Die Tabellenform mit Konto-Spalte ging mit v2 vom 27.08.) */
 }
 .zrechts{text-align:right;flex:none}
-.zbetrag{font:600 16px var(--gc-mono);font-variant-numeric:tabular-nums;color:var(--gc-fg);min-width:110px}
+.zbetrag{font:600 16px var(--gc-mono);font-variant-numeric:tabular-nums;color:var(--gc-fg);min-width:120px;text-align:right}
 .zunten{font:11.5px var(--gc-mono);color:var(--gc-muted);margin-top:2px}
 .zkonto{font:11px var(--gc-mono);color:var(--gc-muted);margin-top:1px}
 
 /* Chips & Schalter */
 .chips{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 16px}
-.chip{padding:10px 18px;border-radius:999px;border:1px solid var(--gc-border);
+.chip{padding:11px 20px;border-radius:999px;border:1px solid var(--gc-border);
   white-space:nowrap;background:var(--gc-bg);font-size:14px;font-weight:550;
   color:var(--gc-fg)}
 .chip.an{background:var(--gc-fg);border-color:var(--gc-fg);color:#fff;font-weight:600}
+.seitentitel{font-size:34px !important;font-weight:500;letter-spacing:-.02em}
+.monatstitel{font:500 34px var(--gc-serif);letter-spacing:-.02em;color:var(--gc-fg)}
+.monatstitel .jahr, .monatsklein{font:400 18px var(--gc-serif);color:var(--gc-muted)}
 .mon-schalter{display:flex;align-items:center;gap:10px;margin-left:auto}
+.mon-schalter b{font:500 18px var(--gc-serif);color:var(--gc-fg);min-width:120px;text-align:center}
 .mon-schalter button{width:44px;height:44px;border-radius:999px;font-size:18px;
   border:1px solid var(--gc-border);background:var(--gc-bg);color:var(--gc-fg)}
-.mon-schalter b{font:500 20px var(--gc-serif);letter-spacing:-.01em;color:var(--gc-fg);min-width:130px;text-align:center}
+
 
 /* Nachfrage-Karte */
 .nachfrage{border-left:3px solid var(--gc-warn)}
@@ -464,7 +469,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 .karte, .ablage-zeile, .zeile, .feld{min-width:0}
 
 /* Detail */
-#detail-grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:22px}
+#detail-grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:44px}
 @media(max-width:820px){#detail-grid{grid-template-columns:1fr}}
 #buehne{background:var(--gc-desk);border-radius:var(--r);padding:22px;display:flex;
   align-items:flex-start;justify-content:center;min-height:340px}
@@ -472,7 +477,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   box-shadow:0 6px 26px rgba(0,0,0,.18);cursor:zoom-in}
 #buehne img.zoom{max-height:none;cursor:zoom-out}
 #buehne .pdfhinweis{align-self:center;color:var(--gc-muted);text-align:center;font-size:13px}
-.sekt{margin-bottom:20px}
+.sekt{margin-bottom:28px}
 /* Leseprotokoll: was babu auf dem Beleg gelesen hat, vollständig. */
 .prot{font-size:13px;line-height:1.5;color:var(--gc-desc)}
 .prot h4{font:600 13px var(--gc-sans);color:var(--gc-fg);margin:16px 0 6px}
@@ -492,7 +497,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 .prot tr:nth-child(even) td{background:var(--gc-desk)}
 .prot td:first-child{white-space:nowrap;color:var(--gc-fg)}
 .sekt .lbl{display:block;margin-bottom:8px}
-.feld{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--gc-border-l);font-size:13.5px}
+.feld{display:flex;justify-content:space-between;gap:12px;padding:13px 2px;border-bottom:1px solid var(--gc-border);font-size:15px}
 .feld:last-child{border-bottom:none}
 .feld b{font-family:var(--gc-mono);font-variant-numeric:tabular-nums;font-weight:400;
   color:var(--gc-fg)}
@@ -965,11 +970,10 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       <button onclick="location.hash='#bank'">Bank</button>
       <button onclick="location.hash='#saloncheck'">Salon-Check</button>
     </div>
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <div class="gruss" style="font-size:22px">Belege</div>
+    <div style="display:flex;align-items:baseline;gap:16px;flex-wrap:wrap">
+      <b class="monatstitel" id="mon-anzeige"></b>
       <div class="mon-schalter">
         <button id="mon-zurueck" aria-label="Vormonat">‹</button>
-        <b id="mon-anzeige"></b>
         <button id="mon-vor" aria-label="Folgemonat">›</button>
       </div>
     </div>
@@ -994,10 +998,10 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       <button class="an" onclick="location.hash='#abschluss'">Monatsabschluss</button>
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <div class="gruss" style="font-size:22px">Monatsabschluss</div>
+      <div class="gruss seitentitel">Monatsabschluss</div>
+      <span class="monatsklein" id="ab-mon-anzeige"></span>
       <div class="mon-schalter">
         <button id="ab-mon-zurueck" aria-label="Vormonat">‹</button>
-        <b id="ab-mon-anzeige"></b>
         <button id="ab-mon-vor" aria-label="Folgemonat">›</button>
       </div>
     </div>
@@ -1013,11 +1017,11 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       <button class="an" onclick="location.hash='#zahlen'">Ausgaben</button>
       <button onclick="location.hash='#abschluss'">Monatsabschluss</button>
     </div>
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <div class="gruss" style="font-size:22px">Deine Zahlen</div>
+    <div style="display:flex;align-items:baseline;gap:16px;flex-wrap:wrap">
+      <div class="gruss seitentitel">Deine Zahlen</div>
+      <span class="monatsklein" id="z-mon-anzeige"></span>
       <div class="mon-schalter">
         <button id="z-mon-zurueck" aria-label="Vormonat">‹</button>
-        <b id="z-mon-anzeige"></b>
         <button id="z-mon-vor" aria-label="Folgemonat">›</button>
       </div>
     </div>
@@ -1828,7 +1832,8 @@ function wochenGruppe(iso){
   return "Früher";
 }
 async function ladeBelege(){
-  $("#mon-anzeige").textContent = monatName(aktMonat);
+  { const [mon, jahr] = monatName(aktMonat).split(" ");
+    $("#mon-anzeige").innerHTML = `${mon} <span class="jahr">${jahr}</span>`; }
   let d;
   try{ d = await (await api(`/api/belege?monat=${aktMonat}` + (aktFilter ? `&status=${encodeURIComponent(aktFilter)}` : ""))).json(); }
   catch{ return; }
