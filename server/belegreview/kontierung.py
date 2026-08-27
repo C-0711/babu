@@ -106,7 +106,27 @@ _K = [
     Kategorie("reinigung", "Reinigung und Wäsche", "4250", "6330",
               hinweis="Handtuchservice und Mietwäsche laufen bei manchen "
                       "Betrieben über Fremdleistung — einmal festlegen."),
+    # Kommunale Gebührenbescheide (Abfall, Straßenreinigung, Grundsteuer)
+    # landeten auf „Sonstiger Betriebsbedarf" — sie sind Raumkosten, und sie
+    # tragen keine Umsatzsteuer (Ninas Anmerkungen P2-21 und P1-21).
+    Kategorie("grundstueck", "Abgaben für die Salonräume", "4270", "6340",
+              geprueft=True,
+              hinweis="Abfall- und Müllgebühren, Straßenreinigung, "
+                      "Grundsteuer für den Betrieb. Hoheitliche Gebühren "
+                      "sind NICHT steuerbar — nie 19 % daraus rechnen."),
     Kategorie("versicherung", "Versicherungen", "4360", "6400", geprueft=True),
+    # Der HWK-Pflichtbeitrag ging als „Post vom Amt" durch und bekam 19 %
+    # aufgerechnet, die nirgends stehen (Ninas Anmerkungen P1-20, P1-21, P1-29).
+    Kategorie("kammerbeitrag", "Kammer- und Verbandsbeiträge", "4380", "6420",
+              geprueft=True,
+              hinweis="Handwerkskammer, Innung, IHK, Berufsverband. "
+                      "Pflichtbeiträge sind NICHT steuerbar — keine "
+                      "Umsatzsteuer, kein Vorsteuerabzug."),
+    Kategorie("abgaben", "Sonstige Abgaben und Gebühren", "4390", "6430",
+              geprueft=True,
+              hinweis="Rundfunkbeitrag, Gewerbeanmeldung, "
+                      "Verwaltungsgebühren. Hoheitliche Gebühren tragen "
+                      "keine Umsatzsteuer."),
     Kategorie("werbung", "Werbung", "4600", "6600", geprueft=True),
     Kategorie("geschenk", "Geschenke", "4630", "6610", geprueft=True,
               hinweis="Zugewendetes, das die Beschenkte behält — bis 50 € "
@@ -121,9 +141,15 @@ _K = [
               hinweis="Kaffee, Getränke, Kekse, kleine Proben für Kundinnen "
                       "im Salon — voll abziehbar, kein 70/30."),
     Kategorie("kfz", "Kfz-Kosten", "4530", "6530", geprueft=True),
+    # Flugtickets landeten auf „Fortbildung" oder „Sonstiges" (P1-24).
     Kategorie("fahrt", "Reise- und Fahrtkosten", "4670", "6673",
-              hinweis="Trennung Unternehmerin/Arbeitnehmerin noch nicht "
-                      "abgebildet — die Konten unterscheiden sich dort."),
+              hinweis="Flug, Bahn, Taxi, Mietwagen, Hotel für "
+                      "Geschäftsreisen — auch wenn der Anlass ein Seminar "
+                      "ist (der Kursbeitrag bleibt Fortbildung). "
+                      "Internationale Flüge tragen KEINE deutsche "
+                      "Umsatzsteuer. Trennung Unternehmerin/Arbeitnehmerin "
+                      "noch nicht abgebildet — die Konten unterscheiden "
+                      "sich dort."),
     Kategorie("telekom", "Telefon und Internet", "4920", "6805", geprueft=True),
     Kategorie("buerobedarf", "Bürobedarf", "4930", "6815", geprueft=True),
     Kategorie("porto", "Porto und Versand", "4910", "6800",
@@ -138,6 +164,17 @@ _K = [
                       "Ausland und auch, wenn Reisekosten getrennt anfallen."),
     Kategorie("it", "IT, Hosting, Software", None, "6837",
               hinweis="SKR03-Gegenstück noch nicht bestätigt."),
+    # Die Rechnung der Steuerkanzlei landete auf 6850 — sie hat ein eigenes
+    # Konto, und der Jahresabschluss darin sogar ein zweites (P1-23).
+    Kategorie("steuerberatung", "Steuerberatung und Buchführung",
+              "4955", "6830", geprueft=True,
+              hinweis="Laufende Buchführung, Lohnabrechnung, "
+                      "Steuererklärungen. Weist die Kanzlei den "
+                      "Jahresabschluss getrennt aus, gehört DIESE Position "
+                      "auf Abschluss- und Prüfungskosten (SKR04 6827)."),
+    Kategorie("rechtsberatung", "Rechts- und Beratungskosten",
+              "4950", "6825", geprueft=True,
+              hinweis="Anwältin, Notar, Unternehmensberatung."),
     Kategorie("sonstiges", "Sonstiger Betriebsbedarf",
               "4980", "6850", geprueft=True),
 

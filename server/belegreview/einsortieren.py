@@ -53,6 +53,24 @@ MERKMALE: dict[str, tuple[tuple[str, int], ...]] = {
 # zweiunddreißig Rechnungsfotos ungelesen ins Auszugsfach.
 AUSZUG_KERN = ("kontoauszug", "kontostand", "buchungstag", "valuta", "auszug nr")
 
+# Post von einer Behörde oder Kammer, die eine ZAHLUNG verlangt, ist ein
+# Beleg — sie wird bezahlt und ist Betriebsausgabe. Der Jahresbeitrag der
+# Handwerkskammer und der Abfallgebührenbescheid lagen bei Nina unter
+# „Post vom Amt" und fehlten damit in der Auswertung (Anmerkungen P1-16,
+# P1-20, P2-17). Ein Bescheid, der nur etwas festsetzt oder mitteilt
+# (Rechtsbehelfsbelehrung, Betriebsprüfung), bleibt Post vom Amt.
+ZAHLPFLICHT = (
+    "handwerkskammer", "hwk-beitrag", "kammerbeitrag", "innungsbeitrag",
+    "jahresbeitrag", "mitgliedsbeitrag", "pflichtbeitrag",
+    "abfallgebühr", "müllgebühr", "abfallentsorgung", "straßenreinigung",
+    "rundfunkbeitrag", "beitragsservice",
+    "mahnung", "zahlungserinnerung", "mahngebühr", "zahlungsaufforderung",
+)
+
+
+def _zahlpflicht(klein: str) -> list[str]:
+    return [w for w in ZAHLPFLICHT if w in klein]
+
 # Ein Bescheid nennt oft Beträge und „Rechnung" — trotzdem ist er Post vom
 # Amt. Diese Reihenfolge entscheidet bei Gleichstand.
 VORRANG = ("behoerde", "kontoauszug", "vertrag", "beleg")
@@ -80,13 +98,24 @@ def _punkte(text: str) -> dict[str, int]:
             (re.search(rf"\b{re.escape(w)}\b", klein) if len(w) <= 3 else w in klein)
             for w in AUSZUG_KERN):
         ergebnis["kontoauszug"] = 0
+    # Kammerbeitrag, Gebührenbescheid, Mahnung: Behördenpapier, aber zu
+    # bezahlen — also ein Beleg. Der Behörden-Punktestand fällt weg, damit
+    # er den Beleg nicht überstimmt.
+    if _zahlpflicht(klein):
+        ergebnis["behoerde"] = 0
+        ergebnis["beleg"] = ergebnis.get("beleg", 0) + SICHER_AB
     return ergebnis
 
 
 def _gruende(text: str, art: str) -> list[str]:
     klein = " " + (text or "").lower() + " "
-    return [w for w, _ in MERKMALE[art]
-            if (re.search(rf"\b{re.escape(w)}\b", klein) if len(w) <= 3 else w in klein)]
+    gefunden = [w for w, _ in MERKMALE[art]
+                if (re.search(rf"\b{re.escape(w)}\b", klein) if len(w) <= 3
+                    else w in klein)]
+    if art == "beleg":
+        # Zuerst der Grund, der die Entscheidung getragen hat.
+        gefunden = _zahlpflicht(klein) + gefunden
+    return gefunden
 
 
 def entscheiden(text: str | None) -> dict:

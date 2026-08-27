@@ -783,6 +783,9 @@ def _index_bauen(head: str) -> None:
             "netto": f.get("netto"),
             "ust": f.get("ust"),
             "ust_satz": f.get("ust_satz"),
+            # Gutschrift/Storno: trägt sein Minus schon in den Beträgen,
+            # das Kennzeichen erklärt es nur (Ninas Anmerkung P1-26).
+            "gutschrift": bool(f.get("gutschrift")),
             # Vorsicht: Stub-Reviews haben "semantik": null — get-Default greift
             # nur bei FEHLENDEM Schlüssel, deshalb das `or {}`.
             "belegart": ((review.get("semantik") or {}).get("belegart")) if review else None,
@@ -2008,6 +2011,7 @@ def _review_aus_einschaetzung(pfad: str, buchung: dict, zeilen: list,
             "datum": buchung.get("datum"),
             "netto": netto, "ust": ust, "brutto": brutto,
             "ust_satz": satz,
+            "gutschrift": bool(buchung.get("gutschrift")),
             "summenprobe_ok": None,
             "bewirtungssignal": False,
             "offen": [],

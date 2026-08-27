@@ -165,6 +165,39 @@ Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
   Kekse für Kundinnen IM Salon → aufmerksamkeit (voll abziehbar, kein 70/30).
   Etwas, das eine Kundin geschenkt bekommt und behält → geschenk (bis 50 €
   je Person und Jahr).
+- Steht auf dem Beleg „Reverse Charge", „Steuerschuldnerschaft des
+  Leistungsempfängers", „§ 13b UStG", „VAT 0 %", „VAT exempt" oder eine
+  ausländische Steuernummer OHNE deutschen Steuerbetrag, dann ist
+  ust_satz 0. Rechne NIE 19 % aus einem Bruttobetrag heraus, die nicht
+  auf dem Beleg stehen.
+- Hoheitliche Gebühren und Pflichtbeiträge sind nicht steuerbar und tragen
+  NIE Umsatzsteuer: Handwerkskammer, Innung, IHK (kategorie
+  kammerbeitrag) · Abfall-, Müll- und Straßenreinigungsgebühren, Grundsteuer
+  der Salonräume (kategorie grundstueck) · Rundfunkbeitrag,
+  Verwaltungsgebühren (kategorie abgaben). Sie kommen zwar von einer
+  Behörde, sind aber BELEGE mit Zahlungspflicht — dokumentklasse "beleg",
+  nicht "behoerde".
+- Eine Mahnung oder Zahlungserinnerung ist ein BELEG (dokumentklasse
+  "beleg"), kein Behördenbrief. Lieferant ist, wer mahnt — ein
+  handschriftlicher Vermerk auf dem Blatt ist NIE der Rechnungssteller.
+  Mahngebühren, Verzugszinsen und Säumniszuschläge sind Schadenersatz:
+  sie sind KEINE Umsatzsteuer und gehören nicht in den Steuerbetrag.
+- Ein Skonto-ANGEBOT („2 % Skonto bei Zahlung innerhalb 10 Tagen") ist
+  nur eine Bedingung — es gilt der volle Rechnungsbetrag. Nur wenn der
+  Beleg einen tatsächlich abgezogenen Skontobetrag ausweist oder eine
+  passende Kontobewegung den geminderten Betrag zeigt, buchst du den
+  geminderten Betrag.
+- Als datum gilt das RECHNUNGSDATUM (Belegdatum). Fälligkeitsdatum,
+  Zahlungsziel, Liefer- oder Leistungsdatum und Bestelldatum sind ein
+  anderes Datum — übernimm sie nicht. Steht nur „Leistungszeitraum",
+  nimm dessen Ende.
+- Gutschriften, Stornos und Retouren sind KEINE Ausgabe: setze
+  "gutschrift": true und den Betrag positiv wie gedruckt. Die Kategorie
+  ist die des ursprünglichen Kaufs — babu zieht den Betrag selbst ab.
+- Prüfe die Summen als ZUSAMMENHÄNGENDES Schema: Zwischensumme, Versand-
+  und Nebenkosten, Rabatt, Steuerbetrag und Endsumme müssen zusammen
+  aufgehen. Versandkosten gehören zum Rechnungsbetrag. Die Prozentzahl
+  eines Steuersatzes ist KEIN Betrag — „19 %“ ist niemals 19,00 €.
 - Erkenne die Währung aus dem Beleg; bei Fremdwährung nimm betrag_eur aus
   einer passenden Kontobewegung, sonst schätze ihn.
 - Passt eine Kontobewegung exakt zu diesem Beleg, nenne sie in der
@@ -188,7 +221,7 @@ oder     {{"status": "gebucht",
            "lieferant": "…", "datum": "JJJJ-MM-TT",
            "buchungstext": "…",
            "betrag": 0.0, "waehrung": "EUR",
-           "betrag_eur": 0.0, "ust_satz": 0,
+           "betrag_eur": 0.0, "ust_satz": 0, "gutschrift": false,
            "positionen": [{{"bezeichnung": "…", "betrag": 0.0,
                            "ust_satz": 0, "kategorie": "<code>"}}],
            "begruendung": "ein Satz"}}"""
@@ -251,6 +284,16 @@ def buchung_pruefen(roh: dict, rahmen: str = "SKR04") -> dict:
     if satz not in (0, 7, 19):
         satz = 0
     positionen = _positionen(roh)
+    # Eine Gutschrift ist der Kauf mit umgekehrtem Vorzeichen. Das Vorzeichen
+    # wird GENAU HIER gesetzt, nicht bei jedem Verbraucher: von hier an
+    # rechnen Review, Index, BWA, Saldenliste und Voranmeldung ohne
+    # Sonderfall weiter — eine Erstattung mindert Aufwand und Vorsteuer,
+    # statt sie ein zweites Mal aufzuschlagen (Ninas Anmerkung P1-26).
+    gutschrift = bool(roh.get("gutschrift"))
+    if gutschrift:
+        betrag_eur = -abs(betrag_eur)
+        for p in positionen:
+            p["betrag"] = -abs(p["betrag"])
     waehrung = str(roh.get("waehrung") or "EUR")[:8].upper()
     # Fremdwährung: die Positionsbeträge sind KEINE Euro, und ausländische
     # Steuer ist keine abziehbare Vorsteuer — keine Steuertabelle, Satz 0.
@@ -272,6 +315,7 @@ def buchung_pruefen(roh: dict, rahmen: str = "SKR04") -> dict:
         "betrag": roh.get("betrag"),
         "waehrung": waehrung,
         "betrag_eur": betrag_eur,
+        "gutschrift": gutschrift,
         "ust_satz": satz,
         "positionen": positionen,
         "steuersaetze": steuersaetze,

@@ -38,6 +38,11 @@ from geld import rund as _rund
 OHNE_VORSTEUER = {"privat", "geldtransit", "gutschein", "ust_zahlung",
                   "darlehen_personal"}
 
+# Hoheitliche Gebühren und Pflichtbeiträge: nicht steuerbar, also nie
+# Vorsteuer — auch wenn auf dem Bescheid eine Zahl steht, die nach 19 %
+# aussieht (Ninas Anmerkung P1-21: 19 % auf den HWK-Beitrag gerechnet).
+NICHT_STEUERBAR = {"kammerbeitrag", "grundstueck", "abgaben"}
+
 # Feste Konten der Erlös- und Steuerseite (SKR04, DATEV-Standard 11175).
 # Wie in `kontierung`: DATEV-Standard, nicht von einer Steuerberatung
 # geprüft — die Blätter tragen den Hinweis.
@@ -47,20 +52,28 @@ SUSA_KONTEN = {
     "vorsteuer": ("1406", "Abziehbare Vorsteuer 19 %"),
     "erloes19": ("4400", "Erlöse 19 % USt"),
     "erloes7": ("4300", "Erlöse 7 % USt"),
-    "erloesfrei": ("4200", "Steuerfreie Erlöse (§ 4 UStG)"),
+    "erloesfrei": ("4100", "Steuerfreie Umsätze § 4 UStG"),
     "ust19": ("3806", "Umsatzsteuer 19 %"),
     "ust7": ("3801", "Umsatzsteuer 7 %"),
 }
 
-# DATEV-BWA Nr. 1: Zeilennummer, Name, und welche babu-Kostengruppen
-# (monatsabschluss.KOSTENGRUPPEN) hineinfallen.
+# Die Zeilen der DATEV-Standard-BWA (Form 01, kurzfristige Erfolgsrechnung)
+# in ihrer Reihenfolge, und welche babu-Kostengruppe in welche gehört.
+#
+# Die Zeilenbezeichnungen stammen aus dem Starter-Kontenplan Beautysalon
+# auf SKR04-Basis (Spalte `bwa_zeile`), nicht aus dem Gedächtnis. Bewusst
+# ohne Zeilennummern: die Form nummeriert je nach Auswertungsvariante
+# anders, und eine erfundene Nummer wäre schlimmer als keine.
 BWA_ZEILEN = [
-    ("1110", "Personalkosten", ("personal",)),
-    ("1120", "Raumkosten", ("raum",)),
-    ("1150", "Versicherungen/Beiträge", ("versicherung",)),
-    ("1180", "Fahrzeugkosten (ohne Steuer)", ("fahrzeug",)),
-    ("1200", "Werbe-/Reisekosten", ("werbung", "bewirtung")),
-    ("1260", "Sonstige Kosten", ("buero", "sonstiges", "fremdleistung")),
+    ("Personalkosten", ("personal",)),
+    ("Raumkosten", ("raum",)),
+    ("Betriebliche Steuern", ("steuern_betrieb",)),
+    ("Versicherungen/Beiträge", ("versicherung",)),
+    ("Kfz-Kosten", ("fahrzeug",)),
+    ("Werbe-/Reisekosten", ("werbung",)),
+    ("Abschreibungen", ("abschreibung",)),
+    ("Reparatur/Instandhaltung", ("instandhaltung",)),
+    ("Sonstige Kosten", ("beratung", "buero", "sonstiges")),
 ]
 
 
@@ -90,6 +103,11 @@ def skr04_pruefung(belege: list[dict]) -> list[dict]:
             b_(z, "keine_vorsteuer",
                f"{name}: kein Leistungsbezug — die ausgewiesene Umsatzsteuer "
                "gehört nicht in die Voranmeldung.")
+        elif kat in NICHT_STEUERBAR and ust > 0:
+            name = (kt.KATEGORIEN.get(kat).name if kat in kt.KATEGORIEN else kat)
+            b_(z, "keine_vorsteuer",
+               f"{name}: hoheitliche Gebühr oder Pflichtbeitrag — nicht "
+               "steuerbar, deshalb kein Vorsteuerabzug.")
         elif kat == "versicherung" and ust > 0:
             b_(z, "keine_vorsteuer",
                "Versicherungsbeiträge tragen Versicherungsteuer, keine "
@@ -150,12 +168,15 @@ def bwa_summe(monats_bwas: list[dict], zeitraum: str) -> dict:
     Spalte der DATEV-BWA: jeder Monat mit seinen eigenen Verträgen und
     Personalkosten, dann addiert."""
     gruppen: dict[str, dict] = {}
-    umsatz = kosten = tage = 0.0
+    umsatz = kosten = tage = neutral_summe = 0.0
+    neutral: list[dict] = []
     fehlt: list[str] = []
     for b in monats_bwas:
         umsatz += b["umsatz_netto"]
         kosten += b["kosten_netto"]
         tage += b.get("tage_erfasst") or 0
+        neutral += b.get("neutral") or []
+        neutral_summe += b.get("neutral_summe") or 0
         for g in b["gruppen"]:
             e = gruppen.setdefault(g["schluessel"],
                                    {"schluessel": g["schluessel"],
@@ -187,6 +208,7 @@ def bwa_summe(monats_bwas: list[dict], zeitraum: str) -> dict:
             "ergebnis": ergebnis,
             "ergebnis_anteil": _rund(100 * ergebnis / umsatz) if umsatz else None,
             "gruppen": geordnet, "tage_erfasst": int(tage), "fehlt": fehlt,
+            "neutral": neutral, "neutral_summe": _rund(neutral_summe),
             "hinweis": "Jahresauflauf — Summe der Monatsauswertungen, "
                        "vorläufig und nicht von der Buchhaltung geprüft."}
 
@@ -464,11 +486,11 @@ def ustva_pdf(entwurf: dict, betrieb: dict, befunde: list[dict]) -> bytes:
 
 
 def bwa_pdf(bwa: dict, betrieb: dict) -> bytes:
-    """Kurzfristige Erfolgsrechnung — Zeilen der DATEV-BWA Nr. 1."""
+    """Kurzfristige Erfolgsrechnung im Schema der DATEV-Standard-BWA."""
     b = _Blatt()
     _kopf(b, "Betriebswirtschaftliche Auswertung", bwa["monat"], betrieb)
-    b.zeile("Kurzfristige Erfolgsrechnung nach dem Schema der DATEV-BWA Nr. 1",
-            size=8)
+    b.zeile("Kurzfristige Erfolgsrechnung im Schema der "
+            "DATEV-Standard-BWA (Form 01)", size=8)
     b.frei(8)
     umsatz = bwa["umsatz_netto"]
 
@@ -476,34 +498,42 @@ def bwa_pdf(bwa: dict, betrieb: dict) -> bytes:
         return (f"{100 * wert / umsatz:5.1f} %".replace(".", ",")
                 if umsatz else "")
 
-    b.zeile("Zeile  Position", mitte="EUR", mitte_x=_BREITE - 130,
+    b.zeile("Position", mitte="EUR", mitte_x=_BREITE - 130,
             rechts="% Umsatz", size=8)
     b.linie()
     gruppen = {g["schluessel"]: g for g in bwa["gruppen"]}
 
-    def z(zeile_nr, name, wert, fett=False):
-        b.zeile(f"{zeile_nr}   {name}", fett=fett, mitte=_eur(wert),
+    def z(name, wert, fett=False):
+        b.zeile(name, fett=fett, mitte=_eur(wert),
                 mitte_x=_BREITE - 130, rechts=prozent(wert))
 
-    z("1010", "Umsatzerlöse", umsatz)
-    z("1045", "Gesamtleistung", umsatz, fett=True)
-    material = _rund(sum(gruppen[s]["netto"] for s in ("material",)
-                         if s in gruppen))
-    z("1050", "Material-/Wareneinkauf", material)
+    z("Umsatzerlöse", umsatz)
+    z("Gesamtleistung", umsatz, fett=True)
+    material = _rund(gruppen["material"]["netto"] if "material" in gruppen else 0)
+    z("Mat./Wareneinkauf", material)
     rohertrag = _rund(umsatz - material)
-    z("1060", "Rohertrag", rohertrag, fett=True)
+    z("Rohertrag", rohertrag, fett=True)
     b.frei(4)
     kosten = 0.0
-    for nr, name, schluessel in BWA_ZEILEN:
+    for name, schluessel in BWA_ZEILEN:
         wert = _rund(sum(gruppen[s]["netto"] for s in schluessel
                          if s in gruppen))
         kosten += wert
         if wert:
-            z(nr, name, wert)
-    z("1280", "Gesamtkosten", _rund(kosten), fett=True)
+            z(name, wert)
+    z("Gesamtkosten", _rund(kosten), fett=True)
     b.linie()
-    z("1300", "Betriebsergebnis", _rund(rohertrag - kosten), fett=True)
-    z("1380", "Vorläufiges Ergebnis", bwa["ergebnis"], fett=True)
+    z("Betriebsergebnis", _rund(rohertrag - kosten), fett=True)
+    z("Vorläufiges Ergebnis", bwa["ergebnis"], fett=True)
+
+    if bwa.get("neutral"):
+        # Kein Aufwand, aber Geld, das den Betrieb verlassen hat: das darf
+        # weder im Ergebnis stehen noch verschwinden.
+        b.frei(8)
+        b.zeile("Nicht im Ergebnis (kein Aufwand): Privatentnahmen, "
+                "Geldtransit, Umsatzsteuer, Anlagenkäufe", size=8)
+        b.zeile("zusammen", einzug=8, size=8,
+                mitte=_eur(bwa.get("neutral_summe")), mitte_x=_BREITE - 130)
 
     if bwa.get("fehlt"):
         b.frei(10)
@@ -511,8 +541,8 @@ def bwa_pdf(bwa: dict, betrieb: dict) -> bytes:
         for f in bwa["fehlt"]:
             b.zeile("· " + f, size=8, einzug=8, abstand=11)
     _fuss(b, [bwa.get("hinweis") or "",
-              "Zeilenschema DATEV-BWA Nr. 1; Kostengruppen aus den "
-              "SKR04-Konten der Buchungen."])
+              "Zeilenschema der DATEV-Standard-BWA (Form 01); Kostengruppen "
+              "aus den SKR04-Konten der Buchungen."])
     return b.bytes()
 
 

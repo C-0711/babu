@@ -11,20 +11,48 @@ from __future__ import annotations
 
 from geld import rund as _rund
 
-# Kostengruppen der BWA nach SKR04 — die Konten, die babu vergibt.
+# Kostengruppen der BWA nach SKR04 — Zuschnitt und Reihenfolge folgen der
+# DATEV-Standard-BWA (Form 01, kurzfristige Erfolgsrechnung); die Konten
+# stammen aus dem Starter-Kontenplan Beautysalon auf SKR04-Basis.
+#
+# Der Name hier ist Ninas Wort für den Bildschirm — der Zeilenname der
+# DATEV-BWA steht daneben in `vordrucke.BWA_ZEILE` und geht aufs Papier.
+# Bis 27.08.2026 kannten die Gruppen nur zehn Konten: Materialeinsatz,
+# Porto, Fortbildung, Reparaturen, Beiträge und die Beratungskosten
+# fielen alle in „Sonstiges" — genau der Eindruck, den Nina beschrieben
+# hat („Sonstiger Betriebsbedarf wird zu häufig verwendet").
 KOSTENGRUPPEN: list[tuple[str, str, tuple[str, ...]]] = [
     ("personal", "Löhne und Gehälter", ("6000", "6010", "6020", "6030",
-                                        "6040", "6110", "6120", "6130")),
-    ("material", "Material und Ware", ("5400",)),
-    ("fremdleistung", "Fremdleistungen", ("5900",)),
-    ("raum", "Raum", ("6310", "6325", "6330")),
-    ("versicherung", "Versicherungen", ("6400",)),
-    ("werbung", "Werbung", ("6600", "6610")),
-    ("fahrzeug", "Auto und Fahrten", ("6530", "6531", "6673")),
-    ("buero", "Büro und Technik", ("6805", "6815", "6820", "6837")),
-    ("bewirtung", "Bewirtung", ("6640",)),
-    ("sonstiges", "Sonstiges", ("6850",)),
+                                        "6035", "6040", "6110", "6120",
+                                        "6130")),
+    ("material", "Material und Ware", ("5100", "5200", "5400", "5800",
+                                       "5900")),
+    ("raum", "Raum", ("6305", "6310", "6315", "6320", "6325", "6330",
+                      "6335")),
+    ("steuern_betrieb", "Abgaben für Grundbesitz und Kfz", ("6340", "7685")),
+    ("versicherung", "Versicherungen und Beiträge", ("6400", "6420", "6430")),
+    ("fahrzeug", "Auto", ("6520", "6530", "6531", "6540")),
+    ("werbung", "Werbung, Bewirtung und Reisen", ("6600", "6605", "6610",
+                                                  "6640", "6673")),
+    ("abschreibung", "Abschreibungen", ("6220", "6221", "6222", "6260",
+                                        "0670")),
+    ("instandhaltung", "Reparatur und Wartung", ("6470", "6495")),
+    ("beratung", "Beratung und Buchführung", ("6825", "6827", "6830")),
+    ("buero", "Büro, Technik und Fortbildung", ("6800", "6805", "6810",
+                                                "6815", "6820", "6821",
+                                                "6837", "6840", "6845")),
+    ("sonstiges", "Sonstiges", ("6300", "6850", "6855")),
 ]
+
+# Kein Aufwand — diese Konten gehören NICHT in die Kostenseite.
+#
+# Sie landeten bisher stillschweigend unter „Sonstiges" und drückten damit
+# das Ergebnis: eine Privatentnahme ist keine Ausgabe des Betriebs, Geld
+# zwischen eigenen Konten schon gar nicht, und die Umsatzsteuer ist in der
+# Netto-Rechnung der BWA bereits aus den Erlösen heraus. Anlagevermögen
+# wirkt nur über die Abschreibung, nicht mit dem Kaufpreis.
+NEUTRALE_KONTEN = ("1360", "1460", "2100", "2150", "2180", "3820", "3840",
+                   "0400", "0650", "0675")
 
 # Umsatzsteuer-Kennziffern der Voranmeldung (Formular UStVA).
 KENNZIFFERN = {
@@ -158,9 +186,9 @@ def vorsteuer_monat(belege: list[dict]) -> dict:
             continue
         ust = float(b.get("ust") or 0)
         netto = float(b.get("netto") or 0) or (float(b.get("brutto") or 0) - ust)
-        # Gutschrift/Erstattung mindert die Vorsteuer.
-        if b.get("gutschrift"):
-            ust, netto = -ust, -netto
+        # Gutschrift/Erstattung mindert die Vorsteuer — sie trägt ihr
+        # Minus seit 27.08.2026 schon in den Beträgen (gemma_buchung setzt
+        # es beim Buchen). Hier NICHT noch einmal drehen.
         vorsteuer += ust
         netto_kosten += netto
         zaehlt += 1
@@ -274,13 +302,21 @@ def bwa(monat: str, erloese: dict, belege: list[dict],
                  for schluessel, name, konten in KOSTENGRUPPEN
                  for konto in konten}
     eimer: dict[str, dict] = {}
+    neutral: list[dict] = []
     for b in belege:
         if b.get("brutto") is None:
             continue
+        konto = b.get("konto_skr04") or ""
+        if konto in NEUTRALE_KONTEN:
+            # Privatentnahme, Geldtransit, Umsatzsteuer, Anlagenkauf: sie
+            # sind kein Aufwand. Sichtbar bleiben sie trotzdem — still
+            # weglassen wäre so irreführend wie falsch mitzählen.
+            neutral.append({"lieferant": b.get("lieferant"),
+                            "brutto": b.get("brutto"), "konto": konto})
+            continue
         ust = float(b.get("ust") or 0)
         netto = float(b.get("netto") or 0) or (float(b.get("brutto")) - ust)
-        schluessel, name = zuordnung.get(b.get("konto_skr04") or "",
-                                         ("sonstiges", "Sonstiges"))
+        schluessel, name = zuordnung.get(konto, ("sonstiges", "Sonstiges"))
         e = eimer.setdefault(schluessel, {"schluessel": schluessel, "name": name,
                                           "netto": 0.0, "anzahl": 0})
         e["netto"] += netto
@@ -341,6 +377,8 @@ def bwa(monat: str, erloese: dict, belege: list[dict],
         "ergebnis_anteil": _rund(100 * ergebnis / umsatz) if umsatz else None,
         "gruppen": gruppen,
         "tage_erfasst": erloese["tage"],
+        "neutral": neutral,
+        "neutral_summe": _rund(sum(float(n["brutto"] or 0) for n in neutral)),
         "fehlt": fehlt,
         "hinweis": "Vorläufig — aus deinen Belegen und deinem Kassenbuch "
                    "gerechnet, noch nicht von der Buchhaltung geprüft.",

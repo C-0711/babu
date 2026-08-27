@@ -108,12 +108,18 @@ def test_ustva_pdf_folgt_dem_amtlichen_vordruck():
 
 
 def test_bwa_pdf_folgt_datev_zeilen():
+    """Die Zeilennamen stammen aus dem Salon-Kontenplan auf SKR04-Basis.
+
+    Bis zum 27.08.2026 standen hier zusätzlich Zeilennummern (1010, 1060,
+    …), die ich nicht belegen konnte — die Form nummeriert je nach
+    Auswertungsvariante anders. Lieber keine Nummer als eine erfundene."""
     import monatsabschluss as ma
     erloese = ma.erloese_monat([{"einnahmenBar": 1190.0}])
     bwa = ma.bwa("2026-02", erloese, [_beleg()])
-    pdf = vordrucke.bwa_pdf(bwa, {"betrieb_name": "Salon Test"})
-    text = _pdf_text(pdf)
-    for zeile in ("1010", "1060", "1280", "1300", "1380", "DATEV-BWA Nr. 1"):
+    text = _pdf_text(vordrucke.bwa_pdf(bwa, {"betrieb_name": "Salon Test"}))
+    for zeile in ("Umsatzerlöse", "Gesamtleistung", "Mat./Wareneinkauf",
+                  "Rohertrag", "Gesamtkosten", "Betriebsergebnis",
+                  "Vorläufiges Ergebnis", "DATEV-Standard-BWA"):
         assert zeile in text, zeile
 
 

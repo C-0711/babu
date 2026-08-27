@@ -88,8 +88,14 @@ def test_belege_ohne_saubere_summenprobe_zaehlen_nicht():
 
 
 def test_gutschrift_mindert_die_vorsteuer():
-    v = ma.vorsteuer_monat([beleg(stamm="kauf"),
-                            beleg(stamm="retoure", gutschrift=True)])
+    """Seit 27.08.2026 trägt eine Gutschrift ihr Minus schon in den
+    Beträgen — `gemma_buchung` setzt das Vorzeichen beim Buchen, damit
+    Voranmeldung, BWA und Saldenliste keinen Sonderfall mehr brauchen."""
+    kauf = beleg(stamm="kauf")
+    retoure = beleg(stamm="retoure", gutschrift=True,
+                    brutto=-kauf["brutto"], netto=-kauf["netto"],
+                    ust=-kauf["ust"])
+    v = ma.vorsteuer_monat([kauf, retoure])
     assert v["vorsteuer"] == 0.0
     assert v["netto_kosten"] == 0.0
 
