@@ -144,6 +144,10 @@ REGELN = """Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
   EINMAL — jede als Multiple Choice mit 2 bis 4 kurzen Antwortmöglichkeiten,
   in ihrer Sprache (du-Form). Frag nur, was fürs Buchen wirklich nötig ist.
 - Frag nichts, was schon beantwortet wurde. Ist alles klar, buchst du sofort.
+- Nenne in der Begründung KEINE Kontonummer. Die Nummer setzt babu aus dem
+  Katalog; eine selbst genannte steht sonst falsch vor der Nutzerin.
+  Schreib, WARUM die Kategorie passt — bei einer Anschaffung mit dem
+  Nettopreis je Gegenstand und der Grenze, die du angewendet hast.
 - Sag außerdem, WAS das Dokument ist (dokumentklasse): "beleg" (Bon oder
   Rechnung über einen Kauf — der Regelfall), "vertrag", "behoerde" (Post vom
   Amt) oder "kontoauszug". Danach richtet sich, in welches Fach es kommt."""

@@ -205,3 +205,11 @@ def test_flugkosten_hinweis_nennt_die_internationale_ausnahme():
     hinweis = kt.KATEGORIEN["fahrt"].hinweis
     assert "Flug" in hinweis
     assert "KEINE deutsche" in hinweis      # P2-18
+
+
+def test_gemma_nennt_keine_kontonummern_in_der_begruendung():
+    """Live-Fund vom 28.08.: Gemma schrieb „Materialeinsatz (SKR04 5400)",
+    gebucht wurde aber korrekt auf 5100. Die Nummer kommt aus dem Katalog,
+    nicht aus dem Modell — in der Begründung hat sie nichts zu suchen."""
+    prompt = gb.voller_prompt(gb.profil_text({}), ["Zeile"], [])
+    assert "KEINE Kontonummer" in prompt
