@@ -153,17 +153,31 @@ def test_aenderung_mit_grund_wird_protokolliert(kasse):
     assert blatt["geaendert_von"] == "nina@0711.io"
 
 
-def test_nach_der_voranmeldung_ist_der_monat_zu(kasse, monkeypatch):
+def test_nach_der_freigabe_ist_der_monat_zu(kasse, monkeypatch):
     bw, _, c = kasse
     assert _tag(c).status_code == 200
-    # Die Voranmeldung des Monats liegt jetzt in der Box.
+    # Der Monatsabschluss ist zur Prüfung übergeben.
     echt = bw.git_show
     monkeypatch.setattr(bw, "git_show", lambda p: (
-        b"%PDF" if p == "ustva/2026-08-ustva.pdf" else echt(p)))
+        b"{}" if p == "abschluss/2026-08/ustva.json" else echt(p)))
     r = _tag(c, bar=530.0, grund="fällt mir jetzt erst auf")
     assert r.status_code == 409
     assert r.json()["abgeschlossen"] is True
     assert "beim Finanzamt" in r.json()["fehler"]
+
+
+def test_ein_voranmeldungs_entwurf_sperrt_das_kassenbuch_nicht(kasse, monkeypatch):
+    """Am 28.08.2026 im Rauchtest gefunden: babu erzeugt die Voranmeldung
+    auf Knopfdruck als ENTWURF für die Ablage. Sie zählte als Festschreibung
+    und hatte damit Ninas ganzen August zugesperrt, ohne dass irgendwo
+    etwas erklärt worden wäre."""
+    bw, _, c = kasse
+    assert _tag(c).status_code == 200
+    echt = bw.git_show
+    monkeypatch.setattr(bw, "git_show", lambda p: (
+        b"%PDF" if p == "ustva/2026-08-ustva.pdf" else echt(p)))
+    r = _tag(c, bar=530.0, grund="Zahlendreher")
+    assert r.status_code == 200, r.text
 
 
 def test_die_route_zeigt_den_zustand_eines_tages(kasse):

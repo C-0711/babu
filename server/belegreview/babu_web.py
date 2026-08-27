@@ -8980,15 +8980,19 @@ def api_fristen(jahr: str, request: Request) -> Response:
 
 
 def _monat_festgeschrieben(monat: str) -> bool:
-    """Sind die Zahlen dieses Monats schon erklärt?
+    """Sind die Zahlen dieses Monats aus der Hand gegeben?
 
-    Zwei Ereignisse schreiben fest, und beide sind derselbe Moment aus
-    zwei Wegen: die Voranmeldung ist erstellt, oder der Monatsabschluss
-    ist zur Prüfung freigegeben. Ab da liegen die Zahlen draußen — was
-    dann noch geändert würde, stimmte mit dem Erklärten nicht mehr
-    überein (§ 146 Abs. 4 AO)."""
-    return (git_show(f"ustva/{monat}-ustva.pdf") is not None
-            or git_show(f"abschluss/{monat}/ustva.json") is not None)
+    Genau EIN Ereignis schreibt fest: die Freigabe des Monatsabschlusses
+    („Zahlen zur Prüfung geben"). Ab da liegen sie beim steuerlichen
+    Backend, und was danach noch geändert würde, stimmte mit dem
+    Übergebenen nicht mehr überein (§ 146 Abs. 4 AO).
+
+    Die erzeugte Voranmeldung zählt AUSDRÜCKLICH NICHT — sie trägt
+    „ENTWURF aus babu" und ist ein Blatt für die Ablage, keine Erklärung.
+    Am 28.08.2026 hat sie in einem Rauchtest beinahe Ninas ganzen August
+    zugesperrt: ein Entwurf, den babu selbst auf Knopfdruck erzeugt, darf
+    ihr das Kassenbuch nicht verschließen."""
+    return git_show(f"abschluss/{monat}/ustva.json") is not None
 
 
 def _kassenblatt_stand(datum: str) -> tuple[dict | None, list[dict]]:
