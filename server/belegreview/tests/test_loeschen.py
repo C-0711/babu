@@ -196,7 +196,7 @@ def test_dokument_loeschen_nimmt_sidecars_mit(welt):
 
 @pytest.mark.parametrize("pfad", [
     "kassenbuch/2026-08/2026-08-17.json",
-    "auszuege/2026-08/auszug.pdf",
+    "auszuege/2026-08/auszug.pdf",          # Auszüge gehen über ihre eigene Route
     "export/2026-08/EXTF_20260821.csv",
     "abschluss/2025/kennzahlen.json",
     "docs/2026-08/" + STAMM + ".jpg",       # Belege gehen über die Beleg-Route
@@ -210,6 +210,43 @@ def test_aufbewahrungspflichtiges_laesst_sich_nicht_loeschen(welt, pfad):
     assert _im_stand(bare) == vorher
 
 
+# ————— Kontoauszüge: eigener Löschweg (Ninas Wunsch vom 26.08.) —————
+
+def test_kontoauszug_loeschen_nimmt_die_beiakte_mit(welt):
+    client, bare, _ = welt
+    r = client.post("/api/auszug-loeschen",
+                    json={"pfad": "auszuege/2026-08/auszug.pdf"})
+    assert r.status_code == 200, r.text
+    dateien = _im_stand(bare)
+    assert "auszuege/2026-08/auszug.pdf" not in dateien
+    assert "auszuege/2026-08/auszug.pdf.umsaetze.json" not in dateien
+
+
+def test_kontoauszug_loeschen_nur_fuer_die_inhaberin(welt):
+    client, bare, bw = welt
+    import babu_web
+    echte = babu_web.rolle
+    bw.rolle = lambda un: "mitarbeit"
+    try:
+        r = client.post("/api/auszug-loeschen",
+                        json={"pfad": "auszuege/2026-08/auszug.pdf"})
+    finally:
+        bw.rolle = echte
+    assert r.status_code == 403
+    assert "auszuege/2026-08/auszug.pdf" in _im_stand(bare)
+
+
+@pytest.mark.parametrize("pfad", ["dokumente/2026-08/brief.pdf",
+                                  "kassenbuch/2026-08/2026-08-17.json",
+                                  "../ausserhalb.txt", ""])
+def test_auszug_route_nimmt_nur_auszuege(welt, pfad):
+    client, bare, _ = welt
+    vorher = _im_stand(bare)
+    r = client.post("/api/auszug-loeschen", json={"pfad": pfad})
+    assert r.status_code in (400, 404)
+    assert _im_stand(bare) == vorher
+
+
 def test_die_ablage_zeigt_was_geloescht_werden_darf(welt):
     """Ein Knopf, der beim Drücken „geht nicht" sagt, ist eine Falle —
     deshalb sagt der Server je Zeile, ob sie gelöscht werden darf."""
@@ -218,7 +255,8 @@ def test_die_ablage_zeigt_was_geloescht_werden_darf(welt):
     stuecke = {s["pfad"]: s for j in jahre for a in j["arten"] for s in a["stuecke"]}
     assert stuecke[DOKUMENT]["loeschbar"] is True
     assert stuecke["kassenbuch/2026-08/2026-08-17.json"]["loeschbar"] is False
-    assert stuecke["auszuege/2026-08/auszug.pdf"]["loeschbar"] is False
+    # Seit 27.08.2026: Auszüge dürfen weg (falsch/doppelt) — Historie bleibt.
+    assert stuecke["auszuege/2026-08/auszug.pdf"]["loeschbar"] is True
     assert stuecke["export/2026-08/EXTF_20260821.csv"]["loeschbar"] is False
 
 

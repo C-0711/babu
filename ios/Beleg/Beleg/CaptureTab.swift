@@ -146,7 +146,7 @@ struct CaptureTab: View {
                     if let daten = try? await neu.loadTransferable(type: Data.self),
                        let bild = UIImage(data: daten) {
                         fotoAuswahl = nil
-                        await verarbeite(bild)
+                        await verarbeite(entzerrt(bild))
                     } else {
                         fotoAuswahl = nil
                         ladeFehler = "Dieses Foto konnten wir nicht laden — bitte ein anderes wählen."
@@ -154,6 +154,15 @@ struct CaptureTab: View {
                 }
             }
         }
+    }
+
+    /// Importierte Fotos gehen denselben Weg wie der Scanner: Blatt suchen,
+    /// zuschneiden, entzerren. Bis 27.08.2026 kam das Mediathek-Foto roh ins
+    /// Archiv — Schreibtisch, Tastatur und Schräglage inklusive (Ninas
+    /// Belege vom 26.08. abends). Findet die Neu-Detektion kein Blatt,
+    /// bleibt das Bild unverändert.
+    private func entzerrt(_ bild: UIImage) -> UIImage {
+        Dewarper.entzerre(bild, liveQuad: nil)
     }
 
     /// Datei aus dem Dateien-Bereich: Bild direkt, PDF wird zur Seite 1
@@ -166,7 +175,7 @@ struct CaptureTab: View {
             return
         }
         if let bild = UIImage(data: daten) {
-            Task { await verarbeite(bild) }
+            Task { await verarbeite(entzerrt(bild)) }
             return
         }
         guard let doc = PDFDocument(data: daten), let seite = doc.page(at: 0) else {

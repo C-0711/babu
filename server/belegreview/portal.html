@@ -2518,14 +2518,18 @@ async function ladeBank(){
     html += `<div class="kacheln" style="grid-template-columns:repeat(auto-fill,minmax(128px,1fr));margin:14px 0">`
       + ab.auszuege.map(a => {
           const stapel = (a.seiten || 0) > 1;
+          const name = a.pfad.split("/").pop().replace(/^\d{8}-\d{6}-\w+-/, "");
           return `<div><a class="kachel" href="#unterlage/${encodeURI(a.pfad)}">
             <div class="blatt${stapel ? " stapel" : ""}">
               <img alt="" loading="lazy" src="/api/vorschau/${encodeURI(a.pfad)}"
                 onerror="this.closest('.blatt').innerHTML=ikoneKnoten().outerHTML">${
               stapel ? `<span class="seitenzahl">${a.seiten} Seiten</span>` : ""}
             </div>
-            <div class="name">${esc(a.pfad.split("/").pop().replace(/^\d{8}-\d{6}-\w+-/, ""))}</div>
-          </a></div>`;
+            <div class="name">${esc(name)}</div>
+          </a>${meineRolle !== "mitarbeit"
+            ? `<button class="loeschknopf" style="margin-top:4px;padding:3px 9px;font-size:11px"
+                 onclick="auszugLoeschen('${a.pfad.replace(/'/g, "")}','${esc(name).replace(/'/g, "")}')">Löschen</button>`
+            : ""}</div>`;
         }).join("") + `</div>`;
   }
 
@@ -3829,12 +3833,24 @@ function belegLoeschen(stamm, was){
 }
 
 function dokumentLoeschen(pfad, titel){
+  // Kontoauszüge haben ihre eigene Tür — gleicher Knopf, gleiches Gefühl.
+  if (pfad.startsWith("auszuege/")) return auszugLoeschen(pfad, titel);
   loeschFragen({
     titel: "Diese Unterlage löschen?",
     sub: titel || "",
     pfad: "/api/dokument-loeschen",
     koerper: {pfad},
     danach: () => { ladeAblage(); postPunktAktualisieren(); },
+  });
+}
+
+function auszugLoeschen(pfad, titel){
+  loeschFragen({
+    titel: "Diesen Kontoauszug löschen?",
+    sub: (titel || "") + " — für falsch oder doppelt Abgelegtes",
+    pfad: "/api/auszug-loeschen",
+    koerper: {pfad},
+    danach: () => { ladeBank(); ladeAblage(); },
   });
 }
 
@@ -4685,7 +4701,7 @@ async function kZeigen(id){
     <div style="font-size:13px;color:var(--gc-desc)">
       ${k.telefon ? esc(k.telefon) + "<br>" : ""}${k.email ? esc(k.email) : ""}</div>
     ${k.notiz ? `<p style="font-size:13px;margin-top:8px">${esc(k.notiz)}</p>` : ""}
-    <div class="lbl" style="margin-top:14px">Was gemacht wurde</div>
+    <div class="lbl" style="margin-top:14px">Termin-Historie</div>
     ${(k.verlauf || []).length
       ? (k.verlauf || []).map(b => `<div class="ablage-zeile">
           <b style="font-variant-numeric:tabular-nums">${esc(b.datum)}</b>

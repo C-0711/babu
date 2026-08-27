@@ -2157,6 +2157,48 @@ async def api_dokument_loeschen(request: Request) -> Response:
     return JSONResponse({"ok": True, "commit": commit, "pfad": pfad})
 
 
+AUSZUG_PFAD_RE = re.compile(r"^auszuege/[A-Za-z0-9._/ -]{1,200}$")
+
+
+@app.post("/api/auszug-loeschen")
+async def api_auszug_loeschen(request: Request) -> Response:
+    """Einen Kontoauszug wegnehmen — für falsch oder doppelt Hochgeladenes.
+
+    Von Nina gewünscht (26.08.): Auszüge brauchen denselben Löschen-Knopf
+    wie Post vom Amt und Verträge. Aufbewahrt bleibt trotzdem alles — die
+    GitChain-Historie behält jede Version; gelöscht wird nur der aktuelle
+    Stand, damit ein doppelt abgelegter Auszug den Abgleich nicht doppelt
+    zählt. Die Umsatz-Beiakte geht mit.
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Unterlagen löschen darf die Inhaberin."},
+                            status_code=403)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    pfad = str((body or {}).get("pfad", ""))
+    if not AUSZUG_PFAD_RE.match(pfad) or ".." in pfad:
+        return JSONResponse({"fehler": "unbekannter Kontoauszug"}, status_code=400)
+    pfade = [pfad, pfad + ".umsaetze.json"]
+
+    import boxschreiber  # noqa: PLC0415
+    try:
+        commit = await run_in_threadpool(boxschreiber.loeschen, pfade,
+                                         f"geloescht: {Path(pfad).name}", un)
+    except boxschreiber.NichtsZuLoeschen:
+        return JSONResponse({"fehler": "unbekannter Kontoauszug"}, status_code=404)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({"ok": True, "commit": commit, "pfad": pfad})
+
+
 @app.post("/api/dokumente")
 async def api_dokument_hochladen(request: Request, name: str = "dokument.pdf",
                                  titel: str = "", art: str = "dokument") -> Response:
@@ -5426,12 +5468,14 @@ def _ablage_eintraege() -> list[dict]:
             art, titel = "rechnung", "Rechnung " + name.removesuffix(".pdf")
         else:
             continue
-        # Aufbewahrungspflichtig: die Oberfläche zeigt hier keinen Knopf, und
-        # die Lösch-Route nimmt diese Pfade ohnehin nicht an.
+        # Kassenbuch, Stapel und Abschluss sind aufbewahrungspflichtig — kein
+        # Knopf, keine Route. Kontoauszüge dürfen seit 27.08.2026 weg (Ninas
+        # Wunsch: falsch oder doppelt Hochgeladenes) — die GitChain-Historie
+        # behält ohnehin jede Version, gelöscht wird nur der aktuelle Stand.
         eintraege.append({"pfad": pfad, "titel": titel, "art": art,
                           "zeit": (zeiten.get(pfad) or {}).get("zeit"),
                           "gelesen": None, "erklaerung": None, "vertrag": None,
-                          "loeschbar": False,
+                          "loeschbar": pfad.startswith("auszuege/"),
                           "seiten": _pdf_seiten(oids.get(pfad), pfad)})
     return eintraege
 
