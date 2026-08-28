@@ -383,8 +383,17 @@ def bwa(monat: str, erloese: dict, belege: list[dict],
         "hinweis": "Vorläufig — aus deinen Belegen und deinem Kassenbuch "
                    "gerechnet, noch nicht von der Buchhaltung geprüft.",
     }
-    if vorjahr and vorjahr.get("umsatz"):
+    # Der Vergleich mit dem Vorjahr — am liebsten Monat gegen denselben
+    # Monat. Liegt der Buchungsstapel aus DATEV vor (`vorjahr_monat_ist`),
+    # ist das ein echter Vergleich; sonst bleibt nur das Zwölftel aus der
+    # Jahressumme, und dann sagt die Auswertung auch, dass es geschätzt ist.
+    if vorjahr and vorjahr.get("monat_umsatz") is not None:
+        d["vorjahr_monat"] = _rund(float(vorjahr["monat_umsatz"]))
+        d["vorjahr_delta"] = _rund(umsatz - d["vorjahr_monat"])
+        d["vorjahr_quelle"] = "monat"
+    elif vorjahr and vorjahr.get("umsatz"):
         monatlich = float(vorjahr["umsatz"]) / 12
         d["vorjahr_monat"] = _rund(monatlich)
         d["vorjahr_delta"] = _rund(umsatz - monatlich)
+        d["vorjahr_quelle"] = "jahresschnitt"
     return d

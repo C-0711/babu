@@ -2229,8 +2229,8 @@ DOKUMENT_PFAD_RE = re.compile(r"^dokumente/[A-Za-z0-9._/ -]{1,200}$")
 # gehören sie dazu. Gelöscht werden sie weiter nur über ihre eigene Route,
 # die den Beleg samt Beiakten wegnimmt.
 ABLAGE_PFAD_RE = re.compile(
-    r"^(dokumente|auszuege|abschluss|export|kassenbuch|rechnungen|docs|ustva|bwa)/"
-    r"[A-Za-z0-9._/ -]{1,200}$")
+    r"^(dokumente|auszuege|abschluss|export|kassenbuch|rechnungen|docs|ustva"
+    r"|bwa|historie)/[A-Za-z0-9._/ -]{1,200}$")
 
 
 @app.get("/api/dokumente")
@@ -5545,6 +5545,8 @@ ABLAGE_ARTEN = {
     "export": ("Buchungsstapel", "Übergaben an die Buchhaltung"),
     "kassenbuch": ("Kassenbuch", "Deine Tagesblätter"),
     "rechnung": ("Rechnungen", "Was du anderen in Rechnung gestellt hast"),
+    "historie": ("Zeit vor babu",
+                 "Buchungsstapel aus DATEV — die Monate und Jahre davor"),
     "ustva": ("Umsatzsteuervoranmeldung",
               "Deine monatlichen Voranmeldungs-Entwürfe (USt 1 A)"),
     "bwa": ("BWA und Summen/Salden",
@@ -5680,6 +5682,8 @@ def _ablage_eintraege() -> list[dict]:
         elif pfad.startswith("ustva/") and pfad.endswith(".pdf"):
             art = "ustva"
             titel = "Voranmeldung " + name.removesuffix("-ustva.pdf")
+        elif pfad.startswith("historie/") and not pfad.endswith("buchungen.json"):
+            art, titel = "historie", "Buchungsstapel " + name
         elif pfad.startswith("bwa/") and pfad.endswith(".pdf"):
             art = "bwa"
             was = ("Summen und Salden " if name.endswith("-susa.pdf")
@@ -8799,6 +8803,12 @@ def api_monatsabschluss(monat: str, request: Request) -> Response:
             vorjahr = (json.loads(roh) or {}).get("zahlen")
         except Exception:  # noqa: BLE001
             vorjahr = None
+    # Liegt der DATEV-Stapel des Vorjahres vor, wird aus dem Zwölftel ein
+    # echter Vergleich: Februar gegen Februar.
+    import historie as hi  # noqa: PLC0415
+    vormonat = hi.vorjahresmonat(historie_lesen(), monat)
+    if vormonat:
+        vorjahr = dict(vorjahr or {}, monat_umsatz=vormonat["erloese"])
 
     return JSONResponse({
         "monat": monat,
@@ -8858,6 +8868,114 @@ def api_monatsabschluss_freigeben(monat: str, request: Request) -> Response:
         _INDEX["geprueft"] = 0.0
     return JSONResponse({"ok": True, "commit": commit, "monat": monat,
                          "offene_punkte": len(offen)})
+
+
+HISTORIE_MAX = 20 * 1024 * 1024      # ein Jahresstapel bleibt weit darunter
+
+
+def historie_lesen() -> dict:
+    """Was babu über die Zeit vor babu weiß."""
+    roh = git_show("historie/buchungen.json")
+    if not roh:
+        return {"monate": {}, "quellen": []}
+    try:
+        d = json.loads(roh)
+        return d if isinstance(d, dict) else {"monate": {}, "quellen": []}
+    except ValueError:
+        return {"monate": {}, "quellen": []}
+
+
+@app.get("/api/historie")
+def api_historie(request: Request) -> Response:
+    """Die übernommene Vergangenheit — je Jahr, mit Lücken benannt."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    import historie as hi  # noqa: PLC0415
+    h = historie_lesen()
+    jahre = hi.jahresuebersicht(h)
+    return JSONResponse({
+        "jahre": jahre, "quellen": h.get("quellen") or [],
+        "monate_gesamt": len(h.get("monate") or {}),
+        "hinweis": ("Aus DATEV übernommen — diese Zahlen sind keine Belege in "
+                    "babu und tragen kein Siegel. Sie dienen dem Vergleich "
+                    "mit deinen heutigen Monaten."),
+    })
+
+
+@app.post("/api/historie")
+async def api_historie_hochladen(request: Request) -> Response:
+    """Einen DATEV-Buchungsstapel aus der Zeit vor babu übernehmen.
+
+    Der Steuerberater exportiert in DATEV „Buchungsstapel" für den
+    gewünschten Zeitraum; dieselbe EXTF-Datei, die babu selbst schreibt.
+    Mehrere Uploads ergänzen einander — ein Monat, der schon da ist, wird
+    ersetzt statt addiert, damit eine Korrektur nicht doppelt zählt.
+
+    Die Datei selbst bleibt in der Ablage liegen: was babu daraus gerechnet
+    hat, muss gegen das Original prüfbar sein."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Die Vergangenheit übernimmt die Inhaberin."},
+                            status_code=403)
+    import boxschreiber  # noqa: PLC0415
+    import historie as hi  # noqa: PLC0415
+    name = "stapel.csv"
+    if request.headers.get("content-type", "").startswith("multipart/"):
+        form = await request.form()
+        datei = form.get("file")
+        if datei is None:
+            return JSONResponse({"fehler": "Keine Datei dabei."}, status_code=400)
+        daten = await datei.read()
+        name = boxschreiber.beleg_dateiname(getattr(datei, "filename", name)
+                                            or name)
+    else:
+        try:
+            daten = await koerper_lesen(request, HISTORIE_MAX)
+        except KoerperZuGross:
+            return JSONResponse({"fehler": "zu groß"}, status_code=413)
+    if not daten:
+        return JSONResponse({"fehler": "Die Datei ist leer."}, status_code=400)
+    if len(daten) > HISTORIE_MAX:
+        return JSONResponse({"fehler": "zu groß"}, status_code=413)
+
+    rahmen = kontenrahmen_von(un)
+    try:
+        neu = await run_in_threadpool(hi.stapel_lesen, daten, rahmen)
+    except hi.HistorieFehler as e:
+        return JSONResponse({"fehler": str(e)}, status_code=400)
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "Die Datei ließ sich nicht lesen — ist "
+                             "es wirklich ein DATEV-Buchungsstapel?"},
+                            status_code=400)
+
+    bestand = await run_in_threadpool(historie_lesen)
+    zusammen = hi.zusammenfuehren(bestand, neu)
+    jahr = (neu["kopf"].get("jahr") or time.strftime("%Y"))
+    dateien = {
+        "historie/buchungen.json": json.dumps(zusammen, ensure_ascii=False,
+                                              indent=1).encode(),
+        f"historie/{jahr}/{name}": daten,
+    }
+    try:
+        commit = await run_in_threadpool(
+            boxschreiber.schreiben, dateien, None,
+            f"historie: Buchungsstapel {neu['kopf'].get('von')}–"
+            f"{neu['kopf'].get('bis')} übernommen", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({
+        "ok": True, "commit": commit,
+        "gelesen": neu["buchungen"], "uebersprungen": neu["uebersprungen"],
+        "monate": sorted(neu["monate"]),
+        "jahre": hi.jahresuebersicht(zusammen),
+        "wohin": "In deiner Ablage unter „Zeit vor babu“",
+    })
 
 
 def _berichtsdaten(un: str, monat: str) -> tuple[dict, dict, list, dict]:
