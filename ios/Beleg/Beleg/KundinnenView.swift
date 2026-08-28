@@ -119,7 +119,10 @@ struct KundinView: View {
                 }
             }
 
-            Section("Was gemacht wurde") {
+            // Ninas Wort dafür, im Portal seit dem 27.08. so benannt — in
+            // der App war es liegen geblieben (beim Schreiben der
+            // Abnahmeliste aufgefallen).
+            Section("Termin-Historie") {
                 if verlauf.isEmpty {
                     Text("Noch nichts eingetragen.")
                         .font(.callout).foregroundStyle(GC.muted)

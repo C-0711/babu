@@ -3707,8 +3707,30 @@ async function ladeAbschluss(){
     <span id="historie-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>
   </div>`;
 
+  // ————— Brief an die bisherige Kanzlei —————
+  html += `<div class="karte" style="margin-top:10px">
+    <b>Brief an deine bisherige Kanzlei</b>
+    <p style="color:var(--gc-desc);font-size:13px;margin:4px 0 10px">
+      babu schreibt dir den Brief: welche Daten du brauchst, warum, und —
+      wenn du willst — die Kündigung dazu. Verschickt wird nichts;
+      der Brief landet in deiner Ablage, du liest ihn und schickst ihn ab.</p>
+    <input class="suchfeld" id="kw-name" placeholder="Name der Kanzlei" style="margin-bottom:6px">
+    <input class="suchfeld" id="kw-anschrift" placeholder="Anschrift (optional)" style="margin-bottom:6px">
+    <input class="suchfeld" id="kw-nummer" placeholder="Mandantennummer (optional)" style="margin-bottom:10px">
+    <label style="display:block;font-size:13px;margin-bottom:10px">
+      <input type="checkbox" id="kw-kuendigen" checked> Mandat gleich kündigen
+    </label>
+    <button class="chip" id="kw-knopf">Brief schreiben</button>
+    <span id="kw-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>
+    <pre id="kw-text" style="display:none;white-space:pre-wrap;font:12px/1.5 var(--gc-mono, ui-monospace);
+      background:var(--gc-chrome);border:1px solid var(--gc-border);border-radius:10px;
+      padding:14px;margin-top:12px;max-height:340px;overflow:auto"></pre>
+  </div>`;
+
   ziel.innerHTML = html;
   ladeHistorie();
+  const kwk = $("#kw-knopf");
+  if (kwk) kwk.addEventListener("click", () => briefSchreiben(kwk));
   const fk = $("#freigabe-knopf");
   if (fk) fk.addEventListener("click", () => abschlussFreigeben(fk));
   const uk = $("#ustva-knopf");
@@ -3716,6 +3738,30 @@ async function ladeAbschluss(){
   const bk = $("#bwa-knopf");
   if (bk) bk.addEventListener("click", () => berichtErstellen("bwa", bk));
   ladeFristen();
+}
+
+async function briefSchreiben(knopf){
+  const status = $("#kw-status"), feld = $("#kw-text");
+  const name = ($("#kw-name").value || "").trim();
+  if (!name){ status.textContent = "Wie heißt die Kanzlei?"; return; }
+  knopf.disabled = true;
+  status.textContent = "Wird geschrieben …";
+  try{
+    const r = await api("/api/kanzleiwechsel", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({
+        kuendigen: $("#kw-kuendigen").checked,
+        kanzlei: {name, anschrift: ($("#kw-anschrift").value || "").trim(),
+                  mandantennummer: ($("#kw-nummer").value || "").trim()}})});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.fehler || "");
+    feld.textContent = d.text;
+    feld.style.display = "block";
+    status.innerHTML = `${esc(d.wohin)} — <a href="/api/dokument/${esc(d.datei)}" target="_blank">als PDF öffnen</a>`;
+  }catch(e){
+    status.textContent = e.message || "Gerade nicht möglich — später nochmal.";
+  }
+  knopf.disabled = false;
 }
 
 async function ladeHistorie(){
