@@ -8978,6 +8978,82 @@ async def api_historie_hochladen(request: Request) -> Response:
     })
 
 
+@app.post("/api/kanzleiwechsel")
+async def api_kanzleiwechsel(request: Request) -> Response:
+    """Den Brief an die bisherige Kanzlei schreiben — Daten anfordern und,
+    wenn gewollt, das Mandat beenden.
+
+    babu SCHREIBT den Brief, es verschickt ihn nicht. Eine Kündigung geht
+    an einen Dritten und hat Folgen; sie gehört gelesen, bevor sie
+    rausgeht. Der Brief liegt danach als PDF und als Text in der Ablage —
+    Nina kann ihn drucken, anhängen oder hineinkopieren."""
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Das Mandat kündigt die Inhaberin."},
+                            status_code=403)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    import boxschreiber  # noqa: PLC0415
+    import kanzleiwechsel as kw  # noqa: PLC0415
+    import vordrucke  # noqa: PLC0415
+
+    inhaber = salon_von(un)
+    e = db_einstellungen(inhaber)
+    betrieb = {"betrieb_name": e.get("betrieb_name"),
+               "anschrift": e.get("anschrift"),
+               "steuernummer": e.get("steuernummer"),
+               "inhaberin": str((body or {}).get("inhaberin")
+                                or e.get("name") or "").strip()}
+    kanzlei = {k: str(((body or {}).get("kanzlei") or {}).get(k) or "").strip()
+               for k in ("name", "anschrift", "email", "mandantennummer")}
+    if not kanzlei["name"]:
+        kanzlei["name"] = str(e.get("kanzlei_name") or "").strip()
+    if not kanzlei["name"]:
+        return JSONResponse({"fehler": "Wie heißt die Kanzlei? Ohne Namen "
+                             "wüsste der Brief nicht, an wen er geht."},
+                            status_code=400)
+    # Lohn nur anfordern, wenn dort auch Lohn lief — sonst steht im Brief
+    # eine Bitte, die niemand beantworten kann.
+    mit_lohn = bool((body or {}).get("mit_lohn"))
+    if "mit_lohn" not in (body or {}):
+        mit_lohn = bool(team_liste(inhaber, nur_aktive=False))
+    brief = kw.brief(betrieb, kanzlei,
+                     kuendigen=(body or {}).get("kuendigen") is not False,
+                     mit_lohn=mit_lohn)
+
+    stempel = time.strftime("%Y-%m-%d")
+    stamm = f"dokumente/kanzleiwechsel/{stempel}-brief"
+    dateien = {
+        f"{stamm}.pdf": vordrucke.brief_pdf(brief, betrieb),
+        f"{stamm}.txt": brief["text"].encode(),
+        f"{stamm}.pdf.meta.json": json.dumps(
+            {"titel": brief["betreff"], "art": "kanzlei",
+             "erstellt": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "von": un},
+            ensure_ascii=False, indent=1).encode(),
+    }
+    try:
+        commit = await run_in_threadpool(
+            boxschreiber.schreiben, dateien, None,
+            f"kanzleiwechsel: Brief an {kanzlei['name']}", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    return JSONResponse({
+        "ok": True, "commit": commit, "datei": f"{stamm}.pdf",
+        "betreff": brief["betreff"], "text": brief["text"],
+        "frist": brief["frist"], "punkte": brief["punkte"],
+        "hinweis": brief["hinweis"],
+        "versendet": False,
+        "wohin": "In deiner Ablage unter „Von deiner Kanzlei“",
+    })
+
+
 def _berichtsdaten(un: str, monat: str) -> tuple[dict, dict, list, dict]:
     """Erlöse, Belege, Profil und Betriebskopf eines Monats — die gemeinsame
     Grundlage der Monats-Vordrucke (UStVA, BWA, SuSa)."""

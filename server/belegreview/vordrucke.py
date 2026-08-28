@@ -546,6 +546,40 @@ def bwa_pdf(bwa: dict, betrieb: dict) -> bytes:
     return b.bytes()
 
 
+def brief_pdf(brief: dict, betrieb: dict) -> bytes:
+    """Ein Brief als Blatt — Absender oben, dann der Text, wie geschrieben.
+
+    Kein Formular: der Text kommt fertig aus `kanzleiwechsel` und wird hier
+    nur gesetzt. Lange Zeilen brechen an der Wortgrenze um."""
+    b = _Blatt()
+    b.frei(10)
+    breite = _BREITE - 2 * _RAND
+    for zeile in brief["text"].splitlines():
+        if not zeile.strip():
+            b.frei(6)
+            continue
+        einzug = 0
+        roh = zeile
+        if roh.startswith("   "):
+            einzug, roh = 14, roh.strip()
+        fett = roh == brief["betreff"]
+        # Umbruch: Helvetica ist proportional, 0,5 × Größe je Zeichen ist
+        # die verlässliche Obergrenze für gemischten deutschen Text.
+        je_zeile = max(20, int((breite - einzug) / (0.5 * 10.5)))
+        rest, aktuell = roh.split(), ""
+        for wort in rest:
+            if len(aktuell) + len(wort) + 1 > je_zeile and aktuell:
+                b.zeile(aktuell, size=10.5, einzug=einzug, fett=fett)
+                aktuell = wort
+            else:
+                aktuell = f"{aktuell} {wort}".strip()
+        if aktuell:
+            b.zeile(aktuell, size=10.5, einzug=einzug, fett=fett)
+    _fuss(b, [brief.get("hinweis") or "",
+              "Vorlage aus babu — geschrieben am " + time.strftime("%d.%m.%Y")])
+    return b.bytes()
+
+
 def susa_pdf(s: dict, betrieb: dict) -> bytes:
     """Summen- und Saldenliste — Konto · Bezeichnung · Soll · Haben · Saldo."""
     b = _Blatt()
