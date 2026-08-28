@@ -3692,7 +3692,23 @@ async function ladeAbschluss(){
     <span id="bericht-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>
   </div>`;
 
+  // ————— Die Zeit vor babu —————
+  html += `<div class="karte" style="margin-top:10px">
+    <b>Die Zeit vor babu</b>
+    <p style="color:var(--gc-desc);font-size:13px;margin:4px 0 10px">
+      Damit der Vergleich mit dem Vorjahr ein echter ist: Lass dir von
+      deiner bisherigen Buchhaltung den Buchungsstapel aus DATEV geben —
+      für einzelne Monate oder ganze Jahre. babu liest ihn und stellt
+      Monat neben Monat. Ohne ihn schätzt es aus der Jahressumme.</p>
+    <div id="historie-stand" style="font-size:13px;margin-bottom:10px"></div>
+    <label class="chip" style="cursor:pointer">Buchungsstapel wählen …
+      <input type="file" id="historie-datei" accept=".csv,.txt,text/csv" hidden>
+    </label>
+    <span id="historie-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>
+  </div>`;
+
   ziel.innerHTML = html;
+  ladeHistorie();
   const fk = $("#freigabe-knopf");
   if (fk) fk.addEventListener("click", () => abschlussFreigeben(fk));
   const uk = $("#ustva-knopf");
@@ -3700,6 +3716,43 @@ async function ladeAbschluss(){
   const bk = $("#bwa-knopf");
   if (bk) bk.addEventListener("click", () => berichtErstellen("bwa", bk));
   ladeFristen();
+}
+
+async function ladeHistorie(){
+  const stand = $("#historie-stand"), feld = $("#historie-datei");
+  if (!stand) return;
+  if (feld) feld.addEventListener("change", historieHochladen);
+  try{
+    const d = await (await api("/api/historie")).json();
+    if (!d.jahre || !d.jahre.length){
+      stand.innerHTML = `<span style="color:var(--gc-muted)">Noch nichts übernommen.</span>`;
+      return;
+    }
+    stand.innerHTML = d.jahre.map(j =>
+      `<div class="mrow"><span class="art">${esc(j.jahr)}</span>
+       <span class="wer">${j.monate} ${j.monate === 1 ? "Monat" : "Monate"}${
+         j.vollstaendig ? "" : " — unvollständig"} · ${j.buchungen} Buchungen</span>
+       <span class="summe">${euro(j.erloese)}</span></div>`).join("");
+  }catch{ stand.textContent = ""; }
+}
+
+async function historieHochladen(ereignis){
+  const datei = ereignis.target.files && ereignis.target.files[0];
+  if (!datei) return;
+  const status = $("#historie-status");
+  status.textContent = `„${datei.name}" wird gelesen …`;
+  try{
+    const koerper = new FormData();
+    koerper.append("file", datei);
+    const r = await api("/api/historie", {method:"POST", body:koerper});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.fehler || "");
+    status.textContent = `${d.gelesen} Buchungen übernommen (${d.monate.join(", ")}).`;
+    ladeHistorie();
+  }catch(e){
+    status.textContent = e.message || "Die Datei ließ sich nicht lesen.";
+  }
+  ereignis.target.value = "";
 }
 
 async function berichtErstellen(art, knopf){
