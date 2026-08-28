@@ -64,7 +64,12 @@ struct ListeView: View {
     /// sie mit Status, hier geht es um das, was NUR auf dem Server liegt.
     private func serverStueckeLaden() async {
         serverStuecke = []
-        guard art != .beleg, store.ablageAktiv,
+        // Auch die BELEGE: sie lagen bisher nur lokal auf dem Telefon, das
+        // sie fotografiert hat. Auf einem zweiten Gerät — oder wenn eine
+        // Kollegin dieselbe Belegbox öffnet — war der Reiter leer, während
+        // im Portal alles stand. Doppelt gezeigt wird nichts; die Prüfung
+        // gegen `lokaleNamen` unten gab es längst.
+        guard store.ablageAktiv,
               let url = URL(string: store.ablageURL),
               let pat = KeychainHelfer.ladePAT() else { return }
         serverLaedt = true
@@ -199,7 +204,7 @@ struct ListeView: View {
                     }
                   }
                 }
-                if gefiltert.isEmpty && (art == .beleg || serverStuecke.isEmpty) {
+                if gefiltert.isEmpty && serverStuecke.isEmpty {
                     Text(filter == .alle ? art.leerSatz
                                          : "Kein \(art.einzahl) entspricht diesem Filter.")
                         .font(.footnote)
@@ -209,8 +214,10 @@ struct ListeView: View {
                 // Kontoauszüge, Verträge und Post kommen oft übers Portal
                 // herein und liegen dann NUR in der Server-Ablage — bis
                 // 27.08.2026 zeigte die App sie gar nicht („warum kommen
-                // die Kontoauszüge nicht in der App?").
-                if art != .beleg {
+                // die Kontoauszüge nicht in der App?"). Seit dem 28.08.
+                // gilt dasselbe für die Belege: was auf einem anderen Gerät
+                // fotografiert wurde, gehört auch hierher.
+                Group {
                     if serverLaedt && serverStuecke.isEmpty {
                         HStack { ProgressView(); Text("Deine Ablage wird geholt …") }
                             .font(.footnote)
