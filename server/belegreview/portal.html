@@ -2094,17 +2094,6 @@ async function ladeDetail(stamm){
   }
 
   if (!inArbeit){
-    // Wo die Gegenprobe etwas anderes gelesen hat, wird das gezeigt statt
-    // still entschieden — gültig ist die Lesung mit Zeilenangabe.
-    const abweichungen = f.widerspruch || [];
-    if (abweichungen.length){
-      html += `<div class="sekt"><span class="lbl">Zwei Lesungen weichen ab</span>
-        <div class="karte" style="margin:0">` +
-        abweichungen.map(w => `<div style="font-size:13px;color:var(--gc-desc);margin-bottom:4px">${esc(w)}</div>`).join("") +
-        `<div style="font-size:12px;color:var(--gc-muted);margin-top:6px">Gültig ist die
-        Lesung vom Beleg selbst — im Protokoll steht, aus welcher Zeile sie
-        stammt.</div></div></div>`;
-    }
     html += `<div class="sekt"><span class="lbl">Was babu gelesen hat</span>
       <div class="karte" style="margin:0">
         <div style="font-size:13px;color:var(--gc-desc);margin-bottom:8px">Jede

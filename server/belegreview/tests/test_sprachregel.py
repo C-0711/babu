@@ -12,7 +12,11 @@ PORTAL = Path(__file__).resolve().parent.parent / "portal.html"
 # (.commit, bild_oid …) sind erlaubt — die sieht niemand.
 VERBOTEN = [r"\bServer\b", r"\bOCR\b", r"\bKI\b", r"\bModell\b", r"\bMerkle\b",
             r"\bHash\b", r"\bCommit\b", r"\bToken\b", r"\bPAT\b",
-            r"\bConfidence\b", r"\bQueue\b", r"übermitteln"]
+            r"\bConfidence\b", r"\bQueue\b", r"übermitteln",
+            # Das Zielbild kennt EINE Lesung. „Zwei Lesungen weichen ab"
+            # stand hier bis zuletzt und wäre keinem Wort der Liste
+            # aufgefallen — die Regel nennt genau dieses Vokabular.
+            r"[Ll]esung", r"[Zz]weitlesung", r"[Ee]rstlesung"]
 
 
 def test_keine_verbotenen_woerter():
