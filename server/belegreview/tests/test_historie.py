@@ -113,6 +113,46 @@ def test_ohne_lesbare_buchung_sagt_babu_was_fehlt():
     assert "keine lesbaren Buchungen" in str(e.value)
 
 
+def test_ein_utf8_bom_stoert_den_kopf_nicht():
+    """Echte DATEV-Exporte kommen als UTF-8 mit Byte-Order-Mark an —
+    der darf nicht am „EXTF" kleben und die Datei zum Fremdling machen."""
+    roh = "\r\n".join([KOPF, SPALTEN,
+                       zeile("1190,00", "H", "4400", "1600", "1503")])
+    d = hi.stapel_lesen(b"\xef\xbb\xbf" + roh.encode("utf-8"))
+    assert d["monate"]["2025-03"]["erloese"] == 1190.0
+
+
+def test_erloese_im_gegenkonto_zaehlen_auch():
+    """Ninas Altsystem bucht Kasse AN Erlös — das Erlöskonto steht im
+    Gegenkonto. Ohne diese Seite käme jeder Monat mit 0 € Umsatz an."""
+    d = hi.stapel_lesen(stapel(
+        zeile("49,00", "S", "1461", "4400", "0207", "Dienstleistungen"),
+        zeile("12,50", "H", "1461", "4400", "0207", "Stornierung"),
+        zeile("50,00", "S", "1800", "5400", "0208", "Erstattung Wella"),
+    ))
+    assert d["monate"]["2025-07"]["erloese"] == 36.5
+    # Aufwand im Gegenkonto, Bank im Soll: eine Erstattung mindert die Kosten.
+    assert d["monate"]["2025-08"]["kosten"] == -50.0
+
+
+def test_umbuchung_innerhalb_der_erloese_aendert_nichts():
+    d = hi.stapel_lesen(stapel(
+        zeile("100,00", "S", "4400", "4410", "1503", "Umgliederung"),
+    ))
+    assert d["monate"]["2025-03"]["erloese"] == 0.0
+
+
+def test_doppelte_zeilenumbrueche_zaehlen_nicht_als_uebersprungen():
+    """Manche Exporte enden jede Zeile mit \\r\\r\\n — dann steht die
+    Spaltenzeile eine Zeile tiefer und darf nicht als unlesbare Buchung
+    gemeldet werden. „1 übersprungen" ohne Grund verunsichert nur."""
+    roh = "\r\r\n".join([KOPF, SPALTEN,
+                         zeile("1190,00", "H", "4400", "1600", "1503")])
+    d = hi.stapel_lesen(roh.encode("cp1252"))
+    assert d["monate"]["2025-03"]["erloese"] == 1190.0
+    assert d["uebersprungen"] == 0
+
+
 # ————— Die Gegenprobe: babus eigener Stapel muss lesbar sein —————
 
 def test_babu_liest_seinen_eigenen_stapel_wieder():

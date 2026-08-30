@@ -881,7 +881,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   <div id="kopf-recht" style="position:relative">
     <span id="stand"></span>
     <button class="chip" id="hochladen-knopf">Beleg hochladen</button>
-    <input type="file" id="hochladen-datei" accept=".jpg,.jpeg,.png,.pdf,.heic,image/*,application/pdf" multiple hidden>
+    <input type="file" id="hochladen-datei" accept=".jpg,.jpeg,.png,.pdf,.heic,.csv,.txt,image/*,application/pdf,text/csv" multiple hidden>
     <button class="chip mit-ik" id="melden-knopf" title="Ist dir was aufgefallen?">
       <svg class="ik klein" viewBox="0 0 24 24"><use href="#ik-melden"/></svg>
       <span class="melden-wort">Aufgefallen?</span></button>
@@ -4125,6 +4125,20 @@ async function hochladen(dateien){
   /* Zielbild: Beleg-FOTOS kommen nur noch über das Telefon herein — dort
      liest Vision und Gemma bucht sofort. Der Schreibtisch behält PDFs
      (Verträge, Bescheide); ein Foto hier wäre eine Lesung zweiter Klasse. */
+  // Buchungsstapel aus der Zeit vor babu (DATEV) dürfen auch hier herein —
+  // sie sind keine Belege und gehen ihren eigenen Weg in die Historie.
+  const stapelDateien = dateien.filter(d => /\.(csv|txt)$/i.test(d.name));
+  if (stapelDateien.length){
+    dateien = dateien.filter(d => !stapelDateien.includes(d));
+    location.hash = "#belege";
+    for (const datei of stapelDateien){
+      await hochladenMitBalken(datei, "/api/historie", $("#belege-liste"),
+        {fertigSatz: d => `${d.gelesen} Buchungen aus der Zeit vor babu übernommen`
+                          + (d.monate && d.monate.length ? ` (${d.monate.join(", ")})` : ""),
+         vorne: true});
+    }
+    if (!dateien.length) return;
+  }
   const fotos = dateien.filter(d => d.type.startsWith("image/"));
   if (fotos.length){
     alert("Beleg-Fotos bitte mit dem Telefon aufnehmen — dort liest babu "

@@ -108,8 +108,15 @@ def stapel_lesen(daten: bytes, rahmen: str = "SKR04") -> dict:
     Schlüssel je Buchung auflösen, und ein falsch geratener Satz wäre
     schlimmer als ein ehrlicher Bruttowert.
     """
-    text = daten.decode("cp1252", errors="replace")
-    zeilen = text.splitlines()
+    # Echte DATEV-Exporte kommen oft als UTF-8 mit Byte-Order-Mark; babus
+    # eigener Writer schreibt cp1252. Der BOM entscheidet.
+    if daten.startswith(b"\xef\xbb\xbf"):
+        text = daten.decode("utf-8-sig", errors="replace")
+    else:
+        text = daten.decode("cp1252", errors="replace")
+    # Leere Zeilen verwerfen: Exporte mit \r\r\n-Enden liefern zwischen den
+    # Buchungen Leerzeilen, und die Spaltenzeile rutscht sonst eine tiefer.
+    zeilen = [z for z in text.splitlines() if z.strip()]
     if not zeilen:
         raise HistorieFehler("Die Datei ist leer.")
     # Erst die Frage „ist das überhaupt ein Stapel?" — sie hat die
@@ -138,12 +145,25 @@ def stapel_lesen(daten: bytes, rahmen: str = "SKR04") -> dict:
         m = monate.setdefault(monat, {"monat": monat, "erloese": 0.0,
                                       "kosten": 0.0, "buchungen": 0,
                                       "konten": {}})
+        # Beide Seiten der Buchung ansehen: manche Systeme buchen
+        # „Erlös an Kasse", andere „Kasse an Erlös" — das Erlöskonto darf
+        # auch im Gegenkonto stehen. Das Gegenkonto steht auf der jeweils
+        # anderen Seite, sein Beitrag traegt das umgekehrte Vorzeichen.
+        gegen_roh = (f[GEGENKONTO] or "").strip().strip('"')
         seite = _seite(konto, rahmen)
         if seite == "erloes":
             # Erlöse stehen im Haben — das Minus von oben dreht zurück.
             m["erloese"] += -betrag
         elif seite == "aufwand":
             m["kosten"] += betrag
+        if gegen_roh.isdigit():
+            seite_g = _seite(int(gegen_roh), rahmen)
+            if seite_g == "erloes":
+                m["erloese"] += betrag
+            elif seite_g == "aufwand":
+                m["kosten"] += -betrag
+        else:
+            seite_g = "neutral"
         m["buchungen"] += 1
         gebucht += 1
         k = m["konten"].setdefault(konto_roh, {"konto": konto_roh,
@@ -151,6 +171,12 @@ def stapel_lesen(daten: bytes, rahmen: str = "SKR04") -> dict:
                                                "seite": seite})
         k["betrag"] += betrag if seite != "erloes" else -betrag
         k["anzahl"] += 1
+        if seite_g in ("erloes", "aufwand"):
+            g = m["konten"].setdefault(gegen_roh, {"konto": gegen_roh,
+                                                   "betrag": 0.0, "anzahl": 0,
+                                                   "seite": seite_g})
+            g["betrag"] += betrag if seite_g == "erloes" else -betrag
+            g["anzahl"] += 1
 
     for m in monate.values():
         m["erloese"] = round(m["erloese"], 2)
