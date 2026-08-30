@@ -123,3 +123,19 @@ struct Monatsabschluss {
         }
     }
 }
+
+extension Monatsabschluss {
+    /// Die größten Kostenblöcke, absteigend nach Betrag.
+    ///
+    /// Der Server liefert `gruppen` in Katalogreihenfolge (personal, material,
+    /// raum …) und schiebt die Löhne zusätzlich nach vorn — wer die ersten
+    /// drei nimmt, zeigt also immer dieselben drei, nicht die größten.
+    /// Leere Gruppen fallen raus: „0,00 €" ist kein Posten.
+    func groessteGruppen(_ anzahl: Int = 3) -> [Gruppe] {
+        gruppen
+            .filter { $0.netto > 0 }
+            .sorted { $0.netto > $1.netto }
+            .prefix(anzahl)
+            .map { $0 }
+    }
+}

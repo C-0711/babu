@@ -5,10 +5,16 @@ import SwiftUI
 struct AbschlussView: View {
     @EnvironmentObject var store: AppStore
 
-    @State private var monat = AbschlussView.monatJetzt()
+    @State private var monat: String
     @State private var daten: Monatsabschluss?
     @State private var laedt = true
     @State private var fehler: String?
+
+    /// Wer aus dem Kassenbuch heraus auf einen bestimmten Monat tippt, will
+    /// diesen Monat sehen — nicht den laufenden.
+    init(monat: String = AbschlussView.monatJetzt()) {
+        _monat = State(initialValue: monat)
+    }
 
     var body: some View {
         ScrollView {

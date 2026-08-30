@@ -13,12 +13,34 @@ struct KasseTab: View {
     @State private var monat = Date()
     @State private var gewaehlt = KassenTag.schluessel(Date())
     @State private var workflow: TagRef?
+    @State private var ausgaben: AusgabenStand = .laedt
 
     private struct TagRef: Identifiable { let id: String }
+
+    /// Vier unterscheidbare Lagen — „keine Verbindung" ist etwas anderes als
+    /// „noch nie verbunden", und beides ist etwas anderes als „rechnet noch".
+    private enum AusgabenStand {
+        case laedt
+        case nichtVerbunden
+        case keineVerbindung
+        case da(Monatsabschluss)
+    }
 
     private var kal: Calendar { KassenTag.kalender }
     private var heute: String { KassenTag.schluessel(Date()) }
     private var gepflegteTage: Set<String> { Set(store.kassenberichte.map(\.datum)) }
+
+    private var monatSchluessel: String {
+        let f = DateFormatter()
+        f.calendar = kal
+        f.dateFormat = "yyyy-MM"
+        return f.string(from: monat)
+    }
+
+    /// Die Zahlen des Monats sieht nur die Inhaberin — der Server antwortet
+    /// einer Mitarbeiterin mit 403. Ohne diese Prüfung stünde bei ihr
+    /// dauerhaft „keine Verbindung", was schlicht nicht stimmt.
+    private var darfZahlenSehen: Bool { store.verbundenRolle != "mitarbeit" }
 
     var body: some View {
         NavigationStack {
@@ -26,6 +48,7 @@ struct KasseTab: View {
                 VStack(spacing: 16) {
                     kalenderKarte
                     tagesKarte
+                    if darfZahlenSehen { ausgabenKarte }
                 }
                 .padding(16)
             }
@@ -37,6 +60,9 @@ struct KasseTab: View {
             .mitKontoMenu()
             .fullScreenCover(item: $workflow) { ref in
                 KassenberichtWorkflow(tag: ref.id)
+            }
+            .task(id: monatSchluessel) {
+                await ausgabenLaden(fuer: monatSchluessel)
             }
         }
     }
@@ -248,5 +274,110 @@ struct KasseTab: View {
                 .font(.body.monospaced().weight(.medium))
                 .foregroundStyle(GC.fg)
         }
+    }
+
+    // MARK: - Ausgaben des Monats
+
+    private var ausgabenKarte: some View {
+        NavigationLink {
+            AbschlussView(monat: monatSchluessel)
+        } label: {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Ausgaben \(monatsTitel)")
+                            .font(.headline)
+                            .fontDesign(.serif)
+                            .foregroundStyle(GC.fg)
+                        ausgabenInhalt
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(GC.muted.opacity(0.6))
+                }
+                if case .da(let a) = ausgaben, !a.groessteGruppen().isEmpty {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Größte Posten")
+                            .font(.caption)
+                            .foregroundStyle(GC.muted)
+                        ForEach(a.groessteGruppen()) { g in
+                            HStack {
+                                Text(g.name)
+                                    .font(.footnote)
+                                    .foregroundStyle(GC.body)
+                                Spacer()
+                                Text(fmtEur(g.netto))
+                                    .font(.footnote.monospaced())
+                                    .foregroundStyle(GC.desc)
+                            }
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .gcCard()
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var ausgabenInhalt: some View {
+        switch ausgaben {
+        case .laedt:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Wird gerechnet …")
+                    .font(.footnote)
+                    .foregroundStyle(GC.muted)
+            }
+        case .nichtVerbunden:
+            Text("Dafür musst du dich einmal in den Einstellungen verbinden.")
+                .font(.footnote)
+                .foregroundStyle(GC.desc)
+        case .keineVerbindung:
+            Text("Gerade keine Verbindung")
+                .font(.footnote)
+                .foregroundStyle(GC.warn)
+        case .da(let a):
+            if a.tageErfasst == 0 {
+                // Ein leerer Monat sieht sonst aus wie ein Monat ohne
+                // Ausgaben — das ist nicht dasselbe.
+                Text("Für diesen Monat ist noch nichts erfasst.")
+                    .font(.footnote)
+                    .foregroundStyle(GC.desc)
+            } else {
+                Text(fmtEur(a.kostenNetto))
+                    .font(.system(size: 32, weight: .semibold, design: .serif))
+                    .foregroundStyle(GC.fg)
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
+                Text("ohne Steuer")
+                    .font(.footnote)
+                    .foregroundStyle(GC.desc)
+                // Die große Zahl ohne ihre Vorbehalte zu zeigen, wäre eine
+                // Behauptung: die Löhne fehlen hier meistens noch.
+                ForEach(a.fehlt, id: \.self) { satz in
+                    Text(satz)
+                        .font(.caption)
+                        .foregroundStyle(GC.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private func ausgabenLaden(fuer schluessel: String) async {
+        guard let url = URL(string: store.ablageURL), let pat = KeychainHelfer.ladePAT() else {
+            ausgaben = .nichtVerbunden
+            return
+        }
+        ausgaben = .laedt
+        let ergebnis = await AblageService.monatsabschluss(monat: schluessel, basis: url, pat: pat)
+        // Beim Blättern bricht `.task(id:)` den alten Lauf ab — dessen späte
+        // Antwort darf den neuen Monat nicht überschreiben.
+        guard schluessel == monatSchluessel else { return }
+        ausgaben = ergebnis.map(AusgabenStand.da) ?? .keineVerbindung
     }
 }

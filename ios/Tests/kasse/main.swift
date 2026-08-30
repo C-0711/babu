@@ -382,6 +382,51 @@ do {
     }
 }
 
+// ————— Die größten Posten sind die größten, nicht die ersten —————
+//
+// Der Server liefert die Gruppen in Katalogreihenfolge (personal, material,
+// raum …) und schiebt die Löhne zusätzlich nach vorn. Wer davon die ersten
+// drei nimmt, zeigt immer dieselben drei — auch wenn Werbung der größte
+// Posten des Monats war. Genau das stand in der Ausgabenkarte.
+
+do {
+    func gruppe(_ s: String, _ name: String, _ netto: Double) -> [String: Any] {
+        ["schluessel": s, "name": name, "netto": netto]
+    }
+    // Reihenfolge wie vom Server: Personal zuerst, Werbung weit hinten.
+    let json: [String: Any] = [
+        "monat": "2026-08",
+        "bwa": ["kosten_netto": 1000.0, "tage_erfasst": 5,
+                "gruppen": [gruppe("personal", "Löhne und Gehälter", 100),
+                            gruppe("material", "Material und Ware", 50),
+                            gruppe("raum", "Raum", 20),
+                            gruppe("werbung", "Werbung, Bewirtung und Reisen", 800),
+                            gruppe("buero", "Büro, Technik und Fortbildung", 0)]],
+        "ustva": [:] as [String: Any],
+    ]
+    guard let a = Monatsabschluss(json: json) else {
+        pruefe("Monatsabschluss aus JSON gebaut", false)
+        exit(1)
+    }
+    let gross = a.groessteGruppen()
+    pruefe("größter Posten steht vorn (Werbung, nicht Personal)",
+           gross.first?.schluessel == "werbung")
+    pruefe("absteigend sortiert",
+           gross.map(\.netto) == [800, 100, 50])
+    pruefe("höchstens drei Posten", gross.count == 3)
+    pruefe("leere Gruppen fallen raus",
+           !gross.contains { $0.schluessel == "buero" })
+
+    // Weniger Gruppen als gefragt: kein Absturz, keine Auffüllung.
+    let wenig: [String: Any] = [
+        "monat": "2026-08",
+        "bwa": ["gruppen": [gruppe("raum", "Raum", 12)]],
+        "ustva": [:] as [String: Any],
+    ]
+    pruefe("eine Gruppe bleibt eine Gruppe",
+           Monatsabschluss(json: wenig)?.groessteGruppen().count == 1)
+}
+
 print(fehler == 0 ? "\nAlle Prüfungen bestanden."
                   : "\n\(fehler) Prüfung(en) fehlgeschlagen.")
 exit(fehler == 0 ? 0 : 1)

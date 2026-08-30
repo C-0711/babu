@@ -26,7 +26,8 @@ d=json.load(sys.stdin)['devices']
 print([g[0]['udid'] for k,g in d.items() if g and 'iOS' in k][0])")" "$ZIEL/karte"
 
 echo "— Kassen-Harness —"
-swiftc -o "$ZIEL/kasse" ../Beleg/Beleg/Kassenbuch.swift kasse/main.swift
+swiftc -o "$ZIEL/kasse" ../Beleg/Beleg/Models.swift ../Beleg/Beleg/Kassenbuch.swift \
+       ../Beleg/Beleg/TeamModelle.swift kasse/main.swift
 "$ZIEL/kasse"
 
 echo "— Protokoll-Harness —"
