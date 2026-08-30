@@ -103,6 +103,12 @@ REGELN = """Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
   Kekse für Kundinnen IM Salon → aufmerksamkeit (voll abziehbar, kein 70/30).
   Etwas, das eine Kundin geschenkt bekommt und behält → geschenk (bis 50 €
   je Person und Jahr).
+- Blumen: entscheidend ist, WO sie bleiben. Blumen, die den Salon schmücken
+  und dort stehen bleiben, sind dekoration — keine Zuwendung an eine Kundin.
+  Ein Strauß, den eine bestimmte Kundin oder Mitarbeiterin mitbekommt, ist
+  geschenk. Geht aus dem Beleg nicht hervor, welches von beidem gemeint ist,
+  stell EINMAL die Frage, statt zu raten — ein Floristenbeleg allein sagt es
+  nicht.
 - Steht auf dem Beleg „Reverse Charge", „Steuerschuldnerschaft des
   Leistungsempfängers", „§ 13b UStG", „VAT 0 %", „VAT exempt" oder eine
   ausländische Steuernummer OHNE deutschen Steuerbetrag, dann ist

@@ -120,6 +120,15 @@ _K = [
               hinweis="Abfall- und Müllgebühren, Straßenreinigung, "
                       "Grundsteuer für den Betrieb. Hoheitliche Gebühren "
                       "sind NICHT steuerbar — nie 19 % daraus rechnen."),
+    # Blumen für den Salon landeten auf „Sonstiger Betriebsbedarf" oder auf
+    # aufmerksamkeit — beides falsch: Schnittblumen sind kein Wirtschaftsgut
+    # und keine Zuwendung an eine Kundin, sondern Ausstattung des Raums.
+    # Konten aus dem DATEV-Standard, von der Kanzlei noch nicht bestätigt.
+    Kategorie("dekoration", "Dekoration und Raumausstattung", "4280", "6345",
+              hinweis="Blumen, Vasen, Bilder, Kerzen, Saisonschmuck für den "
+                      "Salon — sie bleiben im Salon. Was eine Kundin "
+                      "mitbekommt, ist geschenk; was sie im Salon verzehrt, "
+                      "ist aufmerksamkeit."),
     Kategorie("versicherung", "Versicherungen", "4360", "6400", geprueft=True),
     # Der HWK-Pflichtbeitrag ging als „Post vom Amt" durch und bekam 19 %
     # aufgerechnet, die nirgends stehen (Ninas Anmerkungen P1-20, P1-21, P1-29).

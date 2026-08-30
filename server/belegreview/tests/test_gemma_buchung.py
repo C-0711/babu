@@ -400,3 +400,15 @@ def test_katalog_traegt_die_neuen_kategorien():
     assert "ust_zahlung" in text
     text03 = gemma_buchung.katalog_text("SKR03")
     assert "materialeinsatz" in text03
+
+
+def test_blumen_werden_nach_verbleib_getrennt():
+    """Ein Floristenbeleg sagt nicht, wofür die Blumen waren. Die Regel muss
+    den Unterschied benennen UND die Rückfrage erlauben, statt zu raten."""
+    p = gemma_buchung.voller_prompt("P", ["Blumen Merzen 34,00"], [])
+    assert "dekoration" in p
+    assert "den Salon schmücken" in p
+    assert "stell EINMAL die Frage" in p
+    # Der Katalog muss die Kategorie auch anbieten, sonst kann das Modell
+    # sie nicht wählen.
+    assert "dekoration" in gemma_buchung.katalog_text("SKR04")
