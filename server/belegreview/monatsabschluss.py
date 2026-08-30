@@ -33,7 +33,7 @@ KOSTENGRUPPEN: list[tuple[str, str, tuple[str, ...]]] = [
     ("versicherung", "Versicherungen und Beiträge", ("6400", "6420", "6430")),
     ("fahrzeug", "Auto", ("6520", "6530", "6531", "6540")),
     ("werbung", "Werbung, Bewirtung und Reisen", ("6600", "6605", "6610",
-                                                  "6640", "6673")),
+                                                  "6640", "6643", "6673")),
     ("abschreibung", "Abschreibungen", ("6220", "6221", "6222", "6260",
                                         "0670")),
     ("instandhaltung", "Reparatur und Wartung", ("6470", "6495")),

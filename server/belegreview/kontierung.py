@@ -142,10 +142,15 @@ _K = [
                       "Teilnehmern (70 % abziehbar). Kaffee und Sekt für "
                       "Kundinnen im Salon sind KEINE Bewirtung — das ist "
                       "aufmerksamkeit."),
+    # 4605/6605 sind Streuartikel — Werbekleinzeug, das die Kundin mitnimmt.
+    # Kaffee und Kekse im Salon werden dort verzehrt und gehören auf das
+    # Aufmerksamkeitenkonto. Die Nummern stehen so im DATEV-Standard, die
+    # Kanzlei hat sie noch nicht gegengezeichnet — deshalb ungeprüft.
     Kategorie("aufmerksamkeit", "Kundenaufmerksamkeiten",
-              "4605", "6605", geprueft=True,
-              hinweis="Kaffee, Getränke, Kekse, kleine Proben für Kundinnen "
-                      "im Salon — voll abziehbar, kein 70/30."),
+              "4653", "6643",
+              hinweis="Kaffee, Getränke, Kekse für Kundinnen im Salon, dort "
+                      "verzehrt — voll abziehbar, kein 70/30. Was die Kundin "
+                      "mitnimmt, ist geschenk."),
     Kategorie("kfz", "Kfz-Kosten", "4530", "6530", geprueft=True),
     # Flugtickets landeten auf „Fortbildung" oder „Sonstiges" (P1-24).
     Kategorie("fahrt", "Reise- und Fahrtkosten", "4670", "6673",

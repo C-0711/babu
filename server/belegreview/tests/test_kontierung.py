@@ -178,3 +178,50 @@ def test_ein_fehlendes_konto_wird_zur_rueckfrage_nicht_zur_null():
     from kontierung import _fertig           # noqa: PLC0415
     f = _fertig("it", "SKR03", "Test")
     assert f.offen and f.konto is None and "SKR03" in f.rueckfrage
+
+
+# ————— Die Kategorien müssen in der Auswertung ankommen —————
+#
+# Anlass: „aufmerksamkeit" stand auf 4605/6605 (Streuartikel) statt auf
+# 4653/6643. Die Korrektur allein hätte es schlimmer gemacht — 6643 fehlte
+# in den KOSTENGRUPPEN, jeder Kaffeebeleg wäre auf „Sonstiges" gefallen,
+# also genau dorthin, wo Nina ihn nicht mehr sehen will (P2-22). Die alten
+# Tests haben das nicht bemerkt, weil sie den Wert aus der Kategorie-Zeile
+# nur gespiegelt haben. Diese drei prüfen die Aussage statt der Zahl.
+
+def test_jedes_konto_taucht_in_der_auswertung_auf():
+    """Kein Konto darf stillschweigend ins Auffangkonto fallen."""
+    import monatsabschluss as ma                       # noqa: PLC0415
+    zuordnung = {k: s for s, _, konten in ma.KOSTENGRUPPEN for k in konten}
+    heimatlos = []
+    for code, kat in KATEGORIEN.items():
+        skr04 = kat.konto("SKR04")
+        if not skr04 or skr04 in ma.NEUTRALE_KONTEN:
+            continue                                   # kein Aufwand
+        if skr04 not in zuordnung:
+            heimatlos.append((code, skr04))
+    assert not heimatlos, (
+        "Diese Kategorien fallen in der BWA auf „Sonstiges“, weil ihr Konto "
+        f"in keiner KOSTENGRUPPE steht: {heimatlos}")
+
+
+def test_die_vier_zuwendungsarten_sind_auseinandergehalten():
+    """Bewirtung, Aufmerksamkeit, Geschenk und Werbung sind vier Sachen mit
+    vier Rechtsfolgen — sie dürfen sich kein Konto teilen."""
+    konten = {code: KATEGORIEN[code].konto("SKR04")
+              for code in ("bewirtung", "aufmerksamkeit", "geschenk", "werbung")}
+    assert len(set(konten.values())) == 4, konten
+    # 6605 ist das Streuartikelkonto — Werbekleinzeug, das die Kundin
+    # mitnimmt. Kaffee im Salon wird dort verzehrt und gehört nicht dorthin.
+    assert konten["aufmerksamkeit"] != "6605"
+
+
+def test_kaffee_fuer_kundinnen_landet_nicht_unter_sonstiges():
+    """Der Fall aus Ninas Anmerkung, einmal ganz durch die Auswertung."""
+    import monatsabschluss as ma                       # noqa: PLC0415
+    beleg = {"lieferant": "Kaffeeröster", "brutto": 23.80, "netto": 20.0,
+             "ust": 3.80, "konto_skr04": KATEGORIEN["aufmerksamkeit"].konto("SKR04")}
+    d = ma.bwa("2026-08", ma.erloese_monat([]), [beleg])
+    treffer = [g for g in d["gruppen"] if g["anzahl"]]
+    assert [g["schluessel"] for g in treffer] == ["werbung"], treffer
+    assert treffer[0]["netto"] == pytest.approx(20.0)

@@ -289,7 +289,7 @@ def test_die_belegarten_aus_ninas_beschwerde_haben_alle_eine_kategorie():
     es jetzt eine eigene Kategorie mit eigenem Konto — keiner landet mehr
     im Auffangkonto 6850."""
     erwartet = {"kammerbeitrag": "6420", "abgaben": "6430",
-                "steuerberatung": "6830", "aufmerksamkeit": "6605",
+                "steuerberatung": "6830", "aufmerksamkeit": "6643",
                 "verbrauchsmaterial": "5100"}
     for code, konto in erwartet.items():
         k = kt.KATEGORIEN[code]

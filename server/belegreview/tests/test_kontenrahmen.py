@@ -120,10 +120,14 @@ def test_neue_kategorien_kennen_beide_rahmen():
     aufmerksamkeiten und USt-Zahlungen ans Finanzamt — mit Standardkonten
     in SKR03 und SKR04."""
     import kontierung as kt
-    for code, skr03, skr04 in (("materialeinsatz", "3000", "5100"),
-                               ("aufmerksamkeit", "4605", "6605"),
-                               ("ust_zahlung", "1780", "3820")):
+    # aufmerksamkeit steht auf 4653/6643 (Aufmerksamkeiten), nicht auf
+    # 4605/6605 — das sind Streuartikel. Die Nummern stammen aus dem
+    # DATEV-Standard und warten auf die Kanzlei, deshalb geprueft=False.
+    for code, skr03, skr04, geprueft in (
+            ("materialeinsatz", "3000", "5100", True),
+            ("aufmerksamkeit", "4653", "6643", False),
+            ("ust_zahlung", "1780", "3820", True)):
         k = kt.KATEGORIEN[code]
-        assert k.geprueft, code
+        assert k.geprueft is geprueft, code
         assert k.konto("SKR03") == skr03, code
         assert k.konto("SKR04") == skr04, code
