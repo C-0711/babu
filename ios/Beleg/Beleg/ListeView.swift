@@ -17,6 +17,8 @@ struct ListeView: View {
     /// Blätter schieben selbst — ein Link in einer Listenzeile bekommt vom
     /// System einen Pfeil, und der stand neben jeder Kachel.
     @State private var pfad = NavigationPath()
+    /// Welcher Monat gezeigt wird — leer heißt: alle, jeder mit Überschrift.
+    @State private var monat: String = ""
     /// Die Wahl zwischen Liste und Blättern bleibt bestehen. Wer einmal
     /// entschieden hat, wie er sucht, will nicht bei jedem Start neu wählen.
     @AppStorage("dokumentansicht") private var ansichtRoh = Dokumentansicht.liste.rawValue
@@ -81,6 +83,101 @@ struct ListeView: View {
         serverStuecke = alle.filter { s in
             !lokaleNamen.contains((s.pfad as NSString).lastPathComponent)
         }
+    }
+
+    // MARK: - Monate
+
+    /// Die Dokumente des Fachs, nach Monat geordnet — die Monatsansicht.
+    private var monate: [Belegmonat] { Monatsgruppen.gruppieren(gefiltert) }
+
+    /// Der Monat, der wirklich gilt: Wer im Reiter „Belege" den August wählt
+    /// und dann zu den Verträgen wechselt, in denen es keinen August gibt,
+    /// stünde sonst vor einer leeren Liste. Dann gelten wieder alle Monate.
+    private var monatWahl: String {
+        monate.contains { $0.schluessel == monat } ? monat : ""
+    }
+
+    private var sichtbareMonate: [Belegmonat] {
+        monatWahl.isEmpty ? monate : monate.filter { $0.schluessel == monatWahl }
+    }
+
+    /// Ein Monat der Server-Ablage. Eigener Typ, weil ForEach etwas zum
+    /// Wiedererkennen braucht und Schlüsselpfade nicht in Tupel zeigen.
+    private struct Ablagemonat: Identifiable {
+        let schluessel: String
+        let stuecke: [AblageService.AblageStueck]
+        var id: String { schluessel }
+    }
+
+    /// Die Server-Ablage folgt derselben Monatsordnung wie die Liste.
+    private var serverMonate: [Ablagemonat] {
+        let gruppen = Dictionary(grouping: serverStuecke) {
+            Monatsgruppen.schluesselFuerAblage(name: $0.name, zeit: $0.zeit)
+        }
+        return gruppen.keys.sorted { links, rechts in
+            if links.isEmpty { return false }
+            if rechts.isEmpty { return true }
+            return links > rechts
+        }
+        .filter { monatWahl.isEmpty || $0 == monatWahl }
+        .map { Ablagemonat(schluessel: $0, stuecke: gruppen[$0] ?? []) }
+    }
+
+    /// Bei einem einzigen Monat ist die Leiste nur Beiwerk — die Überschrift
+    /// über der Liste sagt dasselbe.
+    private var monatsLeisteZeigen: Bool { monate.count > 1 }
+
+    /// Die Monate als Leiste. „Alle Monate" zeigt jeden Monat mit seiner
+    /// Überschrift, ein einzelner Monat blendet die anderen aus.
+    private var monatsLeiste: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                monatsKnopf(schluessel: "", beschriftung: "Alle Monate",
+                            anzahl: gefiltert.count)
+                ForEach(monate) { m in
+                    monatsKnopf(schluessel: m.schluessel, beschriftung: m.kurz,
+                                anzahl: m.dokumente.count)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 2)
+        }
+    }
+
+    private func monatsKnopf(schluessel: String, beschriftung: String,
+                             anzahl: Int) -> some View {
+        let gewaehlt = monatWahl == schluessel
+        return Button {
+            withAnimation(.easeInOut(duration: 0.18)) { monat = schluessel }
+        } label: {
+            HStack(spacing: 6) {
+                Text(beschriftung).font(.subheadline)
+                Text("\(anzahl)")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(gewaehlt ? GC.fg : GC.muted)
+            }
+            .padding(.horizontal, 13).padding(.vertical, 7)
+            .background(gewaehlt ? GC.accentSubtle : GC.bg, in: Capsule())
+            .overlay(Capsule().stroke(gewaehlt ? GC.accent : GC.linie, lineWidth: 1))
+            .foregroundStyle(gewaehlt ? GC.fg : GC.desc)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(gewaehlt ? [.isSelected] : [])
+    }
+
+    /// Der Kopf eines Monats: wie er heißt, was in ihm liegt.
+    private func monatsKopf(_ m: Belegmonat) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(m.titel)
+                .font(.subheadline.weight(.semibold))
+                .fontDesign(.serif)
+                .foregroundStyle(GC.fg)
+            Spacer()
+            Text("\(m.dokumente.count) · \(fmtEur(m.summe))")
+                .font(.caption.monospaced())
+                .foregroundStyle(GC.muted)
+        }
+        .textCase(nil)
     }
 
     /// Die Arten als Reiter. Belege stehen vorn und sind voreingestellt —
@@ -176,33 +273,52 @@ struct ListeView: View {
                         .foregroundStyle(GC.muted)
                         .listRowBackground(GC.canvas)
                 }
-                artenLeiste
-                    .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
-                    .listRowBackground(GC.canvas)
-
-                if ansicht == .blaetter {
-                    DokumentBlaetter(dokumente: gefiltert,
-                                     grossAnsehen: $grossAnsehen) { pfad.append($0) }
-                        .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 8, trailing: 12))
+                // Arten und Monate zusammen in EINER Gruppe: als zwei
+                // eigenständige Kinder stünde die Liste über den zehn, die
+                // ein ViewBuilder nimmt.
+                Group {
+                    artenLeiste
+                        .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
                         .listRowBackground(GC.canvas)
-                        .listRowSeparator(.hidden)
-                } else {
-                  ForEach(gefiltert) { b in
-                        NavigationLink(value: b.id) {
-                            BelegZeile(beleg: b)
-                        }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        if b.status != .fixiert {
-                            Button(role: .destructive) {
-                                // Erst nachfragen — gelöscht ist gelöscht,
-                                // es gibt keinen Papierkorb.
-                                loeschKandidat = b.id
-                            } label: {
-                                Label("Löschen", systemImage: "trash")
+                    if monatsLeisteZeigen {
+                        monatsLeiste
+                            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 6, trailing: 0))
+                            .listRowBackground(GC.canvas)
+                    }
+                }
+
+                // Buchhaltung geschieht in Monaten — abgeschlossen und
+                // abgegeben wird je Monat. Deshalb steht das Papier auch so
+                // da: eine Überschrift je Monat, darunter seine Dokumente.
+                ForEach(sichtbareMonate) { m in
+                    Section {
+                        if ansicht == .blaetter {
+                            DokumentBlaetter(dokumente: m.dokumente,
+                                             grossAnsehen: $grossAnsehen) { pfad.append($0) }
+                                .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 8, trailing: 12))
+                                .listRowBackground(GC.canvas)
+                                .listRowSeparator(.hidden)
+                        } else {
+                            ForEach(m.dokumente) { b in
+                                NavigationLink(value: b.id) {
+                                    BelegZeile(beleg: b)
+                                }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    if b.status != .fixiert {
+                                        Button(role: .destructive) {
+                                            // Erst nachfragen — gelöscht ist
+                                            // gelöscht, es gibt keinen Papierkorb.
+                                            loeschKandidat = b.id
+                                        } label: {
+                                            Label("Löschen", systemImage: "trash")
+                                        }
+                                    }
+                                }
                             }
                         }
+                    } header: {
+                        monatsKopf(m)
                     }
-                  }
                 }
                 if gefiltert.isEmpty && serverStuecke.isEmpty {
                     Text(filter == .alle ? art.leerSatz
@@ -224,9 +340,10 @@ struct ListeView: View {
                             .foregroundStyle(GC.muted)
                             .listRowBackground(GC.canvas)
                     }
-                    if !serverStuecke.isEmpty {
-                        Section("In deiner Ablage") {
-                            ForEach(serverStuecke) { s in
+                    ForEach(serverMonate) { gruppe in
+                        Section("In deiner Ablage · "
+                                + Monatsgruppen.titel(gruppe.schluessel)) {
+                            ForEach(gruppe.stuecke) { s in
                                 AblageStueckZeile(stueck: s)
                             }
                         }

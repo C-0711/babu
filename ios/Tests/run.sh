@@ -46,6 +46,10 @@ echo "— Parser-Harness —"
 swiftc -o "$ZIEL/parser" ../Beleg/Beleg/Models.swift ../Beleg/Beleg/FeldParser.swift parser/main.swift
 "$ZIEL/parser"
 
+echo "— Monats-Harness —"
+swiftc -o "$ZIEL/monate" ../Beleg/Beleg/Models.swift ../Beleg/Beleg/Monatsgruppen.swift monate/main.swift
+"$ZIEL/monate"
+
 echo "— Bündel-Harness —"
 # Mehrseitige Belege: PDF-Bau braucht UIKit/PDFKit — wie der Karten-Harness
 # gegen das iOS-Simulator-SDK gebaut und im Simulator ausgeführt.

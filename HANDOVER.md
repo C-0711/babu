@@ -77,6 +77,7 @@ Details: Memory `babu-meldeschleife`.
 | AblageService | `einschaetzung` (zeilen+profil+monat), `aufnahme` (multipart mit ergebnis), Review-Abruf, Chat-SSE, Keychain |
 | BuchungsfragenView | Fragen ↔ Antworten mit Gemma, löst danach den Upload aus |
 | ListeView/DetailView | grüner Haken, Feld-Editor, Lösch-Rückfrage; Review wird angezeigt, überschreibt nie lokale Buchungen |
+| Monatsgruppen | die Dokumente nach Monat geordnet (Überschrift je Monat, Monatsleiste zum Eingrenzen) — Harness `ios/Tests/monate/` |
 | RueckmeldungView | Meldeknopf + „Meine Meldungen" (Meldeschleife) |
 
 Tests: `ios/Tests/run.sh` (swiftc-Harnesse) — **Fixtures pflegen, nicht
