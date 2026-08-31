@@ -83,10 +83,8 @@ pruefe(f12.ustSatz == 7, "7,00 % wird als 7 gelesen")
 let f13 = parse(["Kiosk Weber", "Summe 66,70 / bar gegeben 70,00"])
 pruefe(gleich(f13.brutto, 66.70), "Summe 66,70 trotz Gegeben auf derselben Zeile")
 
-print(fehler == 0 ? "\nAlle Prüfungen bestanden." : "\n\(fehler) Prüfung(en) fehlgeschlagen.")
-exit(fehler == 0 ? 0 : 1)
-
 // 20. Fremdwährung: AED-Beleg wird NICHT als Euro gelesen
+// (stand bis 31.08.2026 NACH dem exit() und lief deshalb nie)
 let f20 = parse(["Uber 13:30", "Gesamtsumme 55,74 AED", "Fahrpreis 45,74 AED",
                 "Trinkgeld 5,00 AED"])
 pruefe(f20.waehrung == "AED", "AED als Fremdwährung erkannt")
@@ -94,4 +92,16 @@ let f20b = parse(["EDEKA", "SUMME € 16,08", "EC-Cash 16,08"])
 pruefe(f20b.waehrung == nil, "Euro-Beleg bleibt ohne Fremdwährung")
 let f20c = parse(["Hotel Praha", "Total 799,00 CZK", "Karte 799,00"])
 pruefe(f20c.waehrung == "CZK", "CZK erkannt")
+
+// 21. Monats-Einteilung der Dokumentenliste: der Monat des BELEGdatums
+pruefe(belegMonatSchluessel("03.08.2026") == "2026-08", "03.08.2026 → 2026-08")
+pruefe(belegMonatSchluessel("31.12.2025") == "2025-12", "Jahreswechsel bleibt im alten Jahr")
+pruefe(belegMonatSchluessel("05.08.26") == "2026-08", "zweistelliges Jahr wird 20xx")
+pruefe(belegMonatSchluessel("kein Datum") == nil, "Unlesbares wird nil, nicht geraten")
+pruefe(belegMonatSchluessel("01.13.2026") == nil, "Monat 13 gibt es nicht")
+pruefe(belegMonatTitel("2026-08") == "August 2026", "Überschrift ist deutsch")
+pruefe(belegMonatTitel("2025-03") == "März 2025", "Umlaut-Monat stimmt")
+
+print(fehler == 0 ? "\nAlle Prüfungen bestanden." : "\n\(fehler) Prüfung(en) fehlgeschlagen.")
+exit(fehler == 0 ? 0 : 1)
 

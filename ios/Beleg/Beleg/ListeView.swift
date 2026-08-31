@@ -59,6 +59,18 @@ struct ListeView: View {
         }
     }
 
+    /// Monats-Einteilung der Liste: neuester Monat zuerst, Dokumente ohne
+    /// lesbares Datum gesammelt am Ende. Der Monat ist der des BELEGdatums,
+    /// nicht der des Hochladens — dieselbe Regel wie im Kassenbuch.
+    private var nachMonat: [(schluessel: String, belege: [Beleg])] {
+        Dictionary(grouping: gefiltert) { belegMonatSchluessel($0.datumText) ?? "" }
+            .sorted { a, b in
+                if a.key.isEmpty != b.key.isEmpty { return b.key.isEmpty }
+                return a.key > b.key
+            }
+            .map { ($0.key, $0.value) }
+    }
+
     /// Die Server-Ablage des Fachs holen — lokale Aufnahmen, die schon
     /// übertragen sind, stehen dort ebenfalls; die lokale Liste oben zeigt
     /// sie mit Status, hier geht es um das, was NUR auf dem Server liegt.
@@ -148,19 +160,27 @@ struct ListeView: View {
                     Button {
                         zeigeAufraeumen = true
                     } label: {
+                        // Eine Zeile statt zwei: die rote Zahl am Stapel
+                        // sagt bereits, wie viel wartet.
                         HStack(spacing: 12) {
                             Image(systemName: "rectangle.stack")
                                 .font(.title3)
                                 .foregroundStyle(GC.accent)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Aufräumen")
-                                    .font(.headline)
-                                    .fontDesign(.serif)
-                                    .foregroundStyle(GC.fg)
-                                Text("\(offeneAnzahl) \(offeneAnzahl == 1 ? "offener Beleg wartet" : "offene Belege warten") — wisch dich durch")
-                                    .font(.footnote)
-                                    .foregroundStyle(GC.desc)
-                            }
+                                .overlay(alignment: .topTrailing) {
+                                    Text("\(offeneAnzahl)")
+                                        .font(.caption2.weight(.bold))
+                                        .monospacedDigit()
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 2)
+                                        .background(Capsule().fill(.red))
+                                        .frame(minWidth: 18)
+                                        .offset(x: 12, y: -9)
+                                }
+                            Text("Aufräumen")
+                                .font(.headline)
+                                .fontDesign(.serif)
+                                .foregroundStyle(GC.fg)
                             Spacer()
                             Image(systemName: "chevron.right")
                                 .font(.caption)
@@ -169,6 +189,7 @@ struct ListeView: View {
                         .padding(.vertical, 4)
                     }
                     .listRowBackground(GC.accentSubtle)
+                    .accessibilityLabel("Aufräumen — \(offeneAnzahl) \(offeneAnzahl == 1 ? "offener Beleg wartet" : "offene Belege warten")")
                 }
                 if let d = store.durchsatzText {
                     Text(d)
@@ -187,20 +208,25 @@ struct ListeView: View {
                         .listRowBackground(GC.canvas)
                         .listRowSeparator(.hidden)
                 } else {
-                  ForEach(gefiltert) { b in
+                  ForEach(nachMonat, id: \.schluessel) { gruppe in
+                    Section(gruppe.schluessel.isEmpty ? "Ohne Datum"
+                            : belegMonatTitel(gruppe.schluessel)) {
+                      ForEach(gruppe.belege) { b in
                         NavigationLink(value: b.id) {
                             BelegZeile(beleg: b)
                         }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        if b.status != .fixiert {
-                            Button(role: .destructive) {
-                                // Erst nachfragen — gelöscht ist gelöscht,
-                                // es gibt keinen Papierkorb.
-                                loeschKandidat = b.id
-                            } label: {
-                                Label("Löschen", systemImage: "trash")
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            if b.status != .fixiert {
+                                Button(role: .destructive) {
+                                    // Erst nachfragen — gelöscht ist gelöscht,
+                                    // es gibt keinen Papierkorb.
+                                    loeschKandidat = b.id
+                                } label: {
+                                    Label("Löschen", systemImage: "trash")
+                                }
                             }
                         }
+                      }
                     }
                   }
                 }

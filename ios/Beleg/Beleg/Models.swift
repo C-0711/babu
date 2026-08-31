@@ -107,6 +107,32 @@ func ablageDateiname(fuer beleg: Beleg) -> String {
     return "beleg_\(datum)_\(name)_\(id8).\(endung)"
 }
 
+/// Monats-Schlüssel eines Belegs für die Einteilung der Dokumentenliste:
+/// „03.08.2026" → „2026-08". Der Monat eines Belegs ist der seines DATUMS,
+/// nicht der des Hochladens — dieselbe Regel wie im Kassenbuch und auf dem
+/// Server. Zweistellige Jahre („26") sind 20xx, Unlesbares wird nil.
+func belegMonatSchluessel(_ datumText: String) -> String? {
+    let t = datumText.split(separator: ".")
+    guard t.count == 3, let tag = Int(t[0]), let monat = Int(t[1]),
+          var jahr = Int(t[2]), (1...31).contains(tag),
+          (1...12).contains(monat) else { return nil }
+    if jahr < 100 { jahr += 2000 }
+    guard jahr >= 2000 else { return nil }
+    return String(format: "%04d-%02d", jahr, monat)
+}
+
+private let monatsNamen = ["Januar", "Februar", "März", "April", "Mai",
+                           "Juni", "Juli", "August", "September", "Oktober",
+                           "November", "Dezember"]
+
+/// Überschrift eines Monats-Abschnitts: „2026-08" → „August 2026".
+func belegMonatTitel(_ schluessel: String) -> String {
+    let t = schluessel.split(separator: "-")
+    guard t.count == 2, let jahr = Int(t[0]), let monat = Int(t[1]),
+          (1...12).contains(monat) else { return schluessel }
+    return "\(monatsNamen[monat - 1]) \(jahr)"
+}
+
 /// ASCII-Slug: Umlaute transliteriert, alles außer [a-z0-9] wird zu Bindestrichen.
 private func slug(_ text: String) -> String {
     var s = text.lowercased()
