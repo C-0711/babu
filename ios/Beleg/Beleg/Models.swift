@@ -121,17 +121,35 @@ func belegMonatSchluessel(_ datumText: String) -> String? {
     return String(format: "%04d-%02d", jahr, monat)
 }
 
-/// Die Blätter des Monatswechslers in Dokumente: jeder vorkommende Monat
-/// einmal, neuester zuerst — und „Ohne Datum" (leerer Schlüssel) als
-/// letztes Blatt, falls es ungelesene Belege gibt.
-func monatsSchluesselListe(_ datumTexte: [String]) -> [String] {
+/// Die Blätter des Monatswechslers, wenn der Monat IMMER stehen soll:
+/// lückenlos vom neuesten Blatt (aktueller Monat, oder ein vordatierter
+/// Beleg) zurück bis zum ältesten Beleg — leere Monate sind ein eigenes,
+/// leeres Blatt. „Ohne Datum" hängt als letztes an, wenn es Ungelesenes
+/// gibt. Ohne Belege bleibt genau der aktuelle Monat.
+func monatsBlaetter(datumTexte: [String], heute: String) -> [String] {
     var monate = Set<String>()
     var ohneDatum = false
     for t in datumTexte {
         if let m = belegMonatSchluessel(t) { monate.insert(m) }
         else { ohneDatum = true }
     }
-    return monate.sorted(by: >) + (ohneDatum ? [""] : [])
+    let aeltester = min(monate.min() ?? heute, heute)
+    let neuester = max(monate.max() ?? heute, heute)
+    var blaetter: [String] = []
+    var m = neuester
+    while m >= aeltester {
+        blaetter.append(m)
+        guard let jahr = Int(m.prefix(4)), let monat = Int(m.suffix(2)) else { break }
+        m = monat == 1 ? String(format: "%04d-12", jahr - 1)
+                       : String(format: "%04d-%02d", jahr, monat - 1)
+    }
+    return blaetter + (ohneDatum ? [""] : [])
+}
+
+/// Der Schlüssel des laufenden Kalendermonats, z. B. „2026-08".
+func aktuellerMonatSchluessel(_ datum: Date = Date()) -> String {
+    let k = Calendar.current.dateComponents([.year, .month], from: datum)
+    return String(format: "%04d-%02d", k.year ?? 2000, k.month ?? 1)
 }
 
 /// Ergebnis der Betrags-Gegenprobe: leer ist ein eigener Zustand —

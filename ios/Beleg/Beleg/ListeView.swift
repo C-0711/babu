@@ -3,7 +3,6 @@ import UIKit
 
 struct ListeView: View {
     @EnvironmentObject var store: AppStore
-    @State private var filter: Filter = .alle
     @State private var gewaehlterMonat: String?
     @State private var loeschKandidat: UUID?
     /// Welche Art gerade gezeigt wird. Belege sind die Voreinstellung —
@@ -38,45 +37,28 @@ struct ListeView: View {
         store.belege.filter { $0.status == .offen && $0.offeneFrage != nil }
     }
 
-    enum Filter: String, CaseIterable, Identifiable {
-        case alle = "Alle"
-        case automatisch = "Automatisch"
-        case bestaetigt = "Bestätigt"
-        case korrigiert = "Korrigiert"
-        case offen = "Offen"
-        var id: String { rawValue }
-    }
-
     private var gefiltert: [Beleg] {
-        store.belege.filter { Dokumentart.von($0) == art }.filter { b in
-            switch filter {
-            case .alle: return true
-            case .automatisch: return b.status == .automatisch
-            case .bestaetigt: return b.status == .bestaetigt
-            case .korrigiert: return b.status == .korrigiert
-            case .offen: return b.status == .offen
-            }
-        }
+        store.belege.filter { Dokumentart.von($0) == art }
     }
 
     /// Der Monatswechsler oben: ein Blatt je Monat, neuester zuerst,
     /// „Ohne Datum" als letztes Blatt. Der Monat ist der des BELEGdatums,
     /// nicht der des Hochladens — dieselbe Regel wie im Kassenbuch.
     private var monate: [String] {
-        monatsSchluesselListe(gefiltert.map(\.datumText))
+        monatsBlaetter(datumTexte: gefiltert.map(\.datumText),
+                       heute: aktuellerMonatSchluessel())
     }
 
-    /// Das gerade aufgeschlagene Blatt. Fällt der gewählte Monat durch einen
-    /// Filterwechsel weg, springt die Ansicht auf den neuesten zurück.
-    private var aktiverMonat: String? {
-        guard !monate.isEmpty else { return nil }
+    /// Das aufgeschlagene Blatt. Voreinstellung ist der laufende Monat;
+    /// fällt die Wahl durch einen Fachwechsel aus dem Bereich, ebenso.
+    private var aktiverMonat: String {
         if let m = gewaehlterMonat, monate.contains(m) { return m }
-        return monate.first
+        let heute = aktuellerMonatSchluessel()
+        return monate.contains(heute) ? heute : (monate.first ?? heute)
     }
 
     private var monatsBelege: [Beleg] {
-        guard let m = aktiverMonat else { return gefiltert }
-        return gefiltert.filter { (belegMonatSchluessel($0.datumText) ?? "") == m }
+        gefiltert.filter { (belegMonatSchluessel($0.datumText) ?? "") == aktiverMonat }
     }
 
     /// Die Server-Ablage des Fachs holen — lokale Aufnahmen, die schon
@@ -108,6 +90,20 @@ struct ListeView: View {
     private var artenLeiste: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        ansichtRoh = ansicht.andere.rawValue
+                    }
+                } label: {
+                    Image(systemName: ansicht.andere.symbol)
+                        .font(.system(size: 14))
+                        .padding(.horizontal, 11).padding(.vertical, 9)
+                        .background(GC.bg, in: Capsule())
+                        .overlay(Capsule().stroke(GC.linie, lineWidth: 1))
+                        .foregroundStyle(GC.desc)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(ansicht.andere.name)
                 ForEach(Dokumentart.allCases) { a in
                     let anzahl = anzahlJeArt[a] ?? 0
                     Button {
@@ -141,7 +137,7 @@ struct ListeView: View {
     /// ‹ August 2026 › — wie im Kassenbuch: links geht es in die
     /// Vergangenheit, rechts nach vorn. „Ohne Datum" ist das letzte Blatt.
     private var monatsLeiste: some View {
-        let index = aktiverMonat.flatMap { monate.firstIndex(of: $0) } ?? 0
+        let index = monate.firstIndex(of: aktiverMonat) ?? 0
         return HStack {
             Button { blaettere(1) } label: {
                 Image(systemName: "chevron.left")
@@ -150,7 +146,7 @@ struct ListeView: View {
             .disabled(index >= monate.count - 1)
             .accessibilityLabel("Früherer Monat")
             Spacer()
-            Text(aktiverMonat.map { $0.isEmpty ? "Ohne Datum" : belegMonatTitel($0) } ?? "")
+            Text(aktiverMonat.isEmpty ? "Ohne Datum" : belegMonatTitel(aktiverMonat))
                 .font(.title3.weight(.semibold))
                 .fontDesign(.serif)
             Spacer()
@@ -165,7 +161,7 @@ struct ListeView: View {
     }
 
     private func blaettere(_ schritt: Int) {
-        guard let m = aktiverMonat, let i = monate.firstIndex(of: m),
+        guard let i = monate.firstIndex(of: aktiverMonat),
               monate.indices.contains(i + schritt) else { return }
         withAnimation(.easeInOut(duration: 0.18)) {
             gewaehlterMonat = monate[i + schritt]
@@ -198,18 +194,10 @@ struct ListeView: View {
                     .listRowBackground(GC.canvas)
                     .listRowSeparator(.hidden)
                 }
-                if let d = store.durchsatzText {
-                    Text(d)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(GC.muted)
-                        .listRowBackground(GC.canvas)
-                }
-                if aktiverMonat != nil {
-                    monatsLeiste
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                        .listRowBackground(GC.canvas)
-                        .listRowSeparator(.hidden)
-                }
+                monatsLeiste
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    .listRowBackground(GC.canvas)
+                    .listRowSeparator(.hidden)
                 artenLeiste
                     .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
                     .listRowBackground(GC.canvas)
@@ -239,8 +227,12 @@ struct ListeView: View {
                     }
                 }
                 if gefiltert.isEmpty && serverStuecke.isEmpty {
-                    Text(filter == .alle ? art.leerSatz
-                                         : "Kein \(art.einzahl) entspricht diesem Filter.")
+                    Text(art.leerSatz)
+                        .font(.footnote)
+                        .foregroundStyle(GC.muted)
+                        .listRowBackground(GC.canvas)
+                } else if monatsBelege.isEmpty {
+                    Text("In diesem Monat liegt hier nichts.")
                         .font(.footnote)
                         .foregroundStyle(GC.muted)
                         .listRowBackground(GC.canvas)
@@ -270,30 +262,13 @@ struct ListeView: View {
             .task(id: art) { await serverStueckeLaden() }
             .warmerGrund()
             .navigationTitle("Dokumente")
+            .toolbarTitleDisplayMode(.inline)
             .mitMeldenKnopf("Dokumente")
             .mitKontoMenu()
             .navigationDestination(for: UUID.self) { id in
                 DetailView(belegID: id)
             }
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            ansichtRoh = ansicht.andere.rawValue
-                        }
-                    } label: {
-                        Image(systemName: ansicht.symbol)
-                    }
-                    .accessibilityLabel(ansicht.andere.name)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Picker("Filter", selection: $filter) {
-                        ForEach(Filter.allCases) { f in
-                            Text(f.rawValue).tag(f)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                }
             }
             .sheet(item: $grossAnsehen) { auswahl in
                 if let b = store.belege.first(where: { $0.id == auswahl.id }) {

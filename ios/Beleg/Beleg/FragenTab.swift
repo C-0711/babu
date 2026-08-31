@@ -107,6 +107,14 @@ struct FragenTab: View {
                 }
             }
             .sheet(isPresented: $zeigeVerlauf) { verlaufsListe }
+            .onAppear {
+                // Der Verlauf überlebt jeden Neustart — dann soll der Reiter
+                // auch dort weitermachen, wo das Gespräch aufgehört hat,
+                // statt jedes Mal mit dem leeren Begrüßungsblatt zu starten.
+                if aktuelleID == nil {
+                    aktuelleID = store.chatVerlauf.max(by: { $0.zuletzt < $1.zuletzt })?.id
+                }
+            }
             .fileImporter(isPresented: $zeigeBriefDateien,
                           allowedContentTypes: [.pdf, .image]) { ergebnis in
                 guard case .success(let url) = ergebnis else { return }
@@ -149,7 +157,7 @@ struct FragenTab: View {
     private func briefSchicken(_ daten: Data, name: String) {
         guard let url = URL(string: store.ablageURL), let pat = KeychainHelfer.ladePAT() else {
             _ = anhaengen(ChatNachricht(vonMir: false,
-                text: "Dafür braucht die App die Belegbox — einmal im Export-Tab über das Zahnrad verbinden."))
+                text: "Dafür braucht die App die Belegbox — verbinde dich einmal oben im Menü unter ‚Einstellungen'."))
             return
         }
         briefLaeuft = true
@@ -551,7 +559,7 @@ struct FragenTab: View {
 
         guard let url = URL(string: store.ablageURL), KeychainHelfer.ladePAT() != nil else {
             _ = anhaengen(ChatNachricht(vonMir: false,
-                text: "Dafür braucht die App die Belegbox — einmal im Export-Tab über das Zahnrad verbinden."))
+                text: "Dafür braucht die App die Belegbox — verbinde dich einmal oben im Menü unter ‚Einstellungen'."))
             return
         }
         laeuft = true
@@ -582,7 +590,7 @@ struct FragenTab: View {
                 let antwort = await AblageService.fragen(frage, verlauf: verlauf,
                                                          basis: url, pat: pat)
                 textSetzen(index, antwort
-                    ?? "Gerade keine Verbindung — im Export-Tab (Zahnrad) prüfen und noch einmal fragen.")
+                    ?? "Gerade keine Verbindung — die Einstellungen oben im Menü prüfen und noch einmal fragen.")
             }
             laeuft = false
         }

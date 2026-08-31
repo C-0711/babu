@@ -149,16 +149,20 @@ gesiegelt.status = .fixiert
 pruefe(gesiegelt.siegelZusatz == "bleibt unverändert",
        "Fixiert heißt wirklich unveränderlich")
 
-// 26. Der Monatswechsler oben in Dokumente: neuester Monat zuerst,
-// Ohne-Datum als letztes Blatt, Duplikate fallen zusammen.
-pruefe(monatsSchluesselListe(["03.08.2026", "15.07.2026", "", "01.08.2026",
-                              "kein Datum"]) == ["2026-08", "2026-07", ""],
-       "Monate absteigend, Ohne-Datum am Ende, ohne Doppelte")
-pruefe(monatsSchluesselListe(["31.12.2025", "02.01.2026"]) == ["2026-01", "2025-12"],
-       "Jahreswechsel sortiert richtig")
-pruefe(monatsSchluesselListe([]) == [], "Keine Belege, keine Monate")
-pruefe(monatsSchluesselListe(["", "?"]) == [""],
-       "Nur Unlesbares ergibt genau das Ohne-Datum-Blatt")
+// 27. Der Monat steht IMMER: lückenlos vom heutigen Monat zurück bis zum
+// ältesten Beleg — auch leere Monate sind ein Blatt, Ohne-Datum bleibt
+// das letzte. Ohne Belege gibt es genau den aktuellen Monat.
+pruefe(monatsBlaetter(datumTexte: ["03.06.2026", ""], heute: "2026-08")
+       == ["2026-08", "2026-07", "2026-06", ""],
+       "Lückenlos bis zum ältesten Beleg, Ohne-Datum am Ende")
+pruefe(monatsBlaetter(datumTexte: [], heute: "2026-08") == ["2026-08"],
+       "Ohne Belege bleibt der aktuelle Monat stehen")
+pruefe(monatsBlaetter(datumTexte: ["15.11.2025"], heute: "2026-01")
+       == ["2026-01", "2025-12", "2025-11"],
+       "Der Jahreswechsel reißt keine Lücke")
+pruefe(monatsBlaetter(datumTexte: ["05.09.2026"], heute: "2026-08")
+       == ["2026-09", "2026-08"],
+       "Ein vordatierter Beleg schiebt das neueste Blatt nach vorn")
 
 print(fehler == 0 ? "\nAlle Prüfungen bestanden." : "\n\(fehler) Prüfung(en) fehlgeschlagen.")
 exit(fehler == 0 ? 0 : 1)
