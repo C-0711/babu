@@ -262,9 +262,10 @@ struct AufraeumenView: View {
     }
 
     private func buchenAnstossen(_ beleg: Beleg) {
-        if beleg.konto == nil {
-            // Ohne Kategorie wird nichts gebucht und nichts gesiegelt —
-            // erst kurz eine wählen (sonst leeres Kontofeld im Stapel).
+        if beleg.konto == nil || beleg.brauchtBetrag {
+            // Ohne Kategorie oder ohne Betrag wird nichts gebucht und nichts
+            // gesiegelt — im Kontierungs-Sheet lässt sich beides klären
+            // (dort wohnt auch „Angaben korrigieren" für den Betrag).
             withAnimation(.spring(duration: 0.3)) { versatz = .zero }
             zeigeKontierung = true
         } else if beleg.brauchtBewirtungsangaben {

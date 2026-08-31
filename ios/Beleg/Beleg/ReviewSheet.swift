@@ -11,6 +11,7 @@ struct ReviewSheet: View {
     @State private var suche = ""
     @State private var gewaehlt: Konto?
     @State private var steuerschluessel = "9"
+    @State private var zeigeEditor = false
     /// Der Katalog des Servers — die eingebaute Kurzliste ist nur noch
     /// Fallback, wenn keine Verbindung besteht (Ninas Anmerkung #73).
     @State private var serverKonten: [Konto] = []
@@ -38,10 +39,22 @@ struct ReviewSheet: View {
                             Text(b.lieferant).fontDesign(.serif).fontWeight(.semibold)
                             Spacer()
                             Text(fmtEur(b.brutto)).monospaced()
+                                .foregroundStyle(b.brauchtBetrag ? GC.warn : GC.body)
                         }
                         Text(b.begruendung)
                             .font(.footnote)
                             .foregroundStyle(GC.desc)
+                        if b.brauchtBetrag {
+                            Label("Der Beleg steht auf 0,00 € — erst den Betrag eintragen, dann buchen.",
+                                  systemImage: "exclamationmark.triangle")
+                                .font(.footnote)
+                                .foregroundStyle(GC.warn)
+                        }
+                        Button {
+                            zeigeEditor = true
+                        } label: {
+                            Label("Angaben korrigieren", systemImage: "pencil")
+                        }
                     }
 
                     Section("Sachkonto (\(store.skr))") {
@@ -96,8 +109,14 @@ struct ReviewSheet: View {
                                      dauer: Date().timeIntervalSince(startZeit))
                         dismiss()
                     }
-                    .disabled(gewaehlt == nil && beleg?.konto == nil)
+                    // Ohne Kategorie ODER ohne Betrag wird nicht gebucht —
+                    // 0,00 € ist keine Buchung, sondern eine fehlende Lesung.
+                    .disabled((gewaehlt == nil && beleg?.konto == nil)
+                              || beleg?.brauchtBetrag == true)
                 }
+            }
+            .sheet(isPresented: $zeigeEditor) {
+                FeldEditorSheet(belegID: belegID)
             }
             .onAppear {
                 if let b = beleg {

@@ -102,6 +102,19 @@ pruefe(belegMonatSchluessel("01.13.2026") == nil, "Monat 13 gibt es nicht")
 pruefe(belegMonatTitel("2026-08") == "August 2026", "Überschrift ist deutsch")
 pruefe(belegMonatTitel("2025-03") == "März 2025", "Umlaut-Monat stimmt")
 
+// 22. Ohne Betrag wird nicht gebucht: 0,00 € heißt „die Lesung fehlt noch",
+// nicht „kostenloser Beleg". Die Rückfrage hängt an dieser einen Regel.
+func huelle(brutto: Double) -> Beleg {
+    Beleg(lieferant: "Test", belegNr: "ohne Nr.", datumText: "",
+          netto: 0, ust: 0, brutto: brutto, ustSatz: 0, konto: nil,
+          steuerschluessel: "0", kreditor: "70000", herkunft: .ki,
+          confidence: 0, status: .offen, begruendung: "", summenprobeOK: false)
+}
+pruefe(huelle(brutto: 0).brauchtBetrag, "0,00 € heißt: Betrag fehlt noch")
+pruefe(huelle(brutto: -0.004).brauchtBetrag, "Rundungsnull zählt als fehlend")
+pruefe(!huelle(brutto: 119.0).brauchtBetrag, "119,00 € ist buchbar")
+pruefe(!huelle(brutto: -50).brauchtBetrag, "Gutschrift (negativ) ist buchbar")
+
 print(fehler == 0 ? "\nAlle Prüfungen bestanden." : "\n\(fehler) Prüfung(en) fehlgeschlagen.")
 exit(fehler == 0 ? 0 : 1)
 

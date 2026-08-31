@@ -171,7 +171,10 @@ final class AppStore: ObservableObject {
         var beleg = Beleg(
             lieferant: String(kopf.prefix(40)),
             belegNr: "ohne Nr.",
-            datumText: DateFormatter.kurz.string(from: Date()),
+            // Kein erfundenes Datum: der Hochlade-Tag ist NICHT das Belegdatum.
+            // Leer heißt ehrlich „noch ungelesen" — die Einschätzung setzt das
+            // echte Datum, die Liste sammelt es bis dahin unter „Ohne Datum".
+            datumText: "",
             netto: 0, ust: 0, brutto: 0, ustSatz: 0,
             konto: nil,
             steuerschluessel: "0",

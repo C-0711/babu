@@ -607,7 +607,7 @@ struct ErgebnisKarte: View {
                 Text(fmtEur(aktuell.brutto))
                     .font(.subheadline.monospaced())
             }
-            Text("\(aktuell.belegNr) · \(aktuell.datumText)")
+            Text("\(aktuell.belegNr) · \(aktuell.datumText.isEmpty ? "ohne Datum" : aktuell.datumText)")
                 .font(.caption.monospaced())
                 .foregroundStyle(GC.muted)
 

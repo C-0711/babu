@@ -220,6 +220,13 @@ struct Beleg: Identifiable, Codable {
         konto == "6640" && (bewirtungPersonen ?? "").trimmingCharacters(in: .whitespaces).isEmpty
     }
 
+    /// 0,00 € heißt: die Lesung fehlt noch — nicht „kostenloser Beleg".
+    /// Vor dem Buchen muss der Betrag geklärt sein; eine Gutschrift
+    /// (negativ) ist dagegen ein echter Betrag.
+    var brauchtBetrag: Bool {
+        abs(brutto) < 0.005
+    }
+
     /// Grüner Haken nur, wenn das Archiv den Beleg bestätigt hat (Review-
     /// Commit da) UND die Ablage nicht gescheitert ist.
     var archivBestaetigt: Bool {
