@@ -688,7 +688,7 @@ struct DetailView: View {
                         }
 
                         if b.siegel != nil, let z = b.siegelZeit {
-                            Text("Festgehalten am \(DateFormatter.siegel.string(from: z)) — bleibt unverändert")
+                            Text("Festgehalten am \(DateFormatter.siegel.string(from: z)) — \(b.siegelZusatz)")
                                 .font(.caption2)
                                 .foregroundStyle(GC.muted)
                         }

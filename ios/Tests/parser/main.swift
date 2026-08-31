@@ -115,6 +115,40 @@ pruefe(huelle(brutto: -0.004).brauchtBetrag, "Rundungsnull zählt als fehlend")
 pruefe(!huelle(brutto: 119.0).brauchtBetrag, "119,00 € ist buchbar")
 pruefe(!huelle(brutto: -50).brauchtBetrag, "Gutschrift (negativ) ist buchbar")
 
+// 23. Das Etikett lügt nicht: ein ungelesener Beleg trägt kein „geprüft".
+var offenBeleg = huelle(brutto: 0)
+pruefe(offenBeleg.herkunftEtikett == "wird gelesen",
+       "Ungelesener Beleg heißt ‚wird gelesen', nicht ‚geprüft'")
+offenBeleg.confidence = 87
+offenBeleg.status = .bestaetigt
+pruefe(offenBeleg.herkunftEtikett == "geprüft",
+       "Nach der Lesung darf ‚geprüft' stehen")
+offenBeleg.herkunft = .mensch
+pruefe(offenBeleg.herkunftEtikett == "Manuell",
+       "Von Hand bleibt ‚Manuell'")
+
+// 24. Die Summenprobe segnet keine leeren Belege ab: 0+0=0 ist kein Erfolg.
+pruefe(summenprobe(netto: 0, ust: 0, brutto: 0) == .leer,
+       "0+0=0 ist leer, nicht bestanden")
+pruefe(summenprobe(netto: 100, ust: 19, brutto: 119) == .passt,
+       "100+19=119 passt")
+pruefe(summenprobe(netto: 0, ust: 0, brutto: 119) == .passtNicht,
+       "0+0≠119 fällt durch")
+pruefe(summenprobe(netto: 5, ust: 0, brutto: 0) == .passtNicht,
+       "Netto ohne Brutto fällt durch")
+pruefe(summenprobe(netto: 100, ust: 19, brutto: 119.005) == .passt,
+       "Halber Cent ist Rundung, kein Fehler")
+
+// 25. „Bleibt unverändert" nur, wenn es stimmt: bis zur Fixierung ist
+// eine Korrektur möglich — und wird neu festgehalten.
+var gesiegelt = huelle(brutto: 119)
+gesiegelt.status = .bestaetigt
+pruefe(gesiegelt.siegelZusatz == "eine Korrektur wird neu festgehalten",
+       "Vor der Fixierung verspricht das Siegel keine Unveränderlichkeit")
+gesiegelt.status = .fixiert
+pruefe(gesiegelt.siegelZusatz == "bleibt unverändert",
+       "Fixiert heißt wirklich unveränderlich")
+
 print(fehler == 0 ? "\nAlle Prüfungen bestanden." : "\n\(fehler) Prüfung(en) fehlgeschlagen.")
 exit(fehler == 0 ? 0 : 1)
 

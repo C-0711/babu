@@ -121,6 +121,15 @@ func belegMonatSchluessel(_ datumText: String) -> String? {
     return String(format: "%04d-%02d", jahr, monat)
 }
 
+/// Ergebnis der Betrags-Gegenprobe: leer ist ein eigener Zustand —
+/// 0+0=0 stimmt zwar rechnerisch, hat aber nichts bewiesen.
+enum Summenprobe { case leer, passt, passtNicht }
+
+func summenprobe(netto: Double, ust: Double, brutto: Double) -> Summenprobe {
+    if abs(netto) < 0.005, abs(ust) < 0.005, abs(brutto) < 0.005 { return .leer }
+    return abs(netto + ust - brutto) < 0.011 ? .passt : .passtNicht
+}
+
 private let monatsNamen = ["Januar", "Februar", "März", "April", "Mai",
                            "Juni", "Juli", "August", "September", "Oktober",
                            "November", "Dezember"]
@@ -225,6 +234,22 @@ struct Beleg: Identifiable, Codable {
     /// (negativ) ist dagegen ein echter Betrag.
     var brauchtBetrag: Bool {
         abs(brutto) < 0.005
+    }
+
+    /// Das Etikett neben dem Vertrauensbalken. Ein Beleg, den noch niemand
+    /// gelesen hat (offen, ohne jedes Vertrauen), darf nicht „geprüft"
+    /// tragen — das Wort ist erst nach der Lesung verdient.
+    var herkunftEtikett: String {
+        if status == .offen && confidence == 0 { return "wird gelesen" }
+        return herkunft.kurz
+    }
+
+    /// Was hinter „Festgehalten am …" steht. Unveränderlichkeit wird erst
+    /// mit der Fixierung versprochen — vorher ist eine Korrektur möglich
+    /// und wird ihrerseits neu festgehalten.
+    var siegelZusatz: String {
+        status == .fixiert ? "bleibt unverändert"
+                           : "eine Korrektur wird neu festgehalten"
     }
 
     /// Grüner Haken nur, wenn das Archiv den Beleg bestätigt hat (Review-

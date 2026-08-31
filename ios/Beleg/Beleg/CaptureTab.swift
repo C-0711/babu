@@ -614,7 +614,7 @@ struct ErgebnisKarte: View {
             BuchsatzView(beleg: aktuell)
 
             HStack(spacing: 10) {
-                BadgeView(text: aktuell.herkunft.kurz,
+                BadgeView(text: aktuell.herkunftEtikett,
                           color: herkunftsFarbe(aktuell.herkunft))
                 ProgressView(value: Double(aktuell.confidence), total: 100)
                     .tint(confColor(aktuell.confidence))
@@ -764,7 +764,7 @@ struct SiegelZeile: View {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.seal")
                     .foregroundStyle(GC.accent)
-                Text("Festgehalten am \(DateFormatter.siegel.string(from: zeit)) — bleibt unverändert")
+                Text("Festgehalten am \(DateFormatter.siegel.string(from: zeit)) — \(beleg.siegelZusatz)")
                     .font(.caption2)
                     .foregroundStyle(GC.accent)
             }

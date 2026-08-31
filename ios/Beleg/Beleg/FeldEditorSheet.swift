@@ -56,11 +56,18 @@ struct FeldEditorSheet: View {
                     TextField("Steuer", text: $ust)
                         .keyboardType(.decimalPad)
                     if let b = bruttoWert, let n = nettoWert, let u = ustWert {
-                        if abs(n + u - b) < 0.011 {
+                        switch summenprobe(netto: n, ust: u, brutto: b) {
+                        case .leer:
+                            // 0+0=0 stimmt rechnerisch — bewiesen ist nichts.
+                            Label("Noch keine Beträge — bitte vom Beleg übernehmen.",
+                                  systemImage: "circle.dashed")
+                                .font(.footnote)
+                                .foregroundStyle(GC.muted)
+                        case .passt:
                             Label("Die Beträge passen zusammen.", systemImage: "checkmark.circle")
                                 .font(.footnote)
                                 .foregroundStyle(GC.ok)
-                        } else {
+                        case .passtNicht:
                             Label("Netto + Steuer ergibt nicht den Gesamtbetrag — bitte prüfen.",
                                   systemImage: "exclamationmark.triangle")
                                 .font(.footnote)

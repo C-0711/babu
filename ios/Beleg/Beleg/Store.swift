@@ -416,7 +416,7 @@ final class AppStore: ObservableObject {
         b.netto = netto
         b.ust = ust
         b.brutto = brutto
-        b.summenprobeOK = abs(netto + ust - brutto) < 0.011
+        b.summenprobeOK = summenprobe(netto: netto, ust: ust, brutto: brutto) == .passt
         b.herkunft = .mensch
         // Handkorrektur ersetzt die gelesene Tabelle — sie passt nicht mehr.
         b.steuerPositionen = nil
