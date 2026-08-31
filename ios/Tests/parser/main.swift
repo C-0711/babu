@@ -149,6 +149,17 @@ gesiegelt.status = .fixiert
 pruefe(gesiegelt.siegelZusatz == "bleibt unverändert",
        "Fixiert heißt wirklich unveränderlich")
 
+// 26. Der Monatswechsler oben in Dokumente: neuester Monat zuerst,
+// Ohne-Datum als letztes Blatt, Duplikate fallen zusammen.
+pruefe(monatsSchluesselListe(["03.08.2026", "15.07.2026", "", "01.08.2026",
+                              "kein Datum"]) == ["2026-08", "2026-07", ""],
+       "Monate absteigend, Ohne-Datum am Ende, ohne Doppelte")
+pruefe(monatsSchluesselListe(["31.12.2025", "02.01.2026"]) == ["2026-01", "2025-12"],
+       "Jahreswechsel sortiert richtig")
+pruefe(monatsSchluesselListe([]) == [], "Keine Belege, keine Monate")
+pruefe(monatsSchluesselListe(["", "?"]) == [""],
+       "Nur Unlesbares ergibt genau das Ohne-Datum-Blatt")
+
 print(fehler == 0 ? "\nAlle Prüfungen bestanden." : "\n\(fehler) Prüfung(en) fehlgeschlagen.")
 exit(fehler == 0 ? 0 : 1)
 

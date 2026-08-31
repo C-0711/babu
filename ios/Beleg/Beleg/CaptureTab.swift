@@ -26,6 +26,7 @@ struct CaptureTab: View {
     @State private var fotoAuswahl: PhotosPickerItem?
     @State private var zeigeDateien = false
     @State private var ladeFehler: String?
+    @State private var zeigeAufraeumen = false
 
     // MARK: Einrichtung (BABU-51)
     /// Die Angaben aus dem babu-Konto. `nil` heißt „noch nicht nachgesehen" —
@@ -122,6 +123,9 @@ struct CaptureTab: View {
                         .environmentObject(store)
                 }
             }
+            .fullScreenCover(isPresented: $zeigeAufraeumen) {
+                AufraeumenView().environmentObject(store)
+            }
             .fullScreenCover(isPresented: $zeigeScanner) {
                 ScannerView(
                     startMehrseitig: startMehrseitig,
@@ -214,8 +218,19 @@ struct CaptureTab: View {
 
     // MARK: - Bereit
 
+    private var offeneAnzahl: Int {
+        store.belege.filter { $0.status == .offen }.count
+    }
+
     private var bereitView: some View {
         VStack(spacing: 22) {
+            // Der Stapel wohnt am Anfang des Tages: was zu klären ist,
+            // steht hier — nicht erst hinter dem Dokumente-Reiter.
+            if offeneAnzahl > 0 {
+                AufraeumenKarte(anzahl: offeneAnzahl) { zeigeAufraeumen = true }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
+            }
             if zeigeEinrichtung {
                 ScrollView {
                     EinrichtungsKarte(

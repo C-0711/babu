@@ -121,6 +121,19 @@ func belegMonatSchluessel(_ datumText: String) -> String? {
     return String(format: "%04d-%02d", jahr, monat)
 }
 
+/// Die Blätter des Monatswechslers in Dokumente: jeder vorkommende Monat
+/// einmal, neuester zuerst — und „Ohne Datum" (leerer Schlüssel) als
+/// letztes Blatt, falls es ungelesene Belege gibt.
+func monatsSchluesselListe(_ datumTexte: [String]) -> [String] {
+    var monate = Set<String>()
+    var ohneDatum = false
+    for t in datumTexte {
+        if let m = belegMonatSchluessel(t) { monate.insert(m) }
+        else { ohneDatum = true }
+    }
+    return monate.sorted(by: >) + (ohneDatum ? [""] : [])
+}
+
 /// Ergebnis der Betrags-Gegenprobe: leer ist ein eigener Zustand —
 /// 0+0=0 stimmt zwar rechnerisch, hat aber nichts bewiesen.
 enum Summenprobe { case leer, passt, passtNicht }

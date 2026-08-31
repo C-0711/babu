@@ -11,6 +11,47 @@ struct Grossansicht: Identifiable {
     let id: UUID
 }
 
+/// Die Aufräumen-Karte: rote Zahl am Stapel, ein Wort, ein Ziel. Wohnt auf
+/// dem Startbildschirm (Erfassen) — dort beginnt Ninas Tag.
+struct AufraeumenKarte: View {
+    let anzahl: Int
+    let tippen: () -> Void
+
+    var body: some View {
+        Button(action: tippen) {
+            HStack(spacing: 12) {
+                Image(systemName: "rectangle.stack")
+                    .font(.title3)
+                    .foregroundStyle(GC.accent)
+                    .overlay(alignment: .topTrailing) {
+                        Text("\(anzahl)")
+                            .font(.caption2.weight(.bold))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(.red))
+                            .frame(minWidth: 18)
+                            .offset(x: 12, y: -9)
+                    }
+                Text("Aufräumen")
+                    .font(.headline)
+                    .fontDesign(.serif)
+                    .foregroundStyle(GC.fg)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(GC.muted)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(GC.accentSubtle, in: RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Aufräumen — \(anzahl) \(anzahl == 1 ? "offener Beleg wartet" : "offene Belege warten")")
+    }
+}
+
 struct AufraeumenView: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) private var dismiss

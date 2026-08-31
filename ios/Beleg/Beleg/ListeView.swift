@@ -4,7 +4,7 @@ import UIKit
 struct ListeView: View {
     @EnvironmentObject var store: AppStore
     @State private var filter: Filter = .alle
-    @State private var zeigeAufraeumen = false
+    @State private var gewaehlterMonat: String?
     @State private var loeschKandidat: UUID?
     /// Welche Art gerade gezeigt wird. Belege sind die Voreinstellung —
     /// das ist der häufigste Fall und der Grund, warum es die App gibt.
@@ -59,16 +59,24 @@ struct ListeView: View {
         }
     }
 
-    /// Monats-Einteilung der Liste: neuester Monat zuerst, Dokumente ohne
-    /// lesbares Datum gesammelt am Ende. Der Monat ist der des BELEGdatums,
+    /// Der Monatswechsler oben: ein Blatt je Monat, neuester zuerst,
+    /// „Ohne Datum" als letztes Blatt. Der Monat ist der des BELEGdatums,
     /// nicht der des Hochladens — dieselbe Regel wie im Kassenbuch.
-    private var nachMonat: [(schluessel: String, belege: [Beleg])] {
-        Dictionary(grouping: gefiltert) { belegMonatSchluessel($0.datumText) ?? "" }
-            .sorted { a, b in
-                if a.key.isEmpty != b.key.isEmpty { return b.key.isEmpty }
-                return a.key > b.key
-            }
-            .map { ($0.key, $0.value) }
+    private var monate: [String] {
+        monatsSchluesselListe(gefiltert.map(\.datumText))
+    }
+
+    /// Das gerade aufgeschlagene Blatt. Fällt der gewählte Monat durch einen
+    /// Filterwechsel weg, springt die Ansicht auf den neuesten zurück.
+    private var aktiverMonat: String? {
+        guard !monate.isEmpty else { return nil }
+        if let m = gewaehlterMonat, monate.contains(m) { return m }
+        return monate.first
+    }
+
+    private var monatsBelege: [Beleg] {
+        guard let m = aktiverMonat else { return gefiltert }
+        return gefiltert.filter { (belegMonatSchluessel($0.datumText) ?? "") == m }
     }
 
     /// Die Server-Ablage des Fachs holen — lokale Aufnahmen, die schon
@@ -130,6 +138,40 @@ struct ListeView: View {
         }
     }
 
+    /// ‹ August 2026 › — wie im Kassenbuch: links geht es in die
+    /// Vergangenheit, rechts nach vorn. „Ohne Datum" ist das letzte Blatt.
+    private var monatsLeiste: some View {
+        let index = aktiverMonat.flatMap { monate.firstIndex(of: $0) } ?? 0
+        return HStack {
+            Button { blaettere(1) } label: {
+                Image(systemName: "chevron.left")
+                    .frame(width: 44, height: 36)
+            }
+            .disabled(index >= monate.count - 1)
+            .accessibilityLabel("Früherer Monat")
+            Spacer()
+            Text(aktiverMonat.map { $0.isEmpty ? "Ohne Datum" : belegMonatTitel($0) } ?? "")
+                .font(.title3.weight(.semibold))
+                .fontDesign(.serif)
+            Spacer()
+            Button { blaettere(-1) } label: {
+                Image(systemName: "chevron.right")
+                    .frame(width: 44, height: 36)
+            }
+            .disabled(index == 0)
+            .accessibilityLabel("Späterer Monat")
+        }
+        .foregroundStyle(GC.fg)
+    }
+
+    private func blaettere(_ schritt: Int) {
+        guard let m = aktiverMonat, let i = monate.firstIndex(of: m),
+              monate.indices.contains(i + schritt) else { return }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            gewaehlterMonat = monate[i + schritt]
+        }
+    }
+
     var body: some View {
         NavigationStack(path: $pfad) {
             List {
@@ -156,62 +198,30 @@ struct ListeView: View {
                     .listRowBackground(GC.canvas)
                     .listRowSeparator(.hidden)
                 }
-                if offeneAnzahl > 0 {
-                    Button {
-                        zeigeAufraeumen = true
-                    } label: {
-                        // Eine Zeile statt zwei: die rote Zahl am Stapel
-                        // sagt bereits, wie viel wartet.
-                        HStack(spacing: 12) {
-                            Image(systemName: "rectangle.stack")
-                                .font(.title3)
-                                .foregroundStyle(GC.accent)
-                                .overlay(alignment: .topTrailing) {
-                                    Text("\(offeneAnzahl)")
-                                        .font(.caption2.weight(.bold))
-                                        .monospacedDigit()
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, 5)
-                                        .padding(.vertical, 2)
-                                        .background(Capsule().fill(.red))
-                                        .frame(minWidth: 18)
-                                        .offset(x: 12, y: -9)
-                                }
-                            Text("Aufräumen")
-                                .font(.headline)
-                                .fontDesign(.serif)
-                                .foregroundStyle(GC.fg)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.caption)
-                                .foregroundStyle(GC.muted)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    .listRowBackground(GC.accentSubtle)
-                    .accessibilityLabel("Aufräumen — \(offeneAnzahl) \(offeneAnzahl == 1 ? "offener Beleg wartet" : "offene Belege warten")")
-                }
                 if let d = store.durchsatzText {
                     Text(d)
                         .font(.caption.monospaced())
                         .foregroundStyle(GC.muted)
                         .listRowBackground(GC.canvas)
                 }
+                if aktiverMonat != nil {
+                    monatsLeiste
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                        .listRowBackground(GC.canvas)
+                        .listRowSeparator(.hidden)
+                }
                 artenLeiste
                     .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
                     .listRowBackground(GC.canvas)
 
                 if ansicht == .blaetter {
-                    DokumentBlaetter(dokumente: gefiltert,
+                    DokumentBlaetter(dokumente: monatsBelege,
                                      grossAnsehen: $grossAnsehen) { pfad.append($0) }
                         .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 8, trailing: 12))
                         .listRowBackground(GC.canvas)
                         .listRowSeparator(.hidden)
                 } else {
-                  ForEach(nachMonat, id: \.schluessel) { gruppe in
-                    Section(gruppe.schluessel.isEmpty ? "Ohne Datum"
-                            : belegMonatTitel(gruppe.schluessel)) {
-                      ForEach(gruppe.belege) { b in
+                    ForEach(monatsBelege) { b in
                         NavigationLink(value: b.id) {
                             BelegZeile(beleg: b)
                         }
@@ -226,9 +236,7 @@ struct ListeView: View {
                                 }
                             }
                         }
-                      }
                     }
-                  }
                 }
                 if gefiltert.isEmpty && serverStuecke.isEmpty {
                     Text(filter == .alle ? art.leerSatz
@@ -291,9 +299,6 @@ struct ListeView: View {
                 if let b = store.belege.first(where: { $0.id == auswahl.id }) {
                     BelegGrossView(beleg: b).environmentObject(store)
                 }
-            }
-            .fullScreenCover(isPresented: $zeigeAufraeumen) {
-                AufraeumenView()
             }
             .confirmationDialog("Diesen Beleg endgültig löschen?",
                                 isPresented: Binding(get: { loeschKandidat != nil },
