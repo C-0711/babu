@@ -530,18 +530,19 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 .vertrag .liste{margin-top:10px;font-size:13px;color:var(--gc-desc)}
 .vertrag .liste li{margin-left:18px}
 
-/* Beleg-Weg */
-.weg{list-style:none}
-.weg li{display:flex;gap:12px;padding:0 0 16px;position:relative}
-.weg li::before{content:"";position:absolute;left:5.5px;top:16px;bottom:0;width:1px;background:var(--gc-border)}
-.weg li:last-child::before{display:none}
-.weg .punkt{width:12px;height:12px;border-radius:50%;flex:none;margin-top:3px;
-  background:var(--gc-accent);transition:transform .3s}
-.weg li.offen .punkt{background:var(--gc-bg);border:1.5px solid var(--gc-border)}
-.weg li.frage .punkt{background:var(--gc-warn)}
-.weg .wtitel{font-weight:600;color:var(--gc-fg);font-size:13px}
-.weg .wsub{font-size:12px;color:var(--gc-desc)}
-.weg li.offen .wtitel{color:var(--gc-muted);font-weight:500}
+/* Beleg-Weg: eine Zeile Punkte statt fuenf Absaetze — der Platz gehoert
+   dem Beleg, nicht seiner Geschichte. Ein Hinweis-Satz nur, wenn einer
+   der Schritte Aufmerksamkeit braucht. */
+.weg-zeile{display:flex;flex-wrap:wrap;gap:6px 4px;align-items:center}
+.weg-zeile .schritt{display:inline-flex;align-items:center;gap:6px;
+  font-size:13px;font-weight:600;color:var(--gc-fg)}
+.weg-zeile .schritt .punkt{width:10px;height:10px;border-radius:50%;flex:none;
+  background:var(--gc-accent)}
+.weg-zeile .schritt.offen{color:var(--gc-muted);font-weight:500}
+.weg-zeile .schritt.offen .punkt{background:var(--gc-bg);border:1.5px solid var(--gc-border)}
+.weg-zeile .schritt.frage .punkt{background:var(--gc-warn)}
+.weg-zeile .pfeil{color:var(--gc-muted);font-size:12px;padding:0 2px}
+.weg-hinweis{font-size:12.5px;color:var(--gc-desc);margin-top:6px}
 
 /* Haken & Siegel */
 .haken{display:flex;align-items:center;gap:12px}
@@ -1992,18 +1993,23 @@ async function ladeDetail(stamm){
     ? `<img id="belegbild" alt="Foto des Belegs" src="${d.bild_url}">`
     : `<div class="pdfhinweis"><svg class="ik" viewBox="0 0 24 24"><use href="#ik-dokument"/></svg><br>Dieses Dokument kam als Datei —<br><a href="${d.bild_url}">herunterladen und ansehen</a></div>`;
 
-  /* Beleg-Weg */
+  /* Beleg-Weg: eine Punktreihe. Was Aufmerksamkeit braucht, bekommt den
+     einen Hinweis-Satz darunter — alles andere erzaehlt der Punkt selbst. */
   const aufn = d.audit && d.audit.aufnahme, rev = d.audit && d.audit.review;
   const weg = [
-    {t:"Foto erhalten", s: aufn ? zeitKurz(aufn.zeit) + " — sicher abgelegt" : "sicher abgelegt", klasse:""},
-    {t:"Gelesen", s: rev ? "Betrag, Datum und mehr erkannt" : "dauert einen Moment …", klasse: rev ? "" : "offen"},
-    frage ? {t:"Geprüft", s:"eine Frage ist offen — siehe unten", klasse:"frage"}
-          : {t:"Geprüft" + (geprueft||b ? " ✓" : ""), s: rev ? "alles stimmig" : "kommt gleich", klasse: rev ? "" : "offen"},
-    {t:"Liegt für DATEV bereit", s: b ? "im " + monatName(d.monat||jetztMonat()).split(" ")[0] + "-Stapel deiner Kanzlei" : "sobald alles klar ist", klasse: b ? "" : "offen"},
+    {t:"Foto erhalten", klasse:""},
+    {t:"Gelesen", klasse: rev ? "" : "offen"},
+    frage ? {t:"Geprüft", klasse:"frage"}
+          : {t:"Geprüft" + (geprueft||b ? " ✓" : ""), klasse: rev ? "" : "offen"},
+    {t:"Für DATEV bereit", klasse: b ? "" : "offen"},
     d.status === "exportiert"
-      ? {t:"Bei der Kanzlei ✓", s:"der Stapel wurde abgeholt", klasse:""}
-      : {t:"Bei der Kanzlei", s:"sobald sie den Stapel abholt", klasse:"offen"},
+      ? {t:"Bei der Kanzlei ✓", klasse:""}
+      : {t:"Bei der Kanzlei", klasse:"offen"},
   ];
+  const wegHinweis = frage ? "eine Frage ist offen — siehe unten"
+    : (!rev ? "wird gerade gelesen — dauert einen Moment …"
+    : (b ? "im " + monatName(d.monat||jetztMonat()).split(" ")[0] + "-Stapel deiner Kanzlei"
+         : null));
 
   let html = `<div id="detail-grid"><div><div id="buehne">${bildTag}</div></div><div>`;
   const [dMarke, dArt] = statusMarke(d);
@@ -2015,26 +2021,25 @@ async function ladeDetail(stamm){
     html += `<div style="color:var(--gc-body);font-size:14px;margin-bottom:14px">${esc(d.zusammenfassung)}</div>`;
   }
   if (f.brutto != null){
-    html += `<div style="margin:6px 0 22px"><div class="lbl">Du hast bezahlt</div>
-      <div style="font:500 clamp(36px,4vw,52px)/1.05 var(--gc-serif);letter-spacing:-.02em;color:var(--gc-fg);font-variant-numeric:tabular-nums;margin-top:4px">${euro(f.brutto)}</div></div>`;
+    // Netto, Steuer, Trinkgeld und Zahlweise stehen direkt unterm Betrag —
+    // die fruehere „Aus dem Foto"-Karte wiederholte nur Kopf und Zahlen.
+    const betragTeile = [];
+    if (f.netto != null) betragTeile.push(euro(f.netto) + " ohne Steuer");
+    if (f.ust != null) betragTeile.push(euro(f.ust) + " Steuer" + (f.ust_satz != null ? " (" + f.ust_satz + " %)" : ""));
+    if (v.trinkgeld) betragTeile.push("Trinkgeld " + euro(v.trinkgeld));
+    if (v.zahlungsart) betragTeile.push(esc(v.zahlungsart));
+    html += `<div style="margin:6px 0 16px"><div class="lbl">Du hast bezahlt</div>
+      <div style="font:500 clamp(30px,3vw,40px)/1.05 var(--gc-serif);letter-spacing:-.02em;color:var(--gc-fg);font-variant-numeric:tabular-nums;margin-top:4px">${euro(f.brutto)}</div>
+      ${betragTeile.length ? `<div style="font-size:13px;color:var(--gc-desc);margin-top:4px">${betragTeile.join(" · ")}</div>` : ""}</div>`;
   }
 
-  html += `<div class="sekt"><span class="lbl">Beleg-Weg</span><ul class="weg">` +
-    weg.map(w => `<li class="${w.klasse}"><span class="punkt"></span><div>
-      <div class="wtitel">${w.t}</div><div class="wsub">${w.s}</div></div></li>`).join("") + `</ul></div>`;
+  html += `<div class="sekt"><span class="lbl">Beleg-Weg</span>
+    <div class="weg-zeile">` +
+    weg.map(w => `<span class="schritt ${w.klasse}"><span class="punkt"></span>${w.t}</span>`)
+       .join(`<span class="pfeil">›</span>`) + `</div>` +
+    (wegHinweis ? `<div class="weg-hinweis">${wegHinweis}</div>` : "") + `</div>`;
 
   if (!inArbeit){
-    html += `<div class="sekt"><span class="lbl">Aus dem Foto</span><div class="karte" style="margin:0">`;
-    if (f.lieferant || v.lieferant) html += feld("Wer", lieferant);
-    if (f.datum) html += feld("Wann", datumDeutsch(f.datum));
-    if (f.netto != null) html += feld("Ohne Steuer", euro(f.netto));
-    if (f.ust != null) html += feld(`Steuer${f.ust_satz!=null ? " ("+f.ust_satz+" %)" : ""}`, euro(f.ust));
-    if (f.brutto != null) html += feld("Gesamt", euro(f.brutto));
-    if (v.trinkgeld) html += feld("Trinkgeld", euro(v.trinkgeld));
-    if (f.beleg_nr) html += feld("Beleg-Nr.", f.beleg_nr);
-    if (v.zahlungsart) html += feld("Bezahlt", v.zahlungsart);
-    html += `</div></div>`;
-
     const bewirtungOffen = f.bewirtungssignal && !d.bewirtung_beantwortet;
     // Strukturierte Fragen aus buchung.fragen haben Vorrang vor generischen offen-Texten
     const buchungFrage = (d.buchung && d.buchung.fragen && d.buchung.fragen[0]) ? d.buchung.fragen[0] : null;
