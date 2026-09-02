@@ -199,18 +199,26 @@ def test_vorschau_meldet_belege_ohne_konto(welt, c, tmp_path):
     assert befund["sauber"] is False
 
 
-def test_vorschau_meldet_buchungen_ohne_belegdatum(welt):
+def test_vorschau_liest_iso_datum_und_meldet_nur_unlesbare(welt):
     """Befund vom 02.09.2026: die Belege des Zielbild-Wegs tragen ihr Datum
-    als `JJJJ-MM-TT`, `extf.buchungszeilen` liest aber `TT.MM.JJJJ` — die
-    Spalte Belegdatum bleibt dann leer. Das wird hier nicht repariert (das
-    gehört in `extf`), aber es muss im Befund stehen, bevor die Datei aus
-    dem Haus geht."""
+    als `JJJJ-MM-TT`, `extf.buchungszeilen` las nur `TT.MM.JJJJ`. Seit dem
+    extf-Fix (2b281ed) kommen beide Formate durch — der Befund meldet nur
+    noch, was wirklich unlesbar ist."""
     import datev_seite
     review = json.loads(json.dumps(welt.index_aktuell()["reviews"][BELEGE[0][1]]))
     review["felder"]["datum"] = "2026-07-14"          # so schreibt es die App
     daten = {"monate": ["2026-07"], "rahmen": "SKR04", "kleinunternehmerin": False,
              "je_monat": {"2026-07": {"reviews": [review], "staemme": ["x"],
                                       "ohne_konto": [], "blaetter": []}}}
+    zeilen = datev_seite._zeilen(daten)
+    assert zeilen and all(z["belegdatum"] == "1407" for z in zeilen)
+    befund = datev_seite._befund(daten, zeilen)
+    assert befund["ohne_belegdatum"] == 0
+    assert befund["ohne_belegdatum_belege"] == []
+
+    kaputt = json.loads(json.dumps(review))
+    kaputt["felder"]["datum"] = "irgendwann"
+    daten["je_monat"]["2026-07"]["reviews"] = [kaputt]
     zeilen = datev_seite._zeilen(daten)
     assert zeilen and all(not z["belegdatum"] for z in zeilen)
     befund = datev_seite._befund(daten, zeilen)
