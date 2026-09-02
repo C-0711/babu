@@ -68,9 +68,10 @@ def test_mehrsatz_split():
     }
     zeilen = extf.buchungszeilen(review)
     assert len(zeilen) == 2
-    assert (zeilen[0]["umsatz"], zeilen[0]["bu"]) == ("22,45", "9")
-    assert (zeilen[1]["umsatz"], zeilen[1]["bu"]) == ("4,95", "8")
-    assert all(z["konto"] == "5400" for z in zeilen)
+    # 5400 ist ein Automatikkonto (AV 19 %): kein Schlüssel. Der 7 %-Anteil
+    # gehört auf 5300 (Wareneingang 7 % Vorsteuer, ebenfalls Automatik).
+    assert (zeilen[0]["umsatz"], zeilen[0]["konto"], zeilen[0]["bu"]) == ("22,45", "5400", "")
+    assert (zeilen[1]["umsatz"], zeilen[1]["konto"], zeilen[1]["bu"]) == ("4,95", "5300", "")
 
 
 def test_cp1252_crlf():
@@ -242,3 +243,108 @@ def test_letzter_tag_im_februar():
     assert extf.stapel([], "2024-02", erzeugt=ERZEUGT).split(";")[15] == "20240229"
     assert extf.stapel([], "2026-02", erzeugt=ERZEUGT).split(";")[15] == "20260228"
     assert extf.stapel([], "2100-02", erzeugt=ERZEUGT).split(";")[15] == "21000228"
+
+
+# ————— Automatikkonten (seit 02.09.2026) —————
+
+def _auf(konto, satz=19, brutto=119.0):
+    r = _mit_satz(satz, brutto)
+    r["einschaetzung"]["konto_skr04"] = konto
+    return r
+
+
+def test_automatikkonto_traegt_keinen_schluessel():
+    """Im SKR04 rechnen AV/AM-Konten ihre Steuer selbst — ein Schlüssel
+    obendrauf ist ein Widerspruch, den erst der Import meldet."""
+    assert _zeilen(_auf("5400", 19))[0]["bu"] == ""          # AV 19 %
+    assert _zeilen(_auf("5400"))[0]["konto"] == "5400"
+
+
+def test_verbrauchsmaterial_ist_kein_automatikkonto():
+    """5100 hat im SKR04 kein AV — dort entscheidet der Schlüssel."""
+    assert _zeilen(_auf("5100", 19))[0]["bu"] == "9"
+    assert _zeilen(_auf("5100", 7))[0]["bu"] == "8"
+
+
+def test_fremder_satz_wandert_auf_das_geschwisterkonto():
+    z = _zeilen(_auf("5400", 7))[0]
+    assert (z["konto"], z["bu"]) == ("5300", "")
+
+
+def test_skr03_bleibt_unangetastet():
+    """Für SKR03 liegt babu kein Kontenrahmen als Quelle vor — dort
+    bleibt der Schlüssel, wie er war."""
+    r = _auf("3400", 19)
+    r["einschaetzung"] = {"konto": "3400", "kontenrahmen": "SKR03"}
+    z = _zeilen(r)
+    assert z and z[0]["bu"] == "9"
+
+
+# ————— Die Erlösseite —————
+
+def _blatt(**w):
+    b = {"datum": "2026-08-01", "einnahmenBar": 0.0, "ecZahlungen": 0.0}
+    b.update(w)
+    return b
+
+
+def test_ein_kassentag_wird_kasse_an_erloese_je_satz():
+    z = extf.erloeszeilen([_blatt(einnahmenBar=100, ecZahlungen=50, umsatz7=20)])
+    assert [(x["konto"], x["gegenkonto"], x["umsatz"], x["bu"]) for x in z] == [
+        ("1600", "4400", "130,00", ""),        # 150 − 20 → 19 %, Automatik
+        ("1600", "4300", "20,00", ""),
+        ("1460", "1600", "50,00", ""),         # Kartenumsatz raus aus der Kasse
+    ]
+    assert all(x["belegdatum"] == "0108" for x in z)
+    assert all(x["belegfeld1"] == "KB20260801" for x in z)
+    assert z[0]["text"] == "Tageseinnahmen 19 %"
+    assert z[2]["text"] == "Kartenumsatz an Geldtransit"
+
+
+def test_verkaufte_gutscheine_sind_umsatz_eingeloeste_nicht():
+    """Einzweck-Gutschein: versteuert beim Verkauf — wie erloese_monat."""
+    z = extf.erloeszeilen([_blatt(einnahmenBar=100, gutscheinVerkauf=30,
+                                  gutscheineEingeloest=25)])
+    assert z[0]["umsatz"] == "130,00"
+    assert len(z) == 1
+
+
+def test_steuerfreier_umsatz_geht_auf_4100():
+    z = extf.erloeszeilen([_blatt(einnahmenBar=80, umsatzFrei=80)])
+    assert [(x["gegenkonto"], x["umsatz"]) for x in z] == [("4100", "80,00")]
+
+
+def test_die_kleinunternehmerin_bucht_alles_auf_4184():
+    """§ 19 UStG: kein Steuerausweis. Auf 4400 rechnete DATEV
+    Umsatzsteuer heraus, die es nicht gibt."""
+    z = extf.erloeszeilen([_blatt(einnahmenBar=100, ecZahlungen=50, umsatz7=20)],
+                          kleinunternehmerin=True)
+    assert [(x["konto"], x["gegenkonto"], x["umsatz"]) for x in z] == [
+        ("1600", "4184", "150,00"), ("1460", "1600", "50,00")]
+
+
+def test_ein_leerer_tag_erzeugt_keine_zeile():
+    assert extf.erloeszeilen([_blatt()]) == []
+    assert extf.erloeszeilen([{"datum": "kaputt", "einnahmenBar": 5}]) == []
+
+
+def test_der_stapel_traegt_belege_und_kassentage():
+    text = extf.stapel([GOLDEN], "2026-07", erzeugt=ERZEUGT,
+                       kassenblaetter=[_blatt(datum="2026-07-03", einnahmenBar=100)])
+    zeilen = text.rstrip("\r\n").split("\r\n")
+    belege = len(extf.buchungszeilen(GOLDEN))
+    assert len(zeilen) == 2 + belege + 1
+    assert zeilen[-1].startswith('100,00;S;EUR;;;;1600;4400;;0307;"KB20260703";;;"Tageseinnahmen 19 %"')
+
+
+def test_ohne_kassenblaetter_bleibt_der_stapel_wie_er_war():
+    assert extf.stapel([GOLDEN], "2026-07", erzeugt=ERZEUGT) == \
+        extf.stapel([GOLDEN], "2026-07", erzeugt=ERZEUGT, kassenblaetter=[])
+
+
+def test_skr03_stapel_bekommt_keine_erloesseite(capsys):
+    """Geraten wird nicht: die SKR03-Erlöskonten liegen nicht als Quelle vor."""
+    text = extf.stapel([], "2026-07", erzeugt=ERZEUGT, rahmen="SKR03",
+                       kassenblaetter=[_blatt(einnahmenBar=100)])
+    assert len(text.rstrip("\r\n").split("\r\n")) == 2
+    assert "SKR03" in capsys.readouterr().out

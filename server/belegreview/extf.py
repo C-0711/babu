@@ -15,6 +15,8 @@ import re
 import time
 from dataclasses import dataclass, field
 
+import skr04_automatik
+
 import kontierung as kt
 
 BERATER = "0"        # per Env/Einstellung überschreibbar — vor Produktivgang setzen
@@ -93,6 +95,26 @@ def _belegfeld1(beleg_nr: str | None) -> str | None:
 # 19 % gebucht, und der Import zöge stillschweigend zu viel Vorsteuer.
 BU_SCHLUESSEL = {0: "", 5: "7", 7: "8", 16: "5", 19: "9"}
 
+# ── Automatikkonten ──────────────────────────────────────────────────────────
+#
+# Im SKR04 rechnen die mit AV/AM gekennzeichneten Konten ihre Steuer selbst
+# (skr04_automatik, aus dem Kontenrahmen gelesen). Ein Steuerschlüssel
+# obendrauf ist ein Widerspruch, den erst der Import bei der Kanzlei
+# meldet. Also: auf ein Automatikkonto kommt kein Schlüssel — und trägt die
+# Zeile einen ANDEREN Satz als das Konto, gehört sie auf das Geschwister-
+# konto mit diesem Satz (5300 Wareneingang 7 % neben 5400 mit 19 %,
+# 4300 Erlöse 7 % neben 4400). Beide Paare stehen so im SKR04.
+GESCHWISTER = {("5400", 7): "5300", ("5300", 19): "5400",
+               ("4400", 7): "4300", ("4300", 19): "4400"}
+
+# Die Erlösseite. Kasse und Geldtransit sind Finanzkonten (F) des SKR04,
+# die Erlöskonten Automatikkonten — die Steuer kommt vom Konto.
+KASSE = "1600"
+GELDTRANSIT = "1460"
+ERLOESKONTO = {19: "4400", 7: "4300"}
+ERLOES_STEUERFREI = "4100"          # Steuerfreie Umsätze § 4 Nr. 8 ff. UStG
+ERLOES_KLEINUNTERNEHMER = "4184"    # Steuerfreie Erlöse Kleinunternehmer § 19
+
 
 def _bu(satz: int | None) -> str | None:
     """None heißt: unbekannter Satz — diese Zeile gehört nicht in den Stapel."""
@@ -120,7 +142,7 @@ def buchungszeilen(review: dict) -> list[dict]:
     f = review.get("felder") or {}
     e = review.get("einschaetzung") or {}
     v = review.get("vlm") or {}
-    konto, _ = _konto_und_rahmen(review)
+    konto, rahmen = _konto_und_rahmen(review)
     if not konto or f.get("brutto") is None:
         return []
     datum = f.get("datum") or ""
@@ -146,6 +168,7 @@ def buchungszeilen(review: dict) -> list[dict]:
     else:
         satz = f.get("ust_satz")
         zeilen = [dict(basis, umsatz=_de(f["brutto"]), bu=_bu(satz), satz=satz)]
+    zeilen = [_automatik_anpassen(z, rahmen) for z in zeilen]
     # Lieber eine Zeile weniger als eine mit dem falschen Steuerschlüssel:
     # was hier fehlt, fällt beim Abstimmen auf. Ein falscher Schlüssel nicht.
     brauchbar = [z for z in zeilen if z["bu"] is not None]
@@ -154,6 +177,74 @@ def buchungszeilen(review: dict) -> list[dict]:
             print(f"[extf] Steuersatz {z['satz']} % unbekannt — Zeile "
                   f"'{z['text'][:40]}' bleibt aus dem Stapel", flush=True)
     return brauchbar
+
+
+def _automatik_anpassen(z: dict, rahmen: str) -> dict:
+    """Automatikkonto → kein Schlüssel; fremder Satz → Geschwisterkonto."""
+    if rahmen != "SKR04" or z["bu"] is None:
+        return z
+    a = skr04_automatik.automatik(z["konto"])
+    if not a:
+        return z
+    satz = 19 if z.get("satz") is None else int(z["satz"])   # wie _bu(None)
+    if (a[1] or 0) == satz:
+        return dict(z, bu="")
+    ziel = GESCHWISTER.get((z["konto"], satz))
+    if ziel:
+        return dict(z, konto=ziel, bu="")
+    print(f"[extf] Konto {z['konto']} rechnet {a[1]} % selbst, die Zeile "
+          f"'{z['text'][:40]}' trägt {satz} % — Schlüssel bleibt, der Import "
+          f"wird das melden", flush=True)
+    return z
+
+
+def erloeszeilen(kassenblaetter: list[dict], kleinunternehmerin: bool = False
+                 ) -> list[dict]:
+    """Die Erlösseite: jedes Kassenblatt wird zu Tageseinnahmen.
+
+    Bis 02.09.2026 enthielt der Stapel nur die Belege — für die Kanzlei
+    die halbe Buchhaltung. Jetzt je Kassentag: Kasse an Erlöse, getrennt
+    nach Steuersatz (19 % ist, was nicht 7 % oder steuerfrei war, plus
+    verkaufte Gutscheine — dieselbe Rechnung wie monatsabschluss.
+    erloese_monat), und der Kartenumsatz geht per Geldtransit wieder aus
+    der Kasse: die Bank bekommt ihn erst mit dem Kontoauszug.
+
+    Das Kassenblatt trennt Bar und Karte NICHT nach Steuersatz — deshalb
+    läuft alles über die Kasse statt Karte direkt an Erlöse; das wäre
+    eine Aufteilung, die niemand erfasst hat.
+
+    Für die Kleinunternehmerin (§ 19 UStG) gibt es keinen Steuerausweis:
+    alles auf 4184, sonst rechnete DATEV aus 4400 Umsatzsteuer heraus.
+    """
+    aus: list[dict] = []
+    for b in sorted(kassenblaetter, key=lambda x: x.get("datum") or ""):
+        datum = str(b.get("datum") or "")
+        if len(datum) != 10:
+            continue
+        belegdatum = datum[8:10] + datum[5:7]
+        bar = float(b.get("einnahmenBar") or 0)
+        ec = float(b.get("ecZahlungen") or 0)
+        frei = float(b.get("umsatzFrei") or 0)
+        sieben = float(b.get("umsatz7") or 0)
+        gutschein = float(b.get("gutscheinVerkauf") or 0)
+        neunzehn = max(0.0, bar + ec - frei - sieben) + gutschein
+        if kleinunternehmerin:
+            frei, neunzehn, sieben = frei + neunzehn + sieben, 0.0, 0.0
+        frei_konto = ERLOES_KLEINUNTERNEHMER if kleinunternehmerin else ERLOES_STEUERFREI
+        basis = {"belegdatum": belegdatum,
+                 "belegfeld1": _belegfeld1("KB" + datum.replace("-", "")),
+                 "bu": "", "satz": None}
+        for betrag, konto, text in (
+                (neunzehn, ERLOESKONTO[19], "Tageseinnahmen 19 %"),
+                (sieben, ERLOESKONTO[7], "Tageseinnahmen 7 %"),
+                (frei, frei_konto, "Tageseinnahmen steuerfrei")):
+            if round(betrag, 2) > 0:
+                aus.append(dict(basis, konto=KASSE, gegenkonto=konto,
+                                umsatz=_de(betrag), text=text))
+        if round(ec, 2) > 0:
+            aus.append(dict(basis, konto=GELDTRANSIT, gegenkonto=KASSE,
+                            umsatz=_de(ec), text="Kartenumsatz an Geldtransit"))
+    return aus
 
 
 # ── Der Mischungs-Melder ─────────────────────────────────────────────────────
@@ -247,12 +338,18 @@ def _zeile(b: dict) -> str:
 
 def stapel(reviews: list[dict], monat: str, erzeugt: time.struct_time | None = None,
            berater: str = BERATER, mandant: str = MANDANT,
-           festschreibung: bool = True, rahmen: str | None = None) -> str:
+           festschreibung: bool = True, rahmen: str | None = None,
+           kassenblaetter: list[dict] | None = None,
+           kleinunternehmerin: bool = False) -> str:
     """Kompletter Stapel als Text (Zeilen mit CRLF verbinden macht als_bytes).
 
     Mit `rahmen` läuft der Mischungs-Melder mit: ein Konto aus dem anderen
     Kontenrahmen bricht den Export ab, statt ihn zu erzeugen. Ohne `rahmen`
     bleibt alles wie vorher — der Melder ist eine Zutat, kein Umbau.
+
+    `kassenblaetter` bringt die Erlösseite mit (erloeszeilen) — nur für
+    SKR04: die SKR03-Konten der Erlösseite liegen babu nicht als Quelle
+    vor, und geraten wird nicht.
     """
     if rahmen:
         befund = rahmen_pruefen(reviews, rahmen)
@@ -277,6 +374,14 @@ def stapel(reviews: list[dict], monat: str, erzeugt: time.struct_time | None = N
     zeilen = [";".join(kopf), ";".join(SPALTEN)]
     for review in reviews:
         zeilen += [_zeile(b) for b in buchungszeilen(review)]
+    if kassenblaetter:
+        if rahmen == "SKR03":
+            print(f"[extf] {len(kassenblaetter)} Kassenblätter bleiben aus dem "
+                  f"SKR03-Stapel — Erlöskonten nur für SKR04 hinterlegt",
+                  flush=True)
+        else:
+            zeilen += [_zeile(b) for b in erloeszeilen(kassenblaetter,
+                                                       kleinunternehmerin)]
     return "\r\n".join(zeilen) + "\r\n"
 
 

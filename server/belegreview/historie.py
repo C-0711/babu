@@ -25,6 +25,22 @@ import csv
 import io
 import re
 
+import skr04_automatik
+
+# Steuerschlüssel → Satz. Die Vorsteuer-Schlüssel sind die Umkehrung dessen,
+# was babu selbst schreibt (extf.BU_SCHLUESSEL) — so liest babu seinen
+# eigenen Stapel garantiert richtig zurück. 9 = Vorsteuer voller Satz = 401
+# steht so in der DATEV-Steuerschlüssel-Tabelle 2026 (Dok.-Nr. 0907048).
+# 2 und 3 (Umsatzsteuer 7 % / 19 %) sind DATEV-Standardschlüssel; im
+# Kompendium steht dazu keine Zeile — der Import-Test bei der Kanzlei ist
+# ihr Beweis. Alles andere gilt als „ungeklärt": der Betrag bleibt brutto
+# stehen und wird gezählt, statt einen Satz zu raten.
+SCHLUESSEL_SATZ: dict[str, int | float] = {
+    "9": 19, "8": 7, "7": 5, "5": 16,          # Vorsteuer, wie extf sie schreibt
+    "401": 19,                                  # neue Nummer für 9 (Dok. 0907048)
+    "3": 19, "2": 7,                            # Umsatzsteuer (Standard)
+}
+
 # Die Spalten, auf die es ankommt — ihre Position im EXTF-v13-Stapel
 # (siehe extf.SPALTEN, gleiche Reihenfolge).
 UMSATZ, SH, KONTO, GEGENKONTO, BU, BELEGDATUM, BELEGFELD1, TEXT = (
@@ -86,6 +102,32 @@ def kopf_lesen(zeile: str) -> dict:
     }
 
 
+def steuersatz(bu: str, konto: str, gegenkonto: str, rahmen: str
+               ) -> tuple[float | int | None, str]:
+    """Welcher Satz in einer Stapelzeile steckt — und woher das Wissen kommt.
+
+    Reihenfolge wie beim Import in DATEV: ein Schlüssel gewinnt; ohne
+    Schlüssel rechnet ein Automatikkonto seine Steuer selbst (SKR04, aus
+    dem Kontenrahmen gelesen); ohne beides ist die Buchung steuerfrei.
+    Ein Schlüssel, den babu nicht kennt, ist „ungeklärt" — Satz None.
+    """
+    bu = (bu or "").strip().strip('"')
+    if bu:
+        satz = SCHLUESSEL_SATZ.get(bu.lstrip("0") or "0")
+        return (satz, "schluessel") if satz is not None else (None, "ungeklaert")
+    if rahmen == "SKR04":
+        for k in (konto, gegenkonto):
+            if skr04_automatik.automatik(k):
+                return (skr04_automatik.satz_vom_konto(k) or 0, "konto")
+    return (0, "ohne")
+
+
+def _netto(brutto: float, satz: float | int | None) -> float:
+    if not satz:
+        return brutto
+    return round(brutto / (1 + satz / 100), 2)
+
+
 def _seite(konto: int, rahmen: str) -> str:
     if rahmen == "SKR03":
         if konto in ERLOES_SKR03:
@@ -104,9 +146,11 @@ def stapel_lesen(daten: bytes, rahmen: str = "SKR04") -> dict:
     """Einen DATEV-Buchungsstapel auswerten — je Monat und je Konto.
 
     Die Beträge sind BRUTTO, wie DATEV sie führt; der Steuersatz steckt im
-    BU-Schlüssel. Netto wird hier NICHT gerechnet: dafür müsste man den
-    Schlüssel je Buchung auflösen, und ein falsch geratener Satz wäre
-    schlimmer als ein ehrlicher Bruttowert.
+    Schlüssel oder — bei Automatikkonten — im Konto (`steuersatz`). Daraus
+    entstehen je Monat zusätzlich `erloese_netto`, `kosten_netto`,
+    `umsatzsteuer` und `vorsteuer`. Was sich nicht auflösen lässt, bleibt
+    brutto stehen und wird in `ungeklaert` gezählt — ein geratener Satz
+    wäre schlimmer als ein ehrlicher Bruttowert mit Zähler daneben.
     """
     # Echte DATEV-Exporte kommen oft als UTF-8 mit Byte-Order-Mark; babus
     # eigener Writer schreibt cp1252. Der BOM entscheidet.
@@ -143,47 +187,56 @@ def stapel_lesen(daten: bytes, rahmen: str = "SKR04") -> dict:
         if (f[SH] or "").strip().strip('"').upper() == "H":
             betrag = -betrag
         m = monate.setdefault(monat, {"monat": monat, "erloese": 0.0,
-                                      "kosten": 0.0, "buchungen": 0,
-                                      "konten": {}})
+                                      "kosten": 0.0, "erloese_netto": 0.0,
+                                      "kosten_netto": 0.0, "umsatzsteuer": 0.0,
+                                      "vorsteuer": 0.0, "ungeklaert": 0,
+                                      "buchungen": 0, "konten": {}})
+        gegen_roh = (f[GEGENKONTO] or "").strip().strip('"')
+        satz, quelle = steuersatz(f[BU], konto_roh, gegen_roh, rahmen)
+        if quelle == "ungeklaert":
+            m["ungeklaert"] += 1
+        netto = _netto(betrag, satz)
         # Beide Seiten der Buchung ansehen: manche Systeme buchen
         # „Erlös an Kasse", andere „Kasse an Erlös" — das Erlöskonto darf
-        # auch im Gegenkonto stehen. Das Gegenkonto steht auf der jeweils
-        # anderen Seite, sein Beitrag traegt das umgekehrte Vorzeichen.
-        gegen_roh = (f[GEGENKONTO] or "").strip().strip('"')
-        seite = _seite(konto, rahmen)
-        if seite == "erloes":
-            # Erlöse stehen im Haben — das Minus von oben dreht zurück.
-            m["erloese"] += -betrag
-        elif seite == "aufwand":
-            m["kosten"] += betrag
+        # auch im Gegenkonto stehen (so schreibt auch babu seine eigene
+        # Erlösseite, extf.erloeszeilen). Das Gegenkonto steht auf der
+        # jeweils anderen Seite, sein Beitrag trägt das umgekehrte
+        # Vorzeichen — brutto wie netto.
+        seiten = [(konto_roh, _seite(konto, rahmen), betrag, netto)]
         if gegen_roh.isdigit():
-            seite_g = _seite(int(gegen_roh), rahmen)
-            if seite_g == "erloes":
-                m["erloese"] += betrag
-            elif seite_g == "aufwand":
-                m["kosten"] += -betrag
-        else:
-            seite_g = "neutral"
+            seiten.append((gegen_roh, _seite(int(gegen_roh), rahmen),
+                           -betrag, -netto))
+        for kto, s_, b_, n_ in seiten:
+            if s_ == "erloes":
+                # Erlöse stehen im Haben — das Minus von oben dreht zurück.
+                m["erloese"] += -b_
+                m["erloese_netto"] += -n_
+                m["umsatzsteuer"] += -(b_ - n_)
+            elif s_ == "aufwand":
+                m["kosten"] += b_
+                m["kosten_netto"] += n_
+                m["vorsteuer"] += b_ - n_
+            elif kto != konto_roh:
+                continue            # neutrales Gegenkonto: keine eigene Zeile
+            k = m["konten"].setdefault(kto, {"konto": kto, "betrag": 0.0,
+                                             "netto": 0.0, "anzahl": 0,
+                                             "seite": s_})
+            dreh = 1 if s_ != "erloes" else -1
+            k["betrag"] += dreh * b_
+            k["netto"] += dreh * n_
+            k["anzahl"] += 1
         m["buchungen"] += 1
         gebucht += 1
-        k = m["konten"].setdefault(konto_roh, {"konto": konto_roh,
-                                               "betrag": 0.0, "anzahl": 0,
-                                               "seite": seite})
-        k["betrag"] += betrag if seite != "erloes" else -betrag
-        k["anzahl"] += 1
-        if seite_g in ("erloes", "aufwand"):
-            g = m["konten"].setdefault(gegen_roh, {"konto": gegen_roh,
-                                                   "betrag": 0.0, "anzahl": 0,
-                                                   "seite": seite_g})
-            g["betrag"] += betrag if seite_g == "erloes" else -betrag
-            g["anzahl"] += 1
 
     for m in monate.values():
-        m["erloese"] = round(m["erloese"], 2)
-        m["kosten"] = round(m["kosten"], 2)
+        for feld in ("erloese", "kosten", "erloese_netto", "kosten_netto",
+                     "umsatzsteuer", "vorsteuer"):
+            m[feld] = round(m[feld], 2)
         m["ergebnis"] = round(m["erloese"] - m["kosten"], 2)
+        m["ergebnis_netto"] = round(m["erloese_netto"] - m["kosten_netto"], 2)
         for k in m["konten"].values():
             k["betrag"] = round(k["betrag"], 2)
+            k["netto"] = round(k["netto"], 2)
         m["konten"] = sorted(m["konten"].values(),
                              key=lambda x: -abs(x["betrag"]))[:40]
     if not monate:
@@ -220,16 +273,22 @@ def jahresuebersicht(historie: dict) -> list[dict]:
     jahre: dict[str, dict] = {}
     for monat, m in (historie.get("monate") or {}).items():
         j = jahre.setdefault(monat[:4], {"jahr": monat[:4], "erloese": 0.0,
-                                         "kosten": 0.0, "monate": 0,
-                                         "buchungen": 0})
+                                         "kosten": 0.0, "erloese_netto": 0.0,
+                                         "kosten_netto": 0.0, "ungeklaert": 0,
+                                         "monate": 0, "buchungen": 0})
         j["erloese"] += m["erloese"]
         j["kosten"] += m["kosten"]
+        # Ältere Stände (vor der Satz-Auflösung) kennen nur brutto.
+        j["erloese_netto"] += m.get("erloese_netto", m["erloese"])
+        j["kosten_netto"] += m.get("kosten_netto", m["kosten"])
+        j["ungeklaert"] += m.get("ungeklaert", 0)
         j["monate"] += 1
         j["buchungen"] += m.get("buchungen", 0)
     for j in jahre.values():
-        j["erloese"] = round(j["erloese"], 2)
-        j["kosten"] = round(j["kosten"], 2)
+        for feld in ("erloese", "kosten", "erloese_netto", "kosten_netto"):
+            j[feld] = round(j[feld], 2)
         j["ergebnis"] = round(j["erloese"] - j["kosten"], 2)
+        j["ergebnis_netto"] = round(j["erloese_netto"] - j["kosten_netto"], 2)
         j["vollstaendig"] = j["monate"] == 12
     return sorted(jahre.values(), key=lambda x: x["jahr"], reverse=True)
 

@@ -3319,7 +3319,14 @@ async def api_registrierung_einrichten(request: Request) -> Response:
 def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response:
     """DATEV-Buchungsstapel (EXTF v13, CP1252/CRLF). festschreiben=1 legt den
     Stapel zusätzlich in der Belegbox ab — die Belege gelten dann als
-    exportiert (Beleg-Weg: „Bei der Kanzlei")."""
+    exportiert (Beleg-Weg: „Bei der Kanzlei").
+
+    Seit 02.09.2026 steht auch die Erlösseite im Stapel: jedes Kassenblatt
+    des Monats wird zu Tageseinnahmen (Kasse an Erlöse je Steuersatz) und
+    der Kartenumsatz geht per Geldtransit wieder aus der Kasse. Vorher
+    enthielt der Stapel nur Ausgaben — für die Kanzlei die halbe
+    Buchhaltung. Das Festschreibungs-Kennzeichen im Kopf trägt der Stapel
+    nur, wenn der Monat wirklich freigegeben ist (`_monat_festgeschrieben`)."""
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
@@ -3332,6 +3339,10 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
     staemme = [s_ for s_, z in idx["belege"].items()
                if z["monat"] == monat and z["status"] in ("geprüft", "exportiert")]
     reviews = [idx["reviews"][s_] for s_ in sorted(staemme) if s_ in idx["reviews"]]
+    blaetter = [b for tag, b in idx["kassenblaetter"].items()
+                if tag.startswith(monat)]
+    import monatsabschluss as ma  # noqa: PLC0415
+    profil = ma.umsatz_profil(db_einstellungen(salon_von(un)))
     # Der Mischungs-Melder (BABU-57). Hier verlassen die Konten das Haus —
     # was hier durchrutscht, fällt erst beim Steuerberater auf, nach dem
     # Import. Ein Stapel mit zwei Kontenrahmen wird deshalb gar nicht erst
@@ -3340,7 +3351,10 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
         text = extf.stapel(reviews, monat,
                            berater=os.environ.get("BABU_BERATER", extf.BERATER),
                            mandant=os.environ.get("BABU_MANDANT", extf.MANDANT),
-                           rahmen=kontenrahmen_von(un))
+                           festschreibung=_monat_festgeschrieben(monat),
+                           rahmen=kontenrahmen_von(un),
+                           kassenblaetter=blaetter,
+                           kleinunternehmerin=not profil.get("braucht_ustva"))
     except extf.RahmenVermischung as fehler_:
         return JSONResponse({"fehler": str(fehler_)}, status_code=409)
     daten = extf.als_bytes(text)
@@ -3352,6 +3366,8 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
                 {f"export/{monat}/EXTF_{stempel}.csv": daten,
                  f"export/{monat}/stapel.json": json.dumps(
                      {"monat": monat, "staemme": sorted(staemme), "zeit": stempel,
+                      "kassentage": sorted(b["datum"] for b in blaetter
+                                           if b.get("datum")),
                       "von": un}, ensure_ascii=False, indent=1).encode()},
                 None, f"export: {monat}", un)
         except boxschreiber.SchreibFehler:
@@ -8808,7 +8824,11 @@ def api_monatsabschluss(monat: str, request: Request) -> Response:
     import historie as hi  # noqa: PLC0415
     vormonat = hi.vorjahresmonat(historie_lesen(), monat)
     if vormonat:
-        vorjahr = dict(vorjahr or {}, monat_umsatz=vormonat["erloese"])
+        # Netto, seit die Historie Steuerschlüssel auflöst — der Salon-Check
+        # liefert die Vorjahreszahl aus der EÜR ebenfalls netto. Ältere
+        # Stände kennen nur brutto; dann bleibt es dabei.
+        vorjahr = dict(vorjahr or {}, monat_umsatz=vormonat.get(
+            "erloese_netto", vormonat["erloese"]))
 
     return JSONResponse({
         "monat": monat,

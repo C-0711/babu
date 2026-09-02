@@ -298,12 +298,14 @@ def test_die_belegarten_aus_ninas_beschwerde_haben_alle_eine_kategorie():
         assert f"  {code}:" in gb.katalog_text("SKR04")
 
 
-def test_der_export_enthaelt_nur_belege_keine_kassenblaetter():
-    """Ninas Frage 5-2 — die Antwort steht im Code: der Buchungsstapel
-    baut ausschließlich auf den Belegen des Monats auf."""
+def test_der_export_enthaelt_belege_und_kassenblaetter():
+    """Ninas Frage 5-2 — bis 02.09.2026 baute der Buchungsstapel nur auf
+    den Belegen auf; seitdem gehen die Kassenblätter des Monats als
+    Erlösbuchungen mit (extf.erloeszeilen)."""
     import inspect
 
     import babu_web as bw
     quelle = inspect.getsource(bw.api_export)
     assert 'idx["belege"]' in quelle
-    assert "kassenblaetter" not in quelle
+    assert 'idx["kassenblaetter"]' in quelle
+    assert "kassenblaetter=blaetter" in quelle

@@ -273,3 +273,114 @@ def test_die_uebersicht_sagt_dass_es_kein_beleg_ist(historiewelt):
     d = c.get("/api/historie").json()
     assert "keine Belege" in d["hinweis"]
     assert "kein Siegel" in d["hinweis"]
+
+
+# ————— Steuerschlüssel auflösen (seit 02.09.2026) —————
+
+def test_der_schluessel_macht_aus_brutto_netto():
+    d = hi.stapel_lesen(stapel(zeile("238,00", "S", "6310", "1800", "0103",
+                                     "Miete", bu="9")))
+    m = d["monate"]["2025-03"]
+    assert (m["kosten"], m["kosten_netto"], m["vorsteuer"]) == (238.0, 200.0, 38.0)
+    assert m["ungeklaert"] == 0
+    assert m["konten"][0]["netto"] == 200.0
+
+
+def test_ein_automatikkonto_rechnet_ohne_schluessel():
+    """4400 ist AM 19 % im SKR04 — DATEV rechnet die Steuer aus dem Konto,
+    also tut babu es beim Lesen genauso."""
+    d = hi.stapel_lesen(stapel(zeile("1190,00", "H", "4400", "1600", "1503")))
+    m = d["monate"]["2025-03"]
+    assert (m["erloese"], m["erloese_netto"], m["umsatzsteuer"]) == (1190.0, 1000.0, 190.0)
+
+
+def test_die_automatik_gilt_auch_vom_gegenkonto_aus():
+    """Kasse an Erlöse: das Automatikkonto steht im Gegenkonto."""
+    d = hi.stapel_lesen(stapel(zeile("107,00", "S", "1600", "4300", "1503")))
+    m = d["monate"]["2025-03"]
+    # Kasse im Soll, Erlöse im Haben: der Erlös steht im Gegenkonto und
+    # zählt trotzdem — mit dem Satz des Automatikkontos.
+    assert (m["erloese"], m["erloese_netto"], m["umsatzsteuer"]) == (107.0, 100.0, 7.0)
+    assert any(k["konto"] == "4300" and k["netto"] == 100.0 for k in m["konten"])
+
+
+def test_ohne_schluessel_und_ohne_automatik_ist_es_steuerfrei():
+    d = hi.stapel_lesen(stapel(zeile("500,00", "S", "6310", "1800", "0103", "Miete")))
+    m = d["monate"]["2025-03"]
+    assert m["kosten_netto"] == 500.0 and m["vorsteuer"] == 0.0
+    assert m["ungeklaert"] == 0
+
+
+def test_ein_unbekannter_schluessel_bleibt_brutto_und_wird_gezaehlt():
+    """Geraten wird nicht: Betrag bleibt stehen, der Zähler sagt es."""
+    d = hi.stapel_lesen(stapel(zeile("238,00", "S", "6310", "1800", "0103",
+                                     bu="77")))
+    m = d["monate"]["2025-03"]
+    assert m["kosten_netto"] == 238.0 and m["ungeklaert"] == 1
+
+
+def test_die_neue_nummer_401_ist_die_alte_9():
+    """DATEV Dok.-Nr. 0907048: 9 = Vorsteuer (voller Satz) = 401."""
+    assert hi.steuersatz("401", "6310", "1800", "SKR04") == (19, "schluessel")
+    assert hi.steuersatz("9", "6310", "1800", "SKR04") == (19, "schluessel")
+
+
+def test_jeder_schluessel_den_babu_schreibt_wird_gelesen():
+    import extf
+    for satz, bu in extf.BU_SCHLUESSEL.items():
+        if bu:
+            assert hi.SCHLUESSEL_SATZ[bu] == satz, (satz, bu)
+
+
+def test_babu_liest_seine_erloesseite_netto_zurueck():
+    """Roundtrip in babu: Stapel mit Kassenblatt raus, netto wieder rein."""
+    import extf
+    review = {
+        "datei": "docs/2026-02/x.jpg",
+        "felder": {"lieferant": "Wella", "datum": "14.02.2026",
+                   "netto": 100.0, "ust": 19.0, "brutto": 119.0,
+                   "ust_satz": 19, "beleg_nr": "R-1"},
+        "einschaetzung": {"konto_skr04": "5400", "steuerschluessel": "9"},
+    }
+    blatt = {"datum": "2026-02-14", "einnahmenBar": 100.0, "ecZahlungen": 50.0,
+             "umsatz7": 20.0}
+    text = extf.stapel([review], "2026-02", kassenblaetter=[blatt])
+    m = hi.stapel_lesen(extf.als_bytes(text))["monate"]["2026-02"]
+    assert m["erloese"] == 150.0
+    # Gerundet je Buchung, wie DATEV — nicht die Summe am Ende.
+    assert m["erloese_netto"] == round(round(130 / 1.19, 2) + round(20 / 1.07, 2), 2)
+    assert (m["kosten"], m["kosten_netto"]) == (119.0, 100.0)
+    assert m["ungeklaert"] == 0
+
+
+def test_die_jahresuebersicht_kennt_netto_und_alte_staende():
+    alt = {"monate": {"2025-01": {"erloese": 119.0, "kosten": 0.0, "buchungen": 1},
+                      "2025-02": {"erloese": 119.0, "erloese_netto": 100.0,
+                                  "kosten": 0.0, "kosten_netto": 0.0,
+                                  "ungeklaert": 2, "buchungen": 1}}}
+    j = hi.jahresuebersicht(alt)[0]
+    assert j["erloese"] == 238.0
+    assert j["erloese_netto"] == 219.0          # alter Monat bleibt brutto
+    assert j["ungeklaert"] == 2
+
+
+def test_der_export_traegt_die_kassentage_des_monats(historiewelt, monkeypatch):
+    """Über den Server: ein Kassenblatt im Monat wird zur Erlösbuchung, und
+    das Festschreibungs-Kennzeichen steht nur bei freigegebenem Monat."""
+    bw, _, c = historiewelt
+    idx = {"belege": {}, "reviews": {}, "rechnungen": {},
+           "kassenblaetter": {"2026-03-05": {"datum": "2026-03-05",
+                                              "einnahmenBar": 200.0,
+                                              "ecZahlungen": 100.0}}}
+    monkeypatch.setattr(bw, "index_aktuell", lambda: idx)
+    monkeypatch.setattr(bw, "darf_verwalten", lambda un: True)
+    monkeypatch.setattr(bw, "_monat_festgeschrieben", lambda monat: False)
+    r = c.get("/api/export/2026-03.csv")
+    assert r.status_code == 200, r.text
+    zeilen = r.content.decode("cp1252").rstrip("\r\n").split("\r\n")
+    assert zeilen[0].split(";")[20] == "0"                 # nicht festgeschrieben
+    assert zeilen[2].startswith('300,00;S;EUR;;;;1600;4400;;0503;"KB20260305"')
+    assert zeilen[3].startswith("100,00;S;EUR;;;;1460;1600;;0503")
+    monkeypatch.setattr(bw, "_monat_festgeschrieben", lambda monat: True)
+    r = c.get("/api/export/2026-03.csv")
+    assert r.content.decode("cp1252").split(";")[20] == "1"
