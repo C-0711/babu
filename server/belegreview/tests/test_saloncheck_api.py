@@ -410,3 +410,86 @@ def test_vertrag_betrag_wird_selbst_geparst(welt, monkeypatch):
                                          "betrag_text": "980.000,00 EUR",
                                          "einfach": "…"})
     assert v2["betrag_monat"] is None and v2["partner"] == "X"
+
+
+# ————— Runde 3d: graue Karten von Hand nachtragen —————
+#
+# `/api/salon-check` baut die Karten bei JEDEM Aufruf frisch aus
+# `kennzahlen.json` (`saloncheck.karten_bauen`) — es gibt keinen
+# gespeicherten Kartenstand. Nachgetragen wird deshalb nicht „die Karte",
+# sondern die Zahl dahinter in den Kennzahlen; die Korrektur-Route schreibt
+# `abschluss/{jahr}/kennzahlen.json` neu und liefert frische Karten zurück.
+
+def _kennzahlen_ablegen(bw, jahr, zahlen, unsicher=None, stammdaten=None):
+    import boxschreiber
+    kennzahlen = {"jahr": jahr, "quellen": [], "zahlen": zahlen,
+                  "unsicher": unsicher or [], "stammdaten": stammdaten or {},
+                  "afa_liste": [], "pruefungen": {}}
+    boxschreiber.schreiben(f"abschluss/{jahr}/kennzahlen.json",
+                          json.dumps(kennzahlen, ensure_ascii=False).encode(),
+                          f"abschluss: kennzahlen {jahr}", "christoph0711.io")
+    return kennzahlen
+
+
+def test_graue_karte_laesst_sich_korrigieren(welt):
+    client, _, bw = welt
+    _kennzahlen_ablegen(bw, 2024, {
+        "umsatz": 60000.0, "wareneinsatz": None, "personal": 0.0,
+        "raumkosten": 7000.0, "gewinn": 20000.0, "ust_zahllast": None,
+    })
+    vorher = {k["id"]: k for k in client.get(
+        "/api/salon-check", params={"jahr": 2024}).json()["karten"]}
+    assert vorher["material"]["ampel"] == "grau"
+    assert vorher["ust"]["ampel"] == "grau"
+    # Ohne die fehlende Zahl bleibt „Dein Gewinn" selbst grün — hier geht es
+    # nur um die Karten, die wirklich am fehlenden Feld hängen.
+    assert vorher["gewinn"]["ampel"] != "grau"
+
+    r = client.post("/api/abschluss/karte-korrektur",
+                    json={"jahr": 2024, "karte_id": "material", "wert": 6000})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    karten = {k["id"]: k for k in d["karten"]}
+    assert karten["material"]["ampel"] != "grau"
+    assert karten["ust"]["ampel"] == "grau"          # unangetastet
+
+    # Und der Stand bleibt auch beim nächsten unabhängigen Abruf so —
+    # die Korrektur landet wirklich in den Kennzahlen, nicht nur in der
+    # Antwort dieses einen Requests.
+    nochmal = {k["id"]: k for k in client.get(
+        "/api/salon-check", params={"jahr": 2024}).json()["karten"]}
+    assert nochmal["material"]["ampel"] != "grau"
+
+    r = client.post("/api/abschluss/karte-korrektur",
+                    json={"jahr": 2024, "karte_id": "ust", "wert": 952.4})
+    assert r.status_code == 200
+    karten = {k["id"]: k for k in r.json()["karten"]}
+    assert karten["ust"]["ampel"] == "gruen"
+    assert karten["ust"]["wert"] == "952 €"
+
+
+def test_ruecklage_hat_kein_eigenes_korrekturfeld(welt):
+    """Die Ampel von „ruecklage" folgt komplett der von „gewinn" — dafür
+    gibt es keine eigene Zahl zum Nachtragen, die Route lehnt das ab."""
+    client, _, bw = welt
+    _kennzahlen_ablegen(bw, 2024, {"umsatz": 60000.0, "gewinn": None},
+                       unsicher=["gewinn"])
+    r = client.post("/api/abschluss/karte-korrektur",
+                    json={"jahr": 2024, "karte_id": "ruecklage", "wert": 500})
+    assert r.status_code == 400
+    assert "nicht nachtragen" in r.json()["fehler"]
+
+
+def test_korrektur_ohne_kennzahlen_kommt_mit_404(welt):
+    client, _, _ = welt
+    r = client.post("/api/abschluss/karte-korrektur",
+                    json={"jahr": 2099, "karte_id": "gewinn", "wert": 1})
+    assert r.status_code == 404
+
+
+def test_korrektur_ohne_zahl_wird_abgelehnt(welt):
+    client, _, bw = welt
+    _kennzahlen_ablegen(bw, 2024, {"umsatz": 1000.0, "gewinn": None})
+    r = client.post("/api/abschluss/karte-korrektur",
+                    json={"jahr": 2024, "karte_id": "gewinn", "wert": "viel"})
+    assert r.status_code == 400

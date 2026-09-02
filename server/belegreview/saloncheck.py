@@ -58,6 +58,25 @@ def _grau(karte_id: str, titel: str, detail: str) -> dict:
     }
 
 
+# Welche einzelne Zahl aus `kennzahlen["zahlen"]` eine graue Karte gelb/grün
+# macht — für die Nachtrag-Route im Portal (`/api/abschluss/karte-korrektur`).
+# Nachgesehen, karte für karte: `gewinn`/`material`/`personal`/`raum`/`ust`
+# hängen je an GENAU einem Feld, das reicht für ein einzelnes Eingabefeld.
+#
+# `ruecklage` fehlt hier ABSICHTLICH: die Karte hat kein eigenes Feld — ihre
+# Ampel folgt 1:1 der von `gewinn` (siehe `_ruecklage_karte`: derselbe
+# `"gewinn" in unsicher or gewinn is None`-Test, keine eigene Bedingung).
+# Eine Korrektur „ruecklage" gäbe es nichts Eigenes zum Eintragen; wer sie
+# grün haben will, trägt den Gewinn nach — das erledigt beide Karten.
+KORREKTUR_FELD = {
+    "gewinn": "gewinn",
+    "material": "wareneinsatz",
+    "personal": "personal",
+    "raum": "raumkosten",
+    "ust": "ust_zahllast",
+}
+
+
 def _anteil_karte(karte_id: str, titel: str, wovon: str, betrag: float | None,
                   umsatz: float | None, unsicher: set[str]) -> dict:
     spanne = UEBLICH_FRISEUR[karte_id]

@@ -5676,6 +5676,76 @@ def api_salon_check(request: Request, jahr: int = 0) -> Response:
                          "quellen": kennzahlen.get("quellen") or []})
 
 
+@app.post("/api/abschluss/karte-korrektur")
+async def api_abschluss_karte_korrektur(request: Request) -> Response:
+    """Eine graue Salon-Check-Karte von Hand nachtragen.
+
+    Die Karten kommen frisch aus `kennzahlen.json` (`saloncheck.karten_bauen`
+    läuft bei jedem `/api/salon-check`-Aufruf neu) — nachgetragen wird also
+    nicht die Karte selbst, sondern die Zahl dahinter in den Kennzahlen.
+    Nur Karten mit GENAU einem eigenen Feld lassen sich so korrigieren
+    (`saloncheck.KORREKTUR_FELD`); „ruecklage" zum Beispiel nicht, die
+    Ampel folgt dort komplett der von „gewinn".
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) == "mitarbeit":
+        return JSONResponse({"fehler": "Die Zahlen trägt nur die Inhaberin nach."},
+                            status_code=403)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    try:
+        jahr_roh = int((body or {}).get("jahr") or 0)
+    except (TypeError, ValueError):
+        jahr_roh = 0
+    jahr = _abschluss_jahr(jahr_roh)
+    if jahr is None:
+        return JSONResponse({"fehler": "ungültiges Jahr"}, status_code=400)
+
+    import saloncheck  # noqa: PLC0415
+    karte_id = str((body or {}).get("karte_id") or "")
+    feld = saloncheck.KORREKTUR_FELD.get(karte_id)
+    if feld is None:
+        return JSONResponse(
+            {"fehler": "Diese Karte lässt sich hier nicht nachtragen."},
+            status_code=400)
+    try:
+        wert = round(float((body or {}).get("wert")), 2)
+    except (TypeError, ValueError):
+        return JSONResponse({"fehler": "Bitte eine Zahl eintragen."}, status_code=400)
+
+    roh = git_show(f"abschluss/{jahr}/kennzahlen.json")
+    if roh is None:
+        return JSONResponse(
+            {"fehler": "Für dieses Jahr gibt es noch keine Kennzahlen."},
+            status_code=404)
+    try:
+        kennzahlen = json.loads(roh)
+    except ValueError:
+        return JSONResponse({"fehler": "Kennzahlen unlesbar"}, status_code=500)
+
+    zahlen = dict(kennzahlen.get("zahlen") or {})
+    zahlen[feld] = wert
+    kennzahlen["zahlen"] = zahlen
+    kennzahlen["unsicher"] = [f for f in (kennzahlen.get("unsicher") or [])
+                             if f != feld]
+
+    import boxschreiber  # noqa: PLC0415
+    try:
+        commit = await run_in_threadpool(
+            boxschreiber.schreiben, f"abschluss/{jahr}/kennzahlen.json",
+            json.dumps(kennzahlen, ensure_ascii=False, indent=1).encode(),
+            f"abschluss: {karte_id} nachgetragen ({jahr})", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    return JSONResponse({"ok": True, "commit": commit, "jahr": jahr,
+                         "karten": saloncheck.karten_bauen(kennzahlen)})
+
+
 # ---------------------------------------------------------------------------
 # Wissen: hochgeladene DATEV-Dokumente (Kontenrahmen, Steuerschlüssel, AfA,
 # Lohn, …) als eigenes, schreibbares Nachschlagewerk neben dem read-only

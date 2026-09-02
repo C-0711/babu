@@ -282,3 +282,43 @@ def test_was_beim_einrichten_erfragt_wird_reicht_fuer_eine_rechnung(welt):
     rechnung = re_.aufbauen(nummer="2026-0001", datum="2026-08-22",
                             empfaenger=EMPF, positionen=[pos()], stammdaten=e)
     assert re_.fehlende_pflichtangaben(rechnung) == []
+
+
+# ————— Runde 3b: das Rechnung-Formular im Portal —————
+#
+# Das Portal-Formular schickt Bruttopreise (die Zahl, die die Kundin zahlt)
+# und keinen `preise_brutto`-Schlüssel — Vorgabe ist brutto, das muss also
+# ohne Extra-Flag stimmen. Alles läuft über die schon angemeldete
+# Cookie-Session der Fixtur, kein PAT-Header im Spiel — genau der Weg, den
+# ein Browser im Portal geht.
+
+def test_portal_stellt_eine_rechnung_mit_bruttopreisen(welt):
+    client, bare, _ = welt
+    r = client.post("/api/rechnungen", json={
+        "datum": "2026-08-24",
+        "empfaenger": {"name": "Jana Allgaier", "anschrift": "Blumenweg 2, Stuttgart"},
+        "positionen": [{"text": "Damenschnitt", "menge": 1,
+                        "einzelpreis": 53.55, "ust_satz": 19}],
+        "hinweis": "Zahlbar innerhalb 14 Tagen",
+    })
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["nummer"] == "2026-0001"
+    assert d["rechnung"]["brutto"] == 53.55          # Vorgabe brutto, ohne Extra-Flag
+    assert "rechnungen/2026-08/2026-0001.json" in _im_stand(bare)
+
+    # Bezahlt-Knopf — derselbe, den das Portal jetzt auch zeigt.
+    nummer = d["nummer"]
+    r = client.post(f"/api/rechnung/{nummer}/bezahlt", json={})
+    assert r.status_code == 200
+    assert client.get("/api/rechnungen").json()["rechnungen"][0]["stand"] == "bezahlt"
+
+
+def test_portal_ohne_kundenname_bekommt_eine_fehlermeldung(welt):
+    """Leeres Pflichtfeld — die Route lehnt ab, das Formular zeigt den Text."""
+    client, _, _ = welt
+    r = client.post("/api/rechnungen", json={
+        "datum": "2026-08-24", "empfaenger": {"name": "", "anschrift": ""},
+        "positionen": [{"text": "Föhnen", "einzelpreis": 20.0}]})
+    assert r.status_code == 400
+    assert r.json()["fehler"]

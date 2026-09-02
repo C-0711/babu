@@ -1225,6 +1225,21 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <p style="color:var(--gc-desc);margin-bottom:14px">Stuhlmiete, Hochzeit,
       Firmenkunde — was du anderen berechnest.</p>
     <div id="r-vom-konto"></div>
+    <div class="karte" id="r-form" style="margin-bottom:14px">
+      <h3 style="font:600 15px var(--gc-serif);margin-bottom:10px">Neue Rechnung</h3>
+      <label for="r-kunde-name" style="display:block;font-size:12px;color:var(--gc-muted);margin-bottom:3px">Kundin / Firma</label>
+      <input class="suchfeld" id="r-kunde-name" placeholder="Name" style="margin-bottom:8px" autocomplete="off">
+      <label for="r-kunde-anschrift" style="display:block;font-size:12px;color:var(--gc-muted);margin-bottom:3px">Anschrift</label>
+      <input class="suchfeld" id="r-kunde-anschrift" placeholder="Straße, PLZ Ort — Pflicht ab 250 €" style="margin-bottom:8px" autocomplete="off">
+      <label for="r-datum" style="display:block;font-size:12px;color:var(--gc-muted);margin-bottom:3px">Datum</label>
+      <input type="date" class="suchfeld" id="r-datum" style="width:auto;margin-bottom:12px">
+      <div id="r-positionen"></div>
+      <button class="chip" id="r-position-plus" type="button" style="margin:2px 0 14px">+ weitere Position</button>
+      <label for="r-hinweis" style="display:block;font-size:12px;color:var(--gc-muted);margin-bottom:3px">Hinweis (optional)</label>
+      <input class="suchfeld" id="r-hinweis" placeholder="z. B. Zahlbar innerhalb 14 Tagen" style="margin-bottom:12px" autocomplete="off">
+      <button class="chip" id="r-stellen">Rechnung stellen</button>
+      <span id="r-form-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>
+    </div>
     <div id="r-liste"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
 
@@ -1266,9 +1281,9 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div class="gruss" style="font-size:22px">Termine</div>
       <div class="mon-schalter">
-        <button id="t-zurueck" aria-label="Tag zurück">‹</button>
+        <button id="t-zurueck" aria-label="Woche zurück">‹</button>
         <b id="t-tag"></b>
-        <button id="t-vor" aria-label="Tag vor">›</button>
+        <button id="t-vor" aria-label="Woche vor">›</button>
       </div>
     </div>
     <p id="t-satz" style="color:var(--gc-desc);margin-bottom:14px"></p>
@@ -3401,6 +3416,44 @@ function scEinzelfrage(ziel, v){
   ziel.appendChild(karte);
 }
 
+// Nur Karten mit genau einem eigenen Feld in den Kennzahlen lassen sich hier
+// nachtragen — Kehrseite von saloncheck.KORREKTUR_FELD. „ruecklage" fehlt
+// bewusst: die Ampel folgt komplett der von „gewinn", eine eigene Zahl gäbe
+// es dafür nicht.
+const SC_KORRIGIERBAR = new Set(["gewinn", "material", "personal", "raum", "ust"]);
+
+function scKorrekturFeld(k){
+  if (k.ampel !== "grau") return "";
+  if (!SC_KORRIGIERBAR.has(k.id)){
+    return `<div style="font-size:12px;color:var(--gc-muted);margin-top:6px">
+      Hängt an „Dein Gewinn" — trag den dort nach, dann stimmt auch diese Karte.</div>`;
+  }
+  return `<div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+      <label for="sc-korrektur-${esc(k.id)}" style="font-size:12px;color:var(--gc-muted)">Zahl nachtragen</label>
+      <input class="suchfeld" id="sc-korrektur-${esc(k.id)}" type="number" step="0.01"
+             placeholder="z. B. 12000" style="width:auto;flex:0 1 150px">
+      <button class="chip" onclick="scKorrigieren('${esc(k.id)}')">Speichern</button>
+    </div>
+    <span id="sc-korrektur-status-${esc(k.id)}" style="font-size:12px;color:var(--gc-muted)"></span>`;
+}
+
+async function scKorrigieren(karteId){
+  const feld = $("#sc-korrektur-" + karteId), status = $("#sc-korrektur-status-" + karteId);
+  const wert = (feld.value || "").trim();
+  if (!wert){ status.textContent = "Bitte eine Zahl eintragen."; return; }
+  status.textContent = "Wird gespeichert …";
+  try{
+    const r = await api("/api/abschluss/karte-korrektur", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({jahr: SC_JAHR, karte_id: karteId, wert: Number(wert)})});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok){ status.textContent = d.fehler || "Das ging nicht."; return; }
+    ladeSalonCheck();
+  }catch{
+    status.textContent = "Gerade keine Verbindung.";
+  }
+}
+
 function scReport(ziel, check, status){
   const karten = (check.karten || []).map(k => `
     <div class="karte einflug" style="display:flex;gap:10px">
@@ -3408,6 +3461,7 @@ function scReport(ziel, check, status){
       <div style="min-width:0">
         <b>${esc(k.titel)}</b>
         <div style="margin-top:3px">${esc(k.satz)}</div>
+        ${scKorrekturFeld(k)}
         <details style="margin-top:6px">
           <summary style="cursor:pointer;color:var(--gc-muted);font-size:13px">Mehr dazu</summary>
           <p style="color:var(--gc-desc);font-size:13px;margin-top:6px">${esc(k.detail)}</p>
@@ -3742,8 +3796,26 @@ async function ladeAbschluss(){
   if (!e.tage){
     html += `<div class="karte nachfrage"><h3>Für diesen Monat fehlt dein Kassenbuch</h3>
       <p>Ohne die Tageseinnahmen können wir weder Auswertung noch Umsatzsteuer rechnen.
-      Trag sie in der App im Kassenbuch ein — eine Zahl pro Frage.</p></div>`;
+      Trag unten ein, was am Ende des Tages in der Kasse war.</p></div>`;
   }
+  html += `<div class="sektion lbl">Kassenbuch</div><div class="karte" id="kb-karte">
+    <div id="kb-hinweis" style="margin-bottom:10px"></div>
+    <div style="margin-bottom:12px">
+      <label for="kb-datum" style="display:block;font-size:12px;color:var(--gc-muted);margin-bottom:3px">Datum</label>
+      <input type="date" class="suchfeld" id="kb-datum" style="width:auto">
+    </div>
+    <div id="kb-felder"></div>
+    <details id="kb-mehr-details" style="margin:6px 0 14px">
+      <summary style="cursor:pointer;color:var(--gc-muted);font-size:13px">Mehr Angaben</summary>
+      <div id="kb-mehr-felder" style="margin-top:10px"></div>
+    </details>
+    <div id="kb-grund-wrap" style="display:none;margin-bottom:12px">
+      <label for="kb-grund" style="display:block;font-size:12px;color:var(--gc-danger);margin-bottom:3px">Grund für die Änderung</label>
+      <input class="suchfeld" id="kb-grund" placeholder="z. B. Zahlendreher">
+    </div>
+    <button class="chip" id="kb-speichern">Speichern</button>
+    <span id="kb-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>
+  </div>`;
 
   // ————— Deine Zahlen (BWA) —————
   html += `<div class="sektion lbl">Deine Zahlen</div><div class="karte">
@@ -3869,6 +3941,143 @@ async function ladeAbschluss(){
   const bk = $("#bwa-knopf");
   if (bk) bk.addEventListener("click", () => berichtErstellen("bwa", bk));
   ladeFristen();
+  kbAufbauen(d.profil || {fragen: []});
+  $("#kb-datum").value = kbDatum;
+  $("#kb-datum").addEventListener("change", () => {
+    kbDatum = $("#kb-datum").value || kbDatum;
+    kbTagLaden();
+  });
+  $("#kb-speichern").addEventListener("click",
+    () => kbSpeichern((d.profil && d.profil.fragen || []).map(f => f.feld)));
+  kbTagLaden();
+}
+
+/* ————— Kassenbuch: am Rechner eintragen, was abends gezählt wurde —————
+   Die Route bleibt exakt die der App (POST /api/kassenbuch) — das Portal
+   rechnet und rundet nichts selbst, jede Zahl geht 1:1 durch. */
+let kbDatum = new Date().toISOString().slice(0, 10);
+const KB_KERN = ["bestandVortag", "einnahmenBar", "ecZahlungen", "gezaehltSchluss"];
+const KB_KERN_LABEL = {
+  bestandVortag: ["Bestand vom Vortag", "Was am Abend vorher in der Kasse war."],
+  einnahmenBar: ["Bar eingenommen", "Alle Barzahlungen der Kundinnen zusammen — ohne Gutscheine."],
+  ecZahlungen: ["Mit Karte bezahlt", "Ohne das Trinkgeld, das mit auf dem Beleg steht."],
+  gezaehltSchluss: ["Abends gezählt", "Scheine und Münzen zusammengezählt."],
+};
+const KB_MEHR_LABEL = {
+  privateinlagen: ["Eigenes Geld eingelegt", "Falls du Geld aus eigener Tasche in die Kasse gelegt hast."],
+  barabhebungBank: ["Von der Bank geholt", "Bargeld von der Bank, das in die Kasse kam."],
+  trinkgeldKarte: ["Trinkgeld auf der Karte", "Kommt aufs Konto, gehört aber dem Team."],
+  trinkgeldTeamEC: ["Trinkgeld bar ans Team ausgezahlt", ""],
+  gutscheineEingeloest: ["Mit Gutschein bezahlt", "Keine neue Einnahme — nur der Ausgleich zum Verkauf."],
+  sonstigeAusgaben: ["Sonstige Ausgaben", "Zum Beispiel Blumen oder Getränke."],
+  privatentnahmen: ["Privat entnommen", "Geld, das du dir aus der Kasse genommen hast."],
+  vorschussTeam: ["Vorschuss ans Team", "Geld, das ein Teammitglied vorab bekommen hat."],
+  auslagenErstattet: ["Auslage erstattet", "Wenn jemand aus der Kasse etwas zurückbekommen hat, das er ausgelegt hatte."],
+  einzahlungBank: ["Zur Bank gebracht", "Bargeld, das du zur Bank gebracht hast."],
+};
+const KB_MEHR = Object.keys(KB_MEHR_LABEL);
+
+function kbZeile(feld, label, hilfe){
+  return `<div style="margin-bottom:10px">
+    <label for="kb-${feld}" style="display:block;font-size:12px;color:var(--gc-muted);margin-bottom:3px">${esc(label)}</label>
+    <input class="suchfeld" id="kb-${feld}" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0,00">
+    ${hilfe ? `<div style="font-size:11px;color:var(--gc-muted);margin-top:2px">${esc(hilfe)}</div>` : ""}
+  </div>`;
+}
+
+function kbAufbauen(profil){
+  const fragen = profil.fragen || [];
+  $("#kb-felder").innerHTML =
+    fragen.map(f => kbZeile(f.feld, f.frage, f.hilfe)).join("")
+    + KB_KERN.map(f => kbZeile(f, KB_KERN_LABEL[f][0], KB_KERN_LABEL[f][1])).join("");
+  $("#kb-mehr-felder").innerHTML =
+    KB_MEHR.map(f => kbZeile(f, KB_MEHR_LABEL[f][0], KB_MEHR_LABEL[f][1])).join("")
+    + `<div style="margin-bottom:10px">
+        <label for="kb-differenzGrund" style="display:block;font-size:12px;color:var(--gc-muted);margin-bottom:3px">Wenn die Kasse nicht aufgeht — warum?</label>
+        <input class="suchfeld" id="kb-differenzGrund" placeholder="z. B. Trinkgeld vergessen einzutragen">
+      </div>
+      <div>
+        <label for="kb-sonstigeNotiz" style="display:block;font-size:12px;color:var(--gc-muted);margin-bottom:3px">Notiz</label>
+        <input class="suchfeld" id="kb-sonstigeNotiz" placeholder="">
+      </div>`;
+}
+
+function kbAlleFelder(){
+  return [...document.querySelectorAll('#kb-felder input[id^="kb-"], #kb-mehr-felder input[type="number"]')]
+    .map(el => el.id.slice(3));
+}
+
+async function kbTagLaden(){
+  const status = $("#kb-status"), hinweis = $("#kb-hinweis"), knopf = $("#kb-speichern");
+  status.textContent = "";
+  $("#kb-grund-wrap").style.display = "none";
+  $("#kb-grund").value = "";
+  let d;
+  try{ d = await (await api("/api/kassenbuch/" + kbDatum)).json(); }
+  catch{ hinweis.innerHTML = `<p style="color:var(--gc-desc);font-size:13px">Gerade keine Verbindung.</p>`; return; }
+  const z = d.zustand || {};
+  if (z.abgeschlossen){
+    hinweis.innerHTML = `<p style="color:var(--gc-desc);font-size:13px">
+      Dieser Monat ist abgeschlossen — die Zahlen sind schon beim Finanzamt.
+      Eine Korrektur trägst du im laufenden Monat ein.</p>`;
+    knopf.disabled = true;
+  } else {
+    knopf.disabled = false;
+    hinweis.innerHTML = z.eingetragen
+      ? `<p style="color:var(--gc-desc);font-size:13px">Für diesen Tag steht schon etwas im Kassenbuch
+          (${esc(z.text)}). Wer etwas ändert, schreibt kurz, warum.</p>`
+      : "";
+    if (z.eingetragen) $("#kb-grund-wrap").style.display = "block";
+  }
+  const b = d.blatt || {};
+  for (const feld of kbAlleFelder()){
+    const el = $("#kb-" + feld);
+    if (el) el.value = b[feld] ? b[feld] : "";
+  }
+  $("#kb-differenzGrund").value = b.differenzGrund || "";
+  $("#kb-sonstigeNotiz").value = b.sonstigeNotiz || "";
+}
+
+async function kbSpeichern(profilFelder){
+  const knopf = $("#kb-speichern"), status = $("#kb-status"), hinweis = $("#kb-hinweis");
+  knopf.disabled = true;
+  status.textContent = "Wird gespeichert …";
+  const body = {datum: kbDatum};
+  for (const feld of [...profilFelder, ...kbAlleFelder()]){
+    const el = $("#kb-" + feld);
+    if (el) body[feld] = el.value === "" ? 0 : Number(el.value);
+  }
+  const dg = ($("#kb-differenzGrund").value || "").trim();
+  if (dg) body.differenzGrund = dg;
+  const sn = ($("#kb-sonstigeNotiz").value || "").trim();
+  if (sn) body.sonstigeNotiz = sn;
+  const grund = ($("#kb-grund").value || "").trim();
+  if (grund) body.grund = grund;
+  try{
+    const r = await api("/api/kassenbuch", {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+    const rd = await r.json().catch(() => ({}));
+    if (!r.ok){
+      knopf.disabled = false;
+      if ("abgeschlossen" in rd){
+        if (rd.abgeschlossen){
+          status.textContent = "";
+          hinweis.innerHTML = `<p style="color:var(--gc-danger);font-size:13px">${esc(rd.fehler)}</p>`;
+        } else {
+          $("#kb-grund-wrap").style.display = "block";
+          status.innerHTML = `<span style="color:var(--gc-danger)">${esc(rd.fehler)}</span>`;
+        }
+      } else {
+        status.innerHTML = `<span style="color:var(--gc-danger)">${esc(rd.fehler || "Das ging nicht.")}</span>`;
+      }
+      return;
+    }
+    status.textContent = "Gespeichert ✓";
+    ladeAbschluss();
+  }catch{
+    status.innerHTML = `<span style="color:var(--gc-danger)">Gerade keine Verbindung.</span>`;
+    knopf.disabled = false;
+  }
 }
 
 async function briefSchreiben(knopf){
@@ -4429,7 +4638,7 @@ async function ladeRechnungen(){
   const liste = d.rechnungen || [];
   if (!liste.length){
     ziel.innerHTML = `<div class="leer"><b>Noch keine Rechnung gestellt.</b>
-      Gestellt wird in der App — hier siehst du, was offen ist.</div>`;
+      Trag oben ein, was du berechnest.</div>`;
     return;
   }
   const offen = liste.filter(r => r.stand === "offen");
@@ -4440,6 +4649,9 @@ async function ladeRechnungen(){
         <span class="wann">Nr. ${esc(r.nummer)}</span>
         <span class="chip" style="font-size:11px">${esc(r.stand)}</span>
         <span class="wann num">${euro(r.brutto)}</span>
+        ${r.stand === "offen" ? `
+          <button class="chip" style="font-size:11px" onclick="rechnungBezahlt('${esc(r.nummer)}')">Bezahlt</button>
+          <button class="loeschknopf" onclick="rechnungStorno('${esc(r.nummer)}')">Stornieren</button>` : ""}
       </div>`).join("");
 }
 
@@ -4449,6 +4661,121 @@ async function zahlungUebernehmen(nummer, am){
     body: JSON.stringify({nummer, am})});
   ladeRechnungen();
 }
+
+async function rechnungBezahlt(nummer){
+  await api("/api/rechnung/" + nummer + "/bezahlt", {method: "POST",
+    headers: {"Content-Type": "application/json"}, body: "{}"});
+  ladeRechnungen();
+}
+
+async function rechnungStorno(nummer){
+  if (!confirm(`Rechnung ${nummer} stornieren?\n\nSie bleibt erhalten, eine Gegenrechnung gleicht sie aus.`)) return;
+  const r = await api("/api/rechnung/" + nummer + "/storno", {method: "POST"});
+  if (!r.ok){
+    const d = await r.json().catch(() => ({}));
+    alert(d.fehler || "Das ging nicht.");
+    return;
+  }
+  ladeRechnungen();
+}
+
+/* ————— Neue Rechnung: Server vergibt die Nummer, das PDF baut die App —————
+   /api/rechnung/{nummer}/pdf nimmt nur ein fertiges PDF entgegen, es
+   rendert keins — deshalb bleibt das PDF hier Sache der App. */
+let rPositionen = [{text: "", menge: 1, einzelpreis: "", satz: 19}];
+
+function rPositionZeile(i, p){
+  return `<div class="r-pos-zeile" data-i="${i}"
+      style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;align-items:flex-end">
+    <div style="flex:2 1 160px">
+      <label for="r-pos-text-${i}" style="display:block;font-size:11px;color:var(--gc-muted)">Bezeichnung</label>
+      <input class="suchfeld" id="r-pos-text-${i}" value="${esc(p.text)}" placeholder="z. B. Damenschnitt" autocomplete="off">
+    </div>
+    <div style="flex:0 0 70px">
+      <label for="r-pos-menge-${i}" style="display:block;font-size:11px;color:var(--gc-muted)">Menge</label>
+      <input class="suchfeld" id="r-pos-menge-${i}" type="number" min="0" step="1" value="${esc(String(p.menge))}">
+    </div>
+    <div style="flex:0 0 110px">
+      <label for="r-pos-preis-${i}" style="display:block;font-size:11px;color:var(--gc-muted)">Preis brutto</label>
+      <input class="suchfeld" id="r-pos-preis-${i}" type="number" min="0" step="0.01" value="${esc(String(p.einzelpreis))}">
+    </div>
+    <div style="flex:0 0 90px">
+      <label for="r-pos-satz-${i}" style="display:block;font-size:11px;color:var(--gc-muted)">USt.</label>
+      <select class="suchfeld" id="r-pos-satz-${i}">
+        <option value="19"${p.satz === 19 ? " selected" : ""}>19 %</option>
+        <option value="7"${p.satz === 7 ? " selected" : ""}>7 %</option>
+        <option value="0"${p.satz === 0 ? " selected" : ""}>0 %</option>
+      </select>
+    </div>
+    ${rPositionen.length > 1 ? `<button class="loeschknopf" type="button" onclick="rPositionWeg(${i})">Weg</button>` : ""}
+  </div>`;
+}
+
+function rPositionenLesen(){
+  rPositionen = rPositionen.map((_, i) => ({
+    text: $("#r-pos-text-" + i)?.value || "",
+    menge: $("#r-pos-menge-" + i)?.value || 1,
+    einzelpreis: $("#r-pos-preis-" + i)?.value || "",
+    satz: Number($("#r-pos-satz-" + i)?.value || 19),
+  }));
+}
+
+function rPositionenZeigen(){
+  const ziel = $("#r-positionen");
+  if (!ziel) return;
+  ziel.innerHTML = rPositionen.map((p, i) => rPositionZeile(i, p)).join("");
+}
+
+function rPositionPlus(){
+  rPositionenLesen();
+  rPositionen.push({text: "", menge: 1, einzelpreis: "", satz: 19});
+  rPositionenZeigen();
+}
+
+function rPositionWeg(i){
+  rPositionenLesen();
+  rPositionen.splice(i, 1);
+  rPositionenZeigen();
+}
+
+async function rechnungStellen(){
+  const status = $("#r-form-status"), knopf = $("#r-stellen");
+  rPositionenLesen();
+  const name = ($("#r-kunde-name").value || "").trim();
+  if (!name){ status.textContent = "Wie heißt die Kundin?"; return; }
+  const positionen = rPositionen
+    .filter(p => (p.text || "").trim())
+    .map(p => ({text: p.text.trim(), menge: Number(p.menge) || 1,
+                einzelpreis: Number(p.einzelpreis) || 0, ust_satz: p.satz}));
+  if (!positionen.length){ status.textContent = "Mindestens eine Position bitte."; return; }
+  knopf.disabled = true;
+  status.textContent = "Wird gestellt …";
+  try{
+    const r = await api("/api/rechnungen", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        datum: $("#r-datum").value || undefined,
+        empfaenger: {name, anschrift: ($("#r-kunde-anschrift").value || "").trim()},
+        positionen,
+        hinweis: ($("#r-hinweis").value || "").trim(),
+      })});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok){ status.textContent = d.fehler || "Das ging nicht."; knopf.disabled = false; return; }
+    status.textContent = `Rechnung Nr. ${d.nummer} angelegt — das PDF folgt in der App.`;
+    $("#r-kunde-name").value = ""; $("#r-kunde-anschrift").value = ""; $("#r-hinweis").value = "";
+    rPositionen = [{text: "", menge: 1, einzelpreis: "", satz: 19}];
+    rPositionenZeigen();
+    knopf.disabled = false;
+    ladeRechnungen();
+  }catch{
+    status.textContent = "Gerade keine Verbindung.";
+    knopf.disabled = false;
+  }
+}
+$("#r-position-plus").addEventListener("click", rPositionPlus);
+$("#r-stellen").addEventListener("click", rechnungStellen);
+$("#r-datum").value = new Date().toISOString().slice(0, 10);
+rPositionenZeigen();
 
 /* ————— Verträge: was jeden Monat sicher abgeht ————— */
 async function ladeVertraege(){
@@ -4581,32 +4908,52 @@ async function briefkopfWaehlen(nummer, saat){
   ladeBriefkopf();
 }
 
-/* ————— Termine: derselbe Kalender wie in der App ————— */
+/* ————— Termine: eine ganze Woche auf einen Blick ————— */
 let tTag = new Date().toISOString().slice(0, 10);
 let tWunsch = null;
 
-function tDatumText(iso){
+// Montag der Woche, die tTag enthält — Wochenstart ist in Deutschland Montag.
+function tMontagVon(iso){
   const d = new Date(iso + "T12:00");
-  return d.toLocaleDateString("de-DE",
-    {weekday:"long", day:"numeric", month:"long"});
+  const versatz = (d.getDay() + 6) % 7;      // 0 = Montag, … 6 = Sonntag
+  d.setDate(d.getDate() - versatz);
+  return d.toISOString().slice(0, 10);
+}
+function tPlusTage(iso, tage){
+  const d = new Date(iso + "T12:00");
+  d.setDate(d.getDate() + tage);
+  return d.toISOString().slice(0, 10);
+}
+function tWocheText(montag){
+  const bis = tPlusTage(montag, 6);
+  const fmt = (iso, mitJahr) => new Date(iso + "T12:00").toLocaleDateString("de-DE",
+    mitJahr ? {day:"numeric", month:"long", year:"numeric"} : {day:"numeric", month:"long"});
+  const gleichesJahr = montag.slice(0, 4) === bis.slice(0, 4);
+  return `${fmt(montag, !gleichesJahr)} – ${fmt(bis, true)}`;
+}
+function tTagUeberschrift(iso){
+  const d = new Date(iso + "T12:00");
+  return d.toLocaleDateString("de-DE", {weekday:"long", day:"numeric", month:"long"});
 }
 
 async function ladeTermine(){
-  $("#t-tag").textContent = tDatumText(tTag);
+  const montag = tMontagVon(tTag);
+  $("#t-tag").textContent = tWocheText(montag);
   const ziel = $("#t-liste");
   let d;
   try{
-    d = await (await api("/api/termine?von=" + tTag + "&bis=" + tTag)).json();
+    d = await (await api("/api/termine?von=" + montag + "&bis=" + tPlusTage(montag, 6))).json();
   }catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
-  const tag = (d.tage || [])[0] || {};
-  $("#t-satz").textContent = tag.satz || "";
-  const liste = tag.liste || [];
-  if (!liste.length){
-    ziel.innerHTML = `<div class="leer"><b>Noch nichts eingetragen.</b>
-      Schreib unten hin, wer wann kommt — babu sucht die Lücke.</div>`;
-    return;
-  }
-  ziel.innerHTML = liste.map(t => `<div class="ablage-zeile">
+  const tage = d.tage || [];
+  const heute = new Date().toISOString().slice(0, 10);
+  const gesamt = tage.reduce((s, t) => s + (t.termine || 0), 0);
+  $("#t-satz").textContent = !gesamt ? "Diese Woche ist noch nichts eingetragen."
+    : gesamt === 1 ? "Ein Termin diese Woche." : `${gesamt} Termine diese Woche.`;
+  ziel.innerHTML = tage.map(tag => {
+    const kopf = `<div class="jahr-kopf">${tTagUeberschrift(tag.datum)}${tag.datum === heute ? " · heute" : ""}</div>`;
+    const liste = tag.liste || [];
+    if (!liste.length) return kopf + `<div class="leer" style="margin-bottom:6px">${esc(tag.satz)}</div>`;
+    return kopf + liste.map(t => `<div class="ablage-zeile">
       <b style="font-variant-numeric:tabular-nums">${esc(t.start.slice(11,16))}</b>
       <span>${esc(t.kundin || "—")}</span>
       ${t.leistung ? `<span class="chip" style="font-size:11px">${esc(t.leistung)}</span>` : ""}
@@ -4620,6 +4967,7 @@ async function ladeTermine(){
         : `<button class="chip" style="font-size:11px" onclick="abrechnenFragen(${t.id}, ${t.preis || 0})">Abrechnen</button>`}
       <button class="loeschknopf" onclick="terminAbsagen(${t.id})">Abgesagt</button>
     </div>`).join("");
+  }).join("");
   ladeKassenvorschlag();
 }
 
@@ -5084,8 +5432,8 @@ function tBlaettern(tage){
   $("#t-vorschlaege").innerHTML = "";
   ladeTermine();
 }
-$("#t-zurueck").addEventListener("click", () => tBlaettern(-1));
-$("#t-vor").addEventListener("click", () => tBlaettern(1));
+$("#t-zurueck").addEventListener("click", () => tBlaettern(-7));
+$("#t-vor").addEventListener("click", () => tBlaettern(7));
 
 $("#t-suchen").addEventListener("click", async () => {
   const text = $("#t-satz-feld").value.trim();
