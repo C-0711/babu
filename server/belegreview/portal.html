@@ -3467,7 +3467,7 @@ async function ladeEinstellungen(){
     meineRolle = ich.rolle || meineRolle;
     meineBox = ich.box !== false;
     $("#verwaltung-knopf").hidden = !(meineRolle === "admin" || meineRolle === "kanzlei");
-    const eigenesKonto = (ich.un || "").includes("@");
+    const eigenesKonto = !!ich.hat_passwort;
     $("#einst-pw-lbl").hidden = !eigenesKonto;
     $("#einst-pw").hidden = !eigenesKonto;
     const testAn = localStorage.getItem("babu_testmodus") === "1";

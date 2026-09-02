@@ -216,6 +216,24 @@ def test_selbstschutz_eigenes_konto(bw, client):
         "aktion": "rolle", "rolle": "salon"}).status_code == 400
 
 
+def test_api_ich_meldet_ob_ein_passwort_existiert(bw, client):
+    """`un` ist bei GitChain-Konten keine E-Mail — die Oberfläche darf das
+    also nicht am „@" ablesen (Befund P2-14). `/api/ich` sagt es direkt."""
+    # PAT-only-Konto (kanzlei/christoph0711.io): kein Eintrag in der
+    # Nutzertabelle, also kein Passwort.
+    _als_kanzlei(client)
+    assert client.get("/api/ich").json()["hat_passwort"] is False
+
+    # Ein per Signup angelegtes Konto hat eines.
+    from fastapi.testclient import TestClient  # noqa: PLC0415
+    eigenes = TestClient(bw.app, base_url="https://testserver")
+    r = eigenes.post("/api/signup", json={"salon": "PW Salon", "name": "Selbst",
+                                          "email": "hatpw@salon.de",
+                                          "passwort": "eigenes-passwort", "rechtsform": "GbR"})
+    assert r.status_code == 200
+    assert eigenes.get("/api/ich").json()["hat_passwort"] is True
+
+
 def test_team_verwalten_und_personalkosten(bw, client):
     """Dein Team: vier Angaben je Person, die Summe trägt die Auswertung."""
     _als_kanzlei(client)

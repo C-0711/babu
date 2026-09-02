@@ -1327,7 +1327,11 @@ def api_ich(request: Request) -> Response:
     exp = int(time.time()) + SESSION_DAUER
     # `box` sagt der Oberfläche, ob es überhaupt Belege zu zeigen gibt —
     # ohne das würde ein frisches Konto auf leere Kacheln starren.
-    antwort = JSONResponse({"un": un, "rolle": rolle(un), "box": box_mitglied(un)})
+    # `un` ist bei GitChain-Konten keine E-Mail (das @ verliert `wer_token`
+    # schon dort) — die Oberfläche kann also nicht am „@" erkennen, ob ein
+    # eigenes Konto mit Passwort dahintersteht. `hat_passwort` sagt es direkt.
+    antwort = JSONResponse({"un": un, "rolle": rolle(un), "box": box_mitglied(un),
+                            "hat_passwort": bool(nutzer_holen(un))})
     if request.cookies.get(SESSION_COOKIE):
         antwort.set_cookie(SESSION_COOKIE, _signieren(un, exp), max_age=SESSION_DAUER,
                            httponly=True, secure=SESSION_SECURE, samesite="lax", path="/")
