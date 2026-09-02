@@ -1510,6 +1510,7 @@ async function api(pfad, opts){
 
 /* ————— Status-Sätze (Sprachregel: menschlich, kein Technik-Vokabular) ————— */
 function statusSatz(z){
+  if (z.status === "unlesbar") return ["Konnte nicht gelesen werden — magst du drauf schauen?","frage"];
   if (z.status === "exportiert") return ["bei der Kanzlei ✓","ok"];
   if (z.status === "geprüft") return ["geprüft ✓","ok"];
   if (z.status === "erfasst") return ["wird noch gelesen …","laeuft"];
@@ -2000,6 +2001,21 @@ async function angabenSenden(stamm){
   }catch{ status.textContent = "Gerade keine Verbindung."; }
 }
 
+/* P0-4/2b: "Wird gelesen" darf nicht ewig stehen bleiben — dieser Knopf
+   stößt denselben Lesepfad wie ein frischer Upload noch einmal an. */
+async function belegErneutLesen(stamm){
+  const status = $("#nl-status-" + stamm);
+  if (status) status.textContent = "Wir schauen nochmal drauf …";
+  try{
+    const r = await api("/api/beleg/" + stamm + "/erneut-lesen", {method:"POST"});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok){ if (status) status.textContent = d.fehler || "Ging gerade nicht."; return; }
+    if (status) status.textContent = d.hinweis || "Wir schauen nochmal drauf.";
+    etag = null;
+    setTimeout(() => ladeDetail(stamm), 1500);
+  }catch{ if (status) status.textContent = "Gerade keine Verbindung."; }
+}
+
 async function ladeDetail(stamm){
   const ziel = $("#detail-inhalt");
   ziel.innerHTML = `<div class="skelett" style="height:300px"></div>`;
@@ -2014,6 +2030,7 @@ async function ladeDetail(stamm){
   const geprueft = d.status === "geprüft";
   const inArbeit = d.status === "erfasst";
   const frage = d.status === "nachfrage";
+  const haengt = d.status === "unlesbar";
   const bildTag = /\.(jpg|jpeg|png)$/i.test(d.datei||"")
     ? `<img id="belegbild" alt="Foto des Belegs" src="${d.bild_url}">`
     : `<div class="pdfhinweis"><svg class="ik" viewBox="0 0 24 24"><use href="#ik-dokument"/></svg><br>Dieses Dokument kam als Datei —<br><a href="${d.bild_url}">herunterladen und ansehen</a></div>`;
@@ -2024,14 +2041,15 @@ async function ladeDetail(stamm){
   const weg = [
     {t:"Foto erhalten", klasse:""},
     {t:"Gelesen", klasse: rev ? "" : "offen"},
-    frage ? {t:"Geprüft", klasse:"frage"}
+    (frage || haengt) ? {t:"Geprüft", klasse:"frage"}
           : {t:"Geprüft" + (geprueft||b ? " ✓" : ""), klasse: rev ? "" : "offen"},
     {t:"Für DATEV bereit", klasse: b ? "" : "offen"},
     d.status === "exportiert"
       ? {t:"Bei der Kanzlei ✓", klasse:""}
       : {t:"Bei der Kanzlei", klasse:"offen"},
   ];
-  const wegHinweis = frage ? "eine Frage ist offen — siehe unten"
+  const wegHinweis = haengt ? "konnte nicht gelesen werden — sieh unten nach"
+    : frage ? "eine Frage ist offen — siehe unten"
     : (!rev ? "wird gerade gelesen — dauert einen Moment …"
     : (b ? "im " + monatName(d.monat||jetztMonat()).split(" ")[0] + "-Stapel deiner Kanzlei"
          : null));
@@ -2068,7 +2086,8 @@ async function ladeDetail(stamm){
     const bewirtungOffen = f.bewirtungssignal && !d.bewirtung_beantwortet;
     // Strukturierte Fragen aus buchung.fragen haben Vorrang vor generischen offen-Texten
     const buchungFrage = (d.buchung && d.buchung.fragen && d.buchung.fragen[0]) ? d.buchung.fragen[0] : null;
-    const frageText = bewirtungOffen ? "Mit wem warst du essen?"
+    const frageText = haengt ? "Konnte nicht gelesen werden — magst du drauf schauen?"
+      : bewirtungOffen ? "Mit wem warst du essen?"
       : (buchungFrage ? buchungFrage.frage : offenSatz((f.offen||[])[0]));
     // Die Doppelgänger-Frage braucht zwei Antwortknöpfe, keine Freitext-Karte
     // (Befund P2-11) — „Ja, doppelt" löscht, „Nein" räumt die Frage weg.
@@ -2076,8 +2095,8 @@ async function ladeDetail(stamm){
       && (f.offen||[]).find(o => (o||"").includes("Doppelgänger"));
     html += `<div class="sekt"><span class="lbl">Prüfung</span>
       <div class="haken ${geprueft||b ? "" : "warte"}">
-        <div class="kreis ${geprueft ? "stempel" : ""}">${frage ? "?" : "✓"}</div>
-        <div class="txt"><b>${frage ? frageText : "Alles stimmig"}</b>
+        <div class="kreis ${geprueft ? "stempel" : ""}">${(frage||haengt) ? "?" : "✓"}</div>
+        <div class="txt"><b>${(frage||haengt) ? frageText : "Alles stimmig"}</b>
         <span>${b && b.buchungstext ? esc(b.buchungstext) : ""}</span>
         ${e.belegart ? `<span class="marke akzent" style="margin-top:4px">${
           esc(String(e.belegart).split("(")[0].trim())}</span>` : ""}</div>
@@ -2101,6 +2120,10 @@ async function ladeDetail(stamm){
           ${buchungFrage.optionen.map(opt => `<p style="margin:4px 0 0 16px;font-size:13px">• ${esc(opt)}</p>`).join("")}
           </div>` : ""}
       ${aenderungsFormular(d.stamm, f, e, (frage && !bewirtungOffen) || !f.brutto)}
+      ${haengt ? `<div style="margin-top:10px">
+        <button class="chip" onclick="belegErneutLesen('${d.stamm}')">Nochmal versuchen</button>
+        <span id="nl-status-${d.stamm}" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>
+        </div>` : ""}
       ${d.bewirtung ? `<div class="feld" style="margin-top:8px"><span>Anlass</span><b style="font-family:var(--gc-sans)">${d.bewirtung.anlass}</b></div>
         <div class="feld"><span>Dabei waren</span><b style="font-family:var(--gc-sans)">${(d.bewirtung.teilnehmer||[]).join(", ")}</b></div>` : ""}
       </div>`;
@@ -2135,7 +2158,7 @@ async function ladeDetail(stamm){
       Kam er als PDF, dauert es noch etwas länger.</div>`;
   }
 
-  if (!inArbeit){
+  if (!inArbeit && !haengt){
     html += `<div class="sekt"><span class="lbl">Was babu gelesen hat</span>
       <div class="karte" style="margin:0">
         <div style="font-size:13px;color:var(--gc-desc);margin-bottom:8px">Jede

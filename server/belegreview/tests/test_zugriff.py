@@ -307,3 +307,55 @@ def test_von_der_verwaltung_angelegte_konten_haben_die_box(welt):
     assert bw.box_mitglied("kollegin@kanzlei.de") is True
     assert any(n["email"] == "kollegin@kanzlei.de" and n["box"] is True
                for n in verwaltung.get("/api/nutzer").json()["nutzer"])
+
+
+# ————— P3-26: die Verwaltung gehört nicht der Mitarbeiterin —————
+#
+# Der Befund: die Zugänge-Ansicht listet für die Kanzlei alle Mandanten
+# (Namen, E-Mails, Passwort-Reset). Dass die Route nur über einen
+# ausgeblendeten Menüpunkt statt über den Server gesperrt war, war früher
+# eine echte Lücke. Seit `_verwalter_wache`/`darf_verwalten` ist sie
+# serverseitig dicht — nur `admin` und `kanzlei` kommen durch. Aber ohne
+# Test ist das eine Behauptung, kein Beweis. Diese vier Routen sind die
+# gesamte Verwaltungsfläche; eine Mitarbeiterin mit gültigem Login muss auf
+# allen vieren 403 bekommen, während ihre tägliche Arbeit weiterläuft.
+
+VERWALTUNG = [
+    ("get", "/api/nutzer", {}),
+    ("post", "/api/nutzer", {"json": {"email": "x@salon.de",
+                                       "name": "X", "rolle": "salon"}}),
+    ("post", "/api/nutzer-aktion",
+     {"json": {"email": "x@salon.de", "aktion": "box_freigeben"}}),
+    ("get", "/api/registrierungen", {}),
+]
+
+
+def _mitarbeiterin(bw):
+    """Eine Mitarbeiterin im Team — volle Box, aber keine Verwaltungsrechte."""
+    with bw._DB_LOCK, bw._db() as c:
+        c.execute("""INSERT INTO nutzer (email, name, salon, rolle, pw, aktiv,
+                                         angelegt, gehoert_zu)
+                     VALUES ('helfer@salon.de','Helfer','Salon','mitarbeit',
+                             ?,1,'2026-01-01','christoph0711.io')""",
+                  (bw.pw_hash("helfer-passwort"),))
+    client = _neuer_client(bw)
+    bw._LOGIN_VERSUCHE.clear()
+    r = client.post("/api/login", json={"email": "helfer@salon.de",
+                                        "passwort": "helfer-passwort"})
+    assert r.status_code == 200, r.text
+    assert r.json()["rolle"] == "mitarbeit"
+    return client
+
+
+@pytest.mark.parametrize("methode,pfad,kwargs", VERWALTUNG)
+def test_mitarbeiterin_sieht_die_verwaltung_nicht(welt, methode, pfad, kwargs):
+    client = _mitarbeiterin(welt)
+    r = getattr(client, methode)(pfad, **kwargs)
+    assert r.status_code == 403, f"{pfad} steht der Mitarbeiterin offen"
+
+
+def test_mitarbeiterin_behaelt_ihre_taegliche_arbeit(welt):
+    """P3-26 sperrt die Verwaltung, nicht die Box der Mitarbeiterin."""
+    client = _mitarbeiterin(welt)
+    assert client.get("/api/ich").json()["box"] is True
+    assert client.get("/api/belege").status_code == 200

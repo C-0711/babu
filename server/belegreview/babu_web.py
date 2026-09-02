@@ -10,6 +10,7 @@
 Liest NUR aus dem Bare-Store (git show) — schreibt nichts, kein Lock-Risiko.
 /ablage und /health laufen weiter direkt zum Eingang (:7843, Tunnel-Ingress).
 """
+import asyncio
 import base64
 import hmac
 import hashlib
@@ -642,8 +643,36 @@ def _zeiten_walk() -> dict[str, dict]:
     return zeiten
 
 
-def _status_ableiten(review: dict | None, bewirtung_da: bool) -> str:
+# P0-4: wie lange darf ein Beleg ohne Review auf "Wird gelesen" stehen,
+# bevor das Portal sagt, dass es nicht geklappt hat? 20 Minuten sind eine
+# Annahme (der Befund nennt Fälle, die seit Tagen so standen — jede
+# vernünftige Schwelle behebt das).
+BELEG_HAENGT_NACH_MIN = 20
+
+
+def _minuten_seit(zeitpunkt: str | None) -> float | None:
+    """Minuten seit einem ISO-8601-Zeitstempel — zeitzonensicher.
+
+    `hochgeladen` kommt aus `git log --format=%cI` (siehe `_zeiten_walk`),
+    trägt also immer eine Zeitzone. `datetime.fromisoformat` versteht das
+    seit Python 3.11 direkt.
+    """
+    if not zeitpunkt:
+        return None
+    try:
+        dann = datetime.fromisoformat(zeitpunkt)
+    except ValueError:
+        return None
+    jetzt = datetime.now(dann.tzinfo) if dann.tzinfo else datetime.now()
+    return (jetzt - dann).total_seconds() / 60
+
+
+def _status_ableiten(review: dict | None, bewirtung_da: bool,
+                     hochgeladen: str | None = None) -> str:
     if review is None:
+        minuten = _minuten_seit(hochgeladen)
+        if minuten is not None and minuten > BELEG_HAENGT_NACH_MIN:
+            return "unlesbar"
         return "erfasst"
     f = review.get("felder") or {}
     # Trinkgeld-Differenzen sind Information, keine Frage — das Trinkgeld hat
@@ -770,13 +799,14 @@ def _index_bauen(head: str) -> None:
         f = (review or {}).get("felder") or {}
         v = (review or {}).get("vlm") or {}
         e = (review or {}).get("einschaetzung") or {}
+        hochgeladen = (zeiten.get(pfad) or {}).get("zeit")
         eintrag = {
             "stamm": stamm,
             "datei": pfad,
             "bild_oid": pfade.get(pfad),
             "monat": _beleg_monat(f.get("datum"), name, pfad),
-            "hochgeladen": (zeiten.get(pfad) or {}).get("zeit"),
-            "status": _status_ableiten(review, bewirtung_da),
+            "hochgeladen": hochgeladen,
+            "status": _status_ableiten(review, bewirtung_da, hochgeladen),
             "review_zeit": (zeiten.get(review_pfad_) or {}).get("zeit") if review else None,
             "lieferant": v.get("lieferant") or f.get("lieferant"),
             "datum": f.get("datum"),
@@ -1426,7 +1456,7 @@ def api_beleg(stamm: str, request: Request) -> Response:
             f_nach_angaben = d.get("felder") or {}
             offen_nach_angaben = f_nach_angaben.get("offen") or []
             bewirtung_signal = bool(f_nach_angaben.get("bewirtungssignal"))
-            if d["status"] in ("erfasst", "nachfrage") and _beleg_abgeschlossen(
+            if d["status"] in ("erfasst", "nachfrage", "unlesbar") and _beleg_abgeschlossen(
                     offen_nach_angaben, bewirtung_signal, eintrag["bewirtung_beantwortet"]):
                 d["status"] = "geprüft"
     d["bewirtung_beantwortet"] = eintrag["bewirtung_beantwortet"]
@@ -1558,7 +1588,7 @@ def _monat_summen(monat: str) -> dict:
             if groesster is None or z["brutto"] > groesster["brutto"]:
                 groesster = {"stamm": z["stamm"], "lieferant": z["lieferant"],
                              "brutto": z["brutto"], "belegart": z["belegart"]}
-        if z["status"] in ("nachfrage", "erfasst"):
+        if z["status"] in ("nachfrage", "erfasst", "unlesbar"):
             offen_gesamt.append({"stamm": z["stamm"], "status": z["status"],
                                  "lieferant": z["lieferant"], "brutto": z["brutto"],
                                  "offen": z["offen"], "bewirtung": z["bewirtung"],
@@ -1638,6 +1668,143 @@ async def koerper_lesen(request: Request, grenze: int) -> bytes:
     return bytes(daten)
 
 
+BELEG_LESE_FRIST_SEK = 90.0
+_BILD_MIME = {".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+             ".png": "image/png", ".heic": "image/heic"}
+
+
+async def _beleg_serverseitig_lesen(pfad: str, daten: bytes, endung: str, un: str) -> None:
+    """Die EINE Lesung nachgeholt — für Belege, die ohne App ankommen.
+
+    Am iPhone liest Vision den Beleg, bevor er ankommt; ein Portal-Upload
+    (`/api/hochladen`, `/ablage`) hat keine App davor und bekam deshalb
+    bisher NIE ein Review — der Beleg blieb für immer auf „Wird gelesen"
+    stehen (P0-4). Hier holt der Server das serverseitig nach: ein PDF mit
+    Textebene liefert seine Zeilen wie gewohnt, ein Foto/Scan hat keinen
+    Vision-Text und geht deshalb als Bild direkt an Gemma — derselbe
+    multimodale Fallback-Weg, den `gemma_buchung.py` für das Telefon ohne
+    Vision-Lesung schon kennt.
+
+    Schreibt bei „gebucht" ein Review, sonst nichts — bei „fragen"/
+    „aufgeben" bleibt der Beleg „erfasst", bis der Timeout (2b) oder
+    „Nochmal versuchen" ihn erneut hierher schickt.
+    """
+    import gemma_buchung  # noqa: PLC0415
+    zeilen: list[str] = []
+    bild: tuple[bytes, str] | None = None
+    if endung == ".pdf":
+        try:
+            import tempfile  # noqa: PLC0415
+            import abschluss_lesen  # noqa: PLC0415
+            with tempfile.NamedTemporaryFile(suffix=".pdf") as tf:
+                tf.write(daten)
+                tf.flush()
+                seiten = await run_in_threadpool(abschluss_lesen.seiten_text, tf.name)
+            zeilen = [z.strip() for z in "\n".join(seiten).splitlines() if z.strip()][:250]
+        except Exception:  # noqa: BLE001
+            zeilen = []
+    elif endung in _BILD_MIME:
+        bild = (daten, _BILD_MIME[endung])
+    else:
+        return  # kein lesbares Format (z. B. .xml) — kein Versuch, kein Review.
+    if not zeilen and bild is None:
+        return
+
+    monat = time.strftime("%Y-%m")
+    ktx = await _einschaetzungs_kontext(un, monat)
+    profil = db_einstellungen(salon_von(un))
+    rahmen = kontenrahmen_von(un)
+
+    def _lesen() -> dict:
+        with _LLM_SEMAPHORE:
+            return gemma_buchung.runde(
+                zeilen, profil, [], rahmen, ktx["umsaetze"], ktx["nachbarn"],
+                None, bild, ktx["vertraege_ktx"], ktx["personal_ktx"],
+                ktx["offene_abbuchungen"])
+
+    ergebnis = await run_in_threadpool(_lesen)
+    if ergebnis.get("status") != "gebucht":
+        # "fragen"/"aufgeben": niemand am Portal beantwortet Rückfragen —
+        # kein Review, der Beleg bleibt "erfasst".
+        return
+
+    stamm = Path(pfad).name.rsplit(".", 1)[0]
+    # Idempotenz: zwischen dem Ablegen des Fotos und dem Ende dieser Lesung
+    # kann Nina den Beleg längst über /api/angaben von Hand eingetragen haben
+    # — oder ein zweiter Auslöser ("Nochmal versuchen" während die erste
+    # Lesung noch läuft) war schneller. Der Hintergrund-Task darf eine
+    # bestehende Angabe nie überschreiben.
+    if await run_in_threadpool(git_show, f"review/{stamm}.json") is not None:
+        return
+
+    buchung = ergebnis["buchung"]
+    klasse = str(buchung.get("dokumentklasse") or "beleg")
+    review, md = _review_aus_einschaetzung(pfad, buchung, zeilen, klasse)
+    # Doppelgänger: gleicher Tag, gleicher Betrag wie ein Beleg im Index —
+    # fragen, nicht blocken (genau wie in /api/aufnahme).
+    try:
+        idx_d = await run_in_threadpool(index_aktuell)
+        for z in idx_d["belege"].values():
+            if (buchung.get("datum") and buchung.get("betrag_eur")
+                    and z.get("datum") == buchung["datum"]
+                    and z.get("brutto") == buchung["betrag_eur"]):
+                review["felder"]["offen"].append(
+                    f"Sieht aus wie ein Doppelgänger von "
+                    f"{z.get('lieferant') or z['stamm']} vom "
+                    f"{buchung['datum']} — bitte prüfen, ob derselbe Beleg "
+                    "zweimal fotografiert wurde.")
+                break
+    except Exception:  # noqa: BLE001
+        pass
+
+    dateien: dict[str, bytes] = {
+        f"review/{stamm}.json": json.dumps(review, ensure_ascii=False, indent=1).encode(),
+        f"review/{stamm}.md": md.encode(),
+    }
+    semantik = await run_in_threadpool(embedding_rechnen, md)
+    if semantik:
+        dateien[f"review/{stamm}.embedding.json"] = json.dumps(semantik).encode()
+
+    import boxschreiber  # noqa: PLC0415
+    # Kein dritter Blick auf review/<stamm>.json unmittelbar vor diesem
+    # Schreiben: der theoretische Rest der Race (zwei Lesungen exakt
+    # gleichzeitig zu Ende) überschreibt sich mit demselben, deterministisch
+    # gleichen Ergebnis — richtet also keinen Schaden an. Die Prüfung oben
+    # deckt den eigentlichen Fall ab: eine manuelle Angabe oder eine bereits
+    # abgeschlossene zweite Lesung.
+    await run_in_threadpool(boxschreiber.schreiben, dateien, None,
+                            f"lesen: {stamm}", un)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+
+
+async def _hintergrund_lesen(pfad: str, daten: bytes, endung: str, un: str) -> None:
+    """Fire-and-forget-Auslöser: lebt nur für die Dauer dieses einen
+    Requests/Prozesses — kein Watcher, kein eigener Dienst, kein pm2-Eintrag
+    (CLAUDE.md verbietet das ausdrücklich). Ein hängender vLLM-Aufruf darf
+    den Beleg nicht für immer auf "Wird gelesen" stehen lassen; der Timeout
+    sorgt dafür, dass spätestens 2b (Status "unlesbar" nach
+    BELEG_HAENGT_NACH_MIN) den Beleg wieder sichtbar macht.
+    """
+    try:
+        async with asyncio.timeout(BELEG_LESE_FRIST_SEK):
+            await _beleg_serverseitig_lesen(pfad, daten, endung, un)
+    except Exception as ex:  # noqa: BLE001
+        print(f"[lesen] {pfad}: {ex!r}", flush=True)
+
+
+# `asyncio.create_task` hält nur eine SCHWACHE Referenz im Event-Loop — ohne
+# eine eigene Referenz dürfte der Garbage Collector die Aufgabe mitten in der
+# Ausführung wegsammeln. Diese Menge hält sie fest, bis sie fertig ist.
+_HINTERGRUND_TASKS: set = set()
+
+
+def _hintergrund_lesen_starten(pfad: str, daten: bytes, endung: str, un: str) -> None:
+    task = asyncio.create_task(_hintergrund_lesen(pfad, daten, endung, un))
+    _HINTERGRUND_TASKS.add(task)
+    task.add_done_callback(_HINTERGRUND_TASKS.discard)
+
+
 @app.post("/ablage")
 async def ablage(request: Request) -> Response:
     """Beleg-Eingang, vertragsgleich zum bisherigen :7843-Eingang — aber über
@@ -1685,7 +1852,8 @@ async def ablage(request: Request) -> Response:
     if datei is None or not getattr(datei, "filename", None):
         return JSONResponse({"fehler": "file fehlt"}, status_code=422)
     name = datei.filename
-    if Path(name).suffix.lower() not in HOCHLADEN_ENDUNGEN:
+    endung = Path(name).suffix.lower()
+    if endung not in HOCHLADEN_ENDUNGEN:
         return JSONResponse({"fehler": "kein Beleg-Format"}, status_code=400)
     daten = await datei.read()
     if not daten:
@@ -1713,6 +1881,12 @@ async def ablage(request: Request) -> Response:
         return JSONResponse({"fehler": "Push fehlgeschlagen"}, status_code=502)
     with _INDEX_LOCK:
         _INDEX["geprueft"] = 0.0
+    # P0-4/2a: dieser Weg (Portal-Upload ohne App davor) bekam bisher NIE
+    # eine Lesung — der Beleg stand für immer auf "Wird gelesen". Ausgelöst
+    # von diesem Request, läuft im Hintergrund weiter, blockiert die Antwort
+    # nicht.
+    _hintergrund_lesen_starten(
+        f"docs/{monat}/{dateiname}", daten, endung, un)
     return JSONResponse({"ok": True,
                          "ref": os.environ.get("BABU_REF",
                                                "inspektor/ws-christoph0711.io/babu"),
@@ -1760,6 +1934,9 @@ async def api_hochladen(request: Request, name: str = "beleg.jpg") -> Response:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"}, status_code=503)
     with _INDEX_LOCK:
         _INDEX["geprueft"] = 0.0
+    # P0-4/2a: siehe /ablage — Portal-Uploads bekamen bisher nie eine Lesung.
+    _hintergrund_lesen_starten(
+        f"docs/{monat}/{dateiname}", daten, endung, un)
     return JSONResponse({"ok": True, "commit": commit, "datei": f"docs/{monat}/{dateiname}"})
 
 
@@ -1812,6 +1989,35 @@ async def api_beleg_loeschen(stamm: str, request: Request) -> Response:
     with _INDEX_LOCK:
         _INDEX["geprueft"] = 0.0
     return JSONResponse({"ok": True, "commit": commit, "stamm": stamm})
+
+
+@app.post("/api/beleg/{stamm}/erneut-lesen")
+async def api_beleg_erneut_lesen(stamm: str, request: Request) -> Response:
+    """„Nochmal versuchen" auf einem hängengebliebenen Beleg (P0-4/2b).
+
+    Bewusst NICHT „neu-lesen" genannt — das hieß die am 27.08. gelöschte
+    Route des review_watcher, ein anderer Mechanismus. Stößt exakt denselben
+    Hintergrund-Lesepfad an wie ein frischer Upload; wirkt nur auf Belege,
+    die noch nichts Endgültiges haben (sonst 409).
+    """
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if not NAME_RE.match(stamm):
+        return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
+    eintrag = (await run_in_threadpool(index_aktuell))["belege"].get(stamm)
+    if eintrag is None:
+        return JSONResponse({"fehler": "unbekannter Beleg"}, status_code=404)
+    if eintrag["status"] not in ("erfasst", "unlesbar"):
+        return JSONResponse(
+            {"fehler": "Für diesen Beleg gibt es nichts erneut zu lesen."},
+            status_code=409)
+    daten = await run_in_threadpool(git_show, eintrag["datei"])
+    if daten is None:
+        return JSONResponse({"fehler": "Lesefehler"}, status_code=500)
+    endung = Path(eintrag["datei"]).suffix.lower()
+    _hintergrund_lesen_starten(eintrag["datei"], daten, endung, un)
+    return JSONResponse({"ok": True, "hinweis": "Wir schauen nochmal drauf."})
 
 
 @app.post("/api/aufnahme")
@@ -3567,7 +3773,8 @@ def kennzahlen_monat(monat: str) -> dict:
                                 "ziel": 0.15},
         "summenprobe_quote": {"wert": round(len(summenprobe) / len(mit_probe), 3) if mit_probe else None,
                               "ziel": 0.9},
-        "offen_zur_frist": {"wert": sum(1 for z in zeilen if z["status"] in ("nachfrage", "erfasst")),
+        "offen_zur_frist": {"wert": sum(1 for z in zeilen
+                                       if z["status"] in ("nachfrage", "erfasst", "unlesbar")),
                             "ziel": 0},
         # `pflicht_metadaten_pro_beleg` stand hier fest auf 0 bei Ziel 0 und
         # meldete damit immer Erfolg, ohne je einen Beleg anzusehen. Raus:
@@ -3628,6 +3835,62 @@ def api_monat(monat: str, request: Request) -> Response:
     return JSONResponse(daten)
 
 
+async def _einschaetzungs_kontext(un: str, monat: str) -> dict:
+    """Der stehende Kontext eines Salons für eine Buchungs-Runde.
+
+    Extrahiert aus `api_buchung_einschaetzung` (P0-4/2a), damit der
+    Hintergrund-Lesepfad für Portal-Uploads (`_beleg_serverseitig_lesen`)
+    genau denselben Kontext bekommt wie das Telefon: laufende Verträge
+    (Miete, Leasing, Versicherung) und Personal — damit eine Mietzahlung
+    gegen den bekannten Vertrag gebucht wird und eine Lohnzahlung als Lohn
+    erkannt wird, statt als neuer Einzelaufwand — sowie Umsätze, Beleg-
+    Nachbarn und offene Abbuchungen des Monats.
+    """
+    vertraege_ktx, personal_ktx = [], []
+    try:
+        import vertraege as vt  # noqa: PLC0415
+        ueb = await run_in_threadpool(lambda: vt.uebersicht(vertraege_aktuell()))
+        vertraege_ktx = [{"art_name": z.get("art_name") or z.get("art"),
+                          "partner": z.get("partner"),
+                          "betrag_monat": z.get("betrag_monat")}
+                         for z in (ueb.get("vertraege") or [])][:10]
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        personal_ktx = [{"name": p.get("name"),
+                         "kosten_monat": p.get("kosten_monat")}
+                        for p in await run_in_threadpool(team_liste, un)
+                        if p.get("aktiv")][:10]
+    except Exception:  # noqa: BLE001
+        pass
+    umsaetze, nachbarn, offene_abbuchungen = [], [], []
+    if re.match(r"^\d{4}-\d{2}$", monat):
+        try:
+            idx = await run_in_threadpool(index_aktuell)
+            umsaetze = [{"datum": u.get("datum"), "betrag": u.get("betrag"),
+                         "text": u.get("text")}
+                        for u in idx["umsaetze"].get(monat, [])][:20]
+            nachbarn = [{"datum": b.get("datum"), "brutto": b.get("brutto"),
+                         "lieferant": b.get("lieferant")}
+                        for b in idx["belege"].values()
+                        if str(b.get("datum") or "").startswith(monat)][:15]
+            # Das Abgleich-RESULTAT in den Prompt: welche Abbuchungen des
+            # Monats haben noch keinen Beleg? Deckt dieser eine davon, soll
+            # Gemma das sagen — der Haken in der Bank-Checkliste beginnt hier.
+            import kontoauszug as ka  # noqa: PLC0415
+            offene_abbuchungen = [
+                {"datum": u.get("datum"), "betrag": u.get("betrag"),
+                 "text": u.get("text"), "gegenpartei": u.get("gegenpartei")}
+                for u in ka.abgleich(idx["umsaetze"].get(monat, []),
+                                     list(idx["belege"].values()))["fehlend"]
+            ][:10]
+        except Exception:  # noqa: BLE001
+            pass
+    return {"vertraege_ktx": vertraege_ktx, "personal_ktx": personal_ktx,
+            "umsaetze": umsaetze, "nachbarn": nachbarn,
+            "offene_abbuchungen": offene_abbuchungen}
+
+
 @app.post("/api/buchung/einschaetzung")
 async def api_buchung_einschaetzung(request: Request) -> Response:
     """Das Telefon fragt direkt nach der steuerlichen Einschätzung.
@@ -3671,56 +3934,13 @@ async def api_buchung_einschaetzung(request: Request) -> Response:
         if isinstance(a, dict) and str(a.get("antwort", "")).strip():
             antworten.append({"frage": str(a.get("frage", ""))[:200],
                               "antwort": str(a.get("antwort", ""))[:200]})
-    # Der stehende Kontext des Salons: laufende Verträge (Miete, Leasing,
-    # Versicherung) und das Personal — damit eine Mietzahlung gegen den
-    # bekannten Vertrag gebucht wird und eine Lohnzahlung als Lohn erkannt
-    # wird, statt als neuer Einzelaufwand.
-    vertraege_ktx, personal_ktx = [], []
-    try:
-        import vertraege as vt  # noqa: PLC0415
-        ueb = await run_in_threadpool(lambda: vt.uebersicht(vertraege_aktuell()))
-        vertraege_ktx = [{"art_name": z.get("art_name") or z.get("art"),
-                          "partner": z.get("partner"),
-                          "betrag_monat": z.get("betrag_monat")}
-                         for z in (ueb.get("vertraege") or [])][:10]
-    except Exception:  # noqa: BLE001
-        pass
-    try:
-        personal_ktx = [{"name": p.get("name"),
-                         "kosten_monat": p.get("kosten_monat")}
-                        for p in await run_in_threadpool(team_liste, un)
-                        if p.get("aktiv")][:10]
-    except Exception:  # noqa: BLE001
-        pass
     monat = str(body.get("monat") or "")
-    umsaetze, nachbarn, offene_abbuchungen = [], [], []
-    if re.match(r"^\d{4}-\d{2}$", monat):
-        try:
-            idx = await run_in_threadpool(index_aktuell)
-            umsaetze = [{"datum": u.get("datum"), "betrag": u.get("betrag"),
-                         "text": u.get("text")}
-                        for u in idx["umsaetze"].get(monat, [])][:20]
-            nachbarn = [{"datum": b.get("datum"), "brutto": b.get("brutto"),
-                         "lieferant": b.get("lieferant")}
-                        for b in idx["belege"].values()
-                        if str(b.get("datum") or "").startswith(monat)][:15]
-            # Das Abgleich-RESULTAT in den Prompt: welche Abbuchungen des
-            # Monats haben noch keinen Beleg? Deckt dieser eine davon, soll
-            # Gemma das sagen — der Haken in der Bank-Checkliste beginnt hier.
-            import kontoauszug as ka  # noqa: PLC0415
-            offene_abbuchungen = [
-                {"datum": u.get("datum"), "betrag": u.get("betrag"),
-                 "text": u.get("text"), "gegenpartei": u.get("gegenpartei")}
-                for u in ka.abgleich(idx["umsaetze"].get(monat, []),
-                                     list(idx["belege"].values()))["fehlend"]
-            ][:10]
-        except Exception:  # noqa: BLE001
-            pass
+    ktx = await _einschaetzungs_kontext(un, monat)
     try:
         ergebnis = await run_in_threadpool(
             gemma_buchung.runde, zeilen, profil, antworten,
-            kontenrahmen_von(un), umsaetze, nachbarn, None, None,
-            vertraege_ktx, personal_ktx, offene_abbuchungen)
+            kontenrahmen_von(un), ktx["umsaetze"], ktx["nachbarn"], None, None,
+            ktx["vertraege_ktx"], ktx["personal_ktx"], ktx["offene_abbuchungen"])
     except Exception as ex:  # noqa: BLE001
         print(f"[einschaetzung] {un}: {ex!r}", flush=True)
         return JSONResponse({"fehler": "Die Buchhaltung ist gerade nicht zu "
