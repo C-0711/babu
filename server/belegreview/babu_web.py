@@ -2189,6 +2189,105 @@ def _beleg_vektoren() -> tuple[list[str], object]:
     return staemme, matrix
 
 
+def _wissen_beiakten() -> dict[str, dict]:
+    """Titel und Thema je hochgeladenem Wissens-Dokument, aus den `.meta.json`.
+
+    Exakte Kopie des Musters `_abschluss_beiakten()`, nur mit dem Filter auf
+    `wissen/`."""
+    kopf = (_git(["rev-parse", "HEAD"], 10) or "HEAD").strip()
+    out = _git(["ls-tree", "-r", kopf], 60) or ""
+    oids: dict[str, str] = {}
+    for zeile in out.splitlines():
+        vorn, _, pfad = zeile.partition("\t")
+        teile = vorn.split()
+        if pfad.startswith("wissen/") and pfad.endswith(".meta.json") \
+                and len(teile) == 3 and teile[1] == "blob":
+            oids[pfad.removesuffix(".meta.json")] = teile[2]
+    raus: dict[str, dict] = {}
+    for oid, roh in _blobs_lesen(list(oids.values())).items():
+        try:
+            raus[oid] = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            raus[oid] = {}
+    return {pfad: raus.get(oid) or {} for pfad, oid in oids.items()}
+
+
+# (HEAD der Box, Atom-Beiwerk, normalisierte Vektor-Matrix) — dasselbe
+# Keying-Muster wie `_BELEG_VEKTOREN`.
+_WISSEN_VEKTOREN: tuple[str | None, list[dict], object] = (None, [], None)
+
+
+def _wissen_vektoren() -> tuple[list[dict], object]:
+    """Alle Vektoren aus hochgeladenen Wissens-Dokumenten (`wissen/*/*.atome.json`)
+    als Matrix — je Box-Stand einmal gebaut."""
+    global _WISSEN_VEKTOREN
+    kopf = (_git(["rev-parse", "HEAD"], 10) or "").strip()
+    if kopf and _WISSEN_VEKTOREN[0] == kopf:
+        return _WISSEN_VEKTOREN[1], _WISSEN_VEKTOREN[2]
+    import numpy as np  # noqa: PLC0415
+    import datev_wissen  # noqa: PLC0415
+    out = _git(["ls-tree", "-r", kopf or "HEAD"], 60) or ""
+    oids: dict[str, str] = {}
+    for zeile in out.splitlines():
+        vorn, _, pfad = zeile.partition("\t")
+        teile = vorn.split()
+        if pfad.startswith("wissen/") and pfad.endswith(".atome.json") \
+                and len(teile) == 3 and teile[1] == "blob":
+            oids[pfad] = teile[2]
+    beiakten = _wissen_beiakten()
+    meta: list[dict] = []
+    vektoren = []
+    for pfad in oids:
+        thema = pfad.split("/")[1] if pfad.count("/") >= 1 else "sonstiges"
+        thema_name = datev_wissen.THEMEN.get(thema, (thema,))[0]
+        titel = (beiakten.get(pfad.removesuffix(".atome.json")) or {}).get("titel") \
+            or Path(pfad).name
+        roh = git_show(pfad)
+        try:
+            atome = json.loads(roh) if roh else []
+        except Exception:  # noqa: BLE001
+            continue
+        for a in (atome if isinstance(atome, list) else []):
+            v = a.get("vektor")
+            if not v:
+                continue
+            arr = np.asarray(v, dtype=np.float32)
+            norm = float(np.linalg.norm(arr))
+            if norm <= 0:
+                continue
+            meta.append({"quelle": f"wissen:{thema}", "loc": a.get("loc"),
+                        "text": a.get("text") or "", "thema": thema,
+                        "thema_name": thema_name, "titel": titel, "pfad": pfad})
+            vektoren.append(arr / norm)
+    matrix = np.vstack(vektoren) if vektoren else None
+    _WISSEN_VEKTOREN = (kopf or None, meta, matrix)
+    return meta, matrix
+
+
+def _wissen_treffer(frage_vektor: list[float], k: int = 5) -> list[dict]:
+    """Die k passendsten Wissens-Atome zur (bereits eingebetteten) Frage —
+    gleiche Rückgabeform wie `kompendium.suchen()`: score, quelle, loc, text
+    (dazu thema, thema_name, titel, pfad für spätere Zitate)."""
+    if not frage_vektor:
+        return []
+    try:
+        meta, matrix = _wissen_vektoren()
+    except Exception:  # noqa: BLE001
+        return []
+    if matrix is None:
+        return []
+    import numpy as np  # noqa: PLC0415
+    q = np.asarray(frage_vektor, dtype=np.float32)
+    norm = float(np.linalg.norm(q))
+    if norm == 0:
+        return []
+    scores = matrix @ (q / norm)
+    treffer = []
+    for nr in np.argsort(-scores)[:k]:
+        treffer.append({**meta[int(nr)], "score": round(float(scores[nr]), 4)})
+    return treffer
+
+
 def _recherche(frage: str) -> str:
     """Was zur Frage nachgeschlagen wird — Branchen-Kompendium und eigene
     Belege, beide über denselben Frage-Vektor.
@@ -2202,8 +2301,11 @@ def _recherche(frage: str) -> str:
         return ""
     import kompendium  # noqa: PLC0415
     bloecke: list[str] = []
-    treffer = [t for t in kompendium.suchen(emb["vektor"], k=5)
-               if t["score"] >= 0.30]
+    treffer = sorted(
+        (t for t in kompendium.suchen(emb["vektor"], k=5)
+         + _wissen_treffer(emb["vektor"], k=5)
+         if t["score"] >= 0.30),
+        key=lambda t: -t["score"])[:5]
     if treffer:
         zeilen = ["NACHGESCHLAGEN im Branchen- und Rechtswissen (mit Quelle):"]
         for t in treffer:
@@ -2243,6 +2345,9 @@ WOHIN_TEXT = {
 
 DOKUMENT_ENDUNGEN = {".pdf", ".jpg", ".jpeg", ".png"}
 DOKUMENT_PFAD_RE = re.compile(r"^dokumente/[A-Za-z0-9._/ -]{1,200}$")
+# Ein DATEV-Nachschlagewerk darf auch Markdown und Klartext sein — die
+# Hilfe-Center-Seiten kommen als .md, nicht als Scan.
+WISSEN_ENDUNGEN = DOKUMENT_ENDUNGEN | {".md", ".txt"}
 # Alles, was in der Ablage steht, muss sich auch öffnen lassen — sonst führt
 # ein Eintrag ins Leere. Gelöscht werden darf davon nur `dokumente/`.
 # `docs/` sind die Belege — seit die Ablage sie als eigenes Fach zeigt,
@@ -2250,7 +2355,7 @@ DOKUMENT_PFAD_RE = re.compile(r"^dokumente/[A-Za-z0-9._/ -]{1,200}$")
 # die den Beleg samt Beiakten wegnimmt.
 ABLAGE_PFAD_RE = re.compile(
     r"^(dokumente|auszuege|abschluss|export|kassenbuch|rechnungen|docs|ustva"
-    r"|bwa|historie)/[A-Za-z0-9._/ -]{1,200}$")
+    r"|bwa|historie|wissen)/[A-Za-z0-9._/ -]{1,200}$")
 
 
 @app.get("/api/dokumente")
@@ -5342,6 +5447,167 @@ def api_salon_check(request: Request, jahr: int = 0) -> Response:
 
 
 # ---------------------------------------------------------------------------
+# Wissen: hochgeladene DATEV-Dokumente (Kontenrahmen, Steuerschlüssel, AfA,
+# Lohn, …) als eigenes, schreibbares Nachschlagewerk neben dem read-only
+# Host-Kompendium. Gleiches Sidecar-Muster wie Beleg-Embeddings: Original +
+# `.meta.json` (Titel, Thema, Status) + `.text.json` (Klartext, damit die
+# bestehende Ablage-Stichwortsuche ihn ohne Codeänderung mitfindet) +
+# `.atome.json` (die eingebetteten Absätze). Der Job läuft im Hintergrund,
+# genau wie beim Salon-Check — Nina lädt hoch und sieht "wird eingelesen",
+# ohne dass die Anfrage darauf wartet.
+# ---------------------------------------------------------------------------
+
+WISSEN_MAX = 80 * 1024 * 1024   # DATEV-Handbücher sind selten größer
+WISSEN_TMP = Path(os.environ.get("BABU_WISSEN_TMP",
+                                 str(Path.home() / "babu-web" / "wissen-tmp")))
+_WISSEN_LOCK = threading.Lock()
+# pfad -> {"stand","eingelesen","gesamt"} — reiner In-Memory-Fortschritt für
+# das Polling der Karte; der Endstand steht dauerhaft im Meta-Commit.
+_WISSEN_JOBS: dict[str, dict] = {}
+
+
+@app.post("/api/wissen")
+async def api_wissen_hochladen(request: Request, name: str = "dokument.pdf",
+                               titel: str = "", thema: str = "") -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    import datev_wissen  # noqa: PLC0415
+    endung = Path(name).suffix.lower()
+    if endung not in WISSEN_ENDUNGEN:
+        return JSONResponse({"fehler": "kein Dokument-Format"}, status_code=400)
+    try:
+        daten = await koerper_lesen(request, WISSEN_MAX)
+    except KoerperZuGross:
+        return JSONResponse({"fehler": "zu groß"}, status_code=413)
+    if not daten:
+        return JSONResponse({"fehler": "leer"}, status_code=400)
+    schon = await run_in_threadpool(_blob_schon_da, daten)
+    if schon:
+        return JSONResponse({"ok": True, "dublette": True, "pfad": schon,
+                             "hinweis": "Genau dieses Dokument liegt schon im "
+                                        "Nachschlagewerk — nichts doppelt abgelegt."})
+    if thema not in datev_wissen.THEMEN:
+        # Kein LLM-Aufruf in der Request-Zeit — nur die Textebene der ersten
+        # Seiten, wenn es welche gibt (schnell, kostenlos).
+        text = ""
+        if endung == ".pdf":
+            try:
+                import tempfile  # noqa: PLC0415
+                import abschluss_lesen  # noqa: PLC0415
+                with tempfile.NamedTemporaryFile(suffix=".pdf") as tf:
+                    tf.write(daten)
+                    tf.flush()
+                    text = "\n".join(abschluss_lesen.seiten_text(tf.name)[:3])
+            except Exception:  # noqa: BLE001
+                text = ""
+        elif endung in (".md", ".txt"):
+            text = daten[:8000].decode("utf-8", errors="replace")
+        thema = datev_wissen.thema_erkennen(text) if text.strip() else "sonstiges"
+    import boxschreiber  # noqa: PLC0415
+    dateiname = boxschreiber.beleg_dateiname(name)
+    pfad = f"wissen/{thema}/{dateiname}"
+    meta = json.dumps({"titel": (titel or name)[:120], "thema": thema, "von": un,
+                       "hochgeladen_am": _jetzt_iso(), "status": "wird eingelesen"},
+                      ensure_ascii=False, indent=1).encode()
+    try:
+        commit = await run_in_threadpool(boxschreiber.schreiben,
+            {pfad: daten, pfad + ".meta.json": meta}, None,
+            f"wissen: {dateiname}", un)
+    except boxschreiber.SchreibFehler:
+        return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                            status_code=503)
+    with _INDEX_LOCK:
+        _INDEX["geprueft"] = 0.0
+    threading.Thread(target=_wissen_job, args=(pfad, daten, thema, un),
+                     daemon=True).start()
+    return JSONResponse({"ok": True, "commit": commit, "pfad": pfad, "thema": thema})
+
+
+def _wissen_job(pfad: str, daten: bytes, thema: str, un: str) -> None:
+    """Ein hochgeladenes DATEV-Dokument lesen, in Absätze zerlegen und
+    einbetten — im Hintergrund, damit `/api/wissen` sofort antwortet.
+
+    Fehlerbild wie `_abschluss_job`: die Ausnahme reißt den Prozess nie mit,
+    sie landet als "status":"fehler" in der Beiakte."""
+    import datev_wissen  # noqa: PLC0415
+    import boxschreiber  # noqa: PLC0415
+    _WISSEN_JOBS[pfad] = {"stand": "liest", "eingelesen": 0, "gesamt": 0}
+    tmp_pfad = WISSEN_TMP / _un_ordner(un) / Path(pfad).name
+    try:
+        tmp_pfad.parent.mkdir(parents=True, exist_ok=True)
+        tmp_pfad.write_bytes(daten)
+
+        def ocr_mit_semaphore(jpeg: bytes, name: str) -> str:
+            with _LLM_SEMAPHORE:
+                return _ocr_seite(jpeg, name)
+
+        seiten = datev_wissen.seiten_lesen(tmp_pfad, ocr=ocr_mit_semaphore)
+        atome_roh = datev_wissen.atome_bauen(seiten)
+        _WISSEN_JOBS[pfad]["gesamt"] = len(atome_roh)
+        atome = []
+        for atom in atome_roh:
+            with _LLM_SEMAPHORE:
+                v = embedding_rechnen(atom["text"], als_dokument=True)
+            if v is not None:
+                atome.append({**atom, **v})
+            with _WISSEN_LOCK:
+                _WISSEN_JOBS[pfad]["eingelesen"] += 1
+        alt_meta = {}
+        roh = git_show(pfad + ".meta.json")
+        if roh is not None:
+            try:
+                alt_meta = json.loads(roh)
+            except Exception:  # noqa: BLE001
+                alt_meta = {}
+        boxschreiber.schreiben({
+            pfad + ".text.json": json.dumps(
+                {"text": "\n\n".join(seiten)}, ensure_ascii=False).encode(),
+            pfad + ".atome.json": json.dumps(atome, ensure_ascii=False).encode(),
+            pfad + ".meta.json": json.dumps(
+                {**alt_meta, "status": "eingelesen", "seiten": len(seiten),
+                 "absaetze": len(atome)}, ensure_ascii=False, indent=1).encode(),
+        }, None, f"wissen: eingelesen {Path(pfad).name}", un)
+        with _INDEX_LOCK:
+            _INDEX["geprueft"] = 0.0
+        _WISSEN_JOBS[pfad]["stand"] = "fertig"
+    except Exception as ex:  # noqa: BLE001
+        print(f"[wissen] Job für {pfad} gescheitert: {ex!r}", flush=True)
+        _WISSEN_JOBS[pfad] = {**_WISSEN_JOBS.get(pfad, {}), "stand": "fehler"}
+        try:
+            alt_meta = {}
+            roh = git_show(pfad + ".meta.json")
+            if roh is not None:
+                alt_meta = json.loads(roh)
+            boxschreiber.schreiben(
+                pfad + ".meta.json",
+                json.dumps({**alt_meta, "status": "fehler",
+                           "hinweis": "Das hat gerade nicht geklappt — "
+                                      "versuch es später nochmal."},
+                          ensure_ascii=False, indent=1).encode(),
+                f"wissen: fehler {Path(pfad).name}", un)
+            with _INDEX_LOCK:
+                _INDEX["geprueft"] = 0.0
+        except Exception:  # noqa: BLE001
+            pass
+    finally:
+        tmp_pfad.unlink(missing_ok=True)
+
+
+WISSEN_STATUS_PFAD_RE = re.compile(r"^wissen/[A-Za-z0-9._/ -]{1,200}$")
+
+
+@app.get("/api/wissen/status")
+def api_wissen_status(request: Request, pfad: str = "") -> Response:
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
+    if not WISSEN_STATUS_PFAD_RE.match(pfad):
+        return JSONResponse({"stand": "unbekannt"})
+    return JSONResponse(_WISSEN_JOBS.get(pfad) or {"stand": "unbekannt"})
+
+
+# ---------------------------------------------------------------------------
 # Finanzamt-Briefe: fotografieren/ablegen (art=behoerde) → babu erklärt sie
 # in einfachen Worten als Sidecar <datei>.erklaerung.json.
 # ---------------------------------------------------------------------------
@@ -5603,6 +5869,7 @@ ABLAGE_ARTEN = {
               "Deine monatlichen Voranmeldungs-Entwürfe (USt 1 A)"),
     "bwa": ("BWA und Summen/Salden",
             "Monatliche Auswertung und Saldenliste nach DATEV-Schema"),
+    "wissen": ("Wissen", "Nachschlagewerk zu Kontenrahmen, Steuer und DATEV"),
 }
 
 # Welche erkannte Art in welches Fach gehört.
@@ -5662,6 +5929,7 @@ def _beleg_titel(z: dict) -> str:
 
 def _ablage_eintraege() -> list[dict]:
     """Alles Abgelegte als flache Liste — die Grundlage für Baum und Suche."""
+    import datev_wissen  # noqa: PLC0415
     index = index_aktuell()
     zeiten = index["zeiten"]
     eintraege: list[dict] = []
@@ -5688,6 +5956,7 @@ def _ablage_eintraege() -> list[dict]:
                           "status": z.get("status"), "loeschbar": False})
 
     beiakten = _abschluss_beiakten()
+    wissen_beiakten = _wissen_beiakten()
 
     # Kontoauszüge, Abschlüsse, Stapel und Kassenblätter direkt aus dem Baum —
     # MIT Blob-Kennungen, denn an denen hängt die gemerkte Seitenzahl.
@@ -5705,10 +5974,12 @@ def _ablage_eintraege() -> list[dict]:
     baum = "\n".join(oids)
     for pfad in baum.splitlines():
         if pfad.endswith((".umsaetze.json", ".meta.json", ".erklaerung.json",
-                          ".text.json", ".aenderungen.json")):
+                          ".text.json", ".aenderungen.json", ".atome.json")):
             continue
         name = pfad.rsplit("/", 1)[-1]
         titel = name
+        status = None
+        thema = thema_name = None
         if pfad.startswith("auszuege/"):
             # Ein Auszug darf heißen, wie Nina ihn wiedererkennt, und ins
             # richtige Fach wandern — wie Verträge und Post vom Amt auch.
@@ -5743,16 +6014,31 @@ def _ablage_eintraege() -> list[dict]:
             rest = name.removesuffix("-susa.pdf").removesuffix("-bwa.pdf")
             titel = (was + "Jahresauflauf " + rest.removesuffix("-ytd")
                      if rest.endswith("-ytd") else was + rest)
+        elif pfad.startswith("wissen/"):
+            # Ein hochgeladenes DATEV-Dokument — solange es noch eingelesen
+            # wird, hat es kein Thema und keinen Titel aus der Beiakte; die
+            # Karte zeigt dann den Rohnamen und „wird eingelesen".
+            beiakte = wissen_beiakten.get(pfad) or {}
+            art = beiakte.get("fach") or "wissen"
+            if art not in ABLAGE_ARTEN:
+                art = "wissen"
+            titel = beiakte.get("titel") or name
+            status = beiakte.get("status")
+            thema = pfad.split("/")[1] if pfad.count("/") >= 1 else None
+            thema_name = datev_wissen.THEMEN.get(thema, (thema,))[0] if thema else None
         else:
             continue
         # Kassenbuch, Stapel und Abschluss sind aufbewahrungspflichtig — kein
         # Knopf, keine Route. Kontoauszüge dürfen seit 27.08.2026 weg (Ninas
         # Wunsch: falsch oder doppelt Hochgeladenes) — die GitChain-Historie
         # behält ohnehin jede Version, gelöscht wird nur der aktuelle Stand.
+        # Wissen ist ebenfalls kein GoBD-Beleg der Nutzerin — Löschen ist
+        # trotzdem (noch) keine Route, siehe Planungsdokument.
         eintraege.append({"pfad": pfad, "titel": titel, "art": art,
                           "zeit": (zeiten.get(pfad) or {}).get("zeit"),
                           "gelesen": None, "erklaerung": None, "vertrag": None,
                           "loeschbar": pfad.startswith("auszuege/"),
+                          "status": status, "thema": thema, "thema_name": thema_name,
                           "seiten": _pdf_seiten(oids.get(pfad), pfad)})
     return eintraege
 
@@ -5781,7 +6067,8 @@ def _blob_schon_da(daten: bytes) -> str | None:
     # Beiwerk zählt nicht — eine Nutzdatei, die zufällig einer meta.json
     # gleicht, gibt es nicht, aber sicher ist sicher.
     if pfad and not pfad.endswith((".meta.json", ".umsaetze.json",
-                                   ".erklaerung.json", ".text.json")):
+                                   ".erklaerung.json", ".text.json",
+                                   ".atome.json")):
         return pfad
     return None
 
@@ -5946,7 +6233,7 @@ def api_ablage_suche(request: Request, q: str = "") -> Response:
 # dass das Siegel („unverändert seit") weiter gilt: eine umbenannte Datei
 # wäre in der Historie ein anderes Stück Papier.
 ABLAGE_BEIAKTE_RE = re.compile(
-    r"^(dokumente|abschluss|auszuege)/[A-Za-z0-9._/ -]{1,200}$")
+    r"^(dokumente|abschluss|auszuege|wissen)/[A-Za-z0-9._/ -]{1,200}$")
 
 
 def _beiakte_aendern(un: str, pfad: str, **felder) -> Response | None:
@@ -5955,7 +6242,7 @@ def _beiakte_aendern(un: str, pfad: str, **felder) -> Response | None:
         return JSONResponse({"fehler": "Die Ablage ordnet die Inhaberin."},
                             status_code=403)
     if not ABLAGE_BEIAKTE_RE.match(pfad) or ".." in pfad \
-            or pfad.endswith((".meta.json", ".text.json")):
+            or pfad.endswith((".meta.json", ".text.json", ".atome.json")):
         return JSONResponse(
             {"fehler": "Belege heißen nach dem, was auf ihnen steht — ändere sie "
                        "im Beleg selbst. Kassenbuch und Stapel bleiben, wie "

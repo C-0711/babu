@@ -125,6 +125,34 @@ def test_recherche_ohne_embedding_dienst_ist_leer(monkeypatch):
     assert bw._recherche("egal") == ""
 
 
+def test_recherche_findet_wissen_atome(mini_kompendium, monkeypatch):
+    """Kompendium- und Wissens-Treffer werden zusammengeführt und nach
+    Score sortiert — beide Quellen rendern gleich, weil `_wissen_treffer`
+    dieselbe Dict-Form wie `kompendium.suchen()` liefert."""
+    import numpy as np
+
+    import babu_web as bw
+    monkeypatch.setattr(
+        bw, "embedding_rechnen",
+        lambda text, als_dokument=True: {"modell": "e", "dim": 4,
+                                         "vektor": [1.0, 0.0, 0.0, 0.0]})
+    monkeypatch.setattr(bw, "_beleg_vektoren", lambda: ([], None))
+    wissen_meta = [{"quelle": "wissen:kontenrahmen", "loc": "S2#0",
+                   "text": "SKR04-Kontenrahmen: Übersicht der Kontenklassen",
+                   "thema": "kontenrahmen", "thema_name": "Kontenrahmen",
+                   "titel": "SKR04-Handbuch", "pfad": "wissen/kontenrahmen/x.pdf"}]
+    # Zeigt nicht exakt auf denselben Punkt wie afa.pdf — score liegt
+    # niedriger, muss also NACH afa.pdf erscheinen.
+    wissen_matrix = np.array([[0.5, 0.8660254, 0.0, 0.0]], dtype=np.float32)
+    monkeypatch.setattr(bw, "_wissen_vektoren", lambda: (wissen_meta, wissen_matrix))
+
+    text = bw._recherche("Welches Konto für was?")
+    assert "NACHGESCHLAGEN" in text
+    assert "[afa.pdf · S1#0]" in text
+    assert "[wissen:kontenrahmen · S2#0]" in text
+    assert text.index("afa.pdf") < text.index("wissen:kontenrahmen")
+
+
 # ————— Der Buchungs-Prompt: stehender Vorspann, variabler Beleg —————
 #
 # Der Chat kontiert erkennbar besser, seit sein Wissen byte-stabil im
@@ -230,6 +258,27 @@ def test_die_suche_laesst_betraege_und_mengen_weg():
                              "Netto 630,25", "Gesamt 750,00 EUR"], None)
     assert "Bedienungsstuhl Hydraulik Holz" in sache
     assert "630" not in sache and "750" not in sache
+
+
+def test_nachschlagen_findet_wissen_quelle(mini_kompendium, monkeypatch):
+    """`quelle="wissen:lohn"` passiert den NACHSCHLAG_QUELLEN-Filter, obwohl
+    "lohn" selbst nicht in der Liste steht — der Filter prüft nur auf das
+    Präfix "wissen", jedes Thema darunter ist für die Buchung zulässig."""
+    import babu_web as bw
+    import gemma_buchung as gb
+    # Zeigt auf statistik.md (kein Buchungswissen) — das Kompendium darf
+    # hier nichts beitragen, damit der Treffer eindeutig vom Wissen kommt.
+    monkeypatch.setattr(bw, "embedding_rechnen",
+                        lambda text, als_dokument=True: {
+                            "modell": "e", "dim": 4, "vektor": [0, 0, 1.0, 0]})
+    monkeypatch.setattr(bw, "_wissen_treffer", lambda vektor, k=6: [
+        {"score": 0.55, "quelle": "wissen:lohn", "loc": "S3#1",
+         "text": "Die Lohnsteuer richtet sich nach der Lohnsteuerklasse.",
+         "thema": "lohn", "thema_name": "Lohn", "titel": "Lohnhandbuch",
+         "pfad": "wissen/lohn/handbuch.pdf"}])
+    text = gb.nachschlagen(["Frisör", "Team-Lohn Auszahlung"])
+    assert "NACHGESCHLAGEN" in text
+    assert "[wissen:lohn · S3#1]" in text
 
 
 def test_nachschlagen_schweigt_ohne_dienst(monkeypatch):

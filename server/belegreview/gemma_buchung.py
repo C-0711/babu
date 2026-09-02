@@ -244,7 +244,7 @@ def system_text(profil: str, rahmen: str = "SKR04") -> str:
 # Branchenstatistiken trifft. Über einen Schwellwert allein ist Signal
 # von Rauschen darum nicht zu trennen — über die Quelle schon.
 NACHSCHLAG_QUELLEN = ("afa", "kontenplan", "skr04", "skr03", "bmf",
-                      "ustg", "estg", "kontenrahmen", "steuerschluessel")
+                      "ustg", "estg", "kontenrahmen", "steuerschluessel", "wissen")
 NACHSCHLAG_SCHWELLE = 0.40
 
 
@@ -292,6 +292,7 @@ def nachschlagen(zeilen: list[str], markdown: str | None = None,
         if not emb:
             return ""
         treffer = [t for t in kompendium.suchen(emb["vektor"], k=k)
+                   + babu_web._wissen_treffer(emb["vektor"], k=k)
                    if t["score"] >= NACHSCHLAG_SCHWELLE
                    and any(q in (t["quelle"] or "").lower()
                            for q in NACHSCHLAG_QUELLEN)][:2]
