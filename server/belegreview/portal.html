@@ -1080,6 +1080,12 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
         placeholder="Suchen — auch in dem, was auf den Blättern steht" autocomplete="off">
       <button class="chip" id="ablage-vertrag">Vertrag ablegen</button>
       <input type="file" id="vertrag-datei" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*" hidden>
+      <select id="wissen-thema" title="Thema" style="max-width:160px">
+        <option value="">Thema: wird erkannt</option>
+      </select>
+      <button class="chip" id="ablage-wissen">DATEV-Dokument ablegen</button>
+      <input type="file" id="wissen-datei"
+        accept=".pdf,.jpg,.jpeg,.png,.md,.txt,application/pdf,image/*" hidden>
       <div class="unterreiter" style="margin:0;border:0" id="ablage-ansicht-schalter">
         <button data-ansicht="kacheln" class="an">Kacheln</button>
         <button data-ansicht="liste">Liste</button>
@@ -2616,12 +2622,27 @@ function artLabel(art){
 const ABLAGE_SYMBOL = {beleg:"euro", behoerde:"amt", kanzlei:"dokument",
                        vertrag:"klemmbrett", abschluss:"diagramm",
                        kontoauszug:"bank", export:"export", kassenbuch:"kasse",
-                       rechnung:"briefkopf"};
+                       rechnung:"briefkopf", wissen:"dokument"};
 /* Dieselben Namen wie im Baum — für das Verschieben, wo es noch keinen
    Ordner dieses Fachs gibt und der Baum ihn deshalb nicht zeigt. */
 const ABLAGE_NAME = {behoerde:"Post vom Amt", kanzlei:"Von deiner Kanzlei",
                      vertrag:"Verträge", abschluss:"Jahresabschluss",
-                     kontoauszug:"Kontoauszüge"};
+                     kontoauszug:"Kontoauszüge", wissen:"Wissen"};
+/* Dieselben 8 Themen wie `datev_wissen.THEMEN` — nur für die Themenwahl
+   beim Hochladen; erkannt wird serverseitig, wenn nichts gewählt wird. */
+const WISSEN_THEMEN = [
+  ["kontenrahmen", "Kontenrahmen"], ["steuerschluessel", "Steuerschlüssel"],
+  ["buchungsstapel", "Buchungsstapel und Schnittstelle"],
+  ["afa", "Anlagen und AfA"], ["umsatzsteuer", "Umsatzsteuer"],
+  ["lohn", "Lohn"], ["jahresabschluss", "Jahresabschluss und EÜR"],
+  ["sonstiges", "Sonstiges"],
+];
+for (const [wert, name] of WISSEN_THEMEN){
+  // Statische, entwicklerseitig feste Liste — kein `esc()` nötig, das an
+  // dieser Stelle im Skript noch nicht deklariert ist.
+  $("#wissen-thema").insertAdjacentHTML("beforeend",
+    `<option value="${wert}">${name}</option>`);
+}
 
 /* Wo Nina gerade steht und wie sie schaut. Beides überlebt einen Wechsel in
    eine andere Ansicht — wer aus einem Dokument zurückkommt, will in seinem
@@ -2704,6 +2725,7 @@ function ablageZiel(s){
 
 function ablageKachel(s){
   const marke = s.status === "nachfrage" ? `<span class="marke warn">braucht dich</span>`
+    : s.status === "wird eingelesen" ? `<span class="marke">wird eingelesen</span>`
     : s.erklaerung ? `<span class="marke ok">erklärt</span>`
     : s.vertrag && s.vertrag.betrag_monat
       ? `<span class="marke akzent">${euro(s.vertrag.betrag_monat)}/Monat</span>` : "";
@@ -2715,6 +2737,7 @@ function ablageKachel(s){
       ${marke}
       <div class="name">${esc(s.titel)}</div>
       <div class="wann">${s.zeit ? zeitKurz(s.zeit) : ""}</div>
+      ${s.thema_name ? `<span class="marke nackt">${esc(s.thema_name)}</span>` : ""}
     </a>
     ${s.fundstelle ? `<div class="fundstelle">${esc(s.fundstelle)}</div>` : ""}
     ${ablageWerkzeug(s)}
@@ -2734,7 +2757,7 @@ function ablageZeile(s){
    also bei Unterlagen und Salon-Check-Blättern. Ein Beleg heißt nach dem,
    was auf ihm steht; ein Buchungsstapel heißt, wie die Kanzlei ihn kennt. */
 function ablageWerkzeug(s){
-  const ordnerbar = /^(dokumente|abschluss)\//.test(s.pfad)
+  const ordnerbar = /^(dokumente|abschluss|wissen)\//.test(s.pfad)
     && meineRolle !== "mitarbeit";
   const wie = esc(s.titel).replace(/'/g, "");
   return `<div class="stueck-werkzeug">
@@ -2929,6 +2952,20 @@ $("#vertrag-datei").addEventListener("change", async ev => {
     "/api/dokumente?art=vertrag&name=" + encodeURIComponent(datei.name)
       + "&titel=" + encodeURIComponent("Vertrag · " + datei.name),
     $("#ablage-hochladen"), {fertigSatz: "abgelegt, wird gelesen"});
+  if (a.ok){ setTimeout(ladeAblage, 1500); setTimeout(ladeAblage, 20000); }
+});
+
+$("#ablage-wissen").addEventListener("click", () => $("#wissen-datei").click());
+$("#wissen-datei").addEventListener("change", async ev => {
+  const datei = ev.target.files[0];
+  ev.target.value = "";
+  if (!datei) return;
+  const thema = $("#wissen-thema").value;   // "" = wird serverseitig erkannt
+  const a = await hochladenMitBalken(datei,
+    "/api/wissen?name=" + encodeURIComponent(datei.name)
+      + (thema ? "&thema=" + encodeURIComponent(thema) : "")
+      + "&titel=" + encodeURIComponent(datei.name),
+    $("#ablage-hochladen"), {fertigSatz: "abgelegt, wird eingelesen"});
   if (a.ok){ setTimeout(ladeAblage, 1500); setTimeout(ladeAblage, 20000); }
 });
 
