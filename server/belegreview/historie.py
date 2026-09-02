@@ -13,6 +13,10 @@ Buchung mit Konto, Gegenkonto, Datum und Betrag. Daraus entsteht je Monat,
 was die Auswertung braucht.
 
 Reine Rechnung ohne I/O — der Aufrufer reicht die Bytes herein.
+Deshalb braucht diese Datei auch keinen Store-Parameter aus dem
+Box-Umbau (Plan 21, Phase 2): sie kennt keine Belegbox. Wer die
+Bytes holt, ist `babu_web.historie_lesen()` — und das liest über
+`git_show`/`_git` aus der Box des laufenden Requests.
 
 Was hier NICHT passiert: die alten Buchungen werden nicht zu Belegen. Sie
 haben kein Foto, kein Siegel und keine Prüfspur; sie als babu-Belege

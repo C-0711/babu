@@ -12,6 +12,7 @@ Liest NUR aus dem Bare-Store (git show) — schreibt nichts, kein Lock-Risiko.
 """
 import asyncio
 import base64
+import contextvars
 import hmac
 import hashlib
 import json
@@ -35,16 +36,105 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 WURZEL = Path(__file__).resolve().parent
 sys.path.insert(0, str(WURZEL))
 import audit  # noqa: E402
+import box as bx  # noqa: E402
 import kontenrahmen as kr  # noqa: E402
 import kontierung as kt  # noqa: E402
+import mandanten  # noqa: E402
 
 SEITE = Path(os.environ.get("BABU_SEITE", str(Path.home() / "babu-web" / "index.html")))
-STORE = Path(os.environ.get("BABU_STORE", str(Path.home() / "inspektor-store" / "inspektor"
-                                              / "ws-christoph0711.io" / "babu.git")))
+# BABU_STORE — derselbe Wert wie `box.STORE_STANDARD`, nur unter dem Namen,
+# unter dem ihn die Tests seit jeher umbiegen.
+STORE = bx.STORE_STANDARD
 GEHEIMNIS_PFAD = Path(os.environ.get("BABU_SESSION_GEHEIMNIS",
                                      str(Path.home() / "babu-web" / ".session_geheimnis")))
 PORTAL_ORIGIN = os.environ.get("BABU_ORIGIN", "https://babu.0711.io")
 PORTAL_DB = Path(os.environ.get("BABU_PORTAL_DB", str(Path.home() / "babu-web" / "portal.db")))
+
+# Woher `box.default_box()` den Store nimmt. Als Funktion und nicht als Wert,
+# damit ein umgebogenes `STORE` (Tests, Vorschau-Server) weiter wirkt.
+bx.store_quelle(lambda: STORE)
+
+
+# ---------------------------------------------------------------------------
+# Welche Belegbox dieser Request bedient.
+#
+# Bis Plan 21 gab es genau eine, und sie stand als Modulkonstante da. Jetzt
+# steht sie in einer ContextVar: `_box_wache` setzt sie einmal je Request,
+# die tief liegenden Funktionen (`_git`, `index_aktuell`, der Schreibweg)
+# lesen sie von dort. Die 104 Routen bleiben dadurch Wort für Wort, wie sie
+# waren — sonst müsste jede von ihnen eine Box durchreichen.
+#
+# `_box()` fällt auf die Default-Box zurück, wenn niemand etwas gesetzt hat.
+# Das ist kein Notnagel, sondern der reguläre Weg — und weil ein stiller
+# Rückfall ab der zweiten Box in die falsche Ablage schriebe, steht hier
+# vollständig, wo er heute greift:
+#
+# A) Neun Routen gehen an die Box, ohne durch `_box_wache` zu kommen. Sie
+#    prüfen ihre Grenze selbst (`box_mitglied`, `ERLAUBT`, Meta-Signatur)
+#    oder haben von Haus aus keinen angemeldeten Zugang:
+#      POST /ablage                              angemeldet + box_mitglied
+#      GET  /api/kontenrahmen                    _api_wache
+#      POST /api/kontenrahmen                    _api_wache
+#      GET  /review/{stamm}                      wer + box_mitglied/ERLAUBT
+#      GET  /review/{stamm}/protokoll            wer + box_mitglied/ERLAUBT
+#      POST /chat                                angemeldet + box_mitglied
+#      POST /api/auswertung/lesen                Einladungsschlüssel, kein Konto
+#      POST /api/onboarding/{marke}/{schritt_id} Onboarding-Schlüssel
+#      POST /api/whatsapp/webhook                Meta-Signatur, kein Konto
+#    Jede davon meint die eine Box dieses Servers. Ab Phase 3 muss jede
+#    einzeln entscheiden, welchen Mandanten sie bedient.
+#
+# B) Hintergrund-Threads (`threading.Thread`) — eine ContextVar wandert
+#    NICHT in einen neuen Thread. Alle sieben Startstellen (Vertrag lesen,
+#    Brief erklären ×2, Abschluss, Auswertung, Wissen) reichen die Box
+#    deshalb über `_im_box_kontext` ausdrücklich weiter; ein Rückfall
+#    passiert dort NICHT. `asyncio.create_task` (Hintergrund-Lesung) erbt
+#    den Kontext von selbst.
+#
+# C) Tests, die `_box_wache` durch ein Lambda ersetzen, und der
+#    Vorschau-Server unter `werkzeuge/portal-vorschau/`.
+#
+# Einen Startup-Index gibt es nicht: der erste Request baut ihn.
+# ---------------------------------------------------------------------------
+
+_AKTIVE_BOX: contextvars.ContextVar = contextvars.ContextVar("aktive_box")
+
+
+def _box() -> bx.Box:
+    """Die Box dieses Requests — ohne gesetzten Kontext die Default-Box."""
+    b = _AKTIVE_BOX.get(None)
+    return bx.default_box() if b is None else b
+
+
+# Die Namen, unter denen der Box-Zustand früher als Modulglobal hier stand.
+# Die Testsuite greift an gut vierzig Stellen darauf zu — und soll das
+# weiter dürfen, denn genau diese unveränderten Tests sind der Beweis, dass
+# der Alt-Pfad sich nicht verschoben hat. Ein Modul-`__getattr__` (PEP 562)
+# reicht die Namen an die aktive Box weiter, statt sie zu duplizieren.
+# NEUER Code nimmt `_box().index` und Geschwister direkt.
+_BOX_FELDER = {"_INDEX": "index", "_INDEX_LOCK": "index_schloss",
+               "_BLOB_STAND": "blob_stand", "_SEITEN_CACHE": "seiten_cache",
+               "_BELEG_VEKTOREN": "beleg_vektoren",
+               "_RECHNUNG_SCHLOSS": "rechnung_schloss",
+               "_TERMIN_SCHLOSS": "termin_schloss"}
+
+
+def __getattr__(name: str):
+    feld = _BOX_FELDER.get(name)
+    if feld is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    return getattr(_box(), feld)
+
+
+def _im_box_kontext(box: bx.Box, ziel, *args):
+    """Einen Hintergrund-Thread in der Box starten, aus der er stammt.
+
+    `threading.Thread` erbt den Kontext des Requests nicht — ohne diesen
+    Umweg liefe der Job in der Default-Box, was ab der zweiten Box in die
+    falsche Ablage schriebe.
+    """
+    _AKTIVE_BOX.set(box)
+    return ziel(*args)
 
 
 # ---------------------------------------------------------------------------
@@ -222,7 +312,29 @@ def _db() -> sqlite3.Connection:
     # Audit-Log + Passwort-Reset (Plan 21, Abschnitt 7) — EIN Aufruf, siehe
     # audit.py, warum beide Tabellen daran hängen.
     audit.schema(conn)
+    # Kanzlei, Mandant, Mitgliedschaft. Die eine Stelle, an der die
+    # Tenancy-Tabellen entstehen — und bewusst hier UNTEN: ihre
+    # Fremdschlüssel zeigen auf `nutzer`, und eine Datenbank mit echten
+    # Fremdschlüsseln verlangt die Zieltabelle zum Anlegezeitpunkt.
+    mandanten.schema(conn)
     return conn
+
+
+@contextmanager
+def _db_sitzung():
+    """Eine Portal-Verbindung unter dem Schloss — für `mandanten.py`.
+
+    Dieselbe Form wie `with _DB_LOCK, _db() as c` an den 86 Stellen
+    darunter, nur als Kontext, den ein anderes Modul anmelden kann. Wer
+    `mandanten`-Funktionen aus einem laufenden `_DB_LOCK`-Block ruft, gibt
+    seine Verbindung als `c=` mit — sonst nähme dieser Weg dasselbe
+    einfache Schloss ein zweites Mal und hinge für immer.
+    """
+    with _DB_LOCK, _db() as c:
+        yield c
+
+
+mandanten.verbindung_quelle(_db_sitzung)
 
 
 def db_gelesen(un: str) -> set[str]:
@@ -531,7 +643,7 @@ def box_mitglied(un: str) -> bool:
 
 
 def git_show(pfad: str) -> bytes | None:
-    r = subprocess.run(["git", "-C", str(STORE), "show", f"HEAD:{pfad}"],
+    r = subprocess.run(["git", "-C", str(_box().store), "show", f"HEAD:{pfad}"],
                        capture_output=True, timeout=20)
     return r.stdout if r.returncode == 0 else None
 
@@ -540,7 +652,8 @@ def review_pfad(stamm: str) -> str | None:
     """Exakter Treffer oder Suffix-Match (Server prefixt JJJJMMTT-HHMMSS-hex-)."""
     if git_show(f"review/{stamm}.json") is not None:
         return f"review/{stamm}.json"
-    r = subprocess.run(["git", "-C", str(STORE), "ls-tree", "--name-only", "HEAD:review"],
+    r = subprocess.run(["git", "-C", str(_box().store), "ls-tree", "--name-only",
+                        "HEAD:review"],
                        capture_output=True, text=True, timeout=20)
     if r.returncode != 0:
         return None
@@ -559,20 +672,15 @@ BILD_ENDUNGEN = {".jpg", ".jpeg", ".png"}
 BELEG_ENDUNGEN = BILD_ENDUNGEN | {".pdf", ".heic", ".xml"}
 INDEX_TTL = float(os.environ.get("BABU_INDEX_TTL", "5"))
 
-_INDEX_LOCK = threading.Lock()
-# Die Rechnungsnummer wird gelesen UND vergeben — dazwischen darf
-# niemand dieselbe Nummer bekommen.
-_RECHNUNG_SCHLOSS = threading.Lock()
-# Termine: Überschneidung prüfen und eintragen gehören zusammen.
-_TERMIN_SCHLOSS = threading.Lock()
-_INDEX: dict = {"head": None, "geprueft": 0.0, "belege": {}, "reviews": {},
-                "dokumente": [], "freigaben": {}, "umsaetze": {},
-                "kassenblaetter": {}, "zeiten": {}, "oid_cache": {},
-                "rechnungen": {}}
+# Index, Blob-Stand, Seitenzahlen und die drei Schlösser liegen seit
+# Plan 21 in der `Box` — je Box ein eigener Satz. Sie standen früher hier
+# als Modulglobals `_INDEX`, `_INDEX_LOCK`, `_RECHNUNG_SCHLOSS`,
+# `_TERMIN_SCHLOSS`, `_BLOB_STAND`, `_SEITEN_CACHE`, `_BELEG_VEKTOREN`;
+# geteilt hätte der Index von Mandant A die Belege von Mandant B gezeigt.
 
 
 def _git(args: list[str], timeout: int = 30) -> str | None:
-    r = subprocess.run(["git", "-C", str(STORE), *args],
+    r = subprocess.run(["git", "-C", str(_box().store), *args],
                        capture_output=True, text=True, timeout=timeout)
     return r.stdout if r.returncode == 0 else None
 
@@ -581,7 +689,7 @@ def _blobs_lesen(oids: list[str]) -> dict[str, bytes]:
     """Mehrere Blobs mit EINEM cat-file-Prozess lesen."""
     if not oids:
         return {}
-    p = subprocess.run(["git", "-C", str(STORE), "cat-file", "--batch"],
+    p = subprocess.run(["git", "-C", str(_box().store), "cat-file", "--batch"],
                        input="\n".join(oids).encode() + b"\n",
                        capture_output=True, timeout=60)
     ergebnis: dict[str, bytes] = {}
@@ -753,6 +861,7 @@ def _kategorie_anwenden(review: dict, kategorie: str) -> None:
 
 def _index_bauen(head: str) -> None:
     import monatsabschluss as ma  # noqa: PLC0415
+    idx = _box().index
     # Klassisches ls-tree-Format „<mode> <typ> <oid>\t<pfad>“ — läuft auch auf
     # Git < 2.36 (H200V: 2.34), das --format für ls-tree noch nicht kennt.
     out = _git(["ls-tree", "-r", "HEAD"], 60) or ""
@@ -780,7 +889,7 @@ def _index_bauen(head: str) -> None:
     beleg_pfade = [p for p in pfade
                    if p.startswith("docs/") and Path(p).suffix.lower() in BELEG_ENDUNGEN]
 
-    oid_cache = _INDEX["oid_cache"]
+    oid_cache = idx["oid_cache"]
     fehlend = [oid for oid in list(review_pfade.values()) + list(korrektur_pfade.values())
                + list(angaben_pfade.values())
                if oid not in oid_cache]
@@ -958,7 +1067,7 @@ def _index_bauen(head: str) -> None:
             "zeit": (zeiten.get(pfad) or {}).get("zeit"),
         })
     dokumente.sort(key=lambda d_: d_["zeit"] or "", reverse=True)
-    _INDEX["dokumente"] = dokumente
+    idx["dokumente"] = dokumente
 
     # Kontoauszüge: auszuege/<monat>/<name>.umsaetze.json sammeln
     umsatz_pfade = {p_: oid for p_, oid in pfade.items()
@@ -974,7 +1083,7 @@ def _index_bauen(head: str) -> None:
         d_ = oid_cache.get(oid)
         if isinstance(d_, dict) and d_.get("monat"):
             umsaetze.setdefault(d_["monat"], []).extend(d_.get("umsaetze") or [])
-    _INDEX["umsaetze"] = umsaetze
+    idx["umsaetze"] = umsaetze
 
     # Kassenbuch: kassenbuch/<JJJJ-MM>/<JJJJ-MM-TT>.json — die Erlösseite.
     kassen_pfade = {p_: oid for p_, oid in pfade.items()
@@ -992,7 +1101,7 @@ def _index_bauen(head: str) -> None:
         if isinstance(d_, dict) and d_.get("datum"):
             # Ein Blatt je Tag; ein späteres gewinnt (Korrektur).
             kassenblaetter[d_["datum"]] = d_
-    _INDEX["kassenblaetter"] = kassenblaetter
+    idx["kassenblaetter"] = kassenblaetter
 
     # Gestellte Rechnungen: rechnungen/<JJJJ-MM>/<nummer>.json
     rechnung_pfade = {p_: oid for p_, oid in pfade.items()
@@ -1008,7 +1117,7 @@ def _index_bauen(head: str) -> None:
         d_ = oid_cache.get(oid)
         if isinstance(d_, dict) and d_.get("nummer"):
             rechnungen_[d_["nummer"]] = d_
-    _INDEX["rechnungen"] = rechnungen_
+    idx["rechnungen"] = rechnungen_
 
     # Exportierte Belege: export/<monat>/stapel.json sammeln
     export_pfade = {p_: oid for p_, oid in pfade.items()
@@ -1035,7 +1144,7 @@ def _index_bauen(head: str) -> None:
     for eintrag_ in dokumente:
         if eintrag_["art"] == "freigabe_anfrage":
             eintrag_["freigabe"] = freigaben.get(eintrag_["pfad"])
-    _INDEX["freigaben"] = freigaben
+    idx["freigaben"] = freigaben
 
     exportiert: set[str] = set()
     for oid in export_pfade.values():
@@ -1046,24 +1155,26 @@ def _index_bauen(head: str) -> None:
         if stamm_ in exportiert and z_["status"] == "geprüft":
             z_["status"] = "exportiert"
 
-    _INDEX["belege"] = belege
-    _INDEX["reviews"] = reviews
-    _INDEX["zeiten"] = zeiten
-    _INDEX["head"] = head
-    _INDEX["geprueft"] = time.time()
+    idx["belege"] = belege
+    idx["reviews"] = reviews
+    idx["zeiten"] = zeiten
+    idx["head"] = head
+    idx["geprueft"] = time.time()
 
 
 def index_aktuell() -> dict:
-    with _INDEX_LOCK:
+    b = _box()
+    with b.index_schloss:
+        idx = b.index
         jetzt = time.time()
-        if _INDEX["head"] is not None and jetzt - _INDEX["geprueft"] < INDEX_TTL:
-            return _INDEX
+        if idx["head"] is not None and jetzt - idx["geprueft"] < INDEX_TTL:
+            return idx
         kopf = (_git(["rev-parse", "HEAD"], 10) or "").strip()
-        if kopf and kopf != _INDEX["head"]:
+        if kopf and kopf != idx["head"]:
             _index_bauen(kopf)
         else:
-            _INDEX["geprueft"] = jetzt
-        return _INDEX
+            idx["geprueft"] = jetzt
+        return idx
 
 
 def _beleg_liste(monat: str | None = None, status: str | None = None) -> list[dict]:
@@ -1199,12 +1310,27 @@ BOX_GESPERRT = ("Dein Zugang ist noch nicht für eine Belegbox freigeschaltet. "
                 "Schreib uns kurz — dann richten wir sie für deinen Salon ein.")
 
 
+def _mandant_aus_kontext(request: Request, un: str) -> int | None:
+    """Für welchen Mandanten arbeitet dieser Request gerade?
+
+    Heute: für keinen bestimmten — also die eigene Box, wie seit jeher.
+    Ab Phase 3 liest diese Stelle den `X-Mandant`-Header und prüft ihn
+    gegen `kanzlei_mitglied`; bis dahin ist sie der eine benannte Ort, an
+    dem das passieren wird, statt einer Suche quer durch 104 Routen.
+    """
+    return None
+
+
 def _box_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]:
     """Zusätzlich zur Anmeldung: Diese Belegbox muss ihm auch gehören.
 
     Jede Route, die Belege, Kassenbuch, Ablage oder Zahlen anfasst, geht
     hier durch — sonst läse ein frisch registriertes Konto die Buchhaltung
     eines fremden Salons.
+
+    Hier wird außerdem die aktive Box für den Rest des Requests gesetzt.
+    Die Routen sehen davon nichts: sie rufen weiter `index_aktuell()` oder
+    `_git(...)` ohne Argument, und die holen sich die Box aus dem Kontext.
     """
     un, fehler = _api_wache(request)
     if fehler:
@@ -1212,6 +1338,7 @@ def _box_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]
     if not box_mitglied(un):
         print(f"[wache] 403: '{un}' gehört nicht zu dieser Belegbox", flush=True)
         return None, JSONResponse({"fehler": BOX_GESPERRT}, status_code=403)
+    _AKTIVE_BOX.set(bx.box_von(un, _mandant_aus_kontext(request, un)))
     return un, None
 
 
@@ -1648,12 +1775,13 @@ async def api_bewirtung(stamm: str, request: Request) -> Response:
     }, ensure_ascii=False, indent=1).encode()
     import boxschreiber  # noqa: PLC0415 — erst beim ersten Schreiben laden
     try:
-        commit = await run_in_threadpool(boxschreiber.schreiben, f"review/{stamm}.bewirtung.json", inhalt,
+        commit = await run_in_threadpool(boxschreiber.schreiben, _box(),
+                                         f"review/{stamm}.bewirtung.json", inhalt,
                                         f"bewirtung: {stamm}", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"}, status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0  # nächster Read sieht den neuen Stand sofort
+    with _box().index_schloss:
+        _box().invalidieren()  # nächster Read sieht den neuen Stand sofort
     return JSONResponse({"ok": True, "commit": commit})
 
 
@@ -1795,10 +1923,10 @@ async def _beleg_serverseitig_lesen(pfad: str, daten: bytes, endung: str, un: st
     # gleichen Ergebnis — richtet also keinen Schaden an. Die Prüfung oben
     # deckt den eigentlichen Fall ab: eine manuelle Angabe oder eine bereits
     # abgeschlossene zweite Lesung.
-    await run_in_threadpool(boxschreiber.schreiben, dateien, None,
+    await run_in_threadpool(boxschreiber.schreiben, _box(), dateien, None,
                             f"lesen: {stamm}", un)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
 
 
 async def _hintergrund_lesen(pfad: str, daten: bytes, endung: str, un: str) -> None:
@@ -1898,12 +2026,13 @@ async def ablage(request: Request) -> Response:
     monat = time.strftime("%Y-%m")
     nachricht = f"aufnahme: {dateiname}" + (f"\n\n{notiz}" if notiz else "")
     try:
-        commit = await run_in_threadpool(boxschreiber.schreiben, f"docs/{monat}/{dateiname}", daten,
+        commit = await run_in_threadpool(boxschreiber.schreiben, _box(),
+                                         f"docs/{monat}/{dateiname}", daten,
                                         nachricht, un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "Push fehlgeschlagen"}, status_code=502)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     # P0-4/2a: dieser Weg (Portal-Upload ohne App davor) bekam bisher NIE
     # eine Lesung — der Beleg stand für immer auf "Wird gelesen". Ausgelöst
     # von diesem Request, läuft im Hintergrund weiter, blockiert die Antwort
@@ -1951,12 +2080,13 @@ async def api_hochladen(request: Request, name: str = "beleg.jpg") -> Response:
     dateiname = boxschreiber.beleg_dateiname(name)
     monat = time.strftime("%Y-%m")
     try:
-        commit = await run_in_threadpool(boxschreiber.schreiben, f"docs/{monat}/{dateiname}", daten,
+        commit = await run_in_threadpool(boxschreiber.schreiben, _box(),
+                                         f"docs/{monat}/{dateiname}", daten,
                                         f"aufnahme: {dateiname}", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"}, status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     # P0-4/2a: siehe /ablage — Portal-Uploads bekamen bisher nie eine Lesung.
     _hintergrund_lesen_starten(
         f"docs/{monat}/{dateiname}", daten, endung, un)
@@ -2003,14 +2133,14 @@ async def api_beleg_loeschen(stamm: str, request: Request) -> Response:
 
     import boxschreiber  # noqa: PLC0415
     try:
-        commit = await run_in_threadpool(boxschreiber.loeschen, pfade, nachricht, un)
+        commit = await run_in_threadpool(boxschreiber.loeschen, _box(), pfade, nachricht, un)
     except boxschreiber.NichtsZuLoeschen:
         return JSONResponse({"fehler": "unbekannter Beleg"}, status_code=404)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     return JSONResponse({"ok": True, "commit": commit, "stamm": stamm})
 
 
@@ -2211,20 +2341,22 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
                 semantik).encode()
 
     try:
-        commit = await run_in_threadpool(boxschreiber.schreiben, dateien, None,
+        commit = await run_in_threadpool(boxschreiber.schreiben, _box(), dateien, None,
                                          f"aufnahme: {dateiname}", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
 
     # Verträge und Briefe liest babu im Hintergrund weiter — wie bisher.
     if art == "vertrag":
-        threading.Thread(target=_vertrag_job, args=(pfad, daten, name, un),
+        threading.Thread(target=_im_box_kontext,
+                         args=(_box(), _vertrag_job, pfad, daten, name, un),
                          daemon=True).start()
     elif art == "behoerde":
-        threading.Thread(target=_brief_job, args=(pfad, daten, name, un),
+        threading.Thread(target=_im_box_kontext,
+                         args=(_box(), _brief_job, pfad, daten, name, un),
                          daemon=True).start()
 
     return JSONResponse({"ok": True, "commit": commit, "datei": pfad,
@@ -2389,19 +2521,17 @@ def embedding_rechnen(text: str, als_dokument: bool = True) -> dict | None:
 # (HEAD der Box, Beleg-Stämme, normalisierte Vektor-Matrix) — ein Tupel, das
 # atomar getauscht wird: /chat läuft im Threadpool, ein Rennen baut schlimm-
 # stenfalls doppelt, liest aber nie einen halben Stand.
-_BELEG_VEKTOREN: tuple[str | None, list[str], object] = (None, [], None)
-
-
 def _beleg_vektoren() -> tuple[list[str], object]:
     """Alle Beleg-Vektoren der Box als Matrix — je Box-Stand einmal gebaut."""
-    global _BELEG_VEKTOREN
-    r = subprocess.run(["git", "-C", str(STORE), "rev-parse", "HEAD"],
+    b = _box()
+    stand = b.beleg_vektoren
+    r = subprocess.run(["git", "-C", str(b.store), "rev-parse", "HEAD"],
                        capture_output=True, text=True, timeout=10)
     head = r.stdout.strip() or None
-    if head and _BELEG_VEKTOREN[0] == head:
-        return _BELEG_VEKTOREN[1], _BELEG_VEKTOREN[2]
+    if head and stand["kopf"] == head:
+        return stand["staemme"], stand["matrix"]
     import numpy as np  # noqa: PLC0415
-    ls = subprocess.run(["git", "-C", str(STORE), "ls-tree", "--name-only",
+    ls = subprocess.run(["git", "-C", str(b.store), "ls-tree", "--name-only",
                          "HEAD:review"], capture_output=True, text=True, timeout=20)
     staemme: list[str] = []
     vektoren = []
@@ -2418,7 +2548,7 @@ def _beleg_vektoren() -> tuple[list[str], object]:
             staemme.append(name[:-len(".embedding.json")])
             vektoren.append(v / norm)
     matrix = np.vstack(vektoren) if vektoren else None
-    _BELEG_VEKTOREN = (head, staemme, matrix)
+    stand.update(kopf=head, staemme=staemme, matrix=matrix)
     return staemme, matrix
 
 
@@ -2446,7 +2576,7 @@ def _wissen_beiakten() -> dict[str, dict]:
 
 
 # (HEAD der Box, Atom-Beiwerk, normalisierte Vektor-Matrix) — dasselbe
-# Keying-Muster wie `_BELEG_VEKTOREN`.
+# Keying-Muster wie `Box.beleg_vektoren`.
 _WISSEN_VEKTOREN: tuple[str | None, list[dict], object] = (None, [], None)
 
 
@@ -2694,15 +2824,15 @@ async def api_dokument_loeschen(request: Request) -> Response:
 
     import boxschreiber  # noqa: PLC0415
     try:
-        commit = await run_in_threadpool(boxschreiber.loeschen, pfade,
+        commit = await run_in_threadpool(boxschreiber.loeschen, _box(), pfade,
                                          f"geloescht: {Path(pfad).name}", un)
     except boxschreiber.NichtsZuLoeschen:
         return JSONResponse({"fehler": "unbekanntes Dokument"}, status_code=404)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     return JSONResponse({"ok": True, "commit": commit, "pfad": pfad})
 
 
@@ -2736,15 +2866,15 @@ async def api_auszug_loeschen(request: Request) -> Response:
 
     import boxschreiber  # noqa: PLC0415
     try:
-        commit = await run_in_threadpool(boxschreiber.loeschen, pfade,
+        commit = await run_in_threadpool(boxschreiber.loeschen, _box(), pfade,
                                          f"geloescht: {Path(pfad).name}", un)
     except boxschreiber.NichtsZuLoeschen:
         return JSONResponse({"fehler": "unbekannter Kontoauszug"}, status_code=404)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     return JSONResponse({"ok": True, "commit": commit, "pfad": pfad})
 
 
@@ -2774,22 +2904,24 @@ async def api_dokument_hochladen(request: Request, name: str = "dokument.pdf",
     meta = json.dumps({"titel": (titel or name)[:120], "art": art[:40], "von": un},
                       ensure_ascii=False, indent=1).encode()
     try:
-        commit = await run_in_threadpool(boxschreiber.schreiben,
+        commit = await run_in_threadpool(boxschreiber.schreiben, _box(),
             {f"dokumente/{monat}/{dateiname}": daten,
              f"dokumente/{monat}/{dateiname}.meta.json": meta},
             None, f"dokument: {dateiname}", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"}, status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     if art[:40] == "vertrag":
-        threading.Thread(target=_vertrag_job,
-                         args=(f"dokumente/{monat}/{dateiname}", daten, name, un),
+        threading.Thread(target=_im_box_kontext,
+                         args=(_box(), _vertrag_job,
+                               f"dokumente/{monat}/{dateiname}", daten, name, un),
                          daemon=True).start()
     if art[:40] == "behoerde":
         # Brief vom Amt: im Hintergrund lesen und einfach erklären.
-        threading.Thread(target=_brief_job,
-                         args=(f"dokumente/{monat}/{dateiname}", daten, name, un),
+        threading.Thread(target=_im_box_kontext,
+                         args=(_box(), _brief_job,
+                               f"dokumente/{monat}/{dateiname}", daten, name, un),
                          daemon=True).start()
     return JSONResponse({"ok": True, "commit": commit,
                          "pfad": f"dokumente/{monat}/{dateiname}"})
@@ -2842,15 +2974,15 @@ async def api_korrektur(stamm: str, request: Request) -> Response:
              "von": un, "am": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
     import boxschreiber  # noqa: PLC0415
     try:
-        commit = await run_in_threadpool(boxschreiber.schreiben,
+        commit = await run_in_threadpool(boxschreiber.schreiben, _box(),
             f"review/{stamm}.korrektur.json",
             json.dumps(daten, ensure_ascii=False, indent=1).encode(),
             f"korrektur: {stamm}", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     return JSONResponse({"ok": True, "commit": commit})
 
 
@@ -2892,7 +3024,7 @@ async def api_kontoauszug(request: Request, name: str = "auszug.pdf") -> Respons
     dateiname = boxschreiber.beleg_dateiname(name)
     monat = geparst["monat"]
     try:
-        commit = await run_in_threadpool(boxschreiber.schreiben,
+        commit = await run_in_threadpool(boxschreiber.schreiben, _box(),
             {f"auszuege/{monat}/{dateiname}": daten,
              f"auszuege/{monat}/{dateiname}.umsaetze.json": json.dumps(
                  geparst, ensure_ascii=False, indent=1).encode()},
@@ -2900,8 +3032,8 @@ async def api_kontoauszug(request: Request, name: str = "auszug.pdf") -> Respons
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     return JSONResponse({"ok": True, "commit": commit, "monat": monat,
                          "umsaetze": len(geparst["umsaetze"])})
 
@@ -2958,13 +3090,14 @@ async def api_freigabe(request: Request) -> Response:
                         ensure_ascii=False, indent=1).encode()
     import boxschreiber  # noqa: PLC0415
     try:
-        commit = await run_in_threadpool(boxschreiber.schreiben, f"freigaben/{name}.json", inhalt,
+        commit = await run_in_threadpool(boxschreiber.schreiben, _box(),
+                                         f"freigaben/{name}.json", inhalt,
                                         f"freigabe: {name}", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     return JSONResponse({"ok": True, "commit": commit})
 
 
@@ -3889,7 +4022,7 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
         import boxschreiber  # noqa: PLC0415
         stempel = time.strftime("%Y%m%d-%H%M%S")
         try:
-            boxschreiber.schreiben(
+            boxschreiber.schreiben(_box(),
                 {f"export/{monat}/EXTF_{stempel}.csv": daten,
                  f"export/{monat}/stapel.json": json.dumps(
                      {"monat": monat, "staemme": sorted(staemme), "zeit": stempel,
@@ -3900,8 +4033,8 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
         except boxschreiber.SchreibFehler:
             return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                                 status_code=503)
-        with _INDEX_LOCK:
-            _INDEX["geprueft"] = 0.0
+        with _box().index_schloss:
+            _box().invalidieren()
     # Hier verlassen Steuerdaten das Haus — auch ein reiner Vorschau-Export
     # (festschreiben=0) gehört ins Log, nicht nur die festgeschriebene Ablage.
     audit.audit(un, "export", monat=monat, festschreiben=bool(festschreiben),
@@ -4201,7 +4334,7 @@ def review_protokoll(stamm: str, request: Request) -> Response:
 def commit_info(pfad: str) -> dict | None:
     if not pfad:
         return None
-    r = subprocess.run(["git", "-C", str(STORE), "log", "-1",
+    r = subprocess.run(["git", "-C", str(_box().store), "log", "-1",
                         "--format=%h|%cI|%an", "--", pfad],
                        capture_output=True, text=True, timeout=20)
     if r.returncode != 0 or not r.stdout.strip():
@@ -4888,7 +5021,7 @@ def _bericht_schreiben(un: str, jahr: int, status: dict, geerntet: list[dict],
             salon=(db_einstellungen(un).get("betrieb_name") or "").strip() or None,
             dokumente=dokumente, felder=felder, befunde=[],
             kennzahlen=zahlen, offen=offen)
-        boxschreiber.schreiben(f"abschluss/{jahr}/bericht.md", text.encode(),
+        boxschreiber.schreiben(_box(), f"abschluss/{jahr}/bericht.md", text.encode(),
                                f"abschluss: Bericht {jahr}", un)
         status["bericht"] = True
     except Exception as ex:  # noqa: BLE001 — ohne Bericht ist der Lauf trotzdem gut
@@ -4938,7 +5071,7 @@ def _unterlage_einsortieren(un: str, jahr: int, datei: str, art: str,
         dateien[f"{rumpf}.text.json"] = json.dumps(
             {"text": text[:ABSCHLUSS_TEXT_MAX]}, ensure_ascii=False).encode()
     try:
-        boxschreiber.schreiben(dateien, None, f"abschluss: einsortiert {datei}", un)
+        boxschreiber.schreiben(_box(), dateien, None, f"abschluss: einsortiert {datei}", un)
     except Exception as ex:  # noqa: BLE001 — Einsortieren darf den Lauf nie kippen
         print(f"[salonpruefung] {datei} nicht einsortiert: {ex!r}", flush=True)
 
@@ -4998,7 +5131,7 @@ def _abschluss_job(un: str, jahr: int, pfade: list[Path]) -> None:
         if any(q["art"] == "euer" for q in kennzahlen["quellen"]) \
                 and not (db_einstellungen(un).get("abschluss_art") or "").strip():
             db_einstellung_setzen(un, "abschluss_art", "EÜR")
-        boxschreiber.schreiben(
+        boxschreiber.schreiben(_box(),
             f"abschluss/{jahr}/kennzahlen.json",
             json.dumps(kennzahlen, ensure_ascii=False, indent=1).encode(),
             f"abschluss: kennzahlen {jahr}", un)
@@ -5047,7 +5180,7 @@ async def api_abschluss_hochladen(request: Request, jahr: int = 0,
     meta = json.dumps({"titel": name[:120], "art": "abschluss", "jahr": jahr,
                        "von": un}, ensure_ascii=False, indent=1).encode()
     try:
-        commit = await run_in_threadpool(boxschreiber.schreiben,
+        commit = await run_in_threadpool(boxschreiber.schreiben, _box(),
             {f"abschluss/{jahr}/{dateiname}": daten,
              f"abschluss/{jahr}/{dateiname}.meta.json": meta},
             None, f"abschluss: {dateiname}", un)
@@ -5091,7 +5224,8 @@ def api_abschluss_start(request: Request, jahr: int = 0) -> Response:
                   "hinweis": "Gleich geht's los — wir schauen uns alles an."}
         _ABSCHLUSS_JOBS[un] = status
     db_abschluss_snapshot(un, jahr, status)
-    threading.Thread(target=_abschluss_job, args=(un, jahr, pfade),
+    threading.Thread(target=_im_box_kontext,
+                     args=(_box(), _abschluss_job, un, jahr, pfade),
                      daemon=True).start()
     return JSONResponse({"ok": True, "jahr": jahr, "dateien": len(pfade)})
 
@@ -5344,7 +5478,8 @@ async def api_auswertung_lesen(request: Request, korb: str = "",
         or int(time.strftime("%Y")) - 1
     with _DB_LOCK, _db() as c:
         c.execute("UPDATE einladung SET stand='liest' WHERE id=?", (eid,))
-    threading.Thread(target=_auswertung_job, args=(eid, jahr, pfade),
+    threading.Thread(target=_im_box_kontext,
+                     args=(_box(), _auswertung_job, eid, jahr, pfade),
                      daemon=True).start()
     return JSONResponse({"ok": True, "stand": "liest"})
 
@@ -5925,7 +6060,7 @@ async def api_abschluss_karte_korrektur(request: Request) -> Response:
     import boxschreiber  # noqa: PLC0415
     try:
         commit = await run_in_threadpool(
-            boxschreiber.schreiben, f"abschluss/{jahr}/kennzahlen.json",
+            boxschreiber.schreiben, _box(), f"abschluss/{jahr}/kennzahlen.json",
             json.dumps(kennzahlen, ensure_ascii=False, indent=1).encode(),
             f"abschluss: {karte_id} nachgetragen ({jahr})", un)
     except boxschreiber.SchreibFehler:
@@ -6000,15 +6135,16 @@ async def api_wissen_hochladen(request: Request, name: str = "dokument.pdf",
                        "hochgeladen_am": _jetzt_iso(), "status": "wird eingelesen"},
                       ensure_ascii=False, indent=1).encode()
     try:
-        commit = await run_in_threadpool(boxschreiber.schreiben,
+        commit = await run_in_threadpool(boxschreiber.schreiben, _box(),
             {pfad: daten, pfad + ".meta.json": meta}, None,
             f"wissen: {dateiname}", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
-    threading.Thread(target=_wissen_job, args=(pfad, daten, thema, un),
+    with _box().index_schloss:
+        _box().invalidieren()
+    threading.Thread(target=_im_box_kontext,
+                     args=(_box(), _wissen_job, pfad, daten, thema, un),
                      daemon=True).start()
     return JSONResponse({"ok": True, "commit": commit, "pfad": pfad, "thema": thema})
 
@@ -6049,7 +6185,7 @@ def _wissen_job(pfad: str, daten: bytes, thema: str, un: str) -> None:
                 alt_meta = json.loads(roh)
             except Exception:  # noqa: BLE001
                 alt_meta = {}
-        boxschreiber.schreiben({
+        boxschreiber.schreiben(_box(), {
             pfad + ".text.json": json.dumps(
                 {"text": "\n\n".join(seiten)}, ensure_ascii=False).encode(),
             pfad + ".atome.json": json.dumps(atome, ensure_ascii=False).encode(),
@@ -6057,8 +6193,8 @@ def _wissen_job(pfad: str, daten: bytes, thema: str, un: str) -> None:
                 {**alt_meta, "status": "eingelesen", "seiten": len(seiten),
                  "absaetze": len(atome)}, ensure_ascii=False, indent=1).encode(),
         }, None, f"wissen: eingelesen {Path(pfad).name}", un)
-        with _INDEX_LOCK:
-            _INDEX["geprueft"] = 0.0
+        with _box().index_schloss:
+            _box().invalidieren()
         _WISSEN_JOBS[pfad]["stand"] = "fertig"
     except Exception as ex:  # noqa: BLE001
         print(f"[wissen] Job für {pfad} gescheitert: {ex!r}", flush=True)
@@ -6068,15 +6204,15 @@ def _wissen_job(pfad: str, daten: bytes, thema: str, un: str) -> None:
             roh = git_show(pfad + ".meta.json")
             if roh is not None:
                 alt_meta = json.loads(roh)
-            boxschreiber.schreiben(
+            boxschreiber.schreiben(_box(),
                 pfad + ".meta.json",
                 json.dumps({**alt_meta, "status": "fehler",
                            "hinweis": "Das hat gerade nicht geklappt — "
                                       "versuch es später nochmal."},
                           ensure_ascii=False, indent=1).encode(),
                 f"wissen: fehler {Path(pfad).name}", un)
-            with _INDEX_LOCK:
-                _INDEX["geprueft"] = 0.0
+            with _box().index_schloss:
+                _box().invalidieren()
         except Exception:  # noqa: BLE001
             pass
     finally:
@@ -6242,12 +6378,12 @@ def _vertrag_job(pfad: str, daten: bytes, name: str, un: str) -> None:
     try:
         with _LLM_SEMAPHORE:
             vertrag = vertrag_lesen(daten, name)
-        boxschreiber.schreiben(
+        boxschreiber.schreiben(_box(),
             pfad + ".vertrag.json",
             json.dumps(vertrag, ensure_ascii=False, indent=1).encode(),
             f"vertrag: {name}", un)
-        with _INDEX_LOCK:
-            _INDEX["geprueft"] = 0.0
+        with _box().index_schloss:
+            _box().invalidieren()
     except Exception as e:  # noqa: BLE001
         print(f"[vertrag] {pfad} nicht gelesen: {e}", flush=True)
 
@@ -6257,12 +6393,12 @@ def _brief_job(pfad: str, daten: bytes, name: str, un: str) -> None:
     try:
         with _LLM_SEMAPHORE:
             erklaerung = brief_erklaerung_bauen(daten, name)
-        boxschreiber.schreiben(
+        boxschreiber.schreiben(_box(),
             pfad + ".erklaerung.json",
             json.dumps(erklaerung, ensure_ascii=False, indent=1).encode(),
             f"erklaerung: {name}", un)
-        with _INDEX_LOCK:
-            _INDEX["geprueft"] = 0.0
+        with _box().index_schloss:
+            _box().invalidieren()
     except Exception as e:  # noqa: BLE001
         print(f"[brief] Erklärung für {pfad} gescheitert: {e}", flush=True)
 
@@ -6572,15 +6708,13 @@ def _ablage_eintraege() -> list[dict]:
 # Blob-Kennung → Pfad im aktuellen Stand. Je HEAD einmal gebaut. Ein Upload
 # mit denselben Bytes ist eine Dublette, egal unter welchem Dateinamen er
 # kommt — derselbe Auszug lag sonst fünfmal in der Box.
-_BLOB_STAND: dict = {"kopf": None, "pfade": {}}
-
-
 def _blob_schon_da(daten: bytes) -> str | None:
     """Liegt genau diese Datei schon in der Box? Dann ihr Pfad, sonst None."""
     import hashlib  # noqa: PLC0415
+    blob_stand = _box().blob_stand
     oid = hashlib.sha1(b"blob %d\x00" % len(daten) + daten).hexdigest()
     kopf = (_git(["rev-parse", "HEAD"]) or "").strip()
-    if kopf and _BLOB_STAND["kopf"] != kopf:
+    if kopf and blob_stand["kopf"] != kopf:
         pfade: dict[str, str] = {}
         for zeile in (_git(["ls-tree", "-r", kopf]) or "").splitlines():
             try:
@@ -6588,8 +6722,8 @@ def _blob_schon_da(daten: bytes) -> str | None:
                 pfade.setdefault(meta_.split()[2], pfad_)
             except (ValueError, IndexError):
                 continue
-        _BLOB_STAND.update(kopf=kopf, pfade=pfade)
-    pfad = _BLOB_STAND["pfade"].get(oid)
+        blob_stand.update(kopf=kopf, pfade=pfade)
+    pfad = blob_stand["pfade"].get(oid)
     # Beiwerk zählt nicht — eine Nutzdatei, die zufällig einer meta.json
     # gleicht, gibt es nicht, aber sicher ist sicher.
     if pfad and not pfad.endswith((".meta.json", ".umsaetze.json",
@@ -6599,20 +6733,20 @@ def _blob_schon_da(daten: bytes) -> str | None:
     return None
 
 
-# Blob-Kennung → Seitenzahl. Ein Blob ändert sich nie; einmal gezählt
-# reicht für die Lebensdauer des Prozesses.
-_SEITEN_CACHE: dict[str, int] = {}
-
-
 def _pdf_seiten(oid: str | None, pfad: str) -> int | None:
-    """Wie viele Seiten eine Unterlage hat — Fotos eine, PDFs so viele wie drin."""
+    """Wie viele Seiten eine Unterlage hat — Fotos eine, PDFs so viele wie drin.
+
+    Blob-Kennung → Seitenzahl steht in `Box.seiten_cache`: ein Blob ändert
+    sich nie, einmal gezählt reicht für die Lebensdauer des Prozesses.
+    """
     endung = Path(pfad).suffix.lower()
     if endung in (".jpg", ".jpeg", ".png", ".heic"):
         return 1
     if endung != ".pdf" or not oid:
         return None
-    if oid in _SEITEN_CACHE:
-        return _SEITEN_CACHE[oid]
+    seiten_cache = _box().seiten_cache
+    if oid in seiten_cache:
+        return seiten_cache[oid]
     roh = git_show(pfad)
     if roh is None:
         return None
@@ -6627,7 +6761,7 @@ def _pdf_seiten(oid: str | None, pfad: str) -> int | None:
             d.close()
     except Exception:  # noqa: BLE001
         return None
-    _SEITEN_CACHE[oid] = n
+    seiten_cache[oid] = n
     return n
 
 
@@ -6790,15 +6924,15 @@ def _beiakte_aendern(un: str, pfad: str, **felder) -> Response | None:
     meta = dict(alt, **felder, geaendert_am=_jetzt_iso(), geaendert_von=un)
     import boxschreiber  # noqa: PLC0415
     try:
-        boxschreiber.schreiben(
+        boxschreiber.schreiben(_box(),
             f"{pfad}.meta.json",
             json.dumps(meta, ensure_ascii=False, indent=1).encode(),
             f"ablage: {Path(pfad).name}", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     return None
 
 
@@ -6909,7 +7043,7 @@ async def api_rechnung_stellen(request: Request) -> Response:
         return JSONResponse({"fehler": "Datum als JJJJ-MM-TT"}, status_code=400)
 
     einstellungen = db_einstellungen(salon_von(un))
-    with _RECHNUNG_SCHLOSS:
+    with _box().rechnung_schloss:
         vorhandene = [r.get("nummer") for r in _rechnungen_lesen()]
         nummer = re_.naechste_nummer(vorhandene, int(datum[:4]))
         try:
@@ -6937,14 +7071,14 @@ async def api_rechnung_stellen(request: Request) -> Response:
         pfad = f"rechnungen/{datum[:7]}/{nummer}.json"
         try:
             commit = await run_in_threadpool(
-                boxschreiber.schreiben, pfad,
+                boxschreiber.schreiben, _box(), pfad,
                 json.dumps(rechnung, ensure_ascii=False, indent=1).encode(),
                 f"rechnung: {nummer}", un)
         except boxschreiber.SchreibFehler:
             return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                                 status_code=503)
-        with _INDEX_LOCK:
-            _INDEX["geprueft"] = 0.0
+        with _box().index_schloss:
+            _box().invalidieren()
     return JSONResponse({"ok": True, "commit": commit, "nummer": nummer,
                          "pfad": pfad, "rechnung": rechnung})
 
@@ -6976,13 +7110,13 @@ async def api_rechnung_pdf(nummer: str, request: Request) -> Response:
     import boxschreiber  # noqa: PLC0415
     pfad = f"rechnungen/{(rechnung.get('datum') or '')[:7]}/{nummer}.pdf"
     try:
-        commit = await run_in_threadpool(boxschreiber.schreiben, pfad, daten,
+        commit = await run_in_threadpool(boxschreiber.schreiben, _box(), pfad, daten,
                                          f"rechnung: {nummer} (PDF)", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     return JSONResponse({"ok": True, "commit": commit, "pfad": pfad})
 
 
@@ -7009,14 +7143,14 @@ async def api_rechnung_bezahlt(nummer: str, request: Request) -> Response:
     import boxschreiber  # noqa: PLC0415
     try:
         commit = await run_in_threadpool(
-            boxschreiber.schreiben, pfad,
+            boxschreiber.schreiben, _box(), pfad,
             json.dumps(rechnung, ensure_ascii=False, indent=1).encode(),
             f"rechnung: {nummer} bezahlt", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     return JSONResponse({"ok": True, "commit": commit, "bezahlt_am": am or None})
 
 
@@ -7041,7 +7175,7 @@ async def api_rechnung_storno(nummer: str, request: Request) -> Response:
     import rechnungen as re_  # noqa: PLC0415
     import boxschreiber  # noqa: PLC0415
     datum = time.strftime("%Y-%m-%d")
-    with _RECHNUNG_SCHLOSS:
+    with _box().rechnung_schloss:
         vorhandene = [r.get("nummer") for r in _rechnungen_lesen()]
         neue_nummer = re_.naechste_nummer(vorhandene, int(datum[:4]))
         try:
@@ -7053,7 +7187,7 @@ async def api_rechnung_storno(nummer: str, request: Request) -> Response:
         markiert = dict(original, storniert_durch=neue_nummer)
         try:
             commit = await run_in_threadpool(
-                boxschreiber.schreiben,
+                boxschreiber.schreiben, _box(),
                 {f"rechnungen/{datum[:7]}/{neue_nummer}.json":
                     json.dumps(gegen, ensure_ascii=False, indent=1).encode(),
                  pfad_alt: json.dumps(markiert, ensure_ascii=False, indent=1).encode()},
@@ -7061,8 +7195,8 @@ async def api_rechnung_storno(nummer: str, request: Request) -> Response:
         except boxschreiber.SchreibFehler:
             return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                                 status_code=503)
-        with _INDEX_LOCK:
-            _INDEX["geprueft"] = 0.0
+        with _box().index_schloss:
+            _box().invalidieren()
     return JSONResponse({"ok": True, "commit": commit, "nummer": neue_nummer,
                          "rechnung": gegen})
 
@@ -7199,14 +7333,14 @@ async def api_fehlende_belege_klaeren(request: Request) -> Response:
     import boxschreiber  # noqa: PLC0415
     try:
         commit = await run_in_threadpool(
-            boxschreiber.schreiben, "auszuege/geklaert.json",
+            boxschreiber.schreiben, _box(), "auszuege/geklaert.json",
             json.dumps(geklaert, ensure_ascii=False, indent=1).encode(),
             f"geklaert: {bj.GRUENDE[grund]}", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     return JSONResponse({"ok": True, "commit": commit, "grund": grund})
 
 
@@ -7269,15 +7403,15 @@ async def api_zahlungen_uebernehmen(request: Request) -> Response:
     import boxschreiber  # noqa: PLC0415
     try:
         commit = await run_in_threadpool(
-            boxschreiber.schreiben, pfad,
+            boxschreiber.schreiben, _box(), pfad,
             json.dumps(dict(rechnung, bezahlt_am=am), ensure_ascii=False,
                        indent=1).encode(),
             f"rechnung: {nummer} bezahlt am {am}", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     return JSONResponse({"ok": True, "commit": commit, "nummer": nummer,
                          "bezahlt_am": am})
 
@@ -7377,7 +7511,7 @@ async def api_termin_anlegen(request: Request) -> Response:
     # Prüfen und Schreiben unter EINEM Schloss: sonst passt zwischen die
     # Überschneidungsprüfung und den Eintrag eine zweite Anfrage, und zwei
     # Kundinnen stehen zur selben Zeit im Laden.
-    with _TERMIN_SCHLOSS:
+    with _box().termin_schloss:
         bestehende = _termine_lesen(inhaber, tag, tag)
         termin["id"] = (body or {}).get("id")
         if (stoerung := ka.stoert(termin, bestehende)):
@@ -7852,7 +7986,7 @@ async def _vertrag_ablegen(un: str, marke: str, person: dict) -> None:
               f"(Fassung {vertrag['fassung']}).\n")
     try:
         await run_in_threadpool(
-            boxschreiber.schreiben,
+            boxschreiber.schreiben, _box(),
             # Der Zettel heißt <datei>.meta.json — der Index sucht ihn
             # genau so. Ohne die Endung bleibt das Dokument unerkannt.
             {f"dokumente/vertraege/{kennung}.txt": text.encode(),
@@ -7861,8 +7995,8 @@ async def _vertrag_ablegen(un: str, marke: str, person: dict) -> None:
             None, f"vertrag: {kennung}", un)
     except boxschreiber.SchreibFehler:
         pass            # der Wizard darf daran nicht scheitern
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
 
 
 @app.get("/api/mitarbeiter/{mitarbeiter_id}/einladung")
@@ -8189,7 +8323,7 @@ def _wa_termin_eintragen(un: str, faden: dict, datum: str, zeit: str,
     import kalender as ka  # noqa: PLC0415
     start = f"{datum}T{zeit}"
     minuten = int(wunsch.get("minuten") or 60)
-    with _TERMIN_SCHLOSS:
+    with _box().termin_schloss:
         bestehend = _termine_lesen(un, datum, datum)
         neu = {"start": start, "minuten": minuten, "wer": wunsch.get("wer") or ""}
         if ka.stoert(ka.pruefen(neu), bestehend):
@@ -9386,15 +9520,15 @@ async def api_angaben(stamm: str, request: Request) -> Response:
 
     import boxschreiber  # noqa: PLC0415
     try:
-        commit = await run_in_threadpool(boxschreiber.schreiben,
+        commit = await run_in_threadpool(boxschreiber.schreiben, _box(),
             f"review/{stamm}.angaben.json",
             json.dumps(daten, ensure_ascii=False, indent=1).encode(),
             f"angaben: {stamm}", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     return JSONResponse({"ok": True, "commit": commit, "angaben": daten})
 
 
@@ -9731,13 +9865,13 @@ def api_monatsabschluss_freigeben(monat: str, request: Request) -> Response:
 
     import boxschreiber  # noqa: PLC0415
     try:
-        commit = boxschreiber.schreiben(f"abschluss/{monat}/ustva.json", inhalt,
+        commit = boxschreiber.schreiben(_box(), f"abschluss/{monat}/ustva.json", inhalt,
                                         f"monatsabschluss {monat} freigegeben", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     return JSONResponse({"ok": True, "commit": commit, "monat": monat,
                          "offene_punkte": len(offen)})
 
@@ -9865,14 +9999,14 @@ async def api_historie_hochladen(request: Request) -> Response:
     }
     try:
         commit = await run_in_threadpool(
-            boxschreiber.schreiben, dateien, None,
+            boxschreiber.schreiben, _box(), dateien, None,
             f"historie: Buchungsstapel {neu['kopf'].get('von')}–"
             f"{neu['kopf'].get('bis')} übernommen", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     return JSONResponse({
         "ok": True, "commit": commit,
         "gelesen": neu["buchungen"], "uebersprungen": neu["uebersprungen"],
@@ -9941,13 +10075,13 @@ async def api_kanzleiwechsel(request: Request) -> Response:
     }
     try:
         commit = await run_in_threadpool(
-            boxschreiber.schreiben, dateien, None,
+            boxschreiber.schreiben, _box(), dateien, None,
             f"kanzleiwechsel: Brief an {kanzlei['name']}", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     return JSONResponse({
         "ok": True, "commit": commit, "datei": f"{stamm}.pdf",
         "betreff": brief["betreff"], "text": brief["text"],
@@ -10005,15 +10139,15 @@ def api_ustva_erstellen(monat: str, request: Request) -> Response:
                           "von": un}, ensure_ascii=False, indent=1).encode()
     import boxschreiber  # noqa: PLC0415
     try:
-        commit = boxschreiber.schreiben(
+        commit = boxschreiber.schreiben(_box(),
             {f"ustva/{monat}-ustva.pdf": pdf,
              f"ustva/{monat}-ustva.json": beiakte},
             None, f"ustva: Voranmeldung {monat}", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     return JSONResponse({"ok": True, "commit": commit,
                          "datei": f"ustva/{monat}-ustva.pdf",
                          "zahllast": entwurf["zahllast"],
@@ -10091,13 +10225,13 @@ def api_bwa_erstellen(monat: str, request: Request) -> Response:
     }
     import boxschreiber  # noqa: PLC0415
     try:
-        commit = boxschreiber.schreiben(dateien, None,
+        commit = boxschreiber.schreiben(_box(), dateien, None,
                                         f"bwa: Auswertung {monat}", un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     return JSONResponse({"ok": True, "commit": commit,
                          "dateien": [p for p in dateien if p.endswith(".pdf")],
                          "ergebnis": bwa.get("ergebnis"),
@@ -10261,14 +10395,14 @@ async def api_kassenbuch(request: Request) -> Response:
     import boxschreiber  # noqa: PLC0415
     try:
         commit = await run_in_threadpool(
-            boxschreiber.schreiben, dateien, None,
+            boxschreiber.schreiben, _box(), dateien, None,
             (f"kassenbuch: {datum} geändert ({grund})" if vorher is not None
              else f"kassenbuch: {datum}"), un)
     except boxschreiber.SchreibFehler:
         return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
                             status_code=503)
-    with _INDEX_LOCK:
-        _INDEX["geprueft"] = 0.0
+    with _box().index_schloss:
+        _box().invalidieren()
     return JSONResponse({"ok": True, "commit": commit, "datum": datum,
                          "zustand": kassenfest.zustand(blatt, neu, zu)})
 

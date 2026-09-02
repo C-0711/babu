@@ -79,14 +79,25 @@ os.environ["BABU_COOKIE_SECURE"] = "0"
 os.environ["BABU_ORIGIN"] = "http://localhost:7899"
 sys.path.insert(0, str(REPO))
 import babu_web  # noqa: E402
+import box  # noqa: E402
 import boxschreiber  # noqa: E402
 
 # Der Schreibweg zeigt IMMER auf die Wegwerf-Box dieses Laufs — niemals auf
 # einen echten Klon. Damit funktionieren auch Aufnahme/Loeschen im
 # Anschau-Server, und ein Fehlgriff kann nichts Echtes treffen.
+#
+# Seit Plan 21 (Phase 2) steht der Schreibweg in einem Box-Objekt statt in
+# Modulkonstanten. Diese drei Zeilen wirken trotzdem weiter, denn
+# `box.default_box()` liest KLON/REF/REMOTE bei jedem Aufruf frisch aus
+# `boxschreiber` — die Box entsteht erst beim ersten Request, also lange
+# nach diesen Zuweisungen. `registry_leeren()` wirft sicherheitshalber weg,
+# was ein frueherer Import schon gebaut haben koennte: sonst bediente der
+# Anschau-Server eine Box, die noch auf den echten Klon zeigt.
 boxschreiber.KLON = TMP / "klon"
 boxschreiber.REMOTE = str(bare)
+boxschreiber.REF = "inspektor/ws-vorschau/babu"
 boxschreiber.PAT_PFAD = TMP / "kein-pat"
+box.registry_leeren()
 
 babu_web.wer_token = lambda token: "christoph0711.io" if token == "test-pat" else None
 # Fuer Screenshot-Werkzeuge (Headless-Chrome ohne Cookie): immer angemeldet.
