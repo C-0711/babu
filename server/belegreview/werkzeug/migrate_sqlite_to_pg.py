@@ -72,10 +72,12 @@ def pg_spalten(cur, tabelle: str) -> set[str]:
 
 def umziehen(quelle: Path, url: str, trocken: bool = False) -> dict[str, int]:
     """Kopiert alles und liefert {Tabelle: Zeilen}. Wirft bei Ungleichheit."""
-    import psycopg  # noqa: PLC0415
-
     quell_conn = sqlite3.connect(f"file:{quelle}?mode=ro", uri=True)
-    ziel = psycopg.connect(url)
+    # Über db.verbindung(), nicht psycopg.connect(url): das Passwort steht
+    # nicht in der URL, sondern in der Datei aus BABU_DB_PASSWORT_DATEI —
+    # genau wie im laufenden babu-web. Aufgefallen beim ersten Probelauf
+    # auf der H200V: „fe_sendauth: no password supplied".
+    ziel = db.verbindung(dialekt="postgres", url=url)
     gezaehlt: dict[str, int] = {}
     try:
         db.schema_anwenden(ziel, "postgres")
