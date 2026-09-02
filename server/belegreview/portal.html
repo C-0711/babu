@@ -1668,7 +1668,15 @@ async function ladeBleibtDir(monat){
     const ergebnis = (d.bwa || {}).ergebnis;
     if (ergebnis == null){ $("#heute-bleibt").hidden = true; return; }
     $("#heute-bleibt-zahl").textContent = euro(ergebnis);
-    $("#heute-bleibt-satz").textContent = "vor Steuern — der Monat läuft noch";
+    // Woher die Zahl kommt, in einem Satz — sonst steht "Bleibt dir −979 €"
+    // ohne Erklärung neben "Eingenommen 0 € / Ausgegeben 79,50 €" auf der
+    // Nachbarseite, und die beiden wirken widersprüchlich (P0-1, Befund 1).
+    const eingenommen = (d.erloese || {}).brutto_gesamt;
+    const ausgegeben = (d.bwa || {}).kosten_netto;
+    $("#heute-bleibt-satz").textContent =
+      eingenommen != null && ausgegeben != null
+        ? `Eingenommen ${euro(eingenommen)} · Ausgegeben ${euro(ausgegeben)} — vor Steuern, der Monat läuft noch`
+        : "vor Steuern — der Monat läuft noch";
     $("#heute-bleibt").hidden = false;
   }catch{ $("#heute-bleibt").hidden = true; }
 }
@@ -2396,6 +2404,21 @@ function kennzahlKacheln(k){
       </div>`).join("") + `</div>`;
 }
 
+/* Eine Kostengruppen-Zeile — von Ausgaben UND Monatsabschluss genutzt, damit
+   dieselbe Gruppe überall gleich aussieht (P0-1: "Eine Zahl, eine Kategorie,
+   überall dieselbe"). Reine Vertragskosten ohne eigenen Beleg (Miete etc.)
+   zeigten hier vorher "0 Belege" — verwirrend, weil ja ein Vertrag dahinter
+   steht; jetzt "aus Vertrag: <Partner>". */
+function kostengruppenZeile(g){
+  const wer = g.aus_vertrag
+    ? "aus Vertrag: " + g.aus_vertrag
+    : `${g.anzahl} ${g.anzahl === 1 ? "Beleg" : "Belege"}`;
+  return `<div class="mrow"><span class="art">${esc(g.name)}</span>
+    <span class="wer">${esc(wer)}${
+      g.anteil !== null ? " · " + Math.round(g.anteil) + " % vom Umsatz" : ""}</span>
+    <span class="summe">${euro(g.netto)}</span></div>`;
+}
+
 async function ladeZahlen(){
   $("#z-mon-anzeige").textContent = monatName(zMonat);
   let d;
@@ -2404,7 +2427,7 @@ async function ladeZahlen(){
   // Die Kennzahlen hängen an der Monatsauswertung. Die sieht nur die
   // Inhaberin (für die Mitarbeit kommt eine Absage) — dann bleibt der
   // Abschnitt einfach weg, statt dass die ganze Ansicht hängt.
-  let lauf = null, erloese = null, ergebnis = null;
+  let lauf = null, erloese = null, ergebnis = null, bwa = null;
   try{
     const r = await api("/api/monatsabschluss/" + zMonat);
     if (r.ok){
@@ -2412,6 +2435,7 @@ async function ladeZahlen(){
       lauf = ab.kennzahlen;
       erloese = (ab.erloese || {}).brutto_gesamt;
       ergebnis = (ab.bwa || {}).ergebnis;
+      bwa = ab.bwa;
     }
   }catch{}
   const ziel = $("#zahlen-inhalt");
@@ -2420,7 +2444,6 @@ async function ladeZahlen(){
       Sobald welche da sind, siehst du hier, wohin dein Geld geht.</div>`;
     return;
   }
-  const max = Math.max(...(d.belegarten || []).map(a => a.brutto || 0), 1);
 
   // Die eine Zahl zuerst (v2 vom 27.08.), darunter das Paar zwischen
   // Haarlinien — kein Buchhalter-Vokabular, keine Kontonummern.
@@ -2431,28 +2454,34 @@ async function ladeZahlen(){
       <div class="bleibt-zahl">${euro(ergebnis)}</div>
       <div class="hero-detail">vor Steuern — der Monat läuft noch</div></div>`;
   }
-  if (erloese != null || d.brutto != null){
+  // "Ausgegeben" zeigt dieselbe Zahl wie im Monatsabschluss (bwa.kosten_netto,
+  // netto und mit Vertragskosten ohne eigenen Beleg) statt der reinen
+  // Belegsumme (d.brutto, brutto) — vorher stand für denselben Monat auf
+  // zwei Seiten ein anderes "Ausgegeben" (P0-1, Befund 1).
+  const ausgegeben = bwa ? bwa.kosten_netto : d.brutto;
+  const ausVertrag = bwa ? bwa.gruppen.filter(g => g.aus_vertrag)
+                                      .reduce((s, g) => s + g.netto, 0) : 0;
+  if (erloese != null || ausgegeben != null){
     html += `<div style="display:flex;gap:72px;flex-wrap:wrap;padding:24px 0;
         border-top:1px solid var(--gc-border);border-bottom:1px solid var(--gc-border);margin-bottom:36px">
       ${erloese != null ? `<div><div class="lbl">Eingenommen</div>
         <div style="font:500 30px var(--gc-serif);letter-spacing:-.02em;color:var(--gc-fg);margin-top:6px;font-variant-numeric:tabular-nums">${euro(erloese)}</div>
         <div style="font-size:13px;color:var(--gc-muted);margin-top:3px">Kasse, Karte und Überweisung</div></div>` : ""}
-      <div><div class="lbl">Ausgegeben</div>
-        <div style="font:500 30px var(--gc-serif);letter-spacing:-.02em;color:var(--gc-fg);margin-top:6px;font-variant-numeric:tabular-nums">${euro(d.brutto)}</div>
-        <div style="font-size:13px;color:var(--gc-muted);margin-top:3px">${d.anzahl} Beleg${d.anzahl===1?"":"e"}</div></div>
+      <div><div class="lbl">${bwa ? "Ausgegeben (ohne Steuer)" : "Ausgegeben"}</div>
+        <div style="font:500 30px var(--gc-serif);letter-spacing:-.02em;color:var(--gc-fg);margin-top:6px;font-variant-numeric:tabular-nums">${euro(ausgegeben)}</div>
+        <div style="font-size:13px;color:var(--gc-muted);margin-top:3px">${d.anzahl} Beleg${d.anzahl===1?"":"e"}</div>
+        ${ausVertrag > 0 ? `<div style="font-size:13px;color:var(--gc-muted);margin-top:3px">
+          davon ${euro(ausVertrag)} aus Verträgen ohne eigenen Beleg</div>` : ""}</div>
     </div>`;
   }
 
-  html += `<div class="sektion lbl">Wohin dein Geld geht</div><div style="max-width:760px;margin-bottom:12px">`;
-  for (const a of (d.belegarten || [])){
-    html += `<div style="display:flex;align-items:center;gap:18px;padding:11px 0">
-      <span style="width:110px;font-weight:600;color:var(--gc-fg)">${a.belegart}</span>
-      <div style="flex:1;height:8px;border-radius:4px;background:#eae7de;overflow:hidden">
-        <div style="width:${Math.max(3, Math.round((a.brutto||0)/max*100))}%;height:8px;border-radius:4px;background:var(--gc-fg)"></div></div>
-      <span class="num" style="font-weight:600;color:var(--gc-fg);width:120px;text-align:right">${euro(a.brutto)}</span>
-    </div>`;
+  if (bwa && bwa.gruppen.length){
+    html += `<div class="sektion lbl">Wohin dein Geld geht</div><div class="karte">`;
+    for (const g of bwa.gruppen){
+      html += kostengruppenZeile(g);
+    }
+    html += `</div>`;
   }
-  html += `</div>`;
 
   html += kennzahlKacheln(lauf);
 
@@ -3625,10 +3654,7 @@ async function ladeAbschluss(){
   if (b.gruppen.length){
     html += `<div class="sektion lbl">Wohin das Geld ging</div><div class="karte">`;
     for (const g of b.gruppen){
-      html += `<div class="mrow"><span class="art">${esc(g.name)}</span>
-        <span class="wer">${g.anzahl} ${g.anzahl === 1 ? "Beleg" : "Belege"}${
-          g.anteil !== null ? " · " + Math.round(g.anteil) + " % vom Umsatz" : ""}</span>
-        <span class="summe">${euro(g.netto)}</span></div>`;
+      html += kostengruppenZeile(g);
     }
     html += `</div>`;
   }
@@ -3879,10 +3905,21 @@ async function ladeExport(){
       Sobald Belege da sind, entsteht der Stapel von selbst.</div>`;
     return;
   }
+  // P0-3: "Summe" hieß vorher `d.summe` — das Feld gab es nie, die Zahl
+  // stand deshalb immer auf 0,00 €. `d.export` ist die exportgenaue
+  // Teilmenge (Statusfilter wie der Export selbst), `d.anzahl` bleibt die
+  // volle Belegzahl des Monats — die Differenz erklärt, warum die Summe im
+  // Stapel kleiner ist als "Belege im Monat".
+  const nichtGeprueft = d.anzahl - d.export.anzahl;
   ziel.innerHTML = `<div class="mrow"><span class="art">Belege im Monat</span>
       <span class="summe">${d.anzahl}</span></div>
-    <div class="mrow"><span class="art">Summe</span>
-      <span class="summe">${euro(d.summe || 0)}</span></div>
+    <div class="mrow"><span class="art">Davon geprüft und bereit für den Stapel</span>
+      <span class="summe">${d.export.anzahl}</span></div>
+    <div class="mrow"><span class="art">Summe im Stapel</span>
+      <span class="summe">${euro(d.export.brutto)}</span></div>
+    ${nichtGeprueft > 0 ? `<p style="color:var(--gc-desc);font-size:13px;margin-top:6px">
+      ${nichtGeprueft} Beleg${nichtGeprueft===1?"":"e"}
+      ${nichtGeprueft===1?"ist":"sind"} noch nicht geprüft und fehlt${nichtGeprueft===1?"":"en"} im Stapel.</p>` : ""}
     <button class="chip" style="margin-top:12px" id="export-knopf">Stapel herunterladen</button>
     <span id="export-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>`;
   $("#export-knopf").addEventListener("click", () => stapelLaden(eMonat, "#export-status"));

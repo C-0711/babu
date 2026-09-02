@@ -54,6 +54,20 @@ KOSTENGRUPPEN: list[tuple[str, str, tuple[str, ...]]] = [
 NEUTRALE_KONTEN = ("1360", "1460", "2100", "2150", "2180", "3820", "3840",
                    "0400", "0650", "0675")
 
+# Dieselbe Zuordnung nutzt babu_web für die Kategorie in der Belegliste
+# (P0-1, "Eine Zahl, eine Kategorie, überall dieselbe") — hier als eigene
+# Funktion statt einer lokal in bwa() gebauten Dict-Comprehension, damit
+# beide Stellen garantiert dieselbe Antwort geben.
+_KONTO_ZUORDNUNG = {konto: (schluessel, name)
+                    for schluessel, name, konten in KOSTENGRUPPEN
+                    for konto in konten}
+
+
+def kostengruppe_von(konto: str | None) -> tuple[str, str]:
+    """(Schlüssel, Name) der Kostengruppe zu einem SKR04-Konto — "sonstiges"/
+    "Sonstiges", wenn das Konto keiner Gruppe zugeordnet ist oder fehlt."""
+    return _KONTO_ZUORDNUNG.get(konto or "", ("sonstiges", "Sonstiges"))
+
 # Umsatzsteuer-Kennziffern der Voranmeldung (Formular UStVA).
 KENNZIFFERN = {
     "81": "Umsätze zu 19 %",
@@ -298,9 +312,6 @@ def bwa(monat: str, erloese: dict, belege: list[dict],
     """Monatliche Auswertung: was reinkam, was rausging, was bleibt."""
     gruppen = []
     kosten_gesamt = 0.0
-    zuordnung = {konto: (schluessel, name)
-                 for schluessel, name, konten in KOSTENGRUPPEN
-                 for konto in konten}
     eimer: dict[str, dict] = {}
     neutral: list[dict] = []
     for b in belege:
@@ -316,7 +327,7 @@ def bwa(monat: str, erloese: dict, belege: list[dict],
             continue
         ust = float(b.get("ust") or 0)
         netto = float(b.get("netto") or 0) or (float(b.get("brutto")) - ust)
-        schluessel, name = zuordnung.get(konto, ("sonstiges", "Sonstiges"))
+        schluessel, name = kostengruppe_von(konto)
         e = eimer.setdefault(schluessel, {"schluessel": schluessel, "name": name,
                                           "netto": 0.0, "anzahl": 0})
         e["netto"] += netto
@@ -330,11 +341,11 @@ def bwa(monat: str, erloese: dict, belege: list[dict],
         # Die Löhne kommen schon aus „Dein Team" — ein zusätzlich abgelegter
         # Arbeitsvertrag würde sie ein zweites Mal aufschlagen.
         dauer = [v for v in dauer
-                 if zuordnung.get(v.get("konto_skr04") or "", ("", ""))[0] != "personal"]
+                 if kostengruppe_von(v.get("konto_skr04"))[0] != "personal"]
     for v in dauer:
         betrag = v.get("betrag_monat")
         konto = v.get("konto_skr04")
-        schluessel, name = zuordnung.get(konto, ("sonstiges", "Sonstiges"))
+        schluessel, name = kostengruppe_von(konto)
         vorhanden = eimer.get(schluessel)
         if vorhanden and vorhanden["anzahl"]:
             continue                      # Beleg schlägt Vertrag

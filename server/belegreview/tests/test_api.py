@@ -210,7 +210,11 @@ def test_monat_aggregation(client):
     d = client.get("/api/monat/2026-08").json()
     assert d["anzahl"] == 3
     assert d["brutto"] == 142.6
-    assert d["belegarten"][0]["belegart"] == "Bewirtung"
+    # P0-1: die Kategorie kommt jetzt aus konto_skr04 (6640 -> dieselbe
+    # Kostengruppe wie im Monatsabschluss), nicht mehr aus dem semantischen
+    # "Bewirtung (semantisch, 30%)"-Label — das war die Ursache dafür, dass
+    # derselbe Beleg in Ausgaben und Monatsabschluss zwei Kategorien zeigte.
+    assert d["belegarten"][0]["belegart"] == "Werbung, Bewirtung und Reisen"
     assert d["belegarten"][0]["lieferanten"] == ["Rotenberger Weingärtle"]
     assert d["konten"][0] == {"konto": "6640", "brutto": 142.6, "anzahl": 1}
     assert len(d["offene"]) == 3                 # nachfrage + erfasstes PDF + Stub

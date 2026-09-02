@@ -202,6 +202,109 @@ def test_speichern_beantwortet_alle_lesefragen(welt):
     assert d["status"] == "geprüft"
 
 
+def test_belegart_kommt_aus_konto_skr04_nicht_aus_semantik(tmp_path, monkeypatch):
+    """P0-1: Zielbild-Reviews setzen "semantik": None hart
+    (_review_aus_einschaetzung) — die Kategorie in der Belegliste muss
+    trotzdem aus konto_skr04 kommen (dieselbe Zuordnung wie im
+    Monatsabschluss), nicht auf "Sonstiges" zurückfallen."""
+    arbeit = tmp_path / "box"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(arbeit)], check=True)
+    _git(arbeit, "config", "user.name", "t")
+    _git(arbeit, "config", "user.email", "t@l")
+    stamm = "20260901-000000-aaaaaa-beleg_zielbild"
+    (arbeit / "docs" / "2026-09").mkdir(parents=True)
+    (arbeit / "docs" / "2026-09" / f"{stamm}.jpg").write_bytes(b"\xff\xd8x")
+    (arbeit / "review").mkdir()
+    (arbeit / "review" / f"{stamm}.json").write_text(json.dumps({
+        "datei": f"docs/2026-09/{stamm}.jpg", "engine": "gemma",
+        "dokumentklasse": "Rechnung", "semantik": None, "vlm": None,
+        "aehnlich": None, "ocr_text": "",
+        "felder": {"lieferant": "Getränkemarkt", "beleg_nr": None,
+                   "datum": "01.09.2026", "netto": 50.0, "ust": 9.5,
+                   "brutto": 59.5, "ust_satz": 19, "summenprobe_ok": True,
+                   "bewirtungssignal": False, "offen": []},
+        "einschaetzung": {"belegart": "Bewirtung (semantisch, 30%)",
+                          "konto_skr04": "6640", "steuerschluessel": "8",
+                          "hinweise": []},
+    }, ensure_ascii=False))
+    _git(arbeit, "add", "-A")
+    _git(arbeit, "commit", "-q", "-m", "aufnahme+review: zielbild")
+    bare = tmp_path / "babu-zielbild.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(arbeit), str(bare)], check=True)
+
+    sys.path.insert(0, str(HIER.parent))
+    import babu_web
+
+    monkeypatch.setattr(babu_web, "STORE", bare)
+    monkeypatch.setattr(babu_web, "INDEX_TTL", 0.0)
+    babu_web._INDEX.update(head=None, geprueft=0.0, belege={}, reviews={},
+                           dokumente=[], zeiten={}, oid_cache={})
+    idx = babu_web.index_aktuell()
+    assert idx["belege"][stamm]["belegart"] == "Werbung, Bewirtung und Reisen"
+
+
+def test_monat_route_liefert_export_teilmenge(tmp_path, monkeypatch):
+    """P0-3: `/api/monat/{monat}` muss zusätzlich zur reinen Belegzahl eine
+    zweite, exportgenaue Summe liefern — mit demselben Statusfilter wie
+    /api/export/{monat}.csv (status in "geprüft"/"exportiert"). Vorher gab
+    es dafür kein Feld ("d.summe" existierte nie), der Export zeigte 0,00 €
+    bei 1 Beleg im Monat, ohne dass klar war, ob das ein Rechenfehler ist
+    oder ein ungenannter Filter."""
+    arbeit = tmp_path / "box"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(arbeit)], check=True)
+    _git(arbeit, "config", "user.name", "t")
+    _git(arbeit, "config", "user.email", "t@l")
+    (arbeit / "docs" / "2026-09").mkdir(parents=True)
+    (arbeit / "review").mkdir()
+
+    geprueft = "20260901-000000-aaaaaa-beleg_geprueft"
+    (arbeit / "docs" / "2026-09" / f"{geprueft}.jpg").write_bytes(b"\xff\xd8x")
+    (arbeit / "review" / f"{geprueft}.json").write_text(json.dumps({
+        "datei": f"docs/2026-09/{geprueft}.jpg", "engine": "gemma",
+        "dokumentklasse": "Rechnung", "semantik": None, "vlm": None,
+        "aehnlich": None, "ocr_text": "",
+        "felder": {"lieferant": "Großhandel", "beleg_nr": None,
+                   "datum": "01.09.2026", "netto": 84.03, "ust": 15.97,
+                   "brutto": 100.0, "ust_satz": 19, "summenprobe_ok": True,
+                   "bewirtungssignal": False, "offen": []},
+        "einschaetzung": {"belegart": "Wareneinkauf", "konto_skr04": "5400",
+                          "steuerschluessel": "9", "hinweise": []},
+    }, ensure_ascii=False))
+
+    # Noch nicht geprüft: nur hochgeladen, kein review.json -> Status "erfasst".
+    erfasst = "20260902-000000-bbbbbb-beleg_erfasst"
+    (arbeit / "docs" / "2026-09" / f"{erfasst}.jpg").write_bytes(b"\xff\xd8y")
+
+    _git(arbeit, "add", "-A")
+    _git(arbeit, "commit", "-q", "-m", "aufnahme+review")
+    bare = tmp_path / "babu.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(arbeit), str(bare)], check=True)
+
+    sys.path.insert(0, str(HIER.parent))
+    import babu_web
+
+    monkeypatch.setattr(babu_web, "STORE", bare)
+    monkeypatch.setattr(babu_web, "GEHEIMNIS_PFAD", tmp_path / ".geheimnis")
+    monkeypatch.setattr(babu_web, "PORTAL_DB", tmp_path / "portal.db")
+    monkeypatch.setattr(babu_web, "INDEX_TTL", 0.0)
+    babu_web._INDEX.update(head=None, geprueft=0.0, belege={}, reviews={},
+                           dokumente=[], zeiten={}, oid_cache={})
+    babu_web.wer_token = lambda t: "christoph0711.io" if t == "test-pat" else None
+
+    from fastapi.testclient import TestClient
+    client = TestClient(babu_web.app, base_url="https://testserver")
+    assert client.post("/api/anmelden", json={"pat": "test-pat"}).status_code == 200
+
+    idx = babu_web.index_aktuell()
+    assert idx["belege"][geprueft]["status"] == "geprüft"
+    assert idx["belege"][erfasst]["status"] == "erfasst"
+
+    d = client.get("/api/monat/2026-09").json()
+    assert d["anzahl"] == 2
+    assert d["export"]["anzahl"] == 1
+    assert d["export"]["brutto"] == 100.0
+
+
 # ————— Das Portal muss die Wege auch anbieten —————
 
 PORTAL = (HIER.parent / "portal.html").read_text()

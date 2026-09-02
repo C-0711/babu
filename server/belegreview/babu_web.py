@@ -719,6 +719,7 @@ def _kategorie_anwenden(review: dict, kategorie: str) -> None:
 
 
 def _index_bauen(head: str) -> None:
+    import monatsabschluss as ma  # noqa: PLC0415
     # Klassisches ls-tree-Format „<mode> <typ> <oid>\t<pfad>“ — läuft auch auf
     # Git < 2.36 (H200V: 2.34), das --format für ls-tree noch nicht kennt.
     out = _git(["ls-tree", "-r", "HEAD"], 60) or ""
@@ -786,9 +787,16 @@ def _index_bauen(head: str) -> None:
             # Gutschrift/Storno: trägt sein Minus schon in den Beträgen,
             # das Kennzeichen erklärt es nur (Ninas Anmerkung P1-26).
             "gutschrift": bool(f.get("gutschrift")),
-            # Vorsicht: Stub-Reviews haben "semantik": null — get-Default greift
-            # nur bei FEHLENDEM Schlüssel, deshalb das `or {}`.
-            "belegart": ((review.get("semantik") or {}).get("belegart")) if review else None,
+            # Kategorie-Quelle vereinheitlicht (P0-1): dieselbe Zuordnung wie
+            # im Monatsabschluss (monatsabschluss.kostengruppe_von), nicht
+            # mehr semantik.belegart — das ist bei jedem Zielbild-Beleg None,
+            # weil _review_aus_einschaetzung "semantik": None hart setzt.
+            # Fallback auf semantik.belegart bleibt nur für alte Reviews vor
+            # dem 27.08. ohne konto_skr04 — sonst würden die auf "Sonstiges"
+            # zurückfallen, statt bei ihrer bisherigen Kategorie zu bleiben.
+            "belegart": (ma.kostengruppe_von(e.get("konto_skr04"))[1]
+                         if e.get("konto_skr04") else
+                         (review.get("semantik") or {}).get("belegart")) if review else None,
             "dokumentklasse": (review or {}).get("dokumentklasse") if review else None,
             "konto_skr04": e.get("konto_skr04"),
             # Das „wofür" in Ninas Worten — daraus wird erst das Konto.
@@ -3493,6 +3501,18 @@ def api_monat(monat: str, request: Request) -> Response:
     vor = f"{jahr - 1}-12" if mon == 1 else f"{jahr}-{mon - 1:02d}"
     daten = _monat_summen(monat)
     daten["vormonat"] = _monat_summen(vor)
+    # P0-3: eine zweite, exportgenaue Summe — derselbe Statusfilter wie
+    # /api/export/{monat}.csv. `daten["brutto"]` bleibt die Summe ALLER
+    # Belege des Monats (auch noch ungeprüfte); "Summe im Stapel" ist etwas
+    # anderes und muss das auch im Namen tragen, sonst wirkt die Zahl im
+    # Export wie ein Rechenfehler statt eines Filters (Befund P0-3).
+    idx = index_aktuell()
+    export_zeilen = [z for z in idx["belege"].values()
+                     if z["monat"] == monat and z["status"] in ("geprüft", "exportiert")]
+    daten["export"] = {
+        "anzahl": len(export_zeilen),
+        "brutto": round(sum(z["brutto"] or 0 for z in export_zeilen), 2),
+    }
     return JSONResponse(daten)
 
 

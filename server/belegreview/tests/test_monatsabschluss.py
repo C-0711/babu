@@ -201,6 +201,21 @@ def test_vertrag_liefert_die_monatskosten():
     assert raum["netto"] == 1250.0
     assert raum["aus_vertrag"] == "Vermieter Weber"
     assert d["kosten_netto"] == 1250.0
+    # Dokumentiert, was die Ausgaben-Ansicht (P0-1) abfragen muss, um "0
+    # Belege" bei reinen Vertragskosten nicht mehr anzuzeigen: die Gruppe
+    # trägt "aus_vertrag" und hat keinen einzigen eigenen Beleg.
+    assert raum["aus_vertrag"]
+    assert raum["anzahl"] == 0
+
+
+def test_kostengruppe_von_ist_eine_eigene_funktion():
+    """P0-1: dieselbe Zuordnung, die bwa() intern benutzt, muss babu_web für
+    die Belegliste stehen können — als eigene Funktion, nicht als lokale
+    Dict-Comprehension in bwa()."""
+    assert ma.kostengruppe_von("6640") == ("werbung", "Werbung, Bewirtung und Reisen")
+    assert ma.kostengruppe_von(None) == ("sonstiges", "Sonstiges")
+    assert ma.kostengruppe_von("") == ("sonstiges", "Sonstiges")
+    assert ma.kostengruppe_von("gibtsnicht") == ("sonstiges", "Sonstiges")
 
 
 def test_beleg_schlaegt_vertrag_keine_doppelten_kosten():
