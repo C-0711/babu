@@ -465,13 +465,22 @@ final class AppStore: ObservableObject {
         }
         if betragEur > 0 {
             b.brutto = betragEur
+            b.ustSatz = ustSatz
+        }
+        // Reihenfolge umgekehrt (Ninas Fund P0-2, Getränkemarkt-Bon 65,73 €):
+        // die GEDRUCKTE Steuertabelle gewinnt vor der Rückrechnung. Pfand
+        // steht auf dem Bon als eigene 0-%-Zeile — ein einzelner Satz auf
+        // den Gesamtbetrag würde es mitversteuern (1,82 € zu viel
+        // Vorsteuer). Erst wenn Gemmas Tabelle den Brutto NICHT deckt (oder
+        // fehlt), kommt die blinde Rückrechnung als letzter Fallback — und
+        // die heißt dann ehrlich "geschätzt", nicht "geprüft".
+        let gedeckt = steuertabelleAnwenden(&b, steuersaetze)
+        if !gedeckt, betragEur > 0 {
             b.netto = (betragEur / (1 + Double(ustSatz) / 100) * 100).rounded() / 100
             b.ust = ((b.brutto - b.netto) * 100).rounded() / 100
-            b.ustSatz = ustSatz
-            b.summenprobeOK = true
+            b.summenprobeOK = false   // geschätzt, keine Tabelle hat es geprüft
         }
         if !begruendung.isEmpty { b.begruendung = begruendung }
-        steuertabelleAnwenden(&b, steuersaetze)
         b.herkunft = .ki
         b.offeneFrage = nil
         siegeln(&b, status: .automatisch)
@@ -481,17 +490,21 @@ final class AppStore: ObservableObject {
 
     /// Die Steuertabelle der Buchhaltung übernehmen — aber nur, wenn sie den
     /// Beleg wirklich deckt (Summe ≈ Brutto). Bei Mischsätzen ersetzt sie die
-    /// eine Zahl, die es dann nicht mehr gibt.
+    /// eine Zahl, die es dann nicht mehr gibt. Gibt zurück, ob sie
+    /// angewendet wurde — das entscheidet in `gemmaBuchungAnwenden`, ob die
+    /// Rückrechnung als Fallback noch drankommt.
+    @discardableResult
     private func steuertabelleAnwenden(_ b: inout Beleg,
-                                       _ tabelle: [SteuerPosition]) {
-        guard !tabelle.isEmpty else { return }
+                                       _ tabelle: [SteuerPosition]) -> Bool {
+        guard !tabelle.isEmpty else { return false }
         let summe = tabelle.reduce(0) { $0 + $1.brutto }
-        guard abs(summe - b.brutto) < 0.02 else { return }
+        guard abs(summe - b.brutto) < 0.02 else { return false }
         b.netto = ((tabelle.reduce(0) { $0 + $1.netto }) * 100).rounded() / 100
         b.ust = ((tabelle.reduce(0) { $0 + $1.ust }) * 100).rounded() / 100
         b.ustSatz = tabelle.max(by: { $0.brutto < $1.brutto })?.satz ?? b.ustSatz
         b.steuerPositionen = tabelle.count > 1 ? tabelle : nil
         b.summenprobeOK = abs(b.netto + b.ust - b.brutto) < 0.011
+        return true
     }
 
     /// Fragenpaket weggelegt: der Beleg bleibt liegen, aber ehrlich markiert.
