@@ -52,5 +52,14 @@ Welle 1, 02.09. abends, fünf Agenten parallel, alles auf dem Branch, Suite 1680
 Welle 2 läuft: P0-4 „Wird gelesen" + P3-26, Runde 3 (Kassenbuch, Rechnung,
 Termine-Woche, Salon-Check-Korrektur). Danach Runde 4 (Desktop-Layout).
 
-Nicht deployt. Vor dem Deploy: Deploy-Ritual aus `CLAUDE.md`, Golden-Diff, und
-den Getränkemarkt-Beleg (P0-2) einmal von Hand durch den Weg schicken.
+**Deployt 02.09. 21:50** (main `c6a2ed6`, Freigabe des Auftraggebers): Golden vorher/nachher
+unter `~/golden/` auf der H200V, `/api/abgleich/*` byte-identisch, `/api/belege` weicht
+in 392 Zeilen ab, alle `belegart` (vorher null, jetzt Kategorie — der P0-1-Fix).
+Sicherung `~/backups/babu-docker-vor-deploy-20260902-2148.tgz`. Live geprüft:
+`/api/ich` (`hat_passwort`), `/api/monat` (`export`), `/api/monatsabschluss`
+(`aus_vertrag`), `/api/wissen/status`, `/portal` (neue Funktionen im Bundle),
+Container-Log ohne Fehler.
+
+Noch nicht: Kompendium-Rebuild auf dem Host (SKR04-Atome) und der iOS-Build auf
+Ninas iPhone (P0-2-Anteil in `Store.swift`). Der Getränkemarkt-Beleg wurde nicht
+nachgestellt (Rohdaten nur lokal).
