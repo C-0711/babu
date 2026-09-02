@@ -423,8 +423,12 @@ main p, .leer, .karte > p{max-width:78ch}
 .nachfrage{border-left:3px solid var(--gc-warn)}
 .nachfrage h3{font:600 15px var(--gc-serif);color:var(--gc-fg);margin-bottom:2px}
 .nachfrage p{font-size:12.5px;color:var(--gc-desc)}
-.nachfrage .hin{margin-top:10px;display:inline-block;padding:7px 14px;border-radius:8px;
-  background:var(--gc-accent-subtle);color:var(--gc-fg);font-weight:550;font-size:13px}
+/* Eigenständige Knopfklasse, nicht an .nachfrage gebunden (Befund P2-15) —
+   „Speichern" sah sonst wie reiner Fließtext aus, sobald die Karte drumherum
+   keine Nachfrage war (Team-Formular, Zugang anlegen, „Beleg ändern"). */
+.hin{margin-top:10px;display:inline-block;padding:7px 14px;border-radius:8px;
+  background:var(--gc-accent-subtle);color:var(--gc-fg);font-weight:550;font-size:13px;
+  border:none;cursor:pointer;font-family:inherit}
 
 /* Monat in Zahlen */
 .mrow{display:flex;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px solid var(--gc-border-l)}
@@ -595,18 +599,22 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 .siegel small{display:block;color:var(--gc-desc);font-size:11.5px}
 .siegel button{margin-left:auto;font-size:12px;color:var(--gc-accent);font-weight:600}
 
-/* Chat */
-#chatlog{display:flex;flex-direction:column;gap:12px;margin-bottom:16px;min-height:180px}
+/* Chat — Eingabe und Beispiel-Chips stehen oben zusammen (Befund P2-20):
+   bei leerem Verlauf war das sonst 80 % erzwungener Weißraum bis zur
+   Eingabe in der Mitte. #chatlog wächst jetzt mit dem Verlauf, statt eine
+   Mindesthöhe zu behaupten, die niemand braucht. */
+#chatform{display:flex;gap:8px;margin-bottom:12px}
+#chatfrage{flex:1;padding:11px 14px;border:1px solid var(--gc-border);border-radius:999px;
+  font:inherit;background:var(--gc-bg)}
+#chatform button{background:var(--gc-fg);color:#fff;border-radius:999px;padding:0 18px;font-weight:600}
+.beispiele{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+#chatlog{display:flex;flex-direction:column;gap:12px}
+#chatlog:not(:empty){margin-top:8px}
 .msg{max-width:82%;padding:10px 14px;border-radius:14px;font-size:13.5px;white-space:pre-wrap}
 .msg.ich{align-self:flex-end;background:var(--gc-fg);color:#fff;border-bottom-right-radius:4px}
 .msg.babu{align-self:flex-start;background:var(--gc-bg);border:1px solid var(--gc-border);border-bottom-left-radius:4px}
 .msg.babu.tippt::after{content:"▋";animation:blink 1s steps(1) infinite;color:var(--gc-muted)}
 @keyframes blink{50%{opacity:0}}
-#chatform{display:flex;gap:8px;position:sticky;bottom:14px}
-#chatfrage{flex:1;padding:11px 14px;border:1px solid var(--gc-border);border-radius:999px;
-  font:inherit;background:var(--gc-bg)}
-#chatform button{background:var(--gc-fg);color:#fff;border-radius:999px;padding:0 18px;font-weight:600}
-.beispiele{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
 #chat-anker{display:none;align-items:center;gap:8px;background:var(--gc-accent-subtle);
   border-radius:8px;padding:6px 12px;margin-bottom:8px;font-size:12.5px}
 #chat-anker button{color:var(--gc-muted)}
@@ -1111,7 +1119,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       <button class="an" onclick="location.hash='#post'">Neue Post</button>
     </div>
     <div class="gruss" style="font-size:22px;margin-bottom:4px">Post</div>
-    <p style="color:var(--gc-desc);margin-bottom:10px">Was deine Kanzlei für dich bereitlegt.</p>
+    <p style="color:var(--gc-desc);margin-bottom:10px">Bescheide und Schreiben — vom Finanzamt, von Ämtern, von der GEZ.</p>
     <button class="chip" id="auszug-knopf" style="margin-bottom:10px">Kontoauszug ablegen</button>
     <button class="chip" id="brief-knopf" style="margin-bottom:10px">Brief vom Amt ablegen</button>
     <input type="file" id="auszug-datei" accept=".pdf,application/pdf" hidden>
@@ -1428,18 +1436,18 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   <section class="ansicht" id="a-fragen">
     <div class="gruss" style="font-size:22px;margin-bottom:4px">Fragen</div>
     <p style="color:var(--gc-desc);margin-bottom:16px">Frag mich zu deinen Belegen — oder ganz allgemein zu Steuer-Grundfragen.</p>
+    <form id="chatform">
+      <input id="chatfrage" placeholder="Frag mich etwas zu deinen Belegen …" autocomplete="off">
+      <button>Fragen</button>
+    </form>
     <div class="beispiele" id="chat-beispiele">
       <button class="chip">Was habe ich diesen Monat für Ware ausgegeben?</button>
       <button class="chip">Welche Belege brauchen mich noch?</button>
       <button class="chip">Was kann ich als Friseurin absetzen?</button>
       <button class="chip">Was ist die Kleinunternehmer-Regel?</button>
     </div>
-    <div id="chatlog"></div>
     <div id="chat-anker"><span id="chat-anker-text"></span><button id="chat-anker-weg" aria-label="Anker entfernen">✕</button></div>
-    <form id="chatform">
-      <input id="chatfrage" placeholder="Frag mich etwas zu deinen Belegen …" autocomplete="off">
-      <button>Fragen</button>
-    </form>
+    <div id="chatlog"></div>
   </section>
 </main>
 
@@ -1785,7 +1793,7 @@ async function ladeHeute(){
   try{
     const l = await (await api("/api/belege?limit=3")).json();
     if (l.belege.length){
-      html += `<div class="sektion lbl">Deine letzten Belege</div><div class="voll" id="heute-zuletzt">`;
+      html += `<div class="sektion lbl">Zuletzt hochgeladen</div><div class="voll" id="heute-zuletzt">`;
       for (const z of l.belege) html += belegZeile(z);
       html += `</div><div style="margin-top:14px"><a href="#belege" style="font-size:14.5px">Alle Belege ansehen ›</a></div>`;
     }
@@ -1862,7 +1870,10 @@ async function ladeBelege(){
   }
   let html = "", gruppe = null;
   for (const z of d.belege){
-    const g = wochenGruppe(z.hochgeladen);
+    // Das Beleg-Datum entscheidet, nicht der Hochlade-Zeitpunkt — sonst
+    // stehen zwei Belege vom selben Tag in verschiedenen Wochen, je
+    // nachdem, wann Nina sie fotografiert hat (Befund P2-9).
+    const g = wochenGruppe(z.datum || z.hochgeladen);
     if (g !== gruppe){ gruppe = g; html += `<div class="lbl gruppe-kopf">${g}</div>`; }
     html += belegKarte(z);
   }
@@ -2059,6 +2070,10 @@ async function ladeDetail(stamm){
     const buchungFrage = (d.buchung && d.buchung.fragen && d.buchung.fragen[0]) ? d.buchung.fragen[0] : null;
     const frageText = bewirtungOffen ? "Mit wem warst du essen?"
       : (buchungFrage ? buchungFrage.frage : offenSatz((f.offen||[])[0]));
+    // Die Doppelgänger-Frage braucht zwei Antwortknöpfe, keine Freitext-Karte
+    // (Befund P2-11) — „Ja, doppelt" löscht, „Nein" räumt die Frage weg.
+    const doppelgaenger = !bewirtungOffen
+      && (f.offen||[]).find(o => (o||"").includes("Doppelgänger"));
     html += `<div class="sekt"><span class="lbl">Prüfung</span>
       <div class="haken ${geprueft||b ? "" : "warte"}">
         <div class="kreis ${geprueft ? "stempel" : ""}">${frage ? "?" : "✓"}</div>
@@ -2071,6 +2086,14 @@ async function ladeDetail(stamm){
         onclick="bewirtungSheet('${d.stamm}','${lieferant} · ${euro(f.brutto)}')">
         <h3>Mit wem warst du essen?</h3><p>Kurz notiert, und der Beleg zählt voll.</p>
         <span class="hin">Kurz klären ›</span></button>` : ""}
+      ${doppelgaenger ? `<div class="karte nachfrage" style="margin-top:10px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="chip" onclick="doppelgaengerJaLoeschen('${d.stamm}','${
+            (lieferant+"").replace(/'/g,"")}${f.brutto!=null ? " · " + euro(f.brutto) : ""}')">Ja, doppelt — löschen</button>
+          <button class="chip" onclick="doppelgaengerNeinZweiEinkaeufe('${d.stamm}')">Nein, zwei Einkäufe</button>
+        </div>
+        <span id="dg-status-${d.stamm}" style="font-size:12px;color:var(--gc-muted);display:block;margin-top:8px"></span>
+      </div>` : ""}
       ${buchungFrage && buchungFrage.optionen && buchungFrage.optionen.length
         ? `<div class="karte nachfrage" style="margin-top:10px">
           <h3>${esc(buchungFrage.frage)}</h3>
@@ -2377,7 +2400,10 @@ let zMonat = jetztMonat();
    sondern „gut so" oder der Satz, was gut wäre. Steht etwas noch auf „—",
    war in dem Monat schlicht nichts zu messen. */
 function kennzahlKacheln(k){
-  if (!k) return "";
+  // Bei wenig Belegen sind die Quoten Zufall, keine Kennzahl — „0 Sek. bis
+  // ein Beleg fertig war · gut so" bei einem einzigen Beleg ist Füllmaterial,
+  // keine Auskunft (Befund P2-19). Dann bleibt der Abschnitt ganz weg.
+  if (!k || (k.belege || 0) < 5) return "";
   const proz = q => (q && q.wert != null) ? Math.round(q.wert * 100) + " %" : null;
   const s = k.zeit_bis_haken_s || {};
   const dauer = s.median == null ? null
@@ -2993,7 +3019,7 @@ async function ladePost(){
   const ziel = $("#post-liste");
   if (!d.dokumente.length){
     ziel.innerHTML = `<div class="leer"><b>Noch keine Post.</b>
-      Dokumente deiner Kanzlei erscheinen hier — Auswertungen, Bescheide, Lohnunterlagen.</div>`;
+      Bescheide, Auswertungen und Lohnunterlagen erscheinen hier.</div>`;
     return;
   }
   const freigaben = d.dokumente.filter(doc => doc.art === "freigabe_anfrage");
@@ -3020,7 +3046,11 @@ async function ladePost(){
           <b>${esc(doc.titel)}</b>
           <p style="margin-top:6px">${esc(e.einfach)}</p>
           ${e.was_tun ? `<p style="margin-top:6px"><b>Was du tun musst:</b> ${esc(e.was_tun)}</p>` : ""}
-          ${e.bis_wann ? `<p style="margin-top:4px;color:var(--gc-accent)"><b>Bis ${esc(e.bis_wann)}</b></p>` : ""}
+          ${e.bis_wann ? `<p style="margin-top:4px;color:${
+            /^\d{4}-\d{2}-\d{2}$/.test(e.bis_wann)
+              && e.bis_wann < new Date().toISOString().slice(0, 10)
+              ? "var(--gc-danger)" : "var(--gc-accent)"}">
+            <b>Bis ${esc(datumDeutsch(e.bis_wann))}</b></p>` : ""}
           <div style="display:flex;gap:8px;margin-top:10px">
             <button class="chip" onclick="postOeffnen('${doc.pfad}', this)">Brief ansehen</button>
           </div></div>`
@@ -3579,7 +3609,7 @@ async function ladeTeam(){
           <input id="t-betrag" inputmode="decimal" placeholder="z. B. 2.400 im Monat"
             style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
         </div>
-        <div id="t-stunden-feld" hidden style="display:grid;gap:8px;grid-template-columns:1fr 1fr">
+        <div id="t-stunden-feld" style="display:none;gap:8px;grid-template-columns:1fr 1fr">
           <input id="t-stundenlohn" inputmode="decimal" placeholder="Stundenlohn, z. B. 14,50"
             style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
           <input id="t-stunden-zahl" inputmode="decimal" placeholder="Stunden im Monat"
@@ -3592,12 +3622,17 @@ async function ladeTeam(){
   ziel.innerHTML = html;
 }
 let teamArtGewaehlt = "fest";
+// .hidden allein reichte nicht: #t-stunden-feld trug sein Grid-Layout als
+// inline style="display:grid", und ein inline style gewinnt immer gegen
+// die [hidden]-UA-Regel — das Feld blieb sichtbar, egal was .hidden sagte
+// (Befund P2-15: bei „Fester Lohn" standen beide Feldgruppen gleichzeitig
+// da). Jetzt steuert dieselbe Funktion beide display-Werte direkt.
 function teamArt(art){
   teamArtGewaehlt = art;
   $("#t-fest").classList.toggle("an", art === "fest");
   $("#t-stunden").classList.toggle("an", art === "stunden");
-  $("#t-fest-feld").hidden = art !== "fest";
-  $("#t-stunden-feld").hidden = art !== "stunden";
+  $("#t-fest-feld").style.display = art === "fest" ? "" : "none";
+  $("#t-stunden-feld").style.display = art === "stunden" ? "grid" : "none";
 }
 async function teamBearbeiten(id){
   const d = await (await api("/api/team")).json();
@@ -3791,7 +3826,7 @@ async function ladeAbschluss(){
     <input class="suchfeld" id="kw-anschrift" placeholder="Anschrift (optional)" style="margin-bottom:6px">
     <input class="suchfeld" id="kw-nummer" placeholder="Mandantennummer (optional)" style="margin-bottom:10px">
     <label style="display:block;font-size:13px;margin-bottom:10px">
-      <input type="checkbox" id="kw-kuendigen" checked> Mandat gleich kündigen
+      <input type="checkbox" id="kw-kuendigen"> Mandat gleich kündigen
     </label>
     <button class="chip" id="kw-knopf">Brief schreiben</button>
     <span id="kw-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>
@@ -4036,6 +4071,30 @@ $("#loesch-ja").addEventListener("click", async () => {
   }
   ja.disabled = false; ja.textContent = "Ja, löschen";
 });
+
+function doppelgaengerJaLoeschen(stamm, was){
+  loeschFragen({
+    titel: "Diesen doppelten Beleg löschen?",
+    sub: was || "",
+    pfad: "/api/beleg/" + stamm + "/loeschen",
+    koerper: {grund: "Doppelgänger — auf Nachfrage bestätigt"},
+    danach: () => { location.hash = "#belege"; },
+  });
+}
+
+async function doppelgaengerNeinZweiEinkaeufe(stamm){
+  const status = document.getElementById("dg-status-" + stamm);
+  if (status) status.textContent = "wird gespeichert …";
+  try{
+    const r = await api("/api/angaben/" + stamm, {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({notiz: "Kein Doppelgänger — zwei Einkäufe"})});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok){ if (status) status.textContent = d.fehler || "Ging gerade nicht."; return; }
+    etag = null;
+    setTimeout(() => ladeDetail(stamm), 300);
+  }catch{ if (status) status.textContent = "Gerade keine Verbindung."; }
+}
 
 function belegLoeschen(stamm, was){
   loeschFragen({
@@ -4401,7 +4460,7 @@ async function ladeVertraege(){
         <span class="wann">${v.betrag_monat != null ? euro(v.betrag_monat) : "—"}</span>
         <span class="wann">${esc(v.kuendigen_bis?.sicher
             ? "kündbar bis " + (v.kuendigen_bis.datum||"").split("-").reverse().join(".")
-            : "Frist steht im Vertrag")}</span>
+            : (v.kuendigungsfrist || "Frist steht im Vertrag"))}</span>
       </div>`).join("");
 }
 
