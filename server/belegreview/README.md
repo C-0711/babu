@@ -92,3 +92,75 @@ Löschen darf die Inhaberin und die Kanzlei, nicht die Rolle `mitarbeit` —
 einreichen ist etwas anderes als wegwerfen. `GET /api/ablage` liefert je
 Eintrag `loeschbar`, damit die Oberfläche gar nicht erst einen Knopf zeigt,
 der beim Drücken absagt.
+
+## Datenbank: SQLite oder Postgres (Plan 21, Phase 1)
+
+Der Portal-Zustand läuft seit dem 02.09.2026 durch `db.py`, das zwei
+Dialekte spricht. **Ohne `BABU_DB_URL` ändert sich nichts**: SQLite,
+dieselbe `~/babu-web/portal.db`, dieselben Anweisungen. Ist die Variable
+gesetzt, spricht dieselbe Codebasis mit Postgres (psycopg3).
+
+Das Schema steht in `migrations/` als nummerierte SQL-Dateien; `db.py`
+führt darüber eine `schema_version`-Tabelle und wendet an, was noch fehlt.
+Die SQLite-Seite legt ihre Tabellen weiter inline in `babu_web._db()` an —
+dort hängen die `ALTER TABLE … ADD COLUMN`-Nachrüstungen, mit denen Ninas
+Datei über Monate gewachsen ist, und daran soll Phase 1 nicht schrauben.
+Dass beide Wege dasselbe Schema ergeben, prüft
+`tests/test_db_dialekt.py::test_migration_bildet_die_inline_tabellen_ab`.
+
+**Umschalten — die Reihenfolge ist der Punkt:**
+
+1. Passwortdatei anlegen, einmalig auf der H200V:
+   `umask 077 && openssl rand -base64 33 | tr -d '\n' > ~/babu-web/.pg_passwort`
+2. Nur die Datenbank hochfahren: `docker compose up -d postgres`.
+3. Einmal umziehen, von Hand — **nicht** in einem `CMD`, das Skript räumt
+   die Zieltabellen vorher leer:
+
+   ```bash
+   BABU_DB_URL=postgresql://babu@127.0.0.1:55432/babu \
+   BABU_DB_PASSWORT_DATEI=~/babu-web/.pg_passwort \
+   python3 werkzeug/migrate_sqlite_to_pg.py ~/babu-web/portal.db
+   ```
+
+   `--trocken` zählt vorher durch, ohne zu schreiben.
+4. In `docker/compose.yml` die Zeile `BABU_DB_URL:` einkommentieren,
+   `docker compose up -d`, danach das volle Golden-Ritual aus `CLAUDE.md`.
+
+**Rückweg:** die Zeile wieder auskommentieren, `docker compose up -d`.
+`portal.db` bleibt liegen und unangetastet — der Umzug liest sie nur. Nicht
+löschen, solange Postgres sich nicht bewährt hat. Der Postgres-Container
+darf dabei weiterlaufen, er steht nicht im Weg.
+
+### Sicherung
+
+Postgres und Belegbox sind getrennte Sicherungsziele; das bestehende
+`~/babu-sichern.sh` (tägliches Box-Spiegeln) bleibt, wie es ist. Dazu kommt
+ein Cron **auf dem Host**, kein eigener Container — für einen Zeitplan
+allein lohnt kein Dienst, und der Host hat sein Cron-Ritual schon:
+
+```cron
+# täglich 03:20, 14 Tage rollierend
+20 3 * * * docker exec babu-postgres pg_dump -U babu -Fc babu > ~/backups/babu-pg-$(date +\%F).dump && find ~/backups -name 'babu-pg-*.dump' -mtime +14 -delete
+```
+
+Zurückspielen:
+`docker exec -i babu-postgres pg_restore -U babu -d babu --clean --if-exists < ~/backups/babu-pg-<datum>.dump`
+
+### Neue SQL-Zeilen schreiben
+
+`db.platzhalter()` ersetzt für Postgres **jedes** `?` im SQL-Text durch
+`%s`. Das ist sicher, solange kein SQL-Text ein Fragezeichen als Zeichen
+enthält — und kein `%`, das psycopg sonst selbst als Platzhalter läse. Ein
+Fragezeichen gehört in einen Parameter, nicht in den Text.
+`tests/test_db_dialekt.py::test_kein_sql_literal_traegt_ein_echtes_fragezeichen`
+hält das fest und bricht, sobald jemand es vergisst.
+
+Für die Postgres-Tests braucht es kein Docker: die Fixture in
+`tests/conftest.py` nimmt `BABU_TEST_DB_URL`, sonst startet sie sich mit
+`initdb`/`pg_ctl` eine Wegwerf-Instanz auf Port 55433 und räumt sie
+hinterher weg; findet sie keins von beidem, werden die
+`@pytest.mark.pg`-Tests übersprungen. **Die übrige Suite setzt nirgends
+Postgres voraus** — `pytest tests/` läuft wie bisher gegen SQLite. Die
+ganze Suite gegen Postgres fährt `BABU_DB_URL=… pytest tests/`; ein
+Schema-Haken in `conftest.py` gibt dabei jeder Test-`portal.db` ihr eigenes
+Postgres-Schema, damit die Isolation bleibt.

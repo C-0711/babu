@@ -37,6 +37,7 @@ WURZEL = Path(__file__).resolve().parent
 sys.path.insert(0, str(WURZEL))
 import audit  # noqa: E402
 import box as bx  # noqa: E402
+import db  # noqa: E402
 import kontenrahmen as kr  # noqa: E402
 import kontierung as kt  # noqa: E402
 import mandanten  # noqa: E402
@@ -138,16 +139,36 @@ def _im_box_kontext(box: bx.Box, ziel, *args):
 
 
 # ---------------------------------------------------------------------------
-# Portal-State (Lesestatus, Einstellungen): SQLite — kein Audit-Material,
-# gehört nicht als Rauschen in die Belegbox-Historie.
+# Portal-State (Lesestatus, Einstellungen): kein Audit-Material, gehört nicht
+# als Rauschen in die Belegbox-Historie.
+#
+# Seit Plan 21, Phase 1 liegt der Dialekt in `db.py`: ohne `BABU_DB_URL` ist
+# es wie bisher SQLite in `PORTAL_DB`, mit gesetzter Variable Postgres. Die
+# Aufrufstellen unten merken davon nichts — `_db()` ist der eine Ort, an dem
+# übersetzt wird (`?` → `%s`, `lastrowid` → `RETURNING id`).
+#
+# `_DB_LOCK` bleibt. Für SQLite ist er Pflicht, für Postgres wäre er
+# verzichtbar — er bleibt trotzdem, weil das Nebenläufigkeitsverhalten in
+# dieser Phase nicht mitwandern soll. Er ist NICHT wiedereintrittsfähig:
+# wer schon in einem `with _DB_LOCK`-Block steht, darf keine Funktion rufen,
+# die ihn erneut nimmt (`salon_von` etwa).
 # ---------------------------------------------------------------------------
 
 _DB_LOCK = threading.Lock()
 
 
-def _db() -> sqlite3.Connection:
-    PORTAL_DB.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(PORTAL_DB)
+def _sqlite_schema(conn) -> None:
+    """Tabellen und nachgerüstete Spalten der SQLite-Fassung.
+
+    Warum das hier steht und nicht im Migrations-Runner aus `db.py`: die
+    produktive `portal.db` ist über Monate gewachsen, und die
+    `ALTER TABLE … ADD COLUMN`-Blöcke unten sind der Mechanismus, mit dem
+    sie gewachsen ist. Phase 1 soll am Verhalten nichts ändern — also
+    bleibt der Weg, der Ninas Datei kennt, unangetastet. Postgres fängt
+    leer an und bekommt sein Schema aus `migrations/`.
+
+    Dass beide dasselbe ergeben, prüft `tests/test_db_dialekt.py`.
+    """
     conn.execute("""CREATE TABLE IF NOT EXISTS lesestatus
         (un TEXT NOT NULL, dokument TEXT NOT NULL, zeit TEXT NOT NULL,
          PRIMARY KEY (un, dokument))""")
@@ -317,7 +338,21 @@ def _db() -> sqlite3.Connection:
     # Fremdschlüssel zeigen auf `nutzer`, und eine Datenbank mit echten
     # Fremdschlüsseln verlangt die Zieltabelle zum Anlegezeitpunkt.
     mandanten.schema(conn)
-    return conn
+
+
+@contextmanager
+def _db():
+    """Eine Verbindung für die Dauer eines `with`-Blocks.
+
+    Liefert etwas mit `.execute(sql, params)` — bei SQLite die Verbindung
+    selbst, bei Postgres einen dünnen Wrapper, der sich genauso anfühlt.
+    Am Ende des Blocks wird committet, bei einer Ausnahme zurückgerollt;
+    das ist dieselbe Zusage wie vorher `with sqlite3.connect(…)`.
+    """
+    with db.oeffnen(PORTAL_DB) as conn:
+        if conn.dialekt == "sqlite":
+            _sqlite_schema(conn)
+        yield conn
 
 
 @contextmanager
@@ -345,7 +380,8 @@ def db_gelesen(un: str) -> set[str]:
 
 def db_gelesen_setzen(un: str, dokument: str) -> None:
     with _DB_LOCK, _db() as c:
-        c.execute("INSERT OR REPLACE INTO lesestatus VALUES (?,?,?)",
+        c.execute(db.upsert("lesestatus", ("un", "dokument", "zeit"),
+                            ("un", "dokument")),
                   (un, dokument, time.strftime("%Y-%m-%dT%H:%M:%S")))
 
 
@@ -357,7 +393,8 @@ def db_einstellungen(un: str) -> dict[str, str]:
 
 def db_einstellung_setzen(un: str, schluessel: str, wert: str) -> None:
     with _DB_LOCK, _db() as c:
-        c.execute("INSERT OR REPLACE INTO einstellungen VALUES (?,?,?)",
+        c.execute(db.upsert("einstellungen", ("un", "schluessel", "wert"),
+                            ("un", "schluessel")),
                   (un, schluessel, wert))
 GITCHAIN_ID = os.environ.get("GITCHAIN_ID_HOST", "https://gitchain.de").rstrip("/")
 GEMMA_API = os.environ.get("GEMMA_API", "http://127.0.0.1:11435/v1/chat/completions")
@@ -3418,7 +3455,7 @@ def _anlagegut_aus_zeile(zeile) -> "an.Anlagegut":
 
 def db_anlagegueter(un: str) -> list:
     with _DB_LOCK, _db() as c:
-        c.row_factory = sqlite3.Row
+        c.row_factory = db.ZEILEN_MIT_NAMEN
         zeilen = list(c.execute(
             "SELECT * FROM anlagegut WHERE un=? ORDER BY angeschafft, id", (un,)))
     gueter = []
@@ -3570,7 +3607,7 @@ async def api_anlage_aendern(kennung: int, request: Request) -> Response:
         return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
     inhaber = salon_von(un)
     with _DB_LOCK, _db() as c:
-        c.row_factory = sqlite3.Row
+        c.row_factory = db.ZEILEN_MIT_NAMEN
         zeile = c.execute("SELECT * FROM anlagegut WHERE id=? AND un=?",
                           (kennung, inhaber)).fetchone()
     if zeile is None:
@@ -4894,7 +4931,8 @@ _LLM_SEMAPHORE = threading.Semaphore(1)
 
 def db_abschluss_snapshot(un: str, jahr: int | None, status: dict) -> None:
     with _DB_LOCK, _db() as c:
-        c.execute("INSERT OR REPLACE INTO abschluss_status VALUES (?,?,?,?)",
+        c.execute(db.upsert("abschluss_status", ("un", "jahr", "json", "zeit"),
+                            ("un",)),
                   (un, jahr, json.dumps(status, ensure_ascii=False),
                    time.strftime("%Y-%m-%dT%H:%M:%S")))
 

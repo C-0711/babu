@@ -9,6 +9,40 @@
 # Betrieb: docker compose build && docker compose up -d
 # Rückweg: docker compose down && pm2 start babu-web
 services:
+  # Postgres (Plan 21, Phase 1). Steht bereit, ist aber noch NICHT scharf:
+  # `BABU_DB_URL` unten ist auskommentiert, babu-web spricht bis dahin
+  # weiter mit `portal.db`. Der Umschalter ist ein eigener, bewusster
+  # Handgriff — siehe die Reihenfolge in server/belegreview/README.md.
+  postgres:
+    image: postgres:16
+    container_name: babu-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: babu
+      POSTGRES_USER: babu
+      # Kein Passwort im Klartext, auch nicht als Umgebungsvariable (die
+      # stünde in `docker inspect`): Docker hängt die Datei als Secret ein,
+      # das Image liest sie selbst.
+      POSTGRES_PASSWORD_FILE: /run/secrets/babu_pg_passwort
+      # Sortierung wie SQLite (binär). Wirkt nur bei der Erstanlage des
+      # Datenverzeichnisses — später ließe es sich nur mit einem Neuaufbau
+      # ändern. `ORDER BY name` soll dieselbe Reihenfolge liefern wie bisher.
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+    secrets:
+      - babu_pg_passwort
+    volumes:
+      - babu-pg-daten:/var/lib/postgresql/data
+    ports:
+      # NUR localhost. babu-web läuft im Host-Netz und erreicht Postgres
+      # damit über 127.0.0.1:55432 — genau wie insp-app und vLLM. Von außen
+      # ist der Port nicht zu sehen; 5432 auf dem Host bleibt frei.
+      - "127.0.0.1:55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U babu -d babu"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   babu-web:
     build:
       context: ..
@@ -19,15 +53,31 @@ services:
     # christoph.bertsch auf der H200V — Dateien in den Volumes behalten
     # ihren Besitzer, Backups und Handgriffe auf dem Host funktionieren weiter.
     user: "1001:1000"
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       HOME: /data
       BABU_ERLAUBT: "christoph0711.io,nina0711.io"
       BABU_ROLLEN: "christoph0711.io:kanzlei"
+      # --- Postgres scharf schalten (Plan 21, Phase 1) -------------------
+      # Erst hochfahren, dann EINMAL von Hand umziehen
+      #   docker compose up -d postgres
+      #   BABU_DB_URL=… python3 werkzeug/migrate_sqlite_to_pg.py
+      # und erst danach die nächste Zeile einkommentieren und
+      # `docker compose up -d` fahren. Ohne sie bleibt `portal.db` die
+      # Wahrheit — das ist auch der Rückweg: Zeile wieder auskommentieren.
+      # BABU_DB_URL: "postgresql://babu@127.0.0.1:55432/babu"
+      # Das Passwort steht nicht in der URL, sondern in der Secret-Datei;
+      # `db.verbindung()` liest sie und reicht es psycopg getrennt herein.
+      BABU_DB_PASSWORT_DATEI: /run/secrets/babu_pg_passwort
       # Gürtel und Hosenträger: falls ein gemountetes Repo einem anderen
       # Besitzer gehört, soll git lesen statt verweigern.
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: "safe.directory"
       GIT_CONFIG_VALUE_0: "*"
+    secrets:
+      - babu_pg_passwort
     volumes:
       - ~/babu-web:/data/babu-web                                   # portal.db, Box-Klon, Session-Geheimnis, Logos, index.html
       - ~/inspektor-store:/data/inspektor-store:ro                  # Bare-Store, nur lesen (Schreiben geht über :7808)
@@ -35,3 +85,16 @@ services:
       - ~/Youtube/.env:/data/Youtube/.env:ro                        # Gemini-Schlüssel für die Bild-Generierung
       - ~/kompendium:/data/kompendium:ro                            # Branchen-Kompendium: Vektoren + Atome + Grundwissen
     restart: unless-stopped
+
+# Die Datei liegt auf dem Host mit 0600 und gehört christoph.bertsch. Als
+# Secret liest sie der Docker-Daemon (root) und legt sie in beiden
+# Containern unter /run/secrets/ ab — auch für den postgres-Benutzer im
+# Postgres-Image lesbar, der ein direkt gemountetes 0600-Bind nicht öffnen
+# könnte. Anlegen (einmalig, auf der H200V):
+#   umask 077 && openssl rand -base64 33 | tr -d '\n' > ~/babu-web/.pg_passwort
+secrets:
+  babu_pg_passwort:
+    file: ${HOME}/babu-web/.pg_passwort
+
+volumes:
+  babu-pg-daten:
