@@ -1217,7 +1217,6 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <div class="unterreiter">
       <button class="an" onclick="location.hash='#belege'">Belege</button>
       <button onclick="location.hash='#bank'">Bank</button>
-      <button onclick="location.hash='#saloncheck'">Salon-Check</button>
     </div>
     <div style="display:flex;align-items:baseline;gap:16px;flex-wrap:wrap">
       <b class="monatstitel" id="mon-anzeige"></b>
@@ -1245,6 +1244,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <div class="unterreiter">
       <button onclick="location.hash='#zahlen'">Ausgaben</button>
       <button class="an" onclick="location.hash='#abschluss'">Monatsabschluss</button>
+      <button onclick="location.hash='#saloncheck'">Salon-Check</button>
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div class="gruss seitentitel">Monatsabschluss</div>
@@ -1265,6 +1265,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <div class="unterreiter">
       <button class="an" onclick="location.hash='#zahlen'">Ausgaben</button>
       <button onclick="location.hash='#abschluss'">Monatsabschluss</button>
+      <button onclick="location.hash='#saloncheck'">Salon-Check</button>
     </div>
     <div style="display:flex;align-items:baseline;gap:16px;flex-wrap:wrap">
       <div class="gruss seitentitel">Deine Zahlen</div>
@@ -1278,11 +1279,15 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <div id="zahlen-inhalt" class="spalten"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
 
-  <!-- SALON-CHECK (Abschluss-Unterlagen → zuschauen → Ampel-Report) -->
+  <!-- SALON-CHECK (Abschluss-Unterlagen → zuschauen → Ampel-Report)
+       Steht seit 03.09.2026 unter „Auswertung" neben Ausgaben und
+       Monatsabschluss: der Check schaut auf ein ganzes Jahr zurück, das ist
+       Auswertung und nicht Belegarbeit. Der Weg `#saloncheck` bleibt
+       derselbe, alte Verweise gehen weiter. -->
   <section class="ansicht" id="a-saloncheck">
     <div class="unterreiter">
-      <button onclick="location.hash='#belege'">Belege</button>
-      <button onclick="location.hash='#bank'">Bank</button>
+      <button onclick="location.hash='#zahlen'">Ausgaben</button>
+      <button onclick="location.hash='#abschluss'">Monatsabschluss</button>
       <button class="an" onclick="location.hash='#saloncheck'">Salon-Check</button>
     </div>
     <div class="gruss" style="font-size:22px;margin-bottom:4px">Salon-Check</div>
@@ -1296,7 +1301,6 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <div class="unterreiter">
       <button onclick="location.hash='#belege'">Belege</button>
       <button class="an" onclick="location.hash='#bank'">Bank</button>
-      <button onclick="location.hash='#saloncheck'">Salon-Check</button>
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <div class="gruss" style="font-size:22px">Konto</div>
@@ -1962,8 +1966,10 @@ const ansichten = { gesperrt: () => {}, heute: ladeHeute, belege: ladeBelege, fr
                     mandanten: ladeMandanten,
                     einstellungen: ladeEinstellungen, detail: null,
                     unterlage: null };
-/* Welcher Reiter oben leuchtet, wenn die Ansicht selbst keiner ist. */
-const REITER_ZU = {detail: "belege", unterlage: "ablage"};
+/* Welcher Reiter oben leuchtet, wenn die Ansicht selbst keiner ist.
+   Der Salon-Check ist seit 03.09.2026 ein Unterreiter der Auswertung —
+   ohne diesen Eintrag stünde man dort ohne leuchtenden Reiter. */
+const REITER_ZU = {detail: "belege", unterlage: "ablage", saloncheck: "zahlen"};
 function routen(){
   const h = location.hash.slice(1) || "heute";
   const ziel = h.split("/")[0];
