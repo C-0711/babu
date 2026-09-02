@@ -75,6 +75,8 @@ ID_TABELLEN = frozenset({
     "registrierungen", "team", "termin", "kundin", "behandlung", "leistung",
     "mitarbeiter", "wa_faden", "wa_nachricht", "gespraech", "nachricht",
     "anlagegut", "einladung", "meldung_puffer",
+    # 0002: Plan 21, Phase 2 und §7
+    "audit_log", "passwort_reset", "kanzlei", "mandant",
 })
 
 
