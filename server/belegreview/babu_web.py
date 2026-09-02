@@ -34,6 +34,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 
 WURZEL = Path(__file__).resolve().parent
 sys.path.insert(0, str(WURZEL))
+import audit  # noqa: E402
 import kontenrahmen as kr  # noqa: E402
 import kontierung as kt  # noqa: E402
 
@@ -218,6 +219,9 @@ def _db() -> sqlite3.Connection:
          anriss TEXT NOT NULL DEFAULT '', ip TEXT)""")
     conn.execute("""CREATE INDEX IF NOT EXISTS einladung_mail
         ON einladung (mail, erstellt)""")
+    # Audit-Log + Passwort-Reset (Plan 21, Abschnitt 7) — EIN Aufruf, siehe
+    # audit.py, warum beide Tabellen daran hängen.
+    audit.schema(conn)
     return conn
 
 
@@ -3529,6 +3533,164 @@ def _verwalter_wache(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Passwort-Reset über Betriebsgrenzen (Plan 21, Abschnitt 7): das Startpasswort-
+# Verhalten bleibt nur innerhalb des eigenen Betriebs (oder für admin) —
+# sonst nur ein Link, der Aufrufer sieht das Passwort nie. Rate-Limit auf
+# Einlösen wie `_LOGIN_VERSUCHE`; auf Anfordern über die eigenen Zeilen der
+# Zielperson in `passwort_reset` (analog `einladung.gebremst`).
+# ---------------------------------------------------------------------------
+
+_RESET_VERSUCHE: dict[str, list[float]] = {}
+_RESET_SPALTEN = ("id", "token_hash", "un", "erstellt", "laeuft_ab", "eingeloest")
+_RESET_SELECT = "SELECT " + ", ".join(_RESET_SPALTEN) + " FROM passwort_reset"
+
+
+def _reset_per_token(token: str) -> dict | None:
+    import passwort_reset as pr  # noqa: PLC0415
+    with _DB_LOCK, _db() as c:
+        z = c.execute(_RESET_SELECT + " WHERE token_hash=?",
+                      (pr.token_hash(token),)).fetchone()
+    return dict(zip(_RESET_SPALTEN, z)) if z else None
+
+
+def _als_reset(zeile: dict):
+    """DB-Zeile → das Modell aus passwort_reset.py, damit dort geprüft wird."""
+    import passwort_reset as pr  # noqa: PLC0415
+    lies = lambda w: datetime.fromisoformat(w) if w else None  # noqa: E731
+    return pr.Reset(un=zeile["un"], token_hash=zeile["token_hash"],
+                    erstellt=lies(zeile["erstellt"]), laeuft_ab=lies(zeile["laeuft_ab"]),
+                    eingeloest=lies(zeile["eingeloest"]))
+
+
+def _reset_anfordern_erlaubt(ziel_un: str) -> bool:
+    import passwort_reset as pr  # noqa: PLC0415
+    with _DB_LOCK, _db() as c:
+        frueher = [datetime.fromisoformat(z[0]) for z in c.execute(
+            "SELECT erstellt FROM passwort_reset WHERE un=? ORDER BY id DESC LIMIT 10",
+            (ziel_un,))]
+    return not pr.gebremst(frueher)
+
+
+def _reset_aufraeumen(ziel_un: str) -> None:
+    """Alte Zeilen dieser Person weg — eingelöst oder abgelaufen. Sonst
+    wächst die Tabelle mit jeder Anforderung, auch wenn nie ein Link
+    benutzt wird."""
+    jetzt = datetime.now(timezone.utc)
+    with _DB_LOCK, _db() as c:
+        alte = [z[0] for z in c.execute(
+            "SELECT id, laeuft_ab, eingeloest FROM passwort_reset WHERE un=?",
+            (ziel_un,)).fetchall()
+            if z[2] is not None or datetime.fromisoformat(z[1]) < jetzt]
+        if alte:
+            c.executemany("DELETE FROM passwort_reset WHERE id=?", [(a,) for a in alte])
+
+
+def _passwort_neu(aufrufer: str, email: str) -> Response:
+    """`aktion=passwort_neu` — Startpasswort bleibt, wenn `aufrufer` admin
+    ist oder `email` zum selben Betrieb gehört wie `aufrufer` (Inhaberin,
+    die ihr eigenes Team zurücksetzt; auch eine Kanzlei, die sich selbst
+    zurücksetzt). Reicht die Kanzlei in einen fremden Betrieb hinein, gibt
+    es nur den Link — das neue Passwort sieht sie nie.
+
+    `email` ist an dieser Stelle schon als existierender Zugang geprüft."""
+    eigener_betrieb = (rolle(aufrufer) == "admin"
+                       or salon_von(email) == salon_von(aufrufer))
+    if eigener_betrieb:
+        passwort = startpasswort()
+        with _DB_LOCK, _db() as c:
+            c.execute("UPDATE nutzer SET pw=? WHERE email=?", (pw_hash(passwort), email))
+        audit.audit(aufrufer, "passwort_neu", ziel_un=email, weg="startpasswort")
+        return JSONResponse({"ok": True, "email": email, "startpasswort": passwort})
+    if not _reset_anfordern_erlaubt(email):
+        return JSONResponse({"fehler": "Für diesen Zugang wurde gerade erst ein Link "
+                                       "erzeugt — kurz warten, dann noch einmal."},
+                            status_code=429)
+    _reset_aufraeumen(email)
+    import passwort_reset as pr  # noqa: PLC0415
+    token, modell = pr.anfordern(email)
+    with _DB_LOCK, _db() as c:
+        c.execute("""INSERT INTO passwort_reset (token_hash, un, erstellt, laeuft_ab)
+                     VALUES (?,?,?,?)""",
+                  (modell.token_hash, modell.un, modell.erstellt.isoformat(),
+                   modell.laeuft_ab.isoformat()))
+    link = f"{PORTAL_ORIGIN.rstrip('/')}/portal#reset/{token}"
+    audit.audit(aufrufer, "passwort_neu", ziel_un=email, weg="link")
+    return JSONResponse({"ok": True, "email": email, "link": link})
+
+
+@app.post("/api/passwort-reset")
+async def api_passwort_reset_einloesen(request: Request) -> Response:
+    """Das Gegenstück zum Link aus `_passwort_neu`: neues Passwort, zweimal,
+    einmal einlösbar. Ohne Anmeldung — der Link IST die Berechtigung, genau
+    wie `/api/auswertung/konto` beim Auswertungs-Link."""
+    import passwort_reset as pr  # noqa: PLC0415
+    if not _origin_ok(request):
+        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    ip = _client_ip(request)
+    jetzt = time.time()
+    versuche = [t for t in _RESET_VERSUCHE.get(ip, []) if jetzt - t < 60]
+    if len(versuche) >= 5:
+        _RESET_VERSUCHE[ip] = versuche
+        return JSONResponse({"fehler": "Zu viele Versuche — bitte eine Minute warten."},
+                            status_code=429)
+    versuche.append(jetzt)
+    _RESET_VERSUCHE[ip] = versuche
+    _zaehler_aufraeumen(_RESET_VERSUCHE, jetzt, 60)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    token = str(body.get("token") or "")
+    passwort = str(body.get("passwort") or "")
+    zeile = _reset_per_token(token)
+    ergebnis = pr.einloesen(_als_reset(zeile) if zeile else None, token,
+                            passwort, str(body.get("passwort2") or ""))
+    if not ergebnis.ok:
+        return JSONResponse({"fehler": ergebnis.grund}, status_code=400)
+    # Geglückt: das Kontingent gehört den Fehlversuchen, nicht dem Erfolg.
+    _RESET_VERSUCHE.pop(ip, None)
+    n = nutzer_holen(zeile["un"])
+    if n is None:
+        return JSONResponse({"fehler": "Dieses Konto gibt es nicht mehr."},
+                            status_code=404)
+    with _DB_LOCK, _db() as c:
+        c.execute("UPDATE nutzer SET pw=? WHERE email=?",
+                  (pw_hash(passwort), zeile["un"]))
+        c.execute("UPDATE passwort_reset SET eingeloest=? WHERE id=?",
+                  (_jetzt_iso(), zeile["id"]))
+    audit.audit(zeile["un"], "passwort_reset_eingeloest", ziel_un=zeile["un"])
+    return JSONResponse({"ok": True, "email": zeile["un"]})
+
+
+@app.get("/api/audit")
+def api_audit_liste(request: Request, limit: int = 50, vor: int = 0) -> Response:
+    """Nur für admin — die Kanzlei-Ebene bekommt hier (noch) keinen Blick,
+    das Log ist die Betreiber-Sicht (Plan 21, Abschnitt 7)."""
+    un, fehler = _verwalter_wache(request)
+    if fehler:
+        return fehler
+    if rolle(un) != "admin":
+        return JSONResponse({"fehler": "nur für admin"}, status_code=403)
+    limit = max(1, min(limit, 200))
+    with _DB_LOCK, _db() as c:
+        if vor:
+            zeilen = c.execute(
+                """SELECT id, zeit, akteur_un, aktion, ziel_un, mandant_id, details
+                   FROM audit_log WHERE id < ? ORDER BY id DESC LIMIT ?""",
+                (vor, limit)).fetchall()
+        else:
+            zeilen = c.execute(
+                """SELECT id, zeit, akteur_un, aktion, ziel_un, mandant_id, details
+                   FROM audit_log ORDER BY id DESC LIMIT ?""", (limit,)).fetchall()
+    eintraege = [{"id": z[0], "zeit": z[1], "akteur_un": z[2], "aktion": z[3],
+                  "ziel_un": z[4], "mandant_id": z[5],
+                  "details": json.loads(z[6] or "{}")}
+                 for z in zeilen]
+    return JSONResponse({"eintraege": eintraege,
+                         "weiter": eintraege[-1]["id"] if len(eintraege) == limit else None})
+
+
+# ---------------------------------------------------------------------------
 # Verwaltung: Nutzer anlegen/ändern, Registrierungs-Anfragen einrichten.
 # ---------------------------------------------------------------------------
 
@@ -3567,6 +3729,7 @@ async def api_nutzer_anlegen(request: Request) -> Response:
     if passwort is None:
         return JSONResponse({"fehler": "Für diese E-Mail gibt es schon einen Zugang."},
                             status_code=409)
+    audit.audit(un, "nutzer_anlegen", ziel_un=email, rolle=str(body.get("rolle", "salon")))
     return JSONResponse({"ok": True, "email": email, "startpasswort": passwort})
 
 
@@ -3587,6 +3750,7 @@ async def api_nutzer_aktion(request: Request) -> Response:
     if email == un and aktion in ("deaktivieren", "rolle"):
         return JSONResponse({"fehler": "Das eigene Konto kannst du hier nicht ändern."},
                             status_code=400)
+    zusatz: dict = {}
     if aktion == "deaktivieren":
         with _DB_LOCK, _db() as c:
             c.execute("UPDATE nutzer SET aktiv=0 WHERE email=?", (email,))
@@ -3599,18 +3763,19 @@ async def api_nutzer_aktion(request: Request) -> Response:
             return JSONResponse({"fehler": "unbekannte Rolle"}, status_code=400)
         with _DB_LOCK, _db() as c:
             c.execute("UPDATE nutzer SET rolle=? WHERE email=?", (neu, email))
+        zusatz["rolle_neu"] = neu
     elif aktion in ("box_freigeben", "box_sperren"):
         # Der Schalter, mit dem aus einer Registrierung ein echter Zugang wird.
         with _DB_LOCK, _db() as c:
             c.execute("UPDATE nutzer SET box=? WHERE email=?",
                       (1 if aktion == "box_freigeben" else 0, email))
     elif aktion == "passwort_neu":
-        passwort = startpasswort()
-        with _DB_LOCK, _db() as c:
-            c.execute("UPDATE nutzer SET pw=? WHERE email=?", (pw_hash(passwort), email))
-        return JSONResponse({"ok": True, "email": email, "startpasswort": passwort})
+        # Eigene Route/Funktion: zwei Ausgänge (Startpasswort ODER Link) mit
+        # je eigener Audit-Zeile, siehe `_passwort_neu`.
+        return _passwort_neu(un, email)
     else:
         return JSONResponse({"fehler": "unbekannte Aktion"}, status_code=400)
+    audit.audit(un, aktion, ziel_un=email, **zusatz)
     return JSONResponse({"ok": True})
 
 
@@ -3654,6 +3819,7 @@ async def api_registrierung_einrichten(request: Request) -> Response:
             db_einstellung_setzen(email, schluessel, str(wert)[:200])
     with _DB_LOCK, _db() as c:
         c.execute("UPDATE registrierungen SET status='eingerichtet' WHERE id=?", (reg_id,))
+    audit.audit(un, "registrierung_einrichten", ziel_un=email, registrierung_id=reg_id)
     return JSONResponse({"ok": True, "email": email, "startpasswort": passwort})
 
 
@@ -3717,6 +3883,10 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
                                 status_code=503)
         with _INDEX_LOCK:
             _INDEX["geprueft"] = 0.0
+    # Hier verlassen Steuerdaten das Haus — auch ein reiner Vorschau-Export
+    # (festschreiben=0) gehört ins Log, nicht nur die festgeschriebene Ablage.
+    audit.audit(un, "export", monat=monat, festschreiben=bool(festschreiben),
+                belege=len(staemme))
     return Response(content=daten, media_type="text/csv; charset=windows-1252",
                     headers={"Content-Disposition":
                              f'attachment; filename="EXTF_Buchungsstapel_{monat}.csv"'})

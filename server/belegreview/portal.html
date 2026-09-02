@@ -925,6 +925,37 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   babu ersetzt keine individuelle Steuerberatung.</div>
 </div>
 
+<!-- Passwort-Reset (Plan 21, §7): der Link kommt von der Kanzlei, nicht von
+     hier — dieses kleine Formular ist der einzige Zweck des #reset/<token>
+     Hash. Bewusst getrennt von #login/#app: der Aufruf braucht keine
+     laufende Sitzung, das Formular fragt auch keine ab. -->
+<div id="reset-karte" hidden>
+  <a class="heim" href="/">babu</a>
+  <div class="lbl kicker">neues Passwort</div>
+  <h2>Ein neues Passwort für deinen Zugang.</h2>
+  <p>Zweimal eingeben, dann bist du fertig.</p>
+  <div class="lkarte">
+    <form id="reset-form" novalidate>
+      <input type="hidden" id="reset-token">
+      <div class="pw-wrap">
+        <input id="reset-passwort" type="password" placeholder="Neues Passwort"
+               autocomplete="new-password" required>
+      </div>
+      <div class="pw-wrap">
+        <input id="reset-passwort2" type="password" placeholder="Neues Passwort wiederholen"
+               autocomplete="new-password" required>
+      </div>
+      <button id="reset-senden" class="voll" type="submit">Passwort setzen</button>
+      <div class="fehler" id="reset-fehler" role="alert" aria-live="polite"></div>
+    </form>
+    <div id="reset-erfolg" hidden>
+      <p>Fertig — du kannst dich jetzt mit deinem neuen Passwort anmelden.</p>
+      <button class="chip" id="reset-zur-anmeldung">Zur Anmeldung</button>
+    </div>
+  </div>
+  <div class="login-fuss">babu · 0711 Intelligence · Stuttgart · <a href="/">Zur Startseite</a></div>
+</div>
+
 <div id="melden-blatt" hidden role="dialog" aria-modal="true"
      aria-labelledby="melden-titel">
   <div class="melden-karte">
@@ -1781,6 +1812,56 @@ $("#anmelden-code").addEventListener("click", async () => {
   }catch{ f.textContent = "Gerade keine Verbindung — gleich nochmal versuchen."; f.style.display = "block"; }
 });
 $("#zugangscode").addEventListener("keydown", e => { if(e.key==="Enter") $("#anmelden-code").click(); });
+
+/* ————— Passwort-Reset (Plan 21, §7) ————— */
+/* Kein Eintrag im ansichten-Router weiter unten: der setzt eine laufende
+   Sitzung voraus (er läuft erst nach zeigeApp()), dieser Link kommt aber
+   oft an, ohne dass überhaupt eine Sitzung besteht. Der Aufruf steht
+   deshalb ganz am Anfang von „Start" (siehe unten), noch vor der
+   /api/ich-Prüfung. */
+function zeigeReset(token){
+  $("#login").hidden = true; $("#app").hidden = true;
+  $("#reset-karte").hidden = false;
+  $("#reset-form").hidden = false;
+  $("#reset-erfolg").hidden = true;
+  $("#reset-token").value = token;
+}
+$("#reset-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const f = $("#reset-fehler"); f.style.display = "none";
+  const passwort = $("#reset-passwort").value;
+  const passwort2 = $("#reset-passwort2").value;
+  if (!passwort || !passwort2){
+    f.textContent = "Bitte beide Felder ausfüllen.";
+    f.style.display = "block";
+    return;
+  }
+  const knopf = $("#reset-senden");
+  knopf.disabled = true;
+  knopf.textContent = "Einen Moment …";
+  try{
+    const r = await fetch("/api/passwort-reset", {method:"POST", credentials:"same-origin",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({token: $("#reset-token").value, passwort, passwort2})});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok){
+      f.textContent = d.fehler || "Das hat leider nicht geklappt.";
+      f.style.display = "block";
+      return;
+    }
+    $("#reset-form").hidden = true;
+    $("#reset-erfolg").hidden = false;
+  }catch{
+    f.textContent = "Gerade keine Verbindung — gleich nochmal versuchen.";
+    f.style.display = "block";
+  }finally{
+    knopf.disabled = false;
+    knopf.textContent = "Passwort setzen";
+  }
+});
+$("#reset-zur-anmeldung").addEventListener("click", () => {
+  location.hash = ""; location.reload();
+});
 
 /* ————— Router ————— */
 const ansichten = { gesperrt: () => {}, heute: ladeHeute, belege: ladeBelege, fragen: () => {},
@@ -6127,6 +6208,13 @@ function ladeEinrichtung(){
 
 /* ————— Start ————— */
 (async () => {
+  // Reset-Link zuerst: er gilt unabhängig davon, ob gerade eine Sitzung
+  // besteht — die /api/ich-Prüfung darunter würde sonst zur Anmeldung
+  // schicken, bevor das Formular überhaupt zu sehen war.
+  if (location.hash.startsWith("#reset/")){
+    zeigeReset(decodeURIComponent(location.hash.slice("#reset/".length)));
+    return;
+  }
   try{
     const r = await fetch("/api/ich",{credentials:"same-origin"});
     if (r.ok){ const d = await r.json(); meineRolle = d.rolle || "salon";
