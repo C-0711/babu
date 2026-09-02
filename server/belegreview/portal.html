@@ -1073,6 +1073,8 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-zahnrad"/></svg> Konto &amp; Einstellungen</button>
       <button role="menuitem" id="menu-verwaltung" hidden onclick="menuGeh('#verwaltung')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-schluessel"/></svg> Zugänge verwalten</button>
+      <button role="menuitem" id="menu-datev" hidden onclick="location.href='/datev'">
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-export"/></svg> DATEV-Import/Export</button>
       <div class="trenner"></div>
       <button role="menuitem" class="weg" id="menu-abmelden">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-abmelden"/></svg> Abmelden</button>
@@ -1124,6 +1126,8 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-zahnrad"/></svg><span class="txt">Konto &amp; Einstellungen</span></button>
       <button type="button" id="nav-verwaltung" hidden title="Zugänge verwalten" onclick="menuGeh('#verwaltung')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-schluessel"/></svg><span class="txt">Zugänge verwalten</span></button>
+      <button type="button" id="nav-datev" hidden title="DATEV-Import/Export" onclick="location.href='/datev'">
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-export"/></svg><span class="txt">DATEV-Import/Export</span></button>
     </details>
     <button type="button" class="weg" id="nav-abmelden" title="Abmelden">
       <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-abmelden"/></svg><span class="txt">Abmelden</span></button>
@@ -1620,6 +1624,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <div class="gruss" style="font-size:22px;margin-bottom:4px">Zugänge</div>
     <p style="color:var(--gc-desc);margin-bottom:16px">Anfragen einrichten, Zugänge verwalten.
     Startpasswörter erscheinen genau einmal — gleich notieren und persönlich weitergeben.</p>
+    <p style="margin:-6px 0 16px"><a class="chip" href="/datev" style="text-decoration:none">DATEV-Import/Export ›</a></p>
     <div id="verwaltung-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
 
@@ -3907,6 +3912,7 @@ $("#konto-knopf").addEventListener("click", async ev => {
       $("#menu-un").textContent = d.un || "";
       $("#menu-rolle").textContent = rolleAnzeige(d.rolle);
       $("#menu-verwaltung").hidden = !(d.rolle === "admin" || d.rolle === "kanzlei");
+      $("#menu-datev").hidden = $("#menu-verwaltung").hidden;
       naviKopfAktualisieren(d.un, d.rolle);
     }catch{}
   }
@@ -3935,6 +3941,7 @@ function naviKopfAktualisieren(un, rolle){
   $("#nav-un").textContent = un || "";
   $("#nav-rolle").textContent = rolleAnzeige(rolle);
   $("#nav-verwaltung").hidden = !(rolle === "admin" || rolle === "kanzlei");
+  $("#nav-datev").hidden = $("#nav-verwaltung").hidden;
 }
 (() => {
   const nav = $("#seiten-nav"), klapp = $("#nav-klapp");
