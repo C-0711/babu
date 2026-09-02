@@ -676,6 +676,38 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   text-transform:uppercase;color:var(--gc-muted);font-style:normal}
 .datev .box b{font:600 13px var(--gc-mono);font-variant-numeric:tabular-nums;color:var(--gc-fg)}
 
+/* Mandanten der Kanzlei (Plan 21, Phase 4).
+   Eine Tabelle und kein Kachelraster: eine Kanzlei liest hunderte Zeilen
+   senkrecht — Name unter Name, Zahl unter Zahl. Auf schmalen Fenstern rollt
+   sie waagerecht, statt die Spalten umzubrechen; ein umgebrochener
+   Mandantenname ist unbrauchbarer als ein bisschen Schieben. */
+.md-rollt{overflow-x:auto}
+.md-tabelle{width:100%;border-collapse:collapse;font-size:14px;min-width:680px}
+.md-tabelle th{text-align:left;font:11px var(--gc-mono);letter-spacing:.08em;
+  text-transform:uppercase;color:var(--gc-muted);padding:8px 12px;
+  border-bottom:1px solid var(--gc-border);white-space:nowrap}
+.md-tabelle th.num, .md-tabelle td.num{text-align:right}
+.md-tabelle td{padding:11px 12px;border-bottom:1px solid var(--gc-border-l);
+  vertical-align:middle}
+.md-tabelle td.num{font-variant-numeric:tabular-nums}
+.md-tabelle tr.md-tr{cursor:pointer}
+.md-tabelle tr.md-tr:hover{background:var(--gc-chrome)}
+.md-tabelle tr.md-tr.an{background:var(--gc-accent-subtle)}
+.md-name{font:600 15px var(--gc-serif);color:var(--gc-fg)}
+.md-mail{font:11.5px var(--gc-mono);color:var(--gc-muted)}
+/* Der Umschalter oben: er sagt bei jedem Blick, für wen gerade gearbeitet
+   wird. Ohne ihn wäre der gefährlichste Zustand der unsichtbare — Zahlen
+   eines fremden Betriebs, die aussehen wie die eigenen. */
+#mandant-chip{border-color:var(--gc-accent);color:var(--gc-fg);max-width:280px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#nav-mandant{margin:0 0 8px;padding:7px 10px;border-radius:8px;
+  background:var(--gc-accent-subtle);font-size:12px;line-height:1.4}
+#nav-mandant b{display:block;color:var(--gc-fg);font:600 13px var(--gc-sans);
+  overflow-wrap:anywhere}
+#nav-mandant button{display:inline;width:auto;padding:0;margin-top:2px;border:0;
+  background:none;color:var(--gc-accent);font:inherit;cursor:pointer}
+#seiten-nav.zu #nav-mandant{display:none}
+
 /* Wie der Monat gelaufen ist — eine Kachel je Zahl. Bewusst ein Gitter,
    das mitwächst: auf dem breiten Bildschirm im Salon stehen sechs Kacheln
    nebeneinander, auf dem Telefon untereinander. Ein fester Kasten in der
@@ -1031,6 +1063,11 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <button data-ziel="fragen">Fragen</button>
   </nav>
   <div id="kopf-recht" style="position:relative">
+    <!-- Für wen gerade gearbeitet wird. Steht nur da, wenn eine Kanzlei
+         einen Mandanten gewählt hat — im eigenen Betrieb wäre der Hinweis
+         Lärm. -->
+    <button class="chip" id="mandant-chip" hidden onclick="menuGeh('#mandanten')"
+            title="Für wen du gerade arbeitest"></button>
     <span id="stand"></span>
     <button class="chip" id="hochladen-knopf">Beleg hochladen</button>
     <input type="file" id="hochladen-datei" accept=".jpg,.jpeg,.png,.pdf,.heic,.csv,.txt,image/*,application/pdf,text/csv" multiple hidden>
@@ -1071,6 +1108,8 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       <div class="trenner"></div>
       <button role="menuitem" onclick="menuGeh('#einstellungen')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-zahnrad"/></svg> Konto &amp; Einstellungen</button>
+      <button role="menuitem" id="menu-mandanten" hidden onclick="menuGeh('#mandanten')">
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-personen"/></svg> Mandanten</button>
       <button role="menuitem" id="menu-verwaltung" hidden onclick="menuGeh('#verwaltung')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-schluessel"/></svg> Zugänge verwalten</button>
       <button role="menuitem" id="menu-datev" hidden onclick="location.href='/datev'">
@@ -1091,6 +1130,9 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <div class="text"><b id="nav-un">…</b><span id="nav-rolle"></span></div>
     <button type="button" id="nav-klapp" title="Leiste einklappen" aria-label="Leiste einklappen"></button>
   </div>
+  <!-- Derselbe Hinweis wie der Chip oben, hier für den Blick nach links.
+       Text setzt mandantChipAktualisieren(). -->
+  <div id="nav-mandant" hidden></div>
   <details open data-gruppe="Buchhaltung">
     <summary>Buchhaltung</summary>
     <button type="button" title="Rechnungen" onclick="menuGeh('#rechnungen')">
@@ -1124,6 +1166,8 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       <summary>Konto</summary>
       <button type="button" title="Konto &amp; Einstellungen" onclick="menuGeh('#einstellungen')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-zahnrad"/></svg><span class="txt">Konto &amp; Einstellungen</span></button>
+      <button type="button" id="nav-mandanten" hidden title="Mandanten" onclick="menuGeh('#mandanten')">
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-personen"/></svg><span class="txt">Mandanten</span></button>
       <button type="button" id="nav-verwaltung" hidden title="Zugänge verwalten" onclick="menuGeh('#verwaltung')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-schluessel"/></svg><span class="txt">Zugänge verwalten</span></button>
       <button type="button" id="nav-datev" hidden title="DATEV-Import/Export" onclick="location.href='/datev'">
@@ -1628,6 +1672,24 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <div id="verwaltung-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
 
+  <!-- MANDANTEN (Kanzlei): wen wir betreuen, und was dort ansteht -->
+  <section class="ansicht" id="a-mandanten">
+    <a class="zurueck" href="#heute">‹ Heute</a>
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Mandanten</div>
+    <p style="color:var(--gc-desc);margin-bottom:14px">Wen du betreust, was dort
+    ansteht — und für wen du gerade arbeitest.</p>
+    <div class="unterreiter" id="md-reiter">
+      <button type="button" class="an" onclick="mdReiter('liste')">Mandanten</button>
+      <button type="button" onclick="mdReiter('ansteht')">Was ansteht</button>
+    </div>
+    <div id="md-liste-tab">
+      <div id="md-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+    </div>
+    <div id="md-ansteht-tab" hidden>
+      <div id="md-ansteht"><div class="skelett"></div></div>
+    </div>
+  </section>
+
   <!-- EINRICHTUNG (Steuerdaten, eine Frage pro Schritt) -->
   <section class="ansicht" id="a-einrichtung">
     <a class="zurueck" href="#heute">‹ Heute</a>
@@ -1715,8 +1777,25 @@ const zeitKurz = iso => { if(!iso) return ""; const d = new Date(iso);
 const ikone = (name, klasse = "") =>
   `<svg class="ik ${klasse}" viewBox="0 0 24 24"><use href="#ik-${name}"/></svg>`;
 
+/* ————— Für wen wir gerade arbeiten (Plan 21, Phase 4) —————
+   Eine Kanzlei betreut viele Betriebe. Welcher davon gerade offen ist,
+   steht in `aktiverMandant` und geht bei JEDEM Aufruf mit — nicht im
+   Anmeldeausweis, denn dessen Form für alle bestehenden Sitzungen zu
+   ändern wäre ein Umzug, den niemand braucht. `null` heißt: der eigene
+   Betrieb, also genau das Verhalten von vorher.
+   Gemerkt wird das im Sitzungsspeicher, nicht dauerhaft: wer den Tab
+   schließt, fängt beim eigenen Betrieb wieder an. Ein Mandant, der über
+   Wochen still gesetzt bleibt, wäre die gefährlichere Bequemlichkeit. */
+const MANDANT_SCHLUESSEL = "babu.mandant";
+let aktiverMandant = null;
+try{ aktiverMandant = JSON.parse(sessionStorage.getItem(MANDANT_SCHLUESSEL) || "null"); }catch{}
+
 async function api(pfad, opts){
-  const r = await fetch(pfad, Object.assign({credentials:"same-origin"}, opts));
+  const o = Object.assign({credentials:"same-origin"}, opts);
+  if (aktiverMandant && aktiverMandant.id){
+    o.headers = Object.assign({}, o.headers, {"X-Mandant": String(aktiverMandant.id)});
+  }
+  const r = await fetch(pfad, o);
   if (r.status === 401) { zeigeLogin(); throw new Error("abgemeldet"); }
   return r;
 }
@@ -1751,7 +1830,7 @@ function zeigeApp(){
 
 /* Ohne eigene Belegbox gibt es nichts zu zeigen — dann bleiben die Wege
    dorthin zu, statt Ansichten zu öffnen, die nur 403 zurückbekommen. */
-const OHNE_BOX_ERLAUBT = ["gesperrt", "einrichtung", "einstellungen"];
+const OHNE_BOX_ERLAUBT = ["gesperrt", "einrichtung", "einstellungen", "mandanten"];
 function boxZustandZeigen(){
   document.querySelectorAll("nav button").forEach(b => b.hidden = !meineBox);
   $("#hochladen-knopf").hidden = !meineBox;
@@ -1880,6 +1959,7 @@ const ansichten = { gesperrt: () => {}, heute: ladeHeute, belege: ladeBelege, fr
                     vertraege: ladeVertraege, marketing: ladeMarketing,
                     briefkopf: ladeBriefkopf,
                     einrichtung: ladeEinrichtung, verwaltung: ladeVerwaltung,
+                    mandanten: ladeMandanten,
                     einstellungen: ladeEinstellungen, detail: null,
                     unterlage: null };
 /* Welcher Reiter oben leuchtet, wenn die Ansicht selbst keiner ist. */
@@ -3913,6 +3993,7 @@ $("#konto-knopf").addEventListener("click", async ev => {
       $("#menu-rolle").textContent = rolleAnzeige(d.rolle);
       $("#menu-verwaltung").hidden = !(d.rolle === "admin" || d.rolle === "kanzlei");
       $("#menu-datev").hidden = $("#menu-verwaltung").hidden;
+      $("#menu-mandanten").hidden = $("#menu-verwaltung").hidden;
       naviKopfAktualisieren(d.un, d.rolle);
     }catch{}
   }
@@ -3942,6 +4023,8 @@ function naviKopfAktualisieren(un, rolle){
   $("#nav-rolle").textContent = rolleAnzeige(rolle);
   $("#nav-verwaltung").hidden = !(rolle === "admin" || rolle === "kanzlei");
   $("#nav-datev").hidden = $("#nav-verwaltung").hidden;
+  $("#nav-mandanten").hidden = $("#nav-verwaltung").hidden;
+  mandantChipAktualisieren();
 }
 (() => {
   const nav = $("#seiten-nav"), klapp = $("#nav-klapp");
@@ -4916,8 +4999,12 @@ setInterval(async () => {
   // Mitten im Aufräumen oder mit offenem Sheet nicht unterm Hintern auffrischen.
   if ($("#a-aufraeumen").classList.contains("an") || $("#schleier").classList.contains("an")) return;
   try{
-    const r = await fetch("/api/belege?limit=1", {credentials:"same-origin",
-      headers: etag ? {"If-None-Match": `"${etag}"`} : {}});
+    // Bewusst roher fetch und nicht api(): eine abgelaufene Sitzung soll den
+    // Hintergrund-Blick nicht zur Anmeldung umleiten. Der Mandant muss
+    // trotzdem mit, sonst fragte der Takt nach dem eigenen Betrieb.
+    const kopf = etag ? {"If-None-Match": `"${etag}"`} : {};
+    if (aktiverMandant && aktiverMandant.id) kopf["X-Mandant"] = String(aktiverMandant.id);
+    const r = await fetch("/api/belege?limit=1", {credentials:"same-origin", headers: kopf});
     if (r.status === 200){
       const d = await r.json();
       if (etag && d.stand !== etag) routen();   // etwas hat sich getan → Ansicht auffrischen
@@ -5976,6 +6063,213 @@ function verwListeRendern(){
     <button class="chip" ${_verwSeite >= seiten ? "disabled" : ""} onclick="verwSeiteWechseln(1)">Weiter ›</button>`;
 }
 function verwSeiteWechseln(delta){ _verwSeite += delta; verwListeRendern(); }
+
+/* ————— MANDANTEN (Plan 21, Phase 4) —————
+   Die Kanzlei sieht, wen sie betreut und was dort ansteht, und wählt hier,
+   für wen sie arbeitet. Der gewählte Betrieb geht als Kopf mit jedem Aufruf
+   (siehe api()), und der Chip oben sagt es bei jedem Blick. */
+function mandantChipAktualisieren(){
+  const chip = $("#mandant-chip"), nav = $("#nav-mandant");
+  if (!chip || !nav) return;
+  const m = aktiverMandant;
+  if (!m || !m.id){ chip.hidden = true; nav.hidden = true; return; }
+  chip.hidden = false; chip.textContent = `Für ${m.name} · wechseln`;
+  nav.hidden = false;
+  nav.innerHTML = `Du arbeitest gerade für<b>${esc(m.name)}</b>
+    <button type="button" onclick="mandantSetzen(null)">Zurück zum eigenen Betrieb</button>`;
+}
+function mandantSetzen(m){
+  aktiverMandant = (m && m.id) ? {id: m.id, name: m.name} : null;
+  try{
+    if (aktiverMandant) sessionStorage.setItem(MANDANT_SCHLUESSEL, JSON.stringify(aktiverMandant));
+    else sessionStorage.removeItem(MANDANT_SCHLUESSEL);
+  }catch{}
+  // Alles, was sich das Portal gemerkt hat, gehört zum vorigen Betrieb.
+  kategorienCache = null;
+  mandantChipAktualisieren();
+  if (location.hash === "#heute") routen(); else location.hash = "#heute";
+}
+
+let _mdSuche = "", _mdSeite = 1, _mdStatus = "", _mdGewaehlt = null, _mdDarfVerknuepfen = false;
+function mdReiter(w){
+  $("#md-liste-tab").hidden = w !== "liste";
+  $("#md-ansteht-tab").hidden = w !== "ansteht";
+  document.querySelectorAll("#md-reiter button").forEach(b =>
+    b.classList.toggle("an", b.textContent.trim() === (w === "liste" ? "Mandanten" : "Was ansteht")));
+  if (w === "ansteht") ladeWarteschlange(); else ladeMandanten();
+}
+const MD_STATUS_TEXT = {box_ausstehend: "Belegbox wird eingerichtet", aktiv: "aktiv",
+                        pausiert: "pausiert", beendet: "beendet"};
+function mdStatusChip(st){
+  const farbe = st === "aktiv" ? "var(--gc-ok)" : st === "box_ausstehend" ? "var(--gc-accent)" : "var(--gc-muted)";
+  return `<span class="chip" style="font-size:11px;padding:3px 9px;border-color:${farbe};color:${farbe}">${esc(MD_STATUS_TEXT[st] || st)}</span>`;
+}
+async function ladeMandanten(){
+  const ziel = $("#md-inhalt");
+  let d;
+  try{
+    const r = await api(`/api/kanzlei/mandanten?q=${encodeURIComponent(_mdSuche)}&seite=${_mdSeite}&status=${encodeURIComponent(_mdStatus)}`);
+    if (r.status === 403){ ziel.innerHTML = `<div class="leer"><b>Nur für die Kanzlei.</b></div>`; return; }
+    d = await r.json();
+  }catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+  _mdDarfVerknuepfen = !!d.darf_verknuepfen;
+  let html = `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+    <input class="suchfeld" id="md-suche" placeholder="Name, E-Mail oder Nummer" value="${esc(_mdSuche)}"
+      style="flex:1 1 240px;padding:9px 12px">
+    <select id="md-status" style="padding:9px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
+      <option value="">Alle</option>
+      ${Object.entries(MD_STATUS_TEXT).map(([k,v]) => `<option value="${k}" ${_mdStatus===k?"selected":""}>${v}</option>`).join("")}
+    </select>
+    <span style="font-size:12px;color:var(--gc-muted)">${d.gesamt} Mandant${d.gesamt===1?"":"en"}</span></div>`;
+  if (!d.mandanten.length){
+    html += `<div class="karte" style="color:var(--gc-desc)">${_mdSuche || _mdStatus ? "Keine Treffer." : "Noch kein Mandant angelegt — unten geht es los."}</div>`;
+  } else {
+    html += `<div class="md-rollt"><table class="md-tabelle"><thead><tr>
+      <th>Mandant</th><th>Status</th><th>Nummer</th><th class="num">Offene Rückfragen</th><th></th></tr></thead><tbody>`;
+    for (const m of d.mandanten){
+      const an = _mdGewaehlt === m.id ? " an" : "";
+      html += `<tr class="md-tr${an}" onclick="mdZeigen(${m.id})">
+        <td><span class="md-name">${esc(m.name)}</span><br><span class="md-mail">${esc(m.besitzer)}</span></td>
+        <td>${mdStatusChip(m.status)}</td>
+        <td class="md-mail">${esc(m.mandant_nr || "—")}</td>
+        <td class="num">${m.rueckfragen == null ? "—" : m.rueckfragen}</td>
+        <td>${m.belegbox_da && m.status === "aktiv"
+             ? `<button class="chip" onclick="event.stopPropagation();mandantSetzen({id:${m.id},name:${JSON.stringify(m.name)}})">Für diesen Betrieb arbeiten ›</button>` : ""}</td>
+      </tr>`;
+    }
+    html += `</tbody></table></div>`;
+    if (d.seiten > 1){
+      html += `<div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-top:10px">
+        <button class="chip" ${d.seite<=1?"disabled":""} onclick="mdSeite(-1)">‹</button>
+        <span style="font-size:12px;color:var(--gc-muted)">Seite ${d.seite} von ${d.seiten}</span>
+        <button class="chip" ${d.seite>=d.seiten?"disabled":""} onclick="mdSeite(1)">›</button></div>`;
+    }
+  }
+  html += `<div id="md-detail" style="margin-top:14px"></div>`;
+  html += `<div class="sektion lbl" style="margin-top:22px">Mandant anlegen</div><div class="karte">
+    <p style="color:var(--gc-desc);font-size:13px;margin:0 0 10px">Der Salon bekommt eine Einladung per E-Mail.
+    Die Belegbox richten wir danach ein — bis dahin steht der Mandant als „wird eingerichtet".</p>
+    <div style="display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+      <input id="md-neu-name" placeholder="Name des Salons" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+      <input id="md-neu-mail" placeholder="E-Mail der Inhaberin" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+      <select id="md-neu-rahmen" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
+        <option value="SKR04">SKR04</option><option value="SKR03">SKR03</option></select>
+      <input id="md-neu-berater" placeholder="Beraternummer" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+      <input id="md-neu-nummer" placeholder="Mandantennummer" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+    </div>
+    <button class="hin" style="margin-top:10px" onclick="mdAnlegen()">Einladen</button>
+    <div id="md-neu-ergebnis"></div></div>`;
+  ziel.innerHTML = html;
+  $("#md-suche").addEventListener("input", ev => { _mdSuche = ev.target.value; _mdSeite = 1; mdNeuLaden(); });
+  $("#md-status").addEventListener("change", ev => { _mdStatus = ev.target.value; _mdSeite = 1; ladeMandanten(); });
+  if (_mdGewaehlt) mdZeigen(_mdGewaehlt);
+}
+let _mdTakt = null;
+function mdNeuLaden(){ clearTimeout(_mdTakt); _mdTakt = setTimeout(ladeMandanten, 250); }
+function mdSeite(delta){ _mdSeite += delta; ladeMandanten(); }
+async function mdZeigen(id){
+  _mdGewaehlt = id;
+  document.querySelectorAll("#md-inhalt tr.md-tr").forEach(z => z.classList.toggle("an", z.getAttribute("onclick") === `mdZeigen(${id})`));
+  const ziel = $("#md-detail"); if (!ziel) return;
+  let m;
+  try{ const r = await api(`/api/kanzlei/mandanten/${id}`); if (!r.ok){ ziel.innerHTML = ""; return; } m = await r.json(); }
+  catch{ return; }
+  const kann = m.belegbox_da && m.status === "aktiv";
+  let html = `<div class="karte"><div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+      <b style="font:600 17px var(--gc-serif)">${esc(m.name)}</b>${mdStatusChip(m.status)}
+      <span class="md-mail">${esc(m.besitzer)}</span></div>
+    <p style="font-size:13px;color:var(--gc-desc);margin:8px 0 0">${esc(m.kontenrahmen || "SKR04")}
+      ${m.berater_nr ? " · Berater " + esc(m.berater_nr) : ""}${m.mandant_nr ? " · Mandant " + esc(m.mandant_nr) : ""}
+      · seit ${zeitKurz(m.angelegt)}</p>
+    ${m.hinweis ? `<p style="margin:8px 0 0;color:var(--gc-accent)">${esc(m.hinweis)} — wir melden uns, sobald sie da ist.</p>` : ""}
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+      ${kann ? `<button class="hin" onclick="mandantSetzen({id:${m.id},name:${JSON.stringify(m.name)}})">Für diesen Betrieb arbeiten ›</button>` : ""}
+      ${m.status === "aktiv" ? `<button class="chip" onclick="mdStatus(${m.id},'pausiert')">Pausieren</button>` : ""}
+      ${m.status === "pausiert" && m.belegbox_da ? `<button class="chip" onclick="mdStatus(${m.id},'aktiv')">Wieder aufnehmen</button>` : ""}
+      ${m.status !== "beendet" ? `<button class="chip" onclick="if(confirm('Mandat beenden? Die Belege bleiben, der Zugang endet.')) mdStatus(${m.id},'beendet')">Mandat beenden</button>` : ""}
+    </div>`;
+  if (_mdDarfVerknuepfen){
+    html += `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--gc-border-l)">
+      <div class="lbl" style="margin-bottom:6px">Belegbox verknüpfen</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input id="md-box-ref" value="${esc(m.box_ref || "")}" placeholder="Ablageort der Belegbox"
+          style="flex:1 1 260px;padding:9px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+        <button class="chip" onclick="mdVerknuepfen(${m.id})">Verknüpfen</button></div>
+      <div id="md-box-ergebnis"></div></div>`;
+  }
+  html += `</div>`;
+  ziel.innerHTML = html;
+}
+async function mdStatus(id, status){
+  try{
+    const r = await api(`/api/kanzlei/mandanten/${id}/status`, {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({status})});
+    const d = await r.json();
+    if (!r.ok) alert(d.fehler || "Ging gerade nicht.");
+    if (aktiverMandant && aktiverMandant.id === id && status !== "aktiv") mandantSetzen(null);
+    ladeMandanten();
+  }catch{}
+}
+async function mdVerknuepfen(id){
+  const box_ref = ($("#md-box-ref").value || "").trim(), aus = $("#md-box-ergebnis");
+  try{
+    const r = await api(`/api/kanzlei/mandanten/${id}/box-verknuepfen`, {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({box_ref})});
+    const d = await r.json();
+    aus.innerHTML = r.ok ? `<p style="color:var(--gc-ok);margin-top:8px">Verknüpft — der Mandant ist jetzt aktiv.</p>`
+                         : `<p style="color:var(--gc-danger);margin-top:8px">${esc(d.fehler || "Ging gerade nicht.")}</p>`;
+    if (r.ok) ladeMandanten();
+  }catch{}
+}
+async function mdAnlegen(){
+  const aus = $("#md-neu-ergebnis");
+  const body = {name: $("#md-neu-name").value.trim(), email: $("#md-neu-mail").value.trim(),
+    kontenrahmen: $("#md-neu-rahmen").value, berater_nr: $("#md-neu-berater").value.trim(),
+    mandant_nr: $("#md-neu-nummer").value.trim()};
+  try{
+    const r = await api("/api/kanzlei/mandanten", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+    const d = await r.json();
+    if (!r.ok){ aus.innerHTML = `<p style="color:var(--gc-danger);margin-top:8px">${esc(d.fehler || "Ging gerade nicht.")}</p>`; return; }
+    aus.innerHTML = `<p style="color:var(--gc-ok);margin-top:8px">${esc(d.name)} ist angelegt${d.einladung ? " — die Einladung ist unterwegs." : "."}</p>`;
+    _mdGewaehlt = d.id; ladeMandanten();
+  }catch{ aus.innerHTML = `<p style="color:var(--gc-danger);margin-top:8px">Gerade keine Verbindung.</p>`; }
+}
+async function ladeWarteschlange(){
+  const ziel = $("#md-ansteht");
+  let d;
+  try{
+    const r = await api("/api/kanzlei/warteschlange");
+    if (r.status === 403){ ziel.innerHTML = `<div class="leer"><b>Nur für die Kanzlei.</b></div>`; return; }
+    d = await r.json();
+  }catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+  const z = d.zaehler || {};
+  let html = `<div class="lauf-kacheln" style="margin-bottom:16px">
+    ${[["Offene Rückfragen", z.rueckfragen], ["Monate ohne Freigabe", z.monate_ohne_freigabe],
+       ["Export fällig", z.export_faellig], ["Warten auf Belegbox", z.warten_auf_belegbox],
+       ["Nicht erreichbar", z.nicht_erreichbar]].map(([t, w]) =>
+      `<div class="karte" style="padding:12px 14px"><div class="lbl">${t}</div>
+       <div style="font:600 22px var(--gc-serif);margin-top:4px">${w ?? 0}</div></div>`).join("")}</div>`;
+  const offen = (d.eintraege || []).filter(e => !e.erreichbar || e.rueckfragen || (e.monate_ohne_freigabe||[]).length || (e.export_faellig||[]).length || !e.belegbox_da);
+  if (!offen.length){
+    html += `<div class="leer"><b>Nichts steht an.</b> Bei ${d.mandanten} Mandant${d.mandanten===1?"":"en"} ist alles auf Stand.</div>`;
+  } else {
+    html += `<div class="md-rollt"><table class="md-tabelle"><thead><tr>
+      <th>Mandant</th><th class="num">Rückfragen</th><th>Ohne Freigabe</th><th>Export fällig</th><th></th></tr></thead><tbody>`;
+    for (const e of offen){
+      const kann = e.belegbox_da && e.status === "aktiv" && e.erreichbar;
+      html += `<tr class="md-tr" onclick="${kann ? `mandantSetzen({id:${e.id},name:${JSON.stringify(e.name)}})` : `mdReiter('liste');mdZeigen(${e.id})`}">
+        <td><span class="md-name">${esc(e.name)}</span>${e.hinweis ? `<br><span class="md-mail">${esc(e.hinweis)}</span>` : ""}
+            ${!e.erreichbar ? `<br><span class="md-mail" style="color:var(--gc-danger)">Belegbox gerade nicht erreichbar</span>` : ""}</td>
+        <td class="num">${e.rueckfragen ?? "—"}</td>
+        <td class="md-mail">${(e.monate_ohne_freigabe||[]).join(", ") || "—"}</td>
+        <td class="md-mail">${(e.export_faellig||[]).join(", ") || "—"}</td>
+        <td>${kann ? `<span class="chip" style="font-size:11px">Öffnen ›</span>` : ""}</td></tr>`;
+    }
+    html += `</tbody></table></div>`;
+  }
+  ziel.innerHTML = html;
+}
 function startpasswortKarte(email, passwort){
   return `<div class="siegel" style="margin-top:10px"><svg class="ik rosette" viewBox="0 0 24 24"><use href="#ik-siegel"/></svg>
     <div><span class="code">${email} · ${passwort}</span>

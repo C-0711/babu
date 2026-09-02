@@ -1338,6 +1338,13 @@ import datev_seite  # noqa: E402,PLC0415
 
 app.include_router(datev_seite.router)
 
+# Die Mandantenseite der Kanzlei (anlegen, einladen, sehen was ansteht) liegt
+# genauso als eigenes Blatt daneben — siehe `kanzlei_routen`. Hier steht nur,
+# dass es sie gibt.
+import kanzlei_routen  # noqa: E402,PLC0415
+
+app.include_router(kanzlei_routen.router)
+
 
 @app.get("/datev")
 def datev_blatt(request: Request) -> Response:
