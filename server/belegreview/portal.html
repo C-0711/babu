@@ -88,7 +88,11 @@ nav button.an{background:#eae7de;color:var(--gc-fg);font-weight:600}
 #avatar{width:34px;height:34px;border-radius:50%;background:var(--gc-accent);
   color:#fff;font:600 13px var(--gc-sans);display:grid;place-items:center}
 
-main{padding:34px clamp(18px,4.7vw,56px) 60px;min-height:70dvh}
+/* container-type: die Hauptfläche ist seit der Seitenleiste (02.09.2026)
+   nicht mehr der Viewport minus etwas Rand — sie ist 248px (bzw. 56px
+   eingeklappt) schmaler. Das Zwei-Spalten-Raster unten misst deshalb
+   main selbst, nicht das Fenster. */
+main{padding:34px clamp(18px,4.7vw,56px) 60px;min-height:70dvh;container-type:inline-size}
 
 /* Fließtext bleibt lesbar, auch wenn das Fenster breit ist: eine Zeile über
    die ganze Breite eines Monitors kann man nicht mehr zurückfinden. Für
@@ -108,12 +112,17 @@ main p, .leer, .karte > p{max-width:78ch}
    nicht als style="" im HTML verstreut. Inline gesetzte Breiten waren der
    Grund, warum das Portal breit AUSSAH und schmal WAR. */
 .voll{width:100%;max-width:none}
-@media (min-width:1180px){
+@container (min-width:1060px){
   /* Zwei feste Spalten, keine auto-fit-Spurenzahl: auto-fit kollabiert nur
      Spuren, die in KEINER Zeile belegt sind — und die Überschriften belegen
      alle. Gemessen bei 1440px: drei Spuren à 433px, jede Einzelkarte auf
      einem Drittel, rechts zwei Drittel leer. Genau der Befund, den das
-     Raster beheben sollte. */
+     Raster beheben sollte.
+     Schwelle als Container- statt Fensterbreite (seit 02.09.2026): 1060px
+     ist die Innenbreite von main bei ~1180px Fenster ohne Leiste — der
+     Wert, gegen den ursprünglich gemessen wurde. Mit Leiste gemessen bei
+     1440px: offen 1080px, eingeklappt 1272px Innenbreite — beide über der
+     Schwelle, also in beiden Leisten-Zuständen zwei Spalten. */
   .spalten{display:grid;align-items:start;gap:14px;
     grid-template-columns:repeat(2,minmax(0,1fr))}
   .spalten > *{margin-bottom:0}
@@ -171,6 +180,80 @@ main p, .leer, .karte > p{max-width:78ch}
   padding:8px 12px;font:500 14px var(--gc-sans);color:var(--gc-muted);cursor:pointer}
 .unterreiter button:hover{color:var(--gc-fg)}
 .unterreiter button.an{color:var(--gc-fg);border-bottom-color:var(--gc-accent)}
+
+/* ── Seitenleiste (seit 02.09.2026) ───────────────────────────────────────
+   Löst das Konto-Dropdown auf großen Fenstern als Navigation ab. Kein
+   Nachbau per DOM-Umzug aus #konto-menu — eigenes Markup, eigene Liste.
+   Unter 821px bleibt das Dropdown die einzige Navigation (Regel unten),
+   ab da klappt der Hamburger-Knopf stattdessen diese Leiste.
+   `#app:not([hidden])` statt `#app{display:flex}`: sonst hebelt das
+   Flex-Layout den Login-Riegel aus, der #app per [hidden] versteckt. */
+#app:not([hidden]){display:flex;flex-direction:column;min-height:100dvh}
+#app>.rumpf{display:flex;flex:1;align-items:stretch}
+#app>.rumpf>main{flex:1;min-width:0}
+
+/* top/height kommen aus --kopf-h, gemessen am echten Header (Skriptende) —
+   nicht hart verdrahtet, denn die Header-Höhe ändert sich mit Zeilenumbruch
+   und Fensterbreite (77px war nur der bei 1440px gemessene Wert). */
+#seiten-nav{position:sticky;top:var(--kopf-h,67px);align-self:flex-start;
+  height:calc(100dvh - var(--kopf-h,67px));overflow:auto;
+  flex:0 0 248px;width:248px;background:var(--gc-chrome);
+  border-right:1px solid var(--gc-border);padding:10px 8px 16px;
+  display:flex;flex-direction:column;gap:2px;
+  transition:flex-basis .22s ease,width .22s ease}
+#seiten-nav .kopf{padding:8px 10px 10px;border-bottom:1px solid var(--gc-border);
+  margin-bottom:6px;display:flex;align-items:center;gap:8px}
+#seiten-nav .kopf .text{flex:1 1 0;min-width:0}
+#seiten-nav .kopf b{display:block;font:600 14px var(--gc-sans);overflow-wrap:anywhere}
+#seiten-nav .kopf span{font-size:12px;color:var(--gc-muted)}
+
+/* Kategorien als <details> — kein role=menu/menuitem: das ist eine
+   Navigation, kein Menü-Widget. */
+#seiten-nav summary{list-style:none;cursor:pointer;display:flex;align-items:center;
+  gap:6px;padding:9px 10px 5px;font:600 10.5px var(--gc-sans);letter-spacing:.12em;
+  text-transform:uppercase;color:var(--gc-muted);user-select:none}
+#seiten-nav summary::-webkit-details-marker{display:none}
+#seiten-nav summary::after{content:"";margin-left:auto;width:6px;height:6px;
+  border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;
+  transform:rotate(45deg);transition:transform .18s}
+#seiten-nav details:not([open]) summary::after{transform:rotate(-45deg)}
+#seiten-nav summary:hover{color:var(--gc-fg)}
+
+#seiten-nav button{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;
+  border:0;background:none;border-radius:9px;font:400 14px var(--gc-sans);
+  color:var(--gc-fg);cursor:pointer;text-align:left;white-space:nowrap}
+#seiten-nav button:hover{background:var(--gc-bg)}
+#seiten-nav button .sym{opacity:.7;flex:0 0 auto}
+#seiten-nav button:hover .sym{opacity:1}
+#seiten-nav .trenner{height:1px;background:var(--gc-border);margin:6px 4px}
+#seiten-nav .weg{color:var(--gc-danger)}
+#seiten-nav .fuss{margin-top:auto}
+/* Ohne diese Regel würde `#seiten-nav button{display:flex}` das
+   hidden-Attribut aushebeln — genau der Fehler, durch den „Zugänge
+   verwalten" für jede Rolle sichtbar würde. */
+#seiten-nav button[hidden]{display:none}
+
+#seiten-nav button#nav-klapp{flex:0 0 26px;width:26px;height:26px;padding:0;
+  margin-left:auto;border:1px solid var(--gc-border);background:var(--gc-bg);
+  border-radius:8px;color:var(--gc-muted);display:grid;place-items:center}
+#seiten-nav button#nav-klapp::before{content:"";width:6px;height:6px;
+  border-left:1.5px solid currentColor;border-top:1.5px solid currentColor;
+  transform:rotate(-45deg);margin-left:3px;transition:transform .2s}
+#seiten-nav button#nav-klapp:hover{color:var(--gc-fg)}
+
+/* Eingeklappt: nur Symbole, Kategorien werden zu Trennlinien. */
+#seiten-nav.zu{flex-basis:56px;width:56px;padding:10px 6px}
+#seiten-nav.zu .kopf{padding:4px 0 10px;justify-content:center}
+#seiten-nav.zu .kopf .text, #seiten-nav.zu button .txt{display:none}
+#seiten-nav.zu button#nav-klapp{margin:0}
+#seiten-nav.zu button#nav-klapp::before{transform:rotate(135deg);margin-left:-3px}
+#seiten-nav.zu button{justify-content:center;padding:9px 0}
+#seiten-nav.zu summary{display:block;height:1px;padding:0;margin:6px 8px;
+  background:var(--gc-border);font-size:0;overflow:hidden;pointer-events:none}
+#seiten-nav.zu summary::after{display:none}
+
+@media(max-width:820px){#seiten-nav{display:none}} /* mobil bleibt das Dropdown */
+
 /* Ablage: links der Schrank, rechts die aufgeschlagene Mappe.
    Nina wünschte sich „Ordner, in die ich hineingehe". Eine lange Seite mit
    aufklappbaren Abschnitten war das nicht: man sieht nie, wo man ist, und
@@ -966,6 +1049,55 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   </div>
 </header>
 
+<div class="rumpf">
+<!-- Seitenleiste: derselbe Bestand wie #konto-menu oben, als eigenes
+     Markup (keine DOM-Umzugslogik). Zustand (Auf/Zu, Kategorien) hält
+     das Skript am Ende der Datei; Name/Rolle setzt naviKopfAktualisieren(). -->
+<aside id="seiten-nav" aria-label="Bereiche">
+  <div class="kopf">
+    <div class="text"><b id="nav-un">…</b><span id="nav-rolle"></span></div>
+    <button type="button" id="nav-klapp" title="Leiste einklappen" aria-label="Leiste einklappen"></button>
+  </div>
+  <details open data-gruppe="Buchhaltung">
+    <summary>Buchhaltung</summary>
+    <button type="button" title="Rechnungen" onclick="menuGeh('#rechnungen')">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-euro"/></svg><span class="txt">Rechnungen</span></button>
+    <button type="button" title="Monatsabschluss" onclick="menuGeh('#abschluss')">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-diagramm"/></svg><span class="txt">Monatsabschluss</span></button>
+    <button type="button" title="Export für die Buchhaltung" onclick="menuGeh('#export')">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-export"/></svg><span class="txt">Export für die Buchhaltung</span></button>
+  </details>
+  <details open data-gruppe="Dein Salon">
+    <summary>Dein Salon</summary>
+    <button type="button" title="Termine" onclick="menuGeh('#termine')">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-kalender"/></svg><span class="txt">Termine</span></button>
+    <button type="button" title="WhatsApp-Termine" onclick="menuGeh('#whatsapp')">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-nachricht"/></svg><span class="txt">WhatsApp-Termine</span></button>
+    <button type="button" title="Kundinnen" onclick="menuGeh('#kundinnen')">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-person"/></svg><span class="txt">Kundinnen</span></button>
+    <button type="button" title="Einstellen &amp; Personal" onclick="menuGeh('#personal')">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-klemmbrett"/></svg><span class="txt">Einstellen &amp; Personal</span></button>
+    <button type="button" title="Dein Team" onclick="menuGeh('#team')">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-personen"/></svg><span class="txt">Dein Team</span></button>
+    <button type="button" title="Deine Verträge" onclick="menuGeh('#vertraege')">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-dokument"/></svg><span class="txt">Deine Verträge</span></button>
+    <button type="button" title="Marketing" onclick="menuGeh('#marketing')">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-megafon"/></svg><span class="txt">Marketing</span></button>
+    <button type="button" title="Dein Briefkopf" onclick="menuGeh('#briefkopf')">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-briefkopf"/></svg><span class="txt">Dein Briefkopf</span></button>
+  </details>
+  <div class="fuss">
+    <details open data-gruppe="Konto">
+      <summary>Konto</summary>
+      <button type="button" title="Konto &amp; Einstellungen" onclick="menuGeh('#einstellungen')">
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-zahnrad"/></svg><span class="txt">Konto &amp; Einstellungen</span></button>
+      <button type="button" id="nav-verwaltung" hidden title="Zugänge verwalten" onclick="menuGeh('#verwaltung')">
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-schluessel"/></svg><span class="txt">Zugänge verwalten</span></button>
+    </details>
+    <button type="button" class="weg" id="nav-abmelden" title="Abmelden">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-abmelden"/></svg><span class="txt">Abmelden</span></button>
+  </div>
+</aside>
 <main>
   <!-- NOCH KEINE BELEGBOX: ehrlich sagen, statt leere Kacheln zeigen -->
   <section class="ansicht" id="a-gesperrt">
@@ -1494,6 +1626,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <div id="chatlog"></div>
   </section>
 </main>
+</div>
 
 <!-- Mobile Tab-Leiste (v2 vom 27.08.): auf dem Telefon wandert die
      Navigation nach unten, wie in einer App. Ein <nav>, damit die ganze
@@ -3679,6 +3812,10 @@ function menuZu(){ $("#konto-menu").hidden = true;
 function menuGeh(ziel){ menuZu(); location.hash = ziel; }
 $("#konto-knopf").addEventListener("click", async ev => {
   ev.stopPropagation();
+  // Ab 821px hat der Hamburger eine zweite Aufgabe: die Seitenleiste
+  // auf/zu klappen, statt das Dropdown zu öffnen (siehe Medienabfrage
+  // im CSS — darunter bleibt das Dropdown die einzige Navigation).
+  if (SEITENNAV_BREIT.matches){ leisteUmschalten(); return; }
   const menu = $("#konto-menu");
   const auf = menu.hidden;
   menu.hidden = !auf;
@@ -3687,9 +3824,9 @@ $("#konto-knopf").addEventListener("click", async ev => {
     try{
       const d = await (await api("/api/ich")).json();
       $("#menu-un").textContent = d.un || "";
-      $("#menu-rolle").textContent = d.rolle === "salon" ? "Dein Salon"
-        : d.rolle === "kanzlei" ? "Kanzlei" : "Verwaltung";
+      $("#menu-rolle").textContent = rolleAnzeige(d.rolle);
       $("#menu-verwaltung").hidden = !(d.rolle === "admin" || d.rolle === "kanzlei");
+      naviKopfAktualisieren(d.un, d.rolle);
     }catch{}
   }
 });
@@ -3702,6 +3839,61 @@ $("#menu-abmelden").addEventListener("click", async () => {
   try{ await api("/api/abmelden", {method:"POST"}); }catch{}
   zeigeLogin();
 });
+
+/* ————— Seitenleiste (seit 02.09.2026) —————
+   Zustand (auf/zu, welche Kategorie offen) merkt sich der Browser;
+   Name/Rolle setzt naviKopfAktualisieren() — beim App-Start (unten) und
+   jedes Mal, wenn der Hamburger das Dropdown neu lädt. Kein Nachbau per
+   DOM-Umzug: das Markup steht bereits im HTML (siehe #seiten-nav). */
+const SEITENNAV_BREIT = window.matchMedia("(min-width:821px)");
+function rolleAnzeige(rolle){
+  return rolle === "salon" ? "Dein Salon" : rolle === "kanzlei" ? "Kanzlei"
+    : rolle === "mitarbeit" ? "Mitarbeit" : "Verwaltung";
+}
+function naviKopfAktualisieren(un, rolle){
+  $("#nav-un").textContent = un || "";
+  $("#nav-rolle").textContent = rolleAnzeige(rolle);
+  $("#nav-verwaltung").hidden = !(rolle === "admin" || rolle === "kanzlei");
+}
+(() => {
+  const nav = $("#seiten-nav"), klapp = $("#nav-klapp");
+  const schluessel = "babu.seitennav";
+  let stand = {};
+  try{ stand = JSON.parse(localStorage.getItem(schluessel) || "{}"); }catch{}
+  const merken = () => { try{ localStorage.setItem(schluessel, JSON.stringify(stand)); }catch{} };
+
+  nav.querySelectorAll("details").forEach(d => {
+    if (stand[d.dataset.gruppe] === false) d.open = false;
+    d.addEventListener("toggle", () => {
+      if (!nav.classList.contains("zu")){ stand[d.dataset.gruppe] = d.open; merken(); }
+    });
+  });
+
+  window.leisteUmschalten = () => {
+    const zu = nav.classList.toggle("zu");
+    stand.zu = zu;
+    klapp.title = zu ? "Leiste ausklappen" : "Leiste einklappen";
+    klapp.setAttribute("aria-label", klapp.title);
+    // Eingeklappt zeigt jede Kategorie ihre Symbole — sonst blieben sie unsichtbar.
+    nav.querySelectorAll("details").forEach(d => { d.open = zu ? true : stand[d.dataset.gruppe] !== false; });
+    merken();
+  };
+  if (stand.zu){ nav.classList.add("zu"); nav.querySelectorAll("details").forEach(d => d.open = true); }
+  klapp.addEventListener("click", leisteUmschalten);
+
+  $("#nav-abmelden").addEventListener("click", async () => {
+    try{ await api("/api/abmelden", {method:"POST"}); }catch{}
+    zeigeLogin();
+  });
+
+  // Header-Höhe messen statt hart verdrahten (77px war nur der bei 1440px
+  // gemessene Wert — Zeilenumbruch, Zoom und schmalere Fenster ändern sie).
+  const kopf = document.querySelector("header");
+  const kopfHoeheMessen = () => document.documentElement.style.setProperty("--kopf-h", kopf.offsetHeight + "px");
+  kopfHoeheMessen();
+  if ("ResizeObserver" in window) new ResizeObserver(kopfHoeheMessen).observe(kopf);
+  else window.addEventListener("resize", kopfHoeheMessen);
+})();
 
 /* ————— Dein Team ————— */
 async function ladeTeam(){
@@ -5574,15 +5766,24 @@ async function terminAbsagen(id){
   ladeTermine();
 }
 
+/* Rollen-Namen an einer Stelle — auch fürs neue "Mitarbeit" (server-seitig
+   NUTZER_ROLLEN, siehe babu_web.py). */
+const VERW_ROLLEN = {salon:"Salon", mitarbeit:"Mitarbeit", kanzlei:"Kanzlei", admin:"Admin"};
+const VERW_SEITENGROESSE = 25;
+let _verwNutzer = [];
+let _verwSuche = "";
+let _verwSeite = 1;
+
 async function ladeVerwaltung(){
   const ziel = $("#verwaltung-inhalt");
-  let regs = [], nutzer = [];
+  let regs = [];
   try{
     const r1 = await api("/api/registrierungen");
     if (r1.status === 403){ ziel.innerHTML = `<div class="leer"><b>Nur für die Verwaltung.</b></div>`; return; }
     regs = (await r1.json()).registrierungen || [];
-    nutzer = (await (await api("/api/nutzer")).json()).nutzer || [];
+    _verwNutzer = (await (await api("/api/nutzer")).json()).nutzer || [];
   }catch{ return; }
+  _verwSeite = 1;
 
   let html = "";
   const offen = regs.filter(r => r.status === "neu");
@@ -5603,32 +5804,15 @@ async function ladeVerwaltung(){
     </div>`;
   }
 
-  html += `<div class="sektion lbl">Zugänge (${nutzer.length})</div>`;
-  if (!nutzer.length){
-    html += `<div class="karte" style="color:var(--gc-desc)">Noch keine eigenen Zugänge —
-      richte den ersten aus einer Anfrage ein oder lege unten einen an.</div>`;
-  }
-  for (const n of nutzer){
-    html += `<div class="karte" style="${n.aktiv ? "" : "opacity:.55"}">
-      <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
-        <b style="color:var(--gc-fg)">${n.name || n.email}</b>
-        <span style="font-size:12px;color:var(--gc-muted)">${n.email}${n.salon ? " · " + n.salon : ""}${n.paket ? " · " + n.paket : ""}</span>
-        <span style="margin-left:auto;font-size:11px;color:var(--gc-muted)">
-          ${n.letzter_login ? "zuletzt " + zeitKurz(n.letzter_login) : "noch nie angemeldet"}</span>
-      </div>
-      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
-        <select onchange="nutzerAktion('${n.email}','rolle',this.value)"
-          style="padding:6px 10px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
-          ${["salon","kanzlei","admin"].map(x =>
-            `<option value="${x}" ${n.rolle===x?"selected":""}>${x === "salon" ? "Salon" : x === "kanzlei" ? "Kanzlei" : "Admin"}</option>`).join("")}
-        </select>
-        <button class="chip" onclick="nutzerAktion('${n.email}','${n.aktiv ? "deaktivieren" : "aktivieren"}')">
-          ${n.aktiv ? "Abschalten" : "Wieder anschalten"}</button>
-        <button class="chip" onclick="nutzerAktion('${n.email}','passwort_neu')">Neues Startpasswort</button>
-      </div>
-      <div id="pw-${n.email.replace(/[^a-z0-9]/g,"_")}"></div>
-    </div>`;
-  }
+  html += `<div class="sektion lbl">Zugänge (${_verwNutzer.length})</div>`;
+  // Wird mit der Zeit hundert Zeilen — Suchfeld bleibt ein eigenes Element
+  // (nicht im re-render bei jedem Tastendruck), damit der Fokus beim Tippen
+  // nicht verloren geht.
+  html += `<input id="verw-suche" type="search" placeholder="Suchen nach Name, E-Mail oder Salon"
+    value="${esc(_verwSuche)}" style="width:100%;padding:9px 12px;margin-bottom:10px;
+    border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">`;
+  html += `<div id="verw-liste"></div>`;
+  html += `<div id="verw-pager" style="display:flex;align-items:center;justify-content:center;margin-top:10px"></div>`;
 
   html += `<div class="sektion lbl">Zugang anlegen</div><div class="karte">
     <div style="display:grid;gap:8px;grid-template-columns:1fr 1fr">
@@ -5636,14 +5820,74 @@ async function ladeVerwaltung(){
       <input id="nv-name" placeholder="Name" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
       <input id="nv-salon" placeholder="Salon" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
       <select id="nv-rolle" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
-        <option value="salon">Salon</option><option value="kanzlei">Kanzlei</option><option value="admin">Admin</option>
+        ${Object.entries(VERW_ROLLEN).map(([x,l]) => `<option value="${x}">${l}</option>`).join("")}
       </select>
     </div>
     <button class="hin" style="margin-top:10px" onclick="nutzerAnlegen()">Anlegen</button>
     <div id="nv-ergebnis"></div>
   </div>`;
   ziel.innerHTML = html;
+  $("#verw-suche").addEventListener("input", ev => {
+    _verwSuche = ev.target.value; _verwSeite = 1; verwListeRendern();
+  });
+  verwListeRendern();
 }
+
+function zugangKarteHtml(n){
+  return `<div class="karte" style="${n.aktiv ? "" : "opacity:.55"}">
+      <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
+        <b style="color:var(--gc-fg)">${esc(n.name || n.email)}</b>
+        <span style="font-size:12px;color:var(--gc-muted)">${esc(n.email)}${n.salon ? " · " + esc(n.salon) : ""}${n.paket ? " · " + esc(n.paket) : ""}</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--gc-muted)">
+          ${n.letzter_login ? "zuletzt " + zeitKurz(n.letzter_login) : "noch nie angemeldet"}</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
+        <select onchange="nutzerAktion('${n.email}','rolle',this.value)"
+          style="padding:6px 10px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
+          ${Object.entries(VERW_ROLLEN).map(([x,l]) =>
+            `<option value="${x}" ${n.rolle===x?"selected":""}>${l}</option>`).join("")}
+        </select>
+        <button class="chip" onclick="nutzerAktion('${n.email}','${n.aktiv ? "deaktivieren" : "aktivieren"}')">
+          ${n.aktiv ? "Abschalten" : "Wieder anschalten"}</button>
+        <button class="chip" onclick="nutzerAktion('${n.email}','${n.box ? "box_sperren" : "box_freigeben"}')">
+          ${n.box ? "Belegbox sperren" : "Belegbox freigeben"}</button>
+        <button class="chip" onclick="nutzerAktion('${n.email}','passwort_neu')">Neues Startpasswort</button>
+      </div>
+      <div id="pw-${n.email.replace(/[^a-z0-9]/g,"_")}"></div>
+    </div>`;
+}
+
+/* Nur die Liste + den Seitenwechsler neu zeichnen — das Suchfeld bleibt
+   unangetastet, sonst springt der Cursor bei jedem Buchstaben ans Ende. */
+function verwListeRendern(){
+  const liste = $("#verw-liste"), pager = $("#verw-pager");
+  if (!liste || !pager) return;
+  if (!_verwNutzer.length){
+    liste.innerHTML = `<div class="karte" style="color:var(--gc-desc)">Noch keine eigenen Zugänge —
+      richte den ersten aus einer Anfrage ein oder lege unten einen an.</div>`;
+    pager.innerHTML = "";
+    return;
+  }
+  const q = _verwSuche.trim().toLowerCase();
+  const gefiltert = !q ? _verwNutzer : _verwNutzer.filter(n =>
+    (n.name || "").toLowerCase().includes(q) ||
+    (n.email || "").toLowerCase().includes(q) ||
+    (n.salon || "").toLowerCase().includes(q));
+  if (!gefiltert.length){
+    liste.innerHTML = `<div class="karte" style="color:var(--gc-desc)">Keine Treffer für „${esc(_verwSuche)}".</div>`;
+    pager.innerHTML = "";
+    return;
+  }
+  const seiten = Math.max(1, Math.ceil(gefiltert.length / VERW_SEITENGROESSE));
+  if (_verwSeite > seiten) _verwSeite = seiten;
+  const start = (_verwSeite - 1) * VERW_SEITENGROESSE;
+  liste.innerHTML = gefiltert.slice(start, start + VERW_SEITENGROESSE).map(zugangKarteHtml).join("");
+  pager.innerHTML = seiten <= 1 ? "" : `
+    <button class="chip" ${_verwSeite <= 1 ? "disabled" : ""} onclick="verwSeiteWechseln(-1)">‹ Zurück</button>
+    <span style="font-size:12px;color:var(--gc-muted);margin:0 10px">Seite ${_verwSeite} von ${seiten}</span>
+    <button class="chip" ${_verwSeite >= seiten ? "disabled" : ""} onclick="verwSeiteWechseln(1)">Weiter ›</button>`;
+}
+function verwSeiteWechseln(delta){ _verwSeite += delta; verwListeRendern(); }
 function startpasswortKarte(email, passwort){
   return `<div class="siegel" style="margin-top:10px"><svg class="ik rosette" viewBox="0 0 24 24"><use href="#ik-siegel"/></svg>
     <div><span class="code">${email} · ${passwort}</span>
@@ -5800,6 +6044,7 @@ $("#reg-start").addEventListener("click", () => {
         meineRolle = d.rolle || "salon";
         meineBox = d.box !== false;
         $("#avatar").textContent = (d.un||"·")[0].toUpperCase();
+        naviKopfAktualisieren(d.un, meineRolle);
         // Antworten aus dem Paket-Fragebogen der Startseite übernehmen.
         try{
           const q = JSON.parse(sessionStorage.getItem("babu-paket") || "null");
@@ -5886,7 +6131,8 @@ function ladeEinrichtung(){
     const r = await fetch("/api/ich",{credentials:"same-origin"});
     if (r.ok){ const d = await r.json(); meineRolle = d.rolle || "salon";
       meineBox = d.box !== false;
-      $("#avatar").textContent = (d.un||"·")[0].toUpperCase(); zeigeApp(); }
+      $("#avatar").textContent = (d.un||"·")[0].toUpperCase();
+      naviKopfAktualisieren(d.un, meineRolle); zeigeApp(); }
     else zeigeLogin();
   }catch{
     $("#offline").style.display = "block"; zeigeLogin();
