@@ -217,6 +217,28 @@ def mandanten_von_kanzlei(kanzlei_id: int, status: str | None = None,
     return [_zeile(MANDANT_SPALTEN, r) for r in rohe]
 
 
+def mandanten_fuer(un: str, c=None) -> list[dict]:
+    """Alle Mandanten, für die dieser Zugang arbeiten darf.
+
+    Über die Kanzleien, in denen er Mitglied ist — nicht über seine Rolle.
+    Das ist dieselbe Grenze wie in `kanzlei_mitglied`, nur andersherum
+    gefragt: dort „darf ich zu diesem einen?", hier „welche sind es
+    überhaupt?". Beides muss dieselbe Antwort geben, deshalb steht die
+    Verknüpfung nur hier in der Datei und nicht in den Aufrufern.
+
+    Eine leere Liste heißt: dieser Zugang betreut keinen fremden Betrieb.
+    Im heutigen Ein-Betrieb ist das jeder — auch die Kanzlei-Rolle, denn
+    ohne `kanzlei`-Zeilen gibt es nichts zu betreuen.
+    """
+    sql = ("SELECT m.id, m.kanzlei_id, m.name, m.besitzer_un, m.box_ref, "
+           "m.kontenrahmen, m.berater_nr, m.mandant_nr, m.status, m.angelegt "
+           "FROM mandant m JOIN kanzlei_mitglied km "
+           "ON km.kanzlei_id = m.kanzlei_id WHERE km.un = ? ORDER BY m.name")
+    with _sitzung(c) as cc:
+        rohe = cc.execute(sql, (un,)).fetchall()
+    return [_zeile(MANDANT_SPALTEN, r) for r in rohe]
+
+
 def kanzlei_mitglied(un: str, mandant_id: int, c=None) -> bool:
     """Darf dieser Zugang für diesen Mandanten arbeiten?
 

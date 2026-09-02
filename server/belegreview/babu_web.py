@@ -100,11 +100,34 @@ bx.store_quelle(lambda: STORE)
 
 _AKTIVE_BOX: contextvars.ContextVar = contextvars.ContextVar("aktive_box")
 
+# Der Mandant dieses Requests — getrennt von der Box, weil die beiden nicht
+# deckungsgleich sind (Plan 21, Phase 3). Die Belegbox setzt nur
+# `_box_wache`; die Hälfte der Portal-Routen (Team, Kundinnen-Stammdaten,
+# Fristen, Konto) läuft aber über `_api_wache` und fasst gar keine Box an.
+# Auch DIE müssen beim Acting-as die Daten des Mandanten zeigen — sonst
+# stünde die Kanzlei vor den Belegen des Mandanten und ihrem eigenen,
+# leeren Team. Deshalb legt `_api_wache` den Mandanten hier ab, und
+# `_box_wache` macht daraus zusätzlich eine Box.
+_AKTIVER_MANDANT: contextvars.ContextVar = contextvars.ContextVar("aktiver_mandant")
+
 
 def _box() -> bx.Box:
     """Die Box dieses Requests — ohne gesetzten Kontext die Default-Box."""
     b = _AKTIVE_BOX.get(None)
     return bx.default_box() if b is None else b
+
+
+def _aktive_mandant_id() -> int | None:
+    """Für welchen Mandanten läuft dieser Request — `None` im Einzelbetrieb.
+
+    Die Box zuerst: ein Hintergrund-Thread bekommt über `_im_box_kontext`
+    nur sie mit, und sie trägt die Nummer ohnehin. Erst danach der Kopf,
+    den `_api_wache` abgelegt hat — für die Routen ohne Box.
+    """
+    b = _AKTIVE_BOX.get(None)
+    if b is not None and b.mandant_id:
+        return b.mandant_id
+    return _AKTIVER_MANDANT.get(None)
 
 
 # Die Namen, unter denen der Box-Zustand früher als Modulglobal hier stand.
@@ -151,7 +174,7 @@ def _im_box_kontext(box: bx.Box, ziel, *args):
 # verzichtbar — er bleibt trotzdem, weil das Nebenläufigkeitsverhalten in
 # dieser Phase nicht mitwandern soll. Er ist NICHT wiedereintrittsfähig:
 # wer schon in einem `with _DB_LOCK`-Block steht, darf keine Funktion rufen,
-# die ihn erneut nimmt (`salon_von` etwa).
+# die ihn erneut nimmt (`salon_von_aktiv` etwa).
 # ---------------------------------------------------------------------------
 
 _DB_LOCK = threading.Lock()
@@ -661,14 +684,30 @@ def zugelassen(un: str) -> bool:
     return bool(n and n["aktiv"])
 
 
-def box_mitglied(un: str) -> bool:
-    """Gehört dieser Zugang zu der Belegbox, die dieser Server bedient?
+def box_mitglied(un: str, mandant_id: int | None = None) -> bool:
+    """Gehört dieser Zugang zu der Belegbox, um die es gerade geht?
 
+    Zwei Fragen in einer Funktion, weil es zwei Arten von Box gibt:
+
+    **Ohne `mandant_id` — die eigene Box, Regel unverändert seit jeher.**
     Es gibt genau EINE Box je Betrieb. Ein Konto ist deshalb noch kein
     Zugang zu ihren Belegen: darin arbeiten der Betrieb selbst, sein Team —
     und die Kanzlei, die ihn betreut. Wer sich selbst registriert hat,
-    behält sein Konto, sieht aber keine fremden Belege.
+    behält sein Konto, sieht aber keine fremden Belege. Das ist der Weg
+    JEDES Requests ohne `X-Mandant`-Kopf, also im heutigen Ein-Betrieb
+    ausnahmslos jeder — die Regel darf sich hier um kein Byte ändern.
+
+    **Mit `mandant_id` — die Box eines Mandanten (Plan 21, Abschnitt 4.1).**
+    Dann zählt allein die Mitgliedschaft in DER Kanzlei, die DIESEN
+    Mandanten betreut. Die pauschale Regel „Rolle admin oder kanzlei ⇒
+    darf" gilt hier ausdrücklich NICHT: sonst sähe jede Kanzlei jede Box,
+    und genau das ist die Lücke, die Phase 3 schließt. Wer eine fremde
+    `mandant_id` mitschickt, bekommt hier `False` — die Wache macht daraus
+    ein 403.
     """
+    if mandant_id is not None:
+        import mandanten  # noqa: PLC0415 — nur der Mehr-Box-Weg braucht die Tabelle
+        return mandanten.kanzlei_mitglied(un, mandant_id)
     inhaber = salon_von(un)          # Mitarbeiterinnen erben den Salon
     if inhaber in ERLAUBT:
         return True
@@ -1333,13 +1372,29 @@ def app_datei(name: str) -> Response:
 # ---------------------------------------------------------------------------
 
 def _api_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]:
-    """Angemeldet und aktiv — reicht für die eigenen Daten (Konto, Team, Fristen)."""
+    """Angemeldet und aktiv — reicht für die eigenen Daten (Konto, Team, Fristen).
+
+    Und, seit Phase 3: WESSEN eigene Daten. Kommt ein `X-Mandant`-Kopf mit,
+    wird er hier geprüft und abgelegt; ohne Kopf passiert nichts und alles
+    bleibt, wie es war (das ist im heutigen Ein-Betrieb jeder Request).
+    Ein Kopf, den dieser Zugang nicht führen darf, wird abgelehnt und nicht
+    etwa übergangen — sonst arbeitete jemand in seinen eigenen Daten im
+    Glauben, in denen des Mandanten zu sein.
+    """
     un = angemeldet(request)
     if un is None:
         return None, JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
     if not zugelassen(un):
         print(f"[wache] 403: '{un}' weder Allowlist noch aktives Konto", flush=True)
         return None, JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    gewuenscht = _mandant_gewuenscht(request)
+    if gewuenscht:
+        mandant_id = _mandant_aus_kontext(request, un)
+        if mandant_id is None:
+            print(f"[wache] 403: '{un}' betreut Mandant {gewuenscht!r} nicht",
+                  flush=True)
+            return None, JSONResponse({"fehler": MANDANT_FREMD}, status_code=403)
+        _AKTIVER_MANDANT.set(mandant_id)
     return un, None
 
 
@@ -1347,15 +1402,53 @@ BOX_GESPERRT = ("Dein Zugang ist noch nicht für eine Belegbox freigeschaltet. "
                 "Schreib uns kurz — dann richten wir sie für deinen Salon ein.")
 
 
+#: Der Kopf, mit dem das Portal sagt, für welchen Mandanten es gerade
+#: arbeitet. Bewusst ein Kopf und kein Cookie-Claim (Plan 21, Abschnitt
+#: 4.1): das Sitzungsformat bleibt unverändert, jede bestehende Anmeldung
+#: gilt weiter, und der gewählte Mandant lebt im Portal-JS wie `meineRolle`.
+MANDANT_KOPF = "X-Mandant"
+
+MANDANT_FREMD = ("Für diesen Mandanten ist dein Zugang nicht freigeschaltet.")
+
+
+def _mandant_gewuenscht(request: Request) -> str:
+    """Der rohe `X-Mandant`-Kopf — leer, wenn keiner mitkam.
+
+    Eigene Funktion, weil die Wache zwei Dinge auseinanderhalten muss:
+    „kein Mandant gewünscht" (Alt-Verhalten, eigene Box) und „Mandant
+    gewünscht, aber nicht erlaubt" (403). Ohne diese Unterscheidung fiele
+    ein abgelehnter Kopf still auf die eigene Box zurück — und die Kanzlei
+    sähe ihre eigenen Zahlen im Glauben, die des Mandanten zu sehen.
+    """
+    return (request.headers.get(MANDANT_KOPF) or "").strip()
+
+
 def _mandant_aus_kontext(request: Request, un: str) -> int | None:
     """Für welchen Mandanten arbeitet dieser Request gerade?
 
-    Heute: für keinen bestimmten — also die eigene Box, wie seit jeher.
-    Ab Phase 3 liest diese Stelle den `X-Mandant`-Header und prüft ihn
-    gegen `kanzlei_mitglied`; bis dahin ist sie der eine benannte Ort, an
-    dem das passieren wird, statt einer Suche quer durch 104 Routen.
+    Die Regel in einem Satz: **ohne Kopf die eigene Box wie heute, mit Kopf
+    nur mit Mitgliedschaft.**
+
+    Ohne `X-Mandant` also `None` — und das ist im heutigen Ein-Betrieb
+    jeder Request. Mit `X-Mandant` die Nummer, aber nur, wenn `un` in der
+    Kanzlei Mitglied ist, die diesen Mandanten betreut (`box_mitglied`
+    fragt dafür `kanzlei_mitglied` über `mandant.kanzlei_id`). Sonst
+    ebenfalls `None`; die Wache erkennt am mitgeschickten, aber
+    verworfenen Kopf, dass daraus ein 403 werden muss.
+
+    Unlesbares (kein Zahlenwert) wird wie eine fremde Nummer behandelt —
+    abgelehnt, nicht ignoriert.
     """
-    return None
+    roh = _mandant_gewuenscht(request)
+    if not roh:
+        return None
+    try:
+        mandant_id = int(roh)
+    except ValueError:
+        return None
+    if mandant_id <= 0:
+        return None
+    return mandant_id if box_mitglied(un, mandant_id) else None
 
 
 def _box_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]:
@@ -1368,14 +1461,28 @@ def _box_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]
     Hier wird außerdem die aktive Box für den Rest des Requests gesetzt.
     Die Routen sehen davon nichts: sie rufen weiter `index_aktuell()` oder
     `_git(...)` ohne Argument, und die holen sich die Box aus dem Kontext.
+
+    Seit Phase 3 entscheidet der `X-Mandant`-Kopf mit, WELCHE Box das ist.
+    Die beiden Fälle bleiben streng getrennt: ohne Kopf läuft alles wie an
+    dem Tag, an dem es diese Zeilen noch nicht gab (das ist der Golden-Diff
+    des Deploy-Rituals), mit Kopf entscheidet allein die Mitgliedschaft.
     """
     un, fehler = _api_wache(request)
     if fehler:
         return None, fehler
-    if not box_mitglied(un):
+    # Den Kopf hat `_api_wache` schon geprüft und abgelegt (oder mit 403
+    # abgelehnt); hier bleibt nur, daraus eine Box zu machen.
+    mandant_id = _AKTIVER_MANDANT.get(None)
+    if mandant_id is None and not box_mitglied(un):
         print(f"[wache] 403: '{un}' gehört nicht zu dieser Belegbox", flush=True)
         return None, JSONResponse({"fehler": BOX_GESPERRT}, status_code=403)
-    _AKTIVE_BOX.set(bx.box_von(un, _mandant_aus_kontext(request, un)))
+    try:
+        _AKTIVE_BOX.set(bx.box_von(un, mandant_id))
+    except bx.KeineBox as ex:
+        # Angelegt, aber die Belegbox ist noch nicht eingerichtet
+        # (`status = box_ausstehend`). Kein Fehler des Aufrufers und kein
+        # Rechteproblem — deshalb 409 und nicht 403 oder 404.
+        return None, JSONResponse({"fehler": str(ex)}, status_code=409)
     return un, None
 
 
@@ -1900,7 +2007,7 @@ async def _beleg_serverseitig_lesen(pfad: str, daten: bytes, endung: str, un: st
 
     monat = time.strftime("%Y-%m")
     ktx = await _einschaetzungs_kontext(un, monat)
-    profil = db_einstellungen(salon_von(un))
+    profil = db_einstellungen(salon_von_aktiv(un))
     rahmen = kontenrahmen_von(un)
 
     def _lesen() -> dict:
@@ -3266,6 +3373,15 @@ def api_registrierungen(request: Request) -> Response:
 
 
 def _einstellungen_mit_paket(un: str) -> dict:
+    """Die Einstellungen eines Kontos, wie `/api/einstellungen` sie zeigt.
+
+    ROH und absichtlich (Plan 21, Abschnitt 4.3): `GET` liest hier und
+    `POST` schreibt gleich darunter mit `db_einstellung_setzen(un, …)`.
+    Beide müssen dieselbe Zeile treffen; läse das eine den Betrieb und
+    schriebe das andere das Konto, verschwände jede Eingabe beim nächsten
+    Laden wieder. Die Route hängt außerdem an `_api_wache`, nicht an
+    `_box_wache` — es gibt dort nie eine fremde Box zu sehen.
+    """
     import saloncheck  # noqa: PLC0415
     e = db_einstellungen(un)
     e["paket_empfehlung"] = saloncheck.paket_empfehlung(e)
@@ -3348,13 +3464,25 @@ def _gebuchte_jahre() -> list[int]:
 
 
 def kontenrahmen_von(un: str) -> str:
-    """Der Rahmen, in dem dieser Betrieb bucht."""
-    return kr.aus_einstellungen(db_einstellungen(salon_von(un)),
-                                vorgabe=kr.vorgabe())
+    """Der Rahmen, in dem dieser Betrieb bucht.
+
+    Beim Acting-as tritt die `mandant`-Zeile an die Stelle der
+    Server-Vorgabe `BABU_KONTENRAHMEN` (Plan 21, Abschnitt 4.4): eine
+    Kanzlei hat nicht EINEN Kontenrahmen, sie hat je Mandant einen. Die
+    Angabe des Betriebs selbst schlägt weiterhin beides — sie ist die
+    jüngere Entscheidung, und der Jahreswechsel-Vorgang aus BABU-57 hängt
+    daran. Ein unbrauchbarer Wert am Mandanten wird nicht geglaubt; dann
+    gilt wieder die Umgebung.
+    """
+    am_mandanten = ((_mandant_stammdaten() or {}).get("kontenrahmen")
+                    or "").strip().upper()
+    return kr.aus_einstellungen(
+        db_einstellungen(salon_von_aktiv(un)),
+        vorgabe=am_mandanten if am_mandanten in kr.RAHMEN else kr.vorgabe())
 
 
 def _kontenrahmen_auskunft(un: str) -> dict:
-    e = db_einstellungen(salon_von(un))
+    e = db_einstellungen(salon_von_aktiv(un))
     geplant = kr.geplanter_wechsel(e)
     jetzt = kr.aus_einstellungen(e, vorgabe=kr.vorgabe())
     return {
@@ -3398,7 +3526,7 @@ async def api_kontenrahmen_setzen(request: Request) -> Response:
     except Exception:  # noqa: BLE001
         return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
 
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     e = db_einstellungen(inhaber)
     heute_jahr = int(time.strftime("%Y"))
     try:
@@ -3527,7 +3655,7 @@ def api_anlagen(request: Request, jahr: int | None = None) -> Response:
         return fehler
     import anlagen as an  # noqa: PLC0415
     jahr = int(jahr or time.strftime("%Y"))
-    gueter = db_anlagegueter(salon_von(un))
+    gueter = db_anlagegueter(salon_von_aktiv(un))
     d = an.verzeichnis(gueter, jahr)
     d["vorschlaege"] = _anlage_vorschlaege(
         un, jahr, {g.beleg for g in gueter if g.beleg})
@@ -3588,9 +3716,9 @@ async def api_anlage_anlegen(request: Request) -> Response:
         gut = an.Anlagegut(**daten)
     except ValueError as ex:
         return JSONResponse({"fehler": str(ex)}, status_code=400)
-    # salon_von() greift selbst auf die Datenbank zu und nimmt dafür
+    # salon_von_aktiv() greift selbst auf die Datenbank zu und nimmt dafür
     # _DB_LOCK — der ist nicht wiedereintrittsfähig. Also VOR dem with.
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         cur = c.execute(
             "INSERT INTO anlagegut (un, bezeichnung, angeschafft, wert_cent, "
@@ -3616,7 +3744,7 @@ async def api_anlage_aendern(kennung: int, request: Request) -> Response:
         body = await request.json()
     except Exception:  # noqa: BLE001
         return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         c.row_factory = db.ZEILEN_MIT_NAMEN
         zeile = c.execute("SELECT * FROM anlagegut WHERE id=? AND un=?",
@@ -3658,7 +3786,7 @@ def api_anlage_loeschen(kennung: int, request: Request) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    inhaber = salon_von(un)          # nimmt selbst _DB_LOCK, also vorher
+    inhaber = salon_von_aktiv(un)          # nimmt selbst _DB_LOCK, also vorher
     with _DB_LOCK, _db() as c:
         cur = c.execute("DELETE FROM anlagegut WHERE id=? AND un=?",
                         (kennung, inhaber))
@@ -3676,7 +3804,7 @@ def api_anlagen_csv(jahr: int, request: Request) -> Response:
     if fehler:
         return fehler
     import anlagen as an  # noqa: PLC0415
-    text = an.als_csv(db_anlagegueter(salon_von(un)), int(jahr))
+    text = an.als_csv(db_anlagegueter(salon_von_aktiv(un)), int(jahr))
     return Response(
         content=text.encode("cp1252", errors="replace"),
         media_type="text/csv; charset=windows-1252",
@@ -3700,11 +3828,94 @@ def rolle(un: str) -> str:
 
 
 def salon_von(un: str) -> str:
-    """Die Belegbox gehört dem Salon — Mitarbeiterinnen arbeiten darin mit."""
+    """Die Belegbox gehört dem Salon — Mitarbeiterinnen arbeiten darin mit.
+
+    **Für neuen Code ist `salon_von_aktiv` gemeint, nicht diese hier.**
+    Diese Fassung kennt den Mandanten nicht, für den ein Request gerade
+    arbeitet; in einer Route benutzt zeigte sie der Kanzlei beim Acting-as
+    stillschweigend ihre EIGENEN (leeren) Zahlen. `tests/
+    test_salon_von_aktiv_ueberall.py` wacht darüber, dass sie außerhalb der
+    drei Funktionen direkt hier drunter nicht mehr vorkommt.
+    """
     n = nutzer_holen(un)
     if n and n.get("gehoert_zu"):
         return n["gehoert_zu"]
     return un
+
+
+def salon_von_aktiv(un: str) -> str:
+    """Wessen Daten gehören zu diesem Request? (Plan 21, Abschnitt 4.2)
+
+    Beim Acting-as — eine Kanzlei arbeitet in der Box eines Mandanten — der
+    Besitzer dieses Mandanten, also der Salon selbst. Sonst, und das ist im
+    heutigen Ein-Betrieb jeder Aufruf, unverändert `salon_von(un)`.
+
+    Warum das an ~60 Stellen stehen muss und nicht an einer: die
+    Portal-Tabellen (Team, Kundinnen, Einstellungen, Preise) hängen an `un`
+    und wissen von Boxen nichts. Ohne diese Umstellung bekäme die Kanzlei
+    die Belege des Mandanten zu sehen, dazu aber ihr eigenes, leeres
+    Team und ihre eigenen Einstellungen — halb fremde, halb eigene Daten in
+    einer Ansicht, und keiner Zahl sähe man an, welche von beiden sie ist.
+
+    Ohne `X-Mandant`-Kopf ist das Ergebnis per Konstruktion identisch mit
+    `salon_von(un)` — auch auf den Routen ohne Belegbox, denn den Mandanten
+    legt `_api_wache` ab und nicht erst `_box_wache`.
+    """
+    mandant_id = _aktive_mandant_id()
+    if mandant_id is None:
+        return salon_von(un)
+    import mandanten  # noqa: PLC0415
+    besitzer = mandanten.mandant_besitzer_un(mandant_id)
+    # Kein Besitzer heißt: die Zeile ist weg, während der Request lief.
+    # Dann lieber die eigene Betriebszugehörigkeit als gar keine.
+    return besitzer or salon_von(un)
+
+
+def _betrieb_von(zugang: str) -> str:
+    """Zu welchem Betrieb gehört EIN BESTIMMTER Zugang?
+
+    Der Unterschied zu `salon_von_aktiv` ist der Blickwinkel: dort geht es
+    um den angemeldeten Zugang und damit um den Mandanten, für den er
+    gerade arbeitet. Hier urteilt die Verwaltung über FREMDE Konten („wem
+    gehört dieses hier?"), und da wäre der aktive Mandant die falsche
+    Antwort — er bildete jedes fremde Konto auf denselben Betrieb ab.
+
+    Deshalb bleibt `salon_von` roh richtig; es ist neben `salon_von_aktiv`
+    und `box_mitglied` die dritte und letzte Stelle, an der sie stehen darf.
+    """
+    return salon_von(zugang)
+
+
+def _selber_betrieb(einer: str, anderer: str) -> bool:
+    """Gehören beide Zugänge zum selben Betrieb?"""
+    return _betrieb_von(einer) == _betrieb_von(anderer)
+
+
+def _mandant_stammdaten() -> dict | None:
+    """Die `mandant`-Zeile des aktiven Mandanten — `None` im Einzelbetrieb.
+
+    Dort stehen die Angaben, die es je Betrieb nur einmal gibt und die
+    heute aus der Serverumgebung kommen: Kontenrahmen, Berater- und
+    Mandantennummer. Solange nur die eine Box läuft, bleibt es bei der
+    Umgebung — `None` ist die Antwort „nimm den bisherigen Weg".
+    """
+    mandant_id = _aktive_mandant_id()
+    if mandant_id is None:
+        return None
+    import mandanten  # noqa: PLC0415
+    return mandanten.mandant_holen(mandant_id)
+
+
+def _mandant_fuers_log() -> str | None:
+    """Die Nummer des aktiven Mandanten als Text — für die Audit-Zeile.
+
+    `audit_log.mandant_id` ist eine TEXT-Spalte (die Tabelle entstand,
+    bevor es die Mandantentabelle gab). Sie bleibt es: eine Zahl daraus zu
+    machen hieße, das Log zu migrieren, und die Spalte wird nur gelesen
+    und angezeigt, nie verrechnet.
+    """
+    mandant_id = _aktive_mandant_id()
+    return str(mandant_id) if mandant_id else None
 
 
 def team_recht(un: str, recht: str) -> bool:
@@ -3729,6 +3940,83 @@ def _verwalter_wache(request: Request):
         return None, fehler
     if not darf_verwalten(un):
         return None, JSONResponse({"fehler": "nur für die Verwaltung"}, status_code=403)
+    return un, None
+
+
+# ---------------------------------------------------------------------------
+# Die Mandantengrenze der Verwaltung (Plan 21, Abschnitt 7).
+#
+# `darf_verwalten` beantwortet nur, OB jemand verwalten darf — nicht, WEN.
+# Bis Phase 3 war das dasselbe, weil es einen Betrieb je Server gab. Mit
+# mehreren Kanzleien auf einem Server ist es das nicht mehr: eine Kanzlei
+# darf ihre Mandanten sehen und niemanden sonst.
+#
+# Der Betreiber (`admin`) behält den globalen Blick — er betreibt die
+# Plattform, nicht einen Betrieb.
+#
+# Und der heutige Ein-Betrieb bleibt Zeile für Zeile, wie er ist: wer in
+# GAR KEINER Kanzlei Mitglied ist, sieht wie bisher alles. Ohne diese
+# Ausnahme verschwände Nina aus der Verwaltungsliste von christoph0711.io,
+# sobald diese Zeilen live gehen — es gibt dort ja weder `kanzlei`- noch
+# `mandant`-Zeilen, aus denen eine Reichweite käme.
+# ---------------------------------------------------------------------------
+
+def _meine_mandanten(un: str) -> list[dict]:
+    """Die Mandanten, die dieser Zugang betreuen darf."""
+    import mandanten  # noqa: PLC0415
+    return mandanten.mandanten_fuer(un)
+
+
+def _reichweite(un: str) -> set[str] | None:
+    """Welche Betriebe darf dieser Verwalter sehen? `None` heißt: alle."""
+    if rolle(un) == "admin":
+        return None
+    meine = _meine_mandanten(un)
+    if not meine:
+        return None
+    # Der eigene Betrieb gehört dazu — sonst fiele der Zugang, mit dem
+    # gerade jemand arbeitet, aus seiner eigenen Verwaltungsliste heraus.
+    return {salon_von_aktiv(un)} | {m["besitzer_un"] for m in meine}
+
+
+def _in_reichweite(un: str, ziel_un: str) -> bool:
+    """Darf `un` an dem Zugang `ziel_un` etwas ändern?"""
+    grenze = _reichweite(un)
+    return grenze is None or ziel_un in grenze or _betrieb_von(ziel_un) in grenze
+
+
+def _mandant_zu(un: str, ziel_un: str) -> str | None:
+    """Unter welchem Mandanten von `un` steht der Zugang `ziel_un`?
+
+    Für die Audit-Zeile: „wer hat was an wem getan" ist ohne den Mandanten
+    nur die halbe Auskunft, sobald eine Kanzlei viele Betriebe bedient.
+    `None` heißt: kein Mandant im Spiel — der eigene Betrieb, oder ein
+    Zugang, der zu keinem betreuten Betrieb gehört.
+    """
+    betrieb = _betrieb_von(ziel_un)
+    for m in _meine_mandanten(un):
+        if m["besitzer_un"] in (ziel_un, betrieb):
+            return str(m["id"])
+    return None
+
+
+def _kanzlei_wache(request: Request, ziel_un: str):
+    """`_verwalter_wache` plus die Mandantengrenze.
+
+    Rückgabe wie die anderen Wachen: `(un, None)` oder `(None, Antwort)`.
+    Sie wird NACH dem Lesen des Rumpfs gerufen, weil erst dort steht, um
+    wessen Zugang es geht — die Berechtigungsprüfung selbst
+    (`_verwalter_wache`) ist da längst gelaufen und läuft hier nur noch
+    einmal mit, damit diese Funktion für sich allein sicher ist.
+    """
+    un, fehler = _verwalter_wache(request)
+    if fehler:
+        return None, fehler
+    if not _in_reichweite(un, ziel_un):
+        print(f"[wache] 403: '{un}' verwaltet '{ziel_un}' nicht", flush=True)
+        return None, JSONResponse(
+            {"fehler": "Dieser Zugang gehört zu keinem deiner Mandanten."},
+            status_code=403)
     return un, None
 
 
@@ -3781,8 +4069,11 @@ def _reset_aufraeumen(ziel_un: str) -> None:
             "SELECT id, laeuft_ab, eingeloest FROM passwort_reset WHERE un=?",
             (ziel_un,)).fetchall()
             if z[2] is not None or datetime.fromisoformat(z[1]) < jetzt]
-        if alte:
-            c.executemany("DELETE FROM passwort_reset WHERE id=?", [(a,) for a in alte])
+        # Einzeln statt `executemany`: die Verbindung aus `db.py` ist
+        # bewusst dünn und kennt nur `execute` (Plan 21, Phase 1). Es sind
+        # höchstens die zehn Zeilen, die oben gelesen wurden.
+        for a in alte:
+            c.execute("DELETE FROM passwort_reset WHERE id=?", (a,))
 
 
 def _passwort_neu(aufrufer: str, email: str) -> Response:
@@ -3794,12 +4085,13 @@ def _passwort_neu(aufrufer: str, email: str) -> Response:
 
     `email` ist an dieser Stelle schon als existierender Zugang geprüft."""
     eigener_betrieb = (rolle(aufrufer) == "admin"
-                       or salon_von(email) == salon_von(aufrufer))
+                       or _selber_betrieb(email, aufrufer))
     if eigener_betrieb:
         passwort = startpasswort()
         with _DB_LOCK, _db() as c:
             c.execute("UPDATE nutzer SET pw=? WHERE email=?", (pw_hash(passwort), email))
-        audit.audit(aufrufer, "passwort_neu", ziel_un=email, weg="startpasswort")
+        audit.audit(aufrufer, "passwort_neu", ziel_un=email, weg="startpasswort",
+                    mandant_id=_mandant_zu(aufrufer, email))
         return JSONResponse({"ok": True, "email": email, "startpasswort": passwort})
     if not _reset_anfordern_erlaubt(email):
         return JSONResponse({"fehler": "Für diesen Zugang wurde gerade erst ein Link "
@@ -3814,7 +4106,8 @@ def _passwort_neu(aufrufer: str, email: str) -> Response:
                   (modell.token_hash, modell.un, modell.erstellt.isoformat(),
                    modell.laeuft_ab.isoformat()))
     link = f"{PORTAL_ORIGIN.rstrip('/')}/portal#reset/{token}"
-    audit.audit(aufrufer, "passwort_neu", ziel_un=email, weg="link")
+    audit.audit(aufrufer, "passwort_neu", ziel_un=email, weg="link",
+                mandant_id=_mandant_zu(aufrufer, email))
     return JSONResponse({"ok": True, "email": email, "link": link})
 
 
@@ -3858,6 +4151,10 @@ async def api_passwort_reset_einloesen(request: Request) -> Response:
                   (pw_hash(passwort), zeile["un"]))
         c.execute("UPDATE passwort_reset SET eingeloest=? WHERE id=?",
                   (_jetzt_iso(), zeile["id"]))
+    # Ohne `mandant_id`: diese Route läuft ohne Anmeldung (der Link IST die
+    # Berechtigung), es gibt also keinen Aufrufer, aus dessen Kanzleien sich
+    # ein Mandant ableiten ließe. Die Zeile davor — wer den Link erzeugt
+    # hat — trägt ihn.
     audit.audit(zeile["un"], "passwort_reset_eingeloest", ziel_un=zeile["un"])
     return JSONResponse({"ok": True, "email": zeile["un"]})
 
@@ -3896,16 +4193,27 @@ def api_audit_liste(request: Request, limit: int = 50, vor: int = 0) -> Response
 
 @app.get("/api/nutzer")
 def api_nutzer_liste(request: Request) -> Response:
+    """Die Zugänge, die dieser Verwalter sehen darf.
+
+    Für `admin` alle (Betreiber-Ebene). Für eine Kanzlei nur die Besitzer
+    ihrer Mandanten und deren Team — und, solange sie keinen Mandanten
+    betreut, weiterhin alle (siehe `_reichweite`).
+
+    `gehoert_zu` wird nur zum Filtern gelesen und geht NICHT mit hinaus:
+    die Form der Antwort bleibt Feld für Feld die von vorher.
+    """
     un, fehler = _verwalter_wache(request)
     if fehler:
         return fehler
+    grenze = _reichweite(un)
     with _DB_LOCK, _db() as c:
         zeilen = [{"email": z[0], "name": z[1], "salon": z[2], "rolle": z[3],
                    "aktiv": bool(z[4]), "angelegt": z[5], "letzter_login": z[6],
                    "box": bool(z[7])}
                   for z in c.execute("""SELECT email, name, salon, rolle, aktiv,
-                      angelegt, letzter_login, box FROM nutzer
-                      ORDER BY angelegt DESC""")]
+                      angelegt, letzter_login, box, gehoert_zu FROM nutzer
+                      ORDER BY angelegt DESC""")
+                  if grenze is None or z[0] in grenze or (z[8] or z[0]) in grenze]
     import saloncheck  # noqa: PLC0415
     for z in zeilen:
         z["paket"] = saloncheck.paket_empfehlung(db_einstellungen(z["email"]))["name"]
@@ -3929,7 +4237,9 @@ async def api_nutzer_anlegen(request: Request) -> Response:
     if passwort is None:
         return JSONResponse({"fehler": "Für diese E-Mail gibt es schon einen Zugang."},
                             status_code=409)
-    audit.audit(un, "nutzer_anlegen", ziel_un=email, rolle=str(body.get("rolle", "salon")))
+    audit.audit(un, "nutzer_anlegen", ziel_un=email,
+                rolle=str(body.get("rolle", "salon")),
+                mandant_id=_mandant_zu(un, email))
     return JSONResponse({"ok": True, "email": email, "startpasswort": passwort})
 
 
@@ -3946,6 +4256,12 @@ async def api_nutzer_aktion(request: Request) -> Response:
     aktion = str(body.get("aktion", ""))
     if not nutzer_holen(email):
         return JSONResponse({"fehler": "Diesen Zugang gibt es nicht."}, status_code=404)
+    # Dieselbe Grenze wie in `/api/nutzer`: was eine Kanzlei nicht sehen
+    # darf, darf sie erst recht nicht ändern. Erst hier, weil der Zugang,
+    # um den es geht, erst im Rumpf steht.
+    _, fehler = _kanzlei_wache(request, email)
+    if fehler:
+        return fehler
     # Selbstschutz: das eigene Konto weder abschalten noch zurückstufen.
     if email == un and aktion in ("deaktivieren", "rolle"):
         return JSONResponse({"fehler": "Das eigene Konto kannst du hier nicht ändern."},
@@ -3975,7 +4291,8 @@ async def api_nutzer_aktion(request: Request) -> Response:
         return _passwort_neu(un, email)
     else:
         return JSONResponse({"fehler": "unbekannte Aktion"}, status_code=400)
-    audit.audit(un, aktion, ziel_un=email, **zusatz)
+    audit.audit(un, aktion, ziel_un=email, mandant_id=_mandant_zu(un, email),
+                **zusatz)
     return JSONResponse({"ok": True})
 
 
@@ -4019,7 +4336,8 @@ async def api_registrierung_einrichten(request: Request) -> Response:
             db_einstellung_setzen(email, schluessel, str(wert)[:200])
     with _DB_LOCK, _db() as c:
         c.execute("UPDATE registrierungen SET status='eingerichtet' WHERE id=?", (reg_id,))
-    audit.audit(un, "registrierung_einrichten", ziel_un=email, registrierung_id=reg_id)
+    audit.audit(un, "registrierung_einrichten", ziel_un=email,
+                registrierung_id=reg_id, mandant_id=_mandant_zu(un, email))
     return JSONResponse({"ok": True, "email": email, "startpasswort": passwort})
 
 
@@ -4050,15 +4368,27 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
     blaetter = [b for tag, b in idx["kassenblaetter"].items()
                 if tag.startswith(monat)]
     import monatsabschluss as ma  # noqa: PLC0415
-    profil = ma.umsatz_profil(db_einstellungen(salon_von(un)))
+    profil = ma.umsatz_profil(db_einstellungen(salon_von_aktiv(un)))
+    # Berater- und Mandantennummer stehen im Stapelkopf und sagen der
+    # Kanzlei-Software, WESSEN Buchhaltung sie gerade importiert. Aus der
+    # Serverumgebung kamen sie, solange es einen Betrieb je Server gab; beim
+    # Acting-as ist das die falsche Antwort — zwei Mandanten bekämen
+    # dieselbe Nummer und liefen im DATEV-Import ineinander. Deshalb schlägt
+    # die `mandant`-Zeile die Umgebung (Plan 21, Abschnitt 4.4); wo sie
+    # nichts hergibt, bleibt es beim bisherigen Weg.
+    stamm = _mandant_stammdaten() or {}
+    berater = (stamm.get("berater_nr") or "").strip() \
+        or os.environ.get("BABU_BERATER", extf.BERATER)
+    mandant_nr = (stamm.get("mandant_nr") or "").strip() \
+        or os.environ.get("BABU_MANDANT", extf.MANDANT)
     # Der Mischungs-Melder (BABU-57). Hier verlassen die Konten das Haus —
     # was hier durchrutscht, fällt erst beim Steuerberater auf, nach dem
     # Import. Ein Stapel mit zwei Kontenrahmen wird deshalb gar nicht erst
     # erzeugt.
     try:
         text = extf.stapel(reviews, monat,
-                           berater=os.environ.get("BABU_BERATER", extf.BERATER),
-                           mandant=os.environ.get("BABU_MANDANT", extf.MANDANT),
+                           berater=berater,
+                           mandant=mandant_nr,
                            festschreibung=_monat_festgeschrieben(monat),
                            rahmen=kontenrahmen_von(un),
                            kassenblaetter=blaetter,
@@ -4085,8 +4415,8 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
             _box().invalidieren()
     # Hier verlassen Steuerdaten das Haus — auch ein reiner Vorschau-Export
     # (festschreiben=0) gehört ins Log, nicht nur die festgeschriebene Ablage.
-    audit.audit(un, "export", monat=monat, festschreiben=bool(festschreiben),
-                belege=len(staemme))
+    audit.audit(un, "export", monat=monat, mandant_id=_mandant_fuers_log(),
+                festschreiben=bool(festschreiben), belege=len(staemme))
     return Response(content=daten, media_type="text/csv; charset=windows-1252",
                     headers={"Content-Disposition":
                              f'attachment; filename="EXTF_Buchungsstapel_{monat}.csv"'})
@@ -4298,7 +4628,7 @@ async def api_buchung_einschaetzung(request: Request) -> Response:
                         "kleinunternehmer")
               if isinstance(roh_profil, dict) and roh_profil.get(k)}
     if not profil:
-        profil = db_einstellungen(salon_von(un))
+        profil = db_einstellungen(salon_von_aktiv(un))
     antworten = []
     for a in (body.get("antworten") or [])[:gemma_buchung.ANTWORTEN_MAX]:
         if isinstance(a, dict) and str(a.get("antwort", "")).strip():
@@ -5070,6 +5400,7 @@ def _bericht_schreiben(un: str, jahr: int, status: dict, geerntet: list[dict],
             offen.append(f"{len(status['vorschlaege'])} Angaben weichen von dem "
                          "ab, was schon eingetragen war — bitte einmal ansehen.")
         text = salonpruefung.bericht(
+            # Roh wie der ganze Salon-Check — siehe `_abschluss_job`.
             salon=(db_einstellungen(un).get("betrieb_name") or "").strip() or None,
             dokumente=dokumente, felder=felder, befunde=[],
             kennzahlen=zahlen, offen=offen)
@@ -5129,6 +5460,19 @@ def _unterlage_einsortieren(un: str, jahr: int, datei: str, art: str,
 
 
 def _abschluss_job(un: str, jahr: int, pfade: list[Path]) -> None:
+    """Der Salon-Check liest die hochgeladenen Unterlagen eines Jahres.
+
+    ROH und absichtlich, hier wie in `_bericht_ablegen` und
+    `_stammdaten_ernten` (Plan 21, Abschnitt 4.3): der ganze Salon-Check
+    hängt am KONTO, nicht am Betrieb — der Upload-Ordner
+    (`ABSCHLUSS_TMP / _un_ordner(un)`), das Job-Register
+    (`_ABSCHLUSS_JOBS[un]`), der Zwischenstand (`db_abschluss_snapshot`)
+    und die Rückschreibungen (`db_einstellung_setzen(un, …)`) benutzen alle
+    denselben Schlüssel. Einen einzelnen Lesezugriff davon abzukoppeln
+    risse den Lauf auseinander: er läse aus einer Zeile und schriebe in
+    eine andere. Wenn diese Strecke mandantenfähig werden soll, muss sie
+    als Ganzes umgestellt werden, nicht Zeile für Zeile.
+    """
     import abschluss_lesen  # noqa: PLC0415
     import boxschreiber  # noqa: PLC0415
     status = _ABSCHLUSS_JOBS[un]
@@ -5724,6 +6068,9 @@ def api_abschluss_uebernehmen(request: Request) -> Response:
         vorschlaege = list(status.get("vorschlaege") or [])
     if not vorschlaege:
         vorschlaege = list((db_abschluss_lesen(un) or {}).get("vorschlaege") or [])
+    # Roh und absichtlich: gelesen wird, um gleich darunter mit
+    # `db_einstellung_setzen(un, …)` in DIESELBE Zeile zurückzuschreiben —
+    # der Salon-Check hängt am Konto (siehe `_abschluss_job`).
     einstellungen = db_einstellungen(un)
     gesetzt, offen = {}, []
     for v in vorschlaege:
@@ -5743,7 +6090,13 @@ def api_abschluss_uebernehmen(request: Request) -> Response:
 
 @app.get("/api/auswertung")
 def api_auswertung_meine(request: Request) -> Response:
-    """Der Bericht im angemeldeten Konto, samt dem, was noch offensteht."""
+    """Der Bericht im angemeldeten Konto, samt dem, was noch offensteht.
+
+    Roh und absichtlich: `auswertung_bericht` und `auswertung_vorschlag`
+    hat der Einlöseweg des Auswertungs-Links unter GENAU dieser Adresse
+    abgelegt („im angemeldeten Konto" steht schon in der Zeile darüber).
+    Über `salon_von_aktiv` gelesen fände die Route nichts.
+    """
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
@@ -5762,7 +6115,11 @@ def api_auswertung_meine(request: Request) -> Response:
 
 @app.post("/api/auswertung/uebernehmen")
 async def api_auswertung_uebernehmen(request: Request) -> Response:
-    """Der Knopfdruck: die gelesenen Angaben werden zu Betriebsangaben."""
+    """Der Knopfdruck: die gelesenen Angaben werden zu Betriebsangaben.
+
+    Roh und absichtlich, wie `GET /api/auswertung`: Quelle und Ziel sind
+    dieselbe Konto-Zeile.
+    """
     import auswertung as aw  # noqa: PLC0415
     un, fehler = _api_wache(request)
     if fehler:
@@ -7050,7 +7407,7 @@ def _rechnungen_lesen() -> list[dict]:
 
 
 def _versteuerung(un: str) -> str:
-    wert = (db_einstellungen(salon_von(un)).get("versteuerung") or "ist").lower()
+    wert = (db_einstellungen(salon_von_aktiv(un)).get("versteuerung") or "ist").lower()
     return "soll" if wert == "soll" else "ist"
 
 
@@ -7098,7 +7455,7 @@ async def api_rechnung_stellen(request: Request) -> Response:
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", datum):
         return JSONResponse({"fehler": "Datum als JJJJ-MM-TT"}, status_code=400)
 
-    einstellungen = db_einstellungen(salon_von(un))
+    einstellungen = db_einstellungen(salon_von_aktiv(un))
     with _box().rechnung_schloss:
         vorhandene = [r.get("nummer") for r in _rechnungen_lesen()]
         nummer = re_.naechste_nummer(vorhandene, int(datum[:4]))
@@ -7504,7 +7861,7 @@ def api_termine(request: Request, von: str = "", bis: str = "") -> Response:
     heute = dt.date.today().isoformat()
     von = von if re.fullmatch(r"\d{4}-\d{2}-\d{2}", von or "") else heute
     bis = bis if re.fullmatch(r"\d{4}-\d{2}-\d{2}", bis or "") else von
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     termine = _termine_lesen(inhaber, von, bis)
 
     # Termin trifft Geld: der Tagesumsatz kommt aus dem Kassenbuch.
@@ -7546,7 +7903,7 @@ async def api_termin_anlegen(request: Request) -> Response:
     except ka.KalenderFehler as e:
         return JSONResponse({"fehler": str(e)}, status_code=400)
 
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     tag = termin["start"][:10]
 
     # Nicht versehentlich in die Vergangenheit buchen. Nachtragen bleibt
@@ -7640,7 +7997,7 @@ def api_termin_vorschlag(body: dict, request: Request) -> Response:
         return JSONResponse({"wunsch": wunsch, "vorschlaege": [],
                              "hinweis": "An welchem Tag soll der Termin sein?"})
 
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     tag = wunsch["datum"]
     termine = _termine_lesen(inhaber, tag, tag)
     oeffnung = ka.oeffnung_aus(db_einstellungen(inhaber))
@@ -7668,7 +8025,7 @@ def api_termin_absagen(termin_id: int, request: Request) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         if not c.execute("SELECT 1 FROM termin WHERE id=? AND un=?",
                          (termin_id, inhaber)).fetchone():
@@ -7684,7 +8041,7 @@ def api_termin_loeschen(termin_id: int, request: Request) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         c.execute("DELETE FROM termin WHERE id=? AND un=?", (termin_id, inhaber))
     return JSONResponse({"ok": True})
@@ -7741,7 +8098,7 @@ def api_mitarbeiter(request: Request) -> Response:
     if rolle(un) == "mitarbeit":
         return JSONResponse({"fehler": "Das sieht die Inhaberin."},
                             status_code=403)
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         zeilen = [_mitarbeiter_zeile(z) for z in c.execute(
             f"SELECT {_MITARBEITER_SPALTEN} FROM mitarbeiter WHERE un=? "
@@ -7781,7 +8138,7 @@ async def api_mitarbeiter_anlegen(request: Request) -> Response:
 
     import datetime as dt  # noqa: PLC0415
     einladung = secrets.token_urlsafe(24)
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         cur = c.execute(
             """INSERT INTO mitarbeiter (un, vorname, name, telefon, art,
@@ -7845,6 +8202,10 @@ def api_onboarding(marke: str) -> Response:
     un, person = gefunden
     schritt = ob.naechster_schritt(person)
     return JSONResponse({
+        # Roh und richtig: `un` kommt hier NICHT vom angemeldeten Zugang,
+        # sondern aus der Einladung (`_einladung_finden`) — die Route läuft
+        # ohne Anmeldung, der Link ist der Schlüssel. `salon_von_aktiv`
+        # hätte hier gar keinen Zugang, auf den es sich beziehen könnte.
         "salon": db_einstellungen(un).get("betrieb_name", ""),
         "vorname": person["vorname"], "name": person["name"],
         "eintritt": person["eintritt"],
@@ -7971,6 +8332,8 @@ def api_onboarding_vertrag(marke: str) -> Response:
         return JSONResponse({"fehler": "Dieser Link gilt nicht mehr."},
                             status_code=404)
     un, person = gefunden
+    # Roh und richtig: `un` stammt aus der Einladung, nicht aus einer
+    # Anmeldung — siehe `/api/onboarding/{marke}`.
     e = db_einstellungen(un)
     try:
         vertrag = av.vertrag_bauen({
@@ -8003,6 +8366,8 @@ async def _vertrag_ablegen(un: str, marke: str, person: dict) -> None:
     """
     import arbeitsvertrag as av  # noqa: PLC0415
     import boxschreiber  # noqa: PLC0415
+    # Roh und richtig: `un` ist der Salon aus der Einladung, durchgereicht
+    # vom Onboarding-Weg — kein angemeldeter Zugang.
     e = db_einstellungen(un)
     try:
         vertrag = av.vertrag_bauen({
@@ -8065,7 +8430,7 @@ def api_einladung_zeigen(mitarbeiter_id: int, request: Request) -> Response:
     if rolle(un) == "mitarbeit":
         return JSONResponse({"fehler": "Das macht die Inhaberin."},
                             status_code=403)
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         z = c.execute("""SELECT einladung, eingeladen_am, name, stand
                          FROM mitarbeiter WHERE id=? AND un=?""",
@@ -8108,7 +8473,7 @@ def api_mitarbeiter_loeschen(mitarbeiter_id: int, request: Request) -> Response:
     if rolle(un) == "mitarbeit":
         return JSONResponse({"fehler": "Das macht die Inhaberin."},
                             status_code=403)
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         z = c.execute("SELECT einladung FROM mitarbeiter WHERE id=? AND un=?",
                       (mitarbeiter_id, inhaber)).fetchone()
@@ -8168,7 +8533,7 @@ async def api_vertrag_entwurf(request: Request) -> Response:
         return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
 
     import arbeitsvertrag as av  # noqa: PLC0415
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     e = db_einstellungen(inhaber)
     betrieb = {
         "name": e.get("betrieb_name", ""),
@@ -8221,7 +8586,7 @@ def api_einrichtung_zuruecksetzen(request: Request) -> Response:
     if rolle(un) == "mitarbeit":
         return JSONResponse({"fehler": "Das macht die Inhaberin."},
                             status_code=403)
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         cur = c.execute(
             "DELETE FROM einstellungen WHERE un=? AND schluessel IN ({})".format(
@@ -8262,6 +8627,16 @@ def _wa_konto_zu(telefon_id: str) -> str | None:
             "AND wert=? LIMIT 1", (str(telefon_id),)).fetchone()
     return zeile[0] if zeile else None
 
+
+# ---------------------------------------------------------------------------
+# Der WhatsApp-Weg liest seine Einstellungen ROH über `un` — und das ist
+# hier richtig (Plan 21, Abschnitt 4.3): `un` ist an diesen Stellen IMMER
+# schon der Betrieb, nie ein Konto, das noch aufzulösen wäre. Entweder kam
+# es aus `_wa_konto_zu` (der Webhook findet den Betrieb über die
+# hinterlegte Telefonnummer — es gibt dort gar keinen angemeldeten Zugang),
+# oder der Aufrufer hat es mit `salon_von_aktiv` aufgelöst, bevor er
+# hereinging. Ein zweites `salon_von_aktiv` wäre eine Auflösung zu viel.
+# ---------------------------------------------------------------------------
 
 def _wa_senden(un: str, telefon: str, text: str) -> bool:
     """Antworten. Ohne eingerichteten Zugang wird nur mitgeschrieben.
@@ -8591,7 +8966,7 @@ def api_wa_stand(request: Request) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     e = db_einstellungen(inhaber)
     with _DB_LOCK, _db() as c:
         faeden = c.execute("SELECT COUNT(*) FROM wa_faden WHERE un=?",
@@ -8623,7 +8998,7 @@ async def api_wa_einrichten(request: Request) -> Response:
         body = await request.json()
     except Exception:  # noqa: BLE001
         return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     for feld, schluessel in (("telefon_id", "wa_telefon_id"),
                              ("token", "wa_token"),
                              ("geheimnis", "wa_geheimnis"),
@@ -8655,7 +9030,7 @@ async def api_wa_probe(request: Request) -> Response:
         return JSONResponse({"fehler": "Schreib etwas."}, status_code=400)
     telefon = str((body or {}).get("telefon") or "probe-0711")[:32]
     name = str((body or {}).get("name") or "")[:80]
-    antwort = _wa_zug(salon_von(un), telefon, name, text)
+    antwort = _wa_zug(salon_von_aktiv(un), telefon, name, text)
     return JSONResponse({"antwort": antwort, "telefon": telefon})
 
 
@@ -8664,7 +9039,7 @@ def api_wa_faeden(request: Request, faden: int = 0) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         if faden:
             z = c.execute("""SELECT id, telefon, name, stand FROM wa_faden
@@ -8692,7 +9067,7 @@ def api_wa_faden_loeschen(faden_id: int, request: Request) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         c.execute("DELETE FROM wa_nachricht WHERE faden=? AND un=?",
                   (faden_id, inhaber))
@@ -8707,7 +9082,7 @@ def api_termin_bestaetigen(termin_id: int, request: Request) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         c.execute("UPDATE termin SET bestaetigt=1 WHERE id=? AND un=?",
                   (termin_id, inhaber))
@@ -8731,7 +9106,7 @@ def api_leistungen(request: Request) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    inhaber = salon_von(un)         # geht selbst an die DB — vor das Schloss
+    inhaber = salon_von_aktiv(un)         # geht selbst an die DB — vor das Schloss
     with _DB_LOCK, _db() as c:
         zeilen = c.execute("""SELECT id, name, preis, minuten, ust_satz, aktiv
                               FROM leistung WHERE un=? ORDER BY aktiv DESC, name""",
@@ -8758,7 +9133,7 @@ async def api_leistung_speichern(request: Request) -> Response:
         l = ab.leistung_pruefen(body or {})
     except ab.AbrechnungFehler as e:
         return JSONResponse({"fehler": str(e)}, status_code=400)
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         if (body or {}).get("id"):
             c.execute("""UPDATE leistung SET name=?, preis=?, minuten=?,
@@ -8780,7 +9155,7 @@ def api_leistung_loeschen(leistung_id: int, request: Request) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         c.execute("DELETE FROM leistung WHERE id=? AND un=?",
                   (leistung_id, inhaber))
@@ -8812,7 +9187,7 @@ async def api_termin_abrechnen(termin_id: int, request: Request) -> Response:
     except ab.AbrechnungFehler as e:
         return JSONResponse({"fehler": str(e)}, status_code=400)
 
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         zeile = c.execute("SELECT preis, start FROM termin WHERE id=? AND un=?",
                           (termin_id, inhaber)).fetchone()
@@ -8852,7 +9227,7 @@ def api_kasse_vorschlag(request: Request, datum: str = "") -> Response:
     datum = datum if re.fullmatch(r"\d{4}-\d{2}-\d{2}", datum or "") \
         else dt.date.today().isoformat()
     return JSONResponse(ab.tagesvorschlag(
-        datum, _termine_lesen(salon_von(un), datum, datum)))
+        datum, _termine_lesen(salon_von_aktiv(un), datum, datum)))
 
 
 # ---------------------------------------------------------------------------
@@ -8865,7 +9240,7 @@ def api_kundinnen(request: Request, suche: str = "") -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         if suche.strip():
             zeilen = c.execute(
@@ -8896,7 +9271,7 @@ async def api_kundin_speichern(request: Request) -> Response:
         return JSONResponse({"fehler": "Wie heißt sie?"}, status_code=400)
     felder = {k: str((body or {}).get(k) or "").strip()[:200]
               for k in ("telefon", "email", "notiz", "allergie")}
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         if (body or {}).get("id"):
             c.execute("""UPDATE kundin SET name=?, telefon=?, email=?, notiz=?,
@@ -8920,7 +9295,7 @@ def api_kundin(kundin_id: int, request: Request) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         z = c.execute("""SELECT id, name, telefon, email, notiz, allergie, angelegt
                          FROM kundin WHERE id=? AND un=?""",
@@ -8952,7 +9327,7 @@ async def api_behandlung(kundin_id: int, request: Request) -> Response:
     datum = str((body or {}).get("datum") or dt.date.today().isoformat())[:10]
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", datum):
         return JSONResponse({"fehler": "Datum als JJJJ-MM-TT"}, status_code=400)
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         if not c.execute("SELECT 1 FROM kundin WHERE id=? AND un=?",
                          (kundin_id, inhaber)).fetchone():
@@ -8976,7 +9351,7 @@ def api_kundin_loeschen(kundin_id: int, request: Request) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         c.execute("DELETE FROM behandlung WHERE kundin=? AND un=?",
                   (kundin_id, inhaber))
@@ -9001,7 +9376,7 @@ def api_meldungen(request: Request) -> Response:
     import melden  # noqa: PLC0415
     import vertraege as vt  # noqa: PLC0415
 
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     idx = index_aktuell()
     heute = dt.date.today()
     einstellungen = db_einstellungen(inhaber)
@@ -9079,7 +9454,7 @@ def api_marke(request: Request) -> Response:
     if fehler:
         return fehler
     import marke  # noqa: PLC0415
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     stil = _stil_aus_einstellungen(db_einstellungen(inhaber))
     return JSONResponse({**stil, "in_worten": marke.als_text(stil),
                          "logo": _logo_pfad(inhaber).is_file()})
@@ -9114,7 +9489,7 @@ async def api_marke_farbe(request: Request) -> Response:
     if eintrag is None:
         return JSONResponse({"fehler": "Diese Farbe kennen wir nicht."},
                             status_code=400)
-    db_einstellung_setzen(salon_von(un), "marke_farbe", eintrag["hex"])
+    db_einstellung_setzen(salon_von_aktiv(un), "marke_farbe", eintrag["hex"])
     return JSONResponse({"ok": True, **eintrag})
 
 
@@ -9136,7 +9511,7 @@ async def api_marke_logo(request: Request) -> Response:
         return JSONResponse({"fehler": "leer"}, status_code=400)
     if not any(daten.startswith(k) for k in LOGO_TYPEN):
         return JSONResponse({"fehler": "Bitte als PNG oder JPG."}, status_code=400)
-    pfad = _logo_pfad(salon_von(un))
+    pfad = _logo_pfad(salon_von_aktiv(un))
     pfad.parent.mkdir(parents=True, exist_ok=True)
     pfad.write_bytes(daten)
     return JSONResponse({"ok": True})
@@ -9147,7 +9522,7 @@ def api_marke_logo_holen(request: Request) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    pfad = _logo_pfad(salon_von(un))
+    pfad = _logo_pfad(salon_von_aktiv(un))
     if not pfad.is_file():
         return JSONResponse({"fehler": "kein Logo"}, status_code=404)
     daten = pfad.read_bytes()
@@ -9162,7 +9537,7 @@ def api_marke_logo_loeschen(request: Request) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    _logo_pfad(salon_von(un)).unlink(missing_ok=True)
+    _logo_pfad(salon_von_aktiv(un)).unlink(missing_ok=True)
     return JSONResponse({"ok": True})
 
 
@@ -9207,7 +9582,7 @@ def api_marke_logo_entwerfen(request: Request, stil: str = "schlicht") -> Respon
                        "dein eigenes Bild hoch."}, status_code=501)
 
     import marke  # noqa: PLC0415
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     einstellungen = db_einstellungen(inhaber)
     auftrag = marke.logo_auftrag(einstellungen, stil,
                                  einstellungen.get("marke_farbe"))
@@ -9282,7 +9657,7 @@ async def api_marke_vorschlaege(request: Request, saat: int = 0) -> Response:
 
     import concurrent.futures as futures  # noqa: PLC0415
     import marke  # noqa: PLC0415
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     saetze = marke.vorschlag_saetze(db_einstellungen(inhaber), saat=saat)
 
     def hole(satz: dict) -> tuple[dict, bytes | None]:
@@ -9316,7 +9691,7 @@ def api_marke_vorschlag_bild(nummer: int, request: Request) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    pfad = _vorschlag_pfad(salon_von(un), nummer)
+    pfad = _vorschlag_pfad(salon_von_aktiv(un), nummer)
     if not (0 <= nummer < 12) or not pfad.is_file():
         return JSONResponse({"fehler": "kein Vorschlag"}, status_code=404)
     daten = pfad.read_bytes()
@@ -9341,7 +9716,7 @@ async def api_marke_waehlen(request: Request) -> Response:
         return JSONResponse({"fehler": "JSON mit nummer erwartet"}, status_code=400)
 
     import marke  # noqa: PLC0415
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     quelle = _vorschlag_pfad(inhaber, nummer)
     if not (0 <= nummer < 12) or not quelle.is_file():
         return JSONResponse({"fehler": "Diesen Vorschlag gibt es nicht mehr."},
@@ -9388,7 +9763,7 @@ def api_marketing(request: Request) -> Response:
     if fehler:
         return fehler
     import marketing as mk  # noqa: PLC0415
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     stuecke = [dict(s, fertig=_stueck_pfad(inhaber, s["schluessel"]).is_file())
                for s in mk.stuecke_liste()]
     return JSONResponse({"stuecke": stuecke,
@@ -9419,7 +9794,7 @@ async def api_marketing_entwerfen(request: Request) -> Response:
         return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
 
     import marketing as mk  # noqa: PLC0415
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     einstellungen = db_einstellungen(inhaber)
     try:
         stueck = mk.stueck(str((body or {}).get("stueck") or ""))
@@ -9445,7 +9820,7 @@ def api_marketing_bild(schluessel: str, request: Request) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    pfad = _stueck_pfad(salon_von(un), schluessel)
+    pfad = _stueck_pfad(salon_von_aktiv(un), schluessel)
     if not pfad.is_file():
         return JSONResponse({"fehler": "noch nichts gestaltet"}, status_code=404)
     daten = pfad.read_bytes()
@@ -9469,7 +9844,7 @@ def api_marke_entwerfen(request: Request) -> Response:
     if rolle(un) == "mitarbeit":
         return JSONResponse({"fehler": "Das macht die Inhaberin."}, status_code=403)
     import marke  # noqa: PLC0415
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     einstellungen = db_einstellungen(inhaber)
     frage = marke.frage_bauen(einstellungen)
     roh: dict = {}
@@ -9510,7 +9885,11 @@ def api_kategorien(request: Request) -> Response:
     if fehler:
         return fehler
     import kontierung as kt  # noqa: PLC0415
-    rahmen = (db_einstellungen(un).get("kontenrahmen") or "SKR04").strip()
+    # Der Kontenrahmen gehört dem BETRIEB, nicht dem Konto (Plan 21,
+    # Abschnitt 4.3). Vorher stand hier `un`: eine Mitarbeiterin bekam
+    # deshalb die Kategorien nach SKR04, auch wenn der Salon SKR03 bucht.
+    rahmen = (db_einstellungen(salon_von_aktiv(un)).get("kontenrahmen")
+              or "SKR04").strip()
     if rahmen not in kt.RAHMEN:
         rahmen = "SKR04"
     return JSONResponse({"kontenrahmen": rahmen, "kategorien": [
@@ -9637,6 +10016,7 @@ def api_team(request: Request) -> Response:
     if rolle(un) == "mitarbeit":
         return JSONResponse({"fehler": "Das Team verwaltet die Inhaberin."},
                             status_code=403)
+    un = salon_von_aktiv(un)   # Acting-as (Plan 21, 4.2): das Team gehört dem Mandanten
     leute = team_liste(un)
     return JSONResponse({
         "team": leute,
@@ -9651,6 +10031,7 @@ async def api_team_speichern(request: Request) -> Response:
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
+    un = salon_von_aktiv(un)   # Acting-as (Plan 21, 4.2): das Team gehört dem Mandanten
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001
@@ -9710,6 +10091,7 @@ async def api_team_zugang(request: Request) -> Response:
     if rolle(un) == "mitarbeit":
         return JSONResponse({"fehler": "Zugänge vergibt die Inhaberin."},
                             status_code=403)
+    un = salon_von_aktiv(un)   # Acting-as (Plan 21, 4.2): das Team gehört dem Mandanten
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001
@@ -9729,9 +10111,12 @@ async def api_team_zugang(request: Request) -> Response:
             {"fehler": f"Für den Zugang braucht {name} eine E-Mail-Adresse."},
             status_code=400)
 
-    startpasswort = nutzer_anlegen(email.lower(), name,
-                                   db_einstellungen(un).get("betrieb_name") or "",
-                                   "mitarbeit")
+    startpasswort = nutzer_anlegen(
+        email.lower(), name,
+        # Der Name des Betriebs, in dem sie arbeitet — nicht der des
+        # Kontos, das den Zugang vergibt.
+        db_einstellungen(salon_von_aktiv(un)).get("betrieb_name") or "",
+        "mitarbeit")
     if startpasswort is None:
         return JSONResponse({"fehler": "Diese E-Mail hat schon ein Konto."},
                             status_code=409)
@@ -9752,6 +10137,7 @@ async def api_team_aktion(request: Request) -> Response:
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
+    un = salon_von_aktiv(un)   # Acting-as (Plan 21, 4.2): das Team gehört dem Mandanten
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001
@@ -9795,6 +10181,7 @@ async def api_team_foto(request: Request, id: int) -> Response:
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
+    un = salon_von_aktiv(un)   # Acting-as (Plan 21, 4.2): das Team gehört dem Mandanten
     with _DB_LOCK, _db() as c:
         if not c.execute("SELECT 1 FROM team WHERE id=? AND un=?",
                          (id, un)).fetchone():
@@ -9816,6 +10203,7 @@ def api_team_foto_holen(person_id: int, request: Request) -> Response:
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
+    un = salon_von_aktiv(un)   # Acting-as (Plan 21, 4.2): das Team gehört dem Mandanten
     pfad = _foto_pfad(un, person_id)
     if not pfad.is_file():
         return JSONResponse({"fehler": "kein Bild"}, status_code=404)
@@ -9844,7 +10232,11 @@ def api_monatsabschluss(monat: str, request: Request) -> Response:
     if rolle(un) == "mitarbeit":
         return JSONResponse({"fehler": "Die Zahlen sieht nur die Inhaberin."},
                             status_code=403)
-    einstellungen = db_einstellungen(un)
+    # Umsatzprofil, Versteuerung, Kleinunternehmerin: alles Angaben des
+    # Betriebs. Beim Acting-as müssen es die des Mandanten sein — sonst
+    # rechnete die Kanzlei den Monat des Mandanten mit ihrem eigenen,
+    # leeren Profil durch (Plan 21, Abschnitt 4.3).
+    einstellungen = db_einstellungen(salon_von_aktiv(un))
 
     profil = ma.umsatz_profil(einstellungen)
     erloese = ma.erloese_monat(blaetter, monat=monat,
@@ -10095,7 +10487,7 @@ async def api_kanzleiwechsel(request: Request) -> Response:
     import kanzleiwechsel as kw  # noqa: PLC0415
     import vordrucke  # noqa: PLC0415
 
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     e = db_einstellungen(inhaber)
     betrieb = {"betrieb_name": e.get("betrieb_name"),
                "anschrift": e.get("anschrift"),
@@ -10156,7 +10548,7 @@ def _berichtsdaten(un: str, monat: str) -> tuple[dict, dict, list, dict]:
     blaetter = [b for tag, b in idx["kassenblaetter"].items()
                 if tag.startswith(monat)]
     belege = [z for z in idx["belege"].values() if z["monat"] == monat]
-    einstellungen = db_einstellungen(salon_von(un))
+    einstellungen = db_einstellungen(salon_von_aktiv(un))
     erloese = ma.erloese_monat(blaetter, monat=monat,
                                rechnungen=list(idx.get("rechnungen", {}).values()),
                                versteuerung=_versteuerung(un))
@@ -10311,7 +10703,7 @@ def api_fristen(jahr: str, request: Request) -> Response:
     import datetime as dt  # noqa: PLC0415
     import fristen as fr  # noqa: PLC0415
 
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     profil = fr.termin_profil(db_einstellungen(inhaber),
                              hat_team=bool(team_liste(inhaber, nur_aktive=True)))
     termine = fr.fristen_jahr(int(jahr), profil)
@@ -10498,7 +10890,7 @@ def gespraech_gehoert(un: str, gespraech_id: int) -> bool:
 
 def _welt_fuer(un: str) -> dict:
     """Alles, was babu über diesen Salon weiß — für das Fallwissen des Chats."""
-    inhaber = salon_von(un)
+    inhaber = salon_von_aktiv(un)
     idx = index_aktuell()
     monat = time.strftime("%Y-%m")
     einstellungen = db_einstellungen(inhaber)
