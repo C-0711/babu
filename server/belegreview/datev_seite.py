@@ -65,8 +65,16 @@ def _bw():
 
 
 def _wache(request: Request):
-    """Nur Verwaltung (Inhaberin-Kanzlei-Ebene). Gilt für jede Route hier."""
-    return _bw()._verwalter_wache(request)
+    """Nur Verwaltung (Inhaberin-Kanzlei-Ebene). Gilt für jede Route hier.
+
+    Seit dem Kanzlei-Cockpit `_verwalter_box_wache` und nicht mehr
+    `_verwalter_wache`: jede Route hier liest über `index_aktuell()` in die
+    Belegbox, und die kam beim Acting-as aus dem Kontext — den aber setzte
+    niemand. Eine Kanzlei mit `X-Mandant`-Kopf bekam deshalb ihren eigenen
+    (leeren) Stapel statt des Stapels ihres Mandanten. Ohne Kopf ändert
+    sich nichts; siehe `babu_web._verwalter_box_wache`.
+    """
+    return _bw()._verwalter_box_wache(request)
 
 
 def _fehler(text: str, code: int = 400) -> JSONResponse:
@@ -137,7 +145,11 @@ def _kassenblaetter(idx: dict, monat: str) -> list[dict]:
 
 def _kleinunternehmerin(bw, un: str) -> bool:
     import monatsabschluss as ma  # noqa: PLC0415
-    profil = ma.umsatz_profil(bw.db_einstellungen(bw.salon_von(un)))
+    # `salon_von_aktiv` und nicht `salon_von`: die Kleinunternehmer-Regelung
+    # ist eine Angabe des BETRIEBS und entscheidet, ob im Stapel Steuer
+    # steht. Roh gelesen käme beim Acting-as die Angabe der Kanzlei heraus —
+    # der Stapel des Mandanten mit dem Umsatzprofil eines fremden Betriebs.
+    profil = ma.umsatz_profil(bw.db_einstellungen(bw.salon_von_aktiv(un)))
     return not profil.get("braucht_ustva")
 
 
@@ -416,6 +428,13 @@ def api_stapel(request: Request, von: str = "", bis: str = "") -> Response:
         return _fehler(str(fehler_), 409)
     name = (f"EXTF_Buchungsstapel_{monate[0]}.csv" if len(monate) == 1
             else f"EXTF_Buchungsstapel_{monate[0]}_bis_{monate[-1]}.csv")
+    # Hier verlassen Steuerdaten das Haus — dieselbe Zeile wie bei
+    # `/api/export/{monat}.csv` in `babu_web`, und aus demselben Grund. Die
+    # Mandantennummer gehört ausdrücklich hinein: beim Acting-as sagt erst
+    # sie, WESSEN Stapel jemand mitgenommen hat.
+    import audit  # noqa: PLC0415 — nur dieser eine Weg auditiert
+    audit.audit(un, "datev_stapel", mandant_id=bw._mandant_fuers_log(),
+                von=monate[0], bis=monate[-1], monate=len(monate))
     return Response(content=extf.als_bytes(text),
                     media_type="text/csv; charset=windows-1252",
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})

@@ -1348,7 +1348,9 @@ app.include_router(kanzlei_routen.router)
 
 @app.get("/datev")
 def datev_blatt(request: Request) -> Response:
-    _, fehler = _verwalter_wache(request)
+    # Dieselbe Wache wie die Routen der Seite (`datev_seite._wache`) — eine
+    # Seite, die eine andere Frage stellt als ihre Daten, ist keine Wache.
+    _, fehler = _verwalter_box_wache(request)
     if fehler:
         return Response(content=datev_seite.VERBOTEN, status_code=403,
                         media_type="text/html", headers=HTML_FRISCH)
@@ -3947,6 +3949,40 @@ def _verwalter_wache(request: Request):
         return None, fehler
     if not darf_verwalten(un):
         return None, JSONResponse({"fehler": "nur für die Verwaltung"}, status_code=403)
+    return un, None
+
+
+def _verwalter_box_wache(request: Request):
+    """Verwaltung — und beim Acting-as auch die Belegbox des Mandanten.
+
+    `_api_wache` legt den `X-Mandant`-Kopf als `_AKTIVER_MANDANT` ab, macht
+    daraus aber keine Box; das tat bisher nur `_box_wache`. Verwaltungs-
+    routen, die in die Belegbox LESEN — die DATEV-Seite ist die einzige —
+    hingen deshalb an `_verwalter_wache` und lasen beim Acting-as die
+    eigene, leere Box der Kanzlei: der Kopf im Request, die falschen Zahlen
+    in der Antwort, und keiner Zeile sah man an, wessen sie war.
+
+    Ohne Kopf passiert hier ausdrücklich NICHTS: keine Box wird gesetzt,
+    keine zusätzliche Prüfung läuft, also bleibt der Einzelbetrieb Zeile
+    für Zeile, wie er ist (das ist der Golden-Diff des Deploy-Rituals).
+
+    Die Sperre aus `_box_wache` — `box_mitglied(un)` für die EIGENE Box —
+    wird bewusst nicht übernommen. Sie gehört zum Belegweg des Salons; wer
+    hier ankommt, hat `darf_verwalten` schon passiert, und die Sperre
+    nachzuziehen wäre eine Rechteänderung an Routen, die es gar nicht
+    betrifft.
+    """
+    un, fehler = _verwalter_wache(request)
+    if fehler:
+        return None, fehler
+    mandant_id = _AKTIVER_MANDANT.get(None)
+    if mandant_id is not None:
+        try:
+            _AKTIVE_BOX.set(bx.box_von(un, mandant_id))
+        except bx.KeineBox as ex:
+            # Wie in `_box_wache`: angelegt, aber die Belegbox wird noch
+            # eingerichtet. Kein Rechteproblem — deshalb 409.
+            return None, JSONResponse({"fehler": str(ex)}, status_code=409)
     return un, None
 
 

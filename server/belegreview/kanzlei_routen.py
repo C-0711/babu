@@ -52,11 +52,13 @@ und dieser Router merkt es.
 """
 from __future__ import annotations
 
+import calendar
 import contextlib
 import json
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as ZeitAus
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -78,8 +80,54 @@ SEITE_MAX = 100
 # schlechtesten Fall ein Indexaufbau; warm ist das ein paar Millisekunden.
 BUDGET_GESAMT = 2.0
 BUDGET_JE_BOX = 0.5
+# Die Monatsspalte fragt EINE Box und baut dabei im schlechtesten Fall
+# deren Index neu auf. Sie darf dafür länger brauchen als eine Zeile in
+# einer Liste von fünfzig — aber nicht beliebig lange: was hier nicht
+# ankommt, wird ein 503 mit einem Satz und kein hängender Browser.
+BUDGET_DETAIL = 5.0
 # Mehr Fäden als Boxen bringt nichts, weniger machen das Budget zur Lüge.
 FAEDEN_MAX = 8
+
+# Wie viele Monate die beiden Cockpit-Ansichten höchstens zeigen. Die
+# Monatsspalte einer Kanzlei ist eine Arbeitsansicht, kein Archiv — wer
+# weiter zurück will, geht in den Jahresabschluss.
+MONATE_STANDARD = 6
+MONATE_MAX = 24
+UEBERSICHT_MONATE_STANDARD = 3
+UEBERSICHT_MONATE_MAX = 12
+# Wie viele offene Belege je Monat namentlich genannt werden. Wer mehr als
+# zehn Rückfragen in einem Monat hat, braucht keine elfte Zeile, sondern
+# einen Anruf.
+RUECKFRAGEN_MAX = 10
+
+# Was „offen" heißt: der Beleg wartet noch auf einen Menschen. Dieselben
+# drei Stände wie in `_box_befund` — sie stehen hier einmal, damit die
+# Monatsansicht und die Warteschlange nicht auseinanderlaufen können.
+OFFEN_STAENDE = ("nachfrage", "unlesbar", "erfasst")
+
+# Der Stand eines Monats in vier Wörtern. „leer" heißt: da war noch nichts.
+# „offen": etwas wartet. „pruefbereit": nichts wartet mehr, der Stapel ist
+# aber noch nicht heraus. „exportiert": er ist heraus.
+STAND_LEER = "leer"
+STAND_OFFEN = "offen"
+STAND_PRUEFBEREIT = "pruefbereit"
+STAND_EXPORTIERT = "exportiert"
+# Die Zelle einer Box, die gerade nichts sagt. Ein Fragezeichen und keine
+# Null: eine Null behauptet, es sei nichts offen.
+STAND_UNBEKANNT = "?"
+
+# An welchen Wochentagen ein Salon üblicherweise offen hat (0 = Montag).
+# Es gibt bis heute keine Einstellung dafür — `oeffnet`/`schliesst` sind
+# Uhrzeiten, keine Tage. Trägt der Betrieb später `oeffnungstage` ein, wird
+# sie gelesen (siehe `_oeffnungstage`); bis dahin gilt Montag bis Samstag.
+OEFFNUNGSTAGE_STANDARD = (0, 1, 2, 3, 4, 5)
+_WOCHENTAG_KUERZEL = {"mo": 0, "di": 1, "mi": 2, "do": 3, "fr": 4,
+                      "sa": 5, "so": 6}
+
+# Was die Oberfläche sagt, wenn eine Box gerade nicht antwortet oder noch
+# gar nicht da ist. Beides sind Sätze für Menschen, keine Statuscodes.
+BOX_HAENGT = "Belegbox gerade nicht erreichbar"
+BOX_KOMMT = "Belegbox wird eingerichtet"
 
 # Kontenrahmen, die `kontierung.py` kennt. Ein Tippfehler hier wäre ein
 # stiller Fehler im Export — deshalb eine geschlossene Liste statt Freitext.
@@ -312,8 +360,10 @@ OHNE_BOX = {"rueckfragen": None, "monate_ohne_freigabe": [],
             "export_faellig": [], "erreichbar": True}
 
 
-def _befunde(un: str, zeilen: list[dict]) -> dict[int, dict]:
-    """Für jede Zeile der Seite: was steht an? Alles zusammen im Budget.
+def _nebenlaeufig(un: str, zeilen: list[dict], arbeit, leer: dict,
+                  fehler: dict, *zusatz, budget: tuple[float, float] | None = None,
+                  ) -> dict[int, dict]:
+    """Für jede Zeile mit Box: `arbeit(bw, un, id, *zusatz)` — im Budget.
 
     Warum Fäden und kein `asyncio`: `index_aktuell()` ruft `git` über
     `subprocess` und ist durch und durch blockierend. Ein hängender Faden
@@ -321,31 +371,269 @@ def _befunde(un: str, zeilen: list[dict]) -> dict[int, dict]:
     (`shutdown(wait=False)`), sein Mandant steht als „nicht erreichbar" in
     der Liste, und der Faden räumt sich selbst weg, wenn sein `git`
     zurückkommt.
+
+    `arbeit` wird als Argument hereingereicht und nicht fest verdrahtet,
+    weil zwei Ansichten dasselbe Muster brauchen — die Warteschlange fragt
+    „was steht an", die Übersicht „wie steht jeder Monat". Der Aufrufer
+    reicht dabei das Modulattribut herein, damit ein `monkeypatch` im Test
+    weiter greift.
     """
     bw = _bw()
+    gesamt, je_box = budget or (BUDGET_GESAMT, BUDGET_JE_BOX)
     mit_box = [z for z in zeilen if z["box_ref"]]
-    befunde: dict[int, dict] = {z["id"]: dict(OHNE_BOX) for z in zeilen
+    befunde: dict[int, dict] = {z["id"]: dict(leer) for z in zeilen
                                 if not z["box_ref"]}
     if not mit_box:
         return befunde
 
-    ende = time.monotonic() + BUDGET_GESAMT
+    ende = time.monotonic() + gesamt
     ex = ThreadPoolExecutor(max_workers=min(FAEDEN_MAX, len(mit_box)))
     try:
-        auftraege = {ex.submit(_box_befund, bw, un, int(z["id"])): int(z["id"])
-                     for z in mit_box}
+        auftraege = {ex.submit(arbeit, bw, un, int(z["id"]), *zusatz):
+                     int(z["id"]) for z in mit_box}
         for auftrag, mid in auftraege.items():
-            rest = min(BUDGET_JE_BOX, max(0.0, ende - time.monotonic()))
+            rest = min(je_box, max(0.0, ende - time.monotonic()))
             try:
                 befunde[mid] = auftrag.result(timeout=rest)
             except (ZeitAus, Exception):  # noqa: BLE001
                 # Beides führt zur selben Zeile: eine Box, aus der gerade
                 # keine Zahl kommt. Warum sie schweigt, gehört ins Log,
                 # nicht auf den Bildschirm der Kanzlei.
-                befunde[mid] = dict(NICHT_ERREICHBAR)
+                befunde[mid] = dict(fehler)
     finally:
         ex.shutdown(wait=False)
     return befunde
+
+
+def _befunde(un: str, zeilen: list[dict]) -> dict[int, dict]:
+    """Für jede Zeile der Seite: was steht an? Alles zusammen im Budget."""
+    return _nebenlaeufig(un, zeilen, _box_befund, OHNE_BOX, NICHT_ERREICHBAR)
+
+
+# ---------------------------------------------------------------------------
+# Die Monatsspalte — was in einem Monat eines Mandanten steht.
+#
+# Alles hier ist reine Rechnung auf einem einmal gelesenen Index. Ein Blick
+# in die Box kostet einen `git`-Aufruf; sechs Monate kosten deshalb keinen
+# sechsfachen, sondern denselben einen.
+# ---------------------------------------------------------------------------
+
+def _heute() -> date:
+    """Der heutige Tag — als eigene Funktion, damit ein Test ihn festhalten
+    kann. Ohne das hinge jede Erwartung an der Uhr des Rechners."""
+    return date.today()
+
+
+def _monatsliste(anzahl: int, bis: date | None = None) -> list[str]:
+    """Die letzten `anzahl` Monate, jüngster zuerst — auch die leeren.
+
+    Leere Monate stehen ausdrücklich mit drin: eine Kanzlei muss sehen,
+    dass im Juli nichts kam. Eine Liste, die nur die Monate mit Belegen
+    zeigt, verschweigt genau den Fall, der Arbeit macht.
+    """
+    heute = bis or _heute()
+    jahr, monat = heute.year, heute.month
+    aus = []
+    for _ in range(anzahl):
+        aus.append(f"{jahr:04d}-{monat:02d}")
+        monat -= 1
+        if monat == 0:
+            jahr, monat = jahr - 1, 12
+    return aus
+
+
+def _oeffnungstage(einstellungen: dict) -> tuple[int, ...]:
+    """An welchen Wochentagen hat dieser Betrieb auf? (0 = Montag)
+
+    Gelesen wird der Schlüssel `oeffnungstage` aus den Einstellungen des
+    MANDANTEN — nicht denen der Kanzlei. Es gibt heute kein Formularfeld
+    dafür (`oeffnet`/`schliesst` sind Uhrzeiten); bis es eines gibt, greift
+    Montag bis Samstag. Erlaubt sind Zahlen (1 = Montag … 7 = Sonntag) und
+    Kürzel („mo,di,mi,do,fr,sa").
+    """
+    roh = str((einstellungen or {}).get("oeffnungstage") or "").strip().lower()
+    if not roh:
+        return OEFFNUNGSTAGE_STANDARD
+    tage: set[int] = set()
+    for stueck in re.split(r"[^a-z0-9]+", roh):
+        if not stueck:
+            continue
+        if stueck.isdigit():
+            if 1 <= int(stueck) <= 7:
+                tage.add(int(stueck) - 1)
+        elif stueck[:2] in _WOCHENTAG_KUERZEL:
+            tage.add(_WOCHENTAG_KUERZEL[stueck[:2]])
+    return tuple(sorted(tage)) or OEFFNUNGSTAGE_STANDARD
+
+
+def _tage_erwartet(monat: str, tage: tuple[int, ...], heute: date) -> int:
+    """Wie viele Kassentage dieser Monat haben müsste.
+
+    Im laufenden Monat wird nur bis heute gezählt — sonst stünde am 3. des
+    Monats „3 von 26" da, und die Kanzlei hielte einen ganz normalen Stand
+    für einen Rückstand.
+    """
+    jahr, mon = int(monat[:4]), int(monat[5:7])
+    if (jahr, mon) > (heute.year, heute.month):
+        return 0
+    letzter = calendar.monthrange(jahr, mon)[1]
+    if (jahr, mon) == (heute.year, heute.month):
+        letzter = min(letzter, heute.day)
+    return sum(1 for t in range(1, letzter + 1)
+               if date(jahr, mon, t).weekday() in tage)
+
+
+def _monatsstand(zaehler: dict, export_am: str | None, kassentage: int) -> str:
+    """Der Stand eines Monats in einem Wort — die Reihenfolge ist die Regel.
+
+    Zuerst der Export: liegt der Stapel in der Box, ist der Monat aus dem
+    Haus, egal was danach noch hereinkam. Dann das Offene, weil es Arbeit
+    ist. „pruefbereit" ist der Rest mit Inhalt, „leer" der ohne.
+    """
+    if export_am:
+        return STAND_EXPORTIERT
+    if zaehler["offen"]:
+        return STAND_OFFEN
+    if zaehler["gesamt"] or kassentage:
+        return STAND_PRUEFBEREIT
+    return STAND_LEER
+
+
+def _zaehler(belege: list[dict]) -> dict:
+    stand = {"gesamt": len(belege), "offen": 0, "geprueft": 0, "exportiert": 0}
+    for z in belege:
+        if z["status"] in OFFEN_STAENDE:
+            stand["offen"] += 1
+        elif z["status"] == "geprüft":
+            stand["geprueft"] += 1
+        elif z["status"] == "exportiert":
+            stand["exportiert"] += 1
+    return stand
+
+
+def _rueckfragen(belege: list[dict]) -> list[dict]:
+    """Die offenen Belege eines Monats, mit der Frage im Klartext.
+
+    Die Frage ist die erste aus `felder.offen` — die Liste steht dem Beleg
+    im Index schon zur Verfügung, und die erste ist die, die der Salon
+    beantworten muss, bevor die zweite überhaupt Sinn ergibt.
+    """
+    offen = [z for z in belege if z["status"] in OFFEN_STAENDE]
+    offen.sort(key=lambda z: (z["hochgeladen"] or "", z["stamm"]), reverse=True)
+    aus = []
+    for z in offen[:RUECKFRAGEN_MAX]:
+        fragen = [str(f) for f in (z.get("offen") or []) if f]
+        aus.append({"stamm": z["stamm"], "lieferant": z.get("lieferant"),
+                    "brutto": z.get("brutto"),
+                    "frage": fragen[0] if fragen else ""})
+    return aus
+
+
+def _umsatz(blaetter: list[dict]) -> float | None:
+    """Tagesumsatz eines Monats aus den Kassenblättern — bar plus Karte.
+
+    Bewusst NICHT `monatsabschluss.erloese_monat`: das rechnet Gutscheine,
+    Rechnungen und Steuersätze mit hinein und braucht dafür Einstellungen
+    und die Versteuerungsart. Hier steht eine Zahl neben der Anzahl der
+    Kassentage — sie soll dasselbe sagen wie die Kasse, nicht mehr.
+    """
+    if not blaetter:
+        return None
+    summe = 0.0
+    for b in blaetter:
+        for feld in ("einnahmenBar", "ecZahlungen"):
+            try:
+                summe += float(b.get(feld) or 0)
+            except (TypeError, ValueError):
+                pass
+    return round(summe, 2)
+
+
+def _monats_befund(bw, un: str, mandant_id: int, monate: tuple[str, ...],
+                   oeffnungstage: tuple[int, ...], heute: date) -> dict:
+    """Ein Blick in EINE Box, aus dem alle angefragten Monate fallen.
+
+    Läuft in einem eigenen Faden, deshalb `_im_box_kontext` — ohne das läse
+    der Faden die Default-Box (siehe `_box_befund`).
+    """
+    box = bx.box_von(un, mandant_id)
+    idx = bw._im_box_kontext(box, bw.index_aktuell)  # noqa: SLF001
+    belege = list(idx["belege"].values())
+    blaetter = idx.get("kassenblaetter") or {}
+    zeiten = idx.get("zeiten") or {}
+
+    aus = []
+    for monat in monate:
+        m_belege = [z for z in belege if z["monat"] == monat]
+        zaehler = _zaehler(m_belege)
+        tage = sorted(t for t in blaetter if str(t).startswith(monat))
+        # Der festgeschriebene Stapel liegt als `export/<monat>/stapel.json`
+        # in der Box (siehe `api_export(festschreiben=1)`); wann er dorthin
+        # kam, sagt der Commit — dafür trägt der Index `zeiten`.
+        export_am = (zeiten.get(f"export/{monat}/stapel.json") or {}).get("zeit")
+        aus.append({
+            "monat": monat,
+            "belege": zaehler,
+            "rueckfragen": _rueckfragen(m_belege),
+            # `float(...)`: ohne das käme für einen leeren Monat die
+            # Ganzzahl 0 heraus und für jeden anderen eine Kommazahl — die
+            # Oberfläche formatiert sonst zwei verschiedene Dinge.
+            "brutto_summe": round(float(sum(z.get("brutto") or 0
+                                            for z in m_belege)), 2),
+            "kassenbuch": {
+                "tage_eingetragen": len(tage),
+                "tage_erwartet": _tage_erwartet(monat, oeffnungstage, heute),
+                "letzter_tag": tage[-1] if tage else None,
+            },
+            "abschluss": {
+                "stand": _monatsstand(zaehler, export_am, len(tage)),
+                "export_am": export_am,
+            },
+            "umsatz": _umsatz([blaetter[t] for t in tage]),
+        })
+    return {"monate": aus, "erreichbar": True}
+
+
+def _uebersicht_befund(bw, un: str, mandant_id: int,
+                       monate: tuple[str, ...]) -> dict:
+    """Dieselbe Box, aber nur so viel, wie in eine Zeile der Matrix passt.
+
+    Eigene Funktion und nicht `_monats_befund` mit Beschnitt: die Übersicht
+    liest über ALLE Mandanten und darf deshalb keine Rückfragetexte,
+    Umsätze und Kassenzahlen mitschleppen, die niemand ansieht.
+    """
+    box = bx.box_von(un, mandant_id)
+    idx = bw._im_box_kontext(box, bw.index_aktuell)  # noqa: SLF001
+    belege = list(idx["belege"].values())
+    blaetter = idx.get("kassenblaetter") or {}
+    zeiten = idx.get("zeiten") or {}
+
+    zellen = []
+    for monat in monate:
+        m_belege = [z for z in belege if z["monat"] == monat]
+        zaehler = _zaehler(m_belege)
+        kassentage = sum(1 for t in blaetter if str(t).startswith(monat))
+        export_am = (zeiten.get(f"export/{monat}/stapel.json") or {}).get("zeit")
+        zellen.append({"monat": monat,
+                       "stand": _monatsstand(zaehler, export_am, kassentage),
+                       "offen": zaehler["offen"], "gesamt": zaehler["gesamt"]})
+    # Die letzte Aktivität ist der jüngste Beleg-Upload. Nicht der jüngste
+    # Commit: in der Box liegen auch Schreibvorgänge, die babu selbst
+    # auslöst, und die sagen über den Mandanten nichts.
+    letzte = max((z["hochgeladen"] or "" for z in belege), default="")
+    return {"zellen": zellen,
+            "rueckfragen": sum(1 for z in belege
+                               if z["status"] in ("nachfrage", "unlesbar")),
+            "letzte_aktivitaet": letzte or None,
+            "erreichbar": True}
+
+
+def _uebersicht_leer(monate: tuple[str, ...], stand: str) -> dict:
+    """Eine Zeile ohne Zahlen — für „keine Box" und „nicht erreichbar"."""
+    return {"zellen": [{"monat": m, "stand": stand, "offen": None,
+                        "gesamt": None} for m in monate],
+            "rueckfragen": None, "letzte_aktivitaet": None,
+            "erreichbar": stand != STAND_UNBEKANNT}
 
 
 # ---------------------------------------------------------------------------
@@ -679,6 +967,134 @@ def api_warteschlange(request: Request, grenze: int = 50) -> JSONResponse:
             "warten_auf_belegbox": sum(1 for e in eintraege
                                        if not e["belegbox_da"]),
             "offen": len(offen),
+        },
+    })
+
+
+@router.get("/mandanten/{mandant_id}/monate")
+def api_mandant_monate(mandant_id: int, request: Request,
+                       anzahl: int = MONATE_STANDARD) -> JSONResponse:
+    """Die Monatsspalte EINES Mandanten — die Sicht, in der die Kanzlei arbeitet.
+
+    Sie beantwortet vier Fragen auf einmal, und zwar für jeden der letzten
+    Monate: Wie viele Belege sind da und wie viele warten noch? Welche
+    Rückfragen stehen namentlich offen? Ist das Kassenbuch geführt? Und ist
+    der Monat schon aus dem Haus?
+
+    Die drei Fehlerfälle sind absichtlich verschieden:
+
+    * **404** — diesen Mandanten gibt es hier nicht. Derselbe Satz wie in
+      `api_mandant`, damit sich die Nachbarkanzlei nicht abzählen lässt.
+    * **409** — es gibt ihn, aber seine Belegbox wird noch eingerichtet.
+      Kein Rechteproblem, sondern der Wartezustand.
+    * **503** — die Box ist da, antwortet aber nicht innerhalb des Budgets.
+      Ein Zustand des Servers, nicht der Anfrage; die Kanzlei soll es gleich
+      noch einmal versuchen und nicht die Nummer für falsch halten.
+    """
+    un, fehler = _wache(request)
+    if fehler:
+        return fehler
+    anzahl = max(1, min(int(anzahl or MONATE_STANDARD), MONATE_MAX))
+    betreiber = _ist_betreiber(un)      # vor `_sitzung()`, siehe dort
+    with _sitzung() as c:
+        if not _darf_mandant(un, mandant_id, betreiber, c):
+            return _fehler("Diesen Mandanten gibt es hier nicht.", 404)
+        zeile = mandanten.mandant_holen(mandant_id, c=c)
+    if zeile is None:
+        return _fehler("Diesen Mandanten gibt es hier nicht.", 404)
+    if not zeile["box_ref"]:
+        return _fehler(BOX_KOMMT, 409)
+
+    # Die Öffnungstage gehören dem MANDANTEN, nicht der Kanzlei — dieselbe
+    # Regel wie `salon_von_aktiv`, nur ohne Kopf: hier steht der Besitzer
+    # ohnehin in der Zeile. Und ausdrücklich VOR dem Faden gelesen:
+    # `db_einstellungen` nimmt `_DB_LOCK`, und das ist nicht
+    # wiedereintrittsfähig.
+    einstellungen = _bw().db_einstellungen(zeile["besitzer_un"])
+    heute = _heute()
+    monate = tuple(_monatsliste(anzahl, heute))
+    befund = _nebenlaeufig(un, [dict(zeile)], _monats_befund, OHNE_BOX,
+                           NICHT_ERREICHBAR, monate,
+                           _oeffnungstage(einstellungen), heute,
+                           budget=(BUDGET_DETAIL, BUDGET_DETAIL),
+                           ).get(int(mandant_id)) or dict(NICHT_ERREICHBAR)
+    if not befund.get("erreichbar"):
+        return _fehler(BOX_HAENGT, 503)
+
+    return JSONResponse({
+        "mandant": {"id": zeile["id"], "name": zeile["name"],
+                    "besitzer": zeile["besitzer_un"],
+                    "status": zeile["status"],
+                    "status_text": STATUS_TEXT.get(zeile["status"],
+                                                   zeile["status"])},
+        "anzahl": anzahl,
+        "monate": befund["monate"],
+    })
+
+
+@router.get("/uebersicht")
+def api_uebersicht(request: Request,
+                   monate: int = UEBERSICHT_MONATE_STANDARD) -> JSONResponse:
+    """Alle Mandanten mal die letzten Monate — eine Zeile je Betrieb.
+
+    Der Unterschied zur Warteschlange: die zählt zusammen, was insgesamt
+    ansteht, diese hier zeigt, WO es steht. Eine Kanzlei sieht damit auf
+    einen Blick, welcher Mandant im Juli hängengeblieben ist, statt sich
+    das aus drei Zahlen zusammenzureimen.
+
+    Beendete Mandanten fallen heraus, pausierte bleiben — dieselbe Regel
+    und derselbe Grund wie in `api_warteschlange`. Eine Box, die nicht
+    antwortet, bekommt Fragezeichen statt Nullen: eine Null behauptet, es
+    sei nichts offen.
+    """
+    un, fehler = _wache(request)
+    if fehler:
+        return fehler
+    anzahl = max(1, min(int(monate or UEBERSICHT_MONATE_STANDARD),
+                        UEBERSICHT_MONATE_MAX))
+    betreiber = _ist_betreiber(un)      # vor `_sitzung()`, siehe dort
+    with _sitzung() as c:
+        alle = _mandanten_lesen(un, betreiber, c)
+    aktive = [z for z in alle if z["status"] != "beendet"][:SEITE_MAX]
+    spalten = tuple(_monatsliste(anzahl))
+
+    ohne_box = _uebersicht_leer(spalten, STAND_LEER)
+    nicht_da = _uebersicht_leer(spalten, STAND_UNBEKANNT)
+    befunde = _nebenlaeufig(un, aktive, _uebersicht_befund, ohne_box,
+                            nicht_da, spalten)
+
+    zeilen = []
+    for z in aktive:
+        b = befunde.get(int(z["id"]), nicht_da)
+        zellen = b["zellen"]
+        zeilen.append({
+            "id": z["id"], "name": z["name"], "status": z["status"],
+            "status_text": STATUS_TEXT.get(z["status"], z["status"]),
+            "belegbox_da": bool(z["box_ref"]),
+            "erreichbar": b["erreichbar"],
+            "hinweis": (BOX_KOMMT if not z["box_ref"]
+                        else "" if b["erreichbar"] else BOX_HAENGT),
+            "rueckfragen": b["rueckfragen"],
+            "offen_gesamt": sum(zl["offen"] or 0 for zl in zellen),
+            "letzte_aktivitaet": b["letzte_aktivitaet"],
+            "zellen": zellen,
+        })
+    # Wer am meisten offen hat, steht oben — und bei Gleichstand der mit
+    # den meisten Rückfragen. Boxen ohne Zahlen sinken damit von selbst
+    # nach unten, weil ihre Zähler leer sind und nicht null.
+    zeilen.sort(key=lambda e: (-e["offen_gesamt"], -(e["rueckfragen"] or 0),
+                               e["name"].lower()))
+    return JSONResponse({
+        "monate": list(spalten),
+        "mandanten": zeilen,
+        "zaehler": {
+            "mandanten": len(zeilen),
+            "rueckfragen": sum(e["rueckfragen"] or 0 for e in zeilen),
+            "offen": sum(e["offen_gesamt"] for e in zeilen),
+            "nicht_erreichbar": sum(1 for e in zeilen
+                                    if e["belegbox_da"] and not e["erreichbar"]),
+            "warten_auf_belegbox": sum(1 for e in zeilen
+                                       if not e["belegbox_da"]),
         },
     })
 
