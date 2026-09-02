@@ -362,6 +362,16 @@ class Verbindung:
             return Zeiger(cur)
         return self._pg_execute(text, params)
 
+    def executemany(self, sql: str, folge) -> None:
+        """Eine Anweisung, viele Parametersätze — `passwort_reset` räumt so
+        alte Zeilen weg. SQLite hat das eingebaut; für Postgres genügt die
+        Schleife, es sind Handvoll Zeilen, keine Massenimporte."""
+        if self.dialekt == "sqlite":
+            self._roh.executemany(platzhalter(sql, self.dialekt), folge)
+            return
+        for params in folge:
+            self._pg_execute(platzhalter(sql, self.dialekt), params)
+
     def _pg_execute(self, text: str, params) -> Zeiger:
         from psycopg.rows import dict_row  # noqa: PLC0415
         cur = self._roh.cursor(row_factory=dict_row) if self._benannt \

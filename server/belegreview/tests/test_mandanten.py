@@ -146,8 +146,12 @@ def test_ohne_verbindung_und_ohne_c_gibt_es_eine_klare_meldung(monkeypatch):
 def test_db_legt_die_tenancy_tabellen_mit_an(tmp_path, monkeypatch):
     monkeypatch.setattr(babu_web, "PORTAL_DB", tmp_path / "portal.db")
     with babu_web._db() as c:
-        namen = {z[0] for z in c.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table'")}
+        if c.dialekt == "sqlite":
+            frage = "SELECT name FROM sqlite_master WHERE type = 'table'"
+        else:   # Postgres kennt kein sqlite_master — dort über den Katalog
+            frage = ("SELECT table_name FROM information_schema.tables "
+                     "WHERE table_schema = current_schema()")
+        namen = {z[0] for z in c.execute(frage)}
     assert {"kanzlei", "mandant", "kanzlei_mitglied"} <= namen
 
 
