@@ -82,3 +82,49 @@ die bestehende `_wissen_job`-Funktion nachgeholt, kein neuer Code dafür).
 Noch nicht: der iOS-Build auf Ninas iPhone (P0-2-Anteil in `Store.swift`) — auf
 Wunsch des Auftraggebers später. Der Getränkemarkt-Beleg wurde nicht nachgestellt
 (Rohdaten nur lokal).
+
+**Welle 3, 02./03.09. nachts** (Branch `claude/belege-table-rendering-db4f82`,
+lokal, nicht gepusht, nicht deployt) — Runde 4 und der Pro-Zugang, Plan 21,
+mit Subagenten in zwei Wellen, jede Übernahme per Cherry-Pick, Suite danach
+in BEIDEN Dialekten:
+
+- Runde 4 (P1-5, `2cc05ee`): Belege ab 1180px als sortierbare Tabelle,
+  `.spalten`-Raster mit zwei festen Spalten (auto-fit kollabierte nichts —
+  gemessen 433px-Karten, korrigiert), Einzelkarten volle Breite.
+- Seitenleiste (`cb6e611`): Konto-Dropdown wird ab 821px eine einklappbare
+  linke Leiste (Prototyp `~/Downloads/seitennav.html`, fünf gemessene
+  Fehler behoben: Login-Sperre, Mobil-Dropdown, `[hidden]`, Name/Rolle,
+  Header-Höhe); Zugänge-Ansicht mit Belegbox-freigeben-Knopf, Rolle
+  Mitarbeit, Suche und Pager à 25; `.spalten` per Container-Query.
+- Plan 21 §7 (`ebf12e7`): `audit.py` (Tabelle `audit_log`, `GET /api/audit`
+  nur admin), `passwort_reset.py` — Reset-Link statt Klartext über
+  Betriebsgrenzen, Rate-Limits, Portal-Formular `#reset/<token>`.
+- DATEV-Seite (`70fbf81`, verlinkt `06e67f5`): eigene Seite `/datev`
+  (nur admin/kanzlei, serverseitig gated), Modul `datev_seite.py`
+  (`/api/datev/*`): Stapel für Monat/Zeitraum mit Prüfbefund und
+  Zeilenvorschau, Kontenbeschriftungen und Kreditoren als CSV, EXTF-Import
+  mit Abgleich (fehlt bei uns / fehlt bei DATEV / Betrag weicht ab), liest nur.
+- Plan 21 Phase 2 (`28bc3ac`): `box.py` (Box-Objekt, Registry LRU 50),
+  `mandanten.py` (kanzlei/mandant/kanzlei_mitglied), `_AKTIVE_BOX`-
+  ContextVar, `boxschreiber` mit Box-Argument, Alt-Pfad bit-identisch
+  (1725 Bestandstests unverändert grün).
+- Plan 21 Phase 1 (`7908198` + `49169da` + `6cb0479`): `db.py` (zwei
+  Dialekte, `?`→`%s`, `RETURNING id`, `REAL`→`DOUBLE PRECISION`),
+  `migrations/0001` (19 Tabellen) und `0002` (Audit, Reset, Kanzlei,
+  Mandant), Migrationsskript `werkzeug/migrate_sqlite_to_pg.py`,
+  compose.yml mit Postgres-16-Dienst (127.0.0.1:55432, Passwortdatei),
+  `BABU_DB_URL` bewusst auskommentiert — Umschalten ist ein zweiter
+  Handgriff nach dem Migrationslauf, Reihenfolge im Server-README.
+- Belegdatum (`2b281ed`, `76dd7d9`): der Zielbild-Weg schreibt ISO-Daten,
+  extf/Portal/Bankabgleich lasen nur TT.MM.JJJJ — jeder seit 27.08.
+  gebuchte Beleg ging OHNE Belegdatum in den DATEV-Stapel. Behoben über
+  `extf._datum_teile`. Dazu: Mischsatz-Belege (19 %+7 %) werden im Stapel
+  wieder gesplittet (`felder.steuertabelle` wird jetzt geschrieben).
+- Race (`c9966a1`): Auswertungs-Job setzte „fertig" vor der Mail; unter
+  Last fielen wechselnde Tests. Postausgang schreibt atomar.
+
+Stand vor Welle-2-Übernahme (c9966a1): SQLite 1837 grün + 8 pg-Tests
+übersprungen, Postgres 16 volle Suite 1845 grün. Welle 2 (Phase 3
+Acting-as, Phase 4 Mandantenverwaltung/Umschalter) lief beim Schreiben
+dieser Zeilen noch — Ergebnis siehe HANDOVER Abschnitt 8.
+

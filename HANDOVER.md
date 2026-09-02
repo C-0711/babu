@@ -203,6 +203,17 @@ Aufgabe fertigstellen (Plan liegt in `docs/uebergabe-datev-2026-09-02/`),
 dann erst mergen. **Nicht ungeprüft übernehmen** — die Agenten kamen nicht
 zu ihrem eigenen Abschlussbericht.
 
-Noch offen aus dem Auftrag, unangefasst: Pro-Zugang für Kanzleien mit
-Postgres/Mandantenmodell (Plan `21-plan-pro-zugang-postgres.md`, Wochen
-Aufwand laut Schätzung), Desktop-Layout (Runde 4), P2-17/18 und P3-Rest.
+**Nachtrag 03.09. nachts** (Branch `claude/belege-table-rendering-db4f82`,
+lokal, nicht gepusht, nicht deployt): beide WIP-Worktrees oben sind als
+Runde 2 (`feb5710`) und Runde 3 (`88dd3a1`) auf dem Branch, dazu Runde 4
+(Desktop-Layout), Seitenleiste, DATEV-Seite `/datev`, und Plan 21 Phase 1,
+2 und §7 (Postgres-Schicht, Box-Objekt, Mandantentabellen, Audit, Reset-
+Link). Was landete und mit welchen Zahlen: `docs/uebergabe-datev-2026-09-02/
+README.md`, Abschnitt „Welle 3". Deploy-Hinweis: Postgres ist im Compose
+enthalten, aber `BABU_DB_URL` bleibt auskommentiert — erst Migrationslauf,
+dann umschalten (Server-README). Vor dem Merge: Runde 2/3 sind weiterhin
+nur über die Suite geprüft, nicht im Detail gesichtet.
+
+Noch offen aus dem Auftrag: Plan 21 Phase 3/4 (Acting-as, Mandanten-
+verwaltung; Welle 2, siehe docs-README), Phase 5 (Lasttest, Backup-Cron
+auf dem Host), P2-17/18 und P3-Rest.
