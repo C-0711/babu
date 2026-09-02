@@ -61,6 +61,12 @@ def welt(tmp_path, monkeypatch):
     babu_web._INDEX.update(head=None, geprueft=0.0, belege={}, reviews={},
                            dokumente=[], zeiten={}, oid_cache={})
     babu_web.wer_token = lambda t: "christoph0711.io" if t == "test-pat" else None
+    # rolle() ist seit dem fail-closed-Fallback (Plan 21, Abschnitt 7) ohne
+    # BABU_ROLLEN "salon" — Export/Korrektur hier brauchen Kanzlei-Rechte,
+    # also explizit wie in einer echten BABU_ROLLEN-Konfiguration setzen.
+    # monkeypatch statt direkter Zuweisung, damit es nicht in andere Module
+    # dieses Prozesses durchschlägt.
+    monkeypatch.setattr(babu_web, "ROLLEN", {"christoph0711.io": "kanzlei"})
 
     from fastapi.testclient import TestClient  # noqa: PLC0415
     client = TestClient(babu_web.app, base_url="https://testserver")

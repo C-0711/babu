@@ -21,7 +21,15 @@ def bw(tmp_path_factory):
     import babu_web  # noqa: PLC0415
     babu_web.PORTAL_DB = tmp_path_factory.mktemp("db") / "portal.db"
     babu_web.wer_token = lambda token: {"test-pat": "christoph0711.io"}.get(token)
-    return babu_web
+    # rolle() ist seit dem fail-closed-Fallback (Plan 21, Abschnitt 7) ohne
+    # BABU_ROLLEN "salon" — dieses Modul testet gerade die Verwaltung, die
+    # laut Docstring oben "Rolle kanzlei" für den PAT-Weg voraussetzt.
+    # Kein monkeypatch möglich (modulweite Fixture) — von Hand zurücksetzen,
+    # damit es nicht in andere Testmodule dieses Prozesses durchschlägt.
+    alte_rollen = babu_web.ROLLEN
+    babu_web.ROLLEN = {"christoph0711.io": "kanzlei"}
+    yield babu_web
+    babu_web.ROLLEN = alte_rollen
 
 
 @pytest.fixture()
@@ -43,6 +51,14 @@ def test_pw_roundtrip(bw):
     assert bw.pw_pruefen("geheim-123", h)
     assert not bw.pw_pruefen("falsch", h)
     assert not bw.pw_pruefen("geheim-123", "kaputt")
+
+
+def test_rolle_ohne_babu_rollen_ist_salon(bw, monkeypatch):
+    """Fail-closed (Plan 21, Abschnitt 7): eine leere BABU_ROLLEN-Konfiguration
+    darf nicht mehr in die mächtigste Rolle ("kanzlei") fallen, sondern in
+    die machtloseste — unabhängig davon, wer fragt."""
+    monkeypatch.setattr(bw, "ROLLEN", {})
+    assert bw.rolle("wer-auch-immer@irgendwo.de") == "salon"
 
 
 def test_login_unbekannt_ist_generisch(client):

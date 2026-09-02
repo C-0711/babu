@@ -3162,7 +3162,11 @@ def rolle(un: str) -> str:
     n = nutzer_holen(un)
     if n:
         return n["rolle"]
-    return ROLLEN.get(un, "kanzlei" if not ROLLEN else "salon")
+    # Fail-closed (Plan 21, Abschnitt 7): ohne Treffer in ROLLEN gilt immer
+    # die machtloseste Rolle, auch wenn BABU_ROLLEN gar nicht gesetzt ist.
+    # Vorher fiel eine leere BABU_ROLLEN-Konfiguration auf "kanzlei" zurück —
+    # fail-open auf die mächtigste Rolle.
+    return ROLLEN.get(un, "salon")
 
 
 def salon_von(un: str) -> str:
