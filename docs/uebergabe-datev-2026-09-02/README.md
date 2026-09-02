@@ -35,3 +35,22 @@ was aus dem Transkript gerettet wurde, damit die Planung ohne Neuanfang weiterge
   Entscheidungen, die vor dem Bauen beim Auftraggeber liegen.
 
 Die Erkundungen sind Agenten-Ausgaben mit Zeilennummern vom Stand `d163ac6`.
+
+## Umsetzungsstand (Branch `claude/session-context-210439`)
+
+Welle 1, 02.09. abends, fünf Agenten parallel, alles auf dem Branch, Suite 1680 grün:
+
+- Rollen-Fallback fail-closed (Plan 21, Phase 0).
+- P0-1, P0-2, P0-3 (Plan 22, Runde 1): eine Kategorie und eine Ausgaben-Zahl
+  überall, gedruckte Steuerzeilen gewinnen (Server, Prompt, iOS), Export-Summe.
+- Wissensschicht Phasen 2–6 (Plan 20): Modul `datev_wissen.py`, Fach „Wissen",
+  `POST /api/wissen`, Suche in Chat und Buchung, Portal-Upload.
+- Wissensschicht Phasen 1 und 7: Host-Skript `werkzeuge/kompendium/skr04_atome_bauen.py`
+  (noch NICHT auf der H200V gelaufen) und `werkzeuge/wissen-import/datev_ordner_hochladen.py`.
+- P1-7, P1-8, P2 9–16 und 19–20 (Plan 22, Runden 5 und 6). Offen: 17, 18.
+
+Welle 2 läuft: P0-4 „Wird gelesen" + P3-26, Runde 3 (Kassenbuch, Rechnung,
+Termine-Woche, Salon-Check-Korrektur). Danach Runde 4 (Desktop-Layout).
+
+Nicht deployt. Vor dem Deploy: Deploy-Ritual aus `CLAUDE.md`, Golden-Diff, und
+den Getränkemarkt-Beleg (P0-2) einmal von Hand durch den Weg schicken.
