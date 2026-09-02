@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f4f1ec">
+<title>babu — DATEV</title>
+<style>
+/* Dieselbe Designsprache wie das Portal (Unlimited-OCR-Tokens), aber ein
+   eigenes Blatt: diese Seite gehört der Verwaltung, nicht dem Salon, und
+   sie soll das Portal nicht anfassen. Der Kern der Tokens und Bausteine ist
+   hierher kopiert — keine gemeinsame Datei, kein Verweis nach außen. */
+:root{
+  --gc-bg:#fff; --gc-canvas:#f7f5f0; --gc-desk:#efece4; --gc-chrome:#f7f5f0;
+  --gc-fg:#1d1913; --gc-body:#453e31; --gc-desc:#6b6151; --gc-muted:#8f8574;
+  --gc-accent:#8a7c5c; --gc-accent-hover:#736950; --gc-accent-subtle:#f1ede3;
+  --gc-border:#e6e0d4; --gc-border-l:#ece7dc;
+  --gc-ok:#6f8a6e; --gc-warn:#a8791c; --gc-danger:#a8433a;
+  --gc-gold:#b9a574;
+  --gc-serif:'Playfair Display',ui-serif,Georgia,serif;
+  --gc-sans:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --gc-mono:'SF Mono',ui-monospace,Menlo,monospace;
+  --r:12px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{background:var(--gc-canvas)}
+body{font:15px/1.5 var(--gc-sans);color:var(--gc-body);background:var(--gc-canvas);
+  min-height:100dvh;margin:0}
+.num{font-family:var(--gc-mono);font-variant-numeric:tabular-nums}
+.lbl{font:10.5px/1 var(--gc-mono);letter-spacing:.11em;text-transform:uppercase;
+  color:var(--gc-muted)}
+.marke{display:inline-block;font:10px/1.5 var(--gc-mono);letter-spacing:.055em;
+  text-transform:uppercase;padding:3px 9px;border-radius:999px;
+  border:1px solid currentColor;color:var(--gc-muted);white-space:nowrap}
+.marke.ok{color:var(--gc-ok)} .marke.warn{color:var(--gc-warn)}
+.marke.akzent{color:var(--gc-accent)} .marke.gefahr{color:var(--gc-danger)}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+a{color:var(--gc-accent)}
+:focus-visible{outline:2px solid var(--gc-accent);outline-offset:2px}
+
+header{position:sticky;top:0;z-index:20;background:var(--gc-chrome);
+  border-bottom:1px solid var(--gc-border);padding:14px clamp(14px,4.7vw,56px);
+  display:flex;align-items:center;gap:20px}
+header h1{font:600 22px/1 var(--gc-serif);letter-spacing:-.02em;color:var(--gc-fg)}
+header .zurueck{margin-left:auto;font-weight:600;font-size:13.5px;flex:none}
+
+main{padding:30px clamp(18px,4.7vw,56px) 70px;min-height:70dvh}
+main > p{max-width:78ch}
+h2{font:500 30px var(--gc-serif);letter-spacing:-.02em;color:var(--gc-fg);
+  margin:0 0 6px}
+h3{font:600 15px var(--gc-serif);color:var(--gc-fg);margin-bottom:3px}
+.unterreiter{display:flex;gap:4px;flex-wrap:wrap;margin:20px 0 22px;
+  border-bottom:1px solid var(--gc-border)}
+.unterreiter button{background:none;border:0;border-bottom:2px solid transparent;
+  padding:9px 14px;font:500 14.5px var(--gc-sans);color:var(--gc-muted)}
+.unterreiter button:hover{color:var(--gc-fg)}
+.unterreiter button.an{color:var(--gc-fg);border-bottom-color:var(--gc-accent)}
+.blatt{display:none}.blatt.an{display:block}
+
+.karte{background:var(--gc-bg);border:1px solid var(--gc-border);
+  border-radius:var(--r);padding:16px 18px;margin-bottom:12px;min-width:0}
+.karte > .lbl{display:block;margin-bottom:10px}
+.karte p{color:var(--gc-desc);font-size:13.5px}
+
+.reihe{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end}
+label.feldchen{display:flex;flex-direction:column;gap:6px}
+label.feldchen .lbl{margin:0}
+select,input[type=month],input[type=file]{font:14px var(--gc-sans);
+  padding:10px 12px;border:1px solid var(--gc-border);border-radius:9px;
+  background:var(--gc-bg);color:var(--gc-fg);min-width:150px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 4px}
+.chip{padding:11px 20px;border-radius:999px;border:1px solid var(--gc-border);
+  white-space:nowrap;background:var(--gc-bg);font-size:14px;font-weight:550;
+  color:var(--gc-fg)}
+.chip:hover{border-color:var(--gc-accent)}
+.chip.an{background:var(--gc-fg);border-color:var(--gc-fg);color:#fff;font-weight:600}
+.chip[disabled]{opacity:.45;cursor:default}
+.chip.tinte{background:var(--gc-fg);border-color:var(--gc-fg);color:#fff;font-weight:600}
+.chip.tinte:hover{background:#000}
+
+/* Der Befund: eine Zeile je Feststellung, Zeichen links wie bei den
+   Rechenproben im Portal. Grün heißt nicht „geprüft", sondern „hier ist
+   nichts aufgefallen" — der Text sagt das auch. */
+.befund{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--gc-border-l)}
+.befund:last-child{border-bottom:none}
+.befund .zeichen{flex:none;width:18px;text-align:center;font-size:14px;line-height:1.4}
+.befund.auf .zeichen{color:var(--gc-ok)}
+.befund.zu .zeichen{color:var(--gc-warn)}
+.befund.hart .zeichen{color:var(--gc-danger)}
+.befund b{display:block;font:600 13.5px var(--gc-sans);color:var(--gc-fg)}
+.befund p{font-size:12.5px;color:var(--gc-desc);margin-top:2px}
+
+.kacheln{display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 2px}
+.kachel{flex:1 1 130px;border:1px solid var(--gc-border);border-radius:10px;
+  padding:12px 14px;background:var(--gc-bg)}
+.kachel b{display:block;font:600 20px var(--gc-mono);font-variant-numeric:tabular-nums;
+  color:var(--gc-fg);margin-top:4px}
+
+.tabellenrahmen{overflow-x:auto;border:1px solid var(--gc-border);
+  border-radius:10px;background:var(--gc-bg)}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{text-align:left;font:9.5px var(--gc-mono);letter-spacing:.09em;
+  text-transform:uppercase;color:var(--gc-muted);padding:9px 10px;
+  border-bottom:1px solid var(--gc-border);white-space:nowrap;
+  position:sticky;top:0;background:var(--gc-bg)}
+td{padding:8px 10px;border-bottom:1px solid var(--gc-border-l);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tbody tr:nth-child(even) td{background:var(--gc-canvas)}
+td.z,th.z{text-align:right;font-family:var(--gc-mono);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+td.k{font-family:var(--gc-mono);white-space:nowrap;color:var(--gc-fg)}
+td.t{max-width:34ch;overflow-wrap:anywhere}
+tfoot td{font-weight:600;color:var(--gc-fg);border-top:1px solid var(--gc-border)}
+.deckel{display:flex;align-items:baseline;gap:10px;margin:22px 0 8px}
+.deckel .lbl{flex:none}
+.deckel span{font-size:12.5px;color:var(--gc-muted)}
+
+.leer{color:var(--gc-desc);text-align:center;padding:38px 20px}
+.leer b{display:block;font:600 17px var(--gc-serif);color:var(--gc-fg);margin-bottom:5px}
+.meldung{margin:12px 0;padding:11px 13px;border-radius:9px;font-size:13.5px;
+  line-height:1.5;background:var(--gc-accent-subtle);border-left:3px solid var(--gc-warn);
+  color:var(--gc-body)}
+.meldung.schlimm{border-left-color:var(--gc-danger)}
+.ruhe{margin:12px 0;padding:11px 13px;border-radius:9px;font-size:13.5px;
+  line-height:1.5;background:var(--gc-accent-subtle);border-left:3px solid var(--gc-ok);
+  color:var(--gc-body)}
+.laedt{color:var(--gc-muted);font-size:13px;padding:14px 0}
+@media (min-width:1180px){
+  .spalten{display:grid;align-items:start;gap:14px;
+    grid-template-columns:repeat(2,minmax(0,1fr))}
+  .spalten > *{margin-bottom:0}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>DATEV</h1>
+  <a class="zurueck" href="/portal#verwaltung">‹ Zum Portal</a>
+</header>
+
+<main>
+  <h2>Buchungsstapel</h2>
+  <p>Hier verlässt die Buchhaltung das Haus — und hier kommt sie zum
+     Vergleich zurück. Der Kontenrahmen dieses Betriebs ist
+     <b id="rahmen" class="num">—</b>.</p>
+
+  <div class="unterreiter">
+    <button id="r-export" class="an">Hinausgeben</button>
+    <button id="r-stamm">Konten und Lieferanten</button>
+    <button id="r-import">Hereinlesen und vergleichen</button>
+  </div>
+
+  <!-- ── Hinausgeben ───────────────────────────────────────────────── -->
+  <section id="b-export" class="blatt an">
+    <div class="karte">
+      <span class="lbl">Zeitraum</span>
+      <div class="reihe">
+        <label class="feldchen"><span class="lbl">Von</span>
+          <select id="von"></select></label>
+        <label class="feldchen"><span class="lbl">Bis</span>
+          <select id="bis"></select></label>
+        <button class="chip" id="ansehen">Stapel ansehen</button>
+      </div>
+      <p style="margin-top:10px">Mehrere Monate kommen in <b>eine</b> Datei.
+        Ein Stapel gehört immer in ein Wirtschaftsjahr — über den
+        Jahreswechsel hinweg braucht es zwei.</p>
+    </div>
+    <div id="export-ausgabe"></div>
+  </section>
+
+  <!-- ── Stammdaten ────────────────────────────────────────────────── -->
+  <section id="b-stamm" class="blatt">
+    <div class="spalten">
+      <div class="karte">
+        <h3>Kontenbeschriftungen</h3>
+        <p>Die Nummern und Namen der Konten, die im gewählten Zeitraum
+           wirklich vorkommen — nicht der ganze Kontenrahmen.</p>
+        <div class="chips"><button class="chip" id="hol-konten">Konten holen</button></div>
+      </div>
+      <div class="karte">
+        <h3>Lieferanten</h3>
+        <p>Wer im Zeitraum geliefert hat, mit Anzahl und Summe. Die
+           Kontonummern sind ein Vorschlag zum Anlegen — babu bucht alle
+           Ausgaben gegen ein Sammelkonto und kennt die echten nicht.</p>
+        <div class="chips"><button class="chip" id="hol-kreditoren">Lieferanten holen</button></div>
+      </div>
+    </div>
+    <p style="color:var(--gc-desc);font-size:13.5px">Beide Listen richten
+       sich nach dem Zeitraum, der unter „Hinausgeben" eingestellt ist.</p>
+  </section>
+
+  <!-- ── Hereinlesen ───────────────────────────────────────────────── -->
+  <section id="b-import" class="blatt">
+    <div class="karte">
+      <span class="lbl">Datei wählen</span>
+      <div class="reihe">
+        <input type="file" id="datei" accept=".csv,.txt">
+        <button class="chip tinte" id="lesen">Lesen und vergleichen</button>
+      </div>
+      <div class="ruhe" style="margin-top:14px"><b>Es wird nichts
+        übernommen.</b> Die Datei wird gelesen, angezeigt und mit den
+        eigenen Belegen verglichen. In der Belegbox ändert sich dabei
+        nichts, und die Datei wird nicht aufbewahrt.</div>
+    </div>
+    <div id="import-ausgabe"></div>
+  </section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const txt = (s) => String(s == null ? "" : s).replace(/[&<>"]/g,
+  (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+// Der offene Reiter steht in der Adresse. Nicht als Spielerei: wer die
+// Kanzlei auf den Abgleich hinweisen will, schickt einen Verweis — und
+// landet dann dort und nicht wieder am Anfang.
+const REITER = ["export", "stamm", "import"];
+function reiter(name, merken = true){
+  if (!REITER.includes(name)) name = "export";
+  for (const k of REITER){
+    $("#r-"+k).classList.toggle("an", k === name);
+    $("#b-"+k).classList.toggle("an", k === name);
+  }
+  if (merken && location.hash.slice(1) !== name) location.hash = name;
+}
+for (const k of REITER) $("#r-"+k).onclick = () => reiter(k);
+addEventListener("hashchange", () => reiter(location.hash.slice(1), false));
+
+async function hol(pfad){
+  const a = await fetch(pfad, {credentials:"same-origin"});
+  const d = await a.json().catch(() => ({fehler:"Antwort nicht lesbar"}));
+  if (!a.ok) throw new Error(d.fehler || "Das hat nicht geklappt.");
+  return d;
+}
+
+// ── Monate füllen ────────────────────────────────────────────────────
+let MONATE = [];
+async function starten(){
+  let d;
+  try { d = await hol("/api/datev/uebersicht"); }
+  catch (e) { $("#export-ausgabe").innerHTML =
+    `<div class="meldung schlimm">${txt(e.message)}</div>`; return; }
+  $("#rahmen").textContent = d.rahmen || "—";
+  MONATE = d.monate || [];
+  if (!MONATE.length){
+    $("#export-ausgabe").innerHTML =
+      `<div class="leer"><b>Noch keine Belege</b>Sobald der erste Monat
+       geprüfte Belege hat, lässt sich ein Stapel erzeugen.</div>`;
+    return;
+  }
+  for (const el of [$("#von"), $("#bis")]){
+    el.innerHTML = MONATE.map((m) => {
+      const z = d.je_monat[m] || {};
+      return `<option value="${txt(m)}">${txt(m)} — ${z.fertig || 0} von
+        ${z.belege || 0} fertig</option>`;
+    }).join("");
+  }
+  // Ein Zeitraum darf in der Adresse stehen: „schau dir den Juli an" ist
+  // sonst eine Anleitung statt eines Verweises.
+  const wunsch = new URLSearchParams(location.search);
+  const gueltig = (m) => MONATE.includes(m);
+  const v = wunsch.get("von"), b = wunsch.get("bis");
+  $("#von").value = gueltig(v) ? v : MONATE[0];
+  $("#bis").value = gueltig(b) ? b : $("#von").value;
+  if ($("#bis").value < $("#von").value) $("#bis").value = $("#von").value;
+  vorschau();
+}
+
+$("#von").onchange = () => { if ($("#bis").value < $("#von").value)
+  $("#bis").value = $("#von").value; };
+$("#bis").onchange = () => { if ($("#bis").value < $("#von").value)
+  $("#von").value = $("#bis").value; };
+$("#ansehen").onclick = vorschau;
+
+function spanne(){
+  return `von=${encodeURIComponent($("#von").value)}` +
+         `&bis=${encodeURIComponent($("#bis").value)}`;
+}
+
+// ── Vorschau ─────────────────────────────────────────────────────────
+function befundzeilen(b){
+  const z = [];
+  if (b.vermischt && b.vermischt.length)
+    z.push(["hart","!","Zwei Kontenrahmen in einem Stapel", b.vermischt_text]);
+  if (b.ohne_kontierung && b.ohne_kontierung.length)
+    z.push(["zu","–", `${b.ohne_kontierung.length} Beleg(e) ohne Konto`,
+      "Sie fehlen im Stapel: " + b.ohne_kontierung.slice(0,6).join(", ") +
+      (b.ohne_kontierung.length > 6 ? " …" : "")]);
+  if (b.ohne_belegdatum)
+    z.push(["zu","–", `${b.ohne_belegdatum} Buchung(en) ohne Belegdatum`,
+      "Die Spalte Belegdatum bleibt bei diesen Zeilen leer: " +
+      (b.ohne_belegdatum_belege || []).join(", ") +
+      " — die Kanzlei muss das Datum sonst von Hand nachtragen."]);
+  if (b.unbenannte_konten && b.unbenannte_konten.length)
+    z.push(["zu","–", "Konten ohne Namen im Kontenrahmen",
+      b.unbenannte_konten.join(", ") + " — bitte bei der Kanzlei nachfragen."]);
+  if (b.fremde_konten && b.fremde_konten.length)
+    z.push(["zu","–", "Von Hand gesetzte Konten",
+      b.fremde_konten.join(", ") + " — sie gehen unverändert mit."]);
+  if (!z.length)
+    z.push(["auf","✓","Nichts aufgefallen",
+      `${b.belege} Beleg(e) und ${b.kassentage} Kassentag(e) ergeben
+       ${b.buchungen} Buchung(en) über ${b.summe_text} €.`]);
+  return z.map(([art,zeichen,kopf,text]) =>
+    `<div class="befund ${art}"><span class="zeichen">${zeichen}</span>
+     <div><b>${txt(kopf)}</b><p>${txt(text)}</p></div></div>`).join("");
+}
+
+function tabelle(zeilen){
+  if (!zeilen.length) return `<div class="leer"><b>Keine Buchungen</b>
+    In diesem Zeitraum ist nichts, was in einen Stapel gehört.</div>`;
+  const kopf = ["Datum","Konto","Gegenkonto","Umsatz","S/H","BU","Belegfeld",
+                "Buchungstext"];
+  const summe = zeilen.reduce((s,z) =>
+    s + parseFloat(String(z.umsatz).replace(".","").replace(",",".")), 0);
+  return `<div class="tabellenrahmen"><table><thead><tr>
+    ${kopf.map((k,i) => `<th class="${i===3?"z":""}">${k}</th>`).join("")}
+    </tr></thead><tbody>` + zeilen.map((z) => `<tr>
+      <td class="k">${txt(z.datum)}</td>
+      <td class="k">${txt(z.konto)}${z.konto_name ?
+        `<br><span class="lbl">${txt(z.konto_name.slice(0,26))}</span>` : ""}</td>
+      <td class="k">${txt(z.gegenkonto)}</td>
+      <td class="z">${txt(z.umsatz)}</td>
+      <td class="k">${txt(z.sh)}</td>
+      <td class="k">${txt(z.bu)}</td>
+      <td class="k">${txt(z.belegfeld)}</td>
+      <td class="t">${txt(z.text)}</td></tr>`).join("") +
+    `</tbody><tfoot><tr><td colspan="3">${zeilen.length} Buchung(en)</td>
+      <td class="z">${summe.toLocaleString("de-DE",{minimumFractionDigits:2,
+        maximumFractionDigits:2})}</td><td colspan="4"></td></tr></tfoot>
+    </table></div>`;
+}
+
+function kontotabelle(je){
+  if (!je.length) return "";
+  return `<div class="deckel"><span class="lbl">Summe je Konto</span></div>
+    <div class="tabellenrahmen"><table><thead><tr><th>Konto</th><th>Name</th>
+    <th class="z">Buchungen</th><th class="z">Summe</th></tr></thead><tbody>` +
+    je.map((e) => `<tr><td class="k">${txt(e.konto)}</td>
+      <td class="t">${txt(e.name)}</td><td class="z">${e.anzahl}</td>
+      <td class="z">${txt(e.summe_text)}</td></tr>`).join("") +
+    `</tbody></table></div>`;
+}
+
+async function vorschau(){
+  const ziel = $("#export-ausgabe");
+  ziel.innerHTML = `<div class="laedt">Wird zusammengestellt …</div>`;
+  let d;
+  try { d = await hol("/api/datev/vorschau?" + spanne()); }
+  catch (e) { ziel.innerHTML =
+    `<div class="meldung schlimm">${txt(e.message)}</div>`; return; }
+  const b = d.befund;
+  ziel.innerHTML = `
+    <div class="karte"><span class="lbl">Prüfbefund</span>
+      ${befundzeilen(b)}
+      <div class="kacheln" style="margin-top:14px">
+        <div class="kachel"><span class="lbl">Belege</span><b>${b.belege}</b></div>
+        <div class="kachel"><span class="lbl">Kassentage</span><b>${b.kassentage}</b></div>
+        <div class="kachel"><span class="lbl">Buchungen</span><b>${b.buchungen}</b></div>
+        <div class="kachel"><span class="lbl">Summe</span><b>${txt(b.summe_text)}</b></div>
+      </div>
+      <div class="chips">
+        <button class="chip tinte" id="holen"${b.buchungen ? "" : " disabled"}>
+          Stapel herunterladen</button>
+        <span class="marke ${d.festgeschrieben ? "ok" : ""}" style="align-self:center">
+          ${d.festgeschrieben ? "Zahlen freigegeben" : "Zahlen noch offen"}</span>
+      </div>
+    </div>
+    <div class="deckel"><span class="lbl">Buchungszeilen</span>
+      <span>So, wie sie in der Datei stehen werden.</span></div>
+    ${tabelle(d.zeilen)}
+    ${kontotabelle(d.je_konto)}`;
+  const knopf = $("#holen");
+  if (knopf) knopf.onclick = () => {
+    window.location.href = "/api/datev/stapel.csv?" + spanne();
+  };
+}
+
+$("#hol-konten").onclick = () => {
+  window.location.href = "/api/datev/konten.csv?" + spanne(); };
+$("#hol-kreditoren").onclick = () => {
+  window.location.href = "/api/datev/kreditoren.csv?" + spanne(); };
+
+// ── Hereinlesen ──────────────────────────────────────────────────────
+function liste(titel, erklaerung, zeilen){
+  if (!zeilen.length) return "";
+  return `<div class="deckel"><span class="lbl">${txt(titel)} (${zeilen.length})</span>
+      <span>${txt(erklaerung)}</span></div>
+    <div class="tabellenrahmen"><table><thead><tr><th>Datum</th><th>Konto</th>
+      <th>Gegenkonto</th><th class="z">Betrag</th><th>Belegfeld</th>
+      <th>Buchungstext</th></tr></thead><tbody>` +
+    zeilen.map((z) => `<tr><td class="k">${txt(z.datum)}</td>
+      <td class="k">${txt(z.konto)}</td><td class="k">${txt(z.gegenkonto)}</td>
+      <td class="z">${txt(z.betrag_text)}</td>
+      <td class="k">${txt(z.belegfeld)}</td>
+      <td class="t">${txt(z.text)}</td></tr>`).join("") +
+    `</tbody></table></div>`;
+}
+
+function abweichliste(zeilen){
+  if (!zeilen.length) return "";
+  return `<div class="deckel"><span class="lbl">Im Betrag anders (${zeilen.length})</span>
+      <span>Gleicher Tag, gleiches Belegfeld — anderer Betrag.</span></div>
+    <div class="tabellenrahmen"><table><thead><tr><th>Datum</th><th>Belegfeld</th>
+      <th>Buchungstext</th><th class="z">Bei uns</th><th class="z">In DATEV</th>
+      <th class="z">Differenz</th></tr></thead><tbody>` +
+    zeilen.map((z) => `<tr><td class="k">${txt(z.datum)}</td>
+      <td class="k">${txt(z.belegfeld)}</td><td class="t">${txt(z.text)}</td>
+      <td class="z">${txt(z.betrag_text)}</td>
+      <td class="z">${txt(z.betrag_datev_text)}</td>
+      <td class="z">${z.differenz > 0 ? "+" : ""}${(z.differenz || 0)
+        .toLocaleString("de-DE",{minimumFractionDigits:2,
+          maximumFractionDigits:2})}</td></tr>`).join("") +
+    `</tbody></table></div>`;
+}
+
+$("#lesen").onclick = async () => {
+  const ziel = $("#import-ausgabe");
+  const f = $("#datei").files[0];
+  if (!f){ ziel.innerHTML =
+    `<div class="meldung">Bitte zuerst eine Datei wählen.</div>`; return; }
+  ziel.innerHTML = `<div class="laedt">Wird gelesen …</div>`;
+  const paket = new FormData(); paket.append("datei", f, f.name);
+  const a = await fetch("/api/datev/lesen",
+    {method:"POST", body:paket, credentials:"same-origin"});
+  const d = await a.json().catch(() => ({fehler:"Antwort nicht lesbar"}));
+  if (!a.ok){ ziel.innerHTML =
+    `<div class="meldung schlimm">${txt(d.fehler || "Das hat nicht geklappt.")}</div>`;
+    return; }
+  const s = d.summen, g = d.abgleich;
+  let html = `<div class="karte"><span class="lbl">Gelesen</span>
+    <div class="kacheln">
+      <div class="kachel"><span class="lbl">Buchungen</span><b>${s.anzahl}</b></div>
+      <div class="kachel"><span class="lbl">Soll</span><b>${txt(s.soll_text)}</b></div>
+      <div class="kachel"><span class="lbl">Haben</span><b>${txt(s.haben_text)}</b></div>
+      <div class="kachel"><span class="lbl">Zeitraum</span>
+        <b>${txt((d.kopf.monate || []).join(" – ") || d.kopf.jahr || "—")}</b></div>
+    </div>
+    <div class="ruhe">${txt(d.hinweis)}</div></div>`;
+  if (g){
+    html += `<div class="karte"><span class="lbl">Abgleich mit den eigenen Belegen</span>
+      <div class="kacheln">
+        <div class="kachel"><span class="lbl">Gleich</span><b>${g.zaehler.gleich}</b></div>
+        <div class="kachel"><span class="lbl">Nur in DATEV</span><b>${g.zaehler.nur_datev}</b></div>
+        <div class="kachel"><span class="lbl">Nur bei uns</span><b>${g.zaehler.nur_babu}</b></div>
+        <div class="kachel"><span class="lbl">Betrag anders</span><b>${g.zaehler.abweichend}</b></div>
+      </div></div>`;
+    html += liste("Nur in DATEV", "Im Stapel, aber nicht in unseren Belegen.",
+                  g.nur_datev);
+    html += liste("Nur bei uns", "In unseren Belegen, aber nicht im Stapel.",
+                  g.nur_babu);
+    html += abweichliste(g.abweichend);
+    if (!g.nur_datev.length && !g.nur_babu.length && !g.abweichend.length)
+      html += `<div class="ruhe">Alle Buchungen des Stapels haben bei uns
+        eine Entsprechung.</div>`;
+  } else {
+    html += `<div class="meldung">Die Datei nennt keinen Zeitraum — ohne ihn
+      lässt sich nicht sagen, gegen welche Belege verglichen werden soll.</div>`;
+  }
+  html += `<div class="deckel"><span class="lbl">Die Datei im Klartext</span>
+    <span>${d.gekuerzt ? "Die ersten 500 Zeilen." : "Alle Zeilen."}</span></div>
+    <div class="tabellenrahmen"><table><thead><tr><th>Zeile</th><th>Datum</th>
+      <th>Konto</th><th>Gegenkonto</th><th class="z">Umsatz</th><th>S/H</th>
+      <th>BU</th><th>Belegfeld</th><th>Buchungstext</th></tr></thead><tbody>` +
+    d.zeilen.map((z) => `<tr><td class="k">${z.nr}</td>
+      <td class="k">${txt(z.datum)}</td><td class="k">${txt(z.konto)}</td>
+      <td class="k">${txt(z.gegenkonto)}</td>
+      <td class="z">${txt(z.umsatz_text)}</td><td class="k">${txt(z.sh)}</td>
+      <td class="k">${txt(z.bu)}</td><td class="k">${txt(z.belegfeld)}</td>
+      <td class="t">${txt(z.text)}</td></tr>`).join("") +
+    `</tbody></table></div>`;
+  ziel.innerHTML = html;
+};
+
+reiter(location.hash.slice(1) || "export", false);
+starten();
+</script>
+</body>
+</html>

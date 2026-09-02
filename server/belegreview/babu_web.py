@@ -1143,6 +1143,25 @@ def einkauf_seite() -> Response:
     return FileResponse(pfad, media_type="text/html", headers=HTML_FRISCH)
 
 
+# Die DATEV-Seite (Stapel hinausgeben und hereinlesen) liegt vollständig in
+# `datev_seite` — eigenes Blatt, eigener Router. Hier steht nur, dass es sie
+# gibt und dass die Seite selbst dieselbe Wache passiert wie ihre Routen:
+# eine Seite, die erst hinterher „nicht erlaubt" sagt, ist keine Wache.
+import datev_seite  # noqa: E402,PLC0415
+
+app.include_router(datev_seite.router)
+
+
+@app.get("/datev")
+def datev_blatt(request: Request) -> Response:
+    _, fehler = _verwalter_wache(request)
+    if fehler:
+        return Response(content=datev_seite.VERBOTEN, status_code=403,
+                        media_type="text/html", headers=HTML_FRISCH)
+    return FileResponse(WURZEL / "datev.html", media_type="text/html",
+                        headers=HTML_FRISCH)
+
+
 @app.get("/app")
 def app_seite() -> Response:
     pfad = APP_ORDNER / "index.html"
