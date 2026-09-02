@@ -60,6 +60,13 @@ Sicherung `~/backups/babu-docker-vor-deploy-20260902-2148.tgz`. Live geprüft:
 (`aus_vertrag`), `/api/wissen/status`, `/portal` (neue Funktionen im Bundle),
 Container-Log ohne Fehler.
 
-Noch nicht: Kompendium-Rebuild auf dem Host (SKR04-Atome) und der iOS-Build auf
-Ninas iPhone (P0-2-Anteil in `Store.swift`). Der Getränkemarkt-Beleg wurde nicht
-nachgestellt (Rohdaten nur lokal).
+**Kompendium-Rebuild 02.09. 21:57** auf dem Host gelaufen: Skript liegt unter
+`~/babu-werkzeuge/werkzeuge/kompendium/` (Symlink `~/babu-werkzeuge/server -> ~/babu-docker`
+stellt die Repo-Struktur nach). 89.760 → 91.459 Atome (1.699 SKR04), Invariante geprüft,
+Sicherungen `~/kompendium/*.bak-20260902-215704`, Kontenübersicht (27 Kategorien) in
+`kontierung-grundwissen.md`, Container neu gestartet, Laden im Container verifiziert.
+
+Noch nicht: der iOS-Build auf Ninas iPhone (P0-2-Anteil in `Store.swift`) — auf
+Wunsch des Auftraggebers später. Der Getränkemarkt-Beleg wurde nicht nachgestellt
+(Rohdaten nur lokal). Die DATEV-Quellen sind noch nicht hochgeladen
+(`werkzeuge/wissen-import/datev_ordner_hochladen.py`, braucht den PAT aus der Keychain).
