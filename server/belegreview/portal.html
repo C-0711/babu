@@ -42,6 +42,14 @@ body{font:15px/1.5 var(--gc-sans);color:var(--gc-body);background:var(--gc-canva
 .lbl{font:10.5px/1 var(--gc-mono);letter-spacing:.11em;text-transform:uppercase;
   color:var(--gc-muted)}
 
+/* Beschriftung nur für die Vorlesefunktion. Viele Felder tragen ihren Namen
+   im Platzhalter — der verschwindet aber, sobald jemand tippt, und ein
+   Vorleseprogramm findet ihn ohnehin nicht zuverlässig. Diese Beschriftung
+   steht deshalb im Feldbaum, nimmt aber keinen Platz ein und verschiebt
+   nichts: aus dem Fluss genommen und auf einen Punkt zusammengezogen. */
+.nurvorlesen{position:absolute;width:1px;height:1px;margin:-1px;padding:0;
+  overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+
 /* Die Marke: das umrandete Kapsel-Label der App (BadgeView) — 9 px
    Schreibmaschine, Rand in der eigenen Farbe auf halber Deckkraft. */
 .marke{display:inline-block;font:10px/1.5 var(--gc-mono);letter-spacing:.055em;
@@ -924,8 +932,10 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   <div id="login-felder">
     <div class="lkarte">
       <form id="login-form" novalidate>
+        <label class="nurvorlesen" for="login-email">E-Mail</label>
         <input id="login-email" type="email" placeholder="E-Mail" autocomplete="username" required>
         <div class="pw-wrap">
+          <label class="nurvorlesen" for="login-passwort">Passwort</label>
           <input id="login-passwort" type="password" placeholder="Passwort" autocomplete="current-password" required>
           <button type="button" id="pw-auge" aria-label="Passwort anzeigen" aria-pressed="false">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -941,6 +951,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       </details>
       <details id="code-login">
         <summary>Mit Zugangscode anmelden (Einrichtung)</summary>
+        <label class="nurvorlesen" for="zugangscode">Zugangscode</label>
         <input id="zugangscode" type="password" placeholder="Zugangscode" autocomplete="off" style="margin-top:10px">
         <button id="anmelden-code" class="voll" style="background:var(--gc-accent-subtle);color:var(--gc-fg);margin-top:0">Mit Code anmelden</button>
       </details>
@@ -970,10 +981,12 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <form id="reset-form" novalidate>
       <input type="hidden" id="reset-token">
       <div class="pw-wrap">
+        <label class="nurvorlesen" for="reset-passwort">Neues Passwort</label>
         <input id="reset-passwort" type="password" placeholder="Neues Passwort"
                autocomplete="new-password" required>
       </div>
       <div class="pw-wrap">
+        <label class="nurvorlesen" for="reset-passwort2">Neues Passwort wiederholen</label>
         <input id="reset-passwort2" type="password" placeholder="Neues Passwort wiederholen"
                autocomplete="new-password" required>
       </div>
@@ -999,6 +1012,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       <button class="chip an" id="melden-fehler">Etwas stimmt nicht</button>
       <button class="chip" id="melden-wunsch">Ich hätte gern …</button>
     </div>
+    <label class="nurvorlesen" for="melden-text">Was ist dir aufgefallen?</label>
     <textarea id="melden-text" rows="5" placeholder="Zum Beispiel: Der Beleg vom Bäcker zeigt 19 % statt 7 %."
       style="width:100%;padding:11px 13px;border:1px solid var(--gc-border);
              border-radius:10px;font:inherit;background:var(--gc-bg);resize:vertical"></textarea>
@@ -1328,10 +1342,12 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       gehört — links die Ordner, rechts, was darin liegt. Aufheben musst du
       nichts mehr selbst.</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+      <label class="nurvorlesen" for="ablage-suche">Suchen</label>
       <input class="suchfeld" id="ablage-suche" style="flex:1;min-width:220px;margin:0"
         placeholder="Suchen — auch in dem, was auf den Blättern steht" autocomplete="off">
       <button class="chip" id="ablage-vertrag">Vertrag ablegen</button>
       <input type="file" id="vertrag-datei" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*" hidden>
+      <label class="nurvorlesen" for="wissen-thema">Thema</label>
       <select id="wissen-thema" title="Thema" style="max-width:160px">
         <option value="">Thema: wird erkannt</option>
       </select>
@@ -1369,6 +1385,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <input type="file" id="auszug-datei" accept=".pdf,application/pdf" hidden>
     <input type="file" id="brief-datei" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*" hidden>
     <div id="post-hochladen"></div>
+    <label class="nurvorlesen" for="post-suche">Suchen</label>
     <input class="suchfeld" id="post-suche" placeholder="Suchen — z. B. Lohn, Auswertung …" autocomplete="off">
     <div class="chips" style="margin-top:0">
       <button class="chip an" id="post-f-alle">Alle</button>
@@ -1420,8 +1437,10 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       </div></div>
     <div class="sektion lbl" id="einst-pw-lbl" hidden>Passwort ändern</div>
     <div class="karte" id="einst-pw" hidden>
+      <label class="nurvorlesen" for="pw-alt">Bisheriges Passwort</label>
       <input id="pw-alt" type="password" placeholder="Bisheriges Passwort" autocomplete="current-password"
         style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-bottom:8px">
+      <label class="nurvorlesen" for="pw-neu">Neues Passwort</label>
       <input id="pw-neu" type="password" placeholder="Neues Passwort (mindestens 8 Zeichen)" autocomplete="new-password"
         style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;margin-bottom:10px">
       <button class="chip" id="pw-speichern">Passwort ändern</button>
@@ -1439,10 +1458,12 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
         <input type="checkbox" data-s="benachrichtigung_abend"></label>
     </div>
     <div class="sektion lbl">Meine Kanzlei</div>
-    <div class="karte"><input id="einst-kanzlei" placeholder="Name der Kanzlei"
+    <div class="karte"><label class="nurvorlesen" for="einst-kanzlei">Name der Kanzlei</label>
+    <input id="einst-kanzlei" placeholder="Name der Kanzlei"
       style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit"></div>
     <div class="sektion lbl">Mein Betrieb</div>
-    <div class="karte"><input id="einst-betrieb" placeholder="Name des Salons"
+    <div class="karte"><label class="nurvorlesen" for="einst-betrieb">Name des Salons</label>
+    <input id="einst-betrieb" placeholder="Name des Salons"
       style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit"></div>
 
     <!-- Solange babu erprobt wird: die Einrichtung noch einmal von vorn,
@@ -1539,6 +1560,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <div id="t-kasse"></div>
     <div class="karte" style="margin-top:16px">
       <h3 style="font:600 15px var(--gc-serif);margin-bottom:8px">Neuer Termin</h3>
+      <label class="nurvorlesen" for="t-satz-feld">Termin in einem Satz</label>
       <input class="suchfeld" id="t-satz-feld" style="margin:0 0 8px"
              placeholder="z. B. Frau Holder Donnerstag Farbe" autocomplete="off">
       <button class="chip" id="t-suchen">Lücke suchen</button>
@@ -1555,6 +1577,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <div class="gruss" style="font-size:22px;margin-bottom:4px">Kundinnen</div>
     <p style="color:var(--gc-desc);margin-bottom:14px">Wer sie ist, was sie verträgt,
       welche Farbe beim letzten Mal stimmte.</p>
+    <label class="nurvorlesen" for="k-suche">Name suchen</label>
     <input class="suchfeld" id="k-suche" placeholder="Name suchen …" autocomplete="off">
     <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">
       <div style="flex:1 1 260px;min-width:240px">
@@ -1580,6 +1603,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
         Schreib hier, als wärst du die Kundin. Es geht nichts nach draußen —
         so siehst du, was babu antworten würde.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <label class="nurvorlesen" for="w-probe">Probenachricht</label>
         <input class="suchfeld" id="w-probe" style="margin:0;flex:1 1 240px"
                placeholder="Hätten Sie Donnerstag was frei für Farbe?">
         <button class="chip" onclick="wProbe()">Absenden</button>
@@ -1597,9 +1621,13 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
         Unternehmen und eine freigegebene Nummer. Bis das steht, funktioniert
         der Prüfstand oben trotzdem.</p>
       <div style="display:grid;gap:8px">
+        <label class="nurvorlesen" for="w-telefon-id">Telefonnummern-ID</label>
         <input class="suchfeld" id="w-telefon-id" style="margin:0" placeholder="Telefonnummern-ID (phone_number_id)">
+        <label class="nurvorlesen" for="w-token">Zugangstoken</label>
         <input class="suchfeld" id="w-token" style="margin:0" type="password" placeholder="Zugangstoken">
+        <label class="nurvorlesen" for="w-geheimnis">App-Geheimnis</label>
         <input class="suchfeld" id="w-geheimnis" style="margin:0" type="password" placeholder="App-Geheimnis (für die Signatur)">
+        <label class="nurvorlesen" for="w-verify">Prüfwort für den Webhook</label>
         <input class="suchfeld" id="w-verify" style="margin:0" placeholder="Prüfwort für den Webhook (frei wählbar)">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <button class="chip" onclick="wSpeichern()">Sichern</button>
@@ -1626,19 +1654,28 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       <summary style="cursor:pointer;font:600 15px var(--gc-serif)">Jemanden einstellen</summary>
       <div style="display:grid;gap:8px;margin-top:12px">
         <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <label class="nurvorlesen" for="pn-vorname">Vorname</label>
           <input class="suchfeld" id="pn-vorname" style="margin:0;flex:1 1 130px" placeholder="Vorname">
+          <label class="nurvorlesen" for="pn-name">Nachname</label>
           <input class="suchfeld" id="pn-name" style="margin:0;flex:1 1 130px" placeholder="Nachname">
         </div>
+        <label class="nurvorlesen" for="pn-telefon">Handynummer — dorthin geht der Link</label>
         <input class="suchfeld" id="pn-telefon" style="margin:0" placeholder="Handynummer — dorthin geht der Link">
         <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <label class="nurvorlesen" for="pn-art">Art der Anstellung</label>
           <select class="suchfeld" id="pn-art" style="margin:0;flex:1 1 170px"></select>
+          <label class="nurvorlesen" for="pn-eintritt">Eintritt (JJJJ-MM-TT)</label>
           <input class="suchfeld" id="pn-eintritt" style="margin:0;flex:1 1 130px" placeholder="Eintritt JJJJ-MM-TT">
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <label class="nurvorlesen" for="pn-stunden">Stunden pro Woche</label>
           <input class="suchfeld" id="pn-stunden" style="margin:0;flex:1 1 90px" placeholder="Std./Woche" inputmode="decimal">
+          <label class="nurvorlesen" for="pn-tage">Tage pro Woche</label>
           <input class="suchfeld" id="pn-tage" style="margin:0;flex:1 1 90px" placeholder="Tage/Woche" inputmode="decimal">
+          <label class="nurvorlesen" for="pn-entgelt">Brutto im Monat</label>
           <input class="suchfeld" id="pn-entgelt" style="margin:0;flex:1 1 110px" placeholder="Brutto/Monat" inputmode="decimal">
         </div>
+        <label class="nurvorlesen" for="pn-taetigkeit">Tätigkeit</label>
         <input class="suchfeld" id="pn-taetigkeit" style="margin:0" placeholder="Tätigkeit, z. B. Friseurin">
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="chip" onclick="personalAnlegen()">Anlegen und Link erzeugen</button>
@@ -1665,8 +1702,11 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <div class="karte" style="margin-top:14px">
       <h3 style="font:600 15px var(--gc-serif);margin-bottom:8px">Neue Leistung</h3>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <label class="nurvorlesen" for="p-name">Name der Leistung</label>
         <input class="suchfeld" id="p-name" style="margin:0;flex:2 1 180px" placeholder="Waschen, Schneiden, Föhnen">
+        <label class="nurvorlesen" for="p-preis">Preis in Euro</label>
         <input class="suchfeld" id="p-preis" style="margin:0;flex:1 1 90px" placeholder="49,00" inputmode="decimal">
+        <label class="nurvorlesen" for="p-min">Dauer in Minuten</label>
         <input class="suchfeld" id="p-min" style="margin:0;flex:1 1 80px" placeholder="60 min" inputmode="numeric">
         <button class="chip" onclick="preisSpeichern()">Aufnehmen</button>
       </div>
@@ -1723,6 +1763,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <div class="gruss" style="font-size:22px;margin-bottom:4px">Fragen</div>
     <p style="color:var(--gc-desc);margin-bottom:16px">Frag mich zu deinen Belegen — oder ganz allgemein zu Steuer-Grundfragen.</p>
     <form id="chatform">
+      <label class="nurvorlesen" for="chatfrage">Deine Frage</label>
       <input id="chatfrage" placeholder="Frag mich etwas zu deinen Belegen …" autocomplete="off">
       <button>Fragen</button>
     </form>
@@ -2362,15 +2403,15 @@ function aenderungsFormular(stamm, f, e, offenBleibt){
         ? "babu konnte hier nicht alles lesen. Was du einträgst, gilt."
         : "Stimmt etwas nicht? Ändere es hier — was du einträgst, gilt."}</p>
     <div class="eingabe-gitter">
-      <label>Betrag (mit Cent)
+      <label for="ang-brutto">Betrag (mit Cent)
         <input id="ang-brutto" inputmode="decimal" placeholder="z. B. 4,20" value="${esc(betrag)}"></label>
-      <label>Datum
+      <label for="ang-datum">Datum
         <input id="ang-datum" type="date" value="${esc(datum)}"></label>
-      <label>Wo war das?
+      <label for="ang-lieferant">Wo war das?
         <input id="ang-lieferant" placeholder="z. B. APCOA Parking" value="${esc(wert(f.lieferant))}"></label>
-      <label>Wofür war das?
+      <label for="ang-kategorie">Wofür war das?
         <select id="ang-kategorie"><option value="">— noch offen —</option></select></label>
-      <label class="breit">Notiz (wenn du magst)
+      <label class="breit" for="ang-notiz">Notiz (wenn du magst)
         <input id="ang-notiz" placeholder="z. B. Parken beim Großhandel"></label>
     </div>
     <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -4140,19 +4181,24 @@ async function ladeTeam(){
     <div class="karte" id="team-form">
       <input type="hidden" id="t-id">
       <div style="display:grid;gap:8px">
+        <label class="nurvorlesen" for="t-name">Name</label>
         <input id="t-name" placeholder="Name" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+        <label class="nurvorlesen" for="t-email">E-Mail</label>
         <input id="t-email" placeholder="E-Mail (wenn du magst)" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
         <div class="chips" style="margin:2px 0">
           <button class="chip an" id="t-fest" onclick="teamArt('fest')">Fester Lohn</button>
           <button class="chip" id="t-stunden" onclick="teamArt('stunden')">Nach Stunden</button>
         </div>
         <div id="t-fest-feld">
+          <label class="nurvorlesen" for="t-betrag">Fester Lohn im Monat</label>
           <input id="t-betrag" inputmode="decimal" placeholder="z. B. 2.400 im Monat"
             style="width:100%;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
         </div>
         <div id="t-stunden-feld" style="display:none;gap:8px;grid-template-columns:1fr 1fr">
+          <label class="nurvorlesen" for="t-stundenlohn">Stundenlohn</label>
           <input id="t-stundenlohn" inputmode="decimal" placeholder="Stundenlohn, z. B. 14,50"
             style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+          <label class="nurvorlesen" for="t-stunden-zahl">Stunden im Monat</label>
           <input id="t-stunden-zahl" inputmode="decimal" placeholder="Stunden im Monat"
             style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
         </div>
@@ -4381,8 +4427,11 @@ async function ladeAbschluss(){
       babu schreibt dir den Brief: welche Daten du brauchst, warum, und —
       wenn du willst — die Kündigung dazu. Verschickt wird nichts;
       der Brief landet in deiner Ablage, du liest ihn und schickst ihn ab.</p>
+    <label class="nurvorlesen" for="kw-name">Name der Kanzlei</label>
     <input class="suchfeld" id="kw-name" placeholder="Name der Kanzlei" style="margin-bottom:6px">
+    <label class="nurvorlesen" for="kw-anschrift">Anschrift</label>
     <input class="suchfeld" id="kw-anschrift" placeholder="Anschrift (optional)" style="margin-bottom:6px">
+    <label class="nurvorlesen" for="kw-nummer">Mandantennummer</label>
     <input class="suchfeld" id="kw-nummer" placeholder="Mandantennummer (optional)" style="margin-bottom:10px">
     <label style="display:block;font-size:13px;margin-bottom:10px">
       <input type="checkbox" id="kw-kuendigen"> Mandat gleich kündigen
@@ -5837,7 +5886,9 @@ async function kZeigen(id){
         </div>`).join("")
       : `<div class="leer">Noch nichts eingetragen.</div>`}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      <label class="nurvorlesen" for="k-b-leistung">Behandlung</label>
       <input class="suchfeld" id="k-b-leistung" style="margin:0;flex:1 1 130px" placeholder="Farbe">
+      <label class="nurvorlesen" for="k-b-formel">Formel und Dauer</label>
       <input class="suchfeld" id="k-b-formel" style="margin:0;flex:1 1 150px" placeholder="7/0 + 8/3, 30 min">
       <button class="chip" onclick="kBehandlung()">Eintragen</button>
     </div>
@@ -5997,7 +6048,8 @@ async function ladeVerwaltung(){
   // Wird mit der Zeit hundert Zeilen — Suchfeld bleibt ein eigenes Element
   // (nicht im re-render bei jedem Tastendruck), damit der Fokus beim Tippen
   // nicht verloren geht.
-  html += `<input id="verw-suche" type="search" placeholder="Suchen nach Name, E-Mail oder Salon"
+  html += `<label class="nurvorlesen" for="verw-suche">Suchen</label>
+  <input id="verw-suche" type="search" placeholder="Suchen nach Name, E-Mail oder Salon"
     value="${esc(_verwSuche)}" style="width:100%;padding:9px 12px;margin-bottom:10px;
     border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">`;
   html += `<div id="verw-liste"></div>`;
@@ -6005,9 +6057,13 @@ async function ladeVerwaltung(){
 
   html += `<div class="sektion lbl">Zugang anlegen</div><div class="karte">
     <div style="display:grid;gap:8px;grid-template-columns:1fr 1fr">
+      <label class="nurvorlesen" for="nv-email">E-Mail</label>
       <input id="nv-email" placeholder="E-Mail" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+      <label class="nurvorlesen" for="nv-name">Name</label>
       <input id="nv-name" placeholder="Name" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+      <label class="nurvorlesen" for="nv-salon">Salon</label>
       <input id="nv-salon" placeholder="Salon" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+      <label class="nurvorlesen" for="nv-rolle">Rolle</label>
       <select id="nv-rolle" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
         ${Object.entries(VERW_ROLLEN).map(([x,l]) => `<option value="${x}">${l}</option>`).join("")}
       </select>
@@ -6031,7 +6087,8 @@ function zugangKarteHtml(n){
           ${n.letzter_login ? "zuletzt " + zeitKurz(n.letzter_login) : "noch nie angemeldet"}</span>
       </div>
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
-        <select onchange="nutzerAktion('${n.email}','rolle',this.value)"
+        <select aria-label="Rolle von ${esc(n.name || n.email)}"
+          onchange="nutzerAktion('${n.email}','rolle',this.value)"
           style="padding:6px 10px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
           ${Object.entries(VERW_ROLLEN).map(([x,l]) =>
             `<option value="${x}" ${n.rolle===x?"selected":""}>${l}</option>`).join("")}
@@ -6128,8 +6185,10 @@ async function ladeMandanten(){
   }catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
   _mdDarfVerknuepfen = !!d.darf_verknuepfen;
   let html = `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+    <label class="nurvorlesen" for="md-suche">Suchen</label>
     <input class="suchfeld" id="md-suche" placeholder="Name, E-Mail oder Nummer" value="${esc(_mdSuche)}"
       style="flex:1 1 240px;padding:9px 12px">
+    <label class="nurvorlesen" for="md-status">Status</label>
     <select id="md-status" style="padding:9px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
       <option value="">Alle</option>
       ${Object.entries(MD_STATUS_TEXT).map(([k,v]) => `<option value="${k}" ${_mdStatus===k?"selected":""}>${v}</option>`).join("")}
@@ -6164,11 +6223,16 @@ async function ladeMandanten(){
     <p style="color:var(--gc-desc);font-size:13px;margin:0 0 10px">Der Salon bekommt eine Einladung per E-Mail.
     Die Belegbox richten wir danach ein — bis dahin steht der Mandant als „wird eingerichtet".</p>
     <div style="display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))">
+      <label class="nurvorlesen" for="md-neu-name">Name des Salons</label>
       <input id="md-neu-name" placeholder="Name des Salons" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+      <label class="nurvorlesen" for="md-neu-mail">E-Mail der Inhaberin</label>
       <input id="md-neu-mail" placeholder="E-Mail der Inhaberin" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+      <label class="nurvorlesen" for="md-neu-rahmen">Kontenrahmen</label>
       <select id="md-neu-rahmen" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
         <option value="SKR04">SKR04</option><option value="SKR03">SKR03</option></select>
+      <label class="nurvorlesen" for="md-neu-berater">Beraternummer</label>
       <input id="md-neu-berater" placeholder="Beraternummer" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+      <label class="nurvorlesen" for="md-neu-nummer">Mandantennummer</label>
       <input id="md-neu-nummer" placeholder="Mandantennummer" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
     </div>
     <button class="hin" style="margin-top:10px" onclick="mdAnlegen()">Einladen</button>
@@ -6206,6 +6270,7 @@ async function mdZeigen(id){
     html += `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--gc-border-l)">
       <div class="lbl" style="margin-bottom:6px">Belegbox verknüpfen</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <label class="nurvorlesen" for="md-box-ref">Ablageort der Belegbox</label>
         <input id="md-box-ref" value="${esc(m.box_ref || "")}" placeholder="Ablageort der Belegbox"
           style="flex:1 1 260px;padding:9px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
         <button class="chip" onclick="mdVerknuepfen(${m.id})">Verknüpfen</button></div>
@@ -6351,7 +6416,8 @@ function strecke(container, schritte, titel, beiWert, beiFertig){
       eingabeHtml = `<div class="chips" style="margin:16px 0">` + s.wahl.map(w =>
         `<button type="button" class="chip" data-wahl="${w}" style="font-size:15px;padding:10px 18px">${w}</button>`).join("") + `</div>`;
     } else {
-      eingabeHtml = `<input id="strecke-feld" type="${s.typ||"text"}" placeholder="${s.platzhalter||""}"
+      eingabeHtml = `<label class="nurvorlesen" for="strecke-feld">Deine Antwort</label>
+      <input id="strecke-feld" type="${s.typ||"text"}" placeholder="${s.platzhalter||""}"
         autocomplete="off" style="width:100%;padding:14px;border:1px solid var(--gc-border);
         border-radius:10px;font:18px var(--gc-sans);background:var(--gc-bg);margin:16px 0 10px">`;
     }
