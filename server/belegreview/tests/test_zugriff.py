@@ -359,3 +359,71 @@ def test_mitarbeiterin_behaelt_ihre_taegliche_arbeit(welt):
     client = _mitarbeiterin(welt)
     assert client.get("/api/ich").json()["box"] is True
     assert client.get("/api/belege").status_code == 200
+
+
+# ── P3-26, Verifikation (Plan 22, Runde 7, Punkt 6) ─────────────────────
+#
+# Der Befund selbst braucht keinen Code-Fix — `_verwalter_wache`/
+# `darf_verwalten` sperren die vier Routen serverseitig schon lange (siehe
+# `_mitarbeiterin`-Tests oben). Was fehlte, war der zweite Fall: eine
+# `salon`-Rolle ist keine Mitarbeiterin mit Login im fremden Betrieb,
+# sondern ein ganz gewöhnliches, selbst registriertes Konto — dieselbe
+# Sperre muss trotzdem für sie gelten. Und der dritte, gegenläufige Fall:
+# `kanzlei` OHNE jede `kanzlei_mitglied`-Zeile (der heutige Ein-Betrieb,
+# `christoph0711.io` in dieser Fixture) muss weiter durchkommen — genau das
+# Alt-Verhalten, das Plan 21 an keiner Stelle brechen darf.
+
+@pytest.mark.parametrize("methode,pfad,kwargs", VERWALTUNG)
+def test_salon_sieht_die_verwaltung_nicht(welt, methode, pfad, kwargs):
+    """Ein `salon`-Konto ist die machtloseste Rolle (Plan 21, Abschnitt 7,
+    Fail-Closed-Fallback) — dieselben vier Routen müssen für sie zubleiben."""
+    client = _fremde(welt)
+    r = getattr(client, methode)(pfad, **kwargs)
+    assert r.status_code == 403, f"{pfad} steht einem Salon-Konto offen"
+
+
+def test_kanzlei_ohne_mandanten_hat_alt_verhalten(welt):
+    """Der heutige Ein-Betrieb (`christoph0711.io`, Rolle `kanzlei`, keine
+    einzige `kanzlei_mitglied`-Zeile) darf auf allen vier Routen genau wie
+    vor Plan 21 arbeiten — das ist die Zusicherung aus `_reichweite`:
+    ohne betreute Mandanten sieht ein Verwalter weiterhin alles."""
+    verwaltung = _inhaberin(welt)          # PAT-Zugang, Rolle kanzlei
+    assert verwaltung.get("/api/nutzer").status_code == 200
+    assert verwaltung.get("/api/registrierungen").status_code == 200
+
+    r = verwaltung.post("/api/nutzer", json={
+        "email": "alt-verhalten@salon.de", "name": "Alt", "rolle": "salon"})
+    assert r.status_code == 200, r.text
+
+    r = verwaltung.post("/api/nutzer-aktion", json={
+        "email": "alt-verhalten@salon.de", "aktion": "box_sperren"})
+    assert r.status_code == 200, r.text
+
+
+def _admin(bw):
+    """Die Betreiber-Ebene — sieht das Audit-Log, keine der drei anderen
+    Rollen (siehe `test_admin_sieht_das_audit_log`).
+
+    Über `nutzer_anlegen` statt rohem SQL — derselbe Weg wie in
+    `test_audit.py`, und der einzige, der auch gegen den Postgres-Dialekt
+    verlässlich ein Passwort setzt, das `pw_pruefen` gleich wieder erkennt.
+    """
+    passwort = "betreiberin-passwort-lang-genug"
+    bw.nutzer_anlegen("betreiberin@babu.local", "Betreiberin", "", "admin",
+                      passwort=passwort)
+    client = _neuer_client(bw)
+    bw._LOGIN_VERSUCHE.clear()
+    r = client.post("/api/login", json={"email": "betreiberin@babu.local",
+                                        "passwort": passwort})
+    assert r.status_code == 200, r.text
+    assert r.json()["rolle"] == "admin"
+    return client
+
+
+def test_admin_sieht_das_audit_log(welt):
+    """`GET /api/audit` bleibt die Betreiber-Sicht — Kanzlei und Salon
+    kommen bis heute nicht heran, auch nicht die Kanzlei ohne Mandanten."""
+    assert _admin(welt).get("/api/audit").status_code == 200
+    assert _inhaberin(welt).get("/api/audit").status_code == 403
+    assert _fremde(welt).get("/api/audit").status_code == 403
+    assert _mitarbeiterin(welt).get("/api/audit").status_code == 403

@@ -71,6 +71,8 @@ def welt(tmp_path, monkeypatch):
     monkeypatch.setattr(babu_web, "zugelassen", lambda un: True)
     monkeypatch.setattr(babu_web, "rolle", lambda un: "admin")
     monkeypatch.setattr(babu_web, "nutzer_holen", lambda email: None)
+    import datev_seite
+    datev_seite._LESE_VERSUCHE.clear()
     return babu_web
 
 
@@ -366,6 +368,21 @@ def test_zu_grosse_datei_wird_abgelehnt(c):
     r = c.post("/api/datev/lesen", files={"datei": ("gross.csv", gross, "text/csv")})
     assert r.status_code == 400
     assert "MB" in r.json()["fehler"]
+
+
+def test_hereinlesen_ist_gebremst(c):
+    """Nach `LESE_MAX` Versuchen im Fenster kommt 429 statt einer weiteren
+    Antwort — unabhängig davon, ob die Datei gültig ist. Der Riegel greift
+    VOR der Endungsprüfung, deshalb reicht eine abgelehnte Datei je Versuch."""
+    import datev_seite
+    for _ in range(datev_seite.LESE_MAX):
+        r = c.post("/api/datev/lesen",
+                   files={"datei": ("stapel.pdf", b"%PDF-1.4", "application/pdf")})
+        assert r.status_code == 400, r.text
+    r = c.post("/api/datev/lesen",
+               files={"datei": ("stapel.pdf", b"%PDF-1.4", "application/pdf")})
+    assert r.status_code == 429
+    assert "warten" in r.json()["fehler"]
 
 
 def test_kaputter_zeichensatz_meldet_das(c):

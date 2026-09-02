@@ -140,6 +140,15 @@ _ANLAGE_VERSUCHE: dict[str, list[float]] = {}
 ANLAGE_MAX = 10
 ANLAGE_FENSTER = 60.0
 
+# Dieselbe Bremse für das Verknüpfen einer Box — seltener als das Anlegen
+# (nur die Betreiber-Ebene darf das, Abschnitt „Verknüpfen" oben), aber ein
+# falsch getippter `box_ref` schreibt einen Mandanten in einen fremden
+# Betrieb, also lohnt sich auch hier ein Riegel gegen ein Skript, das die
+# Route in einer Schleife trifft.
+_VERKNUEPFEN_VERSUCHE: dict[str, list[float]] = {}
+VERKNUEPFEN_MAX = 20
+VERKNUEPFEN_FENSTER = 60.0
+
 # Was die Oberfläche über einen Status sagt. Keine Systemnamen, keine
 # Zustandsautomaten — ein Satz, den eine Sachbearbeiterin vorlesen kann.
 STATUS_TEXT = {
@@ -715,6 +724,19 @@ def _anlage_gebremst(un: str) -> bool:
     return False
 
 
+def _verknuepfen_gebremst(un: str) -> bool:
+    jetzt = time.time()
+    versuche = [t for t in _VERKNUEPFEN_VERSUCHE.get(un, [])
+                if jetzt - t < VERKNUEPFEN_FENSTER]
+    _VERKNUEPFEN_VERSUCHE[un] = versuche
+    if len(versuche) >= VERKNUEPFEN_MAX:
+        return True
+    versuche.append(jetzt)
+    _bw()._zaehler_aufraeumen(_VERKNUEPFEN_VERSUCHE, jetzt,  # noqa: SLF001
+                              VERKNUEPFEN_FENSTER)
+    return False
+
+
 def _einladung_verschicken(bw, mandant_name: str, mail: str) -> str | None:
     """Der Link, mit dem der Salon sein eigenes Passwort setzt.
 
@@ -858,6 +880,9 @@ async def api_box_verknuepfen(mandant_id: int, request: Request) -> JSONResponse
         return fehler
     if not _ist_betreiber(un):
         return _fehler("Das trägt der Betreiber ein.", 403)
+    if _verknuepfen_gebremst(un):
+        return _fehler("Gerade wurden viele Boxen verknüpft — "
+                       "kurz warten, dann noch einmal.", 429)
     koerper = await _koerper(request)
     if koerper is None:
         return _fehler("JSON erwartet")

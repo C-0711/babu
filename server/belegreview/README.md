@@ -133,18 +133,20 @@ darf dabei weiterlaufen, er steht nicht im Weg.
 
 ### Sicherung
 
-Postgres und Belegbox sind getrennte Sicherungsziele; das bestehende
-`~/babu-sichern.sh` (tägliches Box-Spiegeln) bleibt, wie es ist. Dazu kommt
-ein Cron **auf dem Host**, kein eigener Container — für einen Zeitplan
-allein lohnt kein Dienst, und der Host hat sein Cron-Ritual schon:
+Postgres und Belegbox sind getrennte Sicherungsziele. **Seit 03.09.2026
+läuft die Postgres-Sicherung auf dem Host in `~/babu-sichern.sh`** — im
+selben Skript, das schon die tägliche Box-Spiegelung erledigt, kein
+zweiter Cron-Eintrag und kein eigener Container:
 
-```cron
-# täglich 03:20, 14 Tage rollierend
-20 3 * * * docker exec babu-postgres pg_dump -U babu -Fc babu > ~/backups/babu-pg-$(date +\%F).dump && find ~/backups -name 'babu-pg-*.dump' -mtime +14 -delete
+```bash
+docker exec babu-postgres pg_dump -U babu -d babu -Fc > ~/backups/babu/pg-$(date +%Y%m%d).dump
 ```
 
+14 Stände bleiben rollierend erhalten (ältere räumt dasselbe Skript weg,
+wie beim Box-Spiegel).
+
 Zurückspielen:
-`docker exec -i babu-postgres pg_restore -U babu -d babu --clean --if-exists < ~/backups/babu-pg-<datum>.dump`
+`docker exec -i babu-postgres pg_restore -U babu -d babu --clean < ~/backups/babu/pg-<JJJJMMTT>.dump`
 
 ### Neue SQL-Zeilen schreiben
 

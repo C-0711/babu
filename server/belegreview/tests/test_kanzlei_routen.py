@@ -123,6 +123,7 @@ def welt(tmp_path, monkeypatch):
            "ohne": m_ohne, "fremd": m_fremd, "tmp": tmp_path}
     bx.registry_leeren()
     kr._ANLAGE_VERSUCHE.clear()
+    kr._VERKNUEPFEN_VERSUCHE.clear()
 
 
 @pytest.fixture()
@@ -363,6 +364,20 @@ def test_ein_krummer_verweis_wird_abgelehnt(welt, k):
         r = k.post(f"/api/kanzlei/mandanten/{welt['ohne']}/box-verknuepfen",
                    json={"box_ref": ref})
         assert r.status_code == 400, ref
+
+
+def test_box_verknuepfen_ist_gebremst(welt, k):
+    """Nach `VERKNUEPFEN_MAX` Versuchen im Fenster kommt 429 — derselbe
+    Riegel wie beim Anlegen, nur für den Betreiber-Weg."""
+    _als(welt, "betreiber@0711.io")
+    for _ in range(kr.VERKNUEPFEN_MAX):
+        r = k.post(f"/api/kanzlei/mandanten/{welt['ohne']}/box-verknuepfen",
+                   json={"box_ref": "inspektor/ws-ohne/babu"})
+        assert r.status_code == 200, r.text
+    r = k.post(f"/api/kanzlei/mandanten/{welt['ohne']}/box-verknuepfen",
+              json={"box_ref": "inspektor/ws-ohne/babu"})
+    assert r.status_code == 429
+    assert "warten" in r.json()["fehler"]
 
 
 # ── Status ──────────────────────────────────────────────────────────────

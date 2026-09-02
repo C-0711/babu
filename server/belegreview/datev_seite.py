@@ -54,6 +54,17 @@ ENDUNGEN = (".csv", ".txt")
 
 MONAT_MUSTER = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
+# Rate-Limit auf das Hereinlesen, je angemeldetem Zugang (nicht je IP: die
+# Route setzt ohnehin `_verwalter_wache` voraus, und eine Kanzlei sitzt oft
+# hinter derselben Adresse wie ihre Nachbarin). Jeder Aufruf liest die
+# ganze Datei in den Speicher und parst sie — 20 im 60-Sekunden-Fenster
+# lässt ein normales Durchprobieren mehrerer Monatsdateien zu, ohne dass
+# jemand die Route als Upload-Kanone missbrauchen kann. Muster wie
+# `_anlage_gebremst` in `kanzlei_routen.py`.
+_LESE_VERSUCHE: dict[str, list[float]] = {}
+LESE_MAX = 20
+LESE_FENSTER = 60.0
+
 
 # ---------------------------------------------------------------------------
 # Wache und Zugriff auf babu_web — beides erst zur Laufzeit.
@@ -75,6 +86,17 @@ def _wache(request: Request):
     sich nichts; siehe `babu_web._verwalter_box_wache`.
     """
     return _bw()._verwalter_box_wache(request)
+
+
+def _lese_gebremst(un: str) -> bool:
+    jetzt = time.time()
+    versuche = [t for t in _LESE_VERSUCHE.get(un, []) if jetzt - t < LESE_FENSTER]
+    _LESE_VERSUCHE[un] = versuche
+    if len(versuche) >= LESE_MAX:
+        return True
+    versuche.append(jetzt)
+    _bw()._zaehler_aufraeumen(_LESE_VERSUCHE, jetzt, LESE_FENSTER)  # noqa: SLF001
+    return False
 
 
 def _fehler(text: str, code: int = 400) -> JSONResponse:
@@ -769,6 +791,9 @@ async def api_lesen(request: Request, datei: UploadFile = File(...)) -> Response
     un, fehler = _wache(request)
     if fehler:
         return fehler
+    if _lese_gebremst(un):
+        return _fehler("Gerade wurden viele Dateien hereingelesen — "
+                       "kurz warten, dann noch einmal.", 429)
     name = (datei.filename or "").lower()
     if not name.endswith(ENDUNGEN):
         return _fehler("Bitte eine Datei mit der Endung .csv oder .txt wählen.")
