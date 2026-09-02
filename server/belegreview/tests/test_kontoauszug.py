@@ -91,6 +91,14 @@ Kontoführung
     assert len(d["umsaetze"]) == 3
 
 
+def test_parse_text_erkennt_die_bank():
+    d = kontoauszug.parse_text(SYNTHETISCH)
+    assert d["bank"] == "Kreissparkasse"
+
+    ohne = kontoauszug.parse_text("Musterbank Geschäftskonto\n01.02.2026 Lastschrift\n")
+    assert ohne["bank"] is None
+
+
 def test_positionen_tragen_status_in_originalreihenfolge():
     """Die Checkliste der Bank-Ansicht: jede Position des Auszugs, in der
     Reihenfolge des Papiers, mit Haken-Status — gedeckte kennen ihren Beleg."""

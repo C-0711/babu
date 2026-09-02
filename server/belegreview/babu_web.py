@@ -5919,6 +5919,32 @@ def _abschluss_beiakten() -> dict[str, dict]:
     return {pfad: raus.get(oid) or {} for pfad, oid in oids.items()}
 
 
+def _auszug_umsaetze_beiakten() -> dict[str, dict]:
+    """Für jeden Kontoauszug: Monat + Bank aus seiner `.umsaetze.json`.
+
+    Kontoauszüge tragen nie eine `.meta.json` (die schreibt nur die
+    Kanzlei-Dokument-Ablage) — `_abschluss_beiakten()` findet für sie also
+    strukturell nie einen Titel. Diese Funktion liest stattdessen die
+    Beiakte, die beim Hochladen tatsächlich entsteht.
+    """
+    kopf = (_git(["rev-parse", "HEAD"], 10) or "HEAD").strip()
+    out = _git(["ls-tree", "-r", kopf], 60) or ""
+    oids: dict[str, str] = {}
+    for zeile in out.splitlines():
+        vorn, _, pfad = zeile.partition("\t")
+        teile = vorn.split()
+        if pfad.startswith("auszuege/") and pfad.endswith(".umsaetze.json") \
+                and len(teile) == 3 and teile[1] == "blob":
+            oids[pfad.removesuffix(".umsaetze.json")] = teile[2]
+    raus: dict[str, dict] = {}
+    for oid, roh in _blobs_lesen(list(oids.values())).items():
+        try:
+            raus[oid] = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            raus[oid] = {}
+    return {pfad: raus.get(oid) or {} for pfad, oid in oids.items()}
+
+
 def _beleg_titel(z: dict) -> str:
     """Wie ein Beleg im Ordner heißt — so, wie Nina ihn wiedererkennt."""
     teile = [z.get("lieferant") or "Beleg"]
@@ -5930,6 +5956,7 @@ def _beleg_titel(z: dict) -> str:
 def _ablage_eintraege() -> list[dict]:
     """Alles Abgelegte als flache Liste — die Grundlage für Baum und Suche."""
     import datev_wissen  # noqa: PLC0415
+    import monatslauf  # noqa: PLC0415
     index = index_aktuell()
     zeiten = index["zeiten"]
     eintraege: list[dict] = []
@@ -5957,6 +5984,7 @@ def _ablage_eintraege() -> list[dict]:
 
     beiakten = _abschluss_beiakten()
     wissen_beiakten = _wissen_beiakten()
+    auszug_umsaetze = _auszug_umsaetze_beiakten()
 
     # Kontoauszüge, Abschlüsse, Stapel und Kassenblätter direkt aus dem Baum —
     # MIT Blob-Kennungen, denn an denen hängt die gemerkte Seitenzahl.
@@ -5988,7 +6016,16 @@ def _ablage_eintraege() -> list[dict]:
             art = beiakte.get("fach") or "kontoauszug"
             if art not in ABLAGE_ARTEN:
                 art = "kontoauszug"
-            titel = beiakte.get("titel") or name
+            titel = beiakte.get("titel")
+            if not titel:
+                um = auszug_umsaetze.get(pfad) or {}
+                if um.get("monat"):
+                    monatname = monatslauf.monatsname(um["monat"])
+                    jahr = um["monat"][:4]
+                    titel = f"Kontoauszug {monatname} {jahr}"
+                    if um.get("bank"):
+                        titel += f" · {um['bank']}"
+            titel = titel or name
         elif pfad.startswith("abschluss/") and not name.startswith("kennzahlen") \
                 and not name.startswith("bericht"):
             beiakte = beiakten.get(pfad) or {}

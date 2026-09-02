@@ -12,6 +12,20 @@ AUSZUG_RE = re.compile(r"Kontoauszug\s+(\d{1,2})/(\d{4})")
 KONTO_RE = re.compile(r"GiroBusiness\s+(\d+)")
 FUSS_WOERTER = ("Postanschrift", "BIC-Code", "Vorstand", "Handelsregister")
 
+# Für die Ablage: „Kontoauszug Juli 2026 · Kreissparkasse" statt Rohdateiname.
+# Reine Stichwortliste über die ersten Zeilen — kein Anspruch auf
+# Vollständigkeit, nur die gängigen Institute der Zielgruppe.
+BANKNAMEN = ("Kreissparkasse", "Sparkasse", "Volksbank", "Commerzbank",
+             "Deutsche Bank", "Postbank", "ING", "DKB", "comdirect", "GLS Bank")
+
+
+def _bank_erkennen(zeilen: list[str]) -> str | None:
+    for zeile in zeilen[:15]:
+        for name in BANKNAMEN:
+            if name in zeile:
+                return name
+    return None
+
 
 def _betrag(s: str) -> float:
     return float(s.replace(".", "").replace(",", "."))
@@ -19,6 +33,7 @@ def _betrag(s: str) -> float:
 
 def parse_text(text: str) -> dict:
     zeilen = text.replace("\r\n", "\n").split("\n")
+    bank = _bank_erkennen(zeilen)
     umsaetze: list[dict] = []
     monat = None
     konto = None
@@ -65,7 +80,7 @@ def parse_text(text: str) -> dict:
                 haeufig[schluessel] = haeufig.get(schluessel, 0) + 1
         if haeufig:
             monat = max(haeufig, key=lambda k: (haeufig[k], k))
-    return {"konto": konto, "monat": monat, "umsaetze": umsaetze}
+    return {"konto": konto, "monat": monat, "bank": bank, "umsaetze": umsaetze}
 
 
 def parse_pdf(pfad) -> dict:

@@ -266,6 +266,36 @@ def test_ein_pdf_traegt_seine_seitenzahl(welt, tmp_path):
     assert beleg["seiten"] == 1
 
 
+def test_auszug_titel_wird_synthetisiert(welt):
+    """Kontoauszüge heißen wie ihre Rohdatei — babu kennt aber Monat und
+    Bank aus dem Lesen und kann sie „Kontoauszug Juli 2026 · Kreissparkasse"
+    nennen, statt des Zufallsnamens (Befund P1-7)."""
+    client, _, bw = welt
+    import boxschreiber
+    boxschreiber.schreiben(
+        {"auszuege/2026-07/20260701-abc-Auszug.pdf": _zweiseiter(),
+         "auszuege/2026-07/20260701-abc-Auszug.pdf.umsaetze.json": json.dumps(
+             {"konto": "12345678", "monat": "2026-07", "bank": "Kreissparkasse",
+              "umsaetze": []}).encode()},
+        None, "auszug", "t@l")
+    bw._INDEX.update(geprueft=0.0)
+    fach = _faecher(client)["kontoauszug"]
+    stueck = next(s for s in fach["stuecke"] if s["pfad"].endswith("Auszug.pdf"))
+    assert stueck["titel"] == "Kontoauszug Juli 2026 · Kreissparkasse"
+
+
+def test_auszug_ohne_umsaetze_json_faellt_auf_den_rohnamen_zurueck(welt):
+    """Alter Stand ohne Beiakte: der Rohname bleibt der Fallback."""
+    client, _, bw = welt
+    import boxschreiber
+    boxschreiber.schreiben({"auszuege/2026-01/auszug.pdf": _zweiseiter()},
+                           None, "auszug", "t@l")
+    bw._INDEX.update(geprueft=0.0)
+    fach = _faecher(client)["kontoauszug"]
+    stueck = next(s for s in fach["stuecke"] if s["pfad"].endswith("auszug.pdf"))
+    assert stueck["titel"] == "auszug.pdf"
+
+
 def test_die_vorschau_liefert_die_erste_seite_als_bild(welt):
     client, _, bw = welt
     import boxschreiber
