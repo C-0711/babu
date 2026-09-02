@@ -2445,10 +2445,12 @@ def _review_aus_einschaetzung(pfad: str, buchung: dict, zeilen: list,
     steuersaetze = buchung.get("steuersaetze") or []
     netto = ust = None
     summenprobe_ok = None
+    tabelle_deckt_brutto = False
     if steuersaetze and isinstance(brutto, (int, float)):
         tabellen_brutto = round(
             sum(float(s.get("brutto") or 0) for s in steuersaetze), 2)
-        if abs(tabellen_brutto - float(brutto)) < 0.02:
+        tabelle_deckt_brutto = abs(tabellen_brutto - float(brutto)) < 0.02
+        if tabelle_deckt_brutto:
             # Die Steuertabelle aus Gemmas gelesenen Positionen deckt den
             # Betrag — sie trägt Pfand/Mischsätze korrekt, der einzelne Satz
             # auf den Gesamtbetrag würde das ignorieren (Ninas Anmerkung P0-2).
@@ -2460,6 +2462,25 @@ def _review_aus_einschaetzung(pfad: str, buchung: dict, zeilen: list,
         ust = round(brutto - netto, 2)
     elif netto is None and isinstance(brutto, (int, float)):
         netto, ust = round(float(brutto), 2), 0.0
+    felder = {
+        "lieferant": buchung.get("lieferant"),
+        "beleg_nr": None,
+        "datum": buchung.get("datum"),
+        "netto": netto, "ust": ust, "brutto": brutto,
+        "ust_satz": satz,
+        "gutschrift": bool(buchung.get("gutschrift")),
+        "summenprobe_ok": summenprobe_ok,
+        "bewirtungssignal": False,
+        "offen": [],
+        "herkunft": {"quelle": "Einschätzung auf dem Telefon — "
+                               "Vision-Zeilen, von Gemma gebucht"},
+    }
+    if len(steuersaetze) > 1 and tabelle_deckt_brutto:
+        # extf.buchungszeilen liest ausschließlich felder["steuertabelle"]
+        # (nicht buchung["steuersaetze"]) für den Mehrsatz-Split — ohne
+        # diese Zeile bucht ein 19%+7%-Bon als EIN Satz statt gesplittet.
+        # Ein einziger Satz bleibt unverändert ohne das Feld (Golden-Diff).
+        felder["steuertabelle"] = steuersaetze
     review = {
         "datei": pfad,
         "engine": "Vision (Gerät) + Gemma",
@@ -2471,19 +2492,7 @@ def _review_aus_einschaetzung(pfad: str, buchung: dict, zeilen: list,
         # Visions Rohausgabe mit Ort und Konfidenz — das Archiv verliert nichts.
         "zeilen_geo": ([z for z in zeilen if isinstance(z, dict)] or None),
         "zeilen": len(zeilen),
-        "felder": {
-            "lieferant": buchung.get("lieferant"),
-            "beleg_nr": None,
-            "datum": buchung.get("datum"),
-            "netto": netto, "ust": ust, "brutto": brutto,
-            "ust_satz": satz,
-            "gutschrift": bool(buchung.get("gutschrift")),
-            "summenprobe_ok": summenprobe_ok,
-            "bewirtungssignal": False,
-            "offen": [],
-            "herkunft": {"quelle": "Einschätzung auf dem Telefon — "
-                                   "Vision-Zeilen, von Gemma gebucht"},
-        },
+        "felder": felder,
         "buchung": {"status": "gebucht", "buchung": buchung},
         "einschaetzung": {
             "kategorie": buchung.get("kategorie"),
@@ -3491,10 +3500,12 @@ def _anlage_vorschlaege(un: str, jahr: int, vorhanden: set[str]) -> list[dict]:
         netto = f.get("netto")
         if netto is None:
             continue
-        datum = str(f.get("datum") or "")
-        teile = datum.split(".")
-        iso = (f"{int(teile[2]):04d}-{int(teile[1]):02d}-{int(teile[0]):02d}"
-               if len(teile) == 3 else "")
+        import extf  # noqa: PLC0415
+        # Zwei Datumsformate im Haus (extf._datum_teile): TT.MM.JJJJ vom
+        # Altweg, JJJJ-MM-TT vom Zielbild-Weg (Gemma schreibt ISO seit
+        # 27.08.2026) — ein reiner Punkt-Split verschluckte den zweiten.
+        teile = extf._datum_teile(f.get("datum"))
+        iso = f"{teile[2]:04d}-{teile[1]:02d}-{teile[0]:02d}" if teile else ""
         if iso[:4] and int(iso[:4]) > jahr:
             continue
         vorschlaege.append({
@@ -4387,11 +4398,14 @@ def datev_buchungssatz(d: dict) -> dict | None:
     brutto, konto = f.get("brutto"), e.get("konto_skr04")
     if brutto is None or not konto:
         return None
-    belegdatum = None
+    import extf  # noqa: PLC0415
+    # Zwei Datumsformate im Haus (extf._datum_teile): TT.MM.JJJJ vom Altweg,
+    # JJJJ-MM-TT vom Zielbild-Weg (Gemma schreibt ISO seit 27.08.2026) — ein
+    # reiner Punkt-Split ließ Belegdatum und Buchungstext für Zielbild-
+    # Belege leer.
     datum = f.get("datum") or ""
-    teile = datum.split(".")
-    if len(teile) == 3:
-        belegdatum = f"{int(teile[0]):02d}{int(teile[1]):02d}"   # TTMM
+    teile = extf._datum_teile(datum)
+    belegdatum = extf._ttmm(datum)
     belegfeld1 = re.sub(r"[^A-Za-z0-9$%&*+-/]", "", f.get("beleg_nr") or "")[:36] or None
 
     # Sprechender Buchungstext: Gemma-Vorschlag, sonst aus Einordnung + Datum +
@@ -4402,7 +4416,7 @@ def datev_buchungssatz(d: dict) -> dict | None:
     if not text:
         einordnung = ((d.get("semantik") or {}).get("belegart") or "").strip()
         lieferant = (vlm.get("lieferant") or f.get("lieferant") or "").strip()
-        datum_kurz = f"{int(teile[0]):02d}.{int(teile[1]):02d}." if len(teile) == 3 else ""
+        datum_kurz = f"{teile[0]:02d}.{teile[1]:02d}." if teile else ""
         text = " ".join(x for x in (einordnung, datum_kurz, lieferant) if x)
     return {
         "umsatz": f"{brutto:.2f}".replace(".", ","),

@@ -64,6 +64,18 @@ def test_abgleich():
     assert a["einnahmen_summe"] == 109.46
 
 
+def test_abgleich_findet_zielbild_beleg_mit_iso_datum():
+    """Der Zielbild-Weg (seit 27.08.2026, Gemma) schreibt `felder.datum` als
+    ISO (JJJJ-MM-TT), der Auszug bleibt TT.MM.JJJJ. `_tag()` verglich vorher
+    blind per Punkt-Split — bei einem ISO-Datum kam `len(t) != 3` heraus,
+    `_tag` gab None zurück und der Match schlug fehl, egal wie nah die
+    Daten beieinanderlagen."""
+    d = kontoauszug.parse_text(SYNTHETISCH)
+    belege = [{"stamm": "z1", "brutto": 952.58, "datum": "2025-01-03"}]  # ISO, 1 Tag Abstand
+    a = kontoauszug.abgleich(d["umsaetze"], belege)
+    assert [g["stamm"] for g in a["gedeckt"]] == ["z1"]
+
+
 def test_abgleich_datumsfenster():
     d = kontoauszug.parse_text(SYNTHETISCH)
     zu_alt = [{"stamm": "alt", "brutto": 952.58, "datum": "20.11.2024"}]

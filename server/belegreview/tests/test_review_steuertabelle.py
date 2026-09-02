@@ -16,6 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import babu_web as bw  # noqa: E402
+import extf  # noqa: E402
 
 
 def test_steuertabelle_gewinnt_vor_der_rueckrechnung():
@@ -78,3 +79,43 @@ def test_gerissene_probe_setzt_summenprobe_ok_false():
     f = review["felder"]
     assert f["summenprobe_ok"] is False
     assert bw._status_ableiten(review, bewirtung_da=False) == "nachfrage"
+
+
+def test_mischsatz_traegt_steuertabelle_und_splittet_im_stapel():
+    """Der eigentliche Mischsatz-Bug: `_review_aus_einschaetzung` schrieb
+    `felder.steuertabelle` nie, obwohl `buchung.steuersaetze` genau die
+    Form trägt, die `extf.buchungszeilen` für den Mehrsatz-Split braucht
+    (der dm-Fall: 19 % + 7 % auf einem Bon). Ohne das Feld bucht der Stapel
+    einen Satz auf den vollen Bruttobetrag statt zwei Zeilen."""
+    buchung = {
+        "betrag_eur": 100.00,
+        "ust_satz": 19,
+        "lieferant": "dm-drogerie markt",
+        "datum": "2026-08-30",
+        "konto": "4980",
+        "steuersaetze": [
+            {"satz": 19, "brutto": 60.00, "netto": 50.42, "ust": 9.58},
+            {"satz": 7, "brutto": 40.00, "netto": 37.38, "ust": 2.62},
+        ],
+    }
+    review, _ = bw._review_aus_einschaetzung("docs/dm.jpg", buchung, [], "beleg")
+    f = review["felder"]
+    assert f["steuertabelle"] == buchung["steuersaetze"]
+    assert f["summenprobe_ok"] is True
+
+    zeilen = extf.buchungszeilen(review)
+    assert len(zeilen) == 2
+    nach_satz = {z["satz"]: z for z in zeilen}
+    assert nach_satz[19]["bu"] == "9" and nach_satz[19]["umsatz"] == "60,00"
+    assert nach_satz[7]["bu"] == "8" and nach_satz[7]["umsatz"] == "40,00"
+
+
+def test_ein_satz_traegt_keine_steuertabelle():
+    """Golden-Diff-Sicherheit: ein einzelner Satz bleibt unverändert ohne
+    das Feld — `extf.buchungszeilen` bucht wie bisher EINE Zeile."""
+    buchung = {"betrag_eur": 65.73, "ust_satz": 19, "lieferant": "Getränkemarkt",
+               "datum": "2026-08-04", "konto": "4980"}
+    review, _ = bw._review_aus_einschaetzung("docs/x.pdf", buchung, [], "beleg")
+    assert "steuertabelle" not in review["felder"]
+    zeilen = extf.buchungszeilen(review)
+    assert len(zeilen) == 1

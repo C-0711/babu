@@ -6,6 +6,8 @@ Zahlungsabgleich: „Für diese Abbuchung fehlt der Beleg."
 """
 import re
 
+import extf
+
 DATUM_TYP_RE = re.compile(r"^(\d{2}\.\d{2}\.\d{4})\s*(.+)$")
 BETRAG_RE = re.compile(r"^\s*(-?\d{1,3}(?:\.\d{3})*,\d{2})\s*$")
 AUSZUG_RE = re.compile(r"Kontoauszug\s+(\d{1,2})/(\d{4})")
@@ -105,13 +107,15 @@ def abgleich(umsaetze: list[dict], belege: list[dict],
     """Abbuchungen ↔ Belege: Betrag (±2 ct) + Datumsnähe. Bankentgelte zählen
     nicht als fehlend (der Auszug selbst ist der Beleg)."""
     def _tag(d: str) -> int | None:
-        t = d.split(".")
-        if len(t) != 3:
+        # Der Auszug liefert immer TT.MM.JJJJ (DATUM_TYP_RE); `belege`
+        # speist sich aus felder.datum und trägt seit dem Zielbild-Weg
+        # (27.08.2026, Gemma) auch JJJJ-MM-TT — extf._datum_teile liest
+        # beide Formen.
+        teile = extf._datum_teile(d)
+        if teile is None:
             return None
-        try:
-            return int(t[2]) * 372 + int(t[1]) * 31 + int(t[0])
-        except ValueError:
-            return None
+        tag, monat, jahr = teile
+        return jahr * 372 + monat * 31 + tag
 
     fehlend, gedeckt, bank, einnahmen = [], [], [], []
     # Zusätzlich JEDE Position in Originalreihenfolge des Auszugs, mit
@@ -174,14 +178,10 @@ ZAHLUNG_FRIST_TAGE = 120
 
 
 def _iso(datum: str) -> str | None:
-    """„02.09.2026" → „2026-09-02"."""
-    teile = str(datum or "").split(".")
-    if len(teile) != 3:
-        return None
-    try:
-        return f"{int(teile[2]):04d}-{int(teile[1]):02d}-{int(teile[0]):02d}"
-    except ValueError:
-        return None
+    """„02.09.2026" → „2026-09-02" (und ISO bleibt ISO) — extf._datum_teile
+    liest beide Formate, siehe `_tag` oben."""
+    teile = extf._datum_teile(datum)
+    return f"{teile[2]:04d}-{teile[1]:02d}-{teile[0]:02d}" if teile else None
 
 
 def _tage_zwischen(von: str, bis: str) -> int | None:
