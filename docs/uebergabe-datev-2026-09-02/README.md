@@ -157,3 +157,16 @@ eingerichtet"-Blatt in Heute beim Acting-as auf einen Mandanten ohne Box
 (die UI bietet den Umschalter nur bei aktiver Box an, per URL/Konsole
 erzwungen zeigt Heute leere Karten mit 409 im Netz).
 
+**Deployt 03.09. 01:30** (main `9f3809d`, Freigabe des Auftraggebers: „deploy",
+„mit Postgres auf h200v"): Golden vorher → rsync → build → Postgres hoch →
+Probelauf und Umzug (103 Zeilen) → `BABU_DB_URL` scharf → up → Golden nachher.
+`/api/abgleich/*` byte-identisch; `/api/belege` weicht nur in den 195
+Buchungstexten (Datumspräfix, gewollt) und vier Status `erfasst → unlesbar`
+(P0-4) ab. Live geprüft: `/api/ich`, `/api/nutzer` (5 Zugänge, Alt-Verhalten
+ohne Kanzlei-Zeilen), `/api/kanzlei/mandanten` und `/warteschlange`, `/datev`
+und `/api/datev/uebersicht`, `/api/audit` 403 für Kanzlei, `/portal` trägt
+Mandanten-Ansicht, Seitenleiste und Belege-Tabelle, Export-Vorschau 200,
+Container-Log ohne Fehler. Postgres nachweislich in Benutzung: Audit-Zeile des
+Export-Aufrufs liegt dort, `schema_version` 0001+0002. Unterwegs gefixt:
+das Umzugsskript kannte die Passwortdatei nicht (`9f3809d`).
+

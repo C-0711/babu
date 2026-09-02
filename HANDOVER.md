@@ -44,7 +44,19 @@ der Oberfläche.
 
 ## 2. ⚠️ Betrieb: dieser Branch ist die Quelle
 
-Produktiv auf der H200V ist `main`, Stand **`87624ec`** (02.09. 22:15).
+Produktiv auf der H200V ist `main`, Stand **`9f3809d`** (03.09. 01:30) —
+**seit diesem Deploy spricht babu-web mit Postgres 16** (Container
+`babu-postgres`, nur 127.0.0.1:55432, Passwortdatei `~/babu-web/.pg_passwort`,
+Daten im Volume `babu-pg-daten`). `portal.db` liegt unangetastet daneben
+und ist der Rückweg: `BABU_DB_URL` in `docker/compose.yml` auskommentieren,
+`docker compose up -d`. Umzug: 103 Zeilen in 19 Tabellen, Zählprobe im
+Skript bestanden. Golden nach dem Deploy: `/api/abgleich/*` byte-identisch,
+`/api/belege` weicht in 195 Buchungstexten ab (Datumspräfix „TT.MM.“, das
+für Zielbild-Belege seit 27.08. fehlte — gewollt, Commit 76dd7d9) und bei
+vier Belegen `erfasst → unlesbar` (P0-4 aus Runde 2: Portal-Uploads ohne
+Lesung nach 20 Minuten). Sicherung vor dem Deploy:
+`~/backups/babu-docker-vor-deploy-20260903-0103.tgz`, Golden unter
+`~/golden/{vorher3,nachher3}-*`.
 **babu-web läuft seit 27.08.2026 als Docker-Container** (Quelle
 `server/docker/`: host network, User 1001:1000, Volumes `~/babu-web` rw +
 `~/inspektor-store` ro + PAT ro + Gemini-Env ro; Build-Kopie `~/babu-docker/`).
@@ -223,10 +235,8 @@ zur Kanzlei wird: Rolle „kanzlei" unter „Zugänge verwalten", dann unter
 „Mandanten" den ersten Betrieb anlegen — die Kanzlei-Zeile entsteht dabei.
 
 Endstand `20fa9a5`: Suite 1900 grün gegen SQLite UND gegen Postgres 16.
-Nicht gepusht, nicht gemerged, nicht deployt — das ist der Zug des
-Auftraggebers (Push des Branches, ff-Merge nach main, Deploy-Ritual mit
-Golden-Diff; für Postgres zusätzlich Passwortdatei, Migrationslauf,
-dann `BABU_DB_URL` einkommentieren).
+**Gemerged und deployt 03.09. 01:30** (main `9f3809d`), inklusive
+Postgres-Umzug auf Wunsch des Auftraggebers — Details in Abschnitt 2.
 
 Noch offen aus dem Auftrag: Plan 21 Phase 5 (Lasttest, Backup-Cron auf dem
 Host, Compose-Build auf der H200V), P2-17/18 und P3-Rest.
