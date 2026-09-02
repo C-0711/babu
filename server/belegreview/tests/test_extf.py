@@ -74,6 +74,56 @@ def test_mehrsatz_split():
     assert (zeilen[1]["umsatz"], zeilen[1]["konto"], zeilen[1]["bu"]) == ("4,95", "5300", "")
 
 
+def _zielbild_review(datum, **felder_overrides):
+    """Form eines Reviews aus dem Zielbild-Weg (babu_web._review_aus_
+    einschaetzung, seit 27.08.2026): `vlm`/`semantik` sind None, `datum`
+    kommt von Gemma als `JJJJ-MM-TT`, `konto`/`kontenrahmen` statt
+    `konto_skr04` in der Einschätzung."""
+    felder = {"brutto": 27.40, "datum": datum, "beleg_nr": None,
+              "ust_satz": 19}
+    felder.update(felder_overrides)
+    return {"felder": felder,
+            "einschaetzung": {"konto": "5900", "kontenrahmen": "SKR04"},
+            "vlm": None, "semantik": None}
+
+
+def test_iso_datum_aus_dem_zielbild_weg_traegt_ein_belegdatum():
+    """Befund: Gemma schreibt seit 27.08.2026 `felder.datum` als
+    `JJJJ-MM-TT` (siehe _review_aus_einschaetzung in babu_web.py), extf.py
+    las bislang nur `TT.MM.JJJJ` — jeder Beleg aus dem Zielbild-Weg ging
+    ohne Belegdatum in den DATEV-Stapel."""
+    zeilen = extf.buchungszeilen(_zielbild_review("2026-04-02"))
+    assert zeilen[0]["belegdatum"] == "0204"
+
+
+def test_altformat_datum_bleibt_lesbar():
+    zeilen = extf.buchungszeilen(_zielbild_review("02.04.2026"))
+    assert zeilen[0]["belegdatum"] == "0204"
+
+
+def test_datum_tolerant_gegen_leerraum():
+    zeilen = extf.buchungszeilen(_zielbild_review(" 2026-04-02 "))
+    assert zeilen[0]["belegdatum"] == "0204"
+    zeilen = extf.buchungszeilen(_zielbild_review("2.4.2026"))
+    assert zeilen[0]["belegdatum"] == "0204"
+
+
+def test_unlesbares_datum_liefert_kein_belegdatum_statt_absturz():
+    for kaputt in ("kaputt", "2026/04/02", "", None, "2026-04"):
+        zeilen = extf.buchungszeilen(_zielbild_review(kaputt))
+        assert zeilen[0]["belegdatum"] is None
+
+
+def test_buchungstext_fallback_nutzt_iso_datum_ebenfalls():
+    """Ohne Gemma-Buchungstext baut extf.py den Text aus Einordnung +
+    Kurzdatum + Lieferant zusammen — das Kurzdatum (`TT.MM.`) muss auch
+    aus einem ISO-Datum kommen, nicht nur leer bleiben."""
+    review = _zielbild_review("2026-04-02", lieferant="Großhandel")
+    review["semantik"] = {"belegart": "Wareneinkauf"}
+    zeilen = extf.buchungszeilen(review)
+    assert zeilen[0]["text"] == "Wareneinkauf 02.04. Großhandel"
+
+
 def test_cp1252_crlf():
     text = extf.stapel([GOLDEN], "2026-07", erzeugt=ERZEUGT)
     daten = extf.als_bytes(text)

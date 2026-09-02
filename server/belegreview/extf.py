@@ -55,6 +55,33 @@ def _de(betrag: float) -> str:
     return f"{betrag:.2f}".replace(".", ",")
 
 
+def _datum_teile(datum: str | None) -> tuple[int, int, int] | None:
+    """(Tag, Monat, Jahr) aus einem Belegdatum — zwei Formate im Haus:
+    `TT.MM.JJJJ` (Altweg, vor dem Zielbild) und `JJJJ-MM-TT` (Zielbild-Weg,
+    Gemma schreibt seit 27.08.2026 ISO, siehe `_review_aus_einschaetzung`
+    in babu_web.py). Tolerant gegen Leerraum um die Teile. Unlesbares
+    liefert None statt eine Exception — der Beleg bleibt dann ohne
+    Belegdatum im Stapel, statt den ganzen Lauf abzubrechen."""
+    text = str(datum or "").strip()
+    for trenner, ordnung in ((".", (0, 1, 2)), ("-", (2, 1, 0))):
+        teile = [t.strip() for t in text.split(trenner)]
+        if len(teile) != 3 or not all(teile):
+            continue
+        try:
+            tag, monat, jahr = (int(teile[i]) for i in ordnung)
+        except ValueError:
+            continue
+        return tag, monat, jahr
+    return None
+
+
+def _ttmm(datum: str | None) -> str | None:
+    """Belegdatum fürs EXTF-Feld (`TTMM`), formatunabhängig — siehe
+    `_datum_teile`. None, wenn sich das Datum nicht lesen lässt."""
+    teile = _datum_teile(datum)
+    return f"{teile[0]:02d}{teile[1]:02d}" if teile else None
+
+
 def _feld(wert: str | None) -> str:
     if wert is None or wert == "":
         return ""
@@ -146,13 +173,13 @@ def buchungszeilen(review: dict) -> list[dict]:
     if not konto or f.get("brutto") is None:
         return []
     datum = f.get("datum") or ""
-    teile = datum.split(".")
-    belegdatum = f"{int(teile[0]):02d}{int(teile[1]):02d}" if len(teile) == 3 else None
+    teile = _datum_teile(datum)
+    belegdatum = _ttmm(datum)
     text = (v.get("buchungstext") or "").strip()
     if not text:
         einordnung = ((review.get("semantik") or {}).get("belegart") or "").strip()
         lieferant = (v.get("lieferant") or f.get("lieferant") or "").strip()
-        kurz = f"{int(teile[0]):02d}.{int(teile[1]):02d}." if len(teile) == 3 else ""
+        kurz = f"{teile[0]:02d}.{teile[1]:02d}." if teile else ""
         text = " ".join(x for x in (einordnung, kurz, lieferant) if x)
     basis = {"konto": konto, "gegenkonto": GEGENKONTO, "belegdatum": belegdatum,
              "belegfeld1": _belegfeld1(f.get("beleg_nr")),
