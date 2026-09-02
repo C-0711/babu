@@ -747,6 +747,20 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 #melden-blatt[hidden]{display:none}
 .melden-karte{background:var(--gc-bg);border-radius:16px;padding:22px;
   width:min(520px,100%);box-shadow:0 24px 70px rgba(31,30,26,.3)}
+
+/* Impressum und Datenschutz. Beide liegen außerhalb von #app und #login,
+   damit sie auch ohne Anmeldung aufgehen — die Fußzeile steht auf der
+   Anmeldemaske genauso wie im Portal. */
+#rechtblatt{position:fixed;inset:0;z-index:60;background:rgba(31,30,26,.34);
+  display:grid;place-items:center;padding:20px}
+#rechtblatt[hidden]{display:none}
+#rechtblatt .melden-karte{max-height:82dvh;overflow-y:auto}
+#recht-text{color:var(--gc-desc);font-size:13.5px;line-height:1.65;margin:8px 0 16px}
+.seitenfuss{margin-top:44px;padding-top:16px;border-top:1px solid var(--gc-border-l);
+  display:flex;gap:16px;flex-wrap:wrap;align-items:baseline;
+  font-size:12px;color:var(--gc-muted)}
+.seitenfuss button{font-size:12px;color:var(--gc-accent-hover);text-decoration:underline}
+.login-fuss button{font-size:12px;color:var(--gc-accent-hover);text-decoration:underline}
 .ik.funke{color:var(--gc-gold);vertical-align:-2px}
 .siegel .code{font:12px var(--gc-mono);color:var(--gc-fg)}
 .siegel small{display:block;color:var(--gc-desc);font-size:11.5px}
@@ -975,6 +989,8 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   </div>
   <div id="reg-bereich" hidden></div>
   <div class="login-fuss">babu · 0711 Intelligence · Stuttgart · <a href="/">Zur Startseite</a><br>
+  <button type="button" onclick="rechtZeigen('impressum')">Impressum</button> ·
+  <button type="button" onclick="rechtZeigen('datenschutz')">Datenschutz</button><br>
   babu ersetzt keine individuelle Steuerberatung.</div>
 </div>
 
@@ -1008,7 +1024,21 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       <button class="chip" id="reset-zur-anmeldung">Zur Anmeldung</button>
     </div>
   </div>
-  <div class="login-fuss">babu · 0711 Intelligence · Stuttgart · <a href="/">Zur Startseite</a></div>
+  <div class="login-fuss">babu · 0711 Intelligence · Stuttgart · <a href="/">Zur Startseite</a><br>
+  <button type="button" onclick="rechtZeigen('impressum')">Impressum</button> ·
+  <button type="button" onclick="rechtZeigen('datenschutz')">Datenschutz</button></div>
+</div>
+
+<!-- Impressum und Datenschutz: zwei kleine Ansichten, von der Fußzeile aus
+     erreichbar — angemeldet wie unangemeldet.
+     TODO: rechtssichere Texte durch Nina/Kanzlei einsetzen. Was hier steht,
+     ist ausdrücklich Platzhalter; Pflichtangaben erfindet babu nicht. -->
+<div id="rechtblatt" hidden role="dialog" aria-modal="true" aria-labelledby="recht-titel">
+  <div class="melden-karte">
+    <div class="gruss" id="recht-titel" style="font-size:20px">Impressum</div>
+    <p id="recht-text"></p>
+    <button class="chip" id="recht-zu" onclick="rechtSchliessen()">Schließen</button>
+  </div>
 </div>
 
 <div id="melden-blatt" hidden role="dialog" aria-modal="true"
@@ -1786,6 +1816,14 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <div id="chat-anker"><span id="chat-anker-text"></span><button id="chat-anker-weg" aria-label="Anker entfernen">✕</button></div>
     <div id="chatlog"></div>
   </section>
+
+  <!-- Dieselben zwei Wege wie auf der Anmeldemaske, nur unten auf jeder
+       Seite. Steht außerhalb der Ansichten, damit es immer mitläuft. -->
+  <footer class="seitenfuss">
+    <span>babu · 0711 Intelligence · Stuttgart</span>
+    <button type="button" onclick="rechtZeigen('impressum')">Impressum</button>
+    <button type="button" onclick="rechtZeigen('datenschutz')">Datenschutz</button>
+  </footer>
 </main>
 </div>
 
@@ -2739,6 +2777,36 @@ $("#melden-blatt").addEventListener("click", ev => {
 });
 document.addEventListener("keydown", ev => {
   if (ev.key === "Escape" && !$("#melden-blatt").hidden) meldenSchliessen();
+});
+
+/* ————— IMPRESSUM UND DATENSCHUTZ —————
+   TODO: rechtssichere Texte durch Nina/Kanzlei einsetzen. Die beiden Texte
+   unten sind Platzhalter und sagen das auch selbst — Pflichtangaben nach
+   Gesetz kann und darf hier niemand erfinden. */
+const RECHT_TEXTE = {
+  impressum: ["Impressum",
+    "Text folgt. Hier stehen die Angaben zum Anbieter dieser Seite: "
+    + "Name, Anschrift, wer vertritt, wie man erreicht, Eintrag im Register "
+    + "und Steuernummer. Den verbindlichen Wortlaut setzen Nina und ihre "
+    + "Kanzlei ein."],
+  datenschutz: ["Datenschutz",
+    "Text folgt. Hier steht, welche deiner Angaben babu verarbeitet, wofür, "
+    + "wie lange sie bleiben, wer sie sonst noch sieht und welche Rechte du "
+    + "hast. Den verbindlichen Wortlaut setzen Nina und ihre Kanzlei ein."]
+};
+function rechtZeigen(art){
+  const [titel, text] = RECHT_TEXTE[art] || RECHT_TEXTE.impressum;
+  $("#recht-titel").textContent = titel;
+  $("#recht-text").textContent = text;
+  $("#rechtblatt").hidden = false;
+  setTimeout(() => $("#recht-zu").focus(), 60);
+}
+function rechtSchliessen(){ $("#rechtblatt").hidden = true; }
+$("#rechtblatt").addEventListener("click", ev => {
+  if (ev.target.id === "rechtblatt") rechtSchliessen();   // daneben tippen schließt
+});
+document.addEventListener("keydown", ev => {
+  if (ev.key === "Escape" && !$("#rechtblatt").hidden) rechtSchliessen();
 });
 
 /* ————— LESEPROTOKOLL —————
