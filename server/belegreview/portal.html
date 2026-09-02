@@ -109,11 +109,20 @@ main p, .leer, .karte > p{max-width:78ch}
    Grund, warum das Portal breit AUSSAH und schmal WAR. */
 .voll{width:100%;max-width:none}
 @media (min-width:1180px){
+  /* Zwei feste Spalten, keine auto-fit-Spurenzahl: auto-fit kollabiert nur
+     Spuren, die in KEINER Zeile belegt sind — und die Überschriften belegen
+     alle. Gemessen bei 1440px: drei Spuren à 433px, jede Einzelkarte auf
+     einem Drittel, rechts zwei Drittel leer. Genau der Befund, den das
+     Raster beheben sollte. */
   .spalten{display:grid;align-items:start;gap:14px;
-    grid-template-columns:repeat(auto-fill,minmax(min(100%,420px),1fr))}
+    grid-template-columns:repeat(2,minmax(0,1fr))}
   .spalten > *{margin-bottom:0}
   /* Was eine Überschrift ist, gehört über alle Spalten, nicht in eine. */
-  .spalten > .lbl, .spalten > h2, .spalten > .voll{grid-column:1/-1}
+  .spalten > .lbl, .spalten > h2, .spalten > .voll, .spalten > .leer{grid-column:1/-1}
+  /* Eine Karte, die weder eine Karte vor noch hinter sich hat, steht allein
+     in ihrem Abschnitt — dann nimmt sie die Breite, statt eine halbe Zeile
+     leer zu lassen. Nur echte Nachbarn teilen sich die Zeile. */
+  .spalten > :not(.lbl,.voll,.leer,h2):not(:not(.lbl,.voll,.leer,h2) + *):not(:has(+ :not(.lbl,.voll,.leer,h2))){grid-column:1/-1}
 }
 
 /* Karten & Zeilen */
@@ -352,10 +361,30 @@ main p, .leer, .karte > p{max-width:78ch}
    Beträgen hinunter. Deshalb bleibt es eine Spalte, und die ZEILE wird
    breit — als Tabelle mit ausgerichteten Feldern (Regel weiter unten, ab
    1180 px). Das füllt die Breite mit Angaben statt mit Kacheln. */
-#belege-liste{display:grid;gap:14px;align-items:start;
+/* Die Belegliste: auf schmalen Fenstern Foto-Karten im Raster, auf breiten
+   eine sortierbare Tabelle (Befund P1-5). Beide Renderpfade stehen im DOM,
+   die Breite entscheidet per CSS — so bleibt ein Resize ohne Neu-Laden korrekt. */
+#belege-liste{display:block}
+.beleg-kacheln{display:grid;gap:14px;align-items:start;
   grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
-#belege-liste > .gruppe-kopf{grid-column:1/-1;margin-top:6px}
-#belege-liste > .leer{grid-column:1/-1}
+.beleg-kacheln > .gruppe-kopf{grid-column:1/-1;margin-top:6px}
+.beleg-kacheln > .leer{grid-column:1/-1}
+.beleg-tabelle{display:none;width:100%;border-collapse:collapse;font-size:14px}
+.beleg-tabelle th{text-align:left;font:11px var(--gc-mono);letter-spacing:.08em;
+  text-transform:uppercase;color:var(--gc-muted);padding:8px 12px;
+  border-bottom:1px solid var(--gc-border);white-space:nowrap}
+.beleg-tabelle th.num{text-align:right}
+.beleg-tabelle th.sort{cursor:pointer;user-select:none}
+.beleg-tabelle th.sort:hover{color:var(--gc-fg)}
+.beleg-tabelle td{padding:12px;border-bottom:1px solid var(--gc-border-l);
+  vertical-align:middle}
+.beleg-tabelle td.num{text-align:right;font-variant-numeric:tabular-nums}
+.beleg-tabelle tr.beleg-tr{cursor:pointer}
+.beleg-tabelle tr.beleg-tr:hover{background:var(--gc-chrome)}
+@media(min-width:1180px){
+  .beleg-kacheln{display:none}
+  .beleg-tabelle{display:table}
+}
 /* Foto-Karte (v2): das Blatt zuerst — Nina erkennt Belege am Bild. */
 .belegkarte{display:block;background:var(--gc-bg);border:1px solid var(--gc-border);
   border-radius:var(--r);overflow:hidden;text-align:left;padding:0;width:100%}
@@ -673,7 +702,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 #reg-einstieg .zart:active{transform:translateY(1px)}
 
 /* Zustände */
-.leer{color:var(--gc-desc);text-align:center;padding:44px 20px}
+.leer{color:var(--gc-desc);text-align:center;padding:44px 20px;margin-left:auto;margin-right:auto}
 .leer b{display:block;font:600 17px var(--gc-serif);color:var(--gc-fg);margin-bottom:5px}
 .skelett{height:58px;border-radius:var(--r);background:linear-gradient(100deg,var(--gc-accent-subtle) 30%,var(--gc-canvas) 50%,var(--gc-accent-subtle) 70%);
   background-size:200% 100%;animation:schimmer 1.4s infinite;margin-bottom:9px}
@@ -958,7 +987,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 
   <!-- HEUTE -->
   <section class="ansicht" id="a-heute">
-    <div style="max-width:880px">
+    <div>
     <div class="lbl" id="heute-eyebrow">DEIN MONAT</div>
     <div class="gruss" id="heute-gruss">Guten Tag</div>
     <div id="heute-bleibt" hidden>
@@ -968,7 +997,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     </div>
     <div id="heute-monatslauf"></div>
     <div id="heute-meldungen"></div>
-    <div id="heute-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+    <div id="heute-inhalt" class="spalten"><div class="skelett"></div><div class="skelett"></div></div>
     </div>
   </section>
 
@@ -1017,7 +1046,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <p style="color:var(--gc-desc);margin:6px 0 16px">Aus deinen Belegen und
       deinem Kassenbuch gerechnet — ein Entwurf, den dein Steuer-Backend prüft.</p>
     <div id="fristen-karte"></div>
-    <div id="abschluss-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+    <div id="abschluss-inhalt" class="spalten"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
 
   <!-- ZAHLEN (Auswertung wie die BH-Auswertung der Kanzlei, nur lesbar) -->
@@ -1035,7 +1064,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       </div>
     </div>
     <p style="color:var(--gc-desc);margin-bottom:14px">Wohin dein Geld geht — und wie es sich zum Vormonat verändert.</p>
-    <div id="zahlen-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
+    <div id="zahlen-inhalt" class="spalten"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
 
   <!-- SALON-CHECK (Abschluss-Unterlagen → zuschauen → Ampel-Report) -->
@@ -1732,7 +1761,7 @@ async function ladeHeute(){
   try{
     const e = await (await api("/api/einstellungen")).json();
     if (!e.rechtsform){
-      html += `<button class="karte nachfrage einflug" style="display:block;width:100%;text-align:left"
+      html += `<button class="karte nachfrage einflug voll" style="display:block;width:100%;text-align:left"
         onclick="location.hash='#einrichtung'">
         <h3>Einmal kurz einrichten</h3>
         <p>6 Fragen — Salon, Steuernummer &amp; Co. Dauert zwei Minuten.</p>
@@ -1811,7 +1840,7 @@ async function ladeHeute(){
     if (l.belege.length){
       html += `<div class="sektion lbl">Zuletzt hochgeladen</div><div class="voll" id="heute-zuletzt">`;
       for (const z of l.belege) html += belegZeile(z);
-      html += `</div><div style="margin-top:14px"><a href="#belege" style="font-size:14.5px">Alle Belege ansehen ›</a></div>`;
+      html += `</div><div class="voll" style="margin-top:14px"><a href="#belege" style="font-size:14.5px">Alle Belege ansehen ›</a></div>`;
     }
   }catch{}
   ziel.innerHTML = html;
@@ -1870,6 +1899,9 @@ function wochenGruppe(iso){
   if (d >= letzteWoche) return "Letzte Woche";
   return "Früher";
 }
+let aktBelege = [];
+let belegSortSchluessel = null, belegSortRichtung = 1;
+
 async function ladeBelege(){
   { const [mon, jahr] = monatName(aktMonat).split(" ");
     $("#mon-anzeige").innerHTML = `${mon} <span class="jahr">${jahr}</span>`; }
@@ -1878,29 +1910,84 @@ async function ladeBelege(){
   catch{ return; }
   etag = d.stand;
   $("#stand").textContent = "Stand " + new Date().toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});
-  if (!d.belege.length){
-    $("#belege-liste").innerHTML =
-      `<div class="leer"><b>${aktFilter ? "Hier ist gerade nichts." : "Noch keine Belege in diesem Monat."}</b>
-       ${aktFilter ? "Schau bei „Alle“ nach dem Rest." : "Der erste dauert keine fünf Sekunden."}</div>`;
-    return;
-  }
-  let html = "", gruppe = null;
-  for (const z of d.belege){
-    // Das Beleg-Datum entscheidet, nicht der Hochlade-Zeitpunkt — sonst
-    // stehen zwei Belege vom selben Tag in verschiedenen Wochen, je
-    // nachdem, wann Nina sie fotografiert hat (Befund P2-9).
-    const g = wochenGruppe(z.datum || z.hochgeladen);
-    if (g !== gruppe){ gruppe = g; html += `<div class="lbl gruppe-kopf">${g}</div>`; }
-    html += belegKarte(z);
-  }
-  $("#belege-liste").innerHTML = html;
+  aktBelege = d.belege;
+  belegSortSchluessel = null; belegSortRichtung = 1;
+  belegeZeichnen();
   // Der Zähler am Filter: wie viele warten gerade auf Nina?
   if (!aktFilter){
-    const n = d.belege.filter(z => statusMarke(z)[1] === "warn").length;
+    const n = aktBelege.filter(z => statusMarke(z)[1] === "warn").length;
     const zael = $("#chip-nachfrage-zahl");
     zael.textContent = n || "";
     zael.hidden = !n;
   }
+}
+
+/* Beide Sichten der Belegliste — Foto-Karten (schmal) und Tabelle (breit) —
+   aus derselben, evtl. sortierten Liste (Befund P1-5). Der Sortierzustand
+   lebt in `belegSortSchluessel`/`belegSortRichtung`; ein Klick auf eine
+   Tabellen-Überschrift sortiert neu und zeichnet beide Sichten. */
+function belegeZeichnen(){
+  const ziel = $("#belege-liste");
+  if (!aktBelege.length){
+    ziel.innerHTML =
+      `<div class="leer"><b>${aktFilter ? "Hier ist gerade nichts." : "Noch keine Belege in diesem Monat."}</b>
+       ${aktFilter ? "Schau bei „Alle“ nach dem Rest." : "Der erste dauert keine fünf Sekunden."}</div>`;
+    return;
+  }
+  let kacheln = "", gruppe = null;
+  let zeilen = "";
+  for (const z of aktBelege){
+    // Das Beleg-Datum entscheidet, nicht der Hochlade-Zeitpunkt — sonst
+    // stehen zwei Belege vom selben Tag in verschiedenen Wochen, je
+    // nachdem, wann Nina sie fotografiert hat (Befund P2-9).
+    const g = wochenGruppe(z.datum || z.hochgeladen);
+    if (g !== gruppe){ gruppe = g; kacheln += `<div class="lbl gruppe-kopf">${g}</div>`; }
+    kacheln += belegKarte(z);
+    zeilen += belegTabellenzeile(z);
+  }
+  ziel.innerHTML =
+    `<div class="beleg-kacheln">${kacheln}</div>
+     <table class="beleg-tabelle">${belegTabellenKopf()}<tbody>${zeilen}</tbody></table>`;
+  document.querySelectorAll(".beleg-tabelle th.sort").forEach(th => {
+    th.addEventListener("click", () => belegeSortieren(th.dataset.sort));
+  });
+}
+
+function belegeSortieren(schluessel){
+  if (belegSortSchluessel === schluessel) belegSortRichtung *= -1;
+  else { belegSortSchluessel = schluessel; belegSortRichtung = 1; }
+  aktBelege.sort((a, b) => {
+    const x = a[schluessel], y = b[schluessel];
+    if (x == null && y == null) return 0;
+    if (x == null) return 1;
+    if (y == null) return -1;
+    const v = (typeof x === "number" && typeof y === "number")
+      ? x - y : String(x).localeCompare(String(y), "de");
+    return v * belegSortRichtung;
+  });
+  belegeZeichnen();
+}
+
+function belegTabellenKopf(){
+  return `<thead><tr>
+    <th class="sort" data-sort="datum">Datum</th>
+    <th class="sort" data-sort="lieferant">Laden</th>
+    <th class="sort num" data-sort="brutto">Betrag</th>
+    <th>Kategorie</th>
+    <th>Status</th>
+  </tr></thead>`;
+}
+
+function belegTabellenzeile(z){
+  const [marke, art] = statusMarke(z);
+  const kat = z.belegart ? String(z.belegart).split("(")[0].trim() : "";
+  return `<tr class="beleg-tr" onclick="location.hash='#detail/${z.stamm}'">
+    <td class="num">${z.datum ? datumKurz(z.datum) : ""}</td>
+    <td>${esc(z.lieferant || "Beleg")}</td>
+    <td class="num">${euro(z.brutto)}</td>
+    <td>${esc(kat)}</td>
+    <td><span class="marke ${art}">${marke}</span></td>
+  </tr>`;
 }
 
 /* Ein Beleg als Foto-Karte (v2 vom 27.08.): das Blatt zuerst, darunter
@@ -2463,9 +2550,9 @@ function kennzahlKacheln(k){
      (k.offen_zur_frist || {}).wert === 0, "gut wäre: nichts mehr offen"],
   ];
   return `<div class="sektion lbl">Wie der Monat gelaufen ist</div>
-    <p style="color:var(--gc-desc);font-size:13px;margin:0 0 10px">Nicht dein
+    <p class="voll" style="color:var(--gc-desc);font-size:13px;margin:0 0 10px">Nicht dein
       Geld — wie leicht dir der Papierkram von der Hand ging.</p>
-    <div class="lauf-kacheln">` + kacheln.map(([titel, wert, gut, hinweis]) => `
+    <div class="lauf-kacheln voll">` + kacheln.map(([titel, wert, gut, hinweis]) => `
       <div class="lauf-kachel">
         <span class="lbl">${titel}</span>
         <b class="wert${wert == null ? " blass" : ""}">${wert == null ? "—" : wert}</b>
@@ -2519,7 +2606,7 @@ async function ladeZahlen(){
   // Haarlinien — kein Buchhalter-Vokabular, keine Kontonummern.
   let html = "";
   if (ergebnis != null){
-    html += `<div style="margin-bottom:36px">
+    html += `<div class="voll" style="margin-bottom:36px">
       <div class="lbl">Bleibt dir diesen Monat</div>
       <div class="bleibt-zahl">${euro(ergebnis)}</div>
       <div class="hero-detail">vor Steuern — der Monat läuft noch</div></div>`;
@@ -2532,7 +2619,7 @@ async function ladeZahlen(){
   const ausVertrag = bwa ? bwa.gruppen.filter(g => g.aus_vertrag)
                                       .reduce((s, g) => s + g.netto, 0) : 0;
   if (erloese != null || ausgegeben != null){
-    html += `<div style="display:flex;gap:72px;flex-wrap:wrap;padding:24px 0;
+    html += `<div class="voll" style="display:flex;gap:72px;flex-wrap:wrap;padding:24px 0;
         border-top:1px solid var(--gc-border);border-bottom:1px solid var(--gc-border);margin-bottom:36px">
       ${erloese != null ? `<div><div class="lbl">Eingenommen</div>
         <div style="font:500 30px var(--gc-serif);letter-spacing:-.02em;color:var(--gc-fg);margin-top:6px;font-variant-numeric:tabular-nums">${euro(erloese)}</div>
@@ -3794,11 +3881,11 @@ async function ladeAbschluss(){
   let html = "";
 
   if (!e.tage){
-    html += `<div class="karte nachfrage"><h3>Für diesen Monat fehlt dein Kassenbuch</h3>
+    html += `<div class="karte nachfrage voll"><h3>Für diesen Monat fehlt dein Kassenbuch</h3>
       <p>Ohne die Tageseinnahmen können wir weder Auswertung noch Umsatzsteuer rechnen.
       Trag unten ein, was am Ende des Tages in der Kasse war.</p></div>`;
   }
-  html += `<div class="sektion lbl">Kassenbuch</div><div class="karte" id="kb-karte">
+  html += `<div class="sektion lbl">Kassenbuch</div><div class="karte voll" id="kb-karte">
     <div id="kb-hinweis" style="margin-bottom:10px"></div>
     <div style="margin-bottom:12px">
       <label for="kb-datum" style="display:block;font-size:12px;color:var(--gc-muted);margin-bottom:3px">Datum</label>
