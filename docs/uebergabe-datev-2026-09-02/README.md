@@ -66,7 +66,19 @@ stellt die Repo-Struktur nach). 89.760 → 91.459 Atome (1.699 SKR04), Invariant
 Sicherungen `~/kompendium/*.bak-20260902-215704`, Kontenübersicht (27 Kategorien) in
 `kontierung-grundwissen.md`, Container neu gestartet, Laden im Container verifiziert.
 
+**Produktiv-Vorfall und Fix, 02.09. 22:15** (Commit `87624ec`): der erste
+DATEV-Upload-Versuch hat den Container abstürzen lassen — `pypdfium2` ist
+zwischen Threads nicht threadsicher, und seit `_wissen_job` PDFs im
+Hintergrund liest, überlappte das mit anderen Anfragen. Docker startete
+den Prozess automatisch neu, acht von zehn Uploads blieben aus. Fix:
+`PDFIUM_LOCK` in `abschluss_lesen.py`, geteilt mit `kontoauszug.py` und
+drei Inline-Stellen in `babu_web.py`. `tests/test_pdfium_lock.py` beweist
+es: ohne Schloss crasht der dritte parallele Testlauf zuverlässig
+(`Fatal Python error: Aborted`), mit Schloss fünf von fünf grün. Deployt,
+Golden byte-identisch, alle zehn DATEV-Dokumente danach erfolgreich
+hochgeladen und eingelesen (zwei hängende aus dem Absturz per Hand über
+die bestehende `_wissen_job`-Funktion nachgeholt, kein neuer Code dafür).
+
 Noch nicht: der iOS-Build auf Ninas iPhone (P0-2-Anteil in `Store.swift`) — auf
 Wunsch des Auftraggebers später. Der Getränkemarkt-Beleg wurde nicht nachgestellt
-(Rohdaten nur lokal). Die DATEV-Quellen sind noch nicht hochgeladen
-(`werkzeuge/wissen-import/datev_ordner_hochladen.py`, braucht den PAT aus der Keychain).
+(Rohdaten nur lokal).
