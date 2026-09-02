@@ -271,6 +271,31 @@ def test_mischsatz_wird_zur_steuertabelle_mit_fuehrendem_satz():
     assert b["steuersaetze"][0]["satz"] == 7        # absteigend nach Anteil
 
 
+def test_pfand_bleibt_steuerfrei_in_der_positionsliste():
+    """Pfand ist eine durchlaufende Kaution, kein Umsatz — es darf nicht in
+    die Bemessungsgrundlage der 19-%-Positionen hineingerechnet werden
+    (Ninas Anmerkung P0-2, Getränkemarkt-Beleg 65,73 €)."""
+    e = gemma_buchung.buchung_pruefen(
+        {"status": "gebucht", "dokumentklasse": "beleg", "kategorie": "sonstiges", "betrag": 65.73,
+         "betrag_eur": 65.73, "ust_satz": 19, "positionen": [
+             {"bezeichnung": "Getränke", "betrag": 59.06, "ust_satz": 19,
+              "kategorie": "sonstiges"},
+             {"bezeichnung": "Pfand", "betrag": 6.67, "ust_satz": 0,
+              "kategorie": "sonstiges"}]})
+    b = e["buchung"]
+    tabelle = {z["satz"]: z for z in b["steuersaetze"]}
+    assert set(tabelle) == {19, 0}                  # zwei eigene Zeilen
+    assert tabelle[19]["brutto"] == 59.06
+    assert tabelle[19]["netto"] == 49.63
+    assert tabelle[19]["ust"] == 9.43
+    assert tabelle[0]["brutto"] == 6.67
+    assert tabelle[0]["netto"] == 6.67              # Pfand bleibt unangetastet
+    assert tabelle[0]["ust"] == 0.0
+    # Keine gemeinsame 19-%-Zeile, die Pfand mit hineinrechnet.
+    gesamt_brutto = sum(z["brutto"] for z in b["steuersaetze"])
+    assert gesamt_brutto == 65.73
+
+
 def test_fremdwaehrung_bekommt_keine_steuertabelle_und_satz_null():
     e = gemma_buchung.buchung_pruefen(
         {"status": "gebucht", "dokumentklasse": "beleg", "kategorie": "fahrt", "betrag": 55.74,

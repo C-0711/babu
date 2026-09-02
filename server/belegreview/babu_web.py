@@ -2032,11 +2032,23 @@ def _review_aus_einschaetzung(pfad: str, buchung: dict, zeilen: list,
         satz = int(buchung.get("ust_satz") or 0)
     except (TypeError, ValueError):
         satz = 0
+    steuersaetze = buchung.get("steuersaetze") or []
     netto = ust = None
-    if isinstance(brutto, (int, float)) and satz in (7, 19):
+    summenprobe_ok = None
+    if steuersaetze and isinstance(brutto, (int, float)):
+        tabellen_brutto = round(
+            sum(float(s.get("brutto") or 0) for s in steuersaetze), 2)
+        if abs(tabellen_brutto - float(brutto)) < 0.02:
+            # Die Steuertabelle aus Gemmas gelesenen Positionen deckt den
+            # Betrag — sie trägt Pfand/Mischsätze korrekt, der einzelne Satz
+            # auf den Gesamtbetrag würde das ignorieren (Ninas Anmerkung P0-2).
+            netto = round(sum(float(s.get("netto") or 0) for s in steuersaetze), 2)
+            ust = round(sum(float(s.get("ust") or 0) for s in steuersaetze), 2)
+            summenprobe_ok = abs(netto + ust - float(brutto)) < 0.02
+    if netto is None and isinstance(brutto, (int, float)) and satz in (7, 19):
         netto = round(brutto / (1 + satz / 100), 2)
         ust = round(brutto - netto, 2)
-    elif isinstance(brutto, (int, float)):
+    elif netto is None and isinstance(brutto, (int, float)):
         netto, ust = round(float(brutto), 2), 0.0
     review = {
         "datei": pfad,
@@ -2056,7 +2068,7 @@ def _review_aus_einschaetzung(pfad: str, buchung: dict, zeilen: list,
             "netto": netto, "ust": ust, "brutto": brutto,
             "ust_satz": satz,
             "gutschrift": bool(buchung.get("gutschrift")),
-            "summenprobe_ok": None,
+            "summenprobe_ok": summenprobe_ok,
             "bewirtungssignal": False,
             "offen": [],
             "herkunft": {"quelle": "Einschätzung auf dem Telefon — "

@@ -114,6 +114,13 @@ REGELN = """Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
   ausländische Steuernummer OHNE deutschen Steuerbetrag, dann ist
   ust_satz 0. Rechne NIE 19 % aus einem Bruttobetrag heraus, die nicht
   auf dem Beleg stehen.
+- Pfand (Flaschen, Kästen, Mehrweg) ist eine durchlaufende Kaution, KEINE
+  Ware und KEIN Umsatz des Verkäufers: es trägt 0 % Umsatzsteuer. Steht auf
+  dem Bon eine eigene Pfand-Zeile, gib sie als eigene Position mit
+  ust_satz 0 aus — rechne sie NIE in die Bemessungsgrundlage der 19 %/7 %
+  Positionen hinein. Weist der Bon Netto und Steuer bereits fertig
+  aus, übernimm genau diese Werte, statt sie aus dem Bruttobetrag
+  zurückzurechnen.
 - Hoheitliche Gebühren und Pflichtbeiträge sind nicht steuerbar und tragen
   NIE Umsatzsteuer: Handwerkskammer, Innung, IHK (kategorie
   kammerbeitrag) · Abfall-, Müll- und Straßenreinigungsgebühren, Grundsteuer
