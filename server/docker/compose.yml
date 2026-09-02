@@ -67,7 +67,7 @@ services:
       # und erst danach die nächste Zeile einkommentieren und
       # `docker compose up -d` fahren. Ohne sie bleibt `portal.db` die
       # Wahrheit — das ist auch der Rückweg: Zeile wieder auskommentieren.
-      # BABU_DB_URL: "postgresql://babu@127.0.0.1:55432/babu"
+      BABU_DB_URL: "postgresql://babu@127.0.0.1:55432/babu"
       # Das Passwort steht nicht in der URL, sondern in der Secret-Datei;
       # `db.verbindung()` liest sie und reicht es psycopg getrennt herein.
       BABU_DB_PASSWORT_DATEI: /run/secrets/babu_pg_passwort
