@@ -6231,8 +6231,10 @@ async function mdAnlegen(){
       headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
     const d = await r.json();
     if (!r.ok){ aus.innerHTML = `<p style="color:var(--gc-danger);margin-top:8px">${esc(d.fehler || "Ging gerade nicht.")}</p>`; return; }
-    aus.innerHTML = `<p style="color:var(--gc-ok);margin-top:8px">${esc(d.name)} ist angelegt${d.einladung ? " — die Einladung ist unterwegs." : "."}</p>`;
-    _mdGewaehlt = d.id; ladeMandanten();
+    // Erst neu zeichnen, dann die Meldung setzen — sonst wischt das
+    // Neuzeichnen sie sofort wieder weg.
+    _mdGewaehlt = d.id; await ladeMandanten();
+    $("#md-neu-ergebnis").innerHTML = `<p style="color:var(--gc-ok);margin-top:8px">${esc(d.name)} ist angelegt${d.einladung ? " — die Einladung ist unterwegs." : "."}</p>`;
   }catch{ aus.innerHTML = `<p style="color:var(--gc-danger);margin-top:8px">Gerade keine Verbindung.</p>`; }
 }
 async function ladeWarteschlange(){
