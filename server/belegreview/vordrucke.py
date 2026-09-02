@@ -245,6 +245,7 @@ def susa(monat: str, erloese: dict, belege: list[dict]) -> dict:
         buchen(*SUSA_KONTEN["erloesfrei"], haben=erloese["steuerfrei"])
 
     # Ausgabenseite: Aufwandskonto netto und Vorsteuer im Soll, Bank im Haben.
+    import skr04_konten  # noqa: PLC0415
     namen = {k.skr04: k.name for k in kt.KATEGORIEN.values() if k.skr04}
     for z in belege:
         brutto = z.get("brutto")
@@ -253,7 +254,10 @@ def susa(monat: str, erloese: dict, belege: list[dict]) -> dict:
         ust = 0.0 if z.get("stamm") in gesperrt else float(z.get("ust") or 0)
         netto = _rund(brutto - ust)
         konto = z.get("konto_skr04") or "6850"
-        buchen(konto, namen.get(konto, "—"), soll=netto)
+        # Ein Konto, das babu nicht vergibt (Handkorrektur, Kanzlei): Name
+        # aus dem SKR04 selbst statt eines Strichs.
+        buchen(konto, namen.get(konto) or skr04_konten.name(konto) or "—",
+               soll=netto)
         if ust:
             buchen(*SUSA_KONTEN["vorsteuer"], soll=ust)
         nr, name = SUSA_KONTEN["bank"]

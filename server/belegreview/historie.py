@@ -26,6 +26,7 @@ import io
 import re
 
 import skr04_automatik
+import skr04_konten
 
 # Steuerschlüssel → Satz. Die Vorsteuer-Schlüssel sind die Umkehrung dessen,
 # was babu selbst schreibt (extf.BU_SCHLUESSEL) — so liest babu seinen
@@ -222,7 +223,10 @@ def stapel_lesen(daten: bytes, rahmen: str = "SKR04") -> dict:
                 n_ = b_             # Bestandskonto: da steckt keine Steuer drin
             k = m["konten"].setdefault(kto, {"konto": kto, "betrag": 0.0,
                                              "netto": 0.0, "anzahl": 0,
-                                             "seite": s_})
+                                             "seite": s_,
+                                             "name": (skr04_konten.name(kto)
+                                                      if rahmen == "SKR04"
+                                                      else None)})
             dreh = 1 if s_ != "erloes" else -1
             k["betrag"] += dreh * b_
             k["netto"] += dreh * n_
