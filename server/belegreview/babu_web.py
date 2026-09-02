@@ -5560,9 +5560,14 @@ def _auswertung_job(eid: int, jahr: int, pfade: list[Path]) -> None:
 
         schluessel = ei.schluessel_erzeugen()
         zeile = _einladung_zeile(eid) or {}
+        # Erst der Schlüssel in die Datenbank (sonst zeigt ein verschickter
+        # Link ins Leere), dann die Mail, und ERST DANN „fertig": wer den
+        # Stand abfragt und daraufhin den Postausgang liest, fand sonst eine
+        # halbe oder gar keine Datei — die Race stand seit dem ersten Tag
+        # drin und fiel unter Last (drei Testläufe parallel) auf.
         with _DB_LOCK, _db() as c:
             c.execute("""UPDATE einladung SET schluessel_hash=?, gelesen=?,
-                         bericht=?, anriss=?, stand='fertig' WHERE id=?""",
+                         bericht=?, anriss=? WHERE id=?""",
                       (ei.schluessel_hash(schluessel),
                        json.dumps(gelesen, ensure_ascii=False), bericht,
                        anriss, eid))
@@ -5571,10 +5576,9 @@ def _auswertung_job(eid: int, jahr: int, pfade: list[Path]) -> None:
         ok, hinweis = postfach.senden(zeile["mail"], betreff, text,
                                       stempel=time.strftime("%Y%m%d-%H%M%S"))
         print(f"[auswertung] {eid}: {hinweis}", flush=True)
-        if not ok:
-            with _DB_LOCK, _db() as c:
-                c.execute("UPDATE einladung SET stand='wartet_auf_post' WHERE id=?",
-                          (eid,))
+        with _DB_LOCK, _db() as c:
+            c.execute("UPDATE einladung SET stand=? WHERE id=?",
+                      ("fertig" if ok else "wartet_auf_post", eid))
     except Exception as ex:  # noqa: BLE001
         print(f"[auswertung] {eid} gescheitert: {ex!r}", flush=True)
         with _DB_LOCK, _db() as c:

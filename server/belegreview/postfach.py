@@ -62,7 +62,11 @@ def _ablegen(m: EmailMessage, an: str, stempel: str) -> Path:
     POSTAUSGANG.mkdir(parents=True, exist_ok=True)
     name = f"{stempel}-{_UNSAUBER.sub('_', an)}.eml"
     pfad = POSTAUSGANG / name
-    pfad.write_bytes(bytes(m))
+    # Erst daneben schreiben, dann umbenennen: ein Leser sieht die Datei
+    # entweder ganz oder gar nicht, nie halb.
+    zwischen = pfad.with_name(pfad.name + ".teil")
+    zwischen.write_bytes(bytes(m))
+    zwischen.replace(pfad)
     try:
         pfad.chmod(0o600)   # in einer Mail steht ein Anmeldeschlüssel
     except OSError:
