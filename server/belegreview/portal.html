@@ -1095,8 +1095,9 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-nachricht"/></svg> WhatsApp-Termine</button>
       <button role="menuitem" onclick="menuGeh('#kundinnen')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-person"/></svg> Kundinnen</button>
-      <button role="menuitem" onclick="menuGeh('#personal')">
-        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-klemmbrett"/></svg> Einstellen &amp; Personal</button>
+      <!-- Ein Eintrag für beide Team-Seiten (03.09.2026): dahinter liegen
+           zwei Unterreiter — wer bei dir arbeitet, und Einstellen &
+           Verträge. `#personal` bleibt als eigener Weg erreichbar. -->
       <button role="menuitem" onclick="menuGeh('#team')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-personen"/></svg> Dein Team</button>
       <button role="menuitem" onclick="menuGeh('#vertraege')">
@@ -1150,8 +1151,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-nachricht"/></svg><span class="txt">WhatsApp-Termine</span></button>
     <button type="button" title="Kundinnen" onclick="menuGeh('#kundinnen')">
       <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-person"/></svg><span class="txt">Kundinnen</span></button>
-    <button type="button" title="Einstellen &amp; Personal" onclick="menuGeh('#personal')">
-      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-klemmbrett"/></svg><span class="txt">Einstellen &amp; Personal</span></button>
+    <!-- Ein Eintrag für beide Team-Seiten — siehe Kommentar im Dropdown. -->
     <button type="button" title="Dein Team" onclick="menuGeh('#team')">
       <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-personen"/></svg><span class="txt">Dein Team</span></button>
     <button type="button" title="Deine Verträge" onclick="menuGeh('#vertraege')">
@@ -1380,6 +1380,10 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   <!-- EINSTELLUNGEN -->
   <!-- TEAM: wer im Salon arbeitet und was er kostet -->
   <section class="ansicht" id="a-team">
+    <div class="unterreiter">
+      <button class="an" onclick="location.hash='#team'">Wer bei dir arbeitet</button>
+      <button onclick="location.hash='#personal'">Einstellen &amp; Verträge</button>
+    </div>
     <div class="gruss" style="font-size:22px;margin-bottom:4px">Dein Team</div>
     <p style="color:var(--gc-desc);margin-bottom:16px">Wer bei dir arbeitet und
       was du zahlst. Mehr braucht babu nicht — Steuerklasse und Sozialversicherung
@@ -1609,6 +1613,10 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 
   <!-- PERSONAL: einstellen und sehen, wer wie weit ist -->
   <section class="ansicht" id="a-personal">
+    <div class="unterreiter">
+      <button onclick="location.hash='#team'">Wer bei dir arbeitet</button>
+      <button class="an" onclick="location.hash='#personal'">Einstellen &amp; Verträge</button>
+    </div>
     <div class="gruss" style="font-size:22px;margin-bottom:4px">Einstellen &amp; Personal</div>
     <p style="color:var(--gc-desc);margin-bottom:14px">Du legst an, sie macht
       den Rest auf ihrem Telefon. Drucken musst du nichts.</p>
