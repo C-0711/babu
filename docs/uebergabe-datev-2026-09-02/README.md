@@ -124,7 +124,36 @@ in BEIDEN Dialekten:
   Last fielen wechselnde Tests. Postausgang schreibt atomar.
 
 Stand vor Welle-2-Übernahme (c9966a1): SQLite 1837 grün + 8 pg-Tests
-übersprungen, Postgres 16 volle Suite 1845 grün. Welle 2 (Phase 3
-Acting-as, Phase 4 Mandantenverwaltung/Umschalter) lief beim Schreiben
-dieser Zeilen noch — Ergebnis siehe HANDOVER Abschnitt 8.
+übersprungen, Postgres 16 volle Suite 1845 grün.
+
+**Welle 2 (03.09. früh), beide Agenten wurden gestoppt und von Hand zu Ende
+gebracht:**
+
+- Plan 21 Phase 3 (`dae28ec`): Kopf `X-Mandant: <id>`, geprüft in
+  `_api_wache` gegen `kanzlei_mitglied`, `_box_wache` macht daraus die Box;
+  ohne Kopf Alt-Verhalten (Golden-Diff), mit Kopf entscheidet allein die
+  Mitgliedschaft (403 ohne, 409 „Belegbox wird eingerichtet"). `salon_von_
+  aktiv` an allen Stellen inkl. der Team-Routen, Wächter-Test hält es.
+  Verwaltung gescoped (`_reichweite`, `_kanzlei_wache`), Audit mit
+  `mandant_id`, Export mit Berater-/Mandantennummer aus der Mandantenzeile.
+- Plan 21 Phase 4 (`99f7add`, `2638ef9`): Modul `kanzlei_routen.py`
+  (`/api/kanzlei/mandanten` Liste/Anlegen/Detail/Status, `box-verknuepfen`
+  nur admin, `warteschlange` mit Zeitbudget je Box). Portal: Ansicht
+  „Mandanten" (Tabelle, Pager, Detailkarte, Formular, Reiter „Was
+  ansteht"), Umschalter `aktiverMandant` (Sitzungsspeicher, Chip im Kopf,
+  Hinweis in der Seitenleiste, `X-Mandant` an jedem `api()`-Aufruf). In
+  der Vorschau mit Betreiber-Rolle durchgespielt.
+
+Endstand `20fa9a5` (03.09. früh): volle Suite **1900 grün gegen SQLite und
+1900 grün gegen Postgres 16**. Unterwegs durch Postgres aufgedeckt, was
+SQLite verdeckte: `mandant.besitzer_un` als echter Fremdschlüssel (Route
+legte den Mandanten vor dem Konto an), `executemany` im Verbindungs-
+Wrapper, zwei Tests, die `sqlite_master` bzw. die Datei direkt lasen.
+
+Bewusst offen: Plan 21 Phase 5 (Lasttest 50 Boxen, Backup-Cron auf dem
+Host, Rate-Limits auf den neuen Routen sind drin, `docker compose build`
+wurde auf diesem Mac nicht gefahren — kein Docker), das „Box wird
+eingerichtet"-Blatt in Heute beim Acting-as auf einen Mandanten ohne Box
+(die UI bietet den Umschalter nur bei aktiver Box an, per URL/Konsole
+erzwungen zeigt Heute leere Karten mit 409 im Netz).
 

@@ -214,6 +214,19 @@ enthalten, aber `BABU_DB_URL` bleibt auskommentiert — erst Migrationslauf,
 dann umschalten (Server-README). Vor dem Merge: Runde 2/3 sind weiterhin
 nur über die Suite geprüft, nicht im Detail gesichtet.
 
-Noch offen aus dem Auftrag: Plan 21 Phase 3/4 (Acting-as, Mandanten-
-verwaltung; Welle 2, siehe docs-README), Phase 5 (Lasttest, Backup-Cron
-auf dem Host), P2-17/18 und P3-Rest.
+Plan 21 Phase 3 (Acting-as, `X-Mandant`-Kopf) und Phase 4 (Mandanten-
+verwaltung im Portal, Umschalter, `/api/kanzlei/*`) sind ebenfalls auf
+dem Branch (`dae28ec`, `99f7add`). Ein Steuerberater legt damit unter
+„Mandanten" Betriebe an, der Betreiber verknüpft die Belegbox, und die
+Kanzlei arbeitet per Umschalter in der Box des Mandanten. Wie ein Zugang
+zur Kanzlei wird: Rolle „kanzlei" unter „Zugänge verwalten", dann unter
+„Mandanten" den ersten Betrieb anlegen — die Kanzlei-Zeile entsteht dabei.
+
+Endstand `20fa9a5`: Suite 1900 grün gegen SQLite UND gegen Postgres 16.
+Nicht gepusht, nicht gemerged, nicht deployt — das ist der Zug des
+Auftraggebers (Push des Branches, ff-Merge nach main, Deploy-Ritual mit
+Golden-Diff; für Postgres zusätzlich Passwortdatei, Migrationslauf,
+dann `BABU_DB_URL` einkommentieren).
+
+Noch offen aus dem Auftrag: Plan 21 Phase 5 (Lasttest, Backup-Cron auf dem
+Host, Compose-Build auf der H200V), P2-17/18 und P3-Rest.
