@@ -350,3 +350,15 @@ def test_salon_von_aktiv_zeigt_beim_acting_as_auf_den_mandanten(welt2):
         assert bw.salon_von_aktiv(welt2["kanzlei"]) == welt2["berta"]
     finally:
         bw._AKTIVER_MANDANT.reset(marke)  # noqa: SLF001
+
+
+def test_der_mandant_darf_auch_als_adressparameter_kommen(welt2):
+    """Downloads sind Adressen im Browser, kein fetch() — dort kann kein Kopf
+    mit. ?mandant= wird genauso geprüft wie der Kopf (Mitgliedschaft), und
+    ohne Mitgliedschaft ist es genauso 403."""
+    kanzlei = _login(welt2["bw"], welt2["kanzlei"])
+    mit = kanzlei.get(f"/api/belege?mandant={welt2['nina_id']}")
+    assert mit.status_code == 200
+    assert any("alpha" in b["stamm"] for b in mit.json()["belege"])
+    fremd = kanzlei.get(f"/api/belege?mandant={welt2['carla_id']}")
+    assert fremd.status_code == 403

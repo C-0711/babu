@@ -136,7 +136,8 @@ tfoot td{font-weight:600;color:var(--gc-fg);border-top:1px solid var(--gc-border
 
 <header>
   <h1>DATEV</h1>
-  <a class="zurueck" href="/portal#verwaltung">‹ Zum Portal</a>
+  <span id="fuer-wen" hidden style="margin-left:14px;padding:5px 12px;border:1px solid var(--gc-accent);border-radius:999px;font-size:13px;color:var(--gc-fg)"></span>
+  <a class="zurueck" id="zurueck" href="/portal#verwaltung">‹ Zum Portal</a>
 </header>
 
 <main>
@@ -227,8 +228,22 @@ function reiter(name, merken = true){
 for (const k of REITER) $("#r-"+k).onclick = () => reiter(k);
 addEventListener("hashchange", () => reiter(location.hash.slice(1), false));
 
+/* Für wen: eine Kanzlei ruft diese Seite aus dem Cockpit mit ?mandant=&name=
+   auf. Der Mandant geht als Kopf an jeden Aufruf und als Parameter an jeden
+   Download — der Server prüft beides gleich. Ohne Parameter: eigener Betrieb. */
+const MANDANT = (() => { const q = new URLSearchParams(location.search);
+  const id = (q.get("mandant") || "").trim(); return id ? {id, name: q.get("name") || "Mandant"} : null; })();
+if (MANDANT){
+  const s = document.getElementById("fuer-wen"); s.hidden = false; s.textContent = "Für " + MANDANT.name;
+  document.getElementById("zurueck").href = "/portal#mandanten";
+  document.getElementById("zurueck").textContent = "‹ Zu den Mandanten";
+}
+function mitMandant(pfad){
+  if (!MANDANT) return pfad;
+  return pfad + (pfad.includes("?") ? "&" : "?") + "mandant=" + encodeURIComponent(MANDANT.id);
+}
 async function hol(pfad){
-  const a = await fetch(pfad, {credentials:"same-origin"});
+  const a = await fetch(mitMandant(pfad), {credentials:"same-origin"});
   const d = await a.json().catch(() => ({fehler:"Antwort nicht lesbar"}));
   if (!a.ok) throw new Error(d.fehler || "Das hat nicht geklappt.");
   return d;
@@ -373,14 +388,14 @@ async function vorschau(){
     ${kontotabelle(d.je_konto)}`;
   const knopf = $("#holen");
   if (knopf) knopf.onclick = () => {
-    window.location.href = "/api/datev/stapel.csv?" + spanne();
+    window.location.href = mitMandant("/api/datev/stapel.csv?" + spanne());
   };
 }
 
 $("#hol-konten").onclick = () => {
-  window.location.href = "/api/datev/konten.csv?" + spanne(); };
+  window.location.href = mitMandant("/api/datev/konten.csv?" + spanne()); };
 $("#hol-kreditoren").onclick = () => {
-  window.location.href = "/api/datev/kreditoren.csv?" + spanne(); };
+  window.location.href = mitMandant("/api/datev/kreditoren.csv?" + spanne()); };
 
 // ── Hereinlesen ──────────────────────────────────────────────────────
 function liste(titel, erklaerung, zeilen){
@@ -422,7 +437,7 @@ $("#lesen").onclick = async () => {
     `<div class="meldung">Bitte zuerst eine Datei wählen.</div>`; return; }
   ziel.innerHTML = `<div class="laedt">Wird gelesen …</div>`;
   const paket = new FormData(); paket.append("datei", f, f.name);
-  const a = await fetch("/api/datev/lesen",
+  const a = await fetch(mitMandant("/api/datev/lesen"),
     {method:"POST", body:paket, credentials:"same-origin"});
   const d = await a.json().catch(() => ({fehler:"Antwort nicht lesbar"}));
   if (!a.ok){ ziel.innerHTML =

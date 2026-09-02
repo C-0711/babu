@@ -1429,7 +1429,11 @@ def _mandant_gewuenscht(request: Request) -> str:
     ein abgelehnter Kopf still auf die eigene Box zurück — und die Kanzlei
     sähe ihre eigenen Zahlen im Glauben, die des Mandanten zu sehen.
     """
-    return (request.headers.get(MANDANT_KOPF) or "").strip()
+    # Auch als Adressparameter: ein CSV-Download ist eine Adresse im
+    # Browser, kein fetch() — dort kann kein Kopf mit. Geprüft wird beides
+    # gleich (Mitgliedschaft in _mandant_aus_kontext), der Weg ist egal.
+    return (request.headers.get(MANDANT_KOPF)
+            or request.query_params.get("mandant") or "").strip()
 
 
 def _mandant_aus_kontext(request: Request, un: str) -> int | None:
