@@ -518,12 +518,12 @@ async def api_mandant_anlegen(request: Request) -> JSONResponse:
         if doppelt:
             return _fehler("Für diese E-Mail gibt es hier schon einen "
                            "Mandanten.", 409)
-        mandant_id = mandanten.mandant_anlegen(
-            kanzlei_id, name, mail, kontenrahmen or None,
-            berater_nr or None, mandant_nr or None, c=c)
 
-    # Konto und Einladung erst NACH dem Schloss: `nutzer_anlegen` nimmt es
-    # selbst, und dasselbe Schloss ein zweites Mal zu nehmen hinge für immer.
+    # Das Konto VOR dem Mandanten: `mandant.besitzer_un` zeigt per
+    # Fremdschlüssel auf `nutzer.email`, und Postgres prüft das wirklich
+    # (SQLite nicht — so blieb die umgekehrte Reihenfolge lange unbemerkt).
+    # `nutzer_anlegen` nimmt das Schloss selbst, deshalb steht es zwischen
+    # den beiden Sitzungen und nicht in einer.
     #
     # Das Startpasswort wird verworfen, ohne es je anzusehen: in der
     # Datenbank steht nur sein Hash, und wer sich anmelden will, geht über
@@ -532,6 +532,16 @@ async def api_mandant_anlegen(request: Request) -> JSONResponse:
     neu = bw.nutzer_holen(mail) is None
     if neu:
         bw.nutzer_anlegen(mail, "", name, "salon", box=False)
+
+    with _sitzung() as c:
+        # Noch einmal prüfen — zwischen den Sitzungen lag kein Schloss.
+        if c.execute("SELECT 1 FROM mandant WHERE kanzlei_id=? AND besitzer_un=?",
+                     (kanzlei_id, mail)).fetchone():
+            return _fehler("Für diese E-Mail gibt es hier schon einen "
+                           "Mandanten.", 409)
+        mandant_id = mandanten.mandant_anlegen(
+            kanzlei_id, name, mail, kontenrahmen or None,
+            berater_nr or None, mandant_nr or None, c=c)
     link = _einladung_verschicken(bw, name, mail)
     audit.audit(un, "kanzlei_mandant_anlegen", ziel_un=mail,
                 mandant_id=str(mandant_id), kanzlei_id=kanzlei_id,

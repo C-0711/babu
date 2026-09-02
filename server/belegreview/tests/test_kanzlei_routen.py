@@ -99,7 +99,11 @@ def welt(tmp_path, monkeypatch):
                         ("vertretung-a@0711.io", "kanzlei"),
                         ("kanzlei-b@0711.io", "kanzlei"),
                         ("betreiber@0711.io", "admin"),
-                        ("nina@0711.io", "salon")):
+                        ("nina@0711.io", "salon"),
+                        # Postgres prüft den Fremdschlüssel mandant.besitzer_un
+                        # → nutzer.email wirklich; SQLite ließ es durchgehen.
+                        ("ohne@0711.io", "salon"),
+                        ("fremd@0711.io", "salon")):
         babu_web.nutzer_anlegen(mail, mail.split("@")[0], "", rolle)
 
     with babu_web._DB_LOCK, babu_web._db() as c:
@@ -215,16 +219,22 @@ def test_nach_status_laesst_sich_filtern(welt, k):
 # ── Anlegen ─────────────────────────────────────────────────────────────
 
 def _alle_werte(pfad: Path) -> str:
-    """Jede Textzelle der Datenbank am Stück — für die Klartext-Probe."""
-    import sqlite3
-    c = sqlite3.connect(pfad)
-    tabellen = [z[0] for z in c.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'")]
+    """Jede Textzelle der Datenbank am Stück — für die Klartext-Probe.
+
+    Über `babu_web._db()`, damit die Probe in beiden Dialekten dieselbe
+    Datenbank liest, gegen die die Route geschrieben hat (unter Postgres
+    liegt in `pfad` gar nichts)."""
     stuecke = []
-    for t in tabellen:
-        for zeile in c.execute(f"SELECT * FROM {t}"):
-            stuecke.extend(str(w) for w in zeile)
-    c.close()
+    with babu_web._DB_LOCK, babu_web._db() as c:
+        if c.dialekt == "sqlite":
+            frage = "SELECT name FROM sqlite_master WHERE type='table'"
+        else:
+            frage = ("SELECT table_name FROM information_schema.tables "
+                     "WHERE table_schema = current_schema()")
+        tabellen = [z[0] for z in c.execute(frage).fetchall()]
+        for t in tabellen:
+            for zeile in c.execute(f"SELECT * FROM {t}").fetchall():
+                stuecke.extend(str(w) for w in zeile)
     return "\n".join(stuecke)
 
 
