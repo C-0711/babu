@@ -8894,15 +8894,47 @@ HISTORIE_MAX = 20 * 1024 * 1024      # ein Jahresstapel bleibt weit darunter
 
 
 def historie_lesen() -> dict:
-    """Was babu über die Zeit vor babu weiß."""
+    """Was babu über die Zeit vor babu weiß.
+
+    Stände von vor dem 02.09.2026 kennen nur Bruttosummen — die Satz-
+    Auflösung (historie.steuersatz) kam später. Fehlt einem Monat das
+    Netto, werden die Originaldateien unter historie/<jahr>/ neu gelesen;
+    genau dafür liegen sie in der Box. Gelesen, nicht geschrieben: der
+    nächste Upload legt den vollständigen Stand ohnehin neu ab."""
+    leer = {"monate": {}, "quellen": []}
     roh = git_show("historie/buchungen.json")
     if not roh:
-        return {"monate": {}, "quellen": []}
+        return leer
     try:
         d = json.loads(roh)
-        return d if isinstance(d, dict) else {"monate": {}, "quellen": []}
     except ValueError:
-        return {"monate": {}, "quellen": []}
+        return leer
+    if not isinstance(d, dict):
+        return leer
+    monate = d.get("monate") or {}
+    if monate and any("erloese_netto" not in m for m in monate.values()):
+        nachgelesen = _historie_nachlesen(d.get("rahmen") or "SKR04")
+        if nachgelesen:
+            return nachgelesen
+    return d
+
+
+def _historie_nachlesen(rahmen: str) -> dict | None:
+    """Alle abgelegten Originalstapel noch einmal durch den Leser."""
+    import historie as hi  # noqa: PLC0415
+    out = _git(["ls-tree", "-r", "--name-only", "HEAD", "historie/"]) or ""
+    pfade = sorted(p for p in out.splitlines()
+                   if p.count("/") == 2 and not p.endswith(".json"))
+    bestand = None
+    for pfad in pfade:
+        daten = git_show(pfad)
+        if not daten:
+            continue
+        try:
+            bestand = hi.zusammenfuehren(bestand, hi.stapel_lesen(daten, rahmen))
+        except hi.HistorieFehler:
+            continue
+    return bestand
 
 
 @app.get("/api/historie")

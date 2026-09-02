@@ -384,3 +384,45 @@ def test_der_export_traegt_die_kassentage_des_monats(historiewelt, monkeypatch):
     monkeypatch.setattr(bw, "_monat_festgeschrieben", lambda monat: True)
     r = c.get("/api/export/2026-03.csv")
     assert r.content.decode("cp1252").split(";")[20] == "1"
+
+
+def test_ein_bestandskonto_traegt_keine_steuer():
+    """„Kasse an Erlöse": der Satz gehört den Erlösen, nicht der Kasse."""
+    d = hi.stapel_lesen(stapel(zeile("119,00", "S", "1600", "4400", "1503")))
+    konten = {k["konto"]: k for k in d["monate"]["2025-03"]["konten"]}
+    assert konten["4400"]["netto"] == 100.0
+    assert konten["1600"]["netto"] == konten["1600"]["betrag"] == 119.0
+
+
+def test_ein_alter_stand_ohne_netto_wird_aus_den_originalen_nachgelesen(historiewelt, monkeypatch):
+    """Vor dem 02.09.2026 lagen nur Bruttosummen in buchungen.json — die
+    Originaldatei liegt daneben, also wird sie neu gelesen."""
+    import json
+    bw, _, c = historiewelt
+    original = stapel(zeile("1190,00", "H", "4400", "1600", "1503", "Losung"))
+    alt = {"monate": {"2025-03": {"monat": "2025-03", "erloese": 1190.0,
+                                  "kosten": 0.0, "buchungen": 1, "konten": []}},
+           "quellen": [], "rahmen": "SKR04"}
+    dateien = {"historie/buchungen.json": json.dumps(alt).encode(),
+               "historie/2025/stapel.csv": original}
+    monkeypatch.setattr(bw, "git_show", lambda pfad: dateien.get(pfad))
+    monkeypatch.setattr(bw, "_git", lambda args, timeout=30:
+                        "\n".join(dateien) + "\n")
+    h = bw.historie_lesen()
+    assert h["monate"]["2025-03"]["erloese_netto"] == 1000.0
+    r = c.get("/api/historie")
+    assert r.json()["jahre"][0]["erloese_netto"] == 1000.0
+
+
+def test_ein_neuer_stand_wird_nicht_nachgelesen(historiewelt, monkeypatch):
+    import json
+    bw, _, _ = historiewelt
+    neu = {"monate": {"2025-03": {"monat": "2025-03", "erloese": 1190.0,
+                                  "erloese_netto": 1000.0, "kosten": 0.0,
+                                  "buchungen": 1, "konten": []}},
+           "quellen": [], "rahmen": "SKR04"}
+    monkeypatch.setattr(bw, "git_show", lambda pfad: json.dumps(neu).encode()
+                        if pfad.endswith("buchungen.json") else None)
+    monkeypatch.setattr(bw, "_git", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("darf nicht listen")))
+    assert bw.historie_lesen() == neu

@@ -218,6 +218,8 @@ def stapel_lesen(daten: bytes, rahmen: str = "SKR04") -> dict:
                 m["vorsteuer"] += b_ - n_
             elif kto != konto_roh:
                 continue            # neutrales Gegenkonto: keine eigene Zeile
+            else:
+                n_ = b_             # Bestandskonto: da steckt keine Steuer drin
             k = m["konten"].setdefault(kto, {"konto": kto, "betrag": 0.0,
                                              "netto": 0.0, "anzahl": 0,
                                              "seite": s_})
