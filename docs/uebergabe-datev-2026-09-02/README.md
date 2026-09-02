@@ -29,8 +29,9 @@ was aus dem Transkript gerettet wurde, damit die Planung ohne Neuanfang weiterge
   Invariante (Zeilen in `atome.jsonl` == Zeilen in `vektoren.npy`, sonst schweigt
   das Kompendium), alle Ein-Box-Annahmen im Rollenmodell, Code-Stellen hinter den
   P0/P1-Befunden.
-- Drei Planaufträge (`10`–`12`) waren gestartet, als die Sitzung abbrach. Ihre
-  Ergebnisse existieren nicht. Nächster Schritt: die drei Aufträge erneut an
-  Planungsagenten geben und daraus einen Gesamtplan bauen.
+- Drei Planaufträge (`10`–`12`) waren gestartet, als die Sitzung abbrach. Sie
+  wurden am Abend erneut ausgeführt (Sonnet), Ergebnisse in `20`–`22`.
+- `30-gesamtplan.md` ordnet die drei Pläne in eine Reihenfolge und listet die
+  Entscheidungen, die vor dem Bauen beim Auftraggeber liegen.
 
 Die Erkundungen sind Agenten-Ausgaben mit Zeilennummern vom Stand `d163ac6`.
