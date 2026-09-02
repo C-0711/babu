@@ -11,6 +11,17 @@ import io
 import json
 import os
 import re
+import threading
+
+# pypdfium2/PDFium ist NICHT threadsicher zwischen gleichzeitigen Aufrufen —
+# ein Absturz am 02.09.2026 (zwei Wissen-Uploads liefen parallel im
+# Hintergrund-Thread) hat das gezeigt: "assert owner.wref in parent._kids"
+# in pypdfium2/internal/bases.py, der Prozess riss ab, Docker startete ihn
+# neu. Seit `_wissen_job` PDFs im Hintergrund liest, ist Überlappung mit
+# anderen Anfragen (Vorschau, Seitenzahl, Kontoauszug, Salon-Check) real.
+# Jede Stelle, die eine `pdfium.PdfDocument` öffnet, hält deshalb dieses
+# Schloss vom Öffnen bis zum `close()`.
+PDFIUM_LOCK = threading.Lock()
 
 LLM_API = os.environ.get("BABU_LLM_API",
                          "http://127.0.0.1:11435/v1/chat/completions")
@@ -78,12 +89,13 @@ def betrag_zahl(wert) -> float | None:
 
 def seiten_text(pfad) -> list[str]:
     import pypdfium2 as pdfium
-    doc = pdfium.PdfDocument(str(pfad))
-    try:
-        return [seite.get_textpage().get_text_range()
-                for seite in list(doc)[:SEITEN_CAP]]
-    finally:
-        doc.close()
+    with PDFIUM_LOCK:
+        doc = pdfium.PdfDocument(str(pfad))
+        try:
+            return [seite.get_textpage().get_text_range()
+                    for seite in list(doc)[:SEITEN_CAP]]
+        finally:
+            doc.close()
 
 
 def seiten_bilder(pfad, max_kante: int = BILD_MAX_KANTE) -> list[bytes]:
@@ -97,18 +109,19 @@ def seiten_bilder(pfad, max_kante: int = BILD_MAX_KANTE) -> list[bytes]:
         bild.save(puffer, "JPEG", quality=80)
         return [puffer.getvalue()]
     import pypdfium2 as pdfium
-    doc = pdfium.PdfDocument(p)
-    bilder = []
-    try:
-        for seite in list(doc)[:SEITEN_CAP]:
-            breite = seite.get_size()[0]
-            bild = seite.render(scale=max_kante / max(breite, 1)).to_pil().convert("RGB")
-            bild.thumbnail((max_kante, max_kante))
-            puffer = io.BytesIO()
-            bild.save(puffer, "JPEG", quality=80)
-            bilder.append(puffer.getvalue())
-    finally:
-        doc.close()
+    with PDFIUM_LOCK:
+        doc = pdfium.PdfDocument(p)
+        bilder = []
+        try:
+            for seite in list(doc)[:SEITEN_CAP]:
+                breite = seite.get_size()[0]
+                bild = seite.render(scale=max_kante / max(breite, 1)).to_pil().convert("RGB")
+                bild.thumbnail((max_kante, max_kante))
+                puffer = io.BytesIO()
+                bild.save(puffer, "JPEG", quality=80)
+                bilder.append(puffer.getvalue())
+        finally:
+            doc.close()
     return bilder
 
 

@@ -2400,10 +2400,13 @@ def api_vorschau(pfad: str, request: Request) -> Response:
     try:
         import io  # noqa: PLC0415
         import pypdfium2 as pdfium  # noqa: PLC0415
-        d = pdfium.PdfDocument(io.BytesIO(roh))
-        seite = d[0]
-        bild = seite.render(scale=320 / max(seite.get_width(), 1)).to_pil()
-        d.close()
+
+        import abschluss_lesen  # noqa: PLC0415 — teilt sich das PDFium-Schloss
+        with abschluss_lesen.PDFIUM_LOCK:
+            d = pdfium.PdfDocument(io.BytesIO(roh))
+            seite = d[0]
+            bild = seite.render(scale=320 / max(seite.get_width(), 1)).to_pil()
+            d.close()
         puffer = io.BytesIO()
         bild.convert("RGB").save(puffer, "JPEG", quality=72)
     except Exception as ex:  # noqa: BLE001
@@ -4735,10 +4738,13 @@ def api_abschluss_vorschau(jahr: int, datei: str, request: Request) -> Response:
     try:
         import io  # noqa: PLC0415
         import pypdfium2 as pdfium  # noqa: PLC0415
-        d = pdfium.PdfDocument(io.BytesIO(roh))
-        seite = d[0]
-        bild = seite.render(scale=320 / max(seite.get_width(), 1)).to_pil()
-        d.close()
+
+        import abschluss_lesen  # noqa: PLC0415 — teilt sich das PDFium-Schloss
+        with abschluss_lesen.PDFIUM_LOCK:
+            d = pdfium.PdfDocument(io.BytesIO(roh))
+            seite = d[0]
+            bild = seite.render(scale=320 / max(seite.get_width(), 1)).to_pil()
+            d.close()
         puffer = io.BytesIO()
         bild.convert("RGB").save(puffer, "JPEG", quality=72)
     except Exception as ex:  # noqa: BLE001
@@ -6134,9 +6140,12 @@ def _pdf_seiten(oid: str | None, pfad: str) -> int | None:
     try:
         import io  # noqa: PLC0415
         import pypdfium2 as pdfium  # noqa: PLC0415
-        d = pdfium.PdfDocument(io.BytesIO(roh))
-        n = len(d)
-        d.close()
+
+        import abschluss_lesen  # noqa: PLC0415 — teilt sich das PDFium-Schloss
+        with abschluss_lesen.PDFIUM_LOCK:
+            d = pdfium.PdfDocument(io.BytesIO(roh))
+            n = len(d)
+            d.close()
     except Exception:  # noqa: BLE001
         return None
     _SEITEN_CACHE[oid] = n

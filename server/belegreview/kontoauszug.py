@@ -85,11 +85,14 @@ def parse_text(text: str) -> dict:
 
 def parse_pdf(pfad) -> dict:
     import pypdfium2 as pdfium
-    doc = pdfium.PdfDocument(str(pfad))
-    try:
-        text = "\n".join(seite.get_textpage().get_text_range() for seite in doc)
-    finally:
-        doc.close()
+
+    import abschluss_lesen  # noqa: PLC0415 — teilt sich das PDFium-Schloss
+    with abschluss_lesen.PDFIUM_LOCK:
+        doc = pdfium.PdfDocument(str(pfad))
+        try:
+            text = "\n".join(seite.get_textpage().get_text_range() for seite in doc)
+        finally:
+            doc.close()
     return parse_text(text)
 
 
