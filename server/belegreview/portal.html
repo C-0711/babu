@@ -2740,7 +2740,7 @@ function ablageKachel(s){
       ${s.thema_name ? `<span class="marke nackt">${esc(s.thema_name)}</span>` : ""}
     </a>
     ${s.fundstelle ? `<div class="fundstelle">${esc(s.fundstelle)}</div>` : ""}
-    ${ablageWerkzeug(s)}
+    ${ablageWerkzeugKurz(s)}
   </div>`;
 }
 
@@ -2749,14 +2749,30 @@ function ablageZeile(s){
     <a href="${ablageZiel(s)}">${esc(s.titel)}</a>
     ${s.fach ? `<span class="marke nackt">${esc(s.fach)}</span>` : ""}
     <span class="wann">${s.zeit ? zeitKurz(s.zeit) : ""}</span>
-    ${ablageWerkzeug(s)}
+    ${ablageWerkzeugKurz(s)}
   </div>`;
 }
 
 /* Umbenennen und Verschieben gibt es nur, wo eine Beiakte danebenliegt —
    also bei Unterlagen und Salon-Check-Blättern. Ein Beleg heißt nach dem,
-   was auf ihm steht; ein Buchungsstapel heißt, wie die Kanzlei ihn kennt. */
-function ablageWerkzeug(s){
+   was auf ihm steht; ein Buchungsstapel heißt, wie die Kanzlei ihn kennt.
+
+   Löschen steht NICHT auf Kachel-/Zeilenebene (Befund P1-8) — GoBD-relevante
+   Unterlagen sollen nicht mit einem Klick daneben verschwinden können.
+   ablageWerkzeugKurz() liefert deshalb nur Umbenennen/Verschieben; Löschen
+   gibt es ausschließlich in der Detailansicht über ablageWerkzeugVoll(). */
+function ablageWerkzeugKurz(s){
+  const ordnerbar = /^(dokumente|abschluss|wissen)\//.test(s.pfad)
+    && meineRolle !== "mitarbeit";
+  if (!ordnerbar) return "";
+  const wie = esc(s.titel).replace(/'/g, "");
+  return `<div class="stueck-werkzeug">
+    <button onclick="ablageUmbenennen('${s.pfad}','${wie}')">Umbenennen</button>
+    <button onclick="ablageVerschieben('${s.pfad}')">Verschieben</button>
+  </div>`;
+}
+
+function ablageWerkzeugVoll(s){
   const ordnerbar = /^(dokumente|abschluss|wissen)\//.test(s.pfad)
     && meineRolle !== "mitarbeit";
   const wie = esc(s.titel).replace(/'/g, "");
@@ -2918,7 +2934,7 @@ async function ladeUnterlage(pfad){
 
   rechts += `<div style="display:flex;gap:8px;flex-wrap:wrap">
     <a class="chip" href="${url}" target="_blank" rel="noopener">In neuem Fenster öffnen</a>
-    ${ablageWerkzeug(s)}</div>`;
+    ${ablageWerkzeugVoll(s)}</div>`;
 
   ziel.innerHTML = `<div id="unterlage-grid">
     <div id="unterlage-buehne">${buehne}</div><div>${rechts}</div></div>`;
