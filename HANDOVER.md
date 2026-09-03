@@ -238,5 +238,13 @@ Endstand `20fa9a5`: Suite 1900 grün gegen SQLite UND gegen Postgres 16.
 **Gemerged und deployt 03.09. 01:30** (main `9f3809d`), inklusive
 Postgres-Umzug auf Wunsch des Auftraggebers — Details in Abschnitt 2.
 
-Noch offen aus dem Auftrag: Plan 21 Phase 5 (Lasttest, Backup-Cron auf dem
-Host, Compose-Build auf der H200V), P2-17/18 und P3-Rest.
+**Welle 4 (03.09. früh):** P2-17/18, P3-23/24/25, Plan 21 Phase 5 und das
+Kanzlei-Cockpit (Überblick-Matrix, Monatsblick je Mandant) — Details in
+`docs/uebergabe-datev-2026-09-02/README.md`, Abschnitt „Welle 4".
+
+Noch offen: P3-21/22 (Login-Maske getrennt vom App-Bundle, danach
+Caching) als eigener Strukturumbau; `oeffnungstage` als Einstellung mit
+Formularfeld (heute Vorgabe Mo–Sa für „Kassenbuch: x von y Tagen");
+der `salon_von`-Wächter deckt nur babu_web.py ab, nicht kanzlei_routen/
+datev_seite; waagerechter Überlauf auf „Heute" bei 375 px (vor Welle 3
+vorhanden); rechtssichere Texte für Impressum/Datenschutz (Nutzereingabe).

@@ -170,3 +170,26 @@ Container-Log ohne Fehler. Postgres nachweislich in Benutzung: Audit-Zeile des
 Export-Aufrufs liegt dort, `schema_version` 0001+0002. Unterwegs gefixt:
 das Umzugsskript kannte die Passwortdatei nicht (`9f3809d`).
 
+**Welle 4, 03.09. früh** (nach dem Postgres-Deploy): die Reste des Auftrags plus
+die Steuerberater-Sicht.
+
+- Portal-Befunde P2-17 (Salon-Check unter Auswertung), P2-18 (ein Menüpunkt
+  „Dein Team" mit zwei Unterreitern, Datenmodelle unverändert), P3-23 (62
+  Felder mit Beschriftung), P3-24 (nur tote Breakpoint-Regeln entfernt, drei
+  Zusammenlegungen bewusst gelassen — Begründung im Commit), P3-25 (Fußzeile
+  Impressum/Datenschutz mit Platzhalter „Text folgt", auch ohne Anmeldung).
+- Plan 21 Phase 5: Lasttest der Box-Registry (50 Boxen, LRU, TTL, 8 Threads;
+  `box_von` ~0,4 ms warm wie kalt, weil `mandant_holen` je Aufruf gegen die
+  DB geht), Rate-Limits auf `/api/datev/lesen` und `box-verknuepfen`
+  nachgezogen, P3-26 als Test festgeschrieben, Backup-Cron auf dem Host um
+  `pg_dump` ergänzt (`~/babu-sichern.sh`, 14 Stände).
+- Kanzlei-Cockpit: `GET /api/kanzlei/mandanten/{id}/monate` und
+  `GET /api/kanzlei/uebersicht` (Matrix, Zeitbudget je Box); im Portal der
+  Reiter „Überblick" und „Die letzten Monate" in der Detailkarte. Dabei
+  gefunden und behoben: die DATEV-Seite las beim Acting-as die eigene Box der
+  Kanzlei (`_verwalter_box_wache`), `_kleinunternehmerin` nahm das Umsatz-
+  profil der Kanzlei; `?mandant=` zählt jetzt wie der Kopf (Downloads).
+
+Suite: 1939 grün gegen SQLite und Postgres 16 (vor dem Cockpit-Portalteil,
+der nur portal.html ändert).
+
