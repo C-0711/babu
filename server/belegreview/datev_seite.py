@@ -364,6 +364,67 @@ def _csv_feld(wert) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Zeichensatz der Ausgabe
+# ---------------------------------------------------------------------------
+#
+# babu schreibt seit jeher Windows-1252 — das nimmt jede DATEV-Fassung an,
+# und dabei bleibt es als Standard. Der echte Export der Kanzlei kommt aber
+# als UTF-8; wer beide Dateien nebeneinanderlegt oder einen Namen mit einem
+# Buchstaben braucht, den Windows-1252 gar nicht kennt, kann mit
+# `?zeichensatz=utf8` umschalten. Ohne den Zusatz ändert sich nichts.
+
+UTF8_NAMEN = ("utf8", "utf-8", "utf_8")
+
+
+def _utf8_gewuenscht(zeichensatz: str) -> bool:
+    return str(zeichensatz or "").strip().lower().replace(" ", "") in UTF8_NAMEN
+
+
+def _csv_antwort(text: str, dateiname: str, utf8: bool) -> Response:
+    art = ("text/csv; charset=utf-8" if utf8
+           else "text/csv; charset=windows-1252")
+    return Response(content=extf.als_bytes(text, utf8_bom=utf8),
+                    media_type=art,
+                    headers={"Content-Disposition":
+                             f'attachment; filename="{dateiname}"'})
+
+
+def spalten_abweichung(spalten: list[str]) -> str | None:
+    """Trägt die gelesene Datei eine andere Spaltenzeile als babu selbst?
+
+    Reine Rechnung, keine Wertung: die Antwort ist ein Satz für die Seite
+    oder `None`. Eine abweichende Spaltenzeile ist kein Fehler — DATEV
+    ergänzt Spalten von Fassung zu Fassung, und gelesen wird ohnehin über
+    die Namen (siehe `_GESUCHT`). Sie ist aber der erste Hinweis darauf,
+    dass die Kanzlei mit einer anderen Fassung arbeitet als babu schreibt,
+    und das will man wissen, bevor man rät.
+    """
+    eigene = list(extf.SPALTEN)
+    haben = [str(n or "").strip() for n in spalten]
+    if [n.lower() for n in haben] == [n.lower() for n in eigene]:
+        return None
+    saetze = []
+    if len(haben) != len(eigene):
+        saetze.append(f"Die Datei führt {len(haben)} Spalten, babu schreibt "
+                      f"{len(eigene)}.")
+    erste = next((i for i, (a, b) in enumerate(zip(haben, eigene))
+                  if a.lower() != b.lower()), None)
+    if erste is not None:
+        saetze.append(f"Die erste Abweichung steht an Stelle {erste + 1}: dort "
+                      f"heißt die Spalte „{haben[erste]}“, bei babu "
+                      f"„{eigene[erste]}“.")
+    elif len(haben) > len(eigene):
+        zusatz = ", ".join(x for x in haben[len(eigene):] if x)[:200]
+        saetze.append(f"Am Ende stehen zusätzliche Spalten: {zusatz}.")
+    elif len(haben) < len(eigene):
+        fehlt = ", ".join(x for x in eigene[len(haben):])[:200]
+        saetze.append(f"Am Ende fehlen Spalten: {fehlt}.")
+    saetze.append("Gelesen wurde trotzdem — babu sucht die Spalten über "
+                  "ihren Namen, nicht über ihre Stelle.")
+    return " ".join(saetze)
+
+
+# ---------------------------------------------------------------------------
 # Routen: Übersicht, Vorschau, Datei
 # ---------------------------------------------------------------------------
 
@@ -429,7 +490,8 @@ def api_vorschau(request: Request, von: str = "", bis: str = "") -> Response:
 
 
 @router.get("/stapel.csv")
-def api_stapel(request: Request, von: str = "", bis: str = "") -> Response:
+def api_stapel(request: Request, von: str = "", bis: str = "",
+               zeichensatz: str = "") -> Response:
     """Der Buchungsstapel als Datei. Schreibt nichts in die Belegbox —
     das Festschreiben hängt weiter am freigegebenen Monatsabschluss."""
     un, fehler = _wache(request)
@@ -457,13 +519,12 @@ def api_stapel(request: Request, von: str = "", bis: str = "") -> Response:
     import audit  # noqa: PLC0415 — nur dieser eine Weg auditiert
     audit.audit(un, "datev_stapel", mandant_id=bw._mandant_fuers_log(),
                 von=monate[0], bis=monate[-1], monate=len(monate))
-    return Response(content=extf.als_bytes(text),
-                    media_type="text/csv; charset=windows-1252",
-                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    return _csv_antwort(text, name, _utf8_gewuenscht(zeichensatz))
 
 
 @router.get("/konten.csv")
-def api_konten(request: Request, von: str = "", bis: str = "") -> Response:
+def api_konten(request: Request, von: str = "", bis: str = "",
+               zeichensatz: str = "") -> Response:
     """Kontenbeschriftungen der Konten, die in diesem Zeitraum vorkommen.
 
     Nur die benutzten: eine Datei mit dem ganzen SKR04 hilft niemandem, und
@@ -488,11 +549,8 @@ def api_konten(request: Request, von: str = "", bis: str = "") -> Response:
         name = skr04_konten.name(k) or ""
         aus.append(";".join([k, _csv_feld(name[:40]), '"de-DE"', _csv_feld(name)]))
     text = "\r\n".join(aus) + "\r\n"
-    return Response(content=extf.als_bytes(text),
-                    media_type="text/csv; charset=windows-1252",
-                    headers={"Content-Disposition":
-                             f'attachment; filename="EXTF_Kontenbeschriftungen_'
-                             f'{monate[0]}.csv"'})
+    return _csv_antwort(text, f"EXTF_Kontenbeschriftungen_{monate[0]}.csv",
+                        _utf8_gewuenscht(zeichensatz))
 
 
 @router.get("/kreditoren.csv")
@@ -618,8 +676,10 @@ def stapel_lesen(roh: bytes) -> dict:
                            f"Buchungsstapel.")
     if len(zeilen) < 3:
         raise StapelFehler("Die Datei enthält keine Buchungen.")
-    namen = [n.strip().strip('"').lower()
-             for n in next(csv.reader([zeilen[1]], delimiter=";", quotechar='"'))]
+    namen_roh = [n.strip().strip('"')
+                 for n in next(csv.reader([zeilen[1]], delimiter=";",
+                                          quotechar='"'))]
+    namen = [n.lower() for n in namen_roh]
     spalte: dict[str, int] = {}
     for schluessel, (passt, standard) in _GESUCHT.items():
         treffer = next((i for i, n in enumerate(namen) if passt(n)), None)
@@ -667,6 +727,8 @@ def stapel_lesen(roh: bytes) -> dict:
         "berater": (kopf[10] if len(kopf) > 10 else "").strip(),
         "mandant": (kopf[11] if len(kopf) > 11 else "").strip(),
         "jahr": jahr, "von": von, "bis": bis, "monate": monate,
+        "formatversion": (kopf[4] if len(kopf) > 4 else "").strip().strip('"'),
+        "spalten": namen_roh,
         "buchungen": buchungen,
         "summen": {"anzahl": len(buchungen), "soll": soll, "haben": haben,
                    "soll_text": _euro(soll), "haben_text": _euro(haben)},
@@ -823,11 +885,16 @@ async def api_lesen(request: Request, datei: UploadFile = File(...)) -> Response
         vergleich["monate"] = monate
     return JSONResponse({
         "kopf": {k: gelesen[k] for k in ("bezeichnung", "berater", "mandant",
-                                         "jahr", "von", "bis", "monate")},
+                                         "jahr", "von", "bis", "monate",
+                                         "formatversion")},
         "summen": gelesen["summen"],
         "zeilen": gelesen["buchungen"][:500],
         "gekuerzt": max(0, len(gelesen["buchungen"]) - 500),
         "abgleich": vergleich,
+        # Eine Spaltenzeile, die anders aussieht als babus eigene, ist kein
+        # Fehler — aber sie sagt, dass die Kanzlei mit einer anderen Fassung
+        # arbeitet. Das gehört auf die Seite, nicht ins Rätselraten.
+        "spalten_hinweis": spalten_abweichung(gelesen["spalten"]),
         "hinweis": "Gelesen und verglichen. In der Belegbox wurde nichts "
                    "geändert.",
     })

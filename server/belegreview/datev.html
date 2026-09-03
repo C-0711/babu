@@ -453,6 +453,10 @@ $("#lesen").onclick = async () => {
         <b>${txt((d.kopf.monate || []).join(" – ") || d.kopf.jahr || "—")}</b></div>
     </div>
     <div class="ruhe">${txt(d.hinweis)}</div></div>`;
+  // Eine andere Spaltenzeile ist kein Fehler, aber sie sagt, dass die
+  // Kanzlei mit einer anderen DATEV-Fassung arbeitet.
+  if (d.spalten_hinweis)
+    html += `<div class="meldung">${txt(d.spalten_hinweis)}</div>`;
   if (g){
     html += `<div class="karte"><span class="lbl">Abgleich mit den eigenen Belegen</span>
       <div class="kacheln">

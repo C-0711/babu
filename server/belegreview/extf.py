@@ -1,10 +1,17 @@
-"""EXTF-v13-Writer — DATEV-Format Buchungsstapel (Bauplan Phase 5).
+"""EXTF-Writer — DATEV-Format Buchungsstapel (Bauplan Phase 5).
 
 Erzeugt einen importierbaren Buchungsstapel: EXTF-Kopfzeile (Format 700,
-Kategorie 21 Buchungsstapel, Version 13), Spaltenzeile, eine Buchungszeile
-je Steuersatz (Mehrsatz-Split: 19 % + 7 % auf einem Bon werden zwei Sätze —
-der dm-Fall aus dem Testkorpus). Kodierung ist Sache des Aufrufers:
-`als_bytes()` liefert CP1252 mit CRLF.
+Kategorie 21 Buchungsstapel, Formatversion 12), Spaltenzeile mit 124
+Spalten, eine Buchungszeile je Steuersatz (Mehrsatz-Split: 19 % + 7 % auf
+einem Bon werden zwei Sätze — der dm-Fall aus dem Testkorpus). Kodierung
+ist Sache des Aufrufers: `als_bytes()` liefert Windows-1252 mit CRLF, auf
+Wunsch UTF-8.
+
+Version und Spaltenzahl sind seit 03.09.2026 an einem echten Export der
+Kanzlei ausgerichtet (`historie/2026/stapel.csv` in Ninas Belegbox, siehe
+`docs/uebergabe-datev-2026-09-02/23-referenzstapel-kanzlei.md`): dort steht
+Formatversion 12 und eine Spaltenzeile mit 124 Spalten — babus bisherige
+120 in genau derselben Reihenfolge plus vier am Ende.
 
 Abnahme laut Spec: fehlerfreier Import in einer echten DATEV-Instanz —
 die Golden-File-Tests frieren das Format ein, der Import-Test beim
@@ -48,6 +55,14 @@ SPALTEN = [
     "Kennzeichen SoBil-Buchung", "Festschreibung", "Leistungsdatum",
     "Datum Zuord. Steuerperiode", "Fälligkeit", "Generalumkehr (GU)",
     "Steuersatz", "Land",
+    # Die letzten vier stehen so in der Spaltenzeile eines echten
+    # Kanzlei-Exports (`historie/2026/stapel.csv` aus Ninas Belegbox,
+    # 124 Spalten): babus bisherige 120 in genau dieser Reihenfolge, dann
+    # diese vier. Sie bleiben leer — babu füllt sie nicht, aber eine
+    # Spaltenzeile, die kürzer ist als die der Kanzlei, lässt beim Import
+    # jedes Mal eine Rückfrage entstehen.
+    "Abrechnungsreferenz", "BVV-Position",
+    "EU-Land u. UStID (Ursprung)", "EU-Steuersatz (Ursprung)",
 ]
 
 
@@ -417,7 +432,11 @@ def stapel(reviews: list[dict], monat: str, erzeugt: time.struct_time | None = N
     bis = f"{jahr}{mm:02d}{calendar.monthrange(jahr, mm)[1]}"
     stempel = time.strftime("%Y%m%d%H%M%S", erzeugt) + "000"
     kopf = [
-        '"EXTF"', "700", "21", '"Buchungsstapel"', "13", stempel, "",
+        # Feld 5 ist die Formatversion. Der echte Kanzlei-Export trägt 12
+        # (gemessen an `historie/2026/stapel.csv`); babu schrieb 13, was
+        # die Kanzlei-Software zwar annimmt, aber als neueres Format
+        # behandelt. Gleichziehen statt vorauseilen.
+        '"EXTF"', "700", "21", '"Buchungsstapel"', "12", stempel, "",
         f'"{HERKUNFT}"', '"babu"', "", berater, mandant, f"{jahr}0101",
         SACHKONTENLAENGE, von, bis, f'"babu {monat}"', '""', "1", "0",
         "1" if festschreibung else "0", '"EUR"',
@@ -437,5 +456,20 @@ def stapel(reviews: list[dict], monat: str, erzeugt: time.struct_time | None = N
     return "\r\n".join(zeilen) + "\r\n"
 
 
-def als_bytes(text: str) -> bytes:
+def als_bytes(text: str, utf8_bom: bool = False) -> bytes:
+    """Die Datei als Bytes — Windows-1252 wie bisher, auf Wunsch UTF-8.
+
+    Windows-1252 bleibt der Standard: so schreibt babu seit jeher, und so
+    liest es jede DATEV-Fassung. Der echte Kanzlei-Export dagegen kommt als
+    UTF-8 mit vorangestelltem Erkennungszeichen — wer eine babu-Datei neben
+    eine Kanzlei-Datei legt, will sie im selben Zeichensatz haben. Mit
+    `utf8_bom` gibt es genau das, und nur dann.
+
+    Der Unterschied ist nicht kosmetisch: in Windows-1252 fehlen Zeichen,
+    die in Namen vorkommen (das lange Gedankenstrich-Minus, türkische und
+    polnische Buchstaben) — `errors="replace"` macht daraus ein Fragezeichen.
+    In UTF-8 bleibt der Name stehen, wie er ist.
+    """
+    if utf8_bom:
+        return b"\xef\xbb\xbf" + text.encode("utf-8")
     return text.encode("cp1252", errors="replace")

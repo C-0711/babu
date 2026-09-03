@@ -122,7 +122,7 @@ def test_export_monat_hat_gueltigen_extf_kopf(c):
     kopf = _kopf(r.content)
     assert kopf[0] == '"EXTF"' and kopf[1] == "700"
     assert kopf[2] == "21" and kopf[3] == '"Buchungsstapel"'
-    assert kopf[4] == "13"
+    assert kopf[4] == "12"                 # Formatversion wie im Kanzlei-Export
     assert kopf[14] == "20260701" and kopf[15] == "20260731"
     assert "Buchungsstapel_2026-07.csv" in r.headers["content-disposition"]
 
@@ -427,3 +427,70 @@ def test_haben_zeilen_zaehlen_nicht_zum_soll():
     d = datev_seite.stapel_lesen("\r\n".join(
         [kopf, spalten, zeile("10,00", "S"), zeile("4,00", "H")]).encode("cp1252"))
     assert d["summen"]["soll"] == 10.0 and d["summen"]["haben"] == 4.0
+
+
+# ── Zeichensatz und Spaltenzeile (03.09.2026) ───────────────────────────
+
+def test_stapel_kommt_standardmaessig_in_windows_1252(c):
+    r = c.get("/api/datev/stapel.csv?von=2026-07&bis=2026-07")
+    assert not r.content.startswith(b"\xef\xbb\xbf")
+    assert "windows-1252" in r.headers["content-type"]
+    assert r.content.decode("cp1252").startswith('"EXTF"')
+
+
+def test_stapel_auf_wunsch_in_utf8(c):
+    """Der echte Kanzlei-Export ist UTF-8 mit Erkennungszeichen am Anfang.
+    Wer beide Dateien nebeneinanderlegt, will denselben Zeichensatz."""
+    r = c.get("/api/datev/stapel.csv?von=2026-07&bis=2026-07&zeichensatz=utf8")
+    assert r.status_code == 200
+    assert r.content.startswith(b"\xef\xbb\xbf")
+    assert "utf-8" in r.headers["content-type"]
+    text = r.content.decode("utf-8-sig")
+    assert text.startswith('"EXTF"')
+    # Inhaltlich dieselbe Datei — nur anders geschrieben.
+    andere = c.get("/api/datev/stapel.csv?von=2026-07&bis=2026-07")
+    assert text == andere.content.decode("cp1252")
+
+
+def test_konten_auch_in_utf8(c):
+    r = c.get("/api/datev/konten.csv?von=2026-07&bis=2026-07&zeichensatz=utf8")
+    assert r.status_code == 200
+    assert r.content.startswith(b"\xef\xbb\xbf")
+    assert r.content.decode("utf-8-sig").split("\r\n")[0].startswith('"EXTF"')
+
+
+def test_lesen_meldet_abweichende_spalten(c):
+    """Eine Datei mit einer anderen Spaltenzeile wird gelesen — aber es
+    steht dabei, dass sie anders aussieht als babus eigene."""
+    kopf = '"EXTF";700;21;"Buchungsstapel";12;20260101000000000;;"BA";"babu";;' \
+           '0;0;20260101;4;20260701;20260731'
+    spalten = 'Zusatzspalte;Umsatz (ohne Soll/Haben-Kz);Soll/Haben-Kennzeichen;' \
+              'Konto;Gegenkonto (ohne BU-Schlüssel);BU-Schlüssel;Belegdatum;' \
+              'Belegfeld 1;Buchungstext'
+    daten = 'egal;142,60;S;6640;70099;8;2107;"R-1";"Bewirtung"'
+    roh = "\r\n".join([kopf, spalten, daten]).encode("cp1252")
+    d = c.post("/api/datev/lesen",
+               files={"datei": ("fremd.csv", roh, "text/csv")}).json()
+    hinweis = d["spalten_hinweis"]
+    assert hinweis
+    assert "9 Spalten" in hinweis and "124" in hinweis
+    assert "Stelle 1" in hinweis and "Zusatzspalte" in hinweis
+    # Gelesen wurde trotzdem — die Spalten werden über den Namen gesucht.
+    assert d["summen"]["anzahl"] == 1
+    assert d["kopf"]["formatversion"] == "12"
+
+
+def test_eigener_stapel_meldet_keine_spaltenabweichung(c):
+    stapel = c.get("/api/datev/stapel.csv?von=2026-07&bis=2026-07").content
+    d = c.post("/api/datev/lesen",
+               files={"datei": ("EXTF.csv", stapel, "text/csv")}).json()
+    assert d["spalten_hinweis"] is None
+
+
+def test_spaltenabweichung_ist_reine_rechnung():
+    """Ohne Server: dieselbe Liste ist keine Abweichung, eine kürzere schon."""
+    import datev_seite
+    import extf
+    assert datev_seite.spalten_abweichung(list(extf.SPALTEN)) is None
+    kurz = datev_seite.spalten_abweichung(list(extf.SPALTEN)[:120])
+    assert kurz and "120 Spalten" in kurz and "Abrechnungsreferenz" in kurz

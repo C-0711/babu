@@ -85,8 +85,18 @@ def _monat(belegdatum: str, jahr: int | None) -> str | None:
     return None
 
 
-def kopf_lesen(zeile: str) -> dict:
-    """Zeitraum, Kontenrahmen und Herkunft aus der EXTF-Kopfzeile."""
+def kopf_lesen(zeile: str, spaltenzeile: str | None = None) -> dict:
+    """Zeitraum, Kontenrahmen und Herkunft aus der EXTF-Kopfzeile.
+
+    `felder_roh` und `spalten` kommen seit 03.09.2026 mit heraus. Grund ist
+    der Vergleich mit einem echten Kanzlei-Export: dessen Kopf trägt eine
+    andere Formatversion und seine Spaltenzeile vier Spalten mehr, als babu
+    selbst schreibt. Wer das merken will, braucht die Felder ungedeutet —
+    die benannten Schlüssel hier sind eine Auswahl, keine Abschrift.
+
+    Ohne `spaltenzeile` bleibt `spalten` leer; kein Aufrufer muss sie
+    mitgeben.
+    """
     f = next(csv.reader(io.StringIO(zeile), delimiter=";"))
     if not f or f[0].strip('"') != "EXTF":
         raise HistorieFehler(
@@ -96,6 +106,11 @@ def kopf_lesen(zeile: str) -> dict:
     def hol(i):
         return f[i].strip().strip('"') if len(f) > i else ""
     wj = hol(12)                              # Wirtschaftsjahresbeginn JJJJMMTT
+    spalten: list[str] = []
+    if spaltenzeile and spaltenzeile.strip():
+        spalten = [n.strip().strip('"')
+                   for n in next(csv.reader(io.StringIO(spaltenzeile),
+                                            delimiter=";"))]
     return {
         "kategorie": hol(2),
         "bezeichnung": hol(3),
@@ -104,6 +119,9 @@ def kopf_lesen(zeile: str) -> dict:
         "name": hol(16),
         "sachkontenlaenge": hol(13),
         "berater": hol(10), "mandant": hol(11),
+        "formatversion": hol(4),
+        "felder_roh": [x.strip().strip('"') for x in f],
+        "spalten": spalten,
     }
 
 
@@ -170,7 +188,7 @@ def stapel_lesen(daten: bytes, rahmen: str = "SKR04") -> dict:
         raise HistorieFehler("Die Datei ist leer.")
     # Erst die Frage „ist das überhaupt ein Stapel?" — sie hat die
     # hilfreichere Antwort als „unvollständig".
-    kopf = kopf_lesen(zeilen[0])
+    kopf = kopf_lesen(zeilen[0], zeilen[1] if len(zeilen) > 1 else None)
     if len(zeilen) < 3:
         raise HistorieFehler("Der Stapel enthält keine Buchungen — nur Kopf "
                              "und Spaltenzeile.")
