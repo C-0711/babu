@@ -438,12 +438,167 @@ def test_ein_leerer_tag_erzeugt_keine_zeile():
 
 
 def test_der_stapel_traegt_belege_und_kassentage():
+    """Seit dem 03.09.2026 sind es DREI Kassenzeilen statt einer: der Tag
+    bringt außer den Tageseinnahmen auch die Einlage und das Bargeld von
+    der Bank mit. Die Zahl unten ist deshalb bewusst angepasst — sie war
+    vorher `2 + belege + 1` und hätte den Zuwachs sonst als Fehler
+    gemeldet, obwohl er der Zweck der Änderung ist."""
     text = extf.stapel([GOLDEN], "2026-07", erzeugt=ERZEUGT,
-                       kassenblaetter=[_blatt(datum="2026-07-03", einnahmenBar=100)])
+                       kassenblaetter=[_blatt(datum="2026-07-03",
+                                              einnahmenBar=100,
+                                              privateinlagen=50,
+                                              barabhebungBank=200)])
     zeilen = text.rstrip("\r\n").split("\r\n")
     belege = len(extf.buchungszeilen(GOLDEN))
-    assert len(zeilen) == 2 + belege + 1
-    assert zeilen[-1].startswith('100,00;S;EUR;;;;1600;4400;;0307;"KB20260703";;;"Tageseinnahmen 19 %"')
+    assert len(zeilen) == 2 + belege + 3
+    assert zeilen[-3].startswith('100,00;S;EUR;;;;1600;4400;;0307;"KB20260703";;;"Tageseinnahmen 19 %"')
+    assert zeilen[-2].startswith('50,00;S;EUR;;;;1600;2180;;0307;"KB20260703";;;"Privateinlage"')
+    assert zeilen[-1].startswith('200,00;S;EUR;;;;1600;1460;;0307;"KB20260703";;;"Bargeld von der Bank"')
+
+
+# ————— Die übrigen Kassenbewegungen (03.09.2026) —————
+#
+# Ohne sie lief der Kassenbestand in DATEV auseinander: ein Tag, an dem
+# 200 € zur Bank gebracht wurden, hinterließ eine Kasse, die in babu
+# stimmt und in der Buchhaltung 200 € zu hoch steht — und das wächst mit
+# jedem Tag.
+
+def _kasse(**w):
+    """Die Zeilen eines einzelnen Kassentags, ohne die Tageseinnahmen."""
+    return [(x["konto"], x["gegenkonto"], x["umsatz"], x["text"])
+            for x in extf.kassenzeilen([_blatt(**w)])]
+
+
+def test_die_konten_stehen_so_im_skr04():
+    """Keine Nummer aus dem Kopf: der Kontenrahmen kennt jede von ihnen."""
+    import skr04_konten
+    for konto, anfang in ((extf.PRIVATEINLAGE, "Privateinlagen"),
+                          (extf.PRIVATENTNAHME, "Privatentnahmen"),
+                          (extf.GELDTRANSIT, "Geldtransit"),
+                          (extf.DURCHLAUFEND, "Durchlaufende Posten"),
+                          (extf.KASSE, "Kasse")):
+        assert (skr04_konten.name(konto) or "").startswith(anfang), konto
+
+
+def test_privateinlage_fuellt_die_kasse():
+    assert _kasse(privateinlagen=50) == [("1600", "2180", "50,00",
+                                          "Privateinlage")]
+
+
+def test_privatentnahme_leert_sie():
+    assert _kasse(privatentnahmen=80) == [("2100", "1600", "80,00",
+                                           "Privatentnahme")]
+
+
+def test_bargeld_von_der_bank_geht_ueber_den_geldtransit():
+    assert _kasse(barabhebungBank=300) == [("1600", "1460", "300,00",
+                                            "Bargeld von der Bank")]
+
+
+def test_bareinzahlung_auf_die_bank_ebenfalls():
+    assert _kasse(einzahlungBank=250) == [("1460", "1600", "250,00",
+                                           "Bareinzahlung auf die Bank")]
+
+
+def test_trinkgeld_geht_drei_wege():
+    """Über die Karte herein (durchlaufend), bar ans Team hinaus, und was
+    übrig bleibt, ist Erlös der Inhaberin — freiwillige Zahlung an die
+    Unternehmerin selbst ist Entgelt (UStAE 10.1 Abs. 5), nicht der
+    steuerfreie Fall des § 3 Nr. 51 EStG."""
+    assert _kasse(trinkgeldKarte=100, trinkgeldTeamEC=70) == [
+        ("1460", "1370", "100,00", "Trinkgeld über Karte, durchlaufend"),
+        ("1370", "1600", "70,00", "Trinkgeld an das Team ausgezahlt"),
+        ("1370", "4400", "30,00", "Trinkgeld Inhaberin")]
+
+
+def test_ohne_anteil_der_inhaberin_keine_dritte_zeile():
+    """Geht alles ans Team, bleibt nichts übrig — dann steht dort auch
+    keine Zeile über null Euro."""
+    z = _kasse(trinkgeldKarte=100, trinkgeldTeamEC=100)
+    assert [x[3] for x in z] == ["Trinkgeld über Karte, durchlaufend",
+                                 "Trinkgeld an das Team ausgezahlt"]
+
+
+def test_die_kleinunternehmerin_bucht_ihr_trinkgeld_auf_4184():
+    z = [(x["konto"], x["gegenkonto"], x["umsatz"], x["text"])
+         for x in extf.kassenzeilen([_blatt(trinkgeldKarte=100,
+                                            trinkgeldTeamEC=70)],
+                                    kleinunternehmerin=True)]
+    assert z[2] == ("1370", "4184", "30,00", "Trinkgeld Inhaberin")
+
+
+def test_eingeloeste_gutscheine_bleiben_ohne_buchung():
+    """Einzweckgutschein: versteuert ist er beim Verkauf. Das Einlösen ist
+    keine neue Einnahme — es steht schon in den Tageseinnahmen des
+    Verkaufstags."""
+    assert _kasse(gutscheineEingeloest=200) == []
+
+
+def test_nullbetraege_erzeugen_keine_zeile():
+    for feld in ("privateinlagen", "privatentnahmen", "barabhebungBank",
+                 "einzahlungBank", "trinkgeldKarte", "trinkgeldTeamEC"):
+        assert _kasse(**{feld: 0}) == [], feld
+        assert _kasse(**{feld: None}) == [], feld
+
+
+def test_barausgaben_bleiben_draussen_und_werden_beziffert():
+    """Zu jeder gehört ein eigener Beleg, und dort wird sie gebucht. Hier
+    noch einmal hieße doppelt — also gar nicht, und die Lücke wird
+    beziffert, damit niemand nach ihr sucht."""
+    blaetter = [_blatt(datum="2026-08-01", sonstigeAusgaben=50,
+                       auslagenErstattet=25, vorschussTeam=10),
+                _blatt(datum="2026-08-02", sonstigeAusgaben=5)]
+    assert extf.kassenzeilen(blaetter) == []
+    luecken = extf.kassenluecke(blaetter)
+    assert len(luecken) == 1
+    assert luecken[0]["monat"] == "2026-08"
+    assert luecken[0]["betrag"] == 90.0
+    assert luecken[0]["hart"] is False
+    for stueck in ("90,00 €", "Barausgaben 55,00 €", "Auslagen 25,00 €",
+                   "Vorschüsse 10,00 €"):
+        assert stueck in luecken[0]["text"], stueck
+
+
+def test_ohne_barausgaben_gibt_es_keine_luecke():
+    assert extf.kassenluecke([_blatt(einnahmenBar=100)]) == []
+    assert extf.kassenluecke([]) == []
+
+
+def test_die_luecke_wird_je_monat_gezaehlt():
+    luecken = extf.kassenluecke([_blatt(datum="2026-07-30", sonstigeAusgaben=20),
+                                 _blatt(datum="2026-08-02", vorschussTeam=30)])
+    assert [(l["monat"], l["betrag"]) for l in luecken] == [("2026-07", 20.0),
+                                                            ("2026-08", 30.0)]
+
+
+def test_kassenbestand_der_zeilen_entspricht_dem_rechnerischen_bestand():
+    """Der eigentliche Beweis: die Kasse läuft in DATEV mit.
+
+    Summiert werden alle Bewegungen auf 1600 aus den Buchungszeilen — im
+    Soll positiv, im Haben negativ. Herauskommen muss der rechnerische
+    Bestand des Blattes OHNE Vortag und ohne die drei Felder, die der
+    Stapel bewusst nicht bucht (die stehen in `kassenluecke`).
+    """
+    b = _blatt(datum="2026-08-05", bestandVortag=300, einnahmenBar=400,
+               ecZahlungen=150, umsatz7=40, umsatzFrei=60,
+               gutscheinVerkauf=90, privateinlagen=25,
+               privatentnahmen=35, barabhebungBank=500, einzahlungBank=200,
+               trinkgeldKarte=45, trinkgeldTeamEC=30)
+    bewegung = 0.0
+    for z in extf.kassenzeilen([b]):
+        betrag = float(z["umsatz"].replace(",", "."))
+        if z["konto"] == extf.KASSE:
+            bewegung += betrag
+        elif z["gegenkonto"] == extf.KASSE:
+            bewegung -= betrag
+    erwartet = (b["einnahmenBar"] + b["gutscheinVerkauf"] + b["privateinlagen"]
+                + b["barabhebungBank"]
+                - (b["trinkgeldTeamEC"] + b["privatentnahmen"]
+                   + b["einzahlungBank"]))
+    assert round(bewegung, 2) == round(erwartet, 2)
+    # Und mit dem Vortag ist es der Bestand, den das Kassenblatt selbst
+    # ausrechnet — abzüglich genau der drei Felder, die draußen bleiben.
+    assert round(b["bestandVortag"] + bewegung, 2) == extf.kassenschluss(b)
 
 
 def test_ohne_kassenblaetter_bleibt_der_stapel_wie_er_war():

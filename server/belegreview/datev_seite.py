@@ -349,7 +349,7 @@ def _zeilen(daten: dict) -> list[dict]:
     """Die Buchungszeilen des ganzen Zeitraums, in Monatsreihenfolge.
 
     Dieselben Zeilen, die auch in die Datei gehen — sie kommen aus
-    `extf.buchungszeilen` und `extf.erloeszeilen`, damit Vorschau und Datei
+    `extf.buchungszeilen` und `extf.kassenzeilen`, damit Vorschau und Datei
     nicht auseinanderlaufen können. Der Monat wandert mit, weil erst er aus
     dem `TTMM` des Stapels ein Datum macht.
     """
@@ -361,7 +361,7 @@ def _zeilen(daten: dict) -> list[dict]:
                                          daten["kleinunternehmerin"]):
                 aus.append(dict(z, monat=monat, quelle=stamm, art="beleg"))
         if daten["rahmen"] != "SKR03":
-            for z in extf.erloeszeilen(m["blaetter"], daten["kleinunternehmerin"]):
+            for z in extf.kassenzeilen(m["blaetter"], daten["kleinunternehmerin"]):
                 aus.append(dict(z, monat=monat, quelle="Kassenbuch", art="kasse"))
     return aus
 
@@ -468,6 +468,13 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
     blaetter = [b for m in daten["je_monat"].values()
                 for b in (m.get("blaetter") or [])]
     kassen = extf.kassen_pruefen(blaetter) if rahmen != "SKR03" else []
+    # Barausgaben, erstattete Auslagen und Vorschüsse ans Team gehen aus
+    # der Schublade, ohne dass der Stapel sie bucht — zu jeder gehört ein
+    # eigener Beleg, und dort wird sie gebucht. Der Kassenbestand im
+    # Stapel steht deshalb um diese Summe zu hoch. Gelb: das ist kein
+    # Fehler, sondern eine Zahl, die man kennen muss, bevor man den
+    # Bestand abstimmt.
+    luecken = extf.kassenluecke(blaetter) if rahmen != "SKR03" else []
     # Gestellte Rechnungen. Sie zählen im Monat als Erlös (dieselbe
     # Rechnung wie im Monatsabschluss), stehen aber NICHT im Stapel: babu
     # weiß nur, dass sie bezahlt wurden, nicht auf welchem Weg — und ein
@@ -550,6 +557,10 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
                           "text": h["text"]} for h in kassen_weich],
         "kassen_hart_text": _hinweistext(kassen_hart),
         "kassen_weich_text": _hinweistext(kassen_weich),
+        # Gelb: die Kasse im Stapel steht höher als die gezählte.
+        "kassenluecke": [{"monat": l["monat"], "betrag": l["betrag"],
+                          "text": l["text"]} for l in luecken],
+        "kassenluecke_text": " ".join(l["text"] for l in luecken) or None,
         # Gelb: Erlöse, die es gibt, die aber nicht in dieser Datei stehen.
         "rechnungen_nicht_im_stapel": {"anzahl": len(rechnungen),
                                        "summe": r_summe},

@@ -1235,3 +1235,54 @@ def test_die_seite_zeigt_die_rechnungen_im_befund(c):
     seite = c.get("/datev").text
     assert "rechnungen_nicht_im_stapel" in seite
     assert "stehen nicht im Stapel" in seite
+
+
+# ── Die Kassenlücke im Befund (03.09.2026) ─────────────────────────────
+
+def test_befund_beziffert_die_kassenluecke(welt):
+    import datev_seite
+    daten = _daten([], [])
+    daten["je_monat"]["2026-07"]["blaetter"] = [
+        {"datum": "2026-07-03", "einnahmenBar": 200, "sonstigeAusgaben": 40,
+         "auslagenErstattet": 15, "vorschussTeam": 20}]
+    befund = datev_seite._befund(daten, datev_seite._zeilen(daten))
+    assert [(l["monat"], l["betrag"]) for l in befund["kassenluecke"]] == \
+        [("2026-07", 75.0)]
+    assert "75,00 €" in befund["kassenluecke_text"]
+    # Gelb: der Stapel ist deshalb nicht schlechter.
+    assert befund["sauber"] is True
+
+
+def test_ein_tag_ohne_barausgaben_meldet_keine_luecke(welt):
+    import datev_seite
+    daten = _daten([], [])
+    daten["je_monat"]["2026-07"]["blaetter"] = [
+        {"datum": "2026-07-03", "einnahmenBar": 200}]
+    befund = datev_seite._befund(daten, datev_seite._zeilen(daten))
+    assert befund["kassenluecke"] == []
+    assert befund["kassenluecke_text"] is None
+
+
+def test_die_vorschau_zeigt_die_uebrigen_kassenbewegungen(welt):
+    """Die Vorschau darf keine eigene Rechnung aufmachen: was in der Datei
+    steht, muss sie zeigen — auch die Einlage und den Weg zur Bank."""
+    import datev_seite
+    daten = _daten([], [])
+    daten["je_monat"]["2026-07"]["blaetter"] = [
+        {"datum": "2026-07-03", "einnahmenBar": 100, "privateinlagen": 50,
+         "einzahlungBank": 120, "trinkgeldKarte": 20, "trinkgeldTeamEC": 12}]
+    zeilen = datev_seite._zeilen(daten)
+    assert [(z["konto"], z["gegenkonto"], z["umsatz"]) for z in zeilen] == [
+        ("1600", "4400", "100,00"),
+        ("1600", "2180", "50,00"),
+        ("1460", "1600", "120,00"),
+        ("1460", "1370", "20,00"),
+        ("1370", "1600", "12,00"),
+        ("1370", "4400", "8,00")]
+    assert all(z["art"] == "kasse" for z in zeilen)
+
+
+def test_die_seite_zeigt_die_kassenluecke(c):
+    seite = c.get("/datev").text
+    assert "b.kassenluecke" in seite
+    assert "Die Kasse im Stapel steht höher als die gezählte" in seite

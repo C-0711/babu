@@ -307,6 +307,22 @@ ERLOESKONTO = {19: "4400", 7: "4300"}
 ERLOES_STEUERFREI = "4100"          # Steuerfreie Umsätze § 4 Nr. 8 ff. UStG
 ERLOES_KLEINUNTERNEHMER = "4184"    # Steuerfreie Erlöse Kleinunternehmer § 19
 
+# Die übrigen Kassenbewegungen. Alle vier Nummern stehen so im SKR04 und
+# sind über `skr04_konten.name()` nachlesbar — ein Test prüft das, damit
+# hier keine Zahl steht, die jemand aus dem Kopf hingeschrieben hat:
+#
+#   2180 Privateinlagen · 2100 Privatentnahmen allgemein
+#   1460 Geldtransit    · 1370 Durchlaufende Posten
+#
+# 2180/2100 sind der Weg zwischen Betrieb und Privatvermögen: Geld, das
+# die Inhaberin einlegt oder entnimmt, ist weder Erlös noch Aufwand.
+# 1460 ist Geld, das unterwegs ist — zwischen Kasse und Bank, in beide
+# Richtungen; gebucht wird es zweimal, einmal hier und einmal beim
+# Kontoauszug, und trifft sich auf dem Transitkonto.
+PRIVATEINLAGE = "2180"
+PRIVATENTNAHME = "2100"
+DURCHLAUFEND = "1370"
+
 
 def _bu(satz: int | None) -> str | None:
     """Der Steuerschlüssel zu einem Satz. `None` heißt: Zeile zurückhalten.
@@ -555,16 +571,38 @@ def pruefen(review: dict, kleinunternehmerin: bool = False) -> list[dict]:
     return aus
 
 
-def erloeszeilen(kassenblaetter: list[dict], kleinunternehmerin: bool = False
+def kassenzeilen(kassenblaetter: list[dict], kleinunternehmerin: bool = False
                  ) -> list[dict]:
-    """Die Erlösseite: jedes Kassenblatt wird zu Tageseinnahmen.
+    """Ein Kassentag → alle Buchungen, die daraus folgen.
 
     Bis 02.09.2026 enthielt der Stapel nur die Belege — für die Kanzlei
-    die halbe Buchhaltung. Jetzt je Kassentag: Kasse an Erlöse, getrennt
-    nach Steuersatz (19 % ist, was nicht 7 % oder steuerfrei war, plus
-    verkaufte Gutscheine — dieselbe Rechnung wie monatsabschluss.
-    erloese_monat), und der Kartenumsatz geht per Geldtransit wieder aus
-    der Kasse: die Bank bekommt ihn erst mit dem Kontoauszug.
+    die halbe Buchhaltung. Dann kamen die Tageseinnahmen dazu: Kasse an
+    Erlöse, getrennt nach Steuersatz (19 % ist, was nicht 7 % oder
+    steuerfrei war, plus verkaufte Gutscheine — dieselbe Rechnung wie
+    monatsabschluss.erloese_monat), und der Kartenumsatz geht per
+    Geldtransit wieder aus der Kasse: die Bank bekommt ihn erst mit dem
+    Kontoauszug.
+
+    Seit 03.09.2026 gehen auch die übrigen Bewegungen des Blattes mit —
+    Einlage, Entnahme, Bargeld von und zur Bank, Trinkgeld. Der Grund ist
+    nicht Vollständigkeit um ihrer selbst willen: ohne sie läuft der
+    Kassenbestand in DATEV auseinander. Ein Tag, an dem 200 € zur Bank
+    gebracht wurden, hinterließ eine Kasse, die in babu stimmt und in der
+    Buchhaltung 200 € zu hoch steht — und das wächst mit jedem Tag.
+
+    Was NICHT gebucht wird und warum:
+
+    * **Eingelöste Gutscheine.** Einzweckgutschein (§ 3 Abs. 14 UStG):
+      versteuert ist er beim Verkauf, das Einlösen ist keine neue
+      Einnahme. Er steht schon in den Tageseinnahmen des Verkaufstags.
+      Hausannahme — bei Mehrzweckgutscheinen wäre es umgekehrt, und ein
+      Salon, der Gutscheine über verschiedene Steuersätze verkauft, müsste
+      das mit seiner Kanzlei klären.
+    * **Barausgaben, erstattete Auslagen, Vorschüsse ans Team.** Zu jeder
+      gehört ein Beleg oder ein Lohnkonto, und dort wird sie gebucht. Hier
+      noch einmal hieße doppelt. Sie fehlen damit im Kassenbestand des
+      Stapels — genau das beziffert `kassenluecke`, damit niemand danach
+      suchen muss.
 
     Das Kassenblatt trennt Bar und Karte NICHT nach Steuersatz — deshalb
     läuft alles über die Kasse statt Karte direkt an Erlöse; das wäre
@@ -579,11 +617,11 @@ def erloeszeilen(kassenblaetter: list[dict], kleinunternehmerin: bool = False
         if len(datum) != 10:
             continue
         belegdatum = datum[8:10] + datum[5:7]
-        bar = float(b.get("einnahmenBar") or 0)
-        ec = float(b.get("ecZahlungen") or 0)
-        frei = float(b.get("umsatzFrei") or 0)
-        sieben = float(b.get("umsatz7") or 0)
-        gutschein = float(b.get("gutscheinVerkauf") or 0)
+        bar = _kassenzahl(b, "einnahmenBar")
+        ec = _kassenzahl(b, "ecZahlungen")
+        frei = _kassenzahl(b, "umsatzFrei")
+        sieben = _kassenzahl(b, "umsatz7")
+        gutschein = _kassenzahl(b, "gutscheinVerkauf")
         neunzehn = max(0.0, bar + ec - frei - sieben) + gutschein
         if kleinunternehmerin:
             frei, neunzehn, sieben = frei + neunzehn + sieben, 0.0, 0.0
@@ -592,20 +630,75 @@ def erloeszeilen(kassenblaetter: list[dict], kleinunternehmerin: bool = False
         # nach so aufgebaut, dass nur Positives eine Zeile ergibt (siehe
         # die `> 0`-Prüfungen unten). Einen negativen Tagesumsatz gibt es
         # nicht — eine Rückgabe mindert den Tag, sie dreht ihn nicht um.
+        # Dasselbe gilt für alle folgenden Bewegungen: ein Nullbetrag und
+        # eine versehentlich negative Zahl erzeugen keine Zeile, statt
+        # eine Buchung in die falsche Richtung zu schreiben.
         basis = {"belegdatum": belegdatum,
                  "belegfeld1": _belegfeld1("KB" + datum.replace("-", "")),
                  "bu": "", "satz": None, "sh": "S"}
-        for betrag, konto, text in (
-                (neunzehn, ERLOESKONTO[19], "Tageseinnahmen 19 %"),
-                (sieben, ERLOESKONTO[7], "Tageseinnahmen 7 %"),
-                (frei, frei_konto, "Tageseinnahmen steuerfrei")):
+
+        # ── Trinkgeld, drei Wege ──────────────────────────────────────
+        #
+        # ANNAHME, von der Kanzlei zu bestätigen. Sie steht hier, weil
+        # eine falsche Annahme, die man sieht, besser ist als eine
+        # richtige, die niemand nachlesen kann.
+        #
+        # Trinkgeld über die Karte kommt mit dem Kartenumsatz aufs
+        # Geschäftskonto, gehört dem Betrieb aber nicht — bis es verteilt
+        # ist, ist es durchlaufender Posten (1370). Was bar ans Team
+        # ausgezahlt wird, verlässt die Kasse und löscht den Posten
+        # wieder; für das Team ist es nach § 3 Nr. 51 EStG steuerfrei.
+        #
+        # Was übrig bleibt, ist der Anteil der Inhaberin. Der ist NICHT
+        # steuerfrei: § 3 Nr. 51 EStG gilt für Arbeitnehmer, und eine
+        # freiwillige Zahlung des Gastes an die Unternehmerin selbst ist
+        # Entgelt für ihre Leistung (UStAE 10.1 Abs. 5). Also Erlös —
+        # mit Steuer wie jeder andere, für die Kleinunternehmerin auf
+        # 4184 wie ihr übriger Umsatz.
+        trinkgeld_karte = _kassenzahl(b, "trinkgeldKarte")
+        trinkgeld_team = _kassenzahl(b, "trinkgeldTeamEC")
+        erloes_19 = ERLOES_KLEINUNTERNEHMER if kleinunternehmerin \
+            else ERLOESKONTO[19]
+
+        for betrag, konto, gegenkonto, text in (
+                (neunzehn, KASSE, ERLOESKONTO[19], "Tageseinnahmen 19 %"),
+                (sieben, KASSE, ERLOESKONTO[7], "Tageseinnahmen 7 %"),
+                (frei, KASSE, frei_konto, "Tageseinnahmen steuerfrei"),
+                (ec, GELDTRANSIT, KASSE, "Kartenumsatz an Geldtransit"),
+                # Privatvermögen und Kasse. Eine Einlage füllt die
+                # Schublade, eine Entnahme leert sie; keine von beiden ist
+                # Erlös oder Aufwand.
+                (_kassenzahl(b, "privateinlagen"), KASSE, PRIVATEINLAGE,
+                 "Privateinlage"),
+                (_kassenzahl(b, "privatentnahmen"), PRIVATENTNAHME, KASSE,
+                 "Privatentnahme"),
+                # Bank und Kasse. Beide Wege gehen über den Geldtransit:
+                # die Gegenbuchung kommt aus dem Kontoauszug, und bis der
+                # da ist, muss das Geld irgendwo stehen können.
+                (_kassenzahl(b, "barabhebungBank"), KASSE, GELDTRANSIT,
+                 "Bargeld von der Bank"),
+                (_kassenzahl(b, "einzahlungBank"), GELDTRANSIT, KASSE,
+                 "Bareinzahlung auf die Bank"),
+                (trinkgeld_karte, GELDTRANSIT, DURCHLAUFEND,
+                 "Trinkgeld über Karte, durchlaufend"),
+                (trinkgeld_team, DURCHLAUFEND, KASSE,
+                 "Trinkgeld an das Team ausgezahlt"),
+                (trinkgeld_karte - trinkgeld_team, DURCHLAUFEND, erloes_19,
+                 "Trinkgeld Inhaberin")):
             if round(betrag, 2) > 0:
-                aus.append(dict(basis, konto=KASSE, gegenkonto=konto,
+                aus.append(dict(basis, konto=konto, gegenkonto=gegenkonto,
                                 umsatz=_de(betrag), text=text))
-        if round(ec, 2) > 0:
-            aus.append(dict(basis, konto=GELDTRANSIT, gegenkonto=KASSE,
-                            umsatz=_de(ec), text="Kartenumsatz an Geldtransit"))
     return aus
+
+
+def erloeszeilen(kassenblaetter: list[dict], kleinunternehmerin: bool = False
+                 ) -> list[dict]:
+    """Der alte Name für `kassenzeilen` — es sind längst mehr als Erlöse.
+
+    Er bleibt stehen, weil er außerhalb dieses Moduls aufgerufen wird und
+    ein Umbenennen ohne Not nichts besser macht.
+    """
+    return kassenzeilen(kassenblaetter, kleinunternehmerin)
 
 
 # ── Was an einem Kassentag nicht aufgeht ─────────────────────────────────────
@@ -689,6 +782,56 @@ def kassen_pruefen(kassenblaetter: list[dict]) -> list[dict]:
                                 if grund_text else
                                 ", und es steht kein Grund dabei. Bei einer "
                                 "Kassenprüfung ist das die erste Frage."))})
+    return aus
+
+
+# Was aus der Schublade geht, ohne dass der Stapel es bucht. Zu jedem
+# dieser drei gehört ein anderer Beleg oder ein Lohnkonto — die Barausgabe
+# ihren Kassenbon, die erstattete Auslage die Quittung, die sie erstattet,
+# der Vorschuss die Lohnabrechnung, mit der er verrechnet wird. Sie hier
+# ein zweites Mal zu buchen hieße, denselben Betrag doppelt abzuziehen.
+KASSE_NICHT_GEBUCHT = (("sonstigeAusgaben", "Barausgaben"),
+                       ("auslagenErstattet", "Auslagen"),
+                       ("vorschussTeam", "Vorschüsse"))
+
+
+def kassenluecke(kassenblaetter: list[dict]) -> list[dict]:
+    """Um wie viel der Kassenbestand im Stapel zu hoch steht — je Monat.
+
+    Die Folge des Vorsatzes oben: was der Stapel nicht bucht, fehlt in
+    seinem Kassenbestand. In babu stimmt die Schublade, in der Buchhaltung
+    steht sie höher — und der Unterschied wächst mit jedem Tag, an dem bar
+    etwas bezahlt wurde.
+
+    Aufgelöst wird er erst, wenn die Kanzlei die zugehörigen Belege gegen
+    die Kasse bucht. Bis dahin ist die einzige ehrliche Antwort, die Zahl
+    zu nennen: wer sie kennt, sucht sie nicht. Deshalb je Monat und nicht
+    je Tag — abgestimmt wird ein Monat, nicht ein Dienstag.
+    """
+    je_monat: dict[str, dict] = {}
+    for blatt in sorted(kassenblaetter or [], key=lambda x: x.get("datum") or ""):
+        datum = str(blatt.get("datum") or "")
+        if len(datum) != 10:
+            continue
+        e = je_monat.setdefault(datum[:7], {feld: 0.0
+                                            for feld, _ in KASSE_NICHT_GEBUCHT})
+        for feld, _ in KASSE_NICHT_GEBUCHT:
+            e[feld] += _kassenzahl(blatt, feld)
+    aus: list[dict] = []
+    for monat, e in sorted(je_monat.items()):
+        summe = round(sum(e.values()), 2)
+        if summe <= KASSEN_TOLERANZ:
+            continue
+        teile = ", ".join(f"{name} {_de(e[feld])} €"
+                          for feld, name in KASSE_NICHT_GEBUCHT
+                          if round(e[feld], 2) > 0)
+        aus.append({
+            "grund": "kassenluecke", "hart": False, "monat": monat,
+            "betrag": summe,
+            "text": f"Im Zeitraum {monat} steht die Kasse in DATEV um "
+                    f"{_de(summe)} € höher als gezählt: {teile}. Diese "
+                    f"Beträge bucht die Kanzlei mit den Belegen dazu — "
+                    f"danach stimmt der Bestand wieder."})
     return aus
 
 
@@ -792,7 +935,7 @@ def stapel(reviews: list[dict], monat: str, erzeugt: time.struct_time | None = N
     Kontenrahmen bricht den Export ab, statt ihn zu erzeugen. Ohne `rahmen`
     bleibt alles wie vorher — der Melder ist eine Zutat, kein Umbau.
 
-    `kassenblaetter` bringt die Erlösseite mit (erloeszeilen) — nur für
+    `kassenblaetter` bringt die Kassenseite mit (kassenzeilen) — nur für
     SKR04: die SKR03-Konten der Erlösseite liegen babu nicht als Quelle
     vor, und geraten wird nicht.
 
@@ -838,7 +981,7 @@ def stapel(reviews: list[dict], monat: str, erzeugt: time.struct_time | None = N
                   f"SKR03-Stapel — Erlöskonten nur für SKR04 hinterlegt",
                   flush=True)
         else:
-            zeilen += [_zeile(b) for b in erloeszeilen(kassenblaetter,
+            zeilen += [_zeile(b) for b in kassenzeilen(kassenblaetter,
                                                        kleinunternehmerin)]
     return "\r\n".join(zeilen) + "\r\n"
 

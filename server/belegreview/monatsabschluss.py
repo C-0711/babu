@@ -51,8 +51,15 @@ KOSTENGRUPPEN: list[tuple[str, str, tuple[str, ...]]] = [
 # zwischen eigenen Konten schon gar nicht, und die Umsatzsteuer ist in der
 # Netto-Rechnung der BWA bereits aus den Erlösen heraus. Anlagevermögen
 # wirkt nur über die Abschreibung, nicht mit dem Kaufpreis.
-NEUTRALE_KONTEN = ("1360", "1460", "2100", "2150", "2180", "3820", "3840",
-                   "0400", "0650", "0675")
+#
+# 1370 „Durchlaufende Posten" kam am 03.09.2026 dazu: dort steht seither
+# das Trinkgeld, das über die Karte hereinkam und ans Team weitergeht.
+# Es ist Geld, das den Betrieb nur durchquert — als Aufwand gezählt
+# drückte es das Ergebnis um einen Betrag, der nie ihm gehörte. Was davon
+# der Inhaberin bleibt, bucht `extf.kassenzeilen` auf ein Erlöskonto und
+# nicht hierher.
+NEUTRALE_KONTEN = ("1360", "1370", "1460", "2100", "2150", "2180", "3820",
+                   "3840", "0400", "0650", "0675")
 
 # Dieselbe Zuordnung nutzt babu_web für die Kategorie in der Belegliste
 # (P0-1, "Eine Zahl, eine Kategorie, überall dieselbe") — hier als eigene

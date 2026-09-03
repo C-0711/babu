@@ -364,6 +364,11 @@ function befundzeilen(b){
   if (b.kassen_weich && b.kassen_weich.length)
     gelb.push([`${b.kassen_weich.length} Kassentag(e) mit einer Differenz`,
       b.kassen_weich_text]);
+  // Barausgaben, Auslagen und Vorschuesse bucht die Kanzlei mit ihren
+  // eigenen Belegen — bis dahin steht die Kasse im Stapel zu hoch.
+  if (b.kassenluecke && b.kassenluecke.length)
+    gelb.push(["Die Kasse im Stapel steht höher als die gezählte",
+      b.kassenluecke_text]);
   // Gestellte Rechnungen zaehlen im Monat als Erloes, stehen aber nicht im
   // Stapel — sonst wirkt die Summe unter der Tabelle zu klein.
   const rns = b.rechnungen_nicht_im_stapel;

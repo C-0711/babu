@@ -4840,7 +4840,7 @@ def _stapel_uebergeben(monate: list[str], un: str) -> tuple[bytes, dict]:
         blaetter = [idx["kassenblaetter"][t] for t in neu_t]
         buchungen = sum(len(extf.buchungszeilen(r, klein)) for r in reviews)
         if rahmen != "SKR03":
-            buchungen += len(extf.erloeszeilen(blaetter, klein))
+            buchungen += len(extf.kassenzeilen(blaetter, klein))
         je_monat[monat] = {"reviews": reviews, "staemme": neu_s,
                            "ohne_konto": [], "hinweise": [],
                            "blaetter": blaetter, "neu_staemme": neu_s,
