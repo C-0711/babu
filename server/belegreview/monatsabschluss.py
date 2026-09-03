@@ -63,6 +63,14 @@ _KONTO_ZUORDNUNG = {konto: (schluessel, name)
                     for konto in konten}
 
 
+def _kontoname(konto: str | None) -> str | None:
+    """SKR04-Bezeichnung zum Konto — None ohne Konto oder ohne Treffer."""
+    if not konto:
+        return None
+    import skr04_konten  # noqa: PLC0415
+    return skr04_konten.name(konto)
+
+
 def kostengruppe_von(konto: str | None) -> tuple[str, str]:
     """(Schlüssel, Name) der Kostengruppe zu einem SKR04-Konto — "sonstiges"/
     "Sonstiges", wenn das Konto keiner Gruppe zugeordnet ist oder fehlt."""
@@ -329,10 +337,17 @@ def bwa(monat: str, erloese: dict, belege: list[dict],
         netto = float(b.get("netto") or 0) or (float(b.get("brutto")) - ust)
         schluessel, name = kostengruppe_von(konto)
         e = eimer.setdefault(schluessel, {"schluessel": schluessel, "name": name,
-                                          "netto": 0.0, "anzahl": 0})
+                                          "netto": 0.0, "anzahl": 0, "konten": {}})
         e["netto"] += netto
         e["anzahl"] += 1
         kosten_gesamt += netto
+        # Je Konto mitzählen: die Kanzlei will „6640 Bewirtungskosten" sehen,
+        # nicht nur den Oberbegriff, sobald der Beleg auf dem Konto liegt.
+        k = e["konten"].setdefault(konto, {"konto": konto or None,
+                                           "name": _kontoname(konto),
+                                           "netto": 0.0, "anzahl": 0})
+        k["netto"] += netto
+        k["anzahl"] += 1
     # Dauerkosten aus Verträgen (Miete, Versicherung, Leasing): Sie gelten
     # nur, wenn für dasselbe Konto KEIN Beleg im Monat liegt — sonst würde
     # die Miete doppelt zählen.
@@ -350,15 +365,23 @@ def bwa(monat: str, erloese: dict, belege: list[dict],
         if vorhanden and vorhanden["anzahl"]:
             continue                      # Beleg schlägt Vertrag
         e = eimer.setdefault(schluessel, {"schluessel": schluessel, "name": name,
-                                          "netto": 0.0, "anzahl": 0})
+                                          "netto": 0.0, "anzahl": 0, "konten": {}})
         e["netto"] += betrag
         e["aus_vertrag"] = v.get("partner") or v.get("art_name")
         kosten_gesamt += betrag
+        k = e["konten"].setdefault(konto or "", {"konto": konto or None,
+                                                 "name": _kontoname(konto),
+                                                 "netto": 0.0, "anzahl": 0})
+        k["netto"] += betrag
+        k["aus_vertrag"] = e["aus_vertrag"]
 
     for schluessel, name, _ in KOSTENGRUPPEN:
         if schluessel in eimer:
             e = eimer[schluessel]
             e["netto"] = _rund(e["netto"])
+            e["konten"] = sorted(
+                ({**k, "netto": _rund(k["netto"])} for k in e["konten"].values()),
+                key=lambda k: -k["netto"])
             e["anteil"] = (_rund(100 * e["netto"] / erloese["netto_gesamt"])
                            if erloese["netto_gesamt"] else None)
             gruppen.append(e)

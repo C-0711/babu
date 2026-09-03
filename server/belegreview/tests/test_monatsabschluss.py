@@ -293,3 +293,23 @@ def test_vertrag_ohne_daten_stoert_nicht():
     ohne = vertrag(betrag_monat=None)
     gueltig, hinweise = ma.vertraege_fuer_monat([ohne, {}], "2026-08")
     assert gueltig == [] and hinweise == []
+
+
+def test_die_kostengruppen_nennen_ihre_konten():
+    """Befund 03.09.2026: „Wohin dein Geld geht“ zeigte nur den Oberbegriff.
+    Jede Gruppe trägt jetzt ihre Konten mit SKR04-Bezeichnung, Summe und
+    Belegzahl — absteigend nach Betrag."""
+    import monatsabschluss as ma
+    import skr04_konten
+    belege = [
+        {"brutto": 119.0, "netto": 100.0, "ust": 19.0, "konto_skr04": "6640", "lieferant": "A"},
+        {"brutto": 59.5, "netto": 50.0, "ust": 9.5, "konto_skr04": "6640", "lieferant": "B"},
+        {"brutto": 23.8, "netto": 20.0, "ust": 3.8, "konto_skr04": "6600", "lieferant": "C"},
+    ]
+    b = ma.bwa("2026-08", ma.erloese_monat([]), belege)
+    gruppe = next(g for g in b["gruppen"] if any(k["konto"] == "6640" for k in g["konten"]))
+    konten = {k["konto"]: k for k in gruppe["konten"]}
+    assert konten["6640"]["anzahl"] == 2 and konten["6640"]["netto"] == 150.0
+    assert konten["6640"]["name"] == skr04_konten.name("6640")
+    assert [k["konto"] for k in gruppe["konten"]][0] == "6640"   # größter Betrag zuerst
+    assert sum(k["netto"] for k in gruppe["konten"]) == gruppe["netto"]

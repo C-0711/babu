@@ -553,6 +553,9 @@ main p, .leer, .karte > p{max-width:78ch}
 
 /* Monat in Zahlen */
 .mrow{display:flex;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px solid var(--gc-border-l)}
+.mrow.unter{padding-left:18px;font-size:13px;border-top:0}
+.mrow.unter .art{font-weight:400;color:var(--gc-body)}
+.mrow.unter .summe{font-size:13px}
 .mrow:last-child{border-bottom:none}
 .mrow .art{font-weight:600;color:var(--gc-fg)}
 .mrow .wer{font-size:12px;color:var(--gc-muted);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -3116,10 +3119,28 @@ function kostengruppenZeile(g){
   const wer = g.aus_vertrag
     ? "aus Vertrag: " + g.aus_vertrag
     : `${g.anzahl} ${g.anzahl === 1 ? "Beleg" : "Belege"}`;
-  return `<div class="mrow"><span class="art">${esc(g.name)}</span>
-    <span class="wer">${esc(wer)}${
-      g.anteil !== null ? " · " + Math.round(g.anteil) + " % vom Umsatz" : ""}</span>
+  const anteil = g.anteil !== null && g.anteil !== undefined ? " · " + Math.round(g.anteil) + " % vom Umsatz" : "";
+  /* Das Konto zuerst: „6640 Bewirtungskosten“ sagt, wohin gebucht wurde —
+     der Oberbegriff („Werbung, Bewirtung und Reisen“) nur, wohin es gehört.
+     Ein Konto in der Gruppe: eine Zeile mit dem Konto, der Oberbegriff klein
+     dahinter. Mehrere Konten: der Oberbegriff als Summe, die Konten darunter. */
+  const konten = (g.konten || []).filter(k => k.konto);
+  const kontoText = k => `${k.konto} ${k.name || ""}`.trim();
+  if (konten.length === 1 && !g.aus_vertrag){
+    return `<div class="mrow"><span class="art">${esc(kontoText(konten[0]))}</span>
+      <span class="wer">${esc(wer)} · ${esc(g.name)}${anteil}</span>
+      <span class="summe">${euro(g.netto)}</span></div>`;
+  }
+  let html = `<div class="mrow"><span class="art">${esc(g.name)}</span>
+    <span class="wer">${esc(wer)}${anteil}</span>
     <span class="summe">${euro(g.netto)}</span></div>`;
+  for (const k of konten){
+    const kwer = k.aus_vertrag ? "aus Vertrag: " + k.aus_vertrag
+      : `${k.anzahl} ${k.anzahl === 1 ? "Beleg" : "Belege"}`;
+    html += `<div class="mrow unter"><span class="art">${esc(kontoText(k))}</span>
+      <span class="wer">${esc(kwer)}</span><span class="summe">${euro(k.netto)}</span></div>`;
+  }
+  return html;
 }
 
 async function ladeZahlen(){
