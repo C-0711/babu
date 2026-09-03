@@ -59,7 +59,7 @@ services:
     environment:
       HOME: /data
       BABU_ERLAUBT: "christoph0711.io,nina0711.io"
-      BABU_ROLLEN: "christoph0711.io:kanzlei"
+      BABU_ROLLEN: "christoph0711.io:admin"
       # --- Postgres scharf schalten (Plan 21, Phase 1) -------------------
       # Erst hochfahren, dann EINMAL von Hand umziehen
       #   docker compose up -d postgres
