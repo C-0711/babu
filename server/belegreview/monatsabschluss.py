@@ -52,7 +52,8 @@ KOSTENGRUPPEN: list[tuple[str, str, tuple[str, ...]]] = [
 # Netto-Rechnung der BWA bereits aus den Erlösen heraus. Anlagevermögen
 # wirkt nur über die Abschreibung, nicht mit dem Kaufpreis.
 #
-# 1370 „Durchlaufende Posten" kam am 03.09.2026 dazu: dort steht seither
+# 1370 „Durchlaufende Posten" kam am 03.09.2026 dazu — der Weg ist am
+# selben Tag vom Auftraggeber bestätigt worden: dort steht seither
 # das Trinkgeld, das über die Karte hereinkam und ans Team weitergeht.
 # Es ist Geld, das den Betrieb nur durchquert — als Aufwand gezählt
 # drückte es das Ergebnis um einen Betrag, der nie ihm gehörte. Was davon

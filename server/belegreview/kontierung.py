@@ -222,8 +222,10 @@ _K = [
                       "Umsatzsteuer — der Umsatz war schon beim Kunden da."),
     Kategorie("gutschein", "Verbindlichkeit aus Gutscheinen",
               None, None,
-              hinweis="Beim VERKAUF entsteht die Verbindlichkeit, beim "
-                      "Einlösen der Erlös. Konten noch nicht bestätigt."),
+              hinweis="Einzweckgutschein — bestätigt vom Auftraggeber am "
+                      "03.09.2026: versteuert wird beim VERKAUF, das "
+                      "Einlösen bucht nichts mehr. Nur die Konten dafür "
+                      "sind noch nicht bestätigt."),
     Kategorie("privat", "Privatentnahme",
               "1800", "2100", geprueft=True,
               hinweis="Keine Betriebsausgabe, mindert nur den Bestand. "

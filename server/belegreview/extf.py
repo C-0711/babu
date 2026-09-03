@@ -319,6 +319,8 @@ ERLOES_KLEINUNTERNEHMER = "4184"    # Steuerfreie Erlöse Kleinunternehmer § 19
 # 1460 ist Geld, das unterwegs ist — zwischen Kasse und Bank, in beide
 # Richtungen; gebucht wird es zweimal, einmal hier und einmal beim
 # Kontoauszug, und trifft sich auf dem Transitkonto.
+# 1370 nimmt das Trinkgeld auf, das über die Karte hereinkommt — bestätigt
+# vom Auftraggeber am 03.09.2026, siehe `kassenzeilen`.
 PRIVATEINLAGE = "2180"
 PRIVATENTNAHME = "2100"
 DURCHLAUFEND = "1370"
@@ -595,9 +597,10 @@ def kassenzeilen(kassenblaetter: list[dict], kleinunternehmerin: bool = False
     * **Eingelöste Gutscheine.** Einzweckgutschein (§ 3 Abs. 14 UStG):
       versteuert ist er beim Verkauf, das Einlösen ist keine neue
       Einnahme. Er steht schon in den Tageseinnahmen des Verkaufstags.
-      Hausannahme — bei Mehrzweckgutscheinen wäre es umgekehrt, und ein
-      Salon, der Gutscheine über verschiedene Steuersätze verkauft, müsste
-      das mit seiner Kanzlei klären.
+      Bestätigt vom Auftraggeber am 03.09.2026: die Gutscheine dieses
+      Salons sind Einzweckgutscheine. Bei Mehrzweckgutscheinen wäre es
+      umgekehrt, und ein Salon, der Gutscheine über verschiedene
+      Steuersätze verkauft, müsste das mit seiner Kanzlei klären.
     * **Barausgaben, erstattete Auslagen, Vorschüsse ans Team.** Zu jeder
       gehört ein Beleg oder ein Lohnkonto, und dort wird sie gebucht. Hier
       noch einmal hieße doppelt. Sie fehlen damit im Kassenbestand des
@@ -639,9 +642,9 @@ def kassenzeilen(kassenblaetter: list[dict], kleinunternehmerin: bool = False
 
         # ── Trinkgeld, drei Wege ──────────────────────────────────────
         #
-        # ANNAHME, von der Kanzlei zu bestätigen. Sie steht hier, weil
-        # eine falsche Annahme, die man sieht, besser ist als eine
-        # richtige, die niemand nachlesen kann.
+        # Bestätigt vom Auftraggeber am 03.09.2026. Bis dahin stand hier
+        # eine Annahme mit der Bitte um Bestätigung; die Wege selbst sind
+        # unverändert geblieben, nur ihr Status ist ein anderer.
         #
         # Trinkgeld über die Karte kommt mit dem Kartenumsatz aufs
         # Geschäftskonto, gehört dem Betrieb aber nicht — bis es verteilt
