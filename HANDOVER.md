@@ -244,6 +244,15 @@ Postgres-Umzug auf Wunsch des Auftraggebers — Details in Abschnitt 2.
 Kanzlei-Cockpit (Überblick-Matrix, Monatsblick je Mandant) — Details in
 `docs/uebergabe-datev-2026-09-02/README.md`, Abschnitt „Welle 4".
 
+**Konten auf dem Produktivsystem seit 03.09.:** `christoph0711.io` (PAT) ist admin
+(`BABU_ROLLEN` im Compose), `christoph@0711.io` (Passwort) ebenfalls admin;
+`afflek@0711.io` = Kanzlei Afflek (Testkanzlei des Auftraggebers) mit zwei
+Mandanten: „Jenny from the Block" (`jenny@0711.io`, Belegbox ausstehend) und
+**SupremeStudio = Nina** (`nina@0711.io`, Belegbox `inspektor/ws-christoph0711.io/babu`
+verknüpft, Berater 16149, Mandant 19364 aus dem Kanzlei-Referenzstapel). Damit
+trägt der Stapel im Acting-as die echten Nummern. Startpasswörter holt man sich
+unter „Zugänge verwalten" → „Neues Startpasswort" (erscheint einmal).
+
 **Welle 6 (03.09.): DATEV-Schnittstelle gehärtet.** Format an den echten
 Kanzlei-Export angeglichen (Version 12, 124 Spalten, `23-referenzstapel-kanzlei.md`),
 Gutschriften im Haben, § 19 ohne Vorsteuer, kein stiller 19-%-Default, Berater/
