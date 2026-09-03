@@ -69,7 +69,14 @@ def _welt_bauen(tmp_path, monkeypatch, belege):
                    check=True)
 
     import babu_web
+    import boxschreiber
     monkeypatch.setattr(babu_web, "STORE", bare)
+    # Der Schreibweg in die Wegwerf-Box: ohne diese drei zeigt die
+    # Default-Box auf das echte Gateway, und die Übergabe versuchte, aus
+    # dem Test heraus in die Belegbox des Betriebs zu schreiben.
+    monkeypatch.setattr(boxschreiber, "KLON", tmp_path / "klon")
+    monkeypatch.setattr(boxschreiber, "REMOTE", str(bare))
+    monkeypatch.setattr(boxschreiber, "PAT_PFAD", tmp_path / "kein-pat")
     monkeypatch.setattr(babu_web, "GEHEIMNIS_PFAD", tmp_path / ".geheimnis")
     monkeypatch.setattr(babu_web, "PORTAL_DB", tmp_path / "portal.db")
     monkeypatch.setattr(babu_web, "INDEX_TTL", 0.0)
@@ -117,6 +124,8 @@ def test_salon_sieht_weder_seite_noch_zahlen(welt, monkeypatch):
         assert k.get(pfad).status_code == 403, pfad
     assert k.post("/api/datev/lesen",
                   files={"datei": ("x.csv", b"egal", "text/csv")}).status_code == 403
+    assert k.post("/api/datev/uebergeben?von=2026-07&bis=2026-07") \
+        .status_code == 403
 
 
 def test_verwaltung_bekommt_die_seite(c):
@@ -889,3 +898,219 @@ def test_ein_freigegebener_monatsabschluss_schreibt_nicht_mehr_fest(
     kopf = k.get("/api/datev/stapel.csv?von=2026-07&bis=2026-07") \
         .content.decode("cp1252").split("\r\n")[0].split(";")
     assert kopf[20] == "0"
+
+
+# ── Das Stapel-Siegel: übergeben, nachtragen, nicht zweimal ─────────────
+#
+# Vorher gab es nur „Datei erzeugt". Ob ein Monat wirklich bei der Kanzlei
+# lag, stand nirgends — wer zweimal drückte, gab zweimal denselben Stapel
+# ab, und die Kanzlei hatte jede Buchung doppelt.
+
+def _box_datei(welt, pfad):
+    import subprocess
+    r = subprocess.run(["git", "-C", str(welt.STORE), "show", f"HEAD:{pfad}"],
+                       capture_output=True)
+    return r.stdout if r.returncode == 0 else None
+
+
+def _box_ordner(welt, pfad):
+    import subprocess
+    r = subprocess.run(["git", "-C", str(welt.STORE), "ls-tree", "--name-only",
+                        f"HEAD:{pfad}"], capture_output=True, text=True)
+    return sorted(z for z in r.stdout.splitlines() if z) if r.returncode == 0 else []
+
+
+def test_uebergabe_legt_den_stapel_ab_und_schreibt_fest(welt, c):
+    r = c.post("/api/datev/uebergeben?von=2026-07&bis=2026-07")
+    assert r.status_code == 200, r.text
+    kopf = r.content.decode("cp1252").split("\r\n")[0].split(";")
+    assert kopf[20] == "1"                     # Festschreibung
+    assert kopf[16] == '"babu 2026-07"'
+    assert "Buchungsstapel_2026-07.csv" in r.headers["content-disposition"]
+
+    stand = json.loads(_box_datei(welt, "export/2026-07/stapel.json"))
+    assert sorted(stand["staemme"]) == sorted(b[1] for b in BELEGE
+                                              if b[0] == "2026-07")
+    assert len(stand["laeufe"]) == 1
+    lauf = stand["laeufe"][0]
+    assert lauf["buchungen"] == 2 and lauf["von"] == "chef@0711.io"
+    assert lauf["datei"].startswith("EXTF_") and lauf["datei"].endswith(".csv")
+    assert lauf["datei"] in _box_ordner(welt, "export/2026-07")
+
+
+def test_zweiter_uebergabe_aufruf_ist_409(c):
+    """Eine Kanzlei, die denselben Stapel zweimal importiert, hat jede
+    Buchung doppelt."""
+    assert c.post("/api/datev/uebergeben?von=2026-07&bis=2026-07") \
+        .status_code == 200
+    r = c.post("/api/datev/uebergeben?von=2026-07&bis=2026-07")
+    assert r.status_code == 409
+    meldung = r.json()["fehler"]
+    assert "Für Juli liegt alles bei der Kanzlei" in meldung
+    assert "Nachtrag" in meldung
+
+
+def test_neuer_beleg_nach_uebergabe_wird_nachtrag(welt, c, tmp_path):
+    """Was seither dazukam, geht allein — den Rest hat die Kanzlei schon."""
+    assert c.post("/api/datev/uebergeben?von=2026-07&bis=2026-07") \
+        .status_code == 200
+
+    # Ein weiterer Juli-Beleg landet in der Box.
+    stamm = "20260728-120000-aaa009-nachzuegler"
+    review = json.loads(json.dumps(welt.index_aktuell()["reviews"][BELEGE[0][1]]))
+    review["datei"] = f"docs/2026-07/{stamm}.jpg"
+    review["felder"].update(brutto=55.0, datum="28.07.2026", beleg_nr="R-1099",
+                            lieferant="Nachzügler GmbH")
+    review["vlm"] = {"buchungstext": "Einkauf Nachzügler"}
+    import boxschreiber
+    boxschreiber.schreiben(welt._box(), {
+        f"docs/2026-07/{stamm}.jpg": b"\xff\xd8\xff\xe0demo",
+        f"review/{stamm}.json": json.dumps(review, ensure_ascii=False).encode(),
+    }, None, "nachzügler", "chef@0711.io")
+    with welt._box().index_schloss:
+        welt._box().invalidieren()
+
+    r = c.post("/api/datev/uebergeben?von=2026-07&bis=2026-07")
+    assert r.status_code == 200, r.text
+    zeilen = [z for z in r.content.decode("cp1252").split("\r\n") if z]
+    kopf = zeilen[0].split(";")
+    assert kopf[16] == '"babu 2026-07 Nachtrag 2"'
+    assert kopf[20] == "1"
+    # NUR der neue Beleg, nicht die beiden von vorher.
+    daten = [z.split(";") for z in zeilen[2:]]
+    assert len(daten) == 1
+    assert daten[0][10] == '"R-1099"'
+
+    stand = json.loads(_box_datei(welt, "export/2026-07/stapel.json"))
+    assert len(stand["laeufe"]) == 2
+    assert stand["laeufe"][1]["staemme"] == [stamm]
+    # `staemme` bleibt die Vereinigung — der Index liest nur die.
+    assert stamm in stand["staemme"] and len(stand["staemme"]) == 3
+    # Und im Ordner liegen jetzt zwei Dateien.
+    csvs = [d for d in _box_ordner(welt, "export/2026-07") if d.endswith(".csv")]
+    assert len(csvs) == 2
+
+
+def test_vorschau_legt_nichts_ab(welt, c):
+    """`GET stapel.csv` ist zum Ansehen. Wer ansieht, gibt nicht ab."""
+    assert c.get("/api/datev/stapel.csv?von=2026-07&bis=2026-07") \
+        .status_code == 200
+    assert c.get("/api/datev/vorschau?von=2026-07&bis=2026-07") \
+        .status_code == 200
+    assert _box_datei(welt, "export/2026-07/stapel.json") is None
+    assert _box_ordner(welt, "export/2026-07") == []
+    # Und danach ist die Übergabe noch möglich.
+    assert c.post("/api/datev/uebergeben?von=2026-07&bis=2026-07") \
+        .status_code == 200
+
+
+def test_uebergabe_auditiert_mit_mandant(welt, c, monkeypatch):
+    gesehen = []
+    import audit
+    monkeypatch.setattr(audit, "audit",
+                        lambda un, was, **rest: gesehen.append((un, was, rest)))
+    monkeypatch.setattr(welt, "_mandant_fuers_log", lambda: "42")
+    assert c.post("/api/datev/uebergeben?von=2026-07&bis=2026-07") \
+        .status_code == 200
+    eintrag = next(e for e in gesehen if e[1] == "datev_uebergabe")
+    assert eintrag[0] == "chef@0711.io"
+    assert eintrag[2]["mandant_id"] == "42"
+    assert eintrag[2]["von"] == "2026-07" and eintrag[2]["bis"] == "2026-07"
+    assert eintrag[2]["belege"] == 2 and eintrag[2]["buchungen"] == 2
+    assert eintrag[2]["nachtrag"] == 0
+
+
+def test_uebersicht_nennt_uebergabe_und_offenen_nachtrag(c):
+    d = c.get("/api/datev/uebersicht").json()
+    assert d["je_monat"]["2026-07"]["uebergeben_am"] is None
+    assert d["je_monat"]["2026-07"]["nachtrag_offen"] == 0
+    assert c.post("/api/datev/uebergeben?von=2026-07&bis=2026-07") \
+        .status_code == 200
+    d = c.get("/api/datev/uebersicht").json()
+    tag = d["je_monat"]["2026-07"]["uebergeben_am"]
+    assert tag and len(tag) == 10 and tag[2] == "." and tag[5] == "."
+    assert d["je_monat"]["2026-07"]["nachtrag_offen"] == 0
+    assert d["je_monat"]["2026-08"]["uebergeben_am"] is None
+
+
+def test_befund_sagt_was_schon_bei_der_kanzlei_liegt(c):
+    assert c.post("/api/datev/uebergeben?von=2026-07&bis=2026-07") \
+        .status_code == 200
+    b = c.get("/api/datev/vorschau?von=2026-07&bis=2026-07").json()["befund"]
+    assert len(b["uebergeben"]) == 1
+    assert b["uebergeben"][0]["buchungen"] == 2
+    assert "Für Juli liegt ein Stapel vom" in b["uebergeben_text"]
+    assert "(2 Buchungen)" in b["uebergeben_text"]
+    assert b["nachtrag_offen"] == 0
+
+
+def test_ein_monat_ohne_uebergabe_sagt_nichts_dazu(c):
+    b = c.get("/api/datev/vorschau?von=2026-08&bis=2026-08").json()["befund"]
+    assert b["uebergeben"] == [] and b["uebergeben_text"] is None
+
+
+def test_festschreiben_ueber_den_alten_weg_ist_dieselbe_uebergabe(
+        welt, c, monkeypatch):
+    """`/api/export/<monat>.csv?festschreiben=1` und die DATEV-Seite dürfen
+    nicht zwei Wahrheiten darüber haben, was die Kanzlei schon hat."""
+    # Der alte Weg hängt an `_box_wache` (Belegweg des Salons), die
+    # DATEV-Seite an `_verwalter_box_wache`. Beide führen zum selben Siegel.
+    monkeypatch.setattr(welt, "box_mitglied", lambda un, mandant_id=None: True)
+    r = c.get("/api/export/2026-07.csv?festschreiben=1")
+    assert r.status_code == 200, r.text
+    assert r.content.decode("cp1252").split("\r\n")[0].split(";")[20] == "1"
+    stand = json.loads(_box_datei(welt, "export/2026-07/stapel.json"))
+    assert len(stand["laeufe"]) == 1
+    # Der zweite Aufruf findet nichts Neues — auf beiden Wegen.
+    assert c.get("/api/export/2026-07.csv?festschreiben=1").status_code == 409
+    assert c.post("/api/datev/uebergeben?von=2026-07&bis=2026-07") \
+        .status_code == 409
+
+
+def test_export_ohne_festschreiben_bleibt_die_vorschau(welt, c, monkeypatch):
+    monkeypatch.setattr(welt, "box_mitglied", lambda un, mandant_id=None: True)
+    r = c.get("/api/export/2026-07.csv")
+    assert r.status_code == 200
+    assert r.content.decode("cp1252").split("\r\n")[0].split(";")[20] == "0"
+    assert _box_datei(welt, "export/2026-07/stapel.json") is None
+
+
+def test_eine_alte_ablage_ohne_laeufe_zaehlt_als_erster_lauf(welt):
+    """Vor dem Siegel schrieb babu `stapel.json` ohne `laeufe`. Das WAR ein
+    Lauf — sonst zählte der nächste als erster und schickte alles noch
+    einmal."""
+    import boxschreiber
+    alt = {"monat": "2026-07", "zeit": "20260801-101500", "von": "chef@0711.io",
+           "staemme": [b[1] for b in BELEGE if b[0] == "2026-07"],
+           "kassentage": []}
+    boxschreiber.schreiben(welt._box(),
+                           {"export/2026-07/stapel.json":
+                            json.dumps(alt).encode()},
+                           None, "alter stand", "chef@0711.io")
+    with welt._box().index_schloss:
+        welt._box().invalidieren()
+    k = TestClient(welt.app, base_url="https://testserver")
+    r = k.post("/api/datev/uebergeben?von=2026-07&bis=2026-07")
+    assert r.status_code == 409
+    assert "Juli" in r.json()["fehler"]
+    d = k.get("/api/datev/uebersicht").json()
+    assert d["je_monat"]["2026-07"]["uebergeben_am"] == "01.08.2026"
+
+
+def test_stempeltag_liest_den_zeitpunkt():
+    import datev_seite
+    assert datev_seite._stempeltag("20260903-141500") == "03.09.2026"
+    assert datev_seite._stempeltag("") is None
+    assert datev_seite._stempeltag(None) is None
+    assert datev_seite._stempeltag("krumm") is None
+
+
+def test_die_seite_hat_einen_uebergabeknopf_mit_bestaetigung(c):
+    """Übergeben ist etwas anderes als Herunterladen — deshalb wird
+    gefragt, und deshalb steht dort, was danach gilt."""
+    seite = c.get("/datev").text
+    assert 'id="uebergeben"' in seite
+    assert "Stapel übergeben" in seite and "Nachtrag übergeben" in seite
+    assert "Danach gilt der Monat als bei der Kanzlei" in seite
+    assert "was später kommt" in seite
+    assert "/api/datev/uebergeben?" in seite

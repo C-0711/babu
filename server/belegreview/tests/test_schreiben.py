@@ -123,9 +123,18 @@ def test_export_nach_bewirtung(welt):
 
     fest = client.get("/api/export/2026-08.csv", params={"festschreiben": 1})
     assert fest.status_code == 200
+    # `festschreiben=1` ist seit 03.09.2026 eine ÜBERGABE: derselbe Weg wie
+    # der Knopf auf der DATEV-Seite, mit Ablage, Kennzeichen und Lauf-Eintrag.
+    # Der Commit heißt deshalb „übergeben", nicht mehr „export".
     log = subprocess.run(["git", "-C", str(bare), "log", "-1", "--format=%s"],
                          capture_output=True, text=True).stdout.strip()
-    assert log == "export: 2026-08"
+    assert log == "übergeben: 2026-08"
+    assert fest.content.decode("cp1252").split(";")[20] == "1"
+    # Und ein zweiter Aufruf gibt keine zweite Datei, sondern die Auskunft,
+    # dass schon alles bei der Kanzlei liegt.
+    nochmal = client.get("/api/export/2026-08.csv", params={"festschreiben": 1})
+    assert nochmal.status_code == 409
+    assert "bei der Kanzlei" in nochmal.json()["fehler"]
     d = client.get(f"/api/beleg/{STAMM}").json()
     assert d["status"] == "exportiert"
 

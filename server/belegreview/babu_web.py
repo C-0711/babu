@@ -4691,11 +4691,205 @@ def _berater_mandant() -> tuple[str, str]:
     return berater, mandant_nr
 
 
+# ---------------------------------------------------------------------------
+# Das Stapel-Siegel: wann ein Monat bei der Kanzlei liegt
+# ---------------------------------------------------------------------------
+#
+# Bis 03.09.2026 gab es nur „Datei erzeugt" — und weil das Festschreibungs-
+# Kennzeichen am freigegebenen Monatsabschluss hing, sah jede Datei gleich
+# endgültig aus. Ob ein Monat wirklich übergeben war, stand nirgends; wer
+# zweimal drückte, gab zweimal denselben Stapel ab, und die Kanzlei hatte
+# jede Buchung doppelt.
+#
+# Jetzt ist die Übergabe ein Ereignis mit Gedächtnis. `export/<monat>/
+# stapel.json` führt `laeufe`: je Übergabe ein Eintrag mit Zeitpunkt,
+# Dateiname, den mitgegebenen Belegen und Kassentagen. `staemme` und
+# `kassentage` daneben bleiben die VEREINIGUNG aller Läufe — der Index
+# liest weiter nur die, und für ihn ändert sich damit gar nichts.
+#
+# Daraus folgen drei Antworten auf denselben Knopf:
+#
+#   1. Noch nie übergeben  → der volle Stapel, Kennzeichen 1.
+#   2. Seither Neues da    → NUR das Neue, als „Nachtrag 2". Den Rest hat
+#                            die Kanzlei schon; ihn mitzuschicken hieße,
+#                            sie um eine Doppelbuchung zu bitten.
+#   3. Nichts Neues        → gar keine Datei, sondern die Auskunft, dass
+#                            alles bei der Kanzlei liegt.
+
+MONATSNAMEN = ("Januar", "Februar", "März", "April", "Mai", "Juni", "Juli",
+               "August", "September", "Oktober", "November", "Dezember")
+
+
+class StapelSchonUebergeben(Exception):
+    """Für diesen Zeitraum ist nichts Neues abzugeben — mit einem Satz dazu."""
+
+
+def _monat_in_worten(monat: str) -> str:
+    try:
+        return MONATSNAMEN[int(monat[5:7]) - 1]
+    except (ValueError, IndexError):
+        return monat
+
+
+def _stapel_stand(monat: str) -> dict:
+    """Was über die bisherigen Übergaben dieses Monats bekannt ist.
+
+    Leeres dict heißt: noch nie übergeben. Eine kaputte Datei ebenfalls —
+    lieber ein Stapel zu viel als eine Ablage, die wegen eines nicht
+    lesbaren Zeichens gar nichts mehr herausgibt.
+    """
+    roh = git_show(f"export/{monat}/stapel.json")
+    if not roh:
+        return {}
+    try:
+        stand = json.loads(roh)
+    except ValueError:
+        return {}
+    return stand if isinstance(stand, dict) else {}
+
+
+def _laeufe_lesen(stand: dict) -> list[dict]:
+    """Die Läufe eines Monats — auch aus einem Stand von vor dem Siegel.
+
+    Ältere Ablagen kennen `laeufe` nicht, tragen aber `zeit` und `staemme`.
+    Das WAR ein Lauf, und er wird als einer gelesen: sonst zählte der
+    nächste als erster und schickte alles noch einmal.
+    """
+    laeufe = [l for l in (stand.get("laeufe") or []) if isinstance(l, dict)]
+    if laeufe or not stand:
+        return laeufe
+    return [{"zeit": stand.get("zeit"), "datei": None,
+             "staemme": sorted(stand.get("staemme") or []),
+             "kassentage": sorted(stand.get("kassentage") or []),
+             "buchungen": None, "von": stand.get("von")}]
+
+
+def _stapel_uebergeben(monate: list[str], un: str) -> tuple[bytes, dict]:
+    """Einen Zeitraum an die Kanzlei übergeben — Datei erzeugen UND ablegen.
+
+    Zurück kommen die Bytes der Datei und ein Auskunftsblock darüber, was
+    darin steckt. Wirft `StapelSchonUebergeben`, wenn es nichts Neues gibt,
+    und `extf.RahmenVermischung`, wenn zwei Kontenrahmen zusammenkämen.
+    Die Ablage geht über `boxschreiber` und kann `SchreibFehler` werfen —
+    beides reicht der Aufrufer als Meldung weiter.
+    """
+    import sys  # noqa: PLC0415
+    import boxschreiber  # noqa: PLC0415
+    import datev_seite  # noqa: PLC0415
+    import extf  # noqa: PLC0415
+    import monatsabschluss as ma  # noqa: PLC0415
+
+    idx = index_aktuell()
+    rahmen = kontenrahmen_von(un)
+    profil = ma.umsatz_profil(db_einstellungen(salon_von_aktiv(un)))
+    klein = not profil.get("braucht_ustva")
+    berater, mandant_nr = datev_seite._berater_mandant(sys.modules[__name__])
+    stempel = time.strftime("%Y%m%d-%H%M%S")
+
+    je_monat: dict[str, dict] = {}
+    staende: dict[str, dict] = {}
+    hoechster_lauf = 0
+    for monat in monate:
+        stand = _stapel_stand(monat)
+        staende[monat] = stand
+        bisher = _laeufe_lesen(stand)
+        schon_s = {s for lauf in bisher for s in (lauf.get("staemme") or [])}
+        schon_s |= set(stand.get("staemme") or [])
+        schon_t = {t for lauf in bisher for t in (lauf.get("kassentage") or [])}
+        schon_t |= set(stand.get("kassentage") or [])
+        alle_s = sorted(s for s, z in idx["belege"].items()
+                        if z["monat"] == monat
+                        and z["status"] in ("geprüft", "exportiert"))
+        alle_t = sorted(t for t in idx["kassenblaetter"] if t.startswith(monat))
+        neu_s = [s for s in alle_s if s not in schon_s] if bisher else alle_s
+        neu_t = [t for t in alle_t if t not in schon_t] if bisher else alle_t
+        reviews = [idx["reviews"][s] for s in neu_s if s in idx["reviews"]]
+        blaetter = [idx["kassenblaetter"][t] for t in neu_t]
+        buchungen = sum(len(extf.buchungszeilen(r, klein)) for r in reviews)
+        if rahmen != "SKR03":
+            buchungen += len(extf.erloeszeilen(blaetter, klein))
+        je_monat[monat] = {"reviews": reviews, "staemme": neu_s,
+                           "ohne_konto": [], "hinweise": [],
+                           "blaetter": blaetter, "neu_staemme": neu_s,
+                           "neu_tage": neu_t, "buchungen": buchungen,
+                           "bisher": len(bisher)}
+        hoechster_lauf = max(hoechster_lauf, len(bisher))
+
+    betroffen = [m for m in monate
+                 if je_monat[m]["neu_staemme"] or je_monat[m]["neu_tage"]]
+    if not betroffen:
+        namen = " und ".join(_monat_in_worten(m) for m in monate)
+        raise StapelSchonUebergeben(
+            f"Für {namen} liegt alles bei der Kanzlei. Sobald ein neuer "
+            f"Beleg dazukommt, lässt sich ein Nachtrag übergeben.")
+
+    bezeichnung = (f"babu {monate[0]}" if len(monate) == 1
+                   else f"babu {monate[0]} bis {monate[-1]}")
+    if hoechster_lauf:
+        bezeichnung += f" Nachtrag {hoechster_lauf + 1}"
+
+    daten = {"monate": monate, "rahmen": rahmen, "kleinunternehmerin": klein,
+             "berater": berater, "mandant": mandant_nr, "je_monat": je_monat}
+    text = datev_seite.stapel_zeitraum(daten, monate, festschreibung=True,
+                                       berater=berater, mandant=mandant_nr,
+                                       bezeichnung=bezeichnung)
+    roh = extf.als_bytes(text)
+
+    # Der Nachtrag steht im Dateinamen. Nicht nur der Ordnung halber: der
+    # Zeitstempel geht bis zur Sekunde, und zwei Übergaben in derselben
+    # Sekunde (Doppelklick, Wiederholung nach einem Netzhänger) schrieben
+    # sonst in dieselbe Datei — der erste Stapel wäre weg, und die Ablage
+    # behauptete zwei Läufe mit einer Datei.
+    dateiname = (f"EXTF_{stempel}.csv" if not hoechster_lauf
+                 else f"EXTF_{stempel}_Nachtrag{hoechster_lauf + 1}.csv")
+    dateien: dict[str, bytes] = {}
+    for monat in betroffen:
+        m = je_monat[monat]
+        stand = staende[monat]
+        laeufe = _laeufe_lesen(stand)
+        laeufe.append({"zeit": stempel, "datei": dateiname,
+                       "staemme": m["neu_staemme"], "kassentage": m["neu_tage"],
+                       "buchungen": m["buchungen"], "von": un})
+        # `staemme` und `kassentage` bleiben die Vereinigung aller Läufe —
+        # der Index liest nur die, und für ihn ändert sich nichts.
+        alle_s = sorted({x for lauf in laeufe for x in (lauf["staemme"] or [])}
+                        | set(stand.get("staemme") or []))
+        alle_t = sorted({x for lauf in laeufe
+                         for x in (lauf["kassentage"] or [])}
+                        | set(stand.get("kassentage") or []))
+        dateien[f"export/{monat}/{dateiname}"] = roh
+        dateien[f"export/{monat}/stapel.json"] = json.dumps(
+            {"monat": monat, "staemme": alle_s, "zeit": stempel,
+             "kassentage": alle_t, "von": un, "laeufe": laeufe},
+            ensure_ascii=False, indent=1).encode()
+
+    nachricht = ("übergeben: " + ", ".join(betroffen)
+                 + (f" (Nachtrag {hoechster_lauf + 1})" if hoechster_lauf else ""))
+    boxschreiber.schreiben(_box(), dateien, None, nachricht, un)
+    with _box().index_schloss:
+        _box().invalidieren()
+
+    return roh, {
+        "monate": betroffen, "zeit": stempel, "datei": dateiname,
+        "nachtrag": hoechster_lauf + 1 if hoechster_lauf else 0,
+        "bezeichnung": bezeichnung,
+        "belege": sum(len(je_monat[m]["neu_staemme"]) for m in betroffen),
+        "kassentage": sum(len(je_monat[m]["neu_tage"]) for m in betroffen),
+        "buchungen": sum(je_monat[m]["buchungen"] for m in betroffen),
+    }
+
+
 @app.get("/api/export/{monat}.csv")
 def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response:
-    """DATEV-Buchungsstapel (EXTF v13, CP1252/CRLF). festschreiben=1 legt den
-    Stapel zusätzlich in der Belegbox ab — die Belege gelten dann als
-    exportiert (Beleg-Weg: „Bei der Kanzlei").
+    """DATEV-Buchungsstapel (EXTF, Windows-1252/CRLF).
+
+    Zwei Wege, und sie tun Verschiedenes. Ohne `festschreiben` ist das eine
+    VORSCHAU: eine Datei zum Ansehen, die nichts ablegt und kein Kennzeichen
+    trägt. Mit `festschreiben=1` ist es eine ÜBERGABE — dieselbe Funktion,
+    die auch die DATEV-Seite ruft (`_stapel_uebergeben`): der Stapel wird in
+    der Belegbox abgelegt, zählt als Lauf und die Belege gelten als
+    exportiert (Beleg-Weg: „Bei der Kanzlei"). Liegt schon alles bei der
+    Kanzlei, kommt 409 statt einer zweiten Datei.
 
     Seit 02.09.2026 steht auch die Erlösseite im Stapel: jedes Kassenblatt
     des Monats wird zu Tageseinnahmen (Kasse an Erlöse je Steuersatz) und
@@ -4715,6 +4909,27 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
     if not re.match(r"^\d{4}-\d{2}$", monat):
         return JSONResponse({"fehler": "ungültiger Monat"}, status_code=400)
     import extf  # noqa: PLC0415
+    # `festschreiben=1` ist seit 03.09.2026 dasselbe wie „übergeben": eine
+    # Datei, die aus der Hand geht, wird abgelegt, trägt das Kennzeichen
+    # und zählt als Lauf. Damit gibt es genau EINEN Weg dorthin, egal ob
+    # jemand hier oder auf der DATEV-Seite drückt — zwei Wege hätten zwei
+    # Wahrheiten darüber, was die Kanzlei schon hat.
+    if festschreiben:
+        import boxschreiber  # noqa: PLC0415
+        try:
+            daten, info = _stapel_uebergeben([monat], un)
+        except StapelSchonUebergeben as fehler_:
+            return JSONResponse({"fehler": str(fehler_)}, status_code=409)
+        except extf.RahmenVermischung as fehler_:
+            return JSONResponse({"fehler": str(fehler_)}, status_code=409)
+        except boxschreiber.SchreibFehler:
+            return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
+                                status_code=503)
+        audit.audit(un, "export", monat=monat, mandant_id=_mandant_fuers_log(),
+                    festschreiben=True, belege=info["belege"])
+        return Response(content=daten, media_type="text/csv; charset=windows-1252",
+                        headers={"Content-Disposition":
+                                 f'attachment; filename="EXTF_Buchungsstapel_{monat}.csv"'})
     idx = index_aktuell()
     staemme = [s_ for s_, z in idx["belege"].items()
                if z["monat"] == monat and z["status"] in ("geprüft", "exportiert")]
@@ -4732,34 +4947,17 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
         text = extf.stapel(reviews, monat,
                            berater=berater,
                            mandant=mandant_nr,
-                           festschreibung=bool(festschreiben),
+                           festschreibung=False,   # Vorschau, siehe oben
                            rahmen=kontenrahmen_von(un),
                            kassenblaetter=blaetter,
                            kleinunternehmerin=not profil.get("braucht_ustva"))
     except extf.RahmenVermischung as fehler_:
         return JSONResponse({"fehler": str(fehler_)}, status_code=409)
     daten = extf.als_bytes(text)
-    if festschreiben:
-        import boxschreiber  # noqa: PLC0415
-        stempel = time.strftime("%Y%m%d-%H%M%S")
-        try:
-            boxschreiber.schreiben(_box(),
-                {f"export/{monat}/EXTF_{stempel}.csv": daten,
-                 f"export/{monat}/stapel.json": json.dumps(
-                     {"monat": monat, "staemme": sorted(staemme), "zeit": stempel,
-                      "kassentage": sorted(b["datum"] for b in blaetter
-                                           if b.get("datum")),
-                      "von": un}, ensure_ascii=False, indent=1).encode()},
-                None, f"export: {monat}", un)
-        except boxschreiber.SchreibFehler:
-            return JSONResponse({"fehler": "gerade nicht speicherbar — gleich nochmal"},
-                                status_code=503)
-        with _box().index_schloss:
-            _box().invalidieren()
     # Hier verlassen Steuerdaten das Haus — auch ein reiner Vorschau-Export
-    # (festschreiben=0) gehört ins Log, nicht nur die festgeschriebene Ablage.
+    # gehört ins Log, nicht nur die abgelegte Übergabe.
     audit.audit(un, "export", monat=monat, mandant_id=_mandant_fuers_log(),
-                festschreiben=bool(festschreiben), belege=len(staemme))
+                festschreiben=False, belege=len(staemme))
     return Response(content=daten, media_type="text/csv; charset=windows-1252",
                     headers={"Content-Disposition":
                              f'attachment; filename="EXTF_Buchungsstapel_{monat}.csv"'})

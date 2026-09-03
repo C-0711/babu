@@ -109,8 +109,14 @@ def _berater_mandant(bw) -> tuple[str, str]:
             berater = mandant = None
         if berater or mandant:
             return str(berater or "").strip(), str(mandant or "").strip()
-    return (os.environ.get("BABU_BERATER", extf.BERATER),
-            os.environ.get("BABU_MANDANT", extf.MANDANT))
+    # Der Weg, den `api_export` seit dem Mandanten-Umbau geht: die Nummern
+    # stehen an der `mandant`-Zeile. Im Einzelbetrieb gibt es die nicht,
+    # dann bleibt die Umgebung.
+    stamm = (getattr(bw, "_mandant_stammdaten", lambda: None)() or {})
+    return ((stamm.get("berater_nr") or "").strip()
+            or os.environ.get("BABU_BERATER", extf.BERATER),
+            (stamm.get("mandant_nr") or "").strip()
+            or os.environ.get("BABU_MANDANT", extf.MANDANT))
 
 
 def _nummer_fehlt(wert: str) -> bool:
@@ -205,6 +211,44 @@ def _kassenblaetter(idx: dict, monat: str) -> list[dict]:
     return [b for tag, b in idx["kassenblaetter"].items() if tag.startswith(monat)]
 
 
+def _uebergabe_stand(bw, idx: dict, monat: str) -> dict:
+    """Was von diesem Monat schon bei der Kanzlei liegt — und was seither kam.
+
+    Gelesen wird die Ablage, die `babu_web._stapel_uebergeben` schreibt.
+    Fehlt sie (oder ist der Stand älter als das Siegel), ist die Antwort
+    „noch nichts" — und dann ist auch nichts nachzutragen, sondern alles
+    neu.
+    """
+    stand = bw._stapel_stand(monat)
+    laeufe = bw._laeufe_lesen(stand)
+    if not laeufe:
+        return {"monat": monat, "uebergeben_am": None, "laeufe": 0,
+                "buchungen": 0, "nachtrag_offen": 0}
+    schon = {s for lauf in laeufe for s in (lauf.get("staemme") or [])}
+    schon |= set(stand.get("staemme") or [])
+    offen = sum(1 for s, z in idx["belege"].items()
+                if z["monat"] == monat
+                and z["status"] in ("geprüft", "exportiert")
+                and s not in schon)
+    letzter = laeufe[-1]
+    return {
+        "monat": monat,
+        "uebergeben_am": _stempeltag(letzter.get("zeit") or stand.get("zeit")),
+        "laeufe": len(laeufe),
+        "buchungen": sum(int(lauf.get("buchungen") or 0) for lauf in laeufe),
+        "nachtrag_offen": offen,
+    }
+
+
+def _stempeltag(stempel: str | None) -> str | None:
+    """`20260903-141500` → `03.09.2026`. Der Zeitpunkt reicht bis zum Tag —
+    wer wissen will, wann genau, sieht in der Ablage nach."""
+    roh = str(stempel or "")
+    if len(roh) < 8 or not roh[:8].isdigit():
+        return None
+    return f"{roh[6:8]}.{roh[4:6]}.{roh[:4]}"
+
+
 def _kleinunternehmerin(bw, un: str) -> bool:
     import monatsabschluss as ma  # noqa: PLC0415
     # `salon_von_aktiv` und nicht `salon_von`: die Kleinunternehmer-Regelung
@@ -275,6 +319,7 @@ def _sammeln(bw, un: str, monate: list[str]) -> dict:
                            "blaetter": _kassenblaetter(idx, monat)}
     berater, mandant = _berater_mandant(bw)
     return {"idx": idx, "rahmen": rahmen, "kleinunternehmerin": klein,
+            "uebergaben": {m: _uebergabe_stand(bw, idx, m) for m in monate},
             "berater": berater, "mandant": mandant,
             "monate": monate, "je_monat": je_monat}
 
@@ -326,6 +371,28 @@ def _hinweistext(hinweise: list[dict], hoechstens: int = 3) -> str | None:
         wo = ", ".join(namen) + (f" und {rest} weitere" if rest > 0 else "")
         stuecke.append(f"{text} Betroffen: {wo}." if wo else text)
     return " ".join(stuecke)
+
+
+def _uebergabe_text(uebergeben: list[dict]) -> str | None:
+    """Ein Satz je Monat, der schon bei der Kanzlei liegt."""
+    saetze = []
+    for u in uebergeben:
+        monat = f"{_monatsname(u['monat'])}"
+        satz = (f"Für {monat} liegt ein Stapel vom {u['uebergeben_am']} bei "
+                f"der Kanzlei ({u['buchungen']} Buchungen)")
+        if u["nachtrag_offen"]:
+            satz += f", {u['nachtrag_offen']} Beleg(e) seitdem"
+        saetze.append(satz + ".")
+    return " ".join(saetze) or None
+
+
+def _monatsname(monat: str) -> str:
+    namen = ("Januar", "Februar", "März", "April", "Mai", "Juni", "Juli",
+             "August", "September", "Oktober", "November", "Dezember")
+    try:
+        return namen[int(monat[5:7]) - 1]
+    except (ValueError, IndexError):
+        return monat
 
 
 def _befund(daten: dict, zeilen: list[dict]) -> dict:
@@ -401,8 +468,17 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
     stammdaten = [n for n, w in (("Beraternummer", daten.get("berater")),
                                  ("Mandantennummer", daten.get("mandant")))
                   if _nummer_fehlt(w)]
+    # Was von diesem Zeitraum schon bei der Kanzlei liegt. Kein Befund im
+    # Sinne von „stimmt nicht", sondern eine Auskunft — aber sie gehört
+    # genau hierher: wer gleich übergeben will, muss wissen, ob er das
+    # schon getan hat.
+    uebergeben = [u for u in (daten.get("uebergaben") or {}).values()
+                  if u.get("uebergeben_am")]
     return {
         "rahmen": rahmen,
+        "uebergeben": uebergeben,
+        "uebergeben_text": _uebergabe_text(uebergeben),
+        "nachtrag_offen": sum(u["nachtrag_offen"] for u in uebergeben),
         "berater": daten.get("berater") or "",
         "mandant": daten.get("mandant") or "",
         "stammdaten_fehlen": stammdaten,
@@ -470,7 +546,8 @@ def _je_konto(zeilen: list[dict]) -> list[dict]:
 
 def stapel_zeitraum(daten: dict, monate: list[str], festschreibung: bool,
                     berater: str, mandant: str,
-                    erzeugt: time.struct_time | None = None) -> str:
+                    erzeugt: time.struct_time | None = None,
+                    bezeichnung: str | None = None) -> str:
     """Ein Stapel über mehrere Monate — eine Datei, eine Kopfzeile.
 
     `extf.stapel` kann genau einen Monat, und das soll so bleiben: dort
@@ -502,8 +579,11 @@ def stapel_zeitraum(daten: dict, monate: list[str], festschreibung: bool,
     letzter = monate[-1]
     jahr, mm = int(letzter[:4]), int(letzter[5:7])
     kopf[15] = f"{jahr}{mm:02d}{calendar.monthrange(jahr, mm)[1]}"
-    kopf[16] = f'"babu {monate[0]} bis {letzter}"' if len(monate) > 1 \
-        else f'"babu {monate[0]}"'
+    if bezeichnung:
+        kopf[16] = '"' + str(bezeichnung).replace('"', "'") + '"'
+    else:
+        kopf[16] = f'"babu {monate[0]} bis {letzter}"' if len(monate) > 1 \
+            else f'"babu {monate[0]}"'
     return "\r\n".join([";".join(kopf), spalten, *daten_zeilen]) + "\r\n"
 
 
@@ -607,11 +687,17 @@ def api_uebersicht(request: Request) -> Response:
     offen = {}
     for m in monate:
         zeilen = [z for z in idx["belege"].values() if z["monat"] == m]
+        stand = _uebergabe_stand(bw, idx, m)
         offen[m] = {
             "belege": len(zeilen),
             "fertig": sum(1 for z in zeilen
                           if z["status"] in ("geprüft", "exportiert")),
             "kassentage": len(_kassenblaetter(idx, m)),
+            # Wann dieser Monat zuletzt an die Kanzlei ging und wie viele
+            # Belege seitdem dazugekommen sind — die Zahl, die entscheidet,
+            # ob ein Nachtrag fällig ist.
+            "uebergeben_am": stand["uebergeben_am"],
+            "nachtrag_offen": stand["nachtrag_offen"],
         }
     berater, mandant = _berater_mandant(bw)
     return JSONResponse({
@@ -695,6 +781,52 @@ def api_stapel(request: Request, von: str = "", bis: str = "",
     audit.audit(un, "datev_stapel", mandant_id=bw._mandant_fuers_log(),
                 von=monate[0], bis=monate[-1], monate=len(monate))
     return _csv_antwort(text, name, _utf8_gewuenscht(zeichensatz))
+
+
+@router.post("/uebergeben")
+def api_uebergeben(request: Request, von: str = "", bis: str = "") -> Response:
+    """Den Stapel an die Kanzlei übergeben — die Datei geht aus der Hand.
+
+    Der Unterschied zu `stapel.csv` ist kein technischer: dort sieht jemand
+    nach, hier gibt jemand ab. Deshalb legt nur dieser Weg die Datei in der
+    Belegbox ab, trägt das Festschreibungs-Kennzeichen und merkt sich den
+    Lauf. Beim zweiten Aufruf ohne neue Belege kommt keine zweite Datei,
+    sondern die Auskunft, dass alles schon dort liegt — eine Kanzlei, die
+    denselben Stapel zweimal importiert, hat jede Buchung doppelt.
+
+    Was seit dem letzten Lauf dazugekommen ist, geht als NACHTRAG: nur die
+    neuen Belege und Kassentage, mit „Nachtrag 2" in der Bezeichnung.
+    """
+    un, fehler = _wache(request)
+    if fehler:
+        return fehler
+    bw = _bw()
+    if not bw._origin_ok(request):
+        return _fehler("nicht erlaubt", 403)
+    monate, meldung = _zeitraum(von, bis)
+    if meldung:
+        return _fehler(meldung)
+    import boxschreiber  # noqa: PLC0415
+    try:
+        daten, info = bw._stapel_uebergeben(monate, un)
+    except bw.StapelSchonUebergeben as fehler_:
+        return _fehler(str(fehler_), 409)
+    except extf.RahmenVermischung as fehler_:
+        return _fehler(str(fehler_), 409)
+    except boxschreiber.SchreibFehler:
+        return _fehler("gerade nicht speicherbar — gleich nochmal", 503)
+    # Hier verlassen Steuerdaten das Haus, und zwar endgültig. Die
+    # Mandantennummer gehört ausdrücklich ins Log: beim Acting-as sagt erst
+    # sie, WESSEN Buchhaltung jemand abgegeben hat.
+    import audit  # noqa: PLC0415
+    audit.audit(un, "datev_uebergabe", mandant_id=bw._mandant_fuers_log(),
+                von=monate[0], bis=monate[-1], nachtrag=info["nachtrag"],
+                belege=info["belege"], buchungen=info["buchungen"])
+    name = (f"EXTF_Buchungsstapel_{monate[0]}.csv" if len(monate) == 1
+            else f"EXTF_Buchungsstapel_{monate[0]}_bis_{monate[-1]}.csv")
+    return Response(content=daten, media_type="text/csv; charset=windows-1252",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"',
+                             "X-Babu-Uebergabe": info["zeit"]})
 
 
 @router.get("/konten.csv")

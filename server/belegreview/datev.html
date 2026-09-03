@@ -283,8 +283,14 @@ async function starten(){
   for (const el of [$("#von"), $("#bis")]){
     el.innerHTML = MONATE.map((m) => {
       const z = d.je_monat[m] || {};
+      // Steht der Monat schon bei der Kanzlei, gehört das in die Auswahl —
+      // sonst sucht man den Hinweis erst nach dem Klick.
+      const wo = z.uebergeben_am
+        ? ` · bei der Kanzlei seit ${z.uebergeben_am}`
+          + (z.nachtrag_offen ? ` (${z.nachtrag_offen} neu)` : "")
+        : "";
       return `<option value="${txt(m)}">${txt(m)} — ${z.fertig || 0} von
-        ${z.belege || 0} fertig</option>`;
+        ${z.belege || 0} fertig${txt(wo)}</option>`;
     }).join("");
   }
   // Ein Zeitraum darf in der Adresse stehen: „schau dir den Juli an" ist
@@ -375,9 +381,16 @@ function befundzeilen(b){
       + "bleiben sie stehen; frag im Zweifel deine Kanzlei, welche der "
       + "beiden Dateien sie lieber hat."]);
 
+  // Was schon bei der Kanzlei liegt, ist kein Mangel — aber es gehört
+  // ganz nach oben: wer gleich übergeben will, muss wissen, ob er das
+  // schon getan hat.
   const z = [...rot.map((e) => ["hart", "!", ...e]),
              ...gelb.map((e) => ["zu", "–", ...e])];
-  if (!z.length)
+  if (b.uebergeben_text)
+    z.unshift(["auf","✓", b.nachtrag_offen
+      ? `Ein Nachtrag ist fällig` : `Schon bei der Kanzlei`,
+      b.uebergeben_text]);
+  if (!z.length || (z.length === 1 && z[0][0] === "auf"))
     z.push(["auf","✓","Nichts aufgefallen",
       `${b.belege} Beleg(e) und ${b.kassentage} Kassentag(e) ergeben
        ${b.buchungen} Buchung(en) über ${b.summe_text} €.`]);
@@ -447,6 +460,8 @@ async function vorschau(){
           Stapel herunterladen</button>
         ${b.zeichen_ersetzt ? `<button class="chip" id="holen-alle">
           Stapel mit allen Buchstaben</button>` : ""}
+        <button class="chip" id="uebergeben"${b.buchungen ? "" : " disabled"}>
+          ${b.uebergeben_text ? "Nachtrag übergeben" : "Stapel übergeben"}</button>
         <span class="marke ${d.festgeschrieben ? "ok" : ""}" style="align-self:center">
           ${d.festgeschrieben ? "Zahlen freigegeben" : "Zahlen noch offen"}</span>
       </div>
@@ -464,6 +479,47 @@ async function vorschau(){
     window.location.href =
       mitMandant("/api/datev/stapel.csv?" + spanne() + "&zeichensatz=utf8");
   };
+  const ab = $("#uebergeben");
+  if (ab) ab.onclick = uebergeben;
+}
+
+/* Übergeben ist etwas anderes als Herunterladen — deshalb wird gefragt.
+   Danach zählt der Monat als bei der Kanzlei: der Stapel wird in der
+   Belegbox abgelegt, trägt das Festschreibungs-Kennzeichen, und was
+   später noch kommt, geht als Nachtrag. Ein zweiter Klick ohne neue
+   Belege gibt keine zweite Datei, sondern die Auskunft, dass schon alles
+   dort liegt. */
+async function uebergeben(){
+  const ziel = $("#export-ausgabe");
+  if (!confirm("Diesen Stapel jetzt an die Kanzlei übergeben?\n\n"
+      + "Danach gilt der Monat als bei der Kanzlei; was später kommt, "
+      + "geht als Nachtrag.")) return;
+  const a = await fetch(mitMandant("/api/datev/uebergeben?" + spanne()),
+    {method:"POST", credentials:"same-origin"});
+  if (!a.ok){
+    const d = await a.json().catch(() => ({fehler:"Das hat nicht geklappt."}));
+    ziel.insertAdjacentHTML("afterbegin",
+      `<div class="meldung${a.status === 409 ? "" : " schlimm"}">
+       ${txt(d.fehler || "Das hat nicht geklappt.")}</div>`);
+    if (a.status === 409) vorschau();
+    return;
+  }
+  // Die Datei kommt als Antwort — im Browser wird daraus ein Download.
+  const blob = await a.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = (a.headers.get("content-disposition") || "")
+    .split("filename=")[1]?.replace(/"/g, "") || "EXTF_Buchungsstapel.csv";
+  document.body.appendChild(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  // Die Monatsliste neu holen (sie zeigt jetzt „bei der Kanzlei seit …"),
+  // aber den eingestellten Zeitraum behalten — `starten` würde ihn sonst
+  // auf den neuesten Monat zurückstellen.
+  const v = $("#von").value, bi = $("#bis").value;
+  await starten();
+  $("#von").value = v; $("#bis").value = bi;
+  vorschau();
 }
 
 $("#hol-konten").onclick = () => {

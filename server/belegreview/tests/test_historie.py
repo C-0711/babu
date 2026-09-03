@@ -365,8 +365,13 @@ def test_die_jahresuebersicht_kennt_netto_und_alte_staende():
 
 
 def test_der_export_traegt_die_kassentage_des_monats(historiewelt, monkeypatch):
-    """Über den Server: ein Kassenblatt im Monat wird zur Erlösbuchung, und
-    das Festschreibungs-Kennzeichen steht nur bei freigegebenem Monat."""
+    """Über den Server: ein Kassenblatt im Monat wird zur Erlösbuchung.
+
+    Das Festschreibungs-Kennzeichen hing bis 03.09.2026 am freigegebenen
+    Monatsabschluss — damit gab sich jede Vorschau als endgültig aus. Es
+    kommt jetzt einzig vom Übergeben; dieser Test prüft entsprechend, dass
+    die Vorschau es NICHT trägt, auch wenn die Zahlen freigegeben sind.
+    """
     bw, _, c = historiewelt
     idx = {"belege": {}, "reviews": {}, "rechnungen": {},
            "kassenblaetter": {"2026-03-05": {"datum": "2026-03-05",
@@ -381,9 +386,10 @@ def test_der_export_traegt_die_kassentage_des_monats(historiewelt, monkeypatch):
     assert zeilen[0].split(";")[20] == "0"                 # nicht festgeschrieben
     assert zeilen[2].startswith('300,00;S;EUR;;;;1600;4400;;0503;"KB20260305"')
     assert zeilen[3].startswith("100,00;S;EUR;;;;1460;1600;;0503")
+    # Die Freigabe der Zahlen im Salon ändert daran nichts mehr.
     monkeypatch.setattr(bw, "_monat_festgeschrieben", lambda monat: True)
     r = c.get("/api/export/2026-03.csv")
-    assert r.content.decode("cp1252").split(";")[20] == "1"
+    assert r.content.decode("cp1252").split(";")[20] == "0"
 
 
 def test_ein_bestandskonto_traegt_keine_steuer():
