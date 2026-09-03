@@ -218,22 +218,29 @@ def erloese_monat(kassenblaetter: list[dict], monat: str | None = None,
     sieben += r_sieben
     frei += r_frei
 
-    # Ohne Kassenbuch kommt der Umsatz vom Kontoauszug: die Auszahlungen der
-    # Kartenanbieter. MIT Kassenbuch nicht — dort steht die Karte schon als
-    # `ecZahlungen`, und dieselbe Auszahlung zweimal zu zählen wäre der
-    # Fehler, den die Kanzlei zuerst fände.
+    # Kasse GEGEN Konto, nicht entweder-oder: die Karte im Kassenbuch und die
+    # Auszahlungen der Kartenanbieter auf dem Konto meinen dasselbe Geld.
+    # Was das Konto MEHR zeigt als das Kassenbuch, ist Umsatz, der im
+    # Kassenbuch fehlt (kein Kassenbuch, fehlende Tage, Karte nicht
+    # eingetragen) — der zählt mit. Zeigt das Konto weniger, ist das
+    # Gebühr oder Zeitversatz (Salonkee zahlt wöchentlich) und wird nur
+    # ausgewiesen, nie abgezogen.
     bank = bank_erloese(umsaetze or [])
-    aus_bank = 0.0
-    if not kassenblaetter and bank["brutto"] > 0:
-        aus_bank = bank["brutto"]
+    differenz = _rund(bank["brutto"] - ec)
+    aus_bank = differenz if differenz > 0 else 0.0
+    if aus_bank:
         if kleinunternehmerin:
             frei += aus_bank
         else:
             neunzehn += aus_bank
+    abgleich = {"kasse_karte": _rund(ec), "konto_karte": bank["brutto"],
+                "differenz": differenz, "fehlt_im_kassenbuch": _rund(aus_bank),
+                "quellen": bank["quellen"]} if (ec or bank["brutto"]) else None
     return {
         "tage": len(kassenblaetter),
         "aus_bank": _rund(aus_bank),
         "bank_quellen": bank["quellen"] if aus_bank else {},
+        "abgleich": abgleich,
         "bank_sonstige": bank["sonstige"], "bank_sonstige_anzahl": bank["sonstige_anzahl"],
         "bar": _rund(bar), "karte": _rund(ec),
         "brutto_19": _rund(neunzehn), "brutto_7": _rund(sieben),
@@ -477,8 +484,9 @@ def bwa(monat: str, erloese: dict, belege: list[dict],
         "ergebnis_anteil": _rund(100 * ergebnis / umsatz) if umsatz else None,
         "gruppen": gruppen,
         "tage_erfasst": erloese["tage"],
-        "umsatz_quelle": ("Kontoauszug: " + ", ".join(erloese["bank_quellen"]))
-                         if erloese.get("aus_bank") else None,
+        "umsatz_quelle": ((("Kassenbuch + " if erloese["tage"] else "") + "Kontoauszug: "
+                           + ", ".join(erloese["bank_quellen"]))
+                          if erloese.get("aus_bank") else None),
         "neutral": neutral,
         "neutral_summe": _rund(sum(float(n["brutto"] or 0) for n in neutral)),
         "fehlt": fehlt,

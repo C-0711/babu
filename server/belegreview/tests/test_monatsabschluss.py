@@ -333,9 +333,21 @@ def test_kontoauszug_liefert_den_umsatz_wenn_kein_kassenbuch_da_ist():
     e = ma.erloese_monat([], monat="2026-07", umsaetze=umsaetze)
     assert e["aus_bank"] == 2495.78 and e["brutto_19"] == 2495.78
     assert e["brutto_gesamt"] == 2495.78 and e["bank_quellen"] == {"Salonkee": 2495.78}
-    # Mit Kassenbuch zählt die Bank nicht mit — die Karte steht dort schon.
-    e2 = ma.erloese_monat([{"einnahmenBar": 100.0, "ecZahlungen": 2495.78}], monat="2026-07", umsaetze=umsaetze)
-    assert e2["aus_bank"] == 0.0 and e2["brutto_gesamt"] == 2595.78
+    assert e["abgleich"] == {"kasse_karte": 0.0, "konto_karte": 2495.78, "differenz": 2495.78,
+                             "fehlt_im_kassenbuch": 2495.78, "quellen": {"Salonkee": 2495.78}}
+    # Kasse gegen Konto: steht die Karte im Kassenbuch, zählt die Bank nicht
+    # nochmal — und ein Weniger auf dem Konto (Gebühr, Zeitversatz) wird nur
+    # ausgewiesen, nie abgezogen.
+    e2 = ma.erloese_monat([{"einnahmenBar": 100.0, "ecZahlungen": 2500.0}], monat="2026-07", umsaetze=umsaetze)
+    assert e2["aus_bank"] == 0.0 and e2["brutto_gesamt"] == 2600.0
+    assert e2["abgleich"]["differenz"] == -4.22 and e2["abgleich"]["fehlt_im_kassenbuch"] == 0.0
+    # Kassenbuch nur für zwei Tage (August-Fall): was das Konto MEHR zeigt,
+    # fehlt im Kassenbuch und zählt als Umsatz mit.
+    e4 = ma.erloese_monat([{"einnahmenBar": 1108.0, "ecZahlungen": 700.0}], monat="2026-07", umsaetze=umsaetze)
+    assert e4["aus_bank"] == 1795.78 and e4["brutto_gesamt"] == 3603.78
+    assert e4["abgleich"]["kasse_karte"] == 700.0 and e4["abgleich"]["konto_karte"] == 2495.78
+    d4 = ma.bwa("2026-07", e4, [], None)
+    assert d4["umsatz_quelle"] == "Kassenbuch + Kontoauszug: Salonkee"
     # Kleinunternehmerin: steuerfrei, nicht 19 %.
     e3 = ma.erloese_monat([], monat="2026-07", umsaetze=umsaetze, kleinunternehmerin=True)
     assert e3["brutto_19"] == 0.0 and e3["steuerfrei"] == 2495.78

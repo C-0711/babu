@@ -4600,8 +4600,24 @@ async function ladeAbschluss(){
 
   if (!e.tage){
     html += `<div class="karte nachfrage voll"><h3>Für diesen Monat fehlt dein Kassenbuch</h3>
-      <p>Ohne die Tageseinnahmen können wir weder Auswertung noch Umsatzsteuer rechnen.
+      <p>${e.aus_bank > 0
+        ? `Die Kartenumsätze kennen wir vom Konto (${esc(Object.keys(e.bank_quellen || {}).join(", "))}), das Bargeld nicht.`
+        : "Ohne die Tageseinnahmen können wir weder Auswertung noch Umsatzsteuer rechnen."}
       Trag unten ein, was am Ende des Tages in der Kasse war.</p></div>`;
+  }
+  const ag = e.abgleich;
+  if (ag && ag.konto_karte > 0){
+    const quelle = Object.keys(ag.quellen || {}).join(", ");
+    const satz = ag.fehlt_im_kassenbuch > 0
+      ? `<b>${euro(ag.fehlt_im_kassenbuch)}</b> stehen auf dem Konto, aber nicht im Kassenbuch${e.tage ? " — fehlende Tage oder Karte nicht eingetragen" : ""}. Wir zählen sie beim Umsatz mit.`
+      : (ag.differenz < 0
+        ? `Das Konto zeigt ${euro(-ag.differenz)} weniger als das Kassenbuch: Gebühren von ${esc(quelle)} oder eine Auszahlung, die erst im nächsten Monat kommt.`
+        : `Kasse und Konto stimmen überein.`);
+    html += `<div class="sektion lbl">Kasse gegen Konto</div><div class="karte">
+      <div class="mrow"><span class="art">Karte laut Kassenbuch</span><span class="summe">${euro(ag.kasse_karte)}</span></div>
+      <div class="mrow"><span class="art">Karte laut Konto${quelle ? ` <span style="color:var(--gc-muted)">(${esc(quelle)})</span>` : ""}</span><span class="summe">${euro(ag.konto_karte)}</span></div>
+      <div class="mrow"><span class="art">Unterschied</span><span class="summe" style="color:${Math.abs(ag.differenz) < 0.005 ? "inherit" : (ag.differenz > 0 ? "var(--gc-accent)" : "var(--gc-muted)")}">${euro(ag.differenz)}</span></div>
+      <p style="font-size:13px;color:var(--gc-desc);margin:10px 0 0">${satz}</p></div>`;
   }
   html += `<div class="sektion lbl">Kassenbuch</div><div class="karte voll" id="kb-karte">
     <div id="kb-hinweis" style="margin-bottom:10px"></div>
