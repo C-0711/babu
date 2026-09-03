@@ -252,3 +252,8 @@ boxen nur mit umgebogenem Gateway (`box.remote_aus_ref`) schreiben — ein
 `BABU_GATEWAY`-Ausweg im Vorschau-Skript wäre der nächste kleine Schritt.
 
 Endstand `34903a5`: volle Suite **2015 grün gegen SQLite und 2015 gegen Postgres 16** (25 Tabellen).
+
+**Nachtrag 03.09. 06:30** (main `63d0227`, deployt): die Belegtabelle nennt das Konto
+(„6640 Bewirtungskosten“) statt des Oberbegriffs; `/api/belege` trägt `konto_name`
+(Golden: genau diese 200 neuen Zeilen, sonst bytegleich).
+
