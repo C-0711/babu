@@ -6248,6 +6248,7 @@ function mandantSetzen(m){
 const MD_NAMEN = {};
 function mdVon(id){ return {id, name: MD_NAMEN[id] || "Mandant"}; }
 let _mdSuche = "", _mdSeite = 1, _mdStatus = "", _mdGewaehlt = null, _mdDarfVerknuepfen = false;
+let _mdEntwurf = {};
 const MD_REITER = {ueberblick: "Überblick", liste: "Mandanten", ansteht: "Was ansteht"};
 function mdReiter(w){
   $("#md-ueberblick-tab").hidden = w !== "ueberblick";
@@ -6329,6 +6330,12 @@ async function ladeMandanten(){
     <button class="hin" style="margin-top:10px" onclick="mdAnlegen()">Einladen</button>
     <div id="md-neu-ergebnis"></div></div>`;
   ziel.innerHTML = html;
+  // Was im Anlege-Formular steht, überlebt Reiterwechsel und Neuzeichnen.
+  for (const [k, v] of Object.entries(_mdEntwurf)){ const f = $("#md-neu-" + k); if (f) f.value = v; }
+  for (const k of ["name", "mail", "rahmen", "berater", "nummer"]){
+    $("#md-neu-" + k).addEventListener("input", ev => { _mdEntwurf[k] = ev.target.value; });
+    $("#md-neu-" + k).addEventListener("change", ev => { _mdEntwurf[k] = ev.target.value; });
+  }
   $("#md-suche").addEventListener("input", ev => { _mdSuche = ev.target.value; _mdSeite = 1; mdNeuLaden(); });
   $("#md-status").addEventListener("change", ev => { _mdStatus = ev.target.value; _mdSeite = 1; ladeMandanten(); });
   if (_mdGewaehlt) mdZeigen(_mdGewaehlt);
@@ -6402,11 +6409,15 @@ async function mdAnlegen(){
   try{
     const r = await api("/api/kanzlei/mandanten", {method:"POST",
       headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
-    const d = await r.json();
-    if (!r.ok){ aus.innerHTML = `<p style="color:var(--gc-danger);margin-top:8px">${esc(d.fehler || "Ging gerade nicht.")}</p>`; return; }
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok){
+      // Ein Serverfehler ist keine fehlende Verbindung — das eine kann Nina
+      // nicht ändern, das andere schon.
+      const text = d.fehler || (r.status >= 500 ? "Das hat bei uns nicht geklappt — wir schauen nach." : "Ging gerade nicht.");
+      aus.innerHTML = `<p style="color:var(--gc-danger);margin-top:8px">${esc(text)}</p>`; return; }
     // Erst neu zeichnen, dann die Meldung setzen — sonst wischt das
     // Neuzeichnen sie sofort wieder weg.
-    _mdGewaehlt = d.id; await ladeMandanten();
+    _mdGewaehlt = d.id; _mdEntwurf = {}; await ladeMandanten();
     $("#md-neu-ergebnis").innerHTML = `<p style="color:var(--gc-ok);margin-top:8px">${esc(d.name)} ist angelegt${d.einladung ? " — die Einladung ist unterwegs." : "."}</p>`;
   }catch{ aus.innerHTML = `<p style="color:var(--gc-danger);margin-top:8px">Gerade keine Verbindung.</p>`; }
 }

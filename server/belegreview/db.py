@@ -170,6 +170,7 @@ _VERSION_TABELLE = """CREATE TABLE IF NOT EXISTS schema_version
     (nummer INTEGER PRIMARY KEY, datei TEXT NOT NULL, angewendet TEXT NOT NULL)"""
 
 _DATEINAME = re.compile(r"^(\d{4})_.*\.sql$")
+_NUR_DIALEKT = re.compile(r"^--\s*nur:\s*(\w+)", re.M)
 
 
 def _anweisungen(sql: str):
@@ -247,8 +248,15 @@ def schema_anwenden(conn, dialekt: str | None = None,
     for nummer, pfad in migrationsdateien(verzeichnis):
         if nummer in schon:
             continue
-        for anweisung in _anweisungen(ddl(pfad.read_text(encoding="utf-8"), d)):
-            cur.execute(anweisung)
+        text = pfad.read_text(encoding="utf-8")
+        # Eine Migration nur für EINEN Dialekt: Kopfzeile `-- nur: postgres`.
+        # Der andere Dialekt fährt nichts, merkt sich die Nummer aber — sonst
+        # stünden die Versionslisten beider Seiten auseinander. Gebraucht für
+        # `ALTER TABLE … DROP CONSTRAINT`, das SQLite nicht kennt.
+        nur = _NUR_DIALEKT.search(text)
+        if not nur or nur.group(1).lower() == d:
+            for anweisung in _anweisungen(ddl(text, d)):
+                cur.execute(anweisung)
         cur.execute(
             platzhalter("INSERT INTO schema_version (nummer, datei, angewendet) "
                         "VALUES (?,?,?)", d),

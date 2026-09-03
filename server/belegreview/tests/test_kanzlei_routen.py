@@ -487,3 +487,18 @@ def test_der_detailaufruf_nennt_den_wartezustand(welt, k):
     assert d["status_text"] == "Belegbox wird eingerichtet"
     d = k.get(f"/api/kanzlei/mandanten/{welt['nina']}").json()
     assert "hinweis" not in d and d["status_text"] == "aktiv"
+
+
+def test_ein_pat_konto_ohne_nutzerzeile_darf_die_kanzlei_gruenden(welt, k, monkeypatch):
+    """Der Betreiber kommt per PAT (BABU_ROLLEN), ohne Zeile in `nutzer`.
+    Postgres prüfte den Fremdschlüssel kanzlei.inhaber_un → nutzer wirklich:
+    erster Mandant im Betrieb = 500 (03.09.2026). Seit 0003 gibt es den
+    Schlüssel auf der Kanzlei-Seite nicht mehr."""
+    import postfach
+    monkeypatch.setattr(postfach, "senden", lambda *a, **kw: (False, "kein Versand"))
+    monkeypatch.setattr(babu_web, "ROLLEN", {"chef0711.io": "kanzlei"})
+    monkeypatch.setattr(babu_web, "ERLAUBT", {"chef0711.io"})
+    _als(welt, "chef0711.io")
+    r = k.post("/api/kanzlei/mandanten", json={"name": "Salon Neu", "email": "neu@salon.de"})
+    assert r.status_code == 200, r.text
+    assert k.get("/api/kanzlei/mandanten").json()["gesamt"] == 1

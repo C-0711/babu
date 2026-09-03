@@ -41,10 +41,16 @@ from typing import Callable
 STATUS = ("box_ausstehend", "aktiv", "pausiert", "beendet")
 MITGLIED_ROLLEN = ("inhaber", "sachbearbeiter")
 
+# Kanzlei-Seite OHNE Fremdschlüssel auf nutzer(email): der Betreiber und
+# Kanzlei-Zugänge kommen auch per PAT (BABU_ERLAUBT/BABU_ROLLEN, z. B.
+# „christoph0711.io") und haben dann keine nutzer-Zeile. Postgres prüfte
+# den Schlüssel wirklich — der erste Mandant im Betrieb fiel mit 500
+# (03.09.2026). Die Mandanten-Seite (besitzer_un) behält ihn: den Salon
+# legt die Route immer als Konto an. Migration 0003 nimmt ihn im Bestand weg.
 _KANZLEI = """CREATE TABLE IF NOT EXISTS kanzlei
     (id INTEGER PRIMARY KEY AUTOINCREMENT,
      name TEXT NOT NULL,
-     inhaber_un TEXT NOT NULL REFERENCES nutzer(email),
+     inhaber_un TEXT NOT NULL,
      angelegt TEXT NOT NULL)"""
 
 _MANDANT = """CREATE TABLE IF NOT EXISTS mandant
@@ -66,7 +72,7 @@ _MANDANT_INDEX = """CREATE INDEX IF NOT EXISTS mandant_kanzlei
 
 _MITGLIED = """CREATE TABLE IF NOT EXISTS kanzlei_mitglied
     (kanzlei_id INTEGER NOT NULL REFERENCES kanzlei(id),
-     un TEXT NOT NULL REFERENCES nutzer(email),
+     un TEXT NOT NULL,
      rolle TEXT NOT NULL DEFAULT 'sachbearbeiter'
        CHECK (rolle IN ('inhaber','sachbearbeiter')),
      angelegt TEXT NOT NULL,

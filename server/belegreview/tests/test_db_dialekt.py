@@ -162,7 +162,7 @@ def test_runner_faehrt_einmal_und_dann_nicht_mehr():
     assert "0001_initial.sql" in erst
     assert db.schema_anwenden(conn, "sqlite") == [], "zweiter Lauf muss leer sein"
     stand = conn.execute("SELECT nummer, datei FROM schema_version").fetchall()
-    assert stand == [(1, "0001_initial.sql"), (2, "0002_kanzlei_mandant_audit.sql")]
+    assert stand == [(1, "0001_initial.sql"), (2, "0002_kanzlei_mandant_audit.sql"), (3, "0003_kanzlei_ohne_nutzer_fk.sql")]
     conn.close()
 
 
@@ -342,7 +342,7 @@ def test_pg_migration_ist_idempotent(pg_url, pg_schema):
     conn = psycopg.connect(pg_url)
     conn.execute(f'SET search_path TO "{pg_schema}"')
     conn.commit()
-    assert db.schema_anwenden(conn, "postgres") == ["0001_initial.sql", "0002_kanzlei_mandant_audit.sql"]
+    assert db.schema_anwenden(conn, "postgres") == ["0001_initial.sql", "0002_kanzlei_mandant_audit.sql", "0003_kanzlei_ohne_nutzer_fk.sql"]
     assert db.schema_anwenden(conn, "postgres") == []
     conn.close()
 
@@ -354,3 +354,14 @@ def test_pg_double_precision_verliert_keine_cents(pg):
     pg.execute("INSERT INTO leistung (un, name, preis, minuten) VALUES (?,?,?,?)",
                ("nina", "Balayage", 189.95, 120))
     assert pg.execute("SELECT preis FROM leistung").fetchone()[0] == 189.95
+
+
+def test_eine_nur_postgres_migration_wird_in_sqlite_uebersprungen_aber_gemerkt(tmp_path):
+    """`-- nur: postgres` (0003 nimmt einen Fremdschlüssel weg, das kann SQLite
+    nicht): SQLite fährt nichts, trägt die Nummer aber ein — beide Seiten
+    zeigen dieselbe Versionsliste."""
+    (tmp_path / "0001_a.sql").write_text("CREATE TABLE a (id INTEGER PRIMARY KEY);")
+    (tmp_path / "0002_b.sql").write_text("-- nur: postgres\nALTER TABLE a DROP CONSTRAINT IF EXISTS gibt_es_nicht;")
+    conn = sqlite3.connect(tmp_path / "s.db")
+    assert db.schema_anwenden(conn, "sqlite", tmp_path) == ["0001_a.sql", "0002_b.sql"]
+    assert db.schema_anwenden(conn, "sqlite", tmp_path) == []
