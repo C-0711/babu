@@ -199,3 +199,18 @@ nachher4}-*` byte-identisch für `/api/belege` und beide `/api/abgleich`; live g
 Überblick, Fußzeile und Team-Unterreiter; Container-Log ohne Fehler. Sicherungen
 `~/backups/babu-docker-vor-deploy-20260903-0213.tgz` und `~/backups/babu/pg-vor-deploy-20260903-0213.dump`.
 
+**Produktivbefund und Fix 03.09. 03:45** (main `3696d72`): der erste Versuch des
+Auftraggebers, einen Mandanten anzulegen, endete mit 500 —
+`kanzlei.inhaber_un` zeigte per Fremdschlüssel auf `nutzer(email)`, aber der
+Betreiber meldet sich per PAT an („christoph0711.io") und hat dort keine
+Zeile. Postgres prüft das, SQLite nie; alle Test-Fixtures legen Nutzer an,
+darum sah es kein Test. Fix: Kanzlei-Seite ohne Schlüssel (mandanten.py,
+0002 für frische Installationen, Migration 0003 `-- nur: postgres` für den
+Bestand; der Runner kennt jetzt dialektgebundene Migrationen), Regressions-
+test mit PAT-Kanzlei, Portal meldet einen Serverfehler nicht mehr als
+„keine Verbindung", Anlege-Formular vergisst Eingaben beim Reiterwechsel
+nicht. Deployt, `schema_version` 1–3, nur noch `kanzlei_mitglied_kanzlei_id_fkey`
+übrig, Golden byte-identisch. Lehre: **jede Tabelle, in der ein Zugang steht,
+muss PAT-Konten ohne nutzer-Zeile aushalten** — kein Fremdschlüssel auf `nutzer`
+für Kanzlei-/Betreiber-Identitäten.
+

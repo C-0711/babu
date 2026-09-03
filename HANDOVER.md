@@ -44,8 +44,9 @@ der Oberfläche.
 
 ## 2. ⚠️ Betrieb: dieser Branch ist die Quelle
 
-Produktiv auf der H200V ist `main`, Stand **`1a10e49`** (03.09. 02:15; Welle 4:
-Cockpit, Reste, Phase 5 — Golden byte-identisch) —
+Produktiv auf der H200V ist `main`, Stand **`3696d72`** (03.09. 03:45; Welle 4
+plus Fix: Kanzlei-Seite ohne Fremdschlüssel auf `nutzer`, Migration 0003 —
+Golden byte-identisch) —
 **seit diesem Deploy spricht babu-web mit Postgres 16** (Container
 `babu-postgres`, nur 127.0.0.1:55432, Passwortdatei `~/babu-web/.pg_passwort`,
 Daten im Volume `babu-pg-daten`). `portal.db` liegt unangetastet daneben
