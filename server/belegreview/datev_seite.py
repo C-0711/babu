@@ -211,6 +211,26 @@ def _kassenblaetter(idx: dict, monat: str) -> list[dict]:
     return [b for tag, b in idx["kassenblaetter"].items() if tag.startswith(monat)]
 
 
+def _rechnungen(bw, idx: dict, un: str, monat: str) -> list[dict]:
+    """Die gestellten Rechnungen, die in diesem Monat als Erlös zählen.
+
+    Sie gehen NICHT in den Stapel — die Kanzlei bucht sie mit dem
+    Kontoauszug, an dem sie den Zahlungseingang sieht. Sie hier trotzdem
+    zu holen ist der Sinn der Sache: der Prüfbefund soll sagen, dass der
+    Stapel den Monatsumsatz nicht vollständig trägt. Wer das erst beim
+    Abstimmen merkt, sucht den Fehler in babu.
+
+    Gerechnet wird mit denselben Helfern wie im Monatsabschluss
+    (`rechnungen.zaehlt_im_monat` samt Versteuerungsart) — zwei Antworten
+    auf dieselbe Frage wären eine zu viel.
+    """
+    import rechnungen as _re  # noqa: PLC0415 — reine Rechnung, kein I/O
+    versteuerung = bw._versteuerung(un)
+    return [r for r in (idx.get("rechnungen") or {}).values()
+            if isinstance(r, dict)
+            and _re.zaehlt_im_monat(r, versteuerung) == monat]
+
+
 def _uebergabe_stand(bw, idx: dict, monat: str) -> dict:
     """Was von diesem Monat schon bei der Kanzlei liegt — und was seither kam.
 
@@ -316,7 +336,8 @@ def _sammeln(bw, un: str, monate: list[str]) -> dict:
         reviews, mit, ohne, hinweise = _reviews(idx, monat, klein)
         je_monat[monat] = {"reviews": reviews, "staemme": mit, "ohne_konto": ohne,
                            "hinweise": hinweise,
-                           "blaetter": _kassenblaetter(idx, monat)}
+                           "blaetter": _kassenblaetter(idx, monat),
+                           "rechnungen": _rechnungen(bw, idx, un, monat)}
     berater, mandant = _berater_mandant(bw)
     return {"idx": idx, "rahmen": rahmen, "kleinunternehmerin": klein,
             "uebergaben": {m: _uebergabe_stand(bw, idx, m) for m in monate},
@@ -447,6 +468,16 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
     blaetter = [b for m in daten["je_monat"].values()
                 for b in (m.get("blaetter") or [])]
     kassen = extf.kassen_pruefen(blaetter) if rahmen != "SKR03" else []
+    # Gestellte Rechnungen. Sie zählen im Monat als Erlös (dieselbe
+    # Rechnung wie im Monatsabschluss), stehen aber NICHT im Stapel: babu
+    # weiß nur, dass sie bezahlt wurden, nicht auf welchem Weg — und ein
+    # Erlös ohne Gegenkonto ist keine Buchung. Die Kanzlei bucht sie mit
+    # dem Kontoauszug. Gelb, kein Mangel: die Summe unter der Tabelle ist
+    # sonst kleiner als der Monatsumsatz, und wer das nicht weiß, sucht
+    # den Fehler in babu.
+    rechnungen = [r for m in daten["je_monat"].values()
+                  for r in (m.get("rechnungen") or [])]
+    r_summe = round(sum(float(r.get("brutto") or 0) for r in rechnungen), 2)
     # Die Feststellungen aus `extf.pruefen`, über alle Monate zusammengelegt.
     # `.get` und nicht `[…]`: Tests und ältere Aufrufer bauen `je_monat`
     # selbst und kennen den Schlüssel nicht.
@@ -519,6 +550,14 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
                           "text": h["text"]} for h in kassen_weich],
         "kassen_hart_text": _hinweistext(kassen_hart),
         "kassen_weich_text": _hinweistext(kassen_weich),
+        # Gelb: Erlöse, die es gibt, die aber nicht in dieser Datei stehen.
+        "rechnungen_nicht_im_stapel": {"anzahl": len(rechnungen),
+                                       "summe": r_summe},
+        "rechnungen_text": (None if not rechnungen else
+                            f"{len(rechnungen)} Rechnungen über "
+                            f"{_euro(r_summe)} € gelten in diesem Zeitraum "
+                            f"als Erlös — sie stehen nicht im Stapel; die "
+                            f"Kanzlei bucht sie mit dem Kontoauszug."),
         "belege": sum(len(m["staemme"]) for m in daten["je_monat"].values()),
         "kassentage": sum(len(m["blaetter"]) for m in daten["je_monat"].values()),
         "buchungen": len(zeilen),

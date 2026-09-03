@@ -39,7 +39,7 @@ GUTSCHRIFT = ("2026-08", "20260818-140000-aaa004-erstattung",
               "Delila Hair GmbH", -40.00, "18.08.2026", "GS-7")
 
 
-def _welt_bauen(tmp_path, monkeypatch, belege):
+def _welt_bauen(tmp_path, monkeypatch, belege, rechnungen=()):
     """Eine Wegwerf-Belegbox mit den übergebenen Belegen, Rolle „admin"."""
     arbeit = tmp_path / "box"
     subprocess.run(["git", "init", "-q", "-b", "main", str(arbeit)], check=True)
@@ -60,6 +60,13 @@ def _welt_bauen(tmp_path, monkeypatch, belege):
         (arbeit / "review").mkdir(exist_ok=True)
         (arbeit / "review" / f"{stamm}.json").write_text(
             json.dumps(review, ensure_ascii=False))
+    # Gestellte Rechnungen liegen als rechnungen/<JJJJ-MM>/<nummer>.json in
+    # der Box — genau so liest sie `_index_bauen`.
+    for r in rechnungen:
+        ordner = arbeit / "rechnungen" / r["datum"][:7]
+        ordner.mkdir(parents=True, exist_ok=True)
+        (ordner / f"{r['nummer']}.json").write_text(
+            json.dumps(r, ensure_ascii=False))
     subprocess.run(["git", "-C", str(arbeit), "add", "-A"], check=True,
                    capture_output=True)
     subprocess.run(["git", "-C", str(arbeit), "commit", "-q", "-m", "demo"],
@@ -1171,3 +1178,60 @@ def test_der_eigene_stapel_ohne_nummern_wird_wiedererkannt(
         .json()["abgleich"]
     assert g["zaehler"] == {"gleich": 3, "nur_datev": 0, "nur_babu": 0,
                             "abweichend": 0}
+
+
+# ── Rechnungserlöse: nicht im Stapel, aber im Befund (03.09.2026) ───────
+#
+# Eine gestellte Rechnung zählt im Monat der Zahlung als Erlös. Im Stapel
+# steht sie trotzdem nicht: babu weiß, dass sie bezahlt wurde, aber nicht
+# auf welchem Weg — und ein Erlös ohne Gegenkonto ist keine Buchung. Die
+# Kanzlei bucht sie mit dem Kontoauszug. Der Befund sagt es, damit die
+# Summe unter der Tabelle niemanden in die Irre führt.
+
+def _rechnung(nummer="2026-0001", datum="2026-07-10", bezahlt="2026-07-20",
+              netto=200.0, ust=38.0):
+    return {"nummer": nummer, "datum": datum, "bezahlt_am": bezahlt,
+            "netto": netto, "ust": ust, "brutto": round(netto + ust, 2),
+            "saetze": [{"satz": 19, "netto": netto, "ust": ust}],
+            "storniert": None, "storniert_durch": None,
+            "empfaenger": {"name": "Jana Allgaier"}}
+
+
+@pytest.fixture()
+def welt_mit_rechnung(tmp_path, monkeypatch):
+    return _welt_bauen(tmp_path, monkeypatch, BELEGE, [_rechnung()])
+
+
+def test_befund_zaehlt_bezahlte_rechnungen(welt_mit_rechnung):
+    k = TestClient(welt_mit_rechnung.app, base_url="https://testserver")
+    b = k.get("/api/datev/vorschau?von=2026-07&bis=2026-07").json()["befund"]
+    assert b["rechnungen_nicht_im_stapel"] == {"anzahl": 1, "summe": 238.0}
+    assert "238,00 €" in b["rechnungen_text"]
+    assert "Kontoauszug" in b["rechnungen_text"]
+    # Und die Buchungen selbst bleiben, wie sie waren: die Rechnung geht
+    # NICHT in den Stapel.
+    assert b["buchungen"] == 2
+    # Gelb, kein Mangel — der Stapel ist deshalb nicht schlechter.
+    assert b["sauber"] is True
+
+
+def test_eine_unbezahlte_rechnung_zaehlt_noch_nicht(tmp_path, monkeypatch):
+    """Ist-Versteuerung: erst das Geld macht den Erlös. Eine gestellte,
+    unbezahlte Rechnung gehört in keinen Monat."""
+    bw = _welt_bauen(tmp_path, monkeypatch, BELEGE, [_rechnung(bezahlt=None)])
+    k = TestClient(bw.app, base_url="https://testserver")
+    b = k.get("/api/datev/vorschau?von=2026-07&bis=2026-07").json()["befund"]
+    assert b["rechnungen_nicht_im_stapel"] == {"anzahl": 0, "summe": 0.0}
+    assert b["rechnungen_text"] is None
+
+
+def test_ein_monat_ohne_rechnungen_sagt_nichts_dazu(c):
+    b = c.get("/api/datev/vorschau?von=2026-07&bis=2026-07").json()["befund"]
+    assert b["rechnungen_nicht_im_stapel"]["anzahl"] == 0
+    assert b["rechnungen_text"] is None
+
+
+def test_die_seite_zeigt_die_rechnungen_im_befund(c):
+    seite = c.get("/datev").text
+    assert "rechnungen_nicht_im_stapel" in seite
+    assert "stehen nicht im Stapel" in seite

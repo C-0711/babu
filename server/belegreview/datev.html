@@ -364,6 +364,12 @@ function befundzeilen(b){
   if (b.kassen_weich && b.kassen_weich.length)
     gelb.push([`${b.kassen_weich.length} Kassentag(e) mit einer Differenz`,
       b.kassen_weich_text]);
+  // Gestellte Rechnungen zaehlen im Monat als Erloes, stehen aber nicht im
+  // Stapel — sonst wirkt die Summe unter der Tabelle zu klein.
+  const rns = b.rechnungen_nicht_im_stapel;
+  if (rns && rns.anzahl)
+    gelb.push([`${rns.anzahl} Rechnung(en) stehen nicht im Stapel`,
+      b.rechnungen_text]);
   if (b.unbenannte_konten && b.unbenannte_konten.length)
     gelb.push(["Konten ohne Namen im Kontenrahmen",
       b.unbenannte_konten.join(", ") + " — bitte bei der Kanzlei nachfragen."]);
