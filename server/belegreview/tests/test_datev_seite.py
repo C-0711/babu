@@ -1114,3 +1114,60 @@ def test_die_seite_hat_einen_uebergabeknopf_mit_bestaetigung(c):
     assert "Danach gilt der Monat als bei der Kanzlei" in seite
     assert "was später kommt" in seite
     assert "/api/datev/uebergeben?" in seite
+
+
+# ── Belegfeld 1 aus dem Stamm (03.09.2026) ─────────────────────────────
+#
+# Belege ohne gelesene Rechnungsnummer gingen ohne Belegfeld in den Stapel.
+# Der Abgleich vergleicht dann nur noch Datum und Betrag — und ein
+# geänderter Cent sieht aus wie zwei verschiedene Buchungen statt wie eine
+# mit einem anderen Betrag. Jetzt trägt jeder Beleg babus eigene Nummer.
+
+OHNE_NUMMER = [(m, s, l, b, d, "") for (m, s, l, b, d, _n) in BELEGE]
+
+
+@pytest.fixture()
+def welt_ohne_belegnummer(tmp_path, monkeypatch):
+    return _welt_bauen(tmp_path, monkeypatch, OHNE_NUMMER)
+
+
+def test_ohne_rechnungsnummer_traegt_der_stapel_die_kennung(
+        welt_ohne_belegnummer):
+    k = TestClient(welt_ohne_belegnummer.app, base_url="https://testserver")
+    zeilen = [z.split(";") for z in
+              k.get("/api/datev/stapel.csv?von=2026-07&bis=2026-08")
+              .content.decode("cp1252").split("\r\n")[2:] if z]
+    assert [z[10] for z in zeilen] == ['"20260714-101500-aaa001"',
+                                       '"20260722-183000-aaa002"',
+                                       '"20260812-093000-aaa003"']
+
+
+def test_abgleich_findet_ueber_die_kennung(welt_ohne_belegnummer):
+    """Der Beweis, wofür die Kennung da ist: eine im Betrag veränderte
+    Zeile muss als „abweichend" herauskommen, nicht als „fehlt hier, fehlt
+    dort". Genau das kann Welle 3 nur mit einem Belegfeld."""
+    k = TestClient(welt_ohne_belegnummer.app, base_url="https://testserver")
+    text = k.get("/api/datev/stapel.csv?von=2026-07&bis=2026-08") \
+        .content.decode("cp1252")
+    zeilen = [z for z in text.split("\r\n") if z]
+    geaendert = zeilen[3].split(";")
+    geaendert[0] = "400,00"
+    neu = "\r\n".join([zeilen[0], zeilen[1], zeilen[2], ";".join(geaendert),
+                       zeilen[4]]) + "\r\n"
+    g = k.post("/api/datev/lesen",
+               files={"datei": ("EXTF.csv", neu.encode("cp1252"), "text/csv")}
+               ).json()["abgleich"]
+    assert g["zaehler"] == {"gleich": 2, "nur_datev": 0, "nur_babu": 0,
+                            "abweichend": 1}
+    assert g["abweichend"][0]["belegfeld"] == "20260722-183000-aaa002"
+
+
+def test_der_eigene_stapel_ohne_nummern_wird_wiedererkannt(
+        welt_ohne_belegnummer):
+    k = TestClient(welt_ohne_belegnummer.app, base_url="https://testserver")
+    stapel = k.get("/api/datev/stapel.csv?von=2026-07&bis=2026-08").content
+    g = k.post("/api/datev/lesen",
+               files={"datei": ("EXTF.csv", stapel, "text/csv")}) \
+        .json()["abgleich"]
+    assert g["zaehler"] == {"gleich": 3, "nur_datev": 0, "nur_babu": 0,
+                            "abweichend": 0}

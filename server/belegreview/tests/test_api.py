@@ -222,6 +222,21 @@ def test_beleg_detail_traegt_stapelzeilen_neben_dem_buchungssatz(client):
     assert eintrag["buchungstext"] == golden["buchungssatz"]["buchungstext"]
 
 
+def test_beleg_ueber_kennung_erreichbar(client):
+    """Babus eigene Belegnummer steht im Stapel bei jedem Beleg ohne
+    gelesene Rechnungsnummer. Wer sie in einer Rückfrage der Kanzlei liest,
+    muss den Beleg damit aufrufen können — sonst ist sie eine Sackgasse."""
+    _anmelden(client)
+    kennung = "20260812-225200-c781d6"
+    d = client.get(f"/api/beleg/{kennung}").json()
+    assert d["stamm"] == STAMM
+    assert d["kennung"] == kennung
+    # Und in der Liste steht sie NICHT: die ist ein festgeschriebener
+    # Vertrag, ein neues Feld darin fiele beim Abnahmevergleich auf.
+    liste = client.get("/api/belege").json()["belege"]
+    assert all("kennung" not in z for z in liste)
+
+
 def test_datev_buchungssatz_gutschrift_ist_haben(client):
     """Eine Gutschrift ist kein Aufwand, sondern seine Rückgabe.
 

@@ -226,6 +226,54 @@ def _belegfeld1(beleg_nr: str | None) -> str | None:
     return sauber[:36] or None
 
 
+# Der Anfang jedes Dateistamms, den babu selbst vergibt:
+# `JJJJMMTT-HHMMSS-<hex>` (boxschreiber.beleg_dateiname), danach folgt der
+# ursprüngliche Dateiname. Die ersten drei Glieder allein sind eindeutig,
+# kurz genug für Belegfeld 1 und tragen den Zeitpunkt der Aufnahme — der
+# Rest ist der Name, den ein Telefon vergeben hat, und der sagt niemandem
+# etwas.
+KENNUNG_MUSTER = re.compile(r"^\d{8}-\d{6}-[0-9A-Fa-f]+")
+
+
+def kennung(stamm: str | None) -> str | None:
+    """babus eigene Belegnummer für einen Beleg — aus seinem Dateistamm.
+
+    Sie ist die Rückfallebene für Belegfeld 1: steht auf dem Beleg keine
+    Rechnungsnummer, braucht die Kanzlei trotzdem etwas, worüber sich
+    dieselbe Buchung in zwei Stapeln wiederfinden lässt. Ohne Belegfeld
+    vergleicht der Abgleich nur noch über Datum und Betrag — ein
+    geänderter Cent sieht dann aus wie zwei verschiedene Buchungen.
+
+    Stämme aus der Zeit vor diesem Namensschema treffen das Muster nicht;
+    für die gilt der ganze Stamm, gesäubert und auf die 36 Zeichen
+    gekürzt, die DATEV im Belegfeld annimmt. Das ist hässlicher, aber
+    immer noch eine Kennung — und keine ist die schlechtere Antwort.
+    """
+    roh = str(stamm or "").strip()
+    if not roh:
+        return None
+    treffer = KENNUNG_MUSTER.match(roh)
+    return _belegfeld1(treffer.group(0) if treffer else roh)
+
+
+def belegfeld1(review: dict) -> str | None:
+    """Belegfeld 1 eines Belegs — eine Quelle für Stapel und Anzeige.
+
+    Die Reihenfolge ist eine Entscheidung, keine Bequemlichkeit: gelesen
+    hat Vorrang. Steht die Rechnungsnummer des Lieferanten auf dem Beleg,
+    ist SIE das, wonach in der Kanzlei gesucht wird — babus eigene Kennung
+    kennt dort niemand. Erst wenn keine dasteht, tritt die Kennung ein.
+    """
+    f = review.get("felder") or {}
+    gelesen = _belegfeld1(f.get("beleg_nr"))
+    if gelesen:
+        return gelesen
+    datei = str(review.get("datei") or "")
+    if not datei:
+        return None
+    return kennung(datei.rsplit("/", 1)[-1].rsplit(".", 1)[0])
+
+
 # Vorsteuer-Schlüssel je Steuersatz. Die Corona-Sätze 5 %/16 % erkennt der
 # Watcher (GUELTIGE_SAETZE) — ohne eigenen Schlüssel wären sie im Stapel als
 # 19 % gebucht, und der Import zöge stillschweigend zu viel Vorsteuer.
@@ -326,7 +374,7 @@ def buchungszeilen(review: dict, kleinunternehmerin: bool = False
         kurz = f"{teile[0]:02d}.{teile[1]:02d}." if teile else ""
         text = " ".join(x for x in (einordnung, kurz, lieferant) if x)
     basis = {"konto": konto, "gegenkonto": GEGENKONTO, "belegdatum": belegdatum,
-             "belegfeld1": _belegfeld1(f.get("beleg_nr")),
+             "belegfeld1": belegfeld1(review),
              "text": _text_saeubern(text)}
 
     # Eine Gutschrift zieht ALLE ihre Zeilen mit ins Haben — auch wenn eine

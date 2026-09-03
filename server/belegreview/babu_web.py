@@ -1277,6 +1277,20 @@ def _index_bauen(head: str) -> None:
         if stamm_ in exportiert and z_["status"] == "geprüft":
             z_["status"] = "exportiert"
 
+    # Der Weg von babus eigener Belegnummer zurück zum Beleg. Sie steht im
+    # Stapel bei jedem Beleg ohne gelesene Rechnungsnummer im Belegfeld 1 —
+    # wer sie in einer Rückfrage der Kanzlei liest, muss den Beleg damit
+    # aufrufen können, sonst ist die Nummer eine Sackgasse. Ein Stamm je
+    # Kennung: der erste gewinnt, ein zweiter wäre ein doppelt vergebener
+    # Zeitstempel samt Zufallszahl und damit ohnehin ein anderes Problem.
+    import extf  # noqa: PLC0415 — nur für die Kennung, kein Kreis
+    kennungen: dict[str, str] = {}
+    for stamm_ in belege:
+        k_ = extf.kennung(stamm_)
+        if k_ and k_ not in kennungen:
+            kennungen[k_] = stamm_
+    idx["kennungen"] = kennungen
+
     idx["belege"] = belege
     idx["reviews"] = reviews
     idx["zeiten"] = zeiten
@@ -1777,6 +1791,14 @@ def api_beleg(stamm: str, request: Request) -> Response:
             stamm = treffer[0]
             eintrag = idx["belege"][stamm]
     if eintrag is None:
+        # Und zuletzt über babus eigene Belegnummer. Sie steht im Stapel,
+        # den die Kanzlei bekommt — wer von dort zurückfragt, hat genau
+        # diese Zeichenfolge und sonst nichts.
+        ueber_kennung = (idx.get("kennungen") or {}).get(stamm)
+        if ueber_kennung:
+            stamm = ueber_kennung
+            eintrag = idx["belege"][stamm]
+    if eintrag is None:
         return JSONResponse({"fehler": "unbekannter Beleg"}, status_code=404)
 
     d: dict = {}
@@ -1793,6 +1815,11 @@ def api_beleg(stamm: str, request: Request) -> Response:
     d["buchungssatz"] = datev_buchungssatz(d) if d else None
     d["status"] = eintrag["status"]
     d["stamm"] = stamm
+    # Babus eigene Belegnummer. Sie steht NUR hier in der Einzelansicht und
+    # bewusst nicht in der Liste: die Liste ist ein festgeschriebener
+    # Vertrag mit der App, und ein neues Feld darin fiele beim
+    # Abnahmevergleich vor jedem Deploy als Unterschied auf.
+    d["kennung"] = _kennung(stamm)
     d["monat"] = eintrag["monat"]
     d["datei"] = eintrag["datei"]
     d["bild_url"] = f"/api/beleg/{stamm}/bild?v={eintrag['bild_oid']}"
@@ -1845,6 +1872,12 @@ def api_beleg(stamm: str, request: Request) -> Response:
     # liest ihn seit dem ersten Tag, und dieser Vertrag wird nicht gebrochen.
     d["stapelzeilen"] = _stapelzeilen(d, un)
     return JSONResponse(d)
+
+
+def _kennung(stamm: str) -> str | None:
+    """Babus eigene Belegnummer zu einem Stamm — gebildet in `extf`."""
+    import extf  # noqa: PLC0415
+    return extf.kennung(stamm)
 
 
 def _stapelzeilen(review: dict, un: str) -> list[dict]:
@@ -5284,10 +5317,13 @@ def datev_buchungssatz(d: dict) -> dict | None:
     # Belege leer.
     belegdatum = extf._ttmm(f.get("datum") or "")
     # Belegfeld 1 lässt DATEV nur wenige Zeichen zu. Die Regel dafür steht
-    # in `extf._belegfeld1` und wird von dort geholt: die frühere Kopie hier
+    # in `extf.belegfeld1` und wird von dort geholt: die frühere Kopie hier
     # enthielt versehentlich einen Zeichenbereich `+` bis `/` und ließ damit
     # Komma und Punkt durch — Zeichen, die DATEV im Belegfeld nicht annimmt.
-    belegfeld1 = extf._belegfeld1(f.get("beleg_nr"))
+    # Dieselbe Funktion fällt auf babus eigene Kennung zurück, wenn auf dem
+    # Beleg keine Rechnungsnummer steht — sonst zeigte das Portal ein leeres
+    # Feld, wo im Stapel eines steht.
+    belegfeld1 = extf.belegfeld1(d)
 
     # Sprechender Buchungstext: Gemma-Vorschlag, sonst aus Einordnung + Datum +
     # vollem Lieferantennamen zusammengesetzt — „Rotenberger“ allein sagt in

@@ -65,7 +65,7 @@ def _leerer_index() -> dict:
     return {"head": None, "geprueft": 0.0, "belege": {}, "reviews": {},
             "dokumente": [], "freigaben": {}, "umsaetze": {},
             "kassenblaetter": {}, "zeiten": {}, "oid_cache": {},
-            "rechnungen": {}}
+            "rechnungen": {}, "kennungen": {}}
 
 
 # `eq=False`: zwei Boxen sind gleich, wenn sie dasselbe Objekt sind. Alles

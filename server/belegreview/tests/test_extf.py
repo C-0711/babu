@@ -218,6 +218,58 @@ def test_belegfeld_faengt_nie_mit_einem_rechenzeichen_an():
     assert _zeilen(_mit_text("Einkauf", beleg_nr="-2+3"))[0]["belegfeld1"] == "2+3"
 
 
+# ————— Belegfeld 1: gelesene Nummer, sonst babus eigene (03.09.2026) —————
+#
+# Ein Beleg ohne Rechnungsnummer ging bisher ohne Belegfeld in den Stapel.
+# Der Abgleich gegen die Kanzlei-Datei vergleicht dann nur noch Datum und
+# Betrag — ein geänderter Cent sieht damit aus wie zwei verschiedene
+# Buchungen, statt wie eine mit einem anderen Betrag.
+
+def _ohne_nummer(stamm="20260812-225200-c781d6-foto_1234", beleg_nr=None):
+    return {"datei": f"docs/2026-08/{stamm}.jpg",
+            "felder": {"brutto": 119.0, "ust_satz": 19, "datum": "12.08.2026",
+                       "beleg_nr": beleg_nr},
+            "einschaetzung": {"konto_skr04": "5900"},
+            "vlm": {"buchungstext": "Einkauf"}}
+
+
+def test_die_gelesene_nummer_schlaegt_die_kennung():
+    """Was auf dem Beleg steht, sucht die Kanzlei — babus Kennung nicht."""
+    assert extf.belegfeld1(_ohne_nummer(beleg_nr="R-1001")) == "R-1001"
+
+
+def test_belegfeld_faellt_auf_die_kennung_zurueck():
+    r = _ohne_nummer()
+    assert extf.belegfeld1(r) == "20260812-225200-c781d6"
+    assert _zeilen(r)[0]["belegfeld1"] == "20260812-225200-c781d6"
+
+
+def test_eine_leere_nummer_zaehlt_wie_keine():
+    """`beleg_nr` ist im Zielbild-Weg `None`, in alten Reviews auch mal
+    ein Leerstring oder ein Strich, den niemand als Nummer meint."""
+    for leer in (None, "", "   ", "-"):
+        assert extf.belegfeld1(_ohne_nummer(beleg_nr=leer)) \
+            == "20260812-225200-c781d6"
+
+
+def test_kennung_ist_hoechstens_36_zeichen_und_erlaubt():
+    """DATEV nimmt im Belegfeld 36 Zeichen und nur wenige davon. Auch ein
+    Stamm aus der Zeit vor dem Namensschema muss da hineinpassen."""
+    lang = "ein_uralter_beleg_von_ninas_telefon_mit_sehr_langem_namen (2)"
+    feld = extf.belegfeld1(_ohne_nummer(stamm=lang))
+    assert len(feld) <= 36
+    assert feld == "einuralterbelegvonninastelefonmitseh"
+    # Und für einen Stamm nach dem Schema bleibt es die kurze Kennung.
+    assert len(extf.belegfeld1(_ohne_nummer())) <= 36
+
+
+def test_ohne_datei_bleibt_das_belegfeld_leer():
+    """Geraten wird nicht: kein Stamm, keine Kennung."""
+    assert extf.belegfeld1({"felder": {"beleg_nr": None}}) is None
+    assert extf.kennung("") is None
+    assert extf.kennung(None) is None
+
+
 # ————— Der Mischungs-Melder: was den Stapel verlässt, wird geprüft —————
 #
 # BABU-57. Der Buchungsstapel ist die Stelle, an der babus Konten das Haus

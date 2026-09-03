@@ -2703,12 +2703,16 @@ async function ladeDetail(stamm){
     : (b ? "im " + monatName(d.monat||jetztMonat()).split(" ")[0] + "-Stapel deiner Kanzlei"
          : null));
 
+  /* Steht auf dem Beleg keine Nummer, zeigt der Kopf babus eigene — genau
+     die steht dann auch in der Datei fuer die Kanzlei, und wer von dort
+     zurueckfragt, nennt sie. */
   let html = `<div id="detail-grid"><div><div id="buehne">${bildTag}</div></div><div>`;
   const [dMarke, dArt] = statusMarke(d);
   html += `<span class="marke ${dArt}">${dMarke}</span>
     <div class="gruss" style="font:500 clamp(26px,3vw,36px)/1.15 var(--gc-serif);margin:12px 0 4px">${lieferant}</div>
     <div class="dmeta" style="margin-bottom:${d.zusammenfassung ? "8px" : "18px"}">${
-      [f.beleg_nr, datumDeutsch(f.datum)].filter(Boolean).map(esc).join(" · ")}</div>`;
+      [f.beleg_nr || (d.kennung ? "Belegnummer " + d.kennung : ""),
+       datumDeutsch(f.datum)].filter(Boolean).map(esc).join(" · ")}</div>`;
   if (d.zusammenfassung){
     html += `<div style="color:var(--gc-body);font-size:14px;margin-bottom:14px">${esc(d.zusammenfassung)}</div>`;
   }
