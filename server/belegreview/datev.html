@@ -327,8 +327,11 @@ function tabelle(zeilen){
     In diesem Zeitraum ist nichts, was in einen Stapel gehört.</div>`;
   const kopf = ["Datum","Konto","Gegenkonto","Umsatz","S/H","BU","Belegfeld",
                 "Buchungstext"];
+  // Soll minus Haben: eine Gutschrift steht positiv in der Umsatzspalte
+  // und im Haben — beim Summieren muss ihr Minus zurück.
   const summe = zeilen.reduce((s,z) =>
-    s + parseFloat(String(z.umsatz).replace(".","").replace(",",".")), 0);
+    s + (z.sh === "H" ? -1 : 1) *
+        parseFloat(String(z.umsatz).replace(".","").replace(",",".")), 0);
   return `<div class="tabellenrahmen"><table><thead><tr>
     ${kopf.map((k,i) => `<th class="${i===3?"z":""}">${k}</th>`).join("")}
     </tr></thead><tbody>` + zeilen.map((z) => `<tr>

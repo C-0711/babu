@@ -32,14 +32,20 @@ BELEGE = [
 ]
 
 
-@pytest.fixture()
-def welt(tmp_path, monkeypatch):
-    """Eine Wegwerf-Belegbox mit drei geprüften Belegen, Rolle „admin"."""
+# Ein vierter Beleg für die Fälle, die eine Gutschrift brauchen: negativer
+# Betrag, also im Stapel positiv im Haben. Er steht NICHT in `BELEGE` —
+# sonst verschöbe er die Zählungen aller anderen Tests.
+GUTSCHRIFT = ("2026-08", "20260818-140000-aaa004-erstattung",
+              "Delila Hair GmbH", -40.00, "18.08.2026", "GS-7")
+
+
+def _welt_bauen(tmp_path, monkeypatch, belege):
+    """Eine Wegwerf-Belegbox mit den übergebenen Belegen, Rolle „admin"."""
     arbeit = tmp_path / "box"
     subprocess.run(["git", "init", "-q", "-b", "main", str(arbeit)], check=True)
     for k, v in (("user.name", "t"), ("user.email", "t@l")):
         subprocess.run(["git", "-C", str(arbeit), "config", k, v], check=True)
-    for monat, stamm, lieferant, brutto, datum, nummer in BELEGE:
+    for monat, stamm, lieferant, brutto, datum, nummer in belege:
         ordner = arbeit / "docs" / monat
         ordner.mkdir(parents=True, exist_ok=True)
         (ordner / f"{stamm}.jpg").write_bytes(b"\xff\xd8\xff\xe0demo")
@@ -74,6 +80,16 @@ def welt(tmp_path, monkeypatch):
     import datev_seite
     datev_seite._LESE_VERSUCHE.clear()
     return babu_web
+
+
+@pytest.fixture()
+def welt(tmp_path, monkeypatch):
+    return _welt_bauen(tmp_path, monkeypatch, BELEGE)
+
+
+@pytest.fixture()
+def welt_mit_gutschrift(tmp_path, monkeypatch):
+    return _welt_bauen(tmp_path, monkeypatch, [*BELEGE, GUTSCHRIFT])
 
 
 @pytest.fixture()
@@ -447,9 +463,12 @@ def test_stapel_auf_wunsch_in_utf8(c):
     assert "utf-8" in r.headers["content-type"]
     text = r.content.decode("utf-8-sig")
     assert text.startswith('"EXTF"')
-    # Inhaltlich dieselbe Datei — nur anders geschrieben.
+    # Inhaltlich dieselbe Datei — nur anders geschrieben. Verglichen wird
+    # ab der Spaltenzeile: der Kopf trägt den Zeitpunkt der Erzeugung, und
+    # zwischen zwei Aufrufen kann eine Sekunde liegen.
     andere = c.get("/api/datev/stapel.csv?von=2026-07&bis=2026-07")
-    assert text == andere.content.decode("cp1252")
+    assert text.split("\r\n")[1:] == \
+        andere.content.decode("cp1252").split("\r\n")[1:]
 
 
 def test_konten_auch_in_utf8(c):
@@ -494,3 +513,65 @@ def test_spaltenabweichung_ist_reine_rechnung():
     assert datev_seite.spalten_abweichung(list(extf.SPALTEN)) is None
     kurz = datev_seite.spalten_abweichung(list(extf.SPALTEN)[:120])
     assert kurz and "120 Spalten" in kurz and "Abrechnungsreferenz" in kurz
+
+
+# ── Gutschriften (03.09.2026) ───────────────────────────────────────────
+
+def test_vorschau_zeigt_die_gutschrift_im_haben(welt_mit_gutschrift):
+    """Vier Belege, einer davon eine Erstattung: sie steht positiv in der
+    Umsatzspalte und im Haben — und sie MINDERT die Summe."""
+    k = TestClient(welt_mit_gutschrift.app, base_url="https://testserver")
+    d = k.get("/api/datev/vorschau?von=2026-07&bis=2026-08").json()
+    zeilen = d["zeilen"]
+    assert len(zeilen) == 4
+    haben = [z for z in zeilen if z["sh"] == "H"]
+    assert len(haben) == 1
+    assert haben[0]["umsatz"] == "40,00"
+    assert haben[0]["belegfeld"] == "GS-7"
+    assert d["befund"]["gutschriften"] == 1
+    assert d["befund"]["summe"] == round(284.60 + 419.90 + 119.00 - 40.00, 2)
+
+
+def test_die_datei_traegt_die_gutschrift_als_haben_zeile(welt_mit_gutschrift):
+    k = TestClient(welt_mit_gutschrift.app, base_url="https://testserver")
+    zeilen = [z.split(";") for z in
+              k.get("/api/datev/stapel.csv?von=2026-07&bis=2026-08")
+              .content.decode("cp1252").split("\r\n")[2:] if z]
+    gs = [z for z in zeilen if z[1] == "H"]
+    assert len(gs) == 1
+    assert gs[0][0] == "40,00"          # kein Minus in der Umsatzspalte
+    assert all("-" not in z[0] for z in zeilen)
+
+
+def test_roundtrip_mit_gutschrift_wird_wiedererkannt(welt_mit_gutschrift):
+    """Was babu erzeugt, muss babu lesen — auch mit einer Gutschrift darin.
+    Der Abgleich gegen dieselben Belege darf keinen Unterschied finden."""
+    k = TestClient(welt_mit_gutschrift.app, base_url="https://testserver")
+    stapel = k.get("/api/datev/stapel.csv?von=2026-07&bis=2026-08").content
+    d = k.post("/api/datev/lesen",
+               files={"datei": ("EXTF.csv", stapel, "text/csv")}).json()
+    assert d["summen"]["anzahl"] == 4
+    assert d["summen"]["soll"] == round(284.60 + 419.90 + 119.00, 2)
+    assert d["summen"]["haben"] == 40.00
+    assert d["abgleich"]["zaehler"] == {"gleich": 4, "nur_datev": 0,
+                                        "nur_babu": 0, "abweichend": 0}
+
+
+def test_befund_summe_ist_soll_minus_haben():
+    """Ohne Server: die Zahl unter der Tabelle soll sagen, was der Monat
+    gekostet hat — nicht, was durchgelaufen ist."""
+    import datev_seite
+    zeilen = [{"umsatz": "100,00", "sh": "S", "konto": "5100",
+               "gegenkonto": "70099", "quelle": "a", "belegdatum": "0108"},
+              {"umsatz": "40,00", "sh": "H", "konto": "5100",
+               "gegenkonto": "70099", "quelle": "b", "belegdatum": "0208"}]
+    daten = {"monate": ["2026-08"], "rahmen": "SKR04",
+             "kleinunternehmerin": False,
+             "je_monat": {"2026-08": {"reviews": [], "staemme": [],
+                                      "ohne_konto": [], "blaetter": []}}}
+    befund = datev_seite._befund(daten, zeilen)
+    assert befund["summe"] == 60.00
+    assert befund["summe_text"] == "60,00"
+    assert befund["gutschriften"] == 1
+    # Und dieselbe Rechnung je Konto.
+    assert datev_seite._je_konto(zeilen)[0]["summe"] == 60.00

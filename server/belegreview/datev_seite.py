@@ -194,6 +194,18 @@ def _betrag(text: str) -> float:
         return 0.0
 
 
+def _mit_vorzeichen(zeile: dict) -> float:
+    """Der Betrag einer Buchungszeile mit dem Vorzeichen ihrer Seite.
+
+    In der Datei steht jeder Betrag positiv und die Seite daneben (S/H) —
+    so führt DATEV das. Zum Summieren muss das Vorzeichen zurück, sonst
+    zählte eine Gutschrift über 40 € wie eine Ausgabe über 40 € und die
+    Summe unter der Tabelle wäre 80 € daneben.
+    """
+    wert = _betrag(zeile.get("umsatz"))
+    return -wert if (zeile.get("sh") or "S").upper() == "H" else wert
+
+
 def _euro(wert: float) -> str:
     return f"{wert:,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
 
@@ -265,7 +277,11 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
     # Hier wird es nicht repariert (das gehört in `extf`, mit eigener
     # Prüfung), aber es wird gesagt, bevor die Datei aus dem Haus geht.
     ohne_datum = [z for z in zeilen if not z.get("belegdatum")]
-    summe = round(sum(_betrag(z["umsatz"]) for z in zeilen), 2)
+    # Soll minus Haben: eine Gutschrift mindert die Summe, statt sie zu
+    # erhöhen. Die Zahl unter der Tabelle soll dasselbe sagen wie die
+    # Buchhaltung — was der Monat gekostet hat, nicht was durchgelaufen ist.
+    summe = round(sum(_mit_vorzeichen(z) for z in zeilen), 2)
+    gutschriften = [z for z in zeilen if (z.get("sh") or "S").upper() == "H"]
     return {
         "rahmen": rahmen,
         "sauber": (pruef.sauber and not ohne_konto and not unbenannt
@@ -281,6 +297,7 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
         "belege": sum(len(m["staemme"]) for m in daten["je_monat"].values()),
         "kassentage": sum(len(m["blaetter"]) for m in daten["je_monat"].values()),
         "buchungen": len(zeilen),
+        "gutschriften": len(gutschriften),
         "summe": summe,
         "summe_text": _euro(summe),
     }
@@ -291,7 +308,7 @@ def _je_konto(zeilen: list[dict]) -> list[dict]:
     for z in zeilen:
         e = topf.setdefault(z["konto"], {"konto": z["konto"], "anzahl": 0, "summe": 0.0})
         e["anzahl"] += 1
-        e["summe"] = round(e["summe"] + _betrag(z["umsatz"]), 2)
+        e["summe"] = round(e["summe"] + _mit_vorzeichen(z), 2)
     for e in topf.values():
         e["name"] = skr04_konten.name(e["konto"]) or ""
         e["summe_text"] = _euro(e["summe"])
@@ -473,7 +490,7 @@ def api_vorschau(request: Request, von: str = "", bis: str = "") -> Response:
         "konto_name": skr04_konten.name(z["konto"]) or "",
         "gegenkonto": z["gegenkonto"],
         "umsatz": z["umsatz"],
-        "sh": "S",
+        "sh": (z.get("sh") or "S"),
         "bu": z["bu"] or "",
         "belegfeld": z["belegfeld1"] or "",
         "text": z["text"],

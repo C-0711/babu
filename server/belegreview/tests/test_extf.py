@@ -520,3 +520,67 @@ def test_utf8_rettet_zeichen_die_windows_1252_nicht_kennt():
     text = extf.stapel([review], "2026-08", erzeugt=ERZEUGT)
     assert "?" in extf.als_bytes(text).decode("cp1252")
     assert "Doğan" in extf.als_bytes(text, utf8_bom=True).decode("utf-8-sig")
+
+
+# ————— Gutschriften: positiver Betrag, Kennzeichen H (03.09.2026) —————
+#
+# Eine Gutschrift trägt ihr Minus seit Ninas Anmerkung P1-26 schon in den
+# Beträgen (gemma_buchung setzt das Vorzeichen einmal). Im Stapel wurde
+# daraus bis heute `-119,00;S` — ein negativer Betrag in der Umsatzspalte,
+# den DATEV beim Import ablehnt. Richtig ist `119,00;H`.
+
+def _gutschrift(brutto=-40.00, satz=19, **rest):
+    r = {"felder": {"brutto": brutto, "ust_satz": satz, "datum": "12.08.2026",
+                    "beleg_nr": "GS-7", "gutschrift": True},
+         "einschaetzung": {"konto_skr04": "5100"},
+         "semantik": {"belegart": "Erstattung"},
+         "vlm": {"buchungstext": "Rücksendung Friseurbedarf"}}
+    r["felder"].update(rest)
+    return r
+
+
+def test_gutschrift_steht_positiv_im_haben():
+    z = extf.buchungszeilen(_gutschrift())[0]
+    assert z["umsatz"] == "40,00"          # kein Minus in der Umsatzspalte
+    assert z["sh"] == "H"
+    assert extf._zeile(z).split(";")[:2] == ["40,00", "H"]
+
+
+def test_eine_ausgabe_bleibt_im_soll():
+    z = extf.buchungszeilen(_mit_satz(19))[0]
+    assert z["sh"] == "S"
+    assert extf._zeile(z).split(";")[1] == "S"
+
+
+def test_gutschrift_im_mehrsatz_zieht_beide_zeilen_ins_haben():
+    """Ein Beleg steht auf EINER Seite. Halb Soll und halb Haben wäre keine
+    Gutschrift, sondern eine Umbuchung, die niemand erfasst hat."""
+    r = _gutschrift(brutto=-27.40, steuertabelle=[
+        {"satz": 19, "netto": -18.87, "ust": -3.58, "brutto": -22.45},
+        {"satz": 7, "netto": -4.63, "ust": -0.32, "brutto": -4.95}])
+    zeilen = extf.buchungszeilen(r)
+    assert [(z["umsatz"], z["sh"]) for z in zeilen] == [("22,45", "H"),
+                                                        ("4,95", "H")]
+
+
+def test_gutschrift_zieht_auch_eine_positiv_gerechnete_position_mit():
+    """Wenn die Steuertabelle das Vorzeichen verloren hat, entscheidet der
+    Beleg — nicht die Position."""
+    r = _gutschrift(brutto=-27.40, steuertabelle=[
+        {"satz": 19, "brutto": 22.45}, {"satz": 7, "brutto": 4.95}])
+    assert all(z["sh"] == "H" for z in extf.buchungszeilen(r))
+
+
+def test_kassentage_stehen_immer_im_soll():
+    z = extf.erloeszeilen([_blatt(einnahmenBar=100, ecZahlungen=50)])
+    assert z and all(x["sh"] == "S" for x in z)
+    assert all(extf._zeile(x).split(";")[1] == "S" for x in z)
+
+
+def test_de_schreibt_nie_ein_minus():
+    assert extf._de(-119.0) == "119,00"
+    assert extf._de(119.0) == "119,00"
+    assert extf._soll_haben(-0.01) == "H"
+    assert extf._soll_haben(0.0) == "S"
+    # Ein Betrag unterhalb eines halben Cents ist keine Gutschrift.
+    assert extf._soll_haben(-0.001) == "S"

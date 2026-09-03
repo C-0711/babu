@@ -92,7 +92,27 @@ def buchungstext(review: dict) -> str:
 
 
 def _de(betrag: float) -> str:
-    return f"{betrag:.2f}".replace(".", ",")
+    """Der Betrag, wie DATEV ihn führt: immer positiv, Komma als Trenner.
+
+    Das Vorzeichen steht in DATEV nicht am Betrag, sondern im Soll/Haben-
+    Kennzeichen daneben (siehe `_soll_haben`). Ein `-119,00` in der
+    Umsatzspalte ist keine Gutschrift, sondern eine Zeile, die der Import
+    ablehnt.
+    """
+    return f"{abs(betrag):.2f}".replace(".", ",")
+
+
+def _soll_haben(betrag: float) -> str:
+    """`S` oder `H` — die Seite, auf der die Buchung steht.
+
+    Eine Gutschrift (Storno, Retoure, Erstattung) trägt ihr Minus seit
+    Ninas Anmerkung P1-26 schon in den Beträgen: `gemma_buchung` setzt das
+    Vorzeichen einmal und alle Verbraucher rechnen ohne Sonderfall weiter.
+    Für den Stapel heißt das: derselbe Betrag positiv, aber im Haben. So
+    mindert die Erstattung den Aufwand, statt ihn ein zweites Mal
+    aufzuschlagen — und die Vorsteuer geht denselben Weg zurück.
+    """
+    return "H" if round(float(betrag or 0), 2) < 0 else "S"
 
 
 def _datum_teile(datum: str | None) -> tuple[int, int, int] | None:
@@ -227,14 +247,28 @@ def buchungszeilen(review: dict) -> list[dict]:
              # die 60 Zeichen, die DATEV im Buchungstext annimmt.
              "text": _entschaerfen(text)[:60]}
 
+    # Eine Gutschrift zieht ALLE ihre Zeilen mit ins Haben — auch wenn eine
+    # einzelne Position der Steuertabelle für sich positiv gerechnet wäre.
+    # Ein Beleg steht auf einer Seite; halb Soll und halb Haben wäre keine
+    # Gutschrift, sondern eine Umbuchung, die niemand erfasst hat.
+    gutschrift = round(float(f["brutto"]), 2) < 0
+
+    def _wert(betrag) -> float:
+        w = float(betrag or 0)
+        return -abs(w) if gutschrift else w
+
     tabelle = f.get("steuertabelle") or []
     if len(tabelle) > 1:
         # Mehrsatz-Split: der 19%+7%-Bon wird zwei Buchungen.
-        zeilen = [dict(basis, umsatz=_de(z["brutto"]), bu=_bu(int(z["satz"])),
-                       satz=int(z["satz"])) for z in tabelle]
+        zeilen = [dict(basis, umsatz=_de(_wert(z["brutto"])),
+                       sh=_soll_haben(_wert(z["brutto"])),
+                       bu=_bu(int(z["satz"])), satz=int(z["satz"]))
+                  for z in tabelle]
     else:
         satz = f.get("ust_satz")
-        zeilen = [dict(basis, umsatz=_de(f["brutto"]), bu=_bu(satz), satz=satz)]
+        zeilen = [dict(basis, umsatz=_de(_wert(f["brutto"])),
+                       sh=_soll_haben(_wert(f["brutto"])),
+                       bu=_bu(satz), satz=satz)]
     zeilen = [_automatik_anpassen(z, rahmen) for z in zeilen]
     # Lieber eine Zeile weniger als eine mit dem falschen Steuerschlüssel:
     # was hier fehlt, fällt beim Abstimmen auf. Ein falscher Schlüssel nicht.
@@ -298,9 +332,13 @@ def erloeszeilen(kassenblaetter: list[dict], kleinunternehmerin: bool = False
         if kleinunternehmerin:
             frei, neunzehn, sieben = frei + neunzehn + sieben, 0.0, 0.0
         frei_konto = ERLOES_KLEINUNTERNEHMER if kleinunternehmerin else ERLOES_STEUERFREI
+        # Ein Kassentag steht immer im Soll: die Beträge sind der Reihe
+        # nach so aufgebaut, dass nur Positives eine Zeile ergibt (siehe
+        # die `> 0`-Prüfungen unten). Einen negativen Tagesumsatz gibt es
+        # nicht — eine Rückgabe mindert den Tag, sie dreht ihn nicht um.
         basis = {"belegdatum": belegdatum,
                  "belegfeld1": _belegfeld1("KB" + datum.replace("-", "")),
-                 "bu": "", "satz": None}
+                 "bu": "", "satz": None, "sh": "S"}
         for betrag, konto, text in (
                 (neunzehn, ERLOESKONTO[19], "Tageseinnahmen 19 %"),
                 (sieben, ERLOESKONTO[7], "Tageseinnahmen 7 %"),
@@ -392,7 +430,7 @@ def rahmen_pruefen(reviews: list[dict], rahmen: str) -> Befund:
 def _zeile(b: dict) -> str:
     felder = [""] * len(SPALTEN)
     felder[0] = b["umsatz"]
-    felder[1] = "S"
+    felder[1] = b.get("sh") or "S"
     felder[2] = "EUR"
     felder[6] = b["konto"]
     felder[7] = b["gegenkonto"]
