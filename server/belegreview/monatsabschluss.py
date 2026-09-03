@@ -124,9 +124,51 @@ def umsatz_profil(einstellungen: dict) -> dict:
             "braucht_ustva": not klein}
 
 
+# Wer auf dem Kontoauszug Umsatz IST: die Auszahler von Kartenterminals und
+# Buchungssystemen. Alles andere, was hereinkommt (Erstattungen, Rückzahlungen,
+# Privateinlagen), ist kein Umsatz und bleibt draußen — es wird nur gezählt,
+# damit man sieht, dass es da war. Salonkee ist Ninas System (03.09.2026 im
+# Juli-Auszug gesehen: fünf Auszahlungen, 3.448,10 €).
+ERLOES_QUELLEN = ("salonkee", "sumup", "zettle", "izettle", "stripe", "payone",
+                  "concardis", "adyen", "mollie", "girocard", "ec-cash", "ec cash",
+                  "kartenzahlung", "kartenumsatz", "elv-", "treatwell", "planity",
+                  "shore ", "phorest")
+
+
+def bank_erloese(umsaetze: list[dict]) -> dict:
+    """Umsatz aus den Gutschriften eines Kontoauszugs — nur die Quellen oben.
+
+    Die Auszahlung eines Kartenanbieters ist das, was nach dessen Gebühr
+    übrig bleibt; als Umsatz gilt hier die Auszahlung selbst (die Gebühr
+    steht, wo sie abgebucht wird). Wer ein Kassenbuch führt, braucht das
+    nicht — dort stehen Karte und Bar schon.
+    """
+    brutto = 0.0
+    quellen: dict[str, float] = {}
+    sonstige = 0.0
+    sonstige_n = 0
+    for u in umsaetze or []:
+        betrag = float(u.get("betrag") or 0)
+        if betrag <= 0:
+            continue
+        text = " ".join(str(u.get(k) or "") for k in ("text", "gegenpartei")).lower()
+        quelle = next((q for q in ERLOES_QUELLEN if q in text), None)
+        if quelle:
+            brutto += betrag
+            quellen[quelle.strip("- ").capitalize()] = _rund(
+                quellen.get(quelle.strip("- ").capitalize(), 0.0) + betrag)
+        else:
+            sonstige += betrag
+            sonstige_n += 1
+    return {"brutto": _rund(brutto), "anzahl": sum(1 for _ in quellen) and len(quellen),
+            "quellen": quellen, "sonstige": _rund(sonstige), "sonstige_anzahl": sonstige_n}
+
+
 def erloese_monat(kassenblaetter: list[dict], monat: str | None = None,
                   rechnungen: list[dict] | None = None,
-                  versteuerung: str = "ist") -> dict:
+                  versteuerung: str = "ist",
+                  umsaetze: list[dict] | None = None,
+                  kleinunternehmerin: bool = False) -> dict:
     """Erlöse eines Monats — aus der Ladenkasse UND aus gestellten Rechnungen.
 
     Was nicht gefragt wurde, ist 19 % — der Normalfall. Eingelöste
@@ -175,8 +217,24 @@ def erloese_monat(kassenblaetter: list[dict], monat: str | None = None,
     neunzehn += r_neunzehn
     sieben += r_sieben
     frei += r_frei
+
+    # Ohne Kassenbuch kommt der Umsatz vom Kontoauszug: die Auszahlungen der
+    # Kartenanbieter. MIT Kassenbuch nicht — dort steht die Karte schon als
+    # `ecZahlungen`, und dieselbe Auszahlung zweimal zu zählen wäre der
+    # Fehler, den die Kanzlei zuerst fände.
+    bank = bank_erloese(umsaetze or [])
+    aus_bank = 0.0
+    if not kassenblaetter and bank["brutto"] > 0:
+        aus_bank = bank["brutto"]
+        if kleinunternehmerin:
+            frei += aus_bank
+        else:
+            neunzehn += aus_bank
     return {
         "tage": len(kassenblaetter),
+        "aus_bank": _rund(aus_bank),
+        "bank_quellen": bank["quellen"] if aus_bank else {},
+        "bank_sonstige": bank["sonstige"], "bank_sonstige_anzahl": bank["sonstige_anzahl"],
         "bar": _rund(bar), "karte": _rund(ec),
         "brutto_19": _rund(neunzehn), "brutto_7": _rund(sieben),
         "steuerfrei": _rund(frei),
@@ -419,6 +477,8 @@ def bwa(monat: str, erloese: dict, belege: list[dict],
         "ergebnis_anteil": _rund(100 * ergebnis / umsatz) if umsatz else None,
         "gruppen": gruppen,
         "tage_erfasst": erloese["tage"],
+        "umsatz_quelle": ("Kontoauszug: " + ", ".join(erloese["bank_quellen"]))
+                         if erloese.get("aus_bank") else None,
         "neutral": neutral,
         "neutral_summe": _rund(sum(float(n["brutto"] or 0) for n in neutral)),
         "fehlt": fehlt,

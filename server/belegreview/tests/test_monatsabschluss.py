@@ -313,3 +313,40 @@ def test_die_kostengruppen_nennen_ihre_konten():
     assert konten["6640"]["name"] == skr04_konten.name("6640")
     assert [k["konto"] for k in gruppe["konten"]][0] == "6640"   # größter Betrag zuerst
     assert sum(k["netto"] for k in gruppe["konten"]) == gruppe["netto"]
+
+
+def test_kontoauszug_liefert_den_umsatz_wenn_kein_kassenbuch_da_ist():
+    """Befund 03.09.2026 (Nina, Juli): kein Kassenbuch, aber fünf Auszahlungen
+    von Salonkee auf dem Konto — das ist ihr Kartenumsatz. Erstattungen und
+    Rückzahlungen sind kein Umsatz."""
+    import monatsabschluss as ma
+    umsaetze = [
+        {"datum": "06.07.2026", "betrag": 785.78, "text": "Salonkee SA Account for SupremeStudio", "gegenpartei": ""},
+        {"datum": "20.07.2026", "betrag": 1710.0, "text": "Salonkee SA Account for SupremeStudio", "gegenpartei": ""},
+        {"datum": "06.07.2026", "betrag": 307.2, "text": "PayPal Europe MAKI OFF GmbH Ihr Einkauf", "gegenpartei": ""},
+        {"datum": "16.07.2026", "betrag": 104.19, "text": "AXA easy Versicherung ERSTATTUNG", "gegenpartei": ""},
+        {"datum": "02.07.2026", "betrag": -59.9, "text": "Salonkee Gebuehr", "gegenpartei": ""},
+    ]
+    b = ma.bank_erloese(umsaetze)
+    assert b["brutto"] == 2495.78 and b["quellen"] == {"Salonkee": 2495.78}
+    assert b["sonstige"] == 411.39 and b["sonstige_anzahl"] == 2
+    e = ma.erloese_monat([], monat="2026-07", umsaetze=umsaetze)
+    assert e["aus_bank"] == 2495.78 and e["brutto_19"] == 2495.78
+    assert e["brutto_gesamt"] == 2495.78 and e["bank_quellen"] == {"Salonkee": 2495.78}
+    # Mit Kassenbuch zählt die Bank nicht mit — die Karte steht dort schon.
+    e2 = ma.erloese_monat([{"einnahmenBar": 100.0, "ecZahlungen": 2495.78}], monat="2026-07", umsaetze=umsaetze)
+    assert e2["aus_bank"] == 0.0 and e2["brutto_gesamt"] == 2595.78
+    # Kleinunternehmerin: steuerfrei, nicht 19 %.
+    e3 = ma.erloese_monat([], monat="2026-07", umsaetze=umsaetze, kleinunternehmerin=True)
+    assert e3["brutto_19"] == 0.0 and e3["steuerfrei"] == 2495.78
+
+
+def test_bwa_nennt_die_quelle_wenn_der_umsatz_vom_kontoauszug_kommt():
+    import monatsabschluss as ma
+    e = ma.erloese_monat([], monat="2026-07",
+                         umsaetze=[{"betrag": 100.0, "text": "Salonkee SA Auszahlung"}])
+    d = ma.bwa("2026-07", e, [], None)
+    assert d["umsatz_quelle"] == "Kontoauszug: Salonkee"
+    assert d["umsatz_netto"] == 84.03
+    e2 = ma.erloese_monat([{"einnahmenBar": 50.0}], monat="2026-07")
+    assert ma.bwa("2026-07", e2, [], None)["umsatz_quelle"] is None

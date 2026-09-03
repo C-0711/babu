@@ -3254,7 +3254,7 @@ async function ladeZahlen(){
         border-top:1px solid var(--gc-border);border-bottom:1px solid var(--gc-border);margin-bottom:36px">
       ${erloese != null ? `<div><div class="lbl">Eingenommen</div>
         <div style="font:500 30px var(--gc-serif);letter-spacing:-.02em;color:var(--gc-fg);margin-top:6px;font-variant-numeric:tabular-nums">${euro(erloese)}</div>
-        <div style="font-size:13px;color:var(--gc-muted);margin-top:3px">Kasse, Karte und Überweisung</div></div>` : ""}
+        <div style="font-size:13px;color:var(--gc-muted);margin-top:3px">${bwa && bwa.umsatz_quelle ? "aus dem " + esc(bwa.umsatz_quelle) : "Kasse, Karte und Überweisung"}</div></div>` : ""}
       <div><div class="lbl">${bwa ? "Ausgegeben (ohne Steuer)" : "Ausgegeben"}</div>
         <div style="font:500 30px var(--gc-serif);letter-spacing:-.02em;color:var(--gc-fg);margin-top:6px;font-variant-numeric:tabular-nums">${euro(ausgegeben)}</div>
         <div style="font-size:13px;color:var(--gc-muted);margin-top:3px">${d.anzahl} Beleg${d.anzahl===1?"":"e"}</div>
@@ -4624,7 +4624,7 @@ async function ladeAbschluss(){
 
   // ————— Deine Zahlen (BWA) —————
   html += `<div class="sektion lbl">Deine Zahlen</div><div class="karte">
-    <div class="mrow"><span class="art">Eingenommen (ohne Steuer)</span>
+    <div class="mrow"><span class="art">Eingenommen (ohne Steuer)${b.umsatz_quelle ? `<br><span style="font-size:12px;color:var(--gc-muted)">aus dem ${esc(b.umsatz_quelle)}</span>` : ""}</span>
       <span class="summe">${euro(b.umsatz_netto)}</span></div>
     <div class="mrow"><span class="art">Ausgegeben (ohne Steuer)</span>
       <span class="summe">${euro(b.kosten_netto)}</span></div>

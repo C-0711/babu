@@ -8030,6 +8030,18 @@ def _rechnungen_lesen() -> list[dict]:
     return list(idx.get("rechnungen", {}).values())
 
 
+def _erloese_fuer(idx: dict, monat: str, un: str, blaetter: list[dict]) -> dict:
+    """Die Erlöse eines Monats aus allen drei Quellen: Kasse, Rechnungen und
+    Kontoauszug — der Kontoauszug nur ohne Kassenbuch (siehe monatsabschluss)."""
+    import monatsabschluss as ma  # noqa: PLC0415
+    profil = ma.umsatz_profil(db_einstellungen(salon_von_aktiv(un)))
+    return ma.erloese_monat(blaetter, monat=monat,
+                            rechnungen=list(idx.get("rechnungen", {}).values()),
+                            versteuerung=_versteuerung(un),
+                            umsaetze=idx.get("umsaetze", {}).get(monat, []),
+                            kleinunternehmerin=not profil.get("braucht_ustva", True))
+
+
 def _versteuerung(un: str) -> str:
     wert = (db_einstellungen(salon_von_aktiv(un)).get("versteuerung") or "ist").lower()
     return "soll" if wert == "soll" else "ist"
@@ -10863,9 +10875,7 @@ def api_monatsabschluss(monat: str, request: Request) -> Response:
     einstellungen = db_einstellungen(salon_von_aktiv(un))
 
     profil = ma.umsatz_profil(einstellungen)
-    erloese = ma.erloese_monat(blaetter, monat=monat,
-                               rechnungen=list(idx.get("rechnungen", {}).values()),
-                               versteuerung=_versteuerung(un))
+    erloese = _erloese_fuer(idx, monat, un, blaetter)
     vorsteuer = ma.vorsteuer_monat(belege)
 
     # Vorjahreswerte aus dem Salon-Check, wenn vorhanden.
@@ -11173,9 +11183,7 @@ def _berichtsdaten(un: str, monat: str) -> tuple[dict, dict, list, dict]:
                 if tag.startswith(monat)]
     belege = [z for z in idx["belege"].values() if z["monat"] == monat]
     einstellungen = db_einstellungen(salon_von_aktiv(un))
-    erloese = ma.erloese_monat(blaetter, monat=monat,
-                               rechnungen=list(idx.get("rechnungen", {}).values()),
-                               versteuerung=_versteuerung(un))
+    erloese = _erloese_fuer(idx, monat, un, blaetter)
     return erloese, ma.umsatz_profil(einstellungen), belege, einstellungen
 
 
@@ -11267,10 +11275,9 @@ def api_bwa_erstellen(monat: str, request: Request) -> Response:
         blaetter_m = [b for tag, b in idx["kassenblaetter"].items()
                       if tag.startswith(mm)]
         belege_m = [z for z in idx["belege"].values() if z["monat"] == mm]
-        if not blaetter_m and not belege_m:
+        if not blaetter_m and not belege_m and not idx.get("umsaetze", {}).get(mm):
             continue
-        erl_m = ma.erloese_monat(blaetter_m, monat=mm, rechnungen=rechnungen,
-                                 versteuerung=_versteuerung(un))
+        erl_m = _erloese_fuer(idx, mm, un, blaetter_m)
         monats_bwas.append(ma.bwa(mm, erl_m, belege_m, None,
                                   personal_monat=personal,
                                   vertraege=vertraege))
@@ -11535,9 +11542,7 @@ def _welt_fuer(un: str) -> dict:
         import monatsabschluss as ma  # noqa: PLC0415
         blaetter = [b for tag, b in idx["kassenblaetter"].items() if tag.startswith(monat)]
         belege_monat = [z for z in idx["belege"].values() if z["monat"] == monat]
-        erloese = ma.erloese_monat(blaetter, monat=monat,
-                                   rechnungen=list(idx.get("rechnungen", {}).values()),
-                                   versteuerung=_versteuerung(un))
+        erloese = _erloese_fuer(idx, monat, un, blaetter)
         bwa = ma.bwa(monat, erloese, belege_monat, None,
                      personal_monat=team_personalkosten(inhaber),
                      vertraege=vertraege_aktuell())
