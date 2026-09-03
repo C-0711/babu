@@ -257,3 +257,8 @@ Endstand `34903a5`: volle Suite **2015 grün gegen SQLite und 2015 gegen Postgre
 („6640 Bewirtungskosten“) statt des Oberbegriffs; `/api/belege` trägt `konto_name`
 (Golden: genau diese 200 neuen Zeilen, sonst bytegleich).
 
+**Nachtrag 03.09. 06:50** (`b89f698`): „Wohin dein Geld geht" (Ausgaben und
+Monatsabschluss) nennt die Konten mit SKR04-Bezeichnung — eine Gruppe mit einem
+Konto zeigt das Konto als Zeile, mehrere Konten stehen eingerückt unter dem
+Oberbegriff. Server: `monatsabschluss.bwa()` liefert je Gruppe `konten[]`.
+
