@@ -868,3 +868,24 @@ def test_die_seite_zeigt_rot_vor_gelb(c):
     stelle_gelb = seite.index("...gelb.map")
     assert stelle_rot < stelle_gelb
     assert "Konten, die deine Kanzlei noch nicht bestätigt hat" in seite
+
+
+# ── Festschreibung (03.09.2026) ─────────────────────────────────────────
+
+def test_die_vorschaudatei_traegt_kein_festschreibungskennzeichen(c):
+    """`GET stapel.csv` ist die Vorschau: sie legt nichts ab, also darf
+    sie sich auch nicht als endgültig ausgeben."""
+    kopf = c.get("/api/datev/stapel.csv?von=2026-07&bis=2026-07") \
+        .content.decode("cp1252").split("\r\n")[0].split(";")
+    assert kopf[20] == "0"
+
+
+def test_ein_freigegebener_monatsabschluss_schreibt_nicht_mehr_fest(
+        welt, monkeypatch):
+    """Die Freigabe der Zahlen ist ein Ereignis im Salon. Sie sagt nichts
+    darüber, ob dieser Stapel schon bei der Kanzlei liegt."""
+    monkeypatch.setattr(welt, "_monat_festgeschrieben", lambda m: True)
+    k = TestClient(welt.app, base_url="https://testserver")
+    kopf = k.get("/api/datev/stapel.csv?von=2026-07&bis=2026-07") \
+        .content.decode("cp1252").split("\r\n")[0].split(";")
+    assert kopf[20] == "0"

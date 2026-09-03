@@ -735,7 +735,7 @@ def _zeile(b: dict) -> str:
 
 def stapel(reviews: list[dict], monat: str, erzeugt: time.struct_time | None = None,
            berater: str = BERATER, mandant: str = MANDANT,
-           festschreibung: bool = True, rahmen: str | None = None,
+           festschreibung: bool = False, rahmen: str | None = None,
            kassenblaetter: list[dict] | None = None,
            kleinunternehmerin: bool = False) -> str:
     """Kompletter Stapel als Text (Zeilen mit CRLF verbinden macht als_bytes).
@@ -747,6 +747,14 @@ def stapel(reviews: list[dict], monat: str, erzeugt: time.struct_time | None = N
     `kassenblaetter` bringt die Erlösseite mit (erloeszeilen) — nur für
     SKR04: die SKR03-Konten der Erlösseite liegen babu nicht als Quelle
     vor, und geraten wird nicht.
+
+    `festschreibung` steht seit 03.09.2026 standardmäßig auf False und wird
+    NUR beim Übergeben an die Kanzlei gesetzt. Das Kennzeichen im Kopf sagt
+    der Kanzlei-Software: diese Buchungen sind unveränderlich. Bis heute
+    hing es am freigegebenen Monatsabschluss — mit der Folge, dass jede
+    Vorschau, jeder Probe-Download und jeder zweite Blick eine Datei
+    erzeugte, die sich als endgültig ausgab. Endgültig ist etwas, das man
+    einmal aus der Hand gibt, nicht etwas, das man ansieht.
     """
     if rahmen:
         befund = rahmen_pruefen(reviews, rahmen)

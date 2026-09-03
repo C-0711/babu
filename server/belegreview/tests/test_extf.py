@@ -27,7 +27,14 @@ def test_kopfzeile():
     assert kopf[10] == "12345" and kopf[11] == "67890"
     assert kopf[12] == "20260101"          # WJ-Beginn
     assert kopf[14] == "20260701" and kopf[15] == "20260731"
-    assert kopf[20] == "1"                 # Festschreibung
+    # Feld 21 ist die Festschreibung. Bis 03.09.2026 stand hier eine 1,
+    # weil `stapel()` sie standardmäßig setzte — jede Vorschau gab sich
+    # damit als endgültig aus. Jetzt ist der Standard 0, und die 1 kommt
+    # ausschließlich beim Übergeben an die Kanzlei dazu.
+    assert kopf[20] == "0"
+    mit = extf.stapel([GOLDEN], "2026-07", erzeugt=ERZEUGT,
+                      festschreibung=True)
+    assert mit.split("\r\n")[0].split(";")[20] == "1"
 
 
 def test_spalten_und_weingaertle_zeile():
@@ -876,3 +883,19 @@ def test_kaputte_zahlen_stuerzen_die_kassenpruefung_nicht():
     b = _blatt(bestandVortag="hundert", einnahmenBar=50, gezaehltSchluss=50)
     assert extf.kassen_pruefen([b]) == []
     assert extf.kassen_pruefen([{"datum": "kaputt", "einnahmenBar": 5}]) == []
+
+
+# ————— Festschreibung: nur beim Übergeben (03.09.2026) —————
+
+def test_festschreibung_ist_standardmaessig_aus():
+    """Endgültig ist etwas, das man aus der Hand gibt — nicht etwas, das
+    man ansieht. Vorher war der Standard True, und jeder Probe-Download
+    trug das Kennzeichen."""
+    kopf = extf.stapel([], "2026-07", erzeugt=ERZEUGT).split(";")
+    assert kopf[20] == "0"
+
+
+def test_festschreibung_laesst_sich_setzen():
+    kopf = extf.stapel([], "2026-07", erzeugt=ERZEUGT,
+                       festschreibung=True).split(";")
+    assert kopf[20] == "1"

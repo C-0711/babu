@@ -4701,8 +4701,12 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
     des Monats wird zu Tageseinnahmen (Kasse an Erlöse je Steuersatz) und
     der Kartenumsatz geht per Geldtransit wieder aus der Kasse. Vorher
     enthielt der Stapel nur Ausgaben — für die Kanzlei die halbe
-    Buchhaltung. Das Festschreibungs-Kennzeichen im Kopf trägt der Stapel
-    nur, wenn der Monat wirklich freigegeben ist (`_monat_festgeschrieben`)."""
+    Buchhaltung.
+
+    Das Festschreibungs-Kennzeichen im Kopf trägt der Stapel seit dem
+    03.09.2026 nur beim Ablegen (`festschreiben=1`) — also genau dann, wenn
+    er wirklich aus der Hand geht. Vorher hing es am freigegebenen
+    Monatsabschluss, und damit gab sich jede Vorschau als endgültig aus."""
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
@@ -4728,7 +4732,7 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
         text = extf.stapel(reviews, monat,
                            berater=berater,
                            mandant=mandant_nr,
-                           festschreibung=_monat_festgeschrieben(monat),
+                           festschreibung=bool(festschreiben),
                            rahmen=kontenrahmen_von(un),
                            kassenblaetter=blaetter,
                            kleinunternehmerin=not profil.get("braucht_ustva"))

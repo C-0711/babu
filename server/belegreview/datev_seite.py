@@ -676,9 +676,12 @@ def api_stapel(request: Request, von: str = "", bis: str = "",
     bw = _bw()
     daten = _sammeln(bw, un, monate)
     try:
+        # Diese Route ist die VORSCHAU-Datei: sie legt nichts ab und trägt
+        # deshalb kein Festschreibungs-Kennzeichen. Gesetzt wird es einzig
+        # beim Übergeben (`/api/datev/uebergeben`) — dort, wo der Stapel
+        # wirklich aus der Hand geht.
         text = stapel_zeitraum(
-            daten, monate,
-            festschreibung=all(bw._monat_festgeschrieben(m) for m in monate),
+            daten, monate, festschreibung=False,
             berater=daten["berater"], mandant=daten["mandant"])
     except extf.RahmenVermischung as fehler_:
         return _fehler(str(fehler_), 409)
