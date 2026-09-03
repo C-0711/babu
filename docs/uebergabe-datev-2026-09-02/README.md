@@ -262,3 +262,37 @@ Monatsabschluss) nennt die Konten mit SKR04-Bezeichnung — eine Gruppe mit eine
 Konto zeigt das Konto als Zeile, mehrere Konten stehen eingerückt unter dem
 Oberbegriff. Server: `monatsabschluss.bwa()` liefert je Gruppe `konten[]`.
 
+**Welle 6, 03.09. — DATEV-Schnittstelle gehärtet** (Plan im Sitzungsplan, Befund aus zwei
+Erkundungen; Referenz: der echte Kanzlei-Export `historie/2026/stapel.csv`, siehe
+`23-referenzstapel-kanzlei.md`). Entscheidungen des Auftraggebers: § 19 brutto ohne
+Steuer (5400/5300 → 5200), Belegfeld 1 = Rechnungsnummer sonst babu-Kennung, Übergabe
+durch die Kanzlei mit Siegel.
+
+- Format an die Referenz (`ed0b577`): 124 Spalten (babus 120 + vier), Formatversion 12,
+  SKR-Feld leer, `als_bytes(utf8_bom)` als Schalter (`?zeichensatz=utf8`), Leser meldet
+  abweichende Spaltenlisten.
+- Fachlich falsch behoben: Gutschriften positiv im Haben (`38cd59e`); unbekannter
+  Steuersatz ohne stillen 19-%-Default, Automatik → 5200, `extf.pruefen()` (`ffe142b`);
+  Kleinunternehmerin ohne Vorsteuer, kein Split (`35ffe41`); Berater/Mandant aus der
+  Mandantenzeile auch auf der DATEV-Seite, Befund bei „0" (`60e4fee`).
+- Befund vollständig (`4ae5a75`): Belegdatum außerhalb, Kassenprüfung (steuerfrei über
+  Tagesumsatz, gezählter ≠ rechnerischer Bestand), Ersatzzeichen, 7xxx-Ausnahme nur
+  Sammelkonto, unbestätigte Konten.
+- Festschreibung nur beim Übergeben (`c90c149`); Stapel-Siegel (`59add8a`):
+  `export/<monat>/stapel.json` führt `laeufe`, `POST /api/datev/uebergeben` (Kanzlei,
+  Audit), Nachträge nur über Neues, 409 wenn nichts Neues; `GET stapel.csv` bleibt
+  Vorschau; `api_export(festschreiben=1)` ist ein Alias.
+- Portal (`a48525d`, `07a4ca7`): Beleg-Detail zeigt die Stapelzeilen, wie sie in die Datei
+  gehen (`api_beleg.stapelzeilen`), `_berater_mandant()`, `/api/monat.uebergeben_am`.
+- Kopfzeile (`bfb13cd`): Hamburger links neben babu, Kürzel unten in der Leiste, Upload als „+".
+
+Scheibe 2 (`f13427a`, `76794e3`, `ed15300`): Belegfeld 1 = gelesene Rechnungsnummer,
+sonst babu-Kennung `JJJJMMTT-HHMMSS-hex` (Abgleich-Wellen 1/3 greifen wieder; Kennung nur im
+Detail, `/api/belege` unverändert); Befund `rechnungen_nicht_im_stapel`; Kassenbuch
+vollständig (`extf.kassenzeilen`: Privateinlage 2180, Privatentnahme 2100, Bank 1460,
+Trinkgeld über 1370 mit Inhaberinnen-Anteil als Erlös — Annahmen für die Kanzlei),
+Kassenlücke (Barausgaben/Auslagen/Vorschüsse) beziffert.
+
+Stand E1+E2 (`59add8a`): 2116 grün gegen SQLite und Postgres.
+
+Endstand Welle 6 (`ed15300`): volle Suite **2147 grün gegen SQLite und 2147 gegen Postgres 16**.

@@ -244,6 +244,17 @@ Postgres-Umzug auf Wunsch des Auftraggebers — Details in Abschnitt 2.
 Kanzlei-Cockpit (Überblick-Matrix, Monatsblick je Mandant) — Details in
 `docs/uebergabe-datev-2026-09-02/README.md`, Abschnitt „Welle 4".
 
+**Welle 6 (03.09.): DATEV-Schnittstelle gehärtet.** Format an den echten
+Kanzlei-Export angeglichen (Version 12, 124 Spalten, `23-referenzstapel-kanzlei.md`),
+Gutschriften im Haben, § 19 ohne Vorsteuer, kein stiller 19-%-Default, Berater/
+Mandant aus der Mandantenzeile, vollständiger Prüfbefund, Stapel-Siegel mit
+Übergabe durch die Kanzlei (`POST /api/datev/uebergeben`, Nachträge, 409 wenn
+nichts Neues), Belegfeld 1 (Rechnungsnummer sonst Kennung), Kassenbuch
+vollständig, Beleg-Detail zeigt die Stapelzeilen. **Abnahme bleibt der Import
+bei Kanzlei Afflek** — dafür `stapel.csv` (cp1252) und `?zeichensatz=utf8`
+(wie die Referenz) mitgeben und das Importprotokoll festhalten. Details:
+docs-README „Welle 6".
+
 **Welle 5 (03.09. früh):** Kanzlei-Startseite (Arbeitsvorrat statt Heute),
 Reiter „Kanzlei", Pille mit ⌘K, Gruppen „Mandant"/„Kanzlei", und der
 Massenimport je Mandant (`belegimport.py`, Migration 0004, Portal-Block in
