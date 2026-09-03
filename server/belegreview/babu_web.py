@@ -164,16 +164,20 @@ def _im_box_kontext(box: bx.Box, ziel, *args):
 def _im_mandanten_kontext(box: bx.Box, mandant_id: int, ziel, *args):
     """Wie `_im_box_kontext` — und zusätzlich mit dem Mandanten selbst.
 
-    Der Unterschied ist klein und teuer. `_im_box_kontext` setzt NUR die
-    Box. Wer daraus etwas liest, liest richtig. Wer aber BUCHT, fragt
-    unterwegs `salon_von_aktiv()` nach dem Profil und `kontenrahmen_von()`
-    nach dem Rahmen — und beide hängen an `_AKTIVER_MANDANT`, nicht an der
-    Box. Ein Faden mit nur gesetzter Box bucht die Belege des Mandanten
-    also mit dem Profil und dem Kontenrahmen der KANZLEI: die Belege lägen
-    richtig, die Konten wären falsch, und keiner Zahl sähe man das an.
+    Warum es beides gibt: ein Faden, der nur LIEST, braucht die Box. Ein
+    Faden, der BUCHT, braucht zusätzlich den Mandanten — `salon_von_aktiv()`
+    holt darüber das Profil des Salons und `kontenrahmen_von()` seinen
+    Rahmen. Beide fragen `_aktive_mandant_id()`, und das ist der Punkt:
+    diese Funktion nimmt HEUTE zuerst die Nummer aus der Box und erst
+    danach `_AKTIVER_MANDANT`. Eine Mandanten-Box trägt ihre Nummer, also
+    ginge es auch mit `_im_box_kontext` — aber nur solange diese
+    Reihenfolge so bleibt und solange die Box wirklich eine Nummer hat.
 
-    Deshalb setzt der Massenimport beides. `_im_box_kontext` bleibt
-    unverändert — die Ansichten, die es benutzen, lesen nur.
+    Das ist zu wenig Sicherheit für den Massenimport: bucht der Faden mit
+    Profil und Kontenrahmen der KANZLEI, liegen die Belege trotzdem richtig
+    und nur die Konten sind falsch — und keiner Zahl sähe man das an.
+    Deshalb setzt er beides ausdrücklich. `_im_box_kontext` bleibt
+    unverändert; die Ansichten, die es benutzen, lesen nur.
     """
     _AKTIVE_BOX.set(box)
     _AKTIVER_MANDANT.set(mandant_id)

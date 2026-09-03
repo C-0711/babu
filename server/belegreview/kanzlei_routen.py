@@ -56,12 +56,15 @@ import calendar
 import contextlib
 import json
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as ZeitAus
 from datetime import date, datetime
+from pathlib import Path
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 import audit
 import box as bx
@@ -1122,6 +1125,264 @@ def api_uebersicht(request: Request,
                                        if not e["belegbox_da"]),
         },
     })
+
+
+# ---------------------------------------------------------------------------
+# Massenimport: ein Ordner Belege je Mandant.
+#
+# Die Mechanik steht in `belegimport.py`; hier stehen nur die fünf Türen und
+# was an ihnen geprüft wird. Ein `X-Mandant`-Kopf ist ausdrücklich NICHT
+# nötig: der Mandant steht im Pfad, und die Route setzt den Kontext selbst
+# (`bx.box_von` beim Ablegen, `_im_mandanten_kontext` für den Faden). Ein
+# Kopf daneben würde nur eine zweite Wahrheit über denselben Mandanten
+# einführen.
+# ---------------------------------------------------------------------------
+
+def _import_mandant(un: str, mandant_id: int, betreiber: bool):
+    """(Mandantenzeile, Fehlerantwort) — die Tür vor jeder Import-Route.
+
+    Reihenfolge wie überall hier: erst darf-ich-diesen-Mandanten-sehen
+    (404, nie 403 — sonst ließe sich die Nachbarkanzlei abzählen), dann
+    die beiden Zustände, in denen ein Import keinen Sinn ergibt. Beide sind
+    kein Rechteproblem, deshalb 409.
+    """
+    with _sitzung() as c:
+        if not _darf_mandant(un, mandant_id, betreiber, c):
+            return None, _fehler("Diesen Mandanten gibt es hier nicht.", 404)
+        zeile = mandanten.mandant_holen(mandant_id, c=c)
+    if zeile is None:
+        return None, _fehler("Diesen Mandanten gibt es hier nicht.", 404)
+    if not zeile["box_ref"]:
+        return None, _fehler(BOX_KOMMT, 409)
+    if zeile["status"] != "aktiv":
+        return None, _fehler(
+            "Mandat ist pausiert" if zeile["status"] == "pausiert"
+            else "Mandat ist beendet", 409)
+    return zeile, None
+
+
+def _import_tuer(request: Request, mandant_id: int, schreibend: bool = True):
+    """Origin, Verwaltung, Mandant — in genau dieser Reihenfolge.
+
+    `_ist_betreiber` steht VOR `_sitzung()`: das Schloss ist nicht
+    wiedereintrittsfähig (siehe dort), ein Aufruf innerhalb des Blocks
+    hinge für immer.
+    """
+    bw = _bw()
+    if schreibend and not bw._origin_ok(request):  # noqa: SLF001
+        return None, None, _fehler("nicht erlaubt", 403)
+    un, fehler = _wache(request)
+    if fehler:
+        return None, None, fehler
+    zeile, fehler = _import_mandant(un, mandant_id, _ist_betreiber(un))
+    if fehler:
+        return None, None, fehler
+    return un, zeile, None
+
+
+_OHNE_ABLAGE = {"Cache-Control": "no-store"}
+
+
+@router.post("/mandanten/{mandant_id}/import/dateien")
+async def api_import_datei(mandant_id: int, request: Request,
+                           name: str = "beleg.jpg",
+                           monat: str = "") -> JSONResponse:
+    """Eine Datei in den Zwischenspeicher legen — das Portal ruft das je Datei.
+
+    Ein Roh-Body je Datei, wie `/api/hochladen`: `_koerper` daneben nimmt
+    JSON bis 8 KiB und wäre hier die falsche Tür. Geschrieben wird noch
+    nichts in die Belegbox — erst „Start" tut das.
+    """
+    import belegimport as bi  # noqa: PLC0415
+    bw = _bw()
+    un, zeile, fehler = _import_tuer(request, mandant_id)
+    if fehler:
+        return fehler
+    endung = Path(name).suffix.lower()
+    if endung not in bi.IMPORT_ENDUNGEN:
+        return _fehler("Damit können wir nichts anfangen — Fotos und PDF gehen.")
+    if not re.match(r"^\d{4}-\d{2}$", monat or ""):
+        monat = time.strftime("%Y-%m")
+    try:
+        daten = await bw.koerper_lesen(request, bw.HOCHLADEN_MAX)
+    except bw.KoerperZuGross:
+        return _fehler("Diese Datei ist zu groß.", 413)
+    if not daten:
+        return _fehler("Diese Datei ist leer.")
+
+    import boxschreiber  # noqa: PLC0415
+    box = bx.box_von(un, mandant_id)
+    sha = bi.sha_von(daten)
+    with bi._IMPORT_LOCK:  # noqa: SLF001
+        status = bi._IMPORT_JOBS.get(mandant_id)  # noqa: SLF001
+        if status is not None and status["stand"] in bi.LAUFEND:
+            return _fehler("Für diesen Mandanten läuft gerade ein Import.", 409)
+        if status is None or status["stand"] != "sammelt":
+            status = bi.neuer_lauf(mandant_id, un, monat)
+            bi._IMPORT_JOBS[mandant_id] = status  # noqa: SLF001
+            bi._IMPORT_SHAS[mandant_id] = set()  # noqa: SLF001
+        if len(status["dateien"]) >= bi.IMPORT_MAX_DATEIEN:
+            return _fehler(f"Mehr als {bi.IMPORT_MAX_DATEIEN} Belege auf "
+                           "einmal sind zu viel — bitte in zwei Portionen.")
+        schon_im_lauf = sha in bi._IMPORT_SHAS.setdefault(mandant_id, set())  # noqa: SLF001
+
+    # Byte für Byte dasselbe wie etwas, das schon in der Box liegt (oder
+    # in diesem Lauf schon einmal kam)? Dann nichts ablegen und nichts
+    # lesen — nur sagen, wo es steht.
+    war_schon = (await run_in_threadpool(
+        bw._im_box_kontext, box, bw._blob_schon_da, daten))  # noqa: SLF001
+    if war_schon or schon_im_lauf:
+        grund = ("War schon da — nichts doppelt abgelegt." if war_schon
+                 else "War in dieser Auswahl schon dabei.")
+        with bi._IMPORT_LOCK:  # noqa: SLF001
+            status["doppelt"] += 1
+            status["dateien"].append(dict(
+                bi.neue_datei(name, "", "", len(daten)),
+                stand="doppelt", war_schon=war_schon or "", grund=grund))
+            status["gesamt"] = len(status["dateien"])
+        await run_in_threadpool(bi._festhalten, bw, status)  # noqa: SLF001
+        return JSONResponse({"ok": True, "lauf": status["lauf"], "name": name,
+                             "doppelt": True, "war_schon": war_schon or "",
+                             "gesamt": status["gesamt"]})
+
+    dateiname = boxschreiber.beleg_dateiname(name)
+    stamm = dateiname.rsplit(".", 1)[0]
+    ordner = bi._lauf_ordner(mandant_id, status["lauf"])  # noqa: SLF001
+    try:
+        ordner.mkdir(parents=True, exist_ok=True)
+        (ordner / stamm).write_bytes(daten)
+    except OSError:
+        return _fehler("Die Datei ließ sich gerade nicht zwischenlagern — "
+                       "gleich nochmal.", 503)
+    bi._import_tmp_aufraeumen()  # noqa: SLF001
+    with bi._IMPORT_LOCK:  # noqa: SLF001
+        bi._IMPORT_SHAS[mandant_id].add(sha)  # noqa: SLF001
+        status["dateien"].append(bi.neue_datei(
+            name, f"docs/{monat}/{dateiname}", stamm, len(daten)))
+        status["gesamt"] = len(status["dateien"])
+    await run_in_threadpool(bi._festhalten, bw, status)  # noqa: SLF001
+    return JSONResponse({"ok": True, "lauf": status["lauf"], "name": name,
+                         "gesamt": status["gesamt"]})
+
+
+def _lauf_starten(bw, un: str, mandant_id: int, status: dict) -> None:
+    """Den Faden loslassen — mit Box UND Mandant im Gepäck.
+
+    `_im_mandanten_kontext` statt `_im_box_kontext`: der Faden BUCHT, und
+    Profil wie Kontenrahmen hängen am Mandanten, nicht an der Box (siehe
+    `babu_web`). Ohne das bekäme jeder Mandant den Kontenrahmen der Kanzlei.
+    """
+    import belegimport as bi  # noqa: PLC0415
+    box = bx.box_von(un, mandant_id)
+    faden = threading.Thread(
+        target=bw._im_mandanten_kontext,  # noqa: SLF001
+        args=(box, mandant_id, bi._import_lauf, bw, un, mandant_id,  # noqa: SLF001
+              status["lauf"]),
+        daemon=True)
+    faden.start()
+
+
+@router.post("/mandanten/{mandant_id}/import/start")
+async def api_import_start(mandant_id: int, request: Request) -> JSONResponse:
+    """Loslegen: was im Zwischenspeicher liegt, wandert in die Belegbox und
+    wird gelesen. Antwortet sofort — zusehen kann man über `GET …/import`."""
+    import belegimport as bi  # noqa: PLC0415
+    bw = _bw()
+    un, zeile, fehler = _import_tuer(request, mandant_id)
+    if fehler:
+        return fehler
+    if bi._start_gebremst(un):  # noqa: SLF001
+        return _fehler("Gerade wurden viele Importe gestartet — "
+                       "kurz warten, dann noch einmal.", 429)
+    with bi._IMPORT_LOCK:  # noqa: SLF001
+        status = bi._IMPORT_JOBS.get(mandant_id)  # noqa: SLF001
+        if status is not None and status["stand"] in bi.LAUFEND:
+            return _fehler("Für diesen Mandanten läuft gerade ein Import.", 409)
+        if status is None or status["stand"] != "sammelt" or not status["dateien"]:
+            return _fehler("Es liegt nichts bereit, was sich übernehmen ließe.",
+                           409)
+        status["stand"] = "wartet"
+        status["begonnen"] = time.time()
+        anzahl = len(status["dateien"])
+    await run_in_threadpool(bi._festhalten, bw, status)  # noqa: SLF001
+    audit.audit(un, "kanzlei_import_start", ziel_un=zeile["besitzer_un"],
+                mandant_id=str(mandant_id), lauf=status["lauf"], anzahl=anzahl)
+    _lauf_starten(bw, un, mandant_id, status)
+    return JSONResponse({"ok": True, "lauf": status["lauf"], "dateien": anzahl})
+
+
+@router.get("/mandanten/{mandant_id}/import")
+def api_import_stand(mandant_id: int, request: Request) -> JSONResponse:
+    """Wie weit ist der Import? `Cache-Control: no-store`, weil sich die
+    Antwort im Sekundentakt ändert und ein Zwischenspeicher hier lügt."""
+    import belegimport as bi  # noqa: PLC0415
+    bw = _bw()
+    un, zeile, fehler = _import_tuer(request, mandant_id, schreibend=False)
+    if fehler:
+        return fehler
+    return JSONResponse(bi.stand_lesen(bw, mandant_id), headers=_OHNE_ABLAGE)
+
+
+@router.post("/mandanten/{mandant_id}/import/abbrechen")
+async def api_import_abbrechen(mandant_id: int, request: Request) -> JSONResponse:
+    """Anhalten. Der laufende Beleg wird noch fertig — mitten in einer
+    Lesung abzubrechen hieße, ein halbes Ergebnis abzulegen."""
+    import belegimport as bi  # noqa: PLC0415
+    un, zeile, fehler = _import_tuer(request, mandant_id)
+    if fehler:
+        return fehler
+    with bi._IMPORT_LOCK:  # noqa: SLF001
+        status = bi._IMPORT_JOBS.get(mandant_id)  # noqa: SLF001
+        if status is None:
+            return _fehler("Da läuft gerade nichts.", 409)
+        status["abbruch_gewuenscht"] = True
+    audit.audit(un, "kanzlei_import_abbruch", ziel_un=zeile["besitzer_un"],
+                mandant_id=str(mandant_id), lauf=status["lauf"])
+    return JSONResponse({"ok": True})
+
+
+@router.post("/mandanten/{mandant_id}/import/fortsetzen")
+async def api_import_fortsetzen(mandant_id: int, request: Request,
+                                nur: str = "") -> JSONResponse:
+    """Weitermachen, wo es aufgehört hat — nach einem Abbruch, einem Fehler
+    oder einem Neustart.
+
+    Ohne `nur` kommt alles noch nicht Gelesene wieder in die Reihe; mit
+    `nur=unlesbar` genau die Belege, aus denen beim ersten Mal nichts wurde
+    (der Platzhalter, den sie tragen, darf ersetzt werden — eine Angabe von
+    Hand nie, dafür sorgt `_review_ueberschreibbar`).
+    """
+    import belegimport as bi  # noqa: PLC0415
+    bw = _bw()
+    un, zeile, fehler = _import_tuer(request, mandant_id)
+    if fehler:
+        return fehler
+    if bi._start_gebremst(un):  # noqa: SLF001
+        return _fehler("Gerade wurden viele Importe gestartet — "
+                       "kurz warten, dann noch einmal.", 429)
+    with bi._IMPORT_LOCK:  # noqa: SLF001
+        alt = bi._IMPORT_JOBS.get(mandant_id)  # noqa: SLF001
+        if alt is not None and alt["stand"] in bi.LAUFEND:
+            return _fehler("Für diesen Mandanten läuft gerade ein Import.", 409)
+    if alt is None:
+        alt = bw.db_import_lesen(mandant_id)
+    if alt is None:
+        return _fehler("Es gibt keinen Import, der sich fortsetzen ließe.", 409)
+    neu = bi.fortsetzung_bauen(alt, "unlesbar" if nur == "unlesbar" else "")
+    offen = [d for d in neu["dateien"] if d["stand"] in ("wartet", "abgelegt")]
+    if not offen:
+        return _fehler("Es ist nichts mehr offen — alles ist durch.", 409)
+    neu["stand"] = "wartet"
+    neu["begonnen"] = time.time()
+    with bi._IMPORT_LOCK:  # noqa: SLF001
+        bi._IMPORT_JOBS[mandant_id] = neu  # noqa: SLF001
+        bi._IMPORT_SHAS[mandant_id] = set()  # noqa: SLF001
+    await run_in_threadpool(bi._festhalten, bw, neu)  # noqa: SLF001
+    audit.audit(un, "kanzlei_import_start", ziel_un=zeile["besitzer_un"],
+                mandant_id=str(mandant_id), lauf=neu["lauf"],
+                anzahl=len(offen), fortsetzung=True, nur=nur or "alles")
+    _lauf_starten(bw, un, mandant_id, neu)
+    return JSONResponse({"ok": True, "lauf": neu["lauf"], "dateien": len(offen)})
 
 
 # `datetime` wird nur für den Typvertrag der Reset-Zeilen gebraucht — der
