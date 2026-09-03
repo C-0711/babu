@@ -2757,7 +2757,7 @@ async function ladeDetail(stamm){
        Zeilen des Stapels und fällt nur dann auf die eine Vorstufe zurück,
        wenn keine da sind. */
     const zeilen = Array.isArray(d.stapelzeilen) ? d.stapelzeilen : [];
-    if ((zeilen.length || b) && meineRolle === "kanzlei"){
+    if ((zeilen.length || b) && istKanzlei()){
       const gezeigt = zeilen.length ? zeilen.map(stapelzeile) : [stapelzeile(b)];
       html += `<div class="sekt"><span class="lbl">Das geht an DATEV</span>
         <p style="font-size:13px;color:var(--gc-desc);margin:0 0 8px">So steht der Beleg
