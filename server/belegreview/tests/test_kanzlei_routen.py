@@ -502,3 +502,34 @@ def test_ein_pat_konto_ohne_nutzerzeile_darf_die_kanzlei_gruenden(welt, k, monke
     r = k.post("/api/kanzlei/mandanten", json={"name": "Salon Neu", "email": "neu@salon.de"})
     assert r.status_code == 200, r.text
     assert k.get("/api/kanzlei/mandanten").json()["gesamt"] == 1
+
+
+# ── Wie viele Betriebe betreut werden ───────────────────────────────────
+
+def test_ich_zaehlt_die_mandanten(welt, k):
+    """Daran hängt, wo das Portal aufgeht.
+
+    Eine Kanzlei mit betreuten Betrieben startet in ihrem Arbeitsvorrat,
+    alle anderen bei „Heute". Der Betreiber arbeitet im Ein-Betrieb
+    produktiv mit — hätte die Antwort an seiner Rolle statt an der Zahl
+    gehangen, wäre er aus seinem eigenen Betrieb geworfen worden.
+    """
+    assert k.get("/api/ich").json()["mandanten"] == 2          # Kanzlei Süd
+
+    _als(welt, "vertretung-a@0711.io")
+    assert k.get("/api/ich").json()["mandanten"] == 2
+
+    _als(welt, "betreiber@0711.io")
+    assert k.get("/api/ich").json()["mandanten"] == 3          # über alle Kanzleien
+
+    _als(welt, "nina@0711.io")
+    assert k.get("/api/ich").json()["mandanten"] == 0          # ein Salon betreut niemanden
+
+    # Ein beendetes Mandat zählt nicht mehr mit — weder bei der Kanzlei
+    # noch beim Betreiber.
+    _als(welt, "kanzlei-a@0711.io")
+    r = k.post(f"/api/kanzlei/mandanten/{welt['ohne']}/status", json={"status": "beendet"})
+    assert r.status_code == 200, r.text
+    assert k.get("/api/ich").json()["mandanten"] == 1
+    _als(welt, "betreiber@0711.io")
+    assert k.get("/api/ich").json()["mandanten"] == 2

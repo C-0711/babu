@@ -82,3 +82,40 @@ def test_die_kennzahl_kacheln_nehmen_die_ganze_breite():
     regel = css.group(1).replace(" ", "")
     assert "repeat(auto-fill" in regel and "1fr" in regel
     assert "max-width" not in regel
+
+
+# ── Kanzlei-Startseite und Rahmen (Scheibe A) ───────────────────────────
+
+def test_der_beleg_geht_an_den_gewaehlten_betrieb():
+    """Der Balken-Weg läuft über XHR und nicht über `api()` — der Kopf mit
+    dem gewählten Betrieb muss dort eigens gesetzt werden. Fehlt er, landet
+    ein hochgeladener Beleg still im eigenen statt im betreuten Betrieb."""
+    rumpf = re.search(r"function sendenMitFortschritt\(.*?\n\}", PORTAL, re.S).group(0)
+    assert "X-Mandant" in rumpf
+
+
+def test_die_startseite_haengt_nicht_fest_an_heute():
+    """`routen()` entschied bis 03.09.2026 hart auf „Heute" — eine Kanzlei
+    landete damit in ihrem meist leeren eigenen Betrieb."""
+    rumpf = re.search(r"function routen\(\)\{.*?\n\}", PORTAL, re.S).group(0)
+    assert "|| startAnsicht()" in rumpf
+    assert re.search(r"function startAnsicht\(\)\{", PORTAL)
+
+
+def test_jeder_weg_hinein_uebernimmt_dieselbe_sitzung():
+    """Vier Wege führen in die angemeldete Ansicht (Passwort, Zugangscode,
+    Registrierung, Neuladen). Setzt einer davon nur seine eigene Teilmenge,
+    fehlt genau dort die Rolle oder die Zahl der betreuten Betriebe."""
+    assert PORTAL.count("sitzungUebernehmen(") >= 4
+
+
+def test_die_seitenleiste_hat_die_beiden_neuen_gruppen():
+    """Im Markup angelegt, nicht nachgeschoben: die Leiste erfasst die
+    Klapp-Zustände genau einmal beim Laden."""
+    assert 'data-gruppe="Mandant"' in PORTAL
+    assert 'data-gruppe="Kanzlei"' in PORTAL
+
+
+def test_der_reiter_kanzlei_steht_oben_und_unten():
+    """Einmal im Kopf, einmal in der Leiste am unteren Rand des Telefons."""
+    assert len(re.findall(r'data-ziel="mandanten"', PORTAL)) >= 2

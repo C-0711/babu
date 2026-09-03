@@ -709,6 +709,28 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
    eines fremden Betriebs, die aussehen wie die eigenen. */
 #mandant-chip{border-color:var(--gc-accent);color:var(--gc-fg);max-width:280px;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Der Pfeil gehört zur Pille, nicht in den Namen — sonst stünde er im
+   Text und würde beim Abschneiden langer Namen mit verschwinden. */
+#mandant-chip::after{content:" ▾";color:var(--gc-accent)}
+/* Die Schnellwahl: dieselbe Karte wie das Konto-Menü, nur mit Suchfeld. */
+#mandant-liste{position:absolute;top:calc(100% + 8px);right:0;z-index:60;width:288px;
+  background:var(--gc-bg);border:1px solid var(--gc-border);border-radius:14px;
+  box-shadow:0 16px 40px rgba(31,30,26,.16);padding:8px;text-align:left}
+#mandant-liste[hidden]{display:none}
+#mandant-liste input{width:100%;padding:9px 11px;border:1px solid var(--gc-border);
+  border-radius:9px;font:400 14px var(--gc-sans);background:var(--gc-bg);color:var(--gc-fg)}
+#mandant-liste #md-schnell-treffer{max-height:320px;overflow:auto;margin-top:6px}
+#mandant-liste button{display:flex;align-items:center;gap:9px;width:100%;background:none;
+  border:0;padding:9px 10px;border-radius:9px;font:400 14px var(--gc-sans);
+  color:var(--gc-fg);cursor:pointer;text-align:left}
+#mandant-liste button:hover,#mandant-liste button.an{background:var(--gc-chrome)}
+#mandant-liste button .nam{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#mandant-liste .punkt{flex:0 0 auto;width:7px;height:7px;border-radius:50%}
+#mandant-liste .leerzeile{padding:10px;font-size:13px;color:var(--gc-muted)}
+#mandant-liste .trenner{height:1px;background:var(--gc-border);margin:5px 0}
+/* Die Gruppe des gewählten Betriebs trägt die Akzentfarbe — sie ist die
+   einzige Stelle in der Leiste, die auf fremde Zahlen zeigt. */
+#nav-gruppe-mandant>summary{color:var(--gc-accent)}
 #nav-mandant{margin:0 0 8px;padding:7px 10px;border-radius:8px;
   background:var(--gc-accent-subtle);font-size:12px;line-height:1.4}
 #nav-mandant b{display:block;color:var(--gc-fg);font:600 13px var(--gc-sans);
@@ -1109,6 +1131,10 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 <header>
   <h1>babu</h1>
   <nav>
+    <!-- Steht vor „Heute", weil er für die Kanzlei die Startseite ist: der
+         Arbeitsvorrat über alle betreuten Betriebe. Ein Klick darauf legt
+         den gewählten Betrieb wieder aus der Hand. -->
+    <button data-ziel="mandanten" id="reiter-kanzlei" hidden>Kanzlei</button>
     <button data-ziel="heute">Heute</button>
     <button data-ziel="belege">Belege</button>
     <button data-ziel="zahlen">Auswertung</button>
@@ -1120,8 +1146,15 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <!-- Für wen gerade gearbeitet wird. Steht nur da, wenn eine Kanzlei
          einen Mandanten gewählt hat — im eigenen Betrieb wäre der Hinweis
          Lärm. -->
-    <button class="chip" id="mandant-chip" hidden onclick="menuGeh('#mandanten')"
-            title="Für wen du gerade arbeitest"></button>
+    <button class="chip" id="mandant-chip" hidden onclick="mdSchnellUmschalten(event)"
+            title="Für wen du gerade arbeitest — ⌘K"></button>
+    <!-- Der schnelle Wechsel: aufklappen, tippen, Enter. Erreichbar auch
+         über ⌘K (Strg+K), damit die Hand am Wort bleibt. -->
+    <div id="mandant-liste" hidden role="dialog" aria-label="Betrieb wählen">
+      <label class="nurvorlesen" for="md-schnell-feld">Betrieb suchen</label>
+      <input id="md-schnell-feld" placeholder="Betrieb suchen …" autocomplete="off">
+      <div id="md-schnell-treffer"></div>
+    </div>
     <span id="stand"></span>
     <button class="chip" id="hochladen-knopf">Beleg hochladen</button>
     <input type="file" id="hochladen-datei" accept=".jpg,.jpeg,.png,.pdf,.heic,.csv,.txt,image/*,application/pdf,text/csv" multiple hidden>
@@ -1164,7 +1197,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       <button role="menuitem" onclick="menuGeh('#einstellungen')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-zahnrad"/></svg> Konto &amp; Einstellungen</button>
       <button role="menuitem" id="menu-mandanten" hidden onclick="menuGeh('#mandanten')">
-        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-personen"/></svg> Mandanten</button>
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-personen"/></svg> Kanzlei</button>
       <button role="menuitem" id="menu-verwaltung" hidden onclick="menuGeh('#verwaltung')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-schluessel"/></svg> Zugänge verwalten</button>
       <button role="menuitem" id="menu-datev" hidden onclick="location.href='/datev'">
@@ -1188,7 +1221,28 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   <!-- Derselbe Hinweis wie der Chip oben, hier für den Blick nach links.
        Text setzt mandantChipAktualisieren(). -->
   <div id="nav-mandant" hidden></div>
-  <details open data-gruppe="Buchhaltung">
+  <!-- Zwei Gruppen für die Kanzlei, im Markup fest angelegt und nur per
+       hidden geschaltet: die Leiste erfasst ihre Klapp-Zustände EINMAL beim
+       Laden (siehe Skriptende) — nachgeschobenes Markup bekäme keinen. -->
+  <details open data-gruppe="Mandant" id="nav-gruppe-mandant" hidden>
+    <summary>Mandant</summary>
+    <button type="button" title="Belege" onclick="menuGeh('#belege')">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-dokument"/></svg><span class="txt">Belege</span></button>
+    <button type="button" title="Monatsabschluss" onclick="menuGeh('#abschluss')">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-diagramm"/></svg><span class="txt">Monatsabschluss</span></button>
+    <button type="button" title="Export für die Buchhaltung" onclick="menuGeh('#export')">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-export"/></svg><span class="txt">Export</span></button>
+  </details>
+  <details open data-gruppe="Kanzlei" id="nav-gruppe-kanzlei" hidden>
+    <summary>Kanzlei</summary>
+    <button type="button" title="Arbeitsvorrat" onclick="mandantAbwaehlen(); menuGeh('#mandanten')">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-personen"/></svg><span class="txt">Arbeitsvorrat</span></button>
+    <button type="button" title="Alle Rückfragen" onclick="mdReiterVormerken('ansteht'); menuGeh('#mandanten')">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-melden"/></svg><span class="txt">Alle Rückfragen</span></button>
+    <button type="button" title="Exporte" onclick="datevOeffnen()">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-export"/></svg><span class="txt">Exporte</span></button>
+  </details>
+  <details open data-gruppe="Buchhaltung" id="nav-gruppe-buchhaltung">
     <summary>Buchhaltung</summary>
     <button type="button" title="Rechnungen" onclick="menuGeh('#rechnungen')">
       <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-euro"/></svg><span class="txt">Rechnungen</span></button>
@@ -1197,7 +1251,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <button type="button" title="Export für die Buchhaltung" onclick="menuGeh('#export')">
       <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-export"/></svg><span class="txt">Export für die Buchhaltung</span></button>
   </details>
-  <details open data-gruppe="Dein Salon">
+  <details open data-gruppe="Dein Salon" id="nav-gruppe-salon">
     <summary>Dein Salon</summary>
     <button type="button" title="Termine" onclick="menuGeh('#termine')">
       <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-kalender"/></svg><span class="txt">Termine</span></button>
@@ -1220,8 +1274,6 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       <summary>Konto</summary>
       <button type="button" title="Konto &amp; Einstellungen" onclick="menuGeh('#einstellungen')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-zahnrad"/></svg><span class="txt">Konto &amp; Einstellungen</span></button>
-      <button type="button" id="nav-mandanten" hidden title="Mandanten" onclick="menuGeh('#mandanten')">
-        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-personen"/></svg><span class="txt">Mandanten</span></button>
       <button type="button" id="nav-verwaltung" hidden title="Zugänge verwalten" onclick="menuGeh('#verwaltung')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-schluessel"/></svg><span class="txt">Zugänge verwalten</span></button>
       <button type="button" id="nav-datev" hidden title="DATEV-Import/Export" onclick="location.href='/datev'">
@@ -1766,12 +1818,11 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 
   <!-- MANDANTEN (Kanzlei): wen wir betreuen, und was dort ansteht -->
   <section class="ansicht" id="a-mandanten">
-    <a class="zurueck" href="#heute">‹ Heute</a>
-    <div class="gruss" style="font-size:22px;margin-bottom:4px">Mandanten</div>
+    <div class="gruss" style="font-size:22px;margin-bottom:4px">Kanzlei</div>
     <p style="color:var(--gc-desc);margin-bottom:14px">Wen du betreust, was dort
     ansteht — und für wen du gerade arbeitest.</p>
     <div class="unterreiter" id="md-reiter">
-      <button type="button" class="an" onclick="mdReiter('ueberblick')">Überblick</button>
+      <button type="button" class="an" onclick="mdReiter('ueberblick')">Arbeitsvorrat</button>
       <button type="button" onclick="mdReiter('liste')">Mandanten</button>
       <button type="button" onclick="mdReiter('ansteht')">Was ansteht</button>
     </div>
@@ -1835,6 +1886,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
      Navigation nach unten, wie in einer App. Ein <nav>, damit die ganze
      Verdrahtung (Klick, Aktiv-Zustand, Box-Sperre) von selbst greift. -->
 <nav id="tab-leiste" aria-label="Bereiche">
+  <button data-ziel="mandanten" id="tab-kanzlei" hidden><svg viewBox="0 0 24 24"><path d="M9 11.4a3.1 3.1 0 1 0 0-6.2 3.1 3.1 0 0 0 0 6.2z"/><path d="M3.2 19.5c0-3 2.6-5.1 5.8-5.1s5.8 2.1 5.8 5.1"/><path d="M16.2 6.3a2.9 2.9 0 0 1 0 5.8"/><path d="M17.6 14.7c1.9.5 3.2 2.2 3.2 4.8"/></svg><span>Kanzlei</span></button>
   <button data-ziel="heute"><svg viewBox="0 0 24 24"><path d="M4 11.5 12 4.5l8 7"/><path d="M6 10v9h12v-9"/></svg><span>Heute</span></button>
   <button data-ziel="belege"><svg viewBox="0 0 24 24"><path d="M6 3.5h9l3 3v14H6z"/><path d="M9 9.5h6M9 13h6"/></svg><span>Belege</span></button>
   <button data-ziel="zahlen"><svg viewBox="0 0 24 24"><path d="M4 19.5h16"/><path d="M6.5 19.5v-7M12 19.5V6.5M17.5 19.5V11"/></svg><span>Zahlen</span></button>
@@ -1939,10 +1991,42 @@ const OHNE_BOX_ERLAUBT = ["gesperrt", "einrichtung", "einstellungen", "mandanten
 function boxZustandZeigen(){
   document.querySelectorAll("nav button").forEach(b => b.hidden = !meineBox);
   $("#hochladen-knopf").hidden = !meineBox;
+  // Der Weg zur Kanzlei hängt nicht an der eigenen Belegbox — wer Betriebe
+  // betreut, hat oft selbst gar keine.
+  $("#reiter-kanzlei").hidden = !istKanzlei();
+  $("#tab-kanzlei").hidden = !istKanzlei();
 }
 
 let meineRolle = "salon";
 let meineBox = true;
+let meineMandanten = 0;
+function istKanzlei(){ return meineRolle === "kanzlei" || meineRolle === "admin"; }
+/* Wo das Portal aufgeht. Eine Kanzlei mit betreuten Betrieben und ohne
+   gewählten Betrieb startet im Arbeitsvorrat — alle anderen bei „Heute".
+   Wer im eigenen Betrieb arbeitet (auch der Betreiber, solange er keine
+   Betriebe betreut), merkt von der Regel nichts. */
+function startAnsicht(){
+  return istKanzlei() && meineMandanten > 0 && !(aktiverMandant && aktiverMandant.id)
+    ? "mandanten" : "heute";
+}
+/* Was über den angemeldeten Zugang bekannt ist, an EINER Stelle übernommen.
+   Vorher setzte jeder der vier Wege hinein seine eigene Teilmenge — der
+   Zugangscode-Weg zum Beispiel gar keine Rolle. */
+function sitzungUebernehmen(d){
+  meineRolle = d.rolle || "salon";
+  meineBox = d.box !== false;
+  meineMandanten = d.mandanten || 0;
+  $("#avatar").textContent = (d.un || "·")[0].toUpperCase();
+  naviKopfAktualisieren(d.un, meineRolle);
+}
+/* Dasselbe, nur frisch geholt: /api/login und /api/anmelden wissen nicht,
+   wie viele Betriebe betreut werden. */
+async function sitzungHolen(){
+  try{
+    const r = await fetch("/api/ich", {credentials:"same-origin"});
+    if (r.ok) sitzungUebernehmen(await r.json());
+  }catch{}
+}
 $("#login-form").addEventListener("submit", async ev => {
   ev.preventDefault();
   const f = $("#login-fehler"); f.style.display = "none";
@@ -1970,10 +2054,11 @@ $("#login-form").addEventListener("submit", async ev => {
       $("#login-passwort").focus();
       return;
     }
-    meineRolle = d.rolle || "salon";
-    meineBox = d.box !== false;
-    $("#avatar").textContent = (d.un||"·")[0].toUpperCase();
+    sitzungUebernehmen(d);
     $("#login-passwort").value = "";
+    // Die Anmeldung sagt nichts über betreute Betriebe — für eine Kanzlei
+    // entscheidet die Zahl aber, wo die Seite aufgeht.
+    if (istKanzlei()) await sitzungHolen();
     zeigeApp();
   }catch{ f.textContent = "Gerade keine Verbindung — gleich nochmal versuchen."; f.style.display = "block"; }
   finally{ knopf.disabled = false; knopf.textContent = "Anmelden"; }
@@ -1997,6 +2082,9 @@ $("#anmelden-code").addEventListener("click", async () => {
     const d = await r.json();
     $("#avatar").textContent = (d.un||"·")[0].toUpperCase();
     $("#zugangscode").value = "";
+    // Dieser Weg antwortet ohne Rolle — ohne den Nachschlag stünde eine
+    // Kanzlei als Salon da und sähe ihren Arbeitsvorrat nicht.
+    await sitzungHolen();
     zeigeApp();
   }catch{ f.textContent = "Gerade keine Verbindung — gleich nochmal versuchen."; f.style.display = "block"; }
 });
@@ -2072,12 +2160,12 @@ const ansichten = { gesperrt: () => {}, heute: ladeHeute, belege: ladeBelege, fr
    ohne diesen Eintrag stünde man dort ohne leuchtenden Reiter. */
 const REITER_ZU = {detail: "belege", unterlage: "ablage", saloncheck: "zahlen"};
 function routen(){
-  const h = location.hash.slice(1) || "heute";
+  const h = location.hash.slice(1) || startAnsicht();
   const ziel = h.split("/")[0];
   // Der Rest hinter dem ersten Schrägstrich, ungeteilt: ein Ablagepfad ist
   // „dokumente/2026-08/miete.pdf" und hätte sich sonst in Stücke zerlegt.
   const arg = h.slice(ziel.length + 1);
-  let name = ansichten[ziel] !== undefined ? ziel : "heute";
+  let name = ansichten[ziel] !== undefined ? ziel : startAnsicht();
   if (!meineBox && !OHNE_BOX_ERLAUBT.includes(name)) name = "gesperrt";
   document.querySelectorAll(".ansicht").forEach(a => a.classList.remove("an"));
   document.querySelectorAll("nav button").forEach(b =>
@@ -2089,7 +2177,14 @@ function routen(){
 }
 window.addEventListener("hashchange", routen);
 document.querySelectorAll("nav button").forEach(b =>
-  b.addEventListener("click", () => location.hash = "#" + b.dataset.ziel));
+  b.addEventListener("click", () => {
+    // Der Reiter „Kanzlei" führt aus dem gewählten Betrieb heraus. Nur hier
+    // — der Router darf niemandem den Betrieb unter den Füßen wegziehen,
+    // nur weil eine Adresse aufgerufen wurde.
+    if (b.dataset.ziel === "mandanten") mandantAbwaehlen();
+    const hin = "#" + b.dataset.ziel;
+    if (location.hash === hin) routen(); else location.hash = hin;
+  }));
 
 /* ————— HEUTE ————— */
 /* Was ansteht und welcher Monat wartet — dasselbe wie in der App, nur
@@ -4112,7 +4207,10 @@ $("#abmelden-knopf").addEventListener("click", async () => {
 /* ————— Konto-Menü rechts oben ————— */
 function menuZu(){ $("#konto-menu").hidden = true;
   $("#konto-knopf").setAttribute("aria-expanded", "false"); }
-function menuGeh(ziel){ menuZu(); location.hash = ziel; }
+/* Steht die Adresse schon, löst das Setzen kein Umblättern aus — dann muss
+   der Router von Hand ran. Sonst täte ein Menüknopf auf der eigenen Seite
+   nichts, auch wenn davor etwas vorgemerkt wurde. */
+function menuGeh(ziel){ menuZu(); if (location.hash === ziel) routen(); else location.hash = ziel; }
 $("#konto-knopf").addEventListener("click", async ev => {
   ev.stopPropagation();
   // Ab 821px hat der Hamburger eine zweite Aufgabe: die Seitenleiste
@@ -4131,7 +4229,7 @@ $("#konto-knopf").addEventListener("click", async ev => {
       $("#menu-verwaltung").hidden = !(d.rolle === "admin" || d.rolle === "kanzlei");
       $("#menu-datev").hidden = $("#menu-verwaltung").hidden;
       $("#menu-mandanten").hidden = $("#menu-verwaltung").hidden;
-      naviKopfAktualisieren(d.un, d.rolle);
+      sitzungUebernehmen(d);
     }catch{}
   }
 });
@@ -4160,7 +4258,9 @@ function naviKopfAktualisieren(un, rolle){
   $("#nav-rolle").textContent = rolleAnzeige(rolle);
   $("#nav-verwaltung").hidden = !(rolle === "admin" || rolle === "kanzlei");
   $("#nav-datev").hidden = $("#nav-verwaltung").hidden;
-  $("#nav-mandanten").hidden = $("#nav-verwaltung").hidden;
+  $("#nav-gruppe-kanzlei").hidden = !istKanzlei();
+  $("#reiter-kanzlei").hidden = !istKanzlei();
+  $("#tab-kanzlei").hidden = !istKanzlei();
   mandantChipAktualisieren();
 }
 (() => {
@@ -5060,6 +5160,10 @@ function sendenMitFortschritt(url, koerper, beiAnteil){
     const x = new XMLHttpRequest();
     x.open("POST", url, true);
     x.withCredentials = true;
+    // Wie in api(): der gewählte Betrieb muss mit, sonst landete ein
+    // hochgeladener Beleg im eigenen statt im betreuten.
+    if (aktiverMandant && aktiverMandant.id)
+      x.setRequestHeader("X-Mandant", String(aktiverMandant.id));
     x.upload.addEventListener("progress", e => {
       if (e.lengthComputable) beiAnteil(e.loaded / e.total);
     });
@@ -6225,13 +6329,30 @@ function mandantChipAktualisieren(){
   const chip = $("#mandant-chip"), nav = $("#nav-mandant");
   if (!chip || !nav) return;
   const m = aktiverMandant;
+  const gruppe = $("#nav-gruppe-mandant");
+  if (gruppe) gruppe.hidden = !(m && m.id);
+  // Eine Kanzlei mit betreuten Betrieben hat selbst meist gar nichts zu
+  // buchen — ihre eigenen Gruppen bleiben zu, bis ein Betrieb gewählt ist.
+  if (istKanzlei() && meineMandanten > 0){
+    const b = $("#nav-gruppe-buchhaltung"), s = $("#nav-gruppe-salon");
+    if (b) b.hidden = !(m && m.id);
+    if (s) s.hidden = !(m && m.id);
+  }
   if (!m || !m.id){ chip.hidden = true; nav.hidden = true; return; }
-  chip.hidden = false; chip.textContent = `Für ${m.name} · wechseln`;
+  chip.hidden = false; chip.textContent = `Für ${m.name}`;
   nav.hidden = false;
   nav.innerHTML = `Du arbeitest gerade für<b>${esc(m.name)}</b>
-    <button type="button" onclick="mandantSetzen(null)">Zurück zum eigenen Betrieb</button>`;
+    <button type="button" onclick="mandantSetzen(null)">Zurück zum Arbeitsvorrat</button>`;
 }
-function mandantSetzen(m){
+/* Den gewählten Betrieb aus der Hand legen, ohne die Ansicht zu wechseln —
+   der Reiter „Kanzlei" macht beides, in dieser Reihenfolge. */
+function mandantAbwaehlen(){
+  aktiverMandant = null;
+  try{ sessionStorage.removeItem(MANDANT_SCHLUESSEL); }catch{}
+  kategorienCache = null;
+  mandantChipAktualisieren();
+}
+function mandantSetzen(m, ziel){
   aktiverMandant = (m && m.id) ? {id: m.id, name: m.name} : null;
   try{
     if (aktiverMandant) sessionStorage.setItem(MANDANT_SCHLUESSEL, JSON.stringify(aktiverMandant));
@@ -6240,8 +6361,125 @@ function mandantSetzen(m){
   // Alles, was sich das Portal gemerkt hat, gehört zum vorigen Betrieb.
   kategorienCache = null;
   mandantChipAktualisieren();
-  if (location.hash === "#heute") routen(); else location.hash = "#heute";
+  // Mit Betrieb geht es an die Arbeit, ohne ihn zurück in den Arbeitsvorrat.
+  const hin = aktiverMandant ? (ziel || "#belege") : "#mandanten";
+  if (location.hash === hin) routen(); else location.hash = hin;
 }
+
+/* Die Ausfuhr-Seite liegt außerhalb des Portals — der gewählte Betrieb muss
+   ihr deshalb in der Adresse mitgegeben werden, nicht über den Kopf. */
+function datevOeffnen(){
+  const m = aktiverMandant;
+  location.href = "/datev" + (m && m.id
+    ? "?mandant=" + encodeURIComponent(m.id) + "&name=" + encodeURIComponent(m.name)
+    : "");
+}
+
+/* ————— Schnellwahl im Kopf (⌘K) —————
+   Wer zwanzig Betriebe betreut, wechselt sie den ganzen Tag. Die Liste hängt
+   an der Pille, hört auf ⌘K und ist 60 Sekunden gepuffert — länger nicht,
+   sonst fehlte ein frisch angelegter Betrieb. */
+let _mdSchnellStand = null, _mdSchnellZeit = 0, _mdSchnellWahl = -1, _mdSchnellSicht = [];
+async function mdSchnellDaten(){
+  if (_mdSchnellStand && Date.now() - _mdSchnellZeit < 60000) return _mdSchnellStand;
+  try{
+    const r = await api("/api/kanzlei/mandanten?je_seite=100");
+    if (!r.ok) return _mdSchnellStand || [];
+    const d = await r.json();
+    // Ohne Status-Filter geholt: der Punkt vor dem Namen soll auch sagen
+    // können, dass eine Belegbox noch fehlt oder ein Mandat ruht.
+    _mdSchnellStand = (d.mandanten || []).filter(m => m.status !== "beendet");
+    _mdSchnellZeit = Date.now();
+    for (const m of _mdSchnellStand) MD_NAMEN[m.id] = m.name;
+  }catch{ return _mdSchnellStand || []; }
+  return _mdSchnellStand;
+}
+function mdSchnellPunkt(st){
+  return st === "aktiv" ? "var(--gc-ok)"
+       : st === "box_ausstehend" ? "var(--gc-accent)" : "var(--gc-muted)";
+}
+function mdSchnellZeichnen(){
+  const wort = ($("#md-schnell-feld").value || "").trim().toLowerCase();
+  const alle = _mdSchnellStand || [];
+  _mdSchnellSicht = wort ? alle.filter(m => (m.name || "").toLowerCase().includes(wort)
+                                         || (m.besitzer || "").toLowerCase().includes(wort))
+                         : alle;
+  if (_mdSchnellWahl >= _mdSchnellSicht.length) _mdSchnellWahl = _mdSchnellSicht.length - 1;
+  let html = aktiverMandant
+    ? `<button type="button" data-nr="-1" class="${_mdSchnellWahl === -1 ? "an" : ""}"
+         onclick="mdSchnellNehmen(-1)"><span class="nam">← Arbeitsvorrat</span></button>
+       <div class="trenner"></div>` : "";
+  if (!_mdSchnellSicht.length){
+    html += `<div class="leerzeile">${alle.length ? "Kein Treffer." : "Noch kein Betrieb angelegt."}</div>`;
+  }
+  html += _mdSchnellSicht.map((m, i) => `<button type="button" data-nr="${i}"
+      class="${i === _mdSchnellWahl ? "an" : ""}" onclick="mdSchnellNehmen(${i})"
+      ${m.belegbox_da && m.status === "aktiv" ? "" : "disabled style=\"opacity:.55\""}>
+      <span class="punkt" style="background:${mdSchnellPunkt(m.status)}"></span>
+      <span class="nam">${esc(m.name)}</span></button>`).join("");
+  $("#md-schnell-treffer").innerHTML = html;
+}
+function mdSchnellNehmen(nr){
+  mdSchnellZu();
+  if (nr === -1){ mandantSetzen(null); return; }
+  const m = _mdSchnellSicht[nr];
+  if (m) mandantSetzen(mdVon(m.id));
+}
+function mdSchnellZu(){
+  $("#mandant-liste").hidden = true;
+  $("#mandant-chip").setAttribute("aria-expanded", "false");
+}
+async function mdSchnellAuf(){
+  const kasten = $("#mandant-liste");
+  kasten.hidden = false;
+  $("#mandant-chip").setAttribute("aria-expanded", "true");
+  $("#md-schnell-feld").value = "";
+  _mdSchnellWahl = aktiverMandant ? -1 : 0;
+  $("#md-schnell-treffer").innerHTML = `<div class="leerzeile">Einen Moment …</div>`;
+  $("#md-schnell-feld").focus();
+  await mdSchnellDaten();
+  if (!kasten.hidden) mdSchnellZeichnen();
+}
+function mdSchnellUmschalten(ev){
+  if (ev) ev.stopPropagation();
+  if ($("#mandant-liste").hidden) mdSchnellAuf(); else mdSchnellZu();
+}
+$("#md-schnell-feld").addEventListener("input", () => {
+  _mdSchnellWahl = _mdSchnellSicht.length ? 0 : -1;
+  mdSchnellZeichnen();
+});
+$("#md-schnell-feld").addEventListener("keydown", ev => {
+  const unten = aktiverMandant ? -1 : 0;
+  if (ev.key === "ArrowDown"){
+    ev.preventDefault();
+    _mdSchnellWahl = Math.min(_mdSchnellWahl + 1, _mdSchnellSicht.length - 1);
+    mdSchnellZeichnen();
+  } else if (ev.key === "ArrowUp"){
+    ev.preventDefault();
+    _mdSchnellWahl = Math.max(_mdSchnellWahl - 1, unten);
+    mdSchnellZeichnen();
+  } else if (ev.key === "Enter"){
+    ev.preventDefault();
+    mdSchnellNehmen(_mdSchnellWahl);
+  } else if (ev.key === "Escape"){
+    ev.preventDefault(); ev.stopPropagation(); mdSchnellZu();
+  }
+});
+document.addEventListener("keydown", ev => {
+  if ((ev.metaKey || ev.ctrlKey) && (ev.key === "k" || ev.key === "K")){
+    if (!istKanzlei() || $("#app").hidden) return;
+    ev.preventDefault();
+    mdSchnellUmschalten();
+  } else if (ev.key === "Escape" && !$("#mandant-liste").hidden){
+    mdSchnellZu();
+  }
+});
+/* Eigener Außenklick-Schließer: der weiter oben schließt nur das Konto-Menü
+   und lässt alles innerhalb von #kopf-recht in Ruhe — die Liste steht dort. */
+document.addEventListener("click", ev => {
+  if ($("#mandant-liste").hidden) return;
+  if (!ev.target.closest("#mandant-liste") && !ev.target.closest("#mandant-chip")) mdSchnellZu();
+});
 
 /* Namen gehören nicht in onclick-Attribute (Anführungszeichen im Salonnamen
    brächen den Aufruf) — die Liste merkt sie sich, die Knöpfe reichen nur die Nummer. */
@@ -6249,7 +6487,13 @@ const MD_NAMEN = {};
 function mdVon(id){ return {id, name: MD_NAMEN[id] || "Mandant"}; }
 let _mdSuche = "", _mdSeite = 1, _mdStatus = "", _mdGewaehlt = null, _mdDarfVerknuepfen = false;
 let _mdEntwurf = {};
-const MD_REITER = {ueberblick: "Überblick", liste: "Mandanten", ansteht: "Was ansteht"};
+const MD_REITER = {ueberblick: "Arbeitsvorrat", liste: "Mandanten", ansteht: "Was ansteht"};
+/* Ein Merker statt einer Reihenfolge-Wette: „Alle Rückfragen" in der
+   Seitenleiste wechselt erst die Ansicht, und die schaltet dann selbst auf
+   den vorgemerkten Unterreiter (siehe ladeUeberblick). Andersherum käme der
+   Adresswechsel hinterher und würfe den Reiter wieder um. */
+let _mdMerker = null;
+function mdReiterVormerken(w){ _mdMerker = w; }
 function mdReiter(w){
   $("#md-ueberblick-tab").hidden = w !== "ueberblick";
   $("#md-liste-tab").hidden = w !== "liste";
@@ -6438,6 +6682,8 @@ function ckZelle(z){
 function monatKurz(m){ const [j, mo] = m.split("-"); return MONATE_KURZ[parseInt(mo, 10) - 1] + " " + j.slice(2); }
 const MONATE_KURZ = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
 async function ladeUeberblick(){
+  // Wurde ein anderer Unterreiter vorgemerkt, gehört ihm dieser Aufruf.
+  if (_mdMerker){ const w = _mdMerker; _mdMerker = null; mdReiter(w); return; }
   const ziel = $("#md-ueberblick");
   let d;
   try{
@@ -6718,10 +6964,7 @@ $("#reg-start").addEventListener("click", () => {
       const d = await r.json().catch(() => ({}));
       if (r.ok){
         // Sofort drin — Konto ist angelegt und angemeldet.
-        meineRolle = d.rolle || "salon";
-        meineBox = d.box !== false;
-        $("#avatar").textContent = (d.un||"·")[0].toUpperCase();
-        naviKopfAktualisieren(d.un, meineRolle);
+        sitzungUebernehmen(d);
         // Antworten aus dem Paket-Fragebogen der Startseite übernehmen.
         try{
           const q = JSON.parse(sessionStorage.getItem("babu-paket") || "null");
@@ -6813,10 +7056,7 @@ function ladeEinrichtung(){
   }
   try{
     const r = await fetch("/api/ich",{credentials:"same-origin"});
-    if (r.ok){ const d = await r.json(); meineRolle = d.rolle || "salon";
-      meineBox = d.box !== false;
-      $("#avatar").textContent = (d.un||"·")[0].toUpperCase();
-      naviKopfAktualisieren(d.un, meineRolle); zeigeApp(); }
+    if (r.ok){ sitzungUebernehmen(await r.json()); zeigeApp(); }
     else zeigeLogin();
   }catch{
     $("#offline").style.display = "block"; zeigeLogin();

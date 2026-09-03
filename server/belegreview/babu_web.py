@@ -1667,8 +1667,26 @@ def api_ich(request: Request) -> Response:
     # `un` ist bei GitChain-Konten keine E-Mail (das @ verliert `wer_token`
     # schon dort) — die Oberfläche kann also nicht am „@" erkennen, ob ein
     # eigenes Konto mit Passwort dahintersteht. `hat_passwort` sagt es direkt.
-    antwort = JSONResponse({"un": un, "rolle": rolle(un), "box": box_mitglied(un),
-                            "hat_passwort": bool(nutzer_holen(un))})
+    # `mandanten` ist die Zahl der betreuten fremden Betriebe. Daran hängt,
+    # wo das Portal aufgeht: eine Kanzlei mit Mandanten startet in ihrem
+    # Arbeitsvorrat, alle anderen bei „Heute". Der Betreiber arbeitet im
+    # Ein-Betrieb produktiv mit — ohne Mandanten muss er weiter auf „Heute"
+    # landen, deshalb wird gezählt und nicht an der Rolle entschieden.
+    meine_rolle = rolle(un)
+    if meine_rolle == "admin":
+        # Der Betreiber sieht alle Kanzleien, nicht nur die eigene.
+        # Eine Abfrage, bewusst außerhalb jedes anderen `with`-Blocks:
+        # `_DB_LOCK` ist nicht wiedereintrittsfähig.
+        with _DB_LOCK, _db() as c:
+            betreute = c.execute(
+                "SELECT COUNT(*) FROM mandant WHERE status <> ?",
+                ("beendet",)).fetchone()[0]
+    else:
+        betreute = len([m for m in mandanten.mandanten_fuer(un)
+                        if m["status"] != "beendet"])
+    antwort = JSONResponse({"un": un, "rolle": meine_rolle, "box": box_mitglied(un),
+                            "hat_passwort": bool(nutzer_holen(un)),
+                            "mandanten": betreute})
     if request.cookies.get(SESSION_COOKIE):
         antwort.set_cookie(SESSION_COOKIE, _signieren(un, exp), max_age=SESSION_DAUER,
                            httponly=True, secure=SESSION_SECURE, samesite="lax", path="/")
