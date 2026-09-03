@@ -75,8 +75,12 @@ nav button{padding:10px 18px;border-radius:999px;font-weight:550;font-size:15px;
   color:var(--gc-desc);flex:none}
 nav button.an{background:#eae7de;color:var(--gc-fg);font-weight:600}
 /* Der eine Knopf, der etwas anstößt, trägt Tinte — alles andere bleibt leise. */
+/* Nur das Zeichen, auf jeder Breite — wie der Aufnehmen-Reiter in der App.
+   Was er tut, sagt der Titel beim Verweilen. */
 #hochladen-knopf{background:var(--gc-fg);border-color:var(--gc-fg);color:#fff;
-  font-weight:600;padding:12px 24px;font-size:14.5px}
+  font-weight:600;font-size:0;padding:0;width:38px;height:38px;border-radius:50%;
+  display:grid;place-items:center}
+#hochladen-knopf::before{content:"+";font:600 20px/1 var(--gc-sans)}
 #hochladen-knopf:hover{background:#000}
 /* Die Uhrzeit ist Technik-Telemetrie — im Premium-Portal unsichtbar. */
 #stand{display:none}
@@ -86,9 +90,11 @@ nav button.an{background:#eae7de;color:var(--gc-fg);font-weight:600}
    Aufnehmen ein Reiter mit Symbol, keine beschriftete Schaltfläche — hier
    wird sie es auch, sobald die Navigation sonst abgeschnitten würde. */
 @media (max-width:820px){
-  #hochladen-knopf{font-size:0;padding:8px 12px}
-  #hochladen-knopf::before{content:"+";font:600 17px var(--gc-sans);line-height:1}
   header{gap:10px;padding:10px 14px}
+}
+@media (min-width:821px){
+  /* Auf breiten Fenstern wohnt das Kürzel unten in der Leiste. */
+  #konto-knopf{display:none}
 }
 #avatar{width:34px;height:34px;border-radius:50%;background:var(--gc-accent);
   color:#fff;font:600 13px var(--gc-sans);display:grid;place-items:center}
@@ -148,12 +154,19 @@ main p, .leer, .karte > p{max-width:78ch}
 #konto-knopf{display:flex;align-items:center;gap:7px;background:none;border:0;
   padding:3px 4px;cursor:pointer;border-radius:20px}
 #konto-knopf:hover{background:var(--gc-chrome)}
-#konto-knopf .striche{display:flex;flex-direction:column;gap:3px}
-#konto-knopf .striche i{display:block;width:16px;height:1.8px;border-radius:2px;
+#leiste-knopf{background:none;border:0;padding:8px 6px;border-radius:9px;cursor:pointer;display:grid;place-items:center}
+#leiste-knopf:hover{background:var(--gc-bg)}
+#leiste-knopf .striche{display:flex;flex-direction:column;gap:3px}
+#leiste-knopf .striche i{display:block;width:16px;height:1.8px;border-radius:2px;
   background:var(--gc-fg)}
 #konto-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:60;width:262px;
   background:var(--gc-bg);border:1px solid var(--gc-border);border-radius:14px;
   box-shadow:0 16px 40px rgba(31,30,26,.16);padding:6px;text-align:left}
+/* Auf schmalen Fenstern hängt das Menü am Hamburger links — deshalb nicht rechts
+   angeflanscht, sondern unter dem ganzen Kopf, so breit wie das Fenster. */
+@media (max-width:820px){
+  #konto-menu{position:fixed;top:calc(var(--kopf-h, 67px) + 6px);left:12px;right:12px;width:auto}
+}
 #konto-menu[hidden]{display:none}
 #konto-menu .kopf{padding:11px 12px 9px;border-bottom:1px solid var(--gc-border);
   margin-bottom:5px}
@@ -741,6 +754,12 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 #nav-mandant button{display:inline;width:auto;padding:0;margin-top:2px;border:0;
   background:none;color:var(--gc-accent);font:inherit;cursor:pointer}
 #seiten-nav.zu #nav-mandant{display:none}
+#nav-konto{margin-top:6px;border-top:1px solid var(--gc-border);border-radius:0;padding-top:12px}
+#nav-konto #nav-avatar{width:28px;height:28px;border-radius:50%;background:var(--gc-accent);color:#fff;
+  font:600 12px var(--gc-sans);display:grid;place-items:center;opacity:1}
+#nav-konto .txt{display:flex;flex-direction:column;min-width:0}
+#nav-konto .txt b{font:600 13px var(--gc-sans);overflow-wrap:anywhere;white-space:normal}
+#nav-konto .txt span{font-size:11.5px;color:var(--gc-muted)}
 
 /* Wie der Monat gelaufen ist — eine Kachel je Zahl. Bewusst ein Gitter,
    das mitwächst: auf dem breiten Bildschirm im Salon stehen sechs Kacheln
@@ -1132,6 +1151,10 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   </defs>
 </svg>
 <header>
+  <!-- Der Hamburger sitzt links neben dem Namen: er klappt die Leiste, die
+       direkt darunter beginnt. Auf schmalen Fenstern öffnet er das Menü. -->
+  <button id="leiste-knopf" aria-label="Leiste ein- oder ausklappen" title="Leiste ein- oder ausklappen">
+    <span class="striche"><i></i><i></i><i></i></span></button>
   <h1>babu</h1>
   <nav>
     <!-- Steht vor „Heute", weil er für die Kanzlei die Startseite ist: der
@@ -1159,14 +1182,15 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       <div id="md-schnell-treffer"></div>
     </div>
     <span id="stand"></span>
-    <button class="chip" id="hochladen-knopf">Beleg hochladen</button>
+    <button class="chip" id="hochladen-knopf" aria-label="Beleg hochladen" title="Beleg hochladen">Beleg hochladen</button>
     <input type="file" id="hochladen-datei" accept=".jpg,.jpeg,.png,.pdf,.heic,.csv,.txt,image/*,application/pdf,text/csv" multiple hidden>
     <button class="chip mit-ik" id="melden-knopf" title="Ist dir was aufgefallen?">
       <svg class="ik klein" viewBox="0 0 24 24"><use href="#ik-melden"/></svg>
       <span class="melden-wort">Aufgefallen?</span></button>
+    <!-- Das Kürzel nur auf schmalen Fenstern: dort ist es der Weg ins Menü.
+         Auf breiten sitzt es unten links in der Leiste. -->
     <button id="konto-knopf" aria-label="Dein Konto und Einstellungen"
             aria-haspopup="true" aria-expanded="false">
-      <span class="striche"><i></i><i></i><i></i></span>
       <span id="avatar" title="Angemeldet">·</span>
     </button>
     <div id="konto-menu" hidden role="menu">
@@ -1218,7 +1242,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
      das Skript am Ende der Datei; Name/Rolle setzt naviKopfAktualisieren(). -->
 <aside id="seiten-nav" aria-label="Bereiche">
   <div class="kopf">
-    <div class="text"><b id="nav-un">…</b><span id="nav-rolle"></span></div>
+    <div class="text"></div>
     <button type="button" id="nav-klapp" title="Leiste einklappen" aria-label="Leiste einklappen"></button>
   </div>
   <!-- Derselbe Hinweis wie der Chip oben, hier für den Blick nach links.
@@ -1284,6 +1308,10 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     </details>
     <button type="button" class="weg" id="nav-abmelden" title="Abmelden">
       <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-abmelden"/></svg><span class="txt">Abmelden</span></button>
+    <!-- Wer angemeldet ist, ganz unten links: Kürzel, Name, Rolle. -->
+    <button type="button" id="nav-konto" title="Konto &amp; Einstellungen" onclick="menuGeh('#einstellungen')">
+      <span id="nav-avatar" class="sym">·</span>
+      <span class="txt"><b id="nav-un">…</b><span id="nav-rolle"></span></span></button>
   </div>
 </aside>
 <main>
@@ -4283,12 +4311,16 @@ function menuZu(){ $("#konto-menu").hidden = true;
    der Router von Hand ran. Sonst täte ein Menüknopf auf der eigenen Seite
    nichts, auch wenn davor etwas vorgemerkt wurde. */
 function menuGeh(ziel){ menuZu(); if (location.hash === ziel) routen(); else location.hash = ziel; }
-$("#konto-knopf").addEventListener("click", async ev => {
+/* Der Hamburger links neben dem Namen: auf breiten Fenstern klappt er die
+   Leiste, auf schmalen öffnet er das Menü. Das Kürzel rechts (nur schmal)
+   öffnet immer das Menü. */
+$("#leiste-knopf").addEventListener("click", ev => {
   ev.stopPropagation();
-  // Ab 821px hat der Hamburger eine zweite Aufgabe: die Seitenleiste
-  // auf/zu klappen, statt das Dropdown zu öffnen (siehe Medienabfrage
-  // im CSS — darunter bleibt das Dropdown die einzige Navigation).
   if (SEITENNAV_BREIT.matches){ leisteUmschalten(); return; }
+  menuUmschalten();
+});
+$("#konto-knopf").addEventListener("click", ev => { ev.stopPropagation(); menuUmschalten(); });
+async function menuUmschalten(){
   const menu = $("#konto-menu");
   const auf = menu.hidden;
   menu.hidden = !auf;
@@ -4304,9 +4336,9 @@ $("#konto-knopf").addEventListener("click", async ev => {
       sitzungUebernehmen(d);
     }catch{}
   }
-});
+}
 document.addEventListener("click", ev => {
-  if (!$("#konto-menu").hidden && !ev.target.closest("#kopf-recht")) menuZu();
+  if (!$("#konto-menu").hidden && !ev.target.closest("#kopf-recht") && !ev.target.closest("#leiste-knopf")) menuZu();
 });
 document.addEventListener("keydown", ev => { if (ev.key === "Escape") menuZu(); });
 $("#menu-abmelden").addEventListener("click", async () => {
@@ -4327,6 +4359,7 @@ function rolleAnzeige(rolle){
 }
 function naviKopfAktualisieren(un, rolle){
   $("#nav-un").textContent = un || "";
+  $("#nav-avatar").textContent = (un || "·")[0].toUpperCase();
   $("#nav-rolle").textContent = rolleAnzeige(rolle);
   $("#nav-verwaltung").hidden = !(rolle === "admin" || rolle === "kanzlei");
   $("#nav-datev").hidden = $("#nav-verwaltung").hidden;
