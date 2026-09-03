@@ -214,3 +214,41 @@ nicht. Deployt, `schema_version` 1–3, nur noch `kanzlei_mitglied_kanzlei_id_fk
 muss PAT-Konten ohne nutzer-Zeile aushalten** — kein Fremdschlüssel auf `nutzer`
 für Kanzlei-/Betreiber-Identitäten.
 
+**Welle 5, 03.09. früh — Kanzlei-Startseite, Rahmen nach Prototyp, Massenimport**
+(Plan `~/.claude/plans/iridescent-wandering-naur.md`, genehmigt; Entscheidungen des
+Auftraggebers: Eingang per Ordner/Mehrfachauswahl, Rückfragen für die Kanzlei,
+Freigabe irreversibel, Umfang A + Import):
+
+- Scheibe A (`9b7c9d8`): Kanzlei/admin mit Mandanten landet ohne Adresszusatz im
+  Arbeitsvorrat (`startAnsicht()` in `routen()`, `/api/ich` liefert `mandanten`;
+  der Betreiber im Ein-Betrieb bleibt auf Heute). Alle vier Anmeldewege gehen über
+  `sitzungUebernehmen()` — der Zugangscode-Weg setzte die Rolle vorher nie. Kopf-
+  Reiter „Kanzlei" (auch in der Tab-Leiste), Pille „Für <Name> ▾" mit Schnellwahl
+  und ⌘K/Strg+K, Seitenleisten-Gruppen „Mandant" (nur bei gewähltem Mandanten) und
+  „Kanzlei", Buchhaltung/Dein Salon verschwinden beim leeren eigenen Betrieb.
+  `sendenMitFortschritt` schickt `X-Mandant` — vorher landete jeder Upload beim
+  Acting-as in der eigenen Box der Kanzlei.
+- Import-Serverseite (`4676895`, `fa0eff3`): `_beleg_serverseitig_lesen` in
+  `_beleg_einschaetzen` + `_beleg_review_ablegen` geschnitten (Hülle bytegleich),
+  `_review_ueberschreibbar` (Platzhalter dürfen ersetzt werden, Hand-Angaben nie),
+  `_review_aus_rueckfrage`/`_review_unlesbar`, `dokumentklasse unlesbar` → Status
+  sofort „unlesbar" (Reviews des alten Watchers wechseln von „nachfrage" — gleiche
+  Zählklasse, nur das Wort), `_im_mandanten_kontext`, Tabelle `import_status`
+  (Migration 0004, 25 Tabellen). `belegimport.py`: Lauf-Register, ein Worker
+  prozessweit, Ablage in Bündeln à 20 (ein Push je Bündel), Lesen je Beleg mit
+  Atempause außerhalb des Semaphors, Import-Regel gebucht/Rückfrage/unlesbar,
+  Dedupe byte-gleich, Snapshot in DB, Wiederaufnahme nach Neustart, Abbruch,
+  Bremse 5/10 min, Audit. Routen `/api/kanzlei/mandanten/{id}/import[/dateien|
+  /start|/abbrechen|/fortsetzen]`.
+- Import-Portal (`a40f46e`, `34903a5`): Block „Belege für diesen Betrieb ablegen"
+  in der Mandanten-Detailkarte, Ordner-/Mehrfachauswahl, Balken je Datei,
+  Zähler, Ergebnisliste je Datei (geprüft / Frage im Wortlaut mit „Ansehen ›" /
+  nicht lesbar / war schon da), Anhalten, Weitermachen, Unlesbare nochmal
+  versuchen, Wiedereinstieg nach Reload.
+
+Befund unterwegs: Headless-Chrome klemmt auf diesem Mac bei 500 px Breite; die
+375er Sichtprüfung lief im echten Browserfenster. Die Vorschau kann Mandanten-
+boxen nur mit umgebogenem Gateway (`box.remote_aus_ref`) schreiben — ein
+`BABU_GATEWAY`-Ausweg im Vorschau-Skript wäre der nächste kleine Schritt.
+
+Endstand `34903a5`: volle Suite **2015 grün gegen SQLite und 2015 gegen Postgres 16** (25 Tabellen).

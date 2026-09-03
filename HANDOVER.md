@@ -244,7 +244,19 @@ Postgres-Umzug auf Wunsch des Auftraggebers — Details in Abschnitt 2.
 Kanzlei-Cockpit (Überblick-Matrix, Monatsblick je Mandant) — Details in
 `docs/uebergabe-datev-2026-09-02/README.md`, Abschnitt „Welle 4".
 
-Noch offen: P3-21/22 (Login-Maske getrennt vom App-Bundle, danach
+**Welle 5 (03.09. früh):** Kanzlei-Startseite (Arbeitsvorrat statt Heute),
+Reiter „Kanzlei", Pille mit ⌘K, Gruppen „Mandant"/„Kanzlei", und der
+Massenimport je Mandant (`belegimport.py`, Migration 0004, Portal-Block in
+der Mandanten-Detailkarte). Import-Regel: unsichere Belege werden Rückfragen
+für die Kanzlei, unlesbare sofort „nicht lesbar"; Ninas Upload-Weg unverändert.
+Details Abschnitt „Welle 5" der docs-README. Betrieb: ein Lauf zur Zeit,
+~½ min je Beleg, Chat/Salon-Check bekommen zwischen zwei Belegen den Vortritt.
+
+Noch offen — nächste Runde (Plan im Bericht des Plan-Agenten, Kurzfassung in
+`~/.claude/plans/iridescent-wandering-naur.md` unter „Nächste Runde"): Arbeitsvorrat-
+Feinschliff mit Exportfrist und Chronik, Freigabe-Checkliste und Kanzlei-Freigabe,
+Rückfragen-Posteingang, Stammdaten je Mandant, Team & Vertretung.
+Außerdem: P3-21/22 (Login-Maske getrennt vom App-Bundle, danach
 Caching) als eigener Strukturumbau; `oeffnungstage` als Einstellung mit
 Formularfeld (heute Vorgabe Mo–Sa für „Kassenbuch: x von y Tagen");
 der `salon_von`-Wächter deckt nur babu_web.py ab, nicht kanzlei_routen/
