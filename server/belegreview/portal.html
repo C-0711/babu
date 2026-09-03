@@ -1771,10 +1771,14 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <p style="color:var(--gc-desc);margin-bottom:14px">Wen du betreust, was dort
     ansteht — und für wen du gerade arbeitest.</p>
     <div class="unterreiter" id="md-reiter">
-      <button type="button" class="an" onclick="mdReiter('liste')">Mandanten</button>
+      <button type="button" class="an" onclick="mdReiter('ueberblick')">Überblick</button>
+      <button type="button" onclick="mdReiter('liste')">Mandanten</button>
       <button type="button" onclick="mdReiter('ansteht')">Was ansteht</button>
     </div>
-    <div id="md-liste-tab">
+    <div id="md-ueberblick-tab">
+      <div id="md-ueberblick"><div class="skelett"></div><div class="skelett"></div></div>
+    </div>
+    <div id="md-liste-tab" hidden>
       <div id="md-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
     </div>
     <div id="md-ansteht-tab" hidden>
@@ -2060,7 +2064,7 @@ const ansichten = { gesperrt: () => {}, heute: ladeHeute, belege: ladeBelege, fr
                     vertraege: ladeVertraege, marketing: ladeMarketing,
                     briefkopf: ladeBriefkopf,
                     einrichtung: ladeEinrichtung, verwaltung: ladeVerwaltung,
-                    mandanten: ladeMandanten,
+                    mandanten: ladeUeberblick,
                     einstellungen: ladeEinstellungen, detail: null,
                     unterlage: null };
 /* Welcher Reiter oben leuchtet, wenn die Ansicht selbst keiner ist.
@@ -6239,13 +6243,21 @@ function mandantSetzen(m){
   if (location.hash === "#heute") routen(); else location.hash = "#heute";
 }
 
+/* Namen gehören nicht in onclick-Attribute (Anführungszeichen im Salonnamen
+   brächen den Aufruf) — die Liste merkt sie sich, die Knöpfe reichen nur die Nummer. */
+const MD_NAMEN = {};
+function mdVon(id){ return {id, name: MD_NAMEN[id] || "Mandant"}; }
 let _mdSuche = "", _mdSeite = 1, _mdStatus = "", _mdGewaehlt = null, _mdDarfVerknuepfen = false;
+const MD_REITER = {ueberblick: "Überblick", liste: "Mandanten", ansteht: "Was ansteht"};
 function mdReiter(w){
+  $("#md-ueberblick-tab").hidden = w !== "ueberblick";
   $("#md-liste-tab").hidden = w !== "liste";
   $("#md-ansteht-tab").hidden = w !== "ansteht";
   document.querySelectorAll("#md-reiter button").forEach(b =>
-    b.classList.toggle("an", b.textContent.trim() === (w === "liste" ? "Mandanten" : "Was ansteht")));
-  if (w === "ansteht") ladeWarteschlange(); else ladeMandanten();
+    b.classList.toggle("an", b.textContent.trim() === MD_REITER[w]));
+  if (w === "ansteht") ladeWarteschlange();
+  else if (w === "ueberblick") ladeUeberblick();
+  else ladeMandanten();
 }
 const MD_STATUS_TEXT = {box_ausstehend: "Belegbox wird eingerichtet", aktiv: "aktiv",
                         pausiert: "pausiert", beendet: "beendet"};
@@ -6278,6 +6290,7 @@ async function ladeMandanten(){
     html += `<div class="md-rollt"><table class="md-tabelle"><thead><tr>
       <th>Mandant</th><th>Status</th><th>Nummer</th><th class="num">Offene Rückfragen</th><th></th></tr></thead><tbody>`;
     for (const m of d.mandanten){
+      MD_NAMEN[m.id] = m.name;
       const an = _mdGewaehlt === m.id ? " an" : "";
       html += `<tr class="md-tr${an}" onclick="mdZeigen(${m.id})">
         <td><span class="md-name">${esc(m.name)}</span><br><span class="md-mail">${esc(m.besitzer)}</span></td>
@@ -6285,7 +6298,7 @@ async function ladeMandanten(){
         <td class="md-mail">${esc(m.mandant_nr || "—")}</td>
         <td class="num">${m.rueckfragen == null ? "—" : m.rueckfragen}</td>
         <td>${m.belegbox_da && m.status === "aktiv"
-             ? `<button class="chip" onclick="event.stopPropagation();mandantSetzen({id:${m.id},name:${JSON.stringify(m.name)}})">Für diesen Betrieb arbeiten ›</button>` : ""}</td>
+             ? `<button class="chip" onclick="event.stopPropagation();mandantSetzen(mdVon(${m.id}))">Für diesen Betrieb arbeiten ›</button>` : ""}</td>
       </tr>`;
     }
     html += `</tbody></table></div>`;
@@ -6330,6 +6343,7 @@ async function mdZeigen(id){
   let m;
   try{ const r = await api(`/api/kanzlei/mandanten/${id}`); if (!r.ok){ ziel.innerHTML = ""; return; } m = await r.json(); }
   catch{ return; }
+  MD_NAMEN[m.id] = m.name;
   const kann = m.belegbox_da && m.status === "aktiv";
   let html = `<div class="karte"><div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
       <b style="font:600 17px var(--gc-serif)">${esc(m.name)}</b>${mdStatusChip(m.status)}
@@ -6339,7 +6353,7 @@ async function mdZeigen(id){
       · seit ${zeitKurz(m.angelegt)}</p>
     ${m.hinweis ? `<p style="margin:8px 0 0;color:var(--gc-accent)">${esc(m.hinweis)} — wir melden uns, sobald sie da ist.</p>` : ""}
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-      ${kann ? `<button class="hin" onclick="mandantSetzen({id:${m.id},name:${JSON.stringify(m.name)}})">Für diesen Betrieb arbeiten ›</button>` : ""}
+      ${kann ? `<button class="hin" onclick="mandantSetzen(mdVon(${m.id}))">Für diesen Betrieb arbeiten ›</button>` : ""}
       ${m.status === "aktiv" ? `<button class="chip" onclick="mdStatus(${m.id},'pausiert')">Pausieren</button>` : ""}
       ${m.status === "pausiert" && m.belegbox_da ? `<button class="chip" onclick="mdStatus(${m.id},'aktiv')">Wieder aufnehmen</button>` : ""}
       ${m.status !== "beendet" ? `<button class="chip" onclick="if(confirm('Mandat beenden? Die Belege bleiben, der Zugang endet.')) mdStatus(${m.id},'beendet')">Mandat beenden</button>` : ""}
@@ -6354,8 +6368,10 @@ async function mdZeigen(id){
         <button class="chip" onclick="mdVerknuepfen(${m.id})">Verknüpfen</button></div>
       <div id="md-box-ergebnis"></div></div>`;
   }
+  html += `<div class="lbl" style="margin-top:16px">Die letzten Monate</div><div id="md-monate"></div>`;
   html += `</div>`;
   ziel.innerHTML = html;
+  mdMonate(m.id);
 }
 async function mdStatus(id, status){
   try{
@@ -6394,6 +6410,113 @@ async function mdAnlegen(){
     $("#md-neu-ergebnis").innerHTML = `<p style="color:var(--gc-ok);margin-top:8px">${esc(d.name)} ist angelegt${d.einladung ? " — die Einladung ist unterwegs." : "."}</p>`;
   }catch{ aus.innerHTML = `<p style="color:var(--gc-danger);margin-top:8px">Gerade keine Verbindung.</p>`; }
 }
+/* ————— KANZLEI-COCKPIT: der Blick über alle Mandanten und in einen hinein —————
+   Eine Steuerberaterin liest nicht Beleg für Beleg, sie liest Monate: wo ist
+   etwas offen, wo ist der Stapel fällig, wo ist seit Wochen Ruhe. Die Matrix
+   sagt das in einer Zeile je Mandant; der Monatsblick sagt, WAS offen ist. */
+const CK_STAND = {leer: ["—", "var(--gc-muted)", "nichts eingereicht"],
+                  offen: ["offen", "var(--gc-accent)", "Belege warten auf Antwort oder Prüfung"],
+                  pruefbereit: ["prüfbereit", "var(--gc-ok)", "alles beantwortet — Stapel kann raus"],
+                  exportiert: ["übergeben", "var(--gc-fg)", "Stapel liegt bei DATEV"],
+                  "?": ["?", "var(--gc-danger)", "Belegbox gerade nicht erreichbar"]};
+function ckZelle(z){
+  const [wort, farbe, titel] = CK_STAND[z && z.stand] || CK_STAND["?"];
+  const zahl = z && z.gesamt ? `<span class="md-mail"> ${z.offen}/${z.gesamt}</span>` : "";
+  return `<td title="${titel}"><span style="color:${farbe};font-weight:600">${wort}</span>${zahl}</td>`;
+}
+function monatKurz(m){ const [j, mo] = m.split("-"); return MONATE_KURZ[parseInt(mo, 10) - 1] + " " + j.slice(2); }
+const MONATE_KURZ = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
+async function ladeUeberblick(){
+  const ziel = $("#md-ueberblick");
+  let d;
+  try{
+    const r = await api("/api/kanzlei/uebersicht?monate=3");
+    if (r.status === 403){ ziel.innerHTML = `<div class="leer"><b>Nur für die Kanzlei.</b></div>`; return; }
+    if (!r.ok){ ziel.innerHTML = `<div class="leer">Der Überblick lässt sich gerade nicht laden.</div>`; return; }
+    d = await r.json();
+  }catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+  const monate = d.monate || [];
+  if (!(d.mandanten || []).length){
+    ziel.innerHTML = `<div class="leer"><b>Noch kein Mandant.</b> Lege unter „Mandanten" den ersten an.</div>`; return;
+  }
+  const z = d.zaehler || {};
+  let html = `<div class="lauf-kacheln" style="margin-bottom:14px">
+    ${[["Mandanten", z.mandanten], ["Offene Belege", z.offen], ["Rückfragen", z.rueckfragen],
+       ["Warten auf Belegbox", z.warten_auf_belegbox], ["Nicht erreichbar", z.nicht_erreichbar]].map(([t, w]) =>
+      `<div class="karte" style="padding:12px 14px"><div class="lbl">${t}</div>
+       <div style="font:600 22px var(--gc-serif);margin-top:4px">${w ?? 0}</div></div>`).join("")}</div>`;
+  html += `<p style="color:var(--gc-desc);font-size:13px;margin:0 0 10px">Wer Aufmerksamkeit braucht, steht oben.
+    Ein Klick auf die Zeile öffnet den Monatsblick, der Pfeil rechts wechselt in den Betrieb.</p>
+    <div class="md-rollt"><table class="md-tabelle"><thead><tr><th>Mandant</th>
+    ${monate.map(m => `<th>${monatKurz(m)}</th>`).join("")}
+    <th class="num">Rückfragen</th><th>Zuletzt</th><th></th></tr></thead><tbody>`;
+  for (const m of d.mandanten){
+    MD_NAMEN[m.id] = m.name;
+    const kann = m.belegbox_da && m.status === "aktiv" && m.erreichbar !== false;
+    const zellen = {}; for (const z of (m.zellen || [])) zellen[z.monat] = z;
+    html += `<tr class="md-tr" onclick="mdReiter('liste');mdZeigen(${m.id})">
+      <td><span class="md-name">${esc(m.name)}</span>${m.status !== "aktiv" ? `<br>${mdStatusChip(m.status)}` : ""}
+          ${m.erreichbar === false ? `<br><span class="md-mail" style="color:var(--gc-danger)">${esc(m.hinweis || "Belegbox gerade nicht erreichbar")}</span>` : ""}</td>
+      ${monate.map(mo => ckZelle(zellen[mo])).join("")}
+      <td class="num">${m.rueckfragen == null ? "—" : m.rueckfragen}</td>
+      <td class="md-mail">${m.letzte_aktivitaet ? zeitKurz(m.letzte_aktivitaet) : "—"}</td>
+      <td>${kann ? `<button class="chip" onclick="event.stopPropagation();mandantSetzen(mdVon(${m.id}))">Öffnen ›</button>` : ""}</td></tr>`;
+  }
+  html += `</tbody></table></div>`;
+  ziel.innerHTML = html;
+}
+async function mdMonate(id){
+  const ziel = $("#md-monate"); if (!ziel) return;
+  ziel.innerHTML = `<div class="skelett"></div>`;
+  let d;
+  try{
+    const r = await api(`/api/kanzlei/mandanten/${id}/monate?anzahl=6`);
+    if (r.status === 409){ ziel.innerHTML = `<p style="color:var(--gc-accent)">Belegbox wird eingerichtet — bis dahin gibt es hier nichts zu sehen.</p>`; return; }
+    if (r.status === 503){ ziel.innerHTML = `<p style="color:var(--gc-danger)">Belegbox gerade nicht erreichbar — gleich nochmal.</p>`; return; }
+    if (!r.ok){ ziel.innerHTML = ""; return; }
+    d = await r.json();
+  }catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
+  if (d.mandant) MD_NAMEN[d.mandant.id] = d.mandant.name;
+  const monate = d.monate || [];
+  if (!monate.some(m => m.belege && m.belege.gesamt)){
+    ziel.innerHTML = `<p style="color:var(--gc-desc)">In den letzten ${monate.length} Monaten ist nichts eingereicht worden.</p>`; return;
+  }
+  let html = `<div class="md-rollt"><table class="md-tabelle"><thead><tr>
+    <th>Monat</th><th>Stand</th><th class="num">Belege</th><th class="num">Offen</th>
+    <th class="num">Ausgaben</th><th>Kassenbuch</th><th class="num">Umsatz</th><th></th></tr></thead><tbody>`;
+  for (const m of monate){
+    const b = m.belege || {}, k = m.kassenbuch || {}, a = m.abschluss || {};
+    const [wort, farbe] = CK_STAND[a.stand] || CK_STAND.leer;
+    const kb = k.tage_erwartet ? `${k.tage_eingetragen || 0} von ${k.tage_erwartet} Tagen` : (k.tage_eingetragen ? `${k.tage_eingetragen} Tage` : "—");
+    html += `<tr><td><b>${monatKurz(m.monat)}</b></td>
+      <td><span style="color:${farbe};font-weight:600">${wort}</span>${a.export_am ? `<br><span class="md-mail">übergeben ${zeitKurz(a.export_am)}</span>` : ""}</td>
+      <td class="num">${b.gesamt || 0}</td>
+      <td class="num">${b.offen ? `<span style="color:var(--gc-accent);font-weight:600">${b.offen}</span>` : "0"}</td>
+      <td class="num">${m.brutto_summe != null ? euro(m.brutto_summe) : "—"}</td>
+      <td class="md-mail">${kb}</td>
+      <td class="num">${m.umsatz != null ? euro(m.umsatz) : "—"}</td>
+      <td>${b.gesamt ? `<a class="chip" style="text-decoration:none" href="/datev?von=${m.monat}&bis=${m.monat}&mandant=${d.mandant.id}&name=${encodeURIComponent(d.mandant.name)}">Stapel ›</a>` : ""}</td></tr>`;
+    const fragen = m.rueckfragen || [];
+    if (fragen.length){
+      html += `<tr><td colspan="8" style="padding:4px 12px 12px;background:var(--gc-chrome)">
+        ${fragen.map(f => `<div style="display:flex;gap:10px;align-items:baseline;padding:4px 0;font-size:13px">
+          <span style="flex:0 0 auto;color:var(--gc-accent)">?</span>
+          <span style="flex:1 1 auto"><b>${esc(f.lieferant || "Beleg")}</b> · ${euro(f.brutto)} — ${esc(f.frage || "Bitte ansehen")}</span>
+          <button class="chip" style="flex:0 0 auto;font-size:12px" onclick="event.stopPropagation();mandantOeffnen(${d.mandant.id},'#detail/${esc(f.stamm)}')">Ansehen ›</button></div>`).join("")}
+        ${fragen.length >= 10 ? `<p class="md-mail" style="margin:6px 0 0">Nur die ersten zehn — im Betrieb stehen alle.</p>` : ""}</td></tr>`;
+    }
+  }
+  html += `</tbody></table></div>`;
+  ziel.innerHTML = html;
+}
+
+/* Als Mandant arbeiten UND direkt an eine Stelle springen (Rückfrage, Monat). */
+function mandantOeffnen(id, hash){
+  aktiverMandant = mdVon(id);
+  try{ sessionStorage.setItem(MANDANT_SCHLUESSEL, JSON.stringify(aktiverMandant)); }catch{}
+  kategorienCache = null; mandantChipAktualisieren();
+  if (location.hash === hash) routen(); else location.hash = hash;
+}
 async function ladeWarteschlange(){
   const ziel = $("#md-ansteht");
   let d;
@@ -6416,8 +6539,9 @@ async function ladeWarteschlange(){
     html += `<div class="md-rollt"><table class="md-tabelle"><thead><tr>
       <th>Mandant</th><th class="num">Rückfragen</th><th>Ohne Freigabe</th><th>Export fällig</th><th></th></tr></thead><tbody>`;
     for (const e of offen){
+      MD_NAMEN[e.id] = e.name;
       const kann = e.belegbox_da && e.status === "aktiv" && e.erreichbar;
-      html += `<tr class="md-tr" onclick="${kann ? `mandantSetzen({id:${e.id},name:${JSON.stringify(e.name)}})` : `mdReiter('liste');mdZeigen(${e.id})`}">
+      html += `<tr class="md-tr" onclick="${kann ? `mandantSetzen(mdVon(${e.id}))` : `mdReiter('liste');mdZeigen(${e.id})`}">
         <td><span class="md-name">${esc(e.name)}</span>${e.hinweis ? `<br><span class="md-mail">${esc(e.hinweis)}</span>` : ""}
             ${!e.erreichbar ? `<br><span class="md-mail" style="color:var(--gc-danger)">Belegbox gerade nicht erreichbar</span>` : ""}</td>
         <td class="num">${e.rueckfragen ?? "—"}</td>
