@@ -1400,6 +1400,14 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <p style="color:var(--gc-desc);margin-bottom:14px">Dein letztes Jahr auf einen Blick — wir lesen deine Unterlagen selbst.</p>
     <div id="saloncheck-inhalt"><div class="skelett"></div></div>
     <input type="file" id="sc-datei" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*" multiple hidden>
+    <!-- Die beiden Wege in den Massenimport der Kanzlei. Sie stehen hier bei
+         ihren Geschwistern, weil ein Auswahlfeld nur einmal im Dokument
+         existieren darf — die Mandantenkarte wird bei jedem Klick neu
+         gezeichnet und nähme sie sonst mit. -->
+    <input type="file" id="md-import-dateien"
+      accept=".jpg,.jpeg,.png,.pdf,.heic,image/*,application/pdf" multiple hidden>
+    <input type="file" id="md-import-ordner"
+      accept=".jpg,.jpeg,.png,.pdf,.heic,image/*,application/pdf" webkitdirectory multiple hidden>
   </section>
 
   <!-- BANK (Zahlungs-Abgleich Konto ↔ Belege) -->
@@ -2171,6 +2179,9 @@ function routen(){
   document.querySelectorAll("nav button").forEach(b =>
     b.classList.toggle("an", b.dataset.ziel === (REITER_ZU[name] || name)));
   $("#a-" + name).classList.add("an");
+  /* Der Takt des Massenimports gehört zur Kanzlei-Ansicht. Wer weggeht,
+     schaut nicht mehr zu — sonst fragt das Portal im Hintergrund weiter. */
+  if (name !== "mandanten") mdImportStop();
   if (name === "detail") ladeDetail(arg);
   else if (name === "unterlage") ladeUnterlage(arg);
   else if (ansichten[name]) ansichten[name]();
@@ -6495,6 +6506,8 @@ const MD_REITER = {ueberblick: "Arbeitsvorrat", liste: "Mandanten", ansteht: "Wa
 let _mdMerker = null;
 function mdReiterVormerken(w){ _mdMerker = w; }
 function mdReiter(w){
+  /* Die Mandantenkarte mit dem Massenimport steht nur im Reiter „Mandanten". */
+  if (w !== "liste") mdImportStop();
   $("#md-ueberblick-tab").hidden = w !== "ueberblick";
   $("#md-liste-tab").hidden = w !== "liste";
   $("#md-ansteht-tab").hidden = w !== "ansteht";
@@ -6588,6 +6601,10 @@ let _mdTakt = null;
 function mdNeuLaden(){ clearTimeout(_mdTakt); _mdTakt = setTimeout(ladeMandanten, 250); }
 function mdSeite(delta){ _mdSeite += delta; ladeMandanten(); }
 async function mdZeigen(id){
+  /* Die Karte wird gleich neu gezeichnet — der Takt des alten Imports
+     schriebe danach in Felder, die es nicht mehr gibt. Läuft für DIESEN
+     Betrieb noch etwas, hängt sich `mdImportWiedereinstieg` unten wieder an. */
+  mdImportStop();
   _mdGewaehlt = id;
   document.querySelectorAll("#md-inhalt tr.md-tr").forEach(z => z.classList.toggle("an", z.getAttribute("onclick") === `mdZeigen(${id})`));
   const ziel = $("#md-detail"); if (!ziel) return;
@@ -6619,10 +6636,34 @@ async function mdZeigen(id){
         <button class="chip" onclick="mdVerknuepfen(${m.id})">Verknüpfen</button></div>
       <div id="md-box-ergebnis"></div></div>`;
   }
+  if (kann){
+    html += `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--gc-border-l)">
+      <div class="lbl" style="margin-bottom:6px">Belege für diesen Betrieb ablegen</div>
+      <p style="font-size:13px;color:var(--gc-desc);margin:0 0 10px;max-width:60ch">Einen ganzen Ordner
+        oder viele Dateien auf einmal — als PDF, Foto oder Scan. Wir sehen uns jeden Beleg an und
+        sagen dir, wo noch eine Frage offen ist.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="chip" onclick="mdImportWaehlen(${m.id},false)">Dateien auswählen</button>
+        <button class="chip" onclick="mdImportWaehlen(${m.id},true)">Ordner auswählen</button>
+        <label class="nurvorlesen" for="md-import-monat">In welchen Monat die Belege gehören</label>
+        <input id="md-import-monat" type="month" title="Leer heißt: der laufende Monat"
+          style="padding:8px 10px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+        <button class="chip" id="md-import-anhalten" hidden
+          onclick="mdImportAbbrechen(${m.id})">Anhalten</button>
+      </div>
+      <div id="md-import-notiz"></div>
+      <div id="md-import-zaehler" class="md-mail" style="margin-top:10px"></div>
+      <div id="md-import-liste" class="voll"></div>
+      <div id="md-import-schluss"></div>
+      <p style="font-size:12px;color:var(--gc-muted);margin:10px 0 0;max-width:60ch">Das dauert ungefähr
+        eine halbe Minute je Beleg — du kannst zuschauen oder später wiederkommen. Solange antwortet
+        die Buchhaltung deinem Mandanten etwas langsamer.</p></div>`;
+  }
   html += `<div class="lbl" style="margin-top:16px">Die letzten Monate</div><div id="md-monate"></div>`;
   html += `</div>`;
   ziel.innerHTML = html;
   mdMonate(m.id);
+  if (kann) mdImportWiedereinstieg(m.id);
 }
 async function mdStatus(id, status){
   try{
@@ -6765,6 +6806,276 @@ async function mdMonate(id){
   }
   html += `</tbody></table></div>`;
   ziel.innerHTML = html;
+}
+
+/* ————— Ein Ordner Belege auf einmal (Massenimport je Mandant) —————
+   Eine Kanzlei, die einen Betrieb übernimmt, hat dessen Belege als Ordner
+   auf der Platte. Von Hand wären das zweihundert Klicks. Hier gehen sie
+   nacheinander hinüber (ein Balken je Datei, damit man sieht, dass etwas
+   passiert), dann drückt das Portal einmal auf Start und schaut zu.
+
+   Zwei Dinge sind Absicht: die Auswahl geht NICHT durch `hochladen()` —
+   das ist der Weg für den eigenen Schreibtisch und weist Fotos ab, hier
+   sind Fotos aber der Normalfall. Und der Takt hängt an der Karte: wer sie
+   verlässt, hört auf zu fragen (`mdImportStop`). */
+let _mdImportZiel = null, _mdImportTimer = null, _mdImportSchau = null;
+/* Was der Betrieb annimmt — dieselbe Liste wie drüben, ohne .xml: eine
+   Buchungsdatei ist kein Beleg. */
+const MD_IMPORT_ENDUNGEN = /\.(jpe?g|png|pdf|heic)$/i;
+/* Mehr als das ist eine Stunde Zuschauen — dann lieber zwei Portionen. */
+const MD_IMPORT_MAX = 300;
+/* So lange nach dem Ende zeigen wir einen Lauf noch, wenn die Karte neu
+   aufgeht. Danach steht das Ergebnis in „Die letzten Monate". */
+const MD_IMPORT_FRIST = 3600;
+
+function mdImportStop(){
+  if (_mdImportTimer){ clearInterval(_mdImportTimer); _mdImportTimer = null; }
+  _mdImportSchau = null;
+}
+
+function mdImportWaehlen(id, ordner){
+  _mdImportZiel = id;
+  const feld = $(ordner ? "#md-import-ordner" : "#md-import-dateien");
+  if (feld) feld.click();
+}
+
+for (const wahl of ["#md-import-dateien", "#md-import-ordner"]){
+  const feld = $(wahl);
+  if (feld) feld.addEventListener("change", ev => {
+    const dateien = [...ev.target.files];
+    ev.target.value = "";
+    mdImportAblegen(_mdImportZiel, dateien);
+  });
+}
+
+/* Eine Notiz über etwas, das gar nicht erst mitkommt. Steht über der Liste
+   und nicht darin, weil die Liste gleich dem Lauf gehört. */
+function mdImportNotiz(text){
+  const ziel = $("#md-import-notiz");
+  if (!ziel) return;
+  const zeile = document.createElement("div");
+  zeile.className = "md-mail";
+  zeile.style.cssText = "margin-top:6px";
+  zeile.textContent = text;
+  ziel.appendChild(zeile);
+}
+
+async function mdImportAblegen(id, dateien){
+  const liste = $("#md-import-liste");
+  if (!id || !liste || !dateien.length) return;
+  mdImportStop();
+  liste.innerHTML = "";
+  $("#md-import-notiz").innerHTML = "";
+  $("#md-import-schluss").innerHTML = "";
+  $("#md-import-zaehler").textContent = "";
+  const monat = ($("#md-import-monat").value || "").trim();
+  /* Ein Ordner bringt immer Unrat mit: .DS_Store, versteckte Dateien, das
+     Preisblatt als Tabelle. Aussortieren, aber sagen, was wegfiel — sonst
+     zählt jemand später zwei Belege zu wenig und weiß nicht, warum. */
+  const nehmen = [];
+  for (const datei of dateien){
+    const kurz = String(datei.name || "").split("/").pop();
+    if (kurz.startsWith(".") || !MD_IMPORT_ENDUNGEN.test(kurz))
+      mdImportNotiz(kurz + " — legen wir hier nicht ab");
+    else nehmen.push(datei);
+  }
+  if (nehmen.length > MD_IMPORT_MAX){
+    mdImportNotiz("Mehr als " + MD_IMPORT_MAX + " Belege auf einmal sind zu viel — die "
+      + (nehmen.length - MD_IMPORT_MAX) + " übrigen bitte in einer zweiten Portion.");
+    nehmen.length = MD_IMPORT_MAX;
+  }
+  if (!nehmen.length) return;
+
+  const wohin = "/api/kanzlei/mandanten/" + id + "/import/dateien?name=";
+  let abgelegt = 0;
+  for (const datei of nehmen){
+    const a = await hochladenMitBalken(datei,
+      wohin + encodeURIComponent(datei.name) + (monat ? "&monat=" + monat : ""),
+      liste, {fertigSatz: d => d.doppelt ? "war schon da" : "abgelegt"});
+    if (a.ok){ abgelegt++; continue; }
+    /* Für diesen Betrieb läuft schon einer. Weiterschicken hieße, gegen
+       den laufenden Import anzuschieben — also aufhören und zusehen. */
+    if (a.status === 409){ mdImportZuschauen(id); return; }
+  }
+  if (!abgelegt) return;
+
+  try{
+    const r = await api("/api/kanzlei/mandanten/" + id + "/import/start", {method: "POST"});
+    if (!r.ok){
+      const d = await r.json().catch(() => ({}));
+      if (r.status === 409){ mdImportZuschauen(id); return; }
+      mdImportNotiz(d.fehler || "Das Übernehmen ging gerade nicht — gleich nochmal.");
+      return;
+    }
+  }catch{ mdImportNotiz("Gerade keine Verbindung."); return; }
+  mdImportZuschauen(id);
+}
+
+function mdImportZuschauen(id){
+  mdImportStop();
+  const liste = $("#md-import-liste");
+  if (liste) liste.innerHTML = "";       /* die Balken haben ihre Arbeit getan */
+  const halt = $("#md-import-anhalten");
+  if (halt){ halt.disabled = false; halt.textContent = "Anhalten"; }
+  _mdImportSchau = id;
+  mdImportPoll(id);
+  _mdImportTimer = setInterval(() => mdImportPoll(id), 1000);
+}
+
+async function mdImportPoll(id){
+  if (_mdImportSchau !== id || _mdGewaehlt !== id || !$("#md-import-zaehler")){
+    mdImportStop(); return;
+  }
+  let d;
+  try{
+    const r = await api("/api/kanzlei/mandanten/" + id + "/import");
+    if (!r.ok){ mdImportStop(); return; }
+    d = await r.json();
+  }catch{ return; }
+  mdImportStandZeigen(id, d);
+  if (["fertig", "abgebrochen", "fehler", "unterbrochen"].includes(d.stand)){
+    mdImportStop();
+    /* Was der Lauf gebracht hat, steht jetzt in den Monaten darunter. */
+    setTimeout(() => { if (_mdGewaehlt === id) mdMonate(id); }, 600);
+  }
+}
+
+/* Beim Öffnen der Karte einmal nachsehen: läuft etwas, oder ist gerade
+   eben etwas fertig geworden? Nach einem Neuladen der Seite ist das der
+   einzige Weg zurück an den Lauf. */
+async function mdImportWiedereinstieg(id){
+  let d;
+  try{
+    const r = await api("/api/kanzlei/mandanten/" + id + "/import");
+    if (!r.ok) return;
+    d = await r.json();
+  }catch{ return; }
+  if (!d || d.stand === "leer" || _mdGewaehlt !== id) return;
+  const laeuft = d.stand === "wartet" || d.stand === "liest";
+  const frisch = d.beendet_um && (Date.now() / 1000 - d.beendet_um) < MD_IMPORT_FRIST;
+  if (!laeuft && !frisch) return;
+  mdImportStandZeigen(id, d);
+  if (laeuft) mdImportZuschauen(id);
+}
+
+function mdImportStandZeigen(id, d){
+  const zaehler = $("#md-import-zaehler");
+  if (!zaehler || !d || d.stand === "leer") return;
+  const teile = [(d.gelesen || 0) + " von " + (d.gesamt || 0) + " angesehen"];
+  if (d.gebucht) teile.push(d.gebucht + " geprüft");
+  if (d.rueckfrage) teile.push(d.rueckfrage + " mit Frage");
+  if (d.unlesbar) teile.push(d.unlesbar + " nicht lesbar");
+  if (d.doppelt) teile.push(d.doppelt + " waren schon da");
+  zaehler.textContent = teile.join(" · ");
+  mdImportZeilen(id, d.dateien || []);
+
+  const laeuft = d.stand === "wartet" || d.stand === "liest";
+  const halt = $("#md-import-anhalten");
+  /* Solange es läuft, den Knopf in Ruhe lassen — sonst überschriebe der
+     nächste Takt das „wird angehalten …" wieder mit „Anhalten". */
+  if (halt){
+    halt.hidden = !laeuft;
+    if (!laeuft){ halt.disabled = false; halt.textContent = "Anhalten"; }
+  }
+
+  const schluss = $("#md-import-schluss");
+  if (!schluss) return;
+  if (laeuft || d.stand === "sammelt"){
+    schluss.innerHTML = d.hinweis
+      ? `<p style="margin:8px 0 0;color:var(--gc-desc)">${esc(d.hinweis)}</p>` : "";
+    return;
+  }
+  let html = "";
+  if (d.stand === "fehler" && d.hinweis)
+    html += `<p style="margin:8px 0 0;color:var(--gc-danger)">${esc(d.hinweis)}</p>`;
+  if (d.stand === "unterbrochen"){
+    if (d.hinweis) html += `<p style="margin:8px 0 0;color:var(--gc-accent)">${esc(d.hinweis)}</p>`;
+    html += `<button class="chip" style="margin-top:8px"
+      onclick="mdImportFortsetzen(${id},'')">Weitermachen</button>`;
+  }
+  if (d.unlesbar)
+    html += `<button class="chip" style="margin:8px 0 0 8px"
+      onclick="mdImportFortsetzen(${id},'unlesbar')">Unlesbare nochmal versuchen</button>`;
+  schluss.innerHTML = html;
+}
+
+/* Eine Zeile je Beleg, bei jedem Takt bewertet, aber nur dort angefasst, wo
+   sich etwas geändert hat — sonst zuckt die Liste im Sekundentakt. */
+function mdImportZeilen(id, dateien){
+  const ziel = $("#md-import-liste");
+  if (!ziel) return;
+  dateien.forEach((f, i) => {
+    const schluessel = i + "|" + (f.name || "");
+    let zeile = ziel.children[i];
+    if (!zeile || zeile.dataset.schluessel !== schluessel){
+      const neu = document.createElement("div");
+      neu.className = "upzeile einflug";
+      neu.dataset.schluessel = schluessel;
+      if (zeile) ziel.replaceChild(neu, zeile); else ziel.appendChild(neu);
+      zeile = neu;
+    }
+    const stand = (f.stand || "") + "|" + (f.grund || "");
+    if (zeile.dataset.stand === stand) return;
+    zeile.dataset.stand = stand;
+    const [satz, marke, art, knopf] = mdImportWortlaut(id, f);
+    zeile.innerHTML = `<div class="upname"></div><span class="marke ${art}">${esc(marke)}</span>`
+      + `<div class="upstand" style="grid-column:1/-1;white-space:normal;text-align:right">`
+      + `<span></span>${knopf}</div>`;
+    /* Dateinamen kommen von einer fremden Platte — als Text setzen, nie als Bauplan. */
+    zeile.querySelector(".upname").textContent =
+      String(f.name || "").replace(/^\d{8}-\d{6}-\w+-/, "");
+    zeile.querySelector(".upstand span").textContent = satz;
+  });
+  while (ziel.children.length > dateien.length) ziel.lastChild.remove();
+}
+
+/* Derselbe Wortlaut wie in der Belegliste — ein Beleg heißt hier nicht
+   anders, nur weil er über den Massenweg hereinkam. */
+function mdImportWortlaut(id, f){
+  const ansehen = f.stamm
+    ? `<button class="chip" style="margin-left:10px;font-size:12px"
+        onclick="mandantOeffnen(${id},'#detail/${esc(f.stamm)}')">Ansehen ›</button>` : "";
+  if (f.stand === "doppelt") return ["war schon da", "war schon da", "", ""];
+  if (f.stand === "uebersprungen" || f.stand === "fehler")
+    return [f.grund || "Ging nicht — bitte noch einmal auswählen.", "übersprungen", "warn", ""];
+  let z = {status: "erfasst"};
+  if (f.stand === "gebucht") z = {status: "geprüft"};
+  else if (f.stand === "rueckfrage") z = {status: "nachfrage", offen: [f.grund || ""]};
+  else if (f.stand === "unlesbar") z = {status: "unlesbar"};
+  const [satz] = statusSatz(z);
+  const [marke, art] = statusMarke(z);
+  return [satz, marke, art, f.stand === "rueckfrage" ? ansehen : ""];
+}
+
+async function mdImportAbbrechen(id){
+  const knopf = $("#md-import-anhalten");
+  if (knopf){ knopf.disabled = true; knopf.textContent = "wird angehalten …"; }
+  try{
+    const r = await api("/api/kanzlei/mandanten/" + id + "/import/abbrechen", {method: "POST"});
+    if (r.ok) return;
+    const d = await r.json().catch(() => ({}));
+    if (knopf){ knopf.disabled = false; knopf.textContent = d.fehler || "Anhalten"; }
+  }catch{ if (knopf){ knopf.disabled = false; knopf.textContent = "Anhalten"; } }
+}
+
+async function mdImportFortsetzen(id, nur){
+  const schluss = $("#md-import-schluss");
+  if (schluss) schluss.innerHTML = `<p style="margin:8px 0 0;color:var(--gc-desc)">Einen Moment …</p>`;
+  try{
+    const r = await api("/api/kanzlei/mandanten/" + id + "/import/fortsetzen"
+      + (nur === "unlesbar" ? "?nur=unlesbar" : ""), {method: "POST"});
+    if (!r.ok){
+      const d = await r.json().catch(() => ({}));
+      if (schluss) schluss.innerHTML =
+        `<p style="margin:8px 0 0;color:var(--gc-danger)">${esc(d.fehler || "Ging gerade nicht.")}</p>`;
+      return;
+    }
+  }catch{
+    if (schluss) schluss.innerHTML =
+      `<p style="margin:8px 0 0;color:var(--gc-danger)">Gerade keine Verbindung.</p>`;
+    return;
+  }
+  mdImportZuschauen(id);
 }
 
 /* Als Mandant arbeiten UND direkt an eine Stelle springen (Rückfrage, Monat). */
