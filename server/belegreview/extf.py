@@ -247,8 +247,20 @@ def _konto_und_rahmen(review: dict) -> tuple[str | None, str]:
     return (str(konto) if konto else None), rahmen
 
 
-def buchungszeilen(review: dict) -> list[dict]:
-    """Ein Review → 1..n Buchungssätze (je Steuersatz einer)."""
+def buchungszeilen(review: dict, kleinunternehmerin: bool = False
+                   ) -> list[dict]:
+    """Ein Review → 1..n Buchungssätze (je Steuersatz einer).
+
+    Für einen Betrieb ohne Umsatzsteuer (§ 19 UStG) wird daraus GENAU EINE
+    Zeile über den Bruttobetrag, ohne Steuerschlüssel. Der Mehrsatz-Split
+    beschreibt eine Aufteilung nach 19 % und 7 % — eine Steuer, die es hier
+    nicht gibt. Sie trotzdem in den Stapel zu schreiben hieße, der Kanzlei
+    eine Unterscheidung zu melden, die für diesen Betrieb keine ist.
+
+    Die Erlösseite geht denselben Weg (`erloeszeilen`) — dort seit dem
+    02.09.2026, hier seit dem 03.09.2026. Bis dahin war der Stapel einer
+    Kleinunternehmerin auf der Ausgabenseite voller Vorsteuer-Schlüssel.
+    """
     f = review.get("felder") or {}
     e = review.get("einschaetzung") or {}
     v = review.get("vlm") or {}
@@ -280,6 +292,12 @@ def buchungszeilen(review: dict) -> list[dict]:
         w = float(betrag or 0)
         return -abs(w) if gutschrift else w
 
+    if kleinunternehmerin:
+        wert = _wert(f["brutto"])
+        return [_ohne_steuer(dict(basis, umsatz=_de(wert),
+                                  sh=_soll_haben(wert), bu="", satz=None),
+                             rahmen)]
+
     tabelle = f.get("steuertabelle") or []
     if len(tabelle) > 1:
         # Mehrsatz-Split: der 19%+7%-Bon wird zwei Buchungen.
@@ -301,6 +319,28 @@ def buchungszeilen(review: dict) -> list[dict]:
             print(f"[extf] Steuersatz {z['satz']} % unbekannt — Zeile "
                   f"'{z['text'][:40]}' bleibt aus dem Stapel", flush=True)
     return brauchbar
+
+
+def _ohne_steuer(z: dict, rahmen: str) -> dict:
+    """Eine Zeile für einen Betrieb, der keine Umsatzsteuer ausweist.
+
+    Kein Schlüssel — und kein Konto, das sich seinen Satz selbst nimmt.
+    Für 5400/5300 gibt es mit 5200 dasselbe Fach ohne Selbstrechnung
+    (`OHNE_STEUER`); für jedes andere Automatikkonto liegt babu keins vor,
+    dort bleibt das Konto stehen und der Prüfbefund meldet es rot. Geraten
+    wird nicht: ein selbst ausgesuchtes Erlöskonto wäre eine Kontierung,
+    keine Anpassung.
+    """
+    z = dict(z, bu="", satz=None)
+    if rahmen != "SKR04" or not skr04_automatik.automatik(z["konto"]):
+        return z
+    ziel = OHNE_STEUER.get(z["konto"])
+    if ziel:
+        return dict(z, konto=ziel)
+    print(f"[extf] Konto {z['konto']} rechnet seine Steuer selbst, dieser "
+          f"Betrieb weist keine aus — die Zeile '{z['text'][:40]}' geht "
+          f"unverändert mit, der Prüfbefund meldet sie", flush=True)
+    return z
 
 
 def _automatik_anpassen(z: dict, rahmen: str) -> dict:
@@ -392,7 +432,10 @@ def pruefen(review: dict, kleinunternehmerin: bool = False) -> list[dict]:
                "Von diesem Beleg ist kein Betrag bekannt — er fehlt im "
                "Stapel.", hart=False)
 
-    for satz in _saetze_des_belegs(f):
+    # Ohne Umsatzsteuer spielt der Satz keine Rolle: es wird keiner in den
+    # Stapel geschrieben. Ihn dann anzumahnen wäre eine Frage nach einer
+    # Zahl, die niemand braucht.
+    for satz in ([] if kleinunternehmerin else _saetze_des_belegs(f)):
         if satz is None:
             melden("steuersatz_unbekannt",
                    "Der Steuersatz steht nicht fest. Die Buchung geht ohne "
@@ -600,7 +643,8 @@ def stapel(reviews: list[dict], monat: str, erzeugt: time.struct_time | None = N
     ]
     zeilen = [";".join(kopf), ";".join(SPALTEN)]
     for review in reviews:
-        zeilen += [_zeile(b) for b in buchungszeilen(review)]
+        zeilen += [_zeile(b) for b in buchungszeilen(review,
+                                                     kleinunternehmerin)]
     if kassenblaetter:
         if rahmen == "SKR03":
             print(f"[extf] {len(kassenblaetter)} Kassenblätter bleiben aus dem "

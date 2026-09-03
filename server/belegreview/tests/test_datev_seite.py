@@ -635,3 +635,48 @@ def test_ein_sauberer_monat_meldet_nichts_dazu(c):
     assert d["befund"]["ohne_steuersatz"] == []
     assert d["befund"]["zurueckgehalten"] == []
     assert d["befund"]["sauber"] is True
+
+
+# ── Ohne Umsatzsteuer: die ganze Seite rechnet mit (03.09.2026) ─────────
+
+@pytest.fixture()
+def welt_ohne_umsatzsteuer(tmp_path, monkeypatch):
+    """Derselbe Betrieb, aber mit der Kleinunternehmer-Regelung.
+
+    Gesetzt wird die Einstellung, nicht die Antwort: `_kleinunternehmerin`
+    liest sie über `monatsabschluss.umsatz_profil` aus den Stammdaten
+    (Schlüssel `kleinunternehmer`), und genau dieser Weg soll geprüft sein.
+    """
+    bw = _welt_bauen(tmp_path, monkeypatch, BELEGE)
+    bw.db_einstellung_setzen(bw.salon_von_aktiv("chef@0711.io"),
+                             "kleinunternehmer", "Ja")
+    return bw
+
+
+def test_uebersicht_kennt_die_regelung(welt_ohne_umsatzsteuer):
+    k = TestClient(welt_ohne_umsatzsteuer.app, base_url="https://testserver")
+    assert k.get("/api/datev/uebersicht").json()["kleinunternehmerin"] is True
+
+
+def test_stapel_der_kleinunternehmerin_zieht_keine_vorsteuer(
+        welt_ohne_umsatzsteuer):
+    """Die Belege stehen auf 6815 mit Schlüssel 9. Ohne Umsatzsteuer darf
+    dort nichts mehr stehen — sonst zöge der Import Vorsteuer, die dieser
+    Betrieb gar nicht ziehen darf."""
+    k = TestClient(welt_ohne_umsatzsteuer.app, base_url="https://testserver")
+    zeilen = [z.split(";") for z in
+              k.get("/api/datev/stapel.csv?von=2026-07&bis=2026-08")
+              .content.decode("cp1252").split("\r\n")[2:] if z]
+    assert len(zeilen) == 3
+    assert all(z[8] == "" for z in zeilen), "kein Steuerschlüssel im Stapel"
+    # Die Vorschau zeigt dasselbe — sie darf keine eigene Rechnung aufmachen.
+    d = k.get("/api/datev/vorschau?von=2026-07&bis=2026-08").json()
+    assert all(z["bu"] == "" for z in d["zeilen"])
+    assert d["befund"]["buchungen"] == 3
+
+
+def test_mit_umsatzsteuer_steht_der_schluessel_weiter_da(c):
+    zeilen = [z.split(";") for z in
+              c.get("/api/datev/stapel.csv?von=2026-07&bis=2026-08")
+              .content.decode("cp1252").split("\r\n")[2:] if z]
+    assert all(z[8] == "9" for z in zeilen)

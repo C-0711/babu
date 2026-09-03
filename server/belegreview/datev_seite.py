@@ -158,7 +158,7 @@ def _reviews(idx: dict, monat: str, kleinunternehmerin: bool = False
             continue
         reviews.append(review)
         mit.append(s)
-        if not extf.buchungszeilen(review):
+        if not extf.buchungszeilen(review, kleinunternehmerin):
             ohne.append(s)
         for h in extf.pruefen(review, kleinunternehmerin):
             hinweise.append(dict(h, beleg=s))
@@ -253,7 +253,8 @@ def _zeilen(daten: dict) -> list[dict]:
     for monat in daten["monate"]:
         m = daten["je_monat"][monat]
         for stamm, review in zip(m["staemme"], m["reviews"]):
-            for z in extf.buchungszeilen(review):
+            for z in extf.buchungszeilen(review,
+                                         daten["kleinunternehmerin"]):
                 aus.append(dict(z, monat=monat, quelle=stamm, art="beleg"))
         if daten["rahmen"] != "SKR03":
             for z in extf.erloeszeilen(m["blaetter"], daten["kleinunternehmerin"]):

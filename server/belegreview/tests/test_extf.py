@@ -696,3 +696,78 @@ def test_alle_gruende_sind_angemeldet():
               extf.pruefen(_auf("4400", 19), kleinunternehmerin=True)]
     gefunden = {x["grund"] for b in faelle for x in b}
     assert gefunden == set(extf.GRUENDE)
+
+
+# ————— Die Kleinunternehmerin: keine Steuer, auch nicht auf der —————
+# ————— Ausgabenseite (03.09.2026)                              —————
+#
+# § 19 UStG heißt: der Betrieb weist keine Umsatzsteuer aus und zieht keine
+# Vorsteuer. Die Erlösseite wusste das seit dem 02.09. (alles auf 4184).
+# Die Ausgabenseite nicht — dort standen weiter Vorsteuer-Schlüssel.
+
+def test_stapel_der_kleinunternehmerin_zieht_keine_vorsteuer():
+    text = extf.stapel([_mit_satz(19), _mit_satz(7)], "2026-08",
+                       erzeugt=ERZEUGT, kleinunternehmerin=True)
+    zeilen = [z.split(";") for z in text.rstrip("\r\n").split("\r\n")[2:]]
+    assert len(zeilen) == 2
+    assert all(z[8] == "" for z in zeilen), "kein Steuerschlüssel"
+    # Zum Vergleich: derselbe Stapel mit Umsatzsteuer trägt 9 und 8.
+    normal = extf.stapel([_mit_satz(19), _mit_satz(7)], "2026-08",
+                         erzeugt=ERZEUGT)
+    assert [z.split(";")[8] for z in
+            normal.rstrip("\r\n").split("\r\n")[2:]] == ["9", "8"]
+
+
+def test_ohne_umsatzsteuer_kein_mehrsatz_split():
+    """Der 19%+7%-Bon wird EINE Zeile über den Bruttobetrag. Die Aufteilung
+    beschreibt eine Steuer, die es hier nicht gibt."""
+    review = {
+        "felder": {"brutto": 27.40, "datum": "02.04.2026", "beleg_nr": "9701",
+                   "ust_satz": 19, "steuertabelle": [
+                       {"satz": 19, "brutto": 22.45},
+                       {"satz": 7, "brutto": 4.95}]},
+        "einschaetzung": {"konto_skr04": "5100"},
+        "vlm": {"buchungstext": "Wareneinkauf dm"},
+    }
+    assert len(extf.buchungszeilen(review)) == 2
+    ohne = extf.buchungszeilen(review, kleinunternehmerin=True)
+    assert len(ohne) == 1
+    assert ohne[0]["umsatz"] == "27,40" and ohne[0]["bu"] == ""
+
+
+def test_automatikkonto_weicht_auch_ohne_umsatzsteuer_aus():
+    z = extf.buchungszeilen(_auf("5400", 19), kleinunternehmerin=True)[0]
+    assert (z["konto"], z["bu"]) == ("5200", "")
+
+
+def test_fremdes_automatikkonto_bleibt_stehen_und_faellt_auf(capsys):
+    """Für 4400 gibt es kein steuerfreies Geschwisterkonto. Eines
+    auszusuchen wäre eine Kontierung, keine Anpassung — also bleibt es
+    stehen, und der Prüfbefund meldet es rot."""
+    z = extf.buchungszeilen(_auf("4400", 19), kleinunternehmerin=True)[0]
+    assert z["konto"] == "4400" and z["bu"] == ""
+    assert "4400" in capsys.readouterr().out
+    b = extf.pruefen(_auf("4400", 19), kleinunternehmerin=True)
+    assert [x["grund"] for x in b] == ["automatik_bei_kleinunternehmerin"]
+    assert b[0]["hart"] is True
+
+
+def test_ohne_umsatzsteuer_wird_der_satz_nicht_angemahnt():
+    """Kein Satz landet im Stapel — also ist auch keiner zu bemängeln."""
+    assert extf.pruefen(_mit_satz(None), kleinunternehmerin=True) == []
+    assert extf.pruefen(_mit_satz(12), kleinunternehmerin=True) == []
+    # Und die Buchung geht dann auch wirklich mit.
+    assert len(extf.buchungszeilen(_mit_satz(12),
+                                   kleinunternehmerin=True)) == 1
+
+
+def test_eine_gutschrift_bleibt_auch_ohne_umsatzsteuer_im_haben():
+    z = extf.buchungszeilen(_gutschrift(), kleinunternehmerin=True)[0]
+    assert (z["umsatz"], z["sh"], z["bu"]) == ("40,00", "H", "")
+
+
+def test_mit_umsatzsteuer_bleibt_alles_wie_es_war():
+    """Der Schalter ist eine Zutat, kein Umbau."""
+    assert extf.stapel([GOLDEN], "2026-07", erzeugt=ERZEUGT) == \
+        extf.stapel([GOLDEN], "2026-07", erzeugt=ERZEUGT,
+                    kleinunternehmerin=False)
