@@ -579,7 +579,9 @@ def test_befund_summe_ist_soll_minus_haben():
 
 # ── Steuersatz-Befund auf der Seite (03.09.2026) ────────────────────────
 
-def _daten(reviews, staemme, hinweise=None, monat="2026-08"):
+def _daten(reviews, staemme, hinweise=None, monat="2026-07"):
+    """`monat` ist der Monat des STAPELS — er muss zum Belegdatum passen,
+    sonst meldet der Befund zu Recht „außerhalb des Zeitraums"."""
     return {"monate": [monat], "rahmen": "SKR04", "kleinunternehmerin": False,
             "je_monat": {monat: {"reviews": reviews, "staemme": staemme,
                                  "ohne_konto": [], "blaetter": [],
@@ -762,3 +764,107 @@ def test_die_seite_zeigt_berater_und_mandant_im_kopf(c):
     seite = c.get("/datev").text
     assert 'id="berater"' in seite and 'id="mandant"' in seite
     assert "Berater" in seite and "Mandant" in seite
+
+
+# ── Der vollständige Prüfbefund (03.09.2026) ────────────────────────────
+
+def test_befund_meldet_belegdatum_ausserhalb_des_zeitraums(welt):
+    """Der Kopf der Datei nennt von und bis. Eine Buchung mit einem Datum
+    davor oder danach landet im falschen Monat."""
+    import datev_seite
+    review = json.loads(json.dumps(welt.index_aktuell()["reviews"][BELEGE[0][1]]))
+    review["felder"]["datum"] = "2026-05-14"          # Mai in einem Juli-Stapel
+    daten = _daten([review], ["ein-beleg"])
+    befund = datev_seite._befund(daten, datev_seite._zeilen(daten))
+    assert befund["ausserhalb_zeitraum"] == 1
+    assert befund["ausserhalb_zeitraum_belege"] == ["ein-beleg"]
+    assert befund["sauber"] is False
+
+
+def test_ein_datum_im_zeitraum_faellt_nicht_auf(welt):
+    import datev_seite
+    review = json.loads(json.dumps(welt.index_aktuell()["reviews"][BELEGE[0][1]]))
+    daten = _daten([review], ["ein-beleg"])
+    befund = datev_seite._befund(daten, datev_seite._zeilen(daten))
+    assert befund["ausserhalb_zeitraum"] == 0
+    assert befund["sauber"] is True
+
+
+def test_befund_zaehlt_zeichen_die_ersetzt_wuerden(welt):
+    import datev_seite
+    review = json.loads(json.dumps(welt.index_aktuell()["reviews"][BELEGE[0][1]]))
+    review["vlm"] = {"buchungstext": "Einkauf Doğan"}
+    daten = _daten([review], ["ein-beleg"])
+    befund = datev_seite._befund(daten, datev_seite._zeilen(daten))
+    assert befund["zeichen_ersetzt"] == 1
+    # Gelb: die Datei geht trotzdem, sie schreibt nur ein Fragezeichen.
+    assert befund["sauber"] is True
+
+
+def test_ein_sauberer_monat_zaehlt_keine_ersetzten_zeichen(c):
+    assert c.get("/api/datev/vorschau?von=2026-07&bis=2026-07") \
+        .json()["befund"]["zeichen_ersetzt"] == 0
+
+
+def test_die_siebener_ausnahme_gilt_nur_dem_sammelkonto(welt):
+    """Bis 03.09.2026 war JEDES Konto ab 70000 von der Namensprüfung
+    befreit — auch ein handkorrigiertes, das dort nichts zu suchen hat."""
+    import datev_seite
+    import extf
+    review = json.loads(json.dumps(welt.index_aktuell()["reviews"][BELEGE[0][1]]))
+    review["einschaetzung"]["konto"] = "70123"
+    review["einschaetzung"]["konto_skr04"] = "70123"
+    daten = _daten([review], ["ein-beleg"])
+    befund = datev_seite._befund(daten, datev_seite._zeilen(daten))
+    assert befund["unbenannte_konten"] == ["70123"]
+    # Das Sammelkonto selbst steht in jeder Zeile und wird nie gemeldet.
+    assert extf.GEGENKONTO not in befund["unbenannte_konten"]
+
+
+def test_befund_nennt_konten_die_die_kanzlei_noch_nicht_bestaetigt_hat(welt):
+    import datev_seite
+    import kontierung as kt
+    offen = next(k for k in kt.ungepruefte_konten() if k.konto("SKR04"))
+    review = json.loads(json.dumps(welt.index_aktuell()["reviews"][BELEGE[0][1]]))
+    review["einschaetzung"]["konto"] = offen.konto("SKR04")
+    review["einschaetzung"]["konto_skr04"] = offen.konto("SKR04")
+    daten = _daten([review], ["ein-beleg"])
+    befund = datev_seite._befund(daten, datev_seite._zeilen(daten))
+    assert befund["unbestaetigte_konten"] == [offen.konto("SKR04")]
+    # Gelb: sie gehen mit, es sind die besten, die babu hat.
+    assert befund["sauber"] is True
+
+
+def test_bestaetigte_konten_stehen_nicht_in_der_liste(c):
+    d = c.get("/api/datev/vorschau?von=2026-07&bis=2026-07").json()
+    assert d["befund"]["unbestaetigte_konten"] == []
+
+
+def test_befund_traegt_die_kassentage_mit(welt):
+    import datev_seite
+    daten = _daten([], [])
+    daten["je_monat"]["2026-07"]["blaetter"] = [
+        {"datum": "2026-07-03", "einnahmenBar": 100, "umsatzFrei": 500},
+        {"datum": "2026-07-04", "einnahmenBar": 50, "bestandVortag": 100,
+         "gezaehltSchluss": 140, "differenzGrund": "verzählt"},
+    ]
+    befund = datev_seite._befund(daten, datev_seite._zeilen(daten))
+    assert [z["grund"] for z in befund["kassen_hart"]] == \
+        ["saetze_ueber_tagesumsatz"]
+    assert [z["grund"] for z in befund["kassen_weich"]] == \
+        ["kassenschluss_weicht_ab"]
+    assert "03.07.2026" in befund["kassen_hart_text"]
+    assert "verzählt" in befund["kassen_weich_text"]
+    assert befund["sauber"] is False        # der harte Tag hält ihn auf
+
+
+def test_die_seite_zeigt_rot_vor_gelb(c):
+    """Wer die Datei gleich weitergeben will, liest die ersten Zeilen —
+    dort muss stehen, was ihn davon abhalten sollte."""
+    seite = c.get("/datev").text
+    assert "const rot = [], gelb = []" in seite
+    assert "...rot.map" in seite
+    stelle_rot = seite.index("...rot.map")
+    stelle_gelb = seite.index("...gelb.map")
+    assert stelle_rot < stelle_gelb
+    assert "Konten, die deine Kanzlei noch nicht bestätigt hat" in seite

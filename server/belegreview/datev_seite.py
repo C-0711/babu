@@ -315,7 +315,10 @@ def _hinweistext(hinweise: list[dict], hoechstens: int = 3) -> str | None:
         return None
     texte: dict[str, list[str]] = {}
     for h in hinweise:
-        texte.setdefault(h["text"], []).append(str(h.get("beleg") or ""))
+        # Ein Beleg hat einen Stamm, ein Kassentag ein Datum — beides ist
+        # die Antwort auf „wo denn?".
+        texte.setdefault(h["text"], []).append(
+            str(h.get("beleg") or h.get("tag") or ""))
     stuecke = []
     for text, belege in texte.items():
         namen = [b for b in belege if b][:hoechstens]
@@ -334,10 +337,22 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
     benutzt = sorted({z["konto"] for z in zeilen} | {z["gegenkonto"] for z in zeilen})
     # Konten, zu denen babu keine Beschriftung kennt. Nur im SKR04 prüfbar —
     # den SKR03 hat babu nicht als Liste, und Raten wäre schlechter als
-    # Schweigen. Das Sammelkonto 70099 ist ein Kreditor, kein Sachkonto.
+    # Schweigen. Ausgenommen ist GENAU EIN Konto: das Sammelkonto, gegen
+    # das babu jede Ausgabe bucht (`extf.GEGENKONTO`) — das ist ein
+    # Kreditor, kein Sachkonto, und steht deshalb in keiner Kontenliste.
+    # Bis 03.09.2026 stand hier `not k.startswith("7")`: damit war JEDES
+    # Konto ab 70000 von der Prüfung befreit, auch ein handkorrigiertes,
+    # das dort nichts zu suchen hat.
     unbenannt = ([k for k in benutzt
-                  if not k.startswith("7") and skr04_konten.name(k) is None]
+                  if k != extf.GEGENKONTO and skr04_konten.name(k) is None]
                  if rahmen == "SKR04" else [])
+    # Konten, die babu selbst vergibt, für die aber noch keine Steuer-
+    # beratung bestätigt hat, dass sie richtig sind (`kontierung.geprueft`).
+    # Sie gehen mit — es sind die besten, die babu hat — aber wer die Datei
+    # weitergibt, soll wissen, worüber er einmal sprechen sollte.
+    import kontierung as kt  # noqa: PLC0415 — nur für diesen Befund
+    unbestaetigt = sorted({k.konto(rahmen) for k in kt.ungepruefte_konten()
+                           if k.konto(rahmen)} & set(benutzt))
     # Buchungen ohne Belegdatum. Gefunden am 02.09.2026 beim Bau dieser
     # Seite: `extf.buchungszeilen` liest das Datum als `TT.MM.JJJJ`, die
     # Belege des Zielbild-Wegs tragen es aber als `JJJJ-MM-TT` (so schreibt
@@ -346,6 +361,25 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
     # Hier wird es nicht repariert (das gehört in `extf`, mit eigener
     # Prüfung), aber es wird gesagt, bevor die Datei aus dem Haus geht.
     ohne_datum = [z for z in zeilen if not z.get("belegdatum")]
+    # Ein Belegdatum, das nicht in den Zeitraum des Stapels fällt. Der Kopf
+    # der Datei nennt von und bis; eine Buchung mit einem Datum davor oder
+    # danach lehnt der Import ab oder bucht sie in einen Monat, für den
+    # niemand sie gemeint hat. Verglichen wird der Monat — mehr trägt das
+    # DATEV-Belegdatum nicht, es ist `TTMM` ohne Jahr.
+    erlaubte_monate = {m[5:7] for m in daten["monate"]}
+    ausserhalb = [z for z in zeilen if z.get("belegdatum")
+                  and str(z["belegdatum"])[2:4] not in erlaubte_monate]
+    # Zeichen, die Windows-1252 nicht schreiben kann. Sie werden beim
+    # Herunterladen zu Fragezeichen — es sei denn, man nimmt UTF-8.
+    zeichen_ersetzt = sum(extf.nicht_darstellbar(z.get("text") or "")
+                          + extf.nicht_darstellbar(z.get("belegfeld1") or "")
+                          for z in zeilen)
+    # Die Kassentage. Sie hängen an der Erlösseite des Stapels und werden
+    # dort gerechnet, nicht hier — `extf.kassen_pruefen` ist dieselbe
+    # Bauart wie `extf.pruefen`.
+    blaetter = [b for m in daten["je_monat"].values()
+                for b in (m.get("blaetter") or [])]
+    kassen = extf.kassen_pruefen(blaetter) if rahmen != "SKR03" else []
     # Die Feststellungen aus `extf.pruefen`, über alle Monate zusammengelegt.
     # `.get` und nicht `[…]`: Tests und ältere Aufrufer bauen `je_monat`
     # selbst und kennen den Schlüssel nicht.
@@ -353,6 +387,8 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
                 for h in (m.get("hinweise") or [])]
     ohne_steuersatz = _feststellung(hinweise, "steuersatz_unbekannt")
     zurueckgehalten = [h for h in hinweise if h.get("hart")]
+    kassen_hart = [h for h in kassen if h.get("hart")]
+    kassen_weich = [h for h in kassen if not h.get("hart")]
     # Soll minus Haben: eine Gutschrift mindert die Summe, statt sie zu
     # erhöhen. Die Zahl unter der Tabelle soll dasselbe sagen wie die
     # Buchhaltung — was der Monat gekostet hat, nicht was durchgelaufen ist.
@@ -377,7 +413,8 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
                             f"muss sie von Hand dem richtigen Betrieb "
                             f"zuordnen."),
         "sauber": (pruef.sauber and not ohne_konto and not unbenannt
-                   and not ohne_datum and not zurueckgehalten),
+                   and not ohne_datum and not zurueckgehalten
+                   and not ausserhalb and not kassen_hart),
         # Gelb: die Buchung geht mit, aber jemand sollte hinsehen.
         "ohne_steuersatz": [h["beleg"] for h in ohne_steuersatz],
         # Rot: die Buchung geht NICHT mit — oder sie wäre falsch.
@@ -392,6 +429,20 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
         "fremde_konten": pruef.unbekannt,
         "ohne_kontierung": ohne_konto,
         "unbenannte_konten": unbenannt,
+        "unbestaetigte_konten": unbestaetigt,
+        # Rot: das Belegdatum liegt nicht im Zeitraum, den der Kopf nennt.
+        "ausserhalb_zeitraum": len(ausserhalb),
+        "ausserhalb_zeitraum_belege": sorted({z["quelle"] for z in ausserhalb
+                                              if z.get("quelle")})[:8],
+        # Gelb: Zeichen, die beim Herunterladen ersetzt würden.
+        "zeichen_ersetzt": zeichen_ersetzt,
+        # Die Kassentage — rot, was nicht aufgeht, gelb, was vermerkt ist.
+        "kassen_hart": [{"tag": h["tag"], "grund": h["grund"],
+                         "text": h["text"]} for h in kassen_hart],
+        "kassen_weich": [{"tag": h["tag"], "grund": h["grund"],
+                          "text": h["text"]} for h in kassen_weich],
+        "kassen_hart_text": _hinweistext(kassen_hart),
+        "kassen_weich_text": _hinweistext(kassen_weich),
         "belege": sum(len(m["staemme"]) for m in daten["je_monat"].values()),
         "kassentage": sum(len(m["blaetter"]) for m in daten["je_monat"].values()),
         "buchungen": len(zeilen),

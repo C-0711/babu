@@ -310,39 +310,73 @@ function spanne(){
 }
 
 // ── Vorschau ─────────────────────────────────────────────────────────
+/* Der Prüfbefund: je eine Zeile je Feststellung, rot vor gelb.
+
+   Die Reihenfolge ist keine Kosmetik. Wer die Datei gleich weitergeben
+   will, liest die ersten drei Zeilen — dort muss stehen, was ihn davon
+   abhalten sollte, nicht was er später einmal besprechen könnte.
+
+   Rot heißt: hier fehlt etwas oder etwas stimmt nicht.
+   Gelb heißt: es geht mit, aber jemand sollte es wissen.
+   Grün heißt nicht „geprüft", sondern „hier ist nichts aufgefallen". */
+function kurzliste(liste, wieviele = 6){
+  const l = (liste || []).slice(0, wieviele).join(", ");
+  return l + ((liste || []).length > wieviele ? " …" : "");
+}
+
 function befundzeilen(b){
-  const z = [];
+  const rot = [], gelb = [];
   if (b.vermischt && b.vermischt.length)
-    z.push(["hart","!","Zwei Kontenrahmen in einem Stapel", b.vermischt_text]);
+    rot.push(["Zwei Kontenrahmen in einem Stapel", b.vermischt_text]);
   if (b.stammdaten_fehlen && b.stammdaten_fehlen.length)
-    z.push(["hart","!", "Der Stapel trägt keine Mandantennummer",
-      b.stammdaten_text]);
+    rot.push(["Der Stapel trägt keine Mandantennummer", b.stammdaten_text]);
   if (b.zurueckgehalten && b.zurueckgehalten.length)
-    z.push(["hart","!",
-      `${b.zurueckgehalten.length} Buchung(en) bleiben aus dem Stapel`,
+    rot.push([`${b.zurueckgehalten.length} Buchung(en) bleiben aus dem Stapel`,
       b.zurueckgehalten_text]);
+  if (b.ausserhalb_zeitraum)
+    rot.push([`${b.ausserhalb_zeitraum} Buchung(en) außerhalb des Zeitraums`,
+      "Ihr Belegdatum liegt vor oder nach dem Zeitraum, den der Stapel "
+      + "nennt: " + kurzliste(b.ausserhalb_zeitraum_belege)
+      + " — so gebucht landen sie im falschen Monat."]);
+  if (b.kassen_hart && b.kassen_hart.length)
+    rot.push([`${b.kassen_hart.length} Kassentag(e) gehen nicht auf`,
+      b.kassen_hart_text]);
+
   if (b.ohne_steuersatz && b.ohne_steuersatz.length)
-    z.push(["zu","–", `${b.ohne_steuersatz.length} Beleg(e) ohne Steuersatz`,
+    gelb.push([`${b.ohne_steuersatz.length} Beleg(e) ohne Steuersatz`,
       "Sie gehen ohne Steuerschlüssel mit, damit keine Vorsteuer gezogen "
-      + "wird, die niemand gelesen hat: "
-      + b.ohne_steuersatz.slice(0,6).join(", ")
-      + (b.ohne_steuersatz.length > 6 ? " …" : "")
+      + "wird, die niemand gelesen hat: " + kurzliste(b.ohne_steuersatz)
       + " — die Kanzlei trägt den Satz nach."]);
   if (b.ohne_kontierung && b.ohne_kontierung.length)
-    z.push(["zu","–", `${b.ohne_kontierung.length} Beleg(e) ohne Konto`,
-      "Sie fehlen im Stapel: " + b.ohne_kontierung.slice(0,6).join(", ") +
-      (b.ohne_kontierung.length > 6 ? " …" : "")]);
+    gelb.push([`${b.ohne_kontierung.length} Beleg(e) ohne Konto`,
+      "Sie fehlen im Stapel: " + kurzliste(b.ohne_kontierung)]);
   if (b.ohne_belegdatum)
-    z.push(["zu","–", `${b.ohne_belegdatum} Buchung(en) ohne Belegdatum`,
-      "Die Spalte Belegdatum bleibt bei diesen Zeilen leer: " +
-      (b.ohne_belegdatum_belege || []).join(", ") +
-      " — die Kanzlei muss das Datum sonst von Hand nachtragen."]);
+    gelb.push([`${b.ohne_belegdatum} Buchung(en) ohne Belegdatum`,
+      "Die Spalte Belegdatum bleibt bei diesen Zeilen leer: "
+      + kurzliste(b.ohne_belegdatum_belege)
+      + " — die Kanzlei muss das Datum sonst von Hand nachtragen."]);
+  if (b.kassen_weich && b.kassen_weich.length)
+    gelb.push([`${b.kassen_weich.length} Kassentag(e) mit einer Differenz`,
+      b.kassen_weich_text]);
   if (b.unbenannte_konten && b.unbenannte_konten.length)
-    z.push(["zu","–", "Konten ohne Namen im Kontenrahmen",
+    gelb.push(["Konten ohne Namen im Kontenrahmen",
       b.unbenannte_konten.join(", ") + " — bitte bei der Kanzlei nachfragen."]);
+  if (b.unbestaetigte_konten && b.unbestaetigte_konten.length)
+    gelb.push(["Konten, die deine Kanzlei noch nicht bestätigt hat",
+      b.unbestaetigte_konten.join(", ") + " — sie gehen mit, es sind die "
+      + "besten, die babu hat. Einmal darüber sprechen lohnt sich."]);
   if (b.fremde_konten && b.fremde_konten.length)
-    z.push(["zu","–", "Von Hand gesetzte Konten",
+    gelb.push(["Von Hand gesetzte Konten",
       b.fremde_konten.join(", ") + " — sie gehen unverändert mit."]);
+  if (b.zeichen_ersetzt)
+    gelb.push([`${b.zeichen_ersetzt} Buchstabe(n) werden zu Fragezeichen`,
+      "Einzelne Buchstaben kann die übliche Stapeldatei nicht speichern — "
+      + "meist in einem Lieferantennamen. Mit „Stapel mit allen Buchstaben“ "
+      + "bleiben sie stehen; frag im Zweifel deine Kanzlei, welche der "
+      + "beiden Dateien sie lieber hat."]);
+
+  const z = [...rot.map((e) => ["hart", "!", ...e]),
+             ...gelb.map((e) => ["zu", "–", ...e])];
   if (!z.length)
     z.push(["auf","✓","Nichts aufgefallen",
       `${b.belege} Beleg(e) und ${b.kassentage} Kassentag(e) ergeben
@@ -411,6 +445,8 @@ async function vorschau(){
       <div class="chips">
         <button class="chip tinte" id="holen"${b.buchungen ? "" : " disabled"}>
           Stapel herunterladen</button>
+        ${b.zeichen_ersetzt ? `<button class="chip" id="holen-alle">
+          Stapel mit allen Buchstaben</button>` : ""}
         <span class="marke ${d.festgeschrieben ? "ok" : ""}" style="align-self:center">
           ${d.festgeschrieben ? "Zahlen freigegeben" : "Zahlen noch offen"}</span>
       </div>
@@ -422,6 +458,11 @@ async function vorschau(){
   const knopf = $("#holen");
   if (knopf) knopf.onclick = () => {
     window.location.href = mitMandant("/api/datev/stapel.csv?" + spanne());
+  };
+  const alle = $("#holen-alle");
+  if (alle) alle.onclick = () => {
+    window.location.href =
+      mitMandant("/api/datev/stapel.csv?" + spanne() + "&zeichensatz=utf8");
   };
 }
 

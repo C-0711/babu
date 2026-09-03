@@ -771,3 +771,108 @@ def test_mit_umsatzsteuer_bleibt_alles_wie_es_war():
     assert extf.stapel([GOLDEN], "2026-07", erzeugt=ERZEUGT) == \
         extf.stapel([GOLDEN], "2026-07", erzeugt=ERZEUGT,
                     kleinunternehmerin=False)
+
+
+# ————— Buchungstext säubern, Zeichen zählen (03.09.2026) —————
+
+def test_ein_zeilenumbruch_im_buchungstext_zerreisst_die_datei_nicht():
+    """DATEV liest eine Zeile je Buchung. Ein Umbruch im Text machte aus
+    einer Buchung zwei — die zweite eine, die niemand geschrieben hat."""
+    z = _zeilen(_mit_text("Rechnung\nZeile zwei"))[0]
+    assert z["text"] == "Rechnung Zeile zwei"
+    assert "\n" not in extf._zeile(z) and "\r" not in extf._zeile(z)
+
+
+def test_tab_und_steuerzeichen_werden_leerzeichen():
+    z = _zeilen(_mit_text("Ein\tZwei\x00Drei\x7f"))[0]
+    assert z["text"] == "Ein Zwei Drei"
+
+
+def test_leerraum_wird_zusammengezogen():
+    assert extf._text_saeubern("  viel     Luft   dazwischen  ") == \
+        "viel Luft dazwischen"
+
+
+def test_gesaeubert_wird_vor_der_entschaerfung():
+    """Ein Umbruch VOR dem Rechenzeichen darf es nicht verstecken."""
+    assert extf._text_saeubern("\n=SUM(A1)").startswith("'=")
+
+
+def test_der_gesaeuberte_text_bleibt_bei_sechzig_zeichen():
+    lang = "=" + "A" * 80 + "\n" + "B" * 80
+    assert len(extf._text_saeubern(lang)) == 60
+
+
+def test_nicht_darstellbar_zaehlt_was_windows_1252_nicht_kann():
+    assert extf.nicht_darstellbar("Weingärtle") == 0
+    assert extf.nicht_darstellbar("Doğan") == 1
+    assert extf.nicht_darstellbar("Łukasz Doğan") == 2
+    assert extf.nicht_darstellbar("") == 0
+    assert extf.nicht_darstellbar(None) == 0
+
+
+# ————— Kassentage: was nicht aufgeht —————
+
+def test_kassen_pruefen_meldet_saetze_ueber_dem_tagesumsatz():
+    """`erloeszeilen` fängt das mit max(0, …) ab, damit kein Minusbetrag in
+    den Stapel läuft. Das ist richtig — verschluckt aber still Geld."""
+    b = _blatt(einnahmenBar=100, ecZahlungen=50, umsatzFrei=200)
+    fest = extf.kassen_pruefen([b])
+    assert [x["grund"] for x in fest] == ["saetze_ueber_tagesumsatz"]
+    assert fest[0]["hart"] is True
+    assert "200,00" in fest[0]["text"] and "150,00" in fest[0]["text"]
+    assert fest[0]["tag"] == "01.08.2026"
+    # Und genau das war der stille Verlust:
+    zeilen = extf.erloeszeilen([b])
+    assert sum(float(z["umsatz"].replace(",", ".")) for z in zeilen
+               if z["konto"] == "1600") == 200.0
+
+
+def test_ein_normaler_tag_meldet_nichts():
+    assert extf.kassen_pruefen([_blatt(einnahmenBar=100, umsatz7=20)]) == []
+    assert extf.kassen_pruefen([]) == []
+
+
+def test_kassenschluss_rechnet_zufluss_minus_abfluss():
+    b = _blatt(bestandVortag=100, einnahmenBar=50, gutscheinVerkauf=30,
+               privateinlagen=10, barabhebungBank=200,
+               trinkgeldTeamEC=15, sonstigeAusgaben=5, privatentnahmen=100,
+               vorschussTeam=20, auslagenErstattet=8, einzahlungBank=150)
+    assert extf.kassenschluss(b) == round(100 + 50 + 30 + 10 + 200
+                                          - 15 - 5 - 100 - 20 - 8 - 150, 2)
+
+
+def test_ein_gezaehlter_schluss_ohne_grund_ist_hart():
+    b = _blatt(bestandVortag=100, einnahmenBar=50, gezaehltSchluss=140)
+    fest = extf.kassen_pruefen([b])
+    assert [x["grund"] for x in fest] == ["kassenschluss_weicht_ab"]
+    assert fest[0]["hart"] is True
+    assert "10,00" in fest[0]["text"] and "zu wenig" in fest[0]["text"]
+
+
+def test_eine_vermerkte_differenz_ist_weich():
+    """Verzählt hat sich jeder einmal. Das Kassenblatt hat dafür ein Feld —
+    wer es ausfüllt, hat die Frage schon beantwortet."""
+    b = _blatt(bestandVortag=100, einnahmenBar=50, gezaehltSchluss=140,
+               differenzGrund="Wechselgeld nicht aufgegangen")
+    fest = extf.kassen_pruefen([b])
+    assert fest[0]["hart"] is False
+    assert "Wechselgeld" in fest[0]["text"]
+
+
+def test_eine_stimmende_kasse_meldet_nichts():
+    b = _blatt(bestandVortag=100, einnahmenBar=50, gezaehltSchluss=150)
+    assert extf.kassen_pruefen([b]) == []
+
+
+def test_ohne_gezaehlten_schluss_wird_nicht_gerechnet():
+    """Kein gezählter Wert ist keine Differenz — es ist ein Blatt, das
+    abends noch nicht fertig war."""
+    assert extf.kassen_pruefen([_blatt(bestandVortag=100,
+                                       einnahmenBar=50)]) == []
+
+
+def test_kaputte_zahlen_stuerzen_die_kassenpruefung_nicht():
+    b = _blatt(bestandVortag="hundert", einnahmenBar=50, gezaehltSchluss=50)
+    assert extf.kassen_pruefen([b]) == []
+    assert extf.kassen_pruefen([{"datum": "kaputt", "einnahmenBar": 5}]) == []

@@ -167,6 +167,55 @@ def _entschaerfen(text: str) -> str:
     return "'" + text if text[:1] in FORMELZEICHEN else text
 
 
+def _text_saeubern(text: str) -> str:
+    """Der Buchungstext, wie er in eine Zeile der Stapeldatei passt.
+
+    Vier Schritte, in dieser Reihenfolge:
+
+    1. **Steuerzeichen raus.** Ein Zeilenumbruch im Buchungstext zerreißt
+       die Datei: DATEV liest eine Zeile je Buchung, und aus einer würden
+       zwei — die zweite eine Zeile, die niemand geschrieben hat. Tab und
+       Wagenrücklauf machen dasselbe. Sie werden Leerzeichen, nicht
+       gelöscht: sonst klebten die Wörter aneinander.
+    2. **Leerraum zusammenziehen.** Was aus Schritt 1 kommt, hat oft drei
+       Leerzeichen hintereinander; die kosten von den 60 Zeichen, die
+       DATEV annimmt, und tragen nichts.
+    3. **Formel entschärfen** (`_entschaerfen`) — die Datei wird beim
+       Steuerbüro in Excel geöffnet.
+    4. **Auf 60 Zeichen kürzen**, erst jetzt: sonst sprengte das
+       Apostroph aus Schritt 3 die Grenze.
+
+    Vorher war das nur Schritt 3 und 4. Ein Buchungstext mit Zeilenumbruch
+    kam damit ungeprüft in die Datei — im Testkorpus ist noch keiner
+    aufgetaucht, aber der Text stammt aus einem Foto, und was aus einem
+    Foto kommt, hat sich noch nie an Zusagen gehalten.
+    """
+    roh = str(text or "")
+    entschaerft = "".join(" " if ord(c) < 32 or ord(c) == 127 else c
+                          for c in roh)
+    zusammen = " ".join(entschaerft.split())
+    return _entschaerfen(zusammen)[:60]
+
+
+def nicht_darstellbar(text: str) -> int:
+    """Wie viele Zeichen dieses Textes Windows-1252 nicht schreiben kann.
+
+    `als_bytes` ersetzt sie durch ein Fragezeichen — still, wie es sich
+    für einen Zeichensatz gehört, der das Zeichen nicht kennt. Für einen
+    Lieferantennamen ist das keine Kleinigkeit: aus „Doğan" wird „Do?an",
+    und in DATEV steht dann ein Name, den es nicht gibt. Gezählt wird
+    hier, damit es jemand sagen kann, bevor die Datei aus dem Haus geht —
+    und damit klar ist, wofür der UTF-8-Schalter gut ist.
+    """
+    fehlend = 0
+    for zeichen in str(text or ""):
+        try:
+            zeichen.encode("cp1252")
+        except UnicodeEncodeError:
+            fehlend += 1
+    return fehlend
+
+
 def _belegfeld1(beleg_nr: str | None) -> str | None:
     """Belegfeld 1 lässt DATEV nur wenige Zeichen zu — ein Apostroph gehört
     nicht dazu. Ein führendes Rechenzeichen fällt deshalb weg, statt
@@ -278,9 +327,7 @@ def buchungszeilen(review: dict, kleinunternehmerin: bool = False
         text = " ".join(x for x in (einordnung, kurz, lieferant) if x)
     basis = {"konto": konto, "gegenkonto": GEGENKONTO, "belegdatum": belegdatum,
              "belegfeld1": _belegfeld1(f.get("beleg_nr")),
-             # Erst entschärfen, dann kürzen: sonst sprengte das Apostroph
-             # die 60 Zeichen, die DATEV im Buchungstext annimmt.
-             "text": _entschaerfen(text)[:60]}
+             "text": _text_saeubern(text)}
 
     # Eine Gutschrift zieht ALLE ihre Zeilen mit ins Haben — auch wenn eine
     # einzelne Position der Steuertabelle für sich positiv gerechnet wäre.
@@ -510,6 +557,90 @@ def erloeszeilen(kassenblaetter: list[dict], kleinunternehmerin: bool = False
         if round(ec, 2) > 0:
             aus.append(dict(basis, konto=GELDTRANSIT, gegenkonto=KASSE,
                             umsatz=_de(ec), text="Kartenumsatz an Geldtransit"))
+    return aus
+
+
+# ── Was an einem Kassentag nicht aufgeht ─────────────────────────────────────
+#
+# Dieselbe Bauart wie `pruefen`: rein die Kassenblätter, raus eine Liste von
+# Feststellungen, kein Zugriff auf irgendetwas. Zwei Fragen, beide an der
+# Erlösseite des Stapels aufgehängt:
+#
+#   1. Passen die Steuersätze in den Tag?  `erloeszeilen` rechnet den
+#      19-Prozent-Anteil als „was nicht 7 % oder steuerfrei war" und fängt
+#      ein negatives Ergebnis mit `max(0.0, …)` ab. Das ist richtig, damit
+#      kein Minusbetrag in den Stapel läuft — aber es verschluckt still
+#      Geld: übersteigen die eingetragenen Anteile den Tagesumsatz, wird
+#      weniger gebucht, als eingenommen wurde, und nichts sagt es.
+#
+#   2. Geht die Schublade auf?  Der gezählte Schluss gegen den rechnerischen
+#      Bestand. Eine Differenz ist im Salon normal (verzählt, Wechselgeld);
+#      das Kassenblatt hat dafür ein Feld für den Grund. Mit Grund ist es
+#      eine Notiz, ohne Grund eine offene Frage — und bei einer
+#      Kassenprüfung ist genau das die Frage, die gestellt wird.
+
+KASSEN_ZUFLUSS = ("bestandVortag", "einnahmenBar", "gutscheinVerkauf",
+                  "privateinlagen", "barabhebungBank")
+KASSEN_ABFLUSS = ("trinkgeldTeamEC", "sonstigeAusgaben", "privatentnahmen",
+                  "vorschussTeam", "auslagenErstattet", "einzahlungBank")
+# Ein halber Cent. Alles darunter ist Rundung, nicht Differenz.
+KASSEN_TOLERANZ = 0.005
+
+
+def _kassenzahl(blatt: dict, feld: str) -> float:
+    try:
+        return float(blatt.get(feld) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def kassenschluss(blatt: dict) -> float:
+    """Der rechnerische Bestand am Abend — was in der Schublade sein müsste."""
+    zu = sum(_kassenzahl(blatt, f) for f in KASSEN_ZUFLUSS)
+    ab = sum(_kassenzahl(blatt, f) for f in KASSEN_ABFLUSS)
+    return round(zu - ab, 2)
+
+
+def kassen_pruefen(kassenblaetter: list[dict]) -> list[dict]:
+    """Was an den Kassentagen dieses Stapels nicht aufgeht.
+
+    Reine Rechnung wie `pruefen`, gleiche Form: `grund`, `text`, `hart` —
+    und `tag` statt `beleg`, weil ein Kassentag keinen Beleg hat.
+    """
+    aus: list[dict] = []
+    for blatt in sorted(kassenblaetter or [], key=lambda x: x.get("datum") or ""):
+        datum = str(blatt.get("datum") or "")
+        if len(datum) != 10:
+            continue
+        tag = f"{datum[8:10]}.{datum[5:7]}.{datum[:4]}"
+        bar = _kassenzahl(blatt, "einnahmenBar")
+        ec = _kassenzahl(blatt, "ecZahlungen")
+        frei = _kassenzahl(blatt, "umsatzFrei")
+        sieben = _kassenzahl(blatt, "umsatz7")
+        if frei + sieben > bar + ec + KASSEN_TOLERANZ:
+            aus.append({
+                "grund": "saetze_ueber_tagesumsatz", "hart": True, "tag": tag,
+                "text": f"Am {tag} sind {_de(frei + sieben)} € als steuerfrei "
+                        f"oder 7 % eingetragen, eingenommen wurden aber nur "
+                        f"{_de(bar + ec)} €. So geht mehr in den Stapel als "
+                        f"in die Kasse kam — bitte den Tag noch einmal "
+                        f"ansehen."})
+        gezaehlt = blatt.get("gezaehltSchluss")
+        if gezaehlt is not None:
+            soll = kassenschluss(blatt)
+            differenz = round(_kassenzahl(blatt, "gezaehltSchluss") - soll, 2)
+            if abs(differenz) > KASSEN_TOLERANZ:
+                grund_text = str(blatt.get("differenzGrund") or "").strip()
+                aus.append({
+                    "grund": "kassenschluss_weicht_ab", "hart": not grund_text,
+                    "tag": tag,
+                    "text": (f"Am {tag} sind {_de(abs(differenz))} € "
+                             f"{'zu viel' if differenz > 0 else 'zu wenig'} "
+                             f"gezählt worden"
+                             + (f" — vermerkt ist: {grund_text}."
+                                if grund_text else
+                                ", und es steht kein Grund dabei. Bei einer "
+                                "Kassenprüfung ist das die erste Frage."))})
     return aus
 
 
