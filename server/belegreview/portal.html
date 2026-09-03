@@ -2868,10 +2868,14 @@ function stapelzeile(z){
   const steuer = SCHLUESSEL_STEUERSATZ[String(bu)] || "";
   const text = z.text ?? z.buchungstext ?? "";
   const kontoName = z.konto_name ? " " + z.konto_name : "";
+  /* Bar bezahlt heißt: gegen die Ladenkasse. Die nackte 1600 sagt das
+     niemandem, der nicht im Kontenrahmen zu Hause ist. */
+  const gegen = z.gegenkonto ?? "—";
+  const gegenName = String(gegen) === "1600" ? " Kasse" : "";
   return `<div class="datev" style="margin-bottom:8px">
     <div class="box"><i>Betrag</i><b>${esc(betrag)} € ${haben ? "Haben" : "Soll"}</b></div>
     <div class="box"><i>Konto</i><b>${esc(z.konto ?? "—")}${esc(kontoName)}</b></div>
-    <div class="box"><i>Gegenkonto</i><b>${esc(z.gegenkonto ?? "—")}</b></div>
+    <div class="box"><i>Gegenkonto</i><b>${esc(gegen)}${gegenName}</b></div>
     <div class="box"><i>Steuer</i><b>${steuer ? "Steuer " + steuer : "ohne Steuer"}</b></div>
     ${z.belegfeld1 ? `<div class="box"><i>Beleg</i><b>${esc(z.belegfeld1)}</b></div>` : ""}
     <div class="box" style="flex:1"><i>Buchungstext</i>

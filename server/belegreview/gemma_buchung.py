@@ -138,6 +138,13 @@ REGELN = """Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
   Beleg einen tatsächlich abgezogenen Skontobetrag ausweist oder eine
   passende Kontobewegung den geminderten Betrag zeigt, buchst du den
   geminderten Betrag.
+- Sag, WIE bezahlt wurde (zahlungsart) — das steht fast immer auf dem Bon:
+  „BAR", „Bar", „Barzahlung", Gegeben/Rückgeld → "bar" · „EC", „EC-Cash",
+  „girocard", „Maestro", „VISA", „Mastercard", „SumUp", „Kartenzahlung",
+  „Apple Pay" → "karte" · „Überweisung", „Lastschrift", „SEPA",
+  „zahlbar bis", Rechnung mit Bankverbindung → "ueberweisung". Steht nichts
+  davon da oder bist du dir nicht sicher, schreib "unbekannt" — rate nicht.
+  Barzahlung ist die wichtigste davon: babu bucht sie gegen die Ladenkasse.
 - Als datum gilt das RECHNUNGSDATUM (Belegdatum). Fälligkeitsdatum,
   Zahlungsziel, Liefer- oder Leistungsdatum und Bestelldatum sind ein
   anderes Datum — übernimm sie nicht. Steht nur „Leistungszeitraum",
@@ -182,6 +189,7 @@ oder     {"status": "gebucht",
            "buchungstext": "…",
            "betrag": 0.0, "waehrung": "EUR",
            "betrag_eur": 0.0, "ust_satz": 0, "gutschrift": false,
+           "zahlungsart": "bar | karte | ueberweisung | unbekannt",
            "positionen": [{"bezeichnung": "…", "betrag": 0.0,
                            "ust_satz": 0, "kategorie": "<code>"}],
            "begruendung": "ein Satz"}"""
@@ -444,6 +452,12 @@ def buchung_pruefen(roh: dict, rahmen: str = "SKR04") -> dict:
         for p in positionen:
             p["betrag"] = -abs(p["betrag"])
     waehrung = str(roh.get("waehrung") or "EUR")[:8].upper()
+    # Wie bezahlt wurde, ist OPTIONAL: ein Beleg, der es nicht hergibt, und
+    # eine Antwort aus der Zeit vor dem 03.09.2026 tragen das Feld nicht —
+    # beide werden gebucht wie bisher. Nur "bar" ändert später etwas (das
+    # Gegenkonto), und dafür muss es dastehen, nicht erraten sein.
+    import extf  # noqa: PLC0415 — nur für die Schreibweise der Zahlart
+    zahlungsart = extf.zahlungsart_normal(roh.get("zahlungsart"))
     # Fremdwährung: die Positionsbeträge sind KEINE Euro, und ausländische
     # Steuer ist keine abziehbare Vorsteuer — keine Steuertabelle, Satz 0.
     steuersaetze = _steuertabelle(positionen) if waehrung == "EUR" else []
@@ -465,6 +479,7 @@ def buchung_pruefen(roh: dict, rahmen: str = "SKR04") -> dict:
         "waehrung": waehrung,
         "betrag_eur": betrag_eur,
         "gutschrift": gutschrift,
+        "zahlungsart": zahlungsart,
         "ust_satz": satz,
         "positionen": positionen,
         "steuersaetze": steuersaetze,

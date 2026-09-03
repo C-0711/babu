@@ -326,6 +326,61 @@ PRIVATENTNAHME = "2100"
 DURCHLAUFEND = "1370"
 
 
+# ── Wie bezahlt wurde ───────────────────────────────────────────────────────
+#
+# Drei Schreibweisen im Haus, weil das Feld aus drei Zeiten stammt:
+#
+#   felder.zahlungsart   Zielbild-Weg — Gemma liest sie vom Bon und schreibt
+#                        sie seit dem 03.09.2026 schon in dieser Form.
+#   vlm.zahlungsart      Alt-Reviews. Dort steht, was auf dem Beleg stand:
+#                        „MASTERCARD", „EC-Cash", „Bar". Roh, nicht sortiert.
+#   (nichts)             Ein Beleg, der es nicht hergibt.
+#
+# Der Normalisierer macht daraus bar/karte/ueberweisung oder None. None ist
+# eine vollwertige Antwort und heißt: unbekannt. Geraten wird nicht — eine
+# erfundene Barzahlung bucht gegen eine Kasse, aus der nie Geld ging.
+KARTE_WORTE = ("karte", "card", "ec-cash", "eccash", "girocard", "maestro",
+               "visa", "mastercard", "amex", "sumup", "paypal", "debit",
+               "apple pay", "google pay", "kreditkarte")
+UEBERWEISUNG_WORTE = ("ueberweis", "überweis", "uberweis", "lastschrift",
+                      "sepa", "dauerauftrag", "einzug", "rechnung", "transfer")
+BAR_WORTE = ("bar", "cash", "kasse")
+
+
+def zahlungsart_normal(wert) -> str | None:
+    """„MASTERCARD" → `karte`, „Barzahlung" → `bar`, alles Unklare → None.
+
+    Reihenfolge ist Absicht: erst Karte, dann Überweisung, zuletzt bar.
+    „bar" ist das kürzeste Wort und würde sonst in einem längeren
+    mitgelesen; umgekehrt steckt in keinem Kartenwort ein „bar".
+    """
+    text = str(wert or "").strip().lower()
+    if not text or text in ("unbekannt", "unknown", "none"):
+        return None
+    if text in ("bar", "karte", "ueberweisung"):
+        return text
+    for treffer, worte in (("karte", KARTE_WORTE),
+                           ("ueberweisung", UEBERWEISUNG_WORTE),
+                           ("bar", BAR_WORTE)):
+        if any(w in text for w in worte):
+            return treffer
+    return None
+
+
+def zahlungsart(review: dict) -> str | None:
+    """Wie dieser Beleg bezahlt wurde — `bar`, `karte`, `ueberweisung`, None.
+
+    Eine reine Rechnung über EIN Review, damit Stapel, Vorschau und Prüfbefund
+    garantiert dieselbe Antwort bekommen. `felder` hat Vorrang: dort steht die
+    Angabe, die zu diesem Beleg gebucht wurde. `vlm` ist der Rückweg für
+    Reviews von vor dem 03.09.2026 — die tragen sie roh, wie sie auf dem Bon
+    stand.
+    """
+    f = review.get("felder") or {}
+    v = review.get("vlm") or {}
+    return zahlungsart_normal(f.get("zahlungsart") or v.get("zahlungsart"))
+
+
 def _bu(satz: int | None) -> str | None:
     """Der Steuerschlüssel zu einem Satz. `None` heißt: Zeile zurückhalten.
 
@@ -391,7 +446,14 @@ def buchungszeilen(review: dict, kleinunternehmerin: bool = False
         lieferant = (v.get("lieferant") or f.get("lieferant") or "").strip()
         kurz = f"{teile[0]:02d}.{teile[1]:02d}." if teile else ""
         text = " ".join(x for x in (einordnung, kurz, lieferant) if x)
-    basis = {"konto": konto, "gegenkonto": GEGENKONTO, "belegdatum": belegdatum,
+    # Bestätigt vom Auftraggeber 03.09.2026: bar bezahlte Belege gehen gegen
+    # die Kasse — nur so stimmt der Kassenbestand im Stapel mit dem gezählten
+    # überein. Alles andere läuft weiter über das Sammel-Gegenkonto, gegen das
+    # die Kanzlei die Zahlung mit dem Kontoauszug auflöst. Das Gegenkonto
+    # steht in `basis` und gilt damit für jede Zeile dieses Belegs: den
+    # Einzelsatz, jede Zeile des Mehrsatz-Splits und die Gutschrift im Haben.
+    gegenkonto = KASSE if zahlungsart(review) == "bar" else GEGENKONTO
+    basis = {"konto": konto, "gegenkonto": gegenkonto, "belegdatum": belegdatum,
              "belegfeld1": belegfeld1(review),
              "text": _text_saeubern(text)}
 
@@ -788,17 +850,50 @@ def kassen_pruefen(kassenblaetter: list[dict]) -> list[dict]:
     return aus
 
 
-# Was aus der Schublade geht, ohne dass der Stapel es bucht. Zu jedem
-# dieser drei gehört ein anderer Beleg oder ein Lohnkonto — die Barausgabe
-# ihren Kassenbon, die erstattete Auslage die Quittung, die sie erstattet,
-# der Vorschuss die Lohnabrechnung, mit der er verrechnet wird. Sie hier
-# ein zweites Mal zu buchen hieße, denselben Betrag doppelt abzuziehen.
+# Was aus der Schublade geht, ohne dass der Stapel es von sich aus bucht.
+# Zu jedem dieser drei gehört ein anderer Beleg oder ein Lohnkonto — die
+# Barausgabe ihren Kassenbon, die erstattete Auslage die Quittung, die sie
+# erstattet, der Vorschuss die Lohnabrechnung, mit der er verrechnet wird.
+# Sie hier ein zweites Mal zu buchen hieße, denselben Betrag doppelt
+# abzuziehen.
+#
+# Seit dem 03.09.2026 schließt sich die Barausgaben-Hälfte davon selbst:
+# ein Beleg, der als bar bezahlt gelesen wurde, bucht gegen die Kasse
+# (siehe `buchungszeilen`) und löscht damit genau den Betrag, der hier
+# fehlte. Was übrig bleibt, ist die Barausgabe OHNE Beleg — und die ist
+# der eigentliche Befund.
 KASSE_NICHT_GEBUCHT = (("sonstigeAusgaben", "Barausgaben"),
                        ("auslagenErstattet", "Auslagen"),
                        ("vorschussTeam", "Vorschüsse"))
+BARAUSGABEN = "sonstigeAusgaben"
 
 
-def kassenluecke(kassenblaetter: list[dict]) -> list[dict]:
+def _bar_je_monat(reviews: list[dict] | None) -> dict[str, float]:
+    """Was in jedem Monat als bar bezahlter Beleg in den Stapel geht.
+
+    Gerechnet wird brutto und mit Vorzeichen: eine bar erstattete Gutschrift
+    bringt Geld IN die Schublade und darf die Barausgaben nicht mindern,
+    sondern erhöht sie rechnerisch wieder.
+    """
+    aus: dict[str, float] = {}
+    for review in reviews or []:
+        if zahlungsart(review) != "bar":
+            continue
+        f = (review or {}).get("felder") or {}
+        teile = _datum_teile(f.get("datum"))
+        if not teile:
+            continue
+        try:
+            brutto = float(f.get("brutto") or 0)
+        except (TypeError, ValueError):
+            continue
+        monat = f"{teile[2]:04d}-{teile[1]:02d}"
+        aus[monat] = round(aus.get(monat, 0.0) + brutto, 2)
+    return aus
+
+
+def kassenluecke(kassenblaetter: list[dict],
+                 reviews: list[dict] | None = None) -> list[dict]:
     """Um wie viel der Kassenbestand im Stapel zu hoch steht — je Monat.
 
     Die Folge des Vorsatzes oben: was der Stapel nicht bucht, fehlt in
@@ -806,35 +901,79 @@ def kassenluecke(kassenblaetter: list[dict]) -> list[dict]:
     steht sie höher — und der Unterschied wächst mit jedem Tag, an dem bar
     etwas bezahlt wurde.
 
-    Aufgelöst wird er erst, wenn die Kanzlei die zugehörigen Belege gegen
-    die Kasse bucht. Bis dahin ist die einzige ehrliche Antwort, die Zahl
-    zu nennen: wer sie kennt, sucht sie nicht. Deshalb je Monat und nicht
-    je Tag — abgestimmt wird ein Monat, nicht ein Dienstag.
+    Mit `reviews` wird gegengerechnet, was der Stapel inzwischen selbst
+    gegen die Kasse bucht: die bar bezahlten Belege des Monats. Die Zahl,
+    die dann noch dasteht, ist die interessante — Bargeld, das die
+    Schublade verlassen hat, ohne dass ein Beleg dazu vorliegt.
+
+    Zwei Befunde können herauskommen, und sie schließen einander aus:
+
+      `kassenluecke`               Das Kassenbuch nennt mehr Barausgaben,
+                                   als Belege gebucht sind.
+      `barbelege_ohne_kassenbuch`  Umgekehrt: es sind mehr Belege bar
+                                   bezahlt, als im Kassenbuch als Ausgabe
+                                   steht. Dann fehlt der Eintrag — und bei
+                                   einer Kassenprüfung ist das die Frage.
+
+    Auslagen und Vorschüsse bleiben unverändert in der Lücke: zu ihnen
+    gehört kein Beleg im Stapel, sondern eine Quittung und ein Lohnkonto.
+
+    Je Monat und nicht je Tag — abgestimmt wird ein Monat, nicht ein
+    Dienstag.
     """
     je_monat: dict[str, dict] = {}
+    leer = {feld: 0.0 for feld, _ in KASSE_NICHT_GEBUCHT}
     for blatt in sorted(kassenblaetter or [], key=lambda x: x.get("datum") or ""):
         datum = str(blatt.get("datum") or "")
         if len(datum) != 10:
             continue
-        e = je_monat.setdefault(datum[:7], {feld: 0.0
-                                            for feld, _ in KASSE_NICHT_GEBUCHT})
+        e = je_monat.setdefault(datum[:7], dict(leer))
         for feld, _ in KASSE_NICHT_GEBUCHT:
             e[feld] += _kassenzahl(blatt, feld)
+    bar = _bar_je_monat(reviews)
+    # Ein Monat mit Barbelegen, aber ohne ein einziges Kassenblatt, hätte
+    # sonst gar keinen Eintrag — und genau der wäre der auffälligste.
+    for monat in bar:
+        je_monat.setdefault(monat, dict(leer))
+
     aus: list[dict] = []
     for monat, e in sorted(je_monat.items()):
-        summe = round(sum(e.values()), 2)
-        if summe <= KASSEN_TOLERANZ:
-            continue
-        teile = ", ".join(f"{name} {_de(e[feld])} €"
-                          for feld, name in KASSE_NICHT_GEBUCHT
-                          if round(e[feld], 2) > 0)
-        aus.append({
-            "grund": "kassenluecke", "hart": False, "monat": monat,
-            "betrag": summe,
-            "text": f"Im Zeitraum {monat} steht die Kasse in DATEV um "
-                    f"{_de(summe)} € höher als gezählt: {teile}. Diese "
-                    f"Beträge bucht die Kanzlei mit den Belegen dazu — "
-                    f"danach stimmt der Bestand wieder."})
+        gebucht = round(bar.get(monat, 0.0), 2)
+        ausgaben = round(e[BARAUSGABEN], 2)
+        ohne_beleg = round(ausgaben - gebucht, 2)
+        summe = round(max(0.0, ohne_beleg)
+                      + sum(e[feld] for feld, _ in KASSE_NICHT_GEBUCHT
+                            if feld != BARAUSGABEN), 2)
+        if summe > KASSEN_TOLERANZ:
+            teile = []
+            for feld, name in KASSE_NICHT_GEBUCHT:
+                wert = round(e[feld], 2)
+                if feld == BARAUSGABEN and gebucht > KASSEN_TOLERANZ:
+                    teile.append(f"{name} {_de(wert)} €, davon "
+                                 f"{_de(min(gebucht, wert))} € als Belege "
+                                 f"gebucht — {_de(max(0.0, ohne_beleg))} € "
+                                 f"ohne Beleg")
+                elif wert > 0:
+                    teile.append(f"{name} {_de(wert)} €")
+            aus.append({
+                "grund": "kassenluecke", "hart": False, "monat": monat,
+                "betrag": summe,
+                "text": f"Im Zeitraum {monat} steht die Kasse in DATEV um "
+                        f"{_de(summe)} € höher als gezählt: "
+                        f"{', '.join(teile)}. Diese Beträge bucht die "
+                        f"Kanzlei mit den Belegen dazu — danach stimmt der "
+                        f"Bestand wieder."})
+        ueberhang = round(gebucht - ausgaben, 2)
+        if ueberhang > KASSEN_TOLERANZ:
+            aus.append({
+                "grund": "barbelege_ohne_kassenbuch", "hart": False,
+                "monat": monat, "betrag": ueberhang,
+                "text": f"Im Zeitraum {monat} sind Barbelege über "
+                        f"{_de(ueberhang)} € ohne Eintrag im Kassenbuch: "
+                        f"gebucht sind {_de(gebucht)} € bar bezahlte "
+                        f"Belege, als Barausgabe eingetragen sind "
+                        f"{_de(ausgaben)} €. Dann ging Geld aus der "
+                        f"Schublade, das dort nie vermerkt wurde."})
     return aus
 
 

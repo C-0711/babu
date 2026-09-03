@@ -474,7 +474,15 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
     # Stapel steht deshalb um diese Summe zu hoch. Gelb: das ist kein
     # Fehler, sondern eine Zahl, die man kennen muss, bevor man den
     # Bestand abstimmt.
-    luecken = extf.kassenluecke(blaetter) if rahmen != "SKR03" else []
+    # Gegengerechnet werden die bar bezahlten Belege desselben Monats: die
+    # bucht der Stapel seit dem 03.09.2026 selbst gegen die Kasse. Übrig
+    # bleibt, was ohne Beleg aus der Schublade ging — und umgekehrt der
+    # Barbeleg, zu dem im Kassenbuch kein Eintrag steht.
+    luecken_alle = (extf.kassenluecke(blaetter, alle_reviews)
+                    if rahmen != "SKR03" else [])
+    luecken = [l for l in luecken_alle if l["grund"] == "kassenluecke"]
+    bar_ohne_eintrag = [l for l in luecken_alle
+                        if l["grund"] == "barbelege_ohne_kassenbuch"]
     # Gestellte Rechnungen. Sie zählen im Monat als Erlös (dieselbe
     # Rechnung wie im Monatsabschluss), stehen aber NICHT im Stapel: babu
     # weiß nur, dass sie bezahlt wurden, nicht auf welchem Weg — und ein
@@ -561,6 +569,14 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
         "kassenluecke": [{"monat": l["monat"], "betrag": l["betrag"],
                           "text": l["text"]} for l in luecken],
         "kassenluecke_text": " ".join(l["text"] for l in luecken) or None,
+        # Gelb, die Gegenrichtung: mehr Belege bar bezahlt, als das
+        # Kassenbuch an Barausgaben kennt.
+        "barbelege_ohne_kassenbuch": [{"monat": l["monat"],
+                                       "betrag": l["betrag"],
+                                       "text": l["text"]}
+                                      for l in bar_ohne_eintrag],
+        "barbelege_ohne_kassenbuch_text": " ".join(
+            l["text"] for l in bar_ohne_eintrag) or None,
         # Gelb: Erlöse, die es gibt, die aber nicht in dieser Datei stehen.
         "rechnungen_nicht_im_stapel": {"anzahl": len(rechnungen),
                                        "summe": r_summe},

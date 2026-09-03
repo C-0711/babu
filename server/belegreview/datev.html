@@ -369,6 +369,11 @@ function befundzeilen(b){
   if (b.kassenluecke && b.kassenluecke.length)
     gelb.push(["Die Kasse im Stapel steht höher als die gezählte",
       b.kassenluecke_text]);
+  // Die Gegenrichtung: bar bezahlte Belege, zu denen im Kassenbuch keine
+  // Barausgabe steht. Dann fehlt der Eintrag, nicht der Beleg.
+  if (b.barbelege_ohne_kassenbuch && b.barbelege_ohne_kassenbuch.length)
+    gelb.push(["Bar bezahlte Belege ohne Eintrag im Kassenbuch",
+      b.barbelege_ohne_kassenbuch_text]);
   // Gestellte Rechnungen zaehlen im Monat als Erloes, stehen aber nicht im
   // Stapel — sonst wirkt die Summe unter der Tabelle zu klein.
   const rns = b.rechnungen_nicht_im_stapel;

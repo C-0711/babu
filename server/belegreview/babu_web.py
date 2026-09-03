@@ -2788,6 +2788,11 @@ def _review_aus_einschaetzung(pfad: str, buchung: dict, zeilen: list,
         "netto": netto, "ust": ust, "brutto": brutto,
         "ust_satz": satz,
         "gutschrift": bool(buchung.get("gutschrift")),
+        # Wie bezahlt wurde — Gemma liest es vom Bon. `None` heißt
+        # unbekannt und ist eine gültige Antwort; nur „bar" bucht später
+        # gegen die Ladenkasse statt gegen das Sammel-Gegenkonto
+        # (bestätigt vom Auftraggeber am 03.09.2026, siehe extf).
+        "zahlungsart": buchung.get("zahlungsart") or None,
         "summenprobe_ok": summenprobe_ok,
         "bewirtungssignal": False,
         "offen": [],
@@ -5338,7 +5343,11 @@ def datev_buchungssatz(d: dict) -> dict | None:
         "umsatz": f"{abs(brutto):.2f}".replace(".", ","),
         "soll_haben": "H" if brutto < 0 else "S",
         "konto": konto,
-        "gegenkonto": "70099",
+        # Dasselbe Gegenkonto, das `extf.buchungszeilen` schreibt — die
+        # Vorschau darf nicht behaupten, was in der Datei anders steht.
+        # Bar bezahlt heißt seit dem 03.09.2026 gegen die Kasse.
+        "gegenkonto": extf.KASSE if extf.zahlungsart(d) == "bar"
+                      else extf.GEGENKONTO,
         "bu_schluessel": e.get("steuerschluessel"),
         "belegdatum": belegdatum,
         "belegfeld1": belegfeld1,

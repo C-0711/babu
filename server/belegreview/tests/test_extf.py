@@ -1106,3 +1106,149 @@ def test_festschreibung_laesst_sich_setzen():
     kopf = extf.stapel([], "2026-07", erzeugt=ERZEUGT,
                        festschreibung=True).split(";")
     assert kopf[20] == "1"
+
+
+# ————— Bar bezahlte Belege gehen gegen die Kasse (03.09.2026) —————
+#
+# Bestätigt vom Auftraggeber: nur so stimmt der Kassenbestand im Stapel mit
+# dem gezählten überein. Alles andere läuft weiter über das Sammel-
+# Gegenkonto, das die Kanzlei mit dem Kontoauszug auflöst.
+
+def test_barbeleg_geht_gegen_die_kasse():
+    review = _zielbild_review("2026-08-04", zahlungsart="bar")
+    zeilen = extf.buchungszeilen(review)
+    assert [z["gegenkonto"] for z in zeilen] == [extf.KASSE]
+    assert extf.KASSE == "1600"
+
+
+def test_kartenbeleg_geht_gegen_das_sammelkonto():
+    for art in ("karte", "ueberweisung", "unbekannt", None):
+        review = _zielbild_review("2026-08-04", zahlungsart=art)
+        assert [z["gegenkonto"] for z in extf.buchungszeilen(review)] == \
+            [extf.GEGENKONTO], art
+
+
+def test_der_mehrsatz_split_geht_vollstaendig_gegen_die_kasse():
+    """Ein Bon mit 19 % und 7 % wird zwei Zeilen — bar bezahlt ist er
+    trotzdem einmal, also gehen BEIDE gegen die Kasse."""
+    review = _zielbild_review("2026-08-04", brutto=142.60, zahlungsart="bar",
+                              steuertabelle=[{"satz": 7, "brutto": 85.40},
+                                             {"satz": 19, "brutto": 57.20}])
+    zeilen = extf.buchungszeilen(review)
+    assert len(zeilen) == 2
+    assert {z["gegenkonto"] for z in zeilen} == {extf.KASSE}
+
+
+def test_die_bar_erstattete_gutschrift_geht_auch_gegen_die_kasse():
+    """Eine Gutschrift steht im Haben — das Gegenkonto wählt sie nicht
+    anders, es ist dieselbe Kasse, nur andersherum."""
+    review = _zielbild_review("2026-08-04", brutto=-27.40, zahlungsart="bar")
+    zeilen = extf.buchungszeilen(review)
+    assert [(z["sh"], z["gegenkonto"]) for z in zeilen] == [("H", extf.KASSE)]
+
+
+def test_die_kleinunternehmerin_bucht_ihren_barbeleg_ebenso():
+    review = _zielbild_review("2026-08-04", zahlungsart="bar")
+    zeilen = extf.buchungszeilen(review, kleinunternehmerin=True)
+    assert [z["gegenkonto"] for z in zeilen] == [extf.KASSE]
+
+
+def test_zahlungsart_aus_altem_und_neuem_review():
+    """Zwei Schreibweisen im Haus: `felder.zahlungsart` schreibt der
+    Zielbild-Weg fertig, `vlm.zahlungsart` trägt in Alt-Reviews das rohe
+    Wort vom Bon. Beide führen auf dieselbe Antwort."""
+    assert extf.zahlungsart({"felder": {"zahlungsart": "bar"}}) == "bar"
+    assert extf.zahlungsart({"vlm": {"zahlungsart": "MASTERCARD"}}) == "karte"
+    assert extf.zahlungsart({"vlm": {"zahlungsart": "EC-Cash"}}) == "karte"
+    assert extf.zahlungsart({"vlm": {"zahlungsart": "Barzahlung"}}) == "bar"
+    assert extf.zahlungsart({"vlm": {"zahlungsart": "Überweisung"}}) \
+        == "ueberweisung"
+    # Unbekannt bleibt unbekannt — geraten wird nicht.
+    assert extf.zahlungsart({}) is None
+    assert extf.zahlungsart({"felder": {"zahlungsart": "unbekannt"}}) is None
+    assert extf.zahlungsart({"vlm": {"zahlungsart": "Sonstiges"}}) is None
+    # `felder` hat Vorrang vor dem alten Feld.
+    assert extf.zahlungsart({"felder": {"zahlungsart": "bar"},
+                             "vlm": {"zahlungsart": "MASTERCARD"}}) == "bar"
+
+
+def _barbeleg(datum, brutto):
+    return _zielbild_review(datum, brutto=brutto, zahlungsart="bar")
+
+
+def test_kassenluecke_zieht_barbelege_ab():
+    """60 € Barausgaben im Kassenbuch, 45 € davon als Beleg gebucht — die
+    Lücke ist die Differenz, und der Text sagt beide Zahlen."""
+    blaetter = [_blatt(datum="2026-08-01", sonstigeAusgaben=60)]
+    luecken = extf.kassenluecke(blaetter, [_barbeleg("2026-08-03", 45.00)])
+    assert len(luecken) == 1
+    assert luecken[0]["grund"] == "kassenluecke"
+    assert luecken[0]["betrag"] == 15.0
+    for stueck in ("Barausgaben 60,00 €", "davon 45,00 € als Belege gebucht",
+                   "15,00 € ohne Beleg"):
+        assert stueck in luecken[0]["text"], stueck
+
+
+def test_vollstaendig_belegte_barausgaben_lassen_keine_luecke():
+    blaetter = [_blatt(datum="2026-08-01", sonstigeAusgaben=45)]
+    assert extf.kassenluecke(blaetter, [_barbeleg("2026-08-03", 45.00)]) == []
+
+
+def test_auslagen_und_vorschuesse_bleiben_in_der_luecke():
+    """Zu ihnen gehört kein Beleg im Stapel, sondern eine Quittung und ein
+    Lohnkonto — ein Barbeleg löscht sie deshalb nicht mit."""
+    blaetter = [_blatt(datum="2026-08-01", sonstigeAusgaben=45,
+                       auslagenErstattet=15, vorschussTeam=20)]
+    luecken = extf.kassenluecke(blaetter, [_barbeleg("2026-08-03", 45.00)])
+    assert [(l["monat"], l["betrag"]) for l in luecken] == [("2026-08", 35.0)]
+    assert "Auslagen 15,00 €" in luecken[0]["text"]
+    assert "Vorschüsse 20,00 €" in luecken[0]["text"]
+
+
+def test_karten_und_ueberweisungsbelege_mindern_die_luecke_nicht():
+    blaetter = [_blatt(datum="2026-08-01", sonstigeAusgaben=60)]
+    karte = _zielbild_review("2026-08-03", brutto=45.0, zahlungsart="karte")
+    assert extf.kassenluecke(blaetter, [karte])[0]["betrag"] == 60.0
+    assert extf.kassenluecke(blaetter, [])[0]["betrag"] == 60.0
+    assert extf.kassenluecke(blaetter)[0]["betrag"] == 60.0
+
+
+def test_barbelege_ohne_kassenbucheintrag_werden_gemeldet():
+    """Mehr Belege bar bezahlt, als das Kassenbuch an Ausgaben kennt: dann
+    ging Geld aus der Schublade, das dort nie vermerkt wurde."""
+    blaetter = [_blatt(datum="2026-08-01", sonstigeAusgaben=20)]
+    luecken = extf.kassenluecke(blaetter, [_barbeleg("2026-08-03", 50.00)])
+    assert [l["grund"] for l in luecken] == ["barbelege_ohne_kassenbuch"]
+    assert luecken[0]["betrag"] == 30.0
+    assert luecken[0]["hart"] is False
+    assert "Barbelege über 30,00 €" in luecken[0]["text"]
+
+
+def test_ein_barbeleg_ganz_ohne_kassenblatt_faellt_auf():
+    """Der auffälligste Fall: ein bar bezahlter Beleg in einem Monat, für
+    den gar kein Kassenblatt vorliegt."""
+    luecken = extf.kassenluecke([], [_barbeleg("2026-08-03", 12.50)])
+    assert [(l["grund"], l["monat"], l["betrag"]) for l in luecken] == \
+        [("barbelege_ohne_kassenbuch", "2026-08", 12.5)]
+
+
+def test_barbelege_werden_je_monat_gerechnet():
+    blaetter = [_blatt(datum="2026-07-30", sonstigeAusgaben=20),
+                _blatt(datum="2026-08-02", sonstigeAusgaben=30)]
+    reviews = [_barbeleg("2026-07-30", 20.00), _barbeleg("2026-08-02", 5.00)]
+    luecken = extf.kassenluecke(blaetter, reviews)
+    assert [(l["monat"], l["betrag"]) for l in luecken] == [("2026-08", 25.0)]
+
+
+def test_ein_barbeleg_im_alten_datumsformat_zaehlt_mit():
+    blaetter = [_blatt(datum="2026-08-01", sonstigeAusgaben=60)]
+    alt = {"felder": {"brutto": 45.0, "datum": "03.08.2026"},
+           "einschaetzung": {"konto": "5900", "kontenrahmen": "SKR04"},
+           "vlm": {"zahlungsart": "Bar"}}
+    assert extf.kassenluecke(blaetter, [alt])[0]["betrag"] == 15.0
+
+
+def test_ein_barbeleg_ohne_lesbares_datum_stuerzt_nichts():
+    blaetter = [_blatt(datum="2026-08-01", sonstigeAusgaben=60)]
+    kaputt = [_barbeleg("keins", 45.0), _barbeleg("2026-08-03", "viel")]
+    assert extf.kassenluecke(blaetter, kaputt)[0]["betrag"] == 60.0
