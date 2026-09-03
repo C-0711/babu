@@ -144,7 +144,11 @@ tfoot td{font-weight:600;color:var(--gc-fg);border-top:1px solid var(--gc-border
   <h2>Buchungsstapel</h2>
   <p>Hier verlässt die Buchhaltung das Haus — und hier kommt sie zum
      Vergleich zurück. Der Kontenrahmen dieses Betriebs ist
-     <b id="rahmen" class="num">—</b>.</p>
+     <b id="rahmen" class="num">—</b>, Berater
+     <b id="berater" class="num">—</b>, Mandant
+     <b id="mandant" class="num">—</b>.</p>
+  <p id="stammdaten-fehlt" hidden class="meldung schlimm"
+     style="max-width:78ch"></p>
 
   <div class="unterreiter">
     <button id="r-export" class="an">Hinausgeben</button>
@@ -257,6 +261,18 @@ async function starten(){
   catch (e) { $("#export-ausgabe").innerHTML =
     `<div class="meldung schlimm">${txt(e.message)}</div>`; return; }
   $("#rahmen").textContent = d.rahmen || "—";
+  // Berater- und Mandantennummer stehen im Kopf jeder Stapeldatei und
+  // sagen der Kanzlei, wessen Buchhaltung sie importiert. Sie gehören
+  // deshalb sichtbar auf die Seite, nicht nur in die Datei.
+  $("#berater").textContent = d.berater || "—";
+  $("#mandant").textContent = d.mandant || "—";
+  const fehlt = d.stammdaten_fehlen || [];
+  if (fehlt.length){
+    const w = $("#stammdaten-fehlt"); w.hidden = false;
+    w.textContent = "Im Kopf des Stapels fehlt die " + fehlt.join(" und die ")
+      + ". Die Datei lässt sich herunterladen, aber die Kanzlei muss sie von "
+      + "Hand dem richtigen Betrieb zuordnen.";
+  }
   MONATE = d.monate || [];
   if (!MONATE.length){
     $("#export-ausgabe").innerHTML =
@@ -298,6 +314,9 @@ function befundzeilen(b){
   const z = [];
   if (b.vermischt && b.vermischt.length)
     z.push(["hart","!","Zwei Kontenrahmen in einem Stapel", b.vermischt_text]);
+  if (b.stammdaten_fehlen && b.stammdaten_fehlen.length)
+    z.push(["hart","!", "Der Stapel trägt keine Mandantennummer",
+      b.stammdaten_text]);
   if (b.zurueckgehalten && b.zurueckgehalten.length)
     z.push(["hart","!",
       `${b.zurueckgehalten.length} Buchung(en) bleiben aus dem Stapel`,

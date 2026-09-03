@@ -680,3 +680,85 @@ def test_mit_umsatzsteuer_steht_der_schluessel_weiter_da(c):
               c.get("/api/datev/stapel.csv?von=2026-07&bis=2026-08")
               .content.decode("cp1252").split("\r\n")[2:] if z]
     assert all(z[8] == "9" for z in zeilen)
+
+
+# ── Berater und Mandant (03.09.2026) ────────────────────────────────────
+#
+# Die beiden Zahlen im Stapelkopf sagen der Kanzlei-Software, wessen
+# Buchhaltung sie importiert. Sie kamen aus der Serverumgebung — richtig,
+# solange ein Betrieb je Server läuft, falsch, sobald eine Kanzlei mehrere
+# betreut.
+
+def test_uebersicht_nennt_berater_und_mandant(c):
+    d = c.get("/api/datev/uebersicht").json()
+    assert "berater" in d and "mandant" in d
+    # Ohne gesetzte Nummern steht dort die Vorbelegung „0" — und die Seite
+    # sagt, dass sie fehlt.
+    assert d["stammdaten_fehlen"] == ["Beraternummer", "Mandantennummer"]
+
+
+def test_befund_meldet_fehlende_nummern_haelt_aber_nichts_auf(c):
+    d = c.get("/api/datev/vorschau?von=2026-07&bis=2026-07").json()
+    b = d["befund"]
+    assert b["stammdaten_fehlen"] == ["Beraternummer", "Mandantennummer"]
+    assert "von Hand" in b["stammdaten_text"]
+    # Der Download bleibt erlaubt: die Buchungen sind richtig, nur der
+    # Umschlag trägt keine Adresse.
+    assert b["sauber"] is True
+    assert c.get("/api/datev/stapel.csv?von=2026-07&bis=2026-07") \
+        .status_code == 200
+
+
+def test_die_nummern_aus_babu_web_schlagen_die_umgebung(welt, monkeypatch):
+    """Sobald babu_web die Nummern am Mandanten führt, gelten sie — die
+    Umgebung ist nur noch der Rückweg."""
+    monkeypatch.setattr(welt, "_berater_mandant", lambda: ("16149", "19364"),
+                        raising=False)
+    k = TestClient(welt.app, base_url="https://testserver")
+    d = k.get("/api/datev/uebersicht").json()
+    assert (d["berater"], d["mandant"]) == ("16149", "19364")
+    assert d["stammdaten_fehlen"] == []
+    kopf = k.get("/api/datev/stapel.csv?von=2026-07&bis=2026-07") \
+        .content.decode("cp1252").split("\r\n")[0].split(";")
+    assert kopf[10] == "16149" and kopf[11] == "19364"
+    # Die Kontenbeschriftungen tragen dieselben Nummern.
+    konten = k.get("/api/datev/konten.csv?von=2026-07&bis=2026-07") \
+        .content.decode("cp1252").split("\r\n")[0].split(";")
+    assert konten[10] == "16149" and konten[11] == "19364"
+    assert k.get("/api/datev/vorschau?von=2026-07&bis=2026-07") \
+        .json()["befund"]["stammdaten_fehlen"] == []
+
+
+def test_ohne_babu_web_nummern_bleibt_die_umgebung(welt, monkeypatch):
+    import datev_seite
+    monkeypatch.setenv("BABU_BERATER", "77777")
+    monkeypatch.setenv("BABU_MANDANT", "88888")
+    assert datev_seite._berater_mandant(welt) == ("77777", "88888")
+
+
+def test_eine_kaputte_nummernquelle_wirft_die_seite_nicht(welt, monkeypatch):
+    """Die Seite soll laufen, egal in welcher Reihenfolge die Hälften
+    ankommen — und auch, wenn die andere Hälfte stolpert."""
+    import datev_seite
+
+    def kaputt():
+        raise RuntimeError("noch nicht da")
+
+    monkeypatch.setattr(welt, "_berater_mandant", kaputt, raising=False)
+    monkeypatch.setenv("BABU_BERATER", "12345")
+    monkeypatch.setenv("BABU_MANDANT", "67890")
+    assert datev_seite._berater_mandant(welt) == ("12345", "67890")
+
+
+def test_was_als_nummer_durchgeht():
+    import datev_seite
+    for schlecht in ("", "   ", "0", "00", "keine", "1a", None):
+        assert datev_seite._nummer_fehlt(schlecht) is True, schlecht
+    for gut in ("1", "16149", " 19364 "):
+        assert datev_seite._nummer_fehlt(gut) is False, gut
+
+
+def test_die_seite_zeigt_berater_und_mandant_im_kopf(c):
+    seite = c.get("/datev").text
+    assert 'id="berater"' in seite and 'id="mandant"' in seite
+    assert "Berater" in seite and "Mandant" in seite

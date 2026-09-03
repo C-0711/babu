@@ -88,6 +88,42 @@ def _wache(request: Request):
     return _bw()._verwalter_box_wache(request)
 
 
+def _berater_mandant(bw) -> tuple[str, str]:
+    """Berater- und Mandantennummer für den Stapelkopf.
+
+    Diese beiden Zahlen sagen der Kanzlei-Software, WESSEN Buchhaltung sie
+    gerade importiert. Aus der Serverumgebung kamen sie, solange es einen
+    Betrieb je Server gab; beim Acting-as ist das die falsche Antwort —
+    zwei Mandanten bekämen dieselbe Nummer und liefen im Import ineinander.
+
+    Gefragt wird deshalb zuerst `babu_web`, das die Nummern am Mandanten
+    führt. Gibt es dort (noch) nichts, bleibt es beim bisherigen Weg über
+    die Umgebung. `getattr` und nicht der harte Aufruf: die Seite soll
+    laufen, egal in welcher Reihenfolge die beiden Hälften ankommen.
+    """
+    holen = getattr(bw, "_berater_mandant", None)
+    if callable(holen):
+        try:
+            berater, mandant = holen()
+        except Exception:  # noqa: BLE001 — die Umgebung ist der Rückweg
+            berater = mandant = None
+        if berater or mandant:
+            return str(berater or "").strip(), str(mandant or "").strip()
+    return (os.environ.get("BABU_BERATER", extf.BERATER),
+            os.environ.get("BABU_MANDANT", extf.MANDANT))
+
+
+def _nummer_fehlt(wert: str) -> bool:
+    """Ist das keine brauchbare Berater- oder Mandantennummer?
+
+    Leer, „0" oder etwas, das keine Zahl ist. DATEV nimmt die Datei damit
+    zwar an, ordnet sie aber keinem Mandanten zu — die Kanzlei muss sie
+    dann von Hand zuweisen, und bei mehreren Betrieben rät sie dabei.
+    """
+    w = str(wert or "").strip()
+    return not w.isdigit() or int(w) == 0
+
+
 def _lese_gebremst(un: str) -> bool:
     jetzt = time.time()
     versuche = [t for t in _LESE_VERSUCHE.get(un, []) if jetzt - t < LESE_FENSTER]
@@ -237,7 +273,9 @@ def _sammeln(bw, un: str, monate: list[str]) -> dict:
         je_monat[monat] = {"reviews": reviews, "staemme": mit, "ohne_konto": ohne,
                            "hinweise": hinweise,
                            "blaetter": _kassenblaetter(idx, monat)}
+    berater, mandant = _berater_mandant(bw)
     return {"idx": idx, "rahmen": rahmen, "kleinunternehmerin": klein,
+            "berater": berater, "mandant": mandant,
             "monate": monate, "je_monat": je_monat}
 
 
@@ -320,8 +358,24 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
     # Buchhaltung — was der Monat gekostet hat, nicht was durchgelaufen ist.
     summe = round(sum(_mit_vorzeichen(z) for z in zeilen), 2)
     gutschriften = [z for z in zeilen if (z.get("sh") or "S").upper() == "H"]
+    # Berater- und Mandantennummer. Sie halten den Stapel NICHT auf — die
+    # Datei ist inhaltlich richtig, sie kommt nur ohne Adresse an. Deshalb
+    # steht das hier neben `sauber` und nicht darin: `sauber` sagt etwas
+    # über die Buchungen, das hier über den Umschlag.
+    stammdaten = [n for n, w in (("Beraternummer", daten.get("berater")),
+                                 ("Mandantennummer", daten.get("mandant")))
+                  if _nummer_fehlt(w)]
     return {
         "rahmen": rahmen,
+        "berater": daten.get("berater") or "",
+        "mandant": daten.get("mandant") or "",
+        "stammdaten_fehlen": stammdaten,
+        "stammdaten_text": (None if not stammdaten else
+                            f"Im Kopf des Stapels fehlt die "
+                            f"{' und die '.join(stammdaten)}. Die Datei "
+                            f"lässt sich herunterladen, aber die Kanzlei "
+                            f"muss sie von Hand dem richtigen Betrieb "
+                            f"zuordnen."),
         "sauber": (pruef.sauber and not ohne_konto and not unbenannt
                    and not ohne_datum and not zurueckgehalten),
         # Gelb: die Buchung geht mit, aber jemand sollte hinsehen.
@@ -508,11 +562,18 @@ def api_uebersicht(request: Request) -> Response:
                           if z["status"] in ("geprüft", "exportiert")),
             "kassentage": len(_kassenblaetter(idx, m)),
         }
+    berater, mandant = _berater_mandant(bw)
     return JSONResponse({
         "monate": monate,
         "je_monat": offen,
         "rahmen": bw.kontenrahmen_von(un),
         "kleinunternehmerin": _kleinunternehmerin(bw, un),
+        # Wessen Buchhaltung das ist — im Kopf der Seite, damit niemand
+        # den Stapel des falschen Betriebs weitergibt.
+        "berater": berater, "mandant": mandant,
+        "stammdaten_fehlen": [n for n, w in (("Beraternummer", berater),
+                                             ("Mandantennummer", mandant))
+                              if _nummer_fehlt(w)],
     })
 
 
@@ -567,8 +628,7 @@ def api_stapel(request: Request, von: str = "", bis: str = "",
         text = stapel_zeitraum(
             daten, monate,
             festschreibung=all(bw._monat_festgeschrieben(m) for m in monate),
-            berater=os.environ.get("BABU_BERATER", extf.BERATER),
-            mandant=os.environ.get("BABU_MANDANT", extf.MANDANT))
+            berater=daten["berater"], mandant=daten["mandant"])
     except extf.RahmenVermischung as fehler_:
         return _fehler(str(fehler_), 409)
     name = (f"EXTF_Buchungsstapel_{monate[0]}.csv" if len(monate) == 1
@@ -602,8 +662,7 @@ def api_konten(request: Request, von: str = "", bis: str = "",
     zeilen = _zeilen(daten)
     konten = sorted({z["konto"] for z in zeilen} | {z["gegenkonto"] for z in zeilen})
     aus = [_stammdaten_kopf(20, "Kontenbeschriftungen", 3, int(monate[0][:4]),
-                            os.environ.get("BABU_BERATER", extf.BERATER),
-                            os.environ.get("BABU_MANDANT", extf.MANDANT)),
+                            daten["berater"], daten["mandant"]),
            ";".join(['"Konto"', '"Kontenbeschriftung"', '"Sprach-ID"',
                      '"Kontenbeschriftung lang"'])]
     for k in konten:
