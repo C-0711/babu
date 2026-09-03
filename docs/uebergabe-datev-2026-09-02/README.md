@@ -193,3 +193,9 @@ die Steuerberater-Sicht.
 Suite: 1939 grün gegen SQLite und Postgres 16 (vor dem Cockpit-Portalteil,
 der nur portal.html ändert).
 
+**Deployt 03.09. 02:15** (main `1a10e49`): Golden vorher/nachher `~/golden/{vorher4,
+nachher4}-*` byte-identisch für `/api/belege` und beide `/api/abgleich`; live geprüft
+`/api/ich`, `/api/kanzlei/uebersicht`, `/warteschlange`, `/datev`, Portal trägt
+Überblick, Fußzeile und Team-Unterreiter; Container-Log ohne Fehler. Sicherungen
+`~/backups/babu-docker-vor-deploy-20260903-0213.tgz` und `~/backups/babu/pg-vor-deploy-20260903-0213.dump`.
+
