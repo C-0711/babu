@@ -6988,8 +6988,12 @@ function mdImportStandZeigen(id, d){
   let html = "";
   if (d.stand === "fehler" && d.hinweis)
     html += `<p style="margin:8px 0 0;color:var(--gc-danger)">${esc(d.hinweis)}</p>`;
-  if (d.stand === "unterbrochen"){
-    if (d.hinweis) html += `<p style="margin:8px 0 0;color:var(--gc-accent)">${esc(d.hinweis)}</p>`;
+  /* Weitermachen gibt es überall dort, wo noch Belege liegen, die niemand
+     angesehen hat: nach einem Neustart, nach „Anhalten“ und nach einem
+     Fehler beim Ablegen. Was schon durch ist, wird dabei nicht doppelt gelesen. */
+  const liegtNoch = (d.dateien || []).some(f => ["wartet", "abgelegt", "liest"].includes(f.stand));
+  if (d.stand === "unterbrochen" || ((d.stand === "abgebrochen" || d.stand === "fehler") && liegtNoch)){
+    if (d.stand === "unterbrochen" && d.hinweis) html += `<p style="margin:8px 0 0;color:var(--gc-accent)">${esc(d.hinweis)}</p>`;
     html += `<button class="chip" style="margin-top:8px"
       onclick="mdImportFortsetzen(${id},'')">Weitermachen</button>`;
   }
