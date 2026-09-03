@@ -296,3 +296,14 @@ Kassenlücke (Barausgaben/Auslagen/Vorschüsse) beziffert.
 Stand E1+E2 (`59add8a`): 2116 grün gegen SQLite und Postgres.
 
 Endstand Welle 6 (`ed15300`): volle Suite **2147 grün gegen SQLite und 2147 gegen Postgres 16**.
+
+**Nachtrag 03.09. mittags** (`b923d7b`, `21b10ec`): die drei Annahmen der DATEV-Runde sind
+vom Auftraggeber bestätigt (Trinkgeld über 1370, Einzweckgutscheine, Barbelege gegen die
+Kasse) und stehen so im Code. Neu: Gemma liest die Zahlart vom Bon (`zahlungsart`, optional),
+bar bezahlte Belege buchen Aufwand an 1600 statt an 70099, die Kassenlücke im Befund rechnet
+sie gegen die Barausgaben des Kassenbuchs, Barbelege ohne Kassenbucheintrag werden gemeldet.
+Produktiv außerdem: Betreiber `christoph0711.io` ist admin, Nina ist Mandantin
+„SupremeStudio" unter Kanzlei Afflek (Berater 16149, Mandant 19364, Belegbox verknüpft);
+zwei August-Stapel (Windows-1252 und UTF-8-BOM) liegen dem Auftraggeber für den
+Import-Test bei der Kanzlei vor, mit Protokollvorlage.
+
