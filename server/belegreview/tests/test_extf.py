@@ -584,3 +584,115 @@ def test_de_schreibt_nie_ein_minus():
     assert extf._soll_haben(0.0) == "S"
     # Ein Betrag unterhalb eines halben Cents ist keine Gutschrift.
     assert extf._soll_haben(-0.001) == "S"
+
+
+# ————— Unbekannter Steuersatz: nicht raten (03.09.2026) —————
+#
+# `_bu(None)` lieferte "9" — 19 % Vorsteuer für einen Satz, den niemand
+# gelesen hatte. Aus einer Lücke wurde damit eine Steuererklärung. Jetzt
+# geht die Zeile ohne Schlüssel mit, und der Prüfbefund sagt es.
+
+def test_ohne_steuersatz_kein_schluessel_statt_neunzehn():
+    z = _zeilen(_mit_satz(None))[0]
+    assert z["bu"] == ""                     # nicht "9"
+    assert extf._zeile(z).split(";")[8] == ""
+
+
+def test_zwoelf_prozent_bleibt_draussen():
+    """Der bestehende Vertrag: ein Satz, den es nicht gibt, kommt nicht in
+    den Stapel. Nur der Weg dorthin ist ein anderer geworden."""
+    assert extf._bu(12) is None
+    assert _zeilen(_mit_satz(12)) == []
+
+
+def test_krummer_steuersatz_stuerzt_nicht_ab():
+    assert extf._bu("neunzehn") is None
+    assert _zeilen(_mit_satz("neunzehn")) == []
+
+
+def test_automatikkonto_ohne_satz_weicht_auf_5200_aus():
+    """5400 rechnet 19 % selbst. Ohne bekannten Satz hätte DATEV die
+    Vorsteuer stillschweigend gezogen — 5200 rechnet nichts."""
+    z = _zeilen(_auf("5400", None))[0]
+    assert (z["konto"], z["bu"]) == ("5200", "")
+    assert _zeilen(_auf("5300", None))[0]["konto"] == "5200"
+
+
+def test_5200_rechnet_wirklich_nichts_selbst():
+    """Die Annahme hinter OHNE_STEUER, an der Quelle nachgesehen."""
+    import skr04_automatik
+    import skr04_konten
+    assert skr04_konten.name("5200") == "Wareneingang"
+    assert skr04_automatik.automatik("5200") is None
+    assert set(extf.OHNE_STEUER.values()) == {"5200"}
+
+
+def test_fremdes_automatikkonto_ohne_satz_behaelt_sein_konto(capsys):
+    """Für 4400 kennt babu kein steuerfreies Geschwisterkonto — die Zeile
+    bleibt, wo sie ist, und der Lauf sagt es."""
+    z = _zeilen(_auf("4400", None))[0]
+    assert (z["konto"], z["bu"]) == ("4400", "")
+    assert "4400" in capsys.readouterr().out
+
+
+# ————— extf.pruefen: was an einem Beleg auffällt —————
+
+def test_pruefen_meldet_unbekannten_satz_weich():
+    b = extf.pruefen(_mit_satz(None))
+    assert [x["grund"] for x in b] == ["steuersatz_unbekannt"]
+    assert b[0]["hart"] is False
+    assert "nicht fest" in b[0]["text"]
+
+
+def test_pruefen_meldet_ungueltigen_satz_hart():
+    b = extf.pruefen(_mit_satz(12))
+    assert [x["grund"] for x in b] == ["steuersatz_ungueltig"]
+    assert b[0]["hart"] is True and b[0]["satz"] == 12
+    assert "12 %" in b[0]["text"]
+
+
+def test_pruefen_meldet_beleg_ohne_konto_und_ohne_betrag():
+    b = extf.pruefen({"felder": {}, "einschaetzung": {}})
+    assert {x["grund"] for x in b} >= {"ohne_konto", "ohne_betrag"}
+    assert all(x["hart"] is False for x in b
+               if x["grund"] in ("ohne_konto", "ohne_betrag"))
+
+
+def test_pruefen_sieht_jeden_satz_des_mehrsatz_bons():
+    r = _mit_satz(19)
+    r["felder"]["steuertabelle"] = [{"satz": 19, "brutto": 20.0},
+                                    {"satz": 12, "brutto": 7.4}]
+    assert [x["grund"] for x in extf.pruefen(r)] == ["steuersatz_ungueltig"]
+
+
+def test_pruefen_wiederholt_denselben_grund_nicht():
+    r = _mit_satz(19)
+    r["felder"]["steuertabelle"] = [{"satz": None, "brutto": 20.0},
+                                    {"satz": None, "brutto": 7.4}]
+    assert len(extf.pruefen(r)) == 1
+
+
+def test_pruefen_meldet_automatikkonto_bei_der_kleinunternehmerin():
+    """§ 19 UStG und ein Konto, das seine Steuer selbst rechnet, schließen
+    einander aus — DATEV zöge Vorsteuer, die es nicht gibt."""
+    r = _auf("4400", 19)
+    b = extf.pruefen(r, kleinunternehmerin=True)
+    assert [x["grund"] for x in b] == ["automatik_bei_kleinunternehmerin"]
+    assert b[0]["hart"] is True
+    # Ohne die Regelung ist dasselbe Konto völlig in Ordnung.
+    assert extf.pruefen(r) == []
+
+
+def test_pruefen_ist_still_wenn_nichts_ist():
+    assert extf.pruefen(_mit_satz(19)) == []
+    assert extf.pruefen(GOLDEN) == []
+
+
+def test_alle_gruende_sind_angemeldet():
+    """Wer einen Grund erfindet, trägt ihn in GRUENDE ein — sonst weiß die
+    Seite nicht, dass es ihn gibt."""
+    faelle = [extf.pruefen(_mit_satz(None)), extf.pruefen(_mit_satz(12)),
+              extf.pruefen({"felder": {}, "einschaetzung": {}}),
+              extf.pruefen(_auf("4400", 19), kleinunternehmerin=True)]
+    gefunden = {x["grund"] for b in faelle for x in b}
+    assert gefunden == set(extf.GRUENDE)

@@ -575,3 +575,63 @@ def test_befund_summe_ist_soll_minus_haben():
     assert befund["gutschriften"] == 1
     # Und dieselbe Rechnung je Konto.
     assert datev_seite._je_konto(zeilen)[0]["summe"] == 60.00
+
+
+# ── Steuersatz-Befund auf der Seite (03.09.2026) ────────────────────────
+
+def _daten(reviews, staemme, hinweise=None, monat="2026-08"):
+    return {"monate": [monat], "rahmen": "SKR04", "kleinunternehmerin": False,
+            "je_monat": {monat: {"reviews": reviews, "staemme": staemme,
+                                 "ohne_konto": [], "blaetter": [],
+                                 "hinweise": hinweise or []}}}
+
+
+def test_befund_meldet_belege_ohne_steuersatz_gelb(welt):
+    import datev_seite
+    import extf
+    review = json.loads(json.dumps(welt.index_aktuell()["reviews"][BELEGE[0][1]]))
+    review["felder"]["ust_satz"] = None
+    hinweise = [dict(h, beleg="ein-beleg")
+                for h in extf.pruefen(review)]
+    daten = _daten([review], ["ein-beleg"], hinweise)
+    befund = datev_seite._befund(daten, datev_seite._zeilen(daten))
+    assert befund["ohne_steuersatz"] == ["ein-beleg"]
+    assert befund["zurueckgehalten"] == []
+    # Gelb heißt: die Buchung geht mit. Der Stapel bleibt sauber.
+    assert befund["sauber"] is True
+    assert befund["buchungen"] == 1
+
+
+def test_befund_haelt_einen_ungueltigen_satz_rot_zurueck(welt):
+    import datev_seite
+    import extf
+    review = json.loads(json.dumps(welt.index_aktuell()["reviews"][BELEGE[0][1]]))
+    review["felder"]["ust_satz"] = 12
+    hinweise = [dict(h, beleg="ein-beleg") for h in extf.pruefen(review)]
+    daten = _daten([review], ["ein-beleg"], hinweise)
+    befund = datev_seite._befund(daten, datev_seite._zeilen(daten))
+    assert [z["grund"] for z in befund["zurueckgehalten"]] == \
+        ["steuersatz_ungueltig"]
+    assert befund["zurueckgehalten"][0]["beleg"] == "ein-beleg"
+    assert "12 %" in befund["zurueckgehalten_text"]
+    assert "ein-beleg" in befund["zurueckgehalten_text"]
+    assert befund["sauber"] is False
+    # Und die Zeile ist wirklich nicht im Stapel.
+    assert befund["buchungen"] == 0
+
+
+def test_derselbe_grund_an_vielen_belegen_steht_einmal_da():
+    import datev_seite
+    hinweise = [{"grund": "steuersatz_ungueltig", "hart": True,
+                 "text": "12 % ist kein Steuersatz, den DATEV kennt.",
+                 "beleg": f"beleg-{i}"} for i in range(6)]
+    text = datev_seite._hinweistext(hinweise)
+    assert text.count("12 %") == 1
+    assert "beleg-0, beleg-1, beleg-2 und 3 weitere" in text
+
+
+def test_ein_sauberer_monat_meldet_nichts_dazu(c):
+    d = c.get("/api/datev/vorschau?von=2026-07&bis=2026-08").json()
+    assert d["befund"]["ohne_steuersatz"] == []
+    assert d["befund"]["zurueckgehalten"] == []
+    assert d["befund"]["sauber"] is True

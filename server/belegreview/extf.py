@@ -194,6 +194,14 @@ BU_SCHLUESSEL = {0: "", 5: "7", 7: "8", 16: "5", 19: "9"}
 GESCHWISTER = {("5400", 7): "5300", ("5300", 19): "5400",
                ("4400", 7): "4300", ("4300", 19): "4400"}
 
+# Wohin ein Automatikkonto ausweicht, wenn gar kein Satz feststeht. 5200
+# „Wareneingang" ist im SKR04 dasselbe Fach ohne die AV-Kennzeichnung — es
+# rechnet nichts selbst, also erfindet es auch keine Vorsteuer. Das ist der
+# ehrliche Platz für eine Buchung, deren Steuersatz niemand gelesen hat:
+# die Kanzlei sieht den Betrag, trägt den Satz nach und bucht um. Auf 5400
+# stehengelassen hätte DATEV stillschweigend 19 % gezogen.
+OHNE_STEUER = {"5400": "5200", "5300": "5200"}
+
 # Die Erlösseite. Kasse und Geldtransit sind Finanzkonten (F) des SKR04,
 # die Erlöskonten Automatikkonten — die Steuer kommt vom Konto.
 KASSE = "1600"
@@ -204,10 +212,25 @@ ERLOES_KLEINUNTERNEHMER = "4184"    # Steuerfreie Erlöse Kleinunternehmer § 19
 
 
 def _bu(satz: int | None) -> str | None:
-    """None heißt: unbekannter Satz — diese Zeile gehört nicht in den Stapel."""
+    """Der Steuerschlüssel zu einem Satz. `None` heißt: Zeile zurückhalten.
+
+    Zwei Fälle, die lange derselbe waren und es nicht sind:
+
+    * **Kein Satz angegeben** (`satz is None`) — dann steht er eben nicht
+      fest. Bis 03.09.2026 machte babu daraus `"9"`, also 19 % Vorsteuer:
+      eine Zahl, die niemand gelesen hat, wurde zur Steuererklärung. Jetzt
+      geht die Zeile OHNE Schlüssel mit; die Kanzlei sieht den Betrag und
+      trägt den Satz nach. Ein leeres Feld ist eine Frage, eine erfundene
+      19 wäre eine Antwort.
+    * **Ein Satz, den es nicht gibt** (12 % etwa) — die Zeile bleibt aus dem
+      Stapel. Lieber eine Buchung weniger als eine falsch besteuerte.
+    """
     if satz is None:
-        return "9"
-    return BU_SCHLUESSEL.get(int(satz))
+        return ""
+    try:
+        return BU_SCHLUESSEL.get(int(satz))
+    except (TypeError, ValueError):
+        return None
 
 
 def _konto_und_rahmen(review: dict) -> tuple[str | None, str]:
@@ -281,13 +304,27 @@ def buchungszeilen(review: dict) -> list[dict]:
 
 
 def _automatik_anpassen(z: dict, rahmen: str) -> dict:
-    """Automatikkonto → kein Schlüssel; fremder Satz → Geschwisterkonto."""
+    """Automatikkonto → kein Schlüssel; fremder Satz → Geschwisterkonto.
+
+    Steht überhaupt kein Satz fest, weicht die Buchung auf das Konto ohne
+    Selbstrechnung aus (`OHNE_STEUER`). Vorher stand hier `19 if satz is
+    None` — dieselbe erfundene Zahl wie im alten `_bu`, nur an zweiter
+    Stelle. Ein Automatikkonto hätte sie dann auch noch selbst gezogen.
+    """
     if rahmen != "SKR04" or z["bu"] is None:
         return z
     a = skr04_automatik.automatik(z["konto"])
     if not a:
         return z
-    satz = 19 if z.get("satz") is None else int(z["satz"])   # wie _bu(None)
+    if z.get("satz") is None:
+        ziel = OHNE_STEUER.get(z["konto"])
+        if ziel:
+            return dict(z, konto=ziel, bu="")
+        print(f"[extf] Konto {z['konto']} rechnet {a[1]} % selbst, die Zeile "
+              f"'{z['text'][:40]}' nennt aber keinen Satz — sie geht ohne "
+              f"Schlüssel mit, der Satz kommt vom Konto", flush=True)
+        return dict(z, bu="")
+    satz = int(z["satz"])
     if (a[1] or 0) == satz:
         return dict(z, bu="")
     ziel = GESCHWISTER.get((z["konto"], satz))
@@ -297,6 +334,87 @@ def _automatik_anpassen(z: dict, rahmen: str) -> dict:
           f"'{z['text'][:40]}' trägt {satz} % — Schlüssel bleibt, der Import "
           f"wird das melden", flush=True)
     return z
+
+
+# ── Was an einem Beleg den Stapel stört ─────────────────────────────────────
+#
+# Eine reine Rechnung: rein ein Review, raus eine Liste von Feststellungen.
+# Kein Zugriff auf die Belegbox, keine Ausgabe, keine Entscheidung — die
+# trifft die Seite, die das anzeigt. Der Grund steht als kurzes Wort da
+# (`grund`), damit sich Zeilen zählen und gruppieren lassen, und daneben ein
+# Satz für Menschen (`text`).
+#
+# `hart` trennt zwei Sorten:
+#
+#   hart=False  Die Buchung geht mit, aber jemand sollte hinsehen.
+#   hart=True   Die Buchung geht NICHT mit — oder sie wäre falsch.
+#
+# Das ist der Unterschied zwischen „nachtragen" und „nicht abgeben".
+
+GRUENDE = ("steuersatz_unbekannt", "steuersatz_ungueltig", "ohne_konto",
+           "ohne_betrag", "automatik_bei_kleinunternehmerin")
+
+
+def _saetze_des_belegs(f: dict) -> list:
+    """Die Steuersätze, die dieser Beleg in den Stapel bringen würde —
+    dieselbe Aufteilung wie `buchungszeilen`, damit beide dasselbe sehen."""
+    tabelle = f.get("steuertabelle") or []
+    if len(tabelle) > 1:
+        return [z.get("satz") for z in tabelle]
+    return [f.get("ust_satz")]
+
+
+def pruefen(review: dict, kleinunternehmerin: bool = False) -> list[dict]:
+    """Was diesem Beleg auf dem Weg in den Stapel fehlt oder widerspricht.
+
+    Rein rechnend und ohne Seiteneffekt, damit dieselbe Antwort in der
+    Vorschau, im Prüfbefund und in einem Test herauskommt. Was hier NICHT
+    passiert: der Beleg wird nicht verändert und nichts wird verworfen —
+    `buchungszeilen` entscheidet weiter für sich, was es schreibt. Diese
+    Funktion sagt nur, was daran auffällt.
+    """
+    f = review.get("felder") or {}
+    konto, rahmen = _konto_und_rahmen(review)
+    aus: list[dict] = []
+
+    def melden(grund: str, text: str, hart: bool, satz=None) -> None:
+        eintrag = {"grund": grund, "text": text, "hart": hart,
+                   "konto": konto, "satz": satz}
+        if not any(a["grund"] == grund and a["satz"] == satz for a in aus):
+            aus.append(eintrag)
+
+    if not konto:
+        melden("ohne_konto",
+               "Für diesen Beleg ist kein Konto festgelegt — er fehlt im "
+               "Stapel.", hart=False)
+    if f.get("brutto") is None:
+        melden("ohne_betrag",
+               "Von diesem Beleg ist kein Betrag bekannt — er fehlt im "
+               "Stapel.", hart=False)
+
+    for satz in _saetze_des_belegs(f):
+        if satz is None:
+            melden("steuersatz_unbekannt",
+                   "Der Steuersatz steht nicht fest. Die Buchung geht ohne "
+                   "Steuerschlüssel mit; die Kanzlei trägt ihn nach.",
+                   hart=False)
+        elif _bu(satz) is None:
+            melden("steuersatz_ungueltig",
+                   f"{satz} % ist kein Steuersatz, den DATEV kennt. Diese "
+                   f"Buchung bleibt aus dem Stapel.", hart=True, satz=satz)
+
+    # Ein Betrieb ohne Umsatzsteuer (§ 19 UStG) und ein Konto, das seine
+    # Steuer selbst rechnet, schließen einander aus: DATEV zöge Vorsteuer,
+    # die es nicht gibt. Die Konten, für die babu ein steuerfreies
+    # Geschwisterkonto kennt, sind kein Fall — die werden umgehängt.
+    if (kleinunternehmerin and konto and rahmen == "SKR04"
+            and skr04_automatik.automatik(konto)
+            and konto not in OHNE_STEUER):
+        melden("automatik_bei_kleinunternehmerin",
+               f"Konto {konto} rechnet seine Steuer selbst. In einem Betrieb "
+               f"ohne Umsatzsteuer zieht das Vorsteuer, die es nicht gibt.",
+               hart=True)
+    return aus
 
 
 def erloeszeilen(kassenblaetter: list[dict], kleinunternehmerin: bool = False

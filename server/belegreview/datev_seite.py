@@ -138,17 +138,19 @@ def _zeitraum(von: str | None, bis: str | None) -> tuple[list[str], str | None]:
 # Was in den Stapel gehört
 # ---------------------------------------------------------------------------
 
-def _reviews(idx: dict, monat: str) -> tuple[list[dict], list[str], list[str]]:
+def _reviews(idx: dict, monat: str, kleinunternehmerin: bool = False
+             ) -> tuple[list[dict], list[str], list[str], list[dict]]:
     """Die Belege eines Monats, die in den Stapel dürfen.
 
-    Zurück kommen die Reviews, die Stämme dazu (in derselben Reihenfolge) und
+    Zurück kommen die Reviews, die Stämme dazu (in derselben Reihenfolge),
     die Stämme, die kein Konto tragen — die fehlen im Stapel, und genau das
-    soll der Prüfbefund sagen, bevor jemand die Datei weitergibt.
+    soll der Prüfbefund sagen, bevor jemand die Datei weitergibt — und die
+    Feststellungen aus `extf.pruefen`, jede mit dem Beleg, an dem sie hängt.
     """
     staemme = sorted(s for s, z in idx["belege"].items()
                      if z["monat"] == monat
                      and z["status"] in ("geprüft", "exportiert"))
-    reviews, mit, ohne = [], [], []
+    reviews, mit, ohne, hinweise = [], [], [], []
     for s in staemme:
         review = idx["reviews"].get(s)
         if review is None:
@@ -158,7 +160,9 @@ def _reviews(idx: dict, monat: str) -> tuple[list[dict], list[str], list[str]]:
         mit.append(s)
         if not extf.buchungszeilen(review):
             ohne.append(s)
-    return reviews, mit, ohne
+        for h in extf.pruefen(review, kleinunternehmerin):
+            hinweise.append(dict(h, beleg=s))
+    return reviews, mit, ohne, hinweise
 
 
 def _kassenblaetter(idx: dict, monat: str) -> list[dict]:
@@ -229,8 +233,9 @@ def _sammeln(bw, un: str, monate: list[str]) -> dict:
     klein = _kleinunternehmerin(bw, un)
     je_monat = {}
     for monat in monate:
-        reviews, mit, ohne = _reviews(idx, monat)
+        reviews, mit, ohne, hinweise = _reviews(idx, monat, klein)
         je_monat[monat] = {"reviews": reviews, "staemme": mit, "ohne_konto": ohne,
+                           "hinweise": hinweise,
                            "blaetter": _kassenblaetter(idx, monat)}
     return {"idx": idx, "rahmen": rahmen, "kleinunternehmerin": klein,
             "monate": monate, "je_monat": je_monat}
@@ -256,6 +261,31 @@ def _zeilen(daten: dict) -> list[dict]:
     return aus
 
 
+def _feststellung(hinweise: list[dict], grund: str) -> list[dict]:
+    return [h for h in hinweise if h.get("grund") == grund]
+
+
+def _hinweistext(hinweise: list[dict], hoechstens: int = 3) -> str | None:
+    """Aus mehreren gleichartigen Feststellungen ein Satz — ohne Wiederholung.
+
+    Derselbe Grund an zwanzig Belegen soll nicht zwanzigmal dastehen: der
+    Text steht einmal, die Belege dahinter, und ab dem vierten nur noch die
+    Anzahl.
+    """
+    if not hinweise:
+        return None
+    texte: dict[str, list[str]] = {}
+    for h in hinweise:
+        texte.setdefault(h["text"], []).append(str(h.get("beleg") or ""))
+    stuecke = []
+    for text, belege in texte.items():
+        namen = [b for b in belege if b][:hoechstens]
+        rest = len([b for b in belege if b]) - len(namen)
+        wo = ", ".join(namen) + (f" und {rest} weitere" if rest > 0 else "")
+        stuecke.append(f"{text} Betroffen: {wo}." if wo else text)
+    return " ".join(stuecke)
+
+
 def _befund(daten: dict, zeilen: list[dict]) -> dict:
     """Was jemand wissen muss, BEVOR er die Datei an die Kanzlei gibt."""
     rahmen = daten["rahmen"]
@@ -277,6 +307,13 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
     # Hier wird es nicht repariert (das gehört in `extf`, mit eigener
     # Prüfung), aber es wird gesagt, bevor die Datei aus dem Haus geht.
     ohne_datum = [z for z in zeilen if not z.get("belegdatum")]
+    # Die Feststellungen aus `extf.pruefen`, über alle Monate zusammengelegt.
+    # `.get` und nicht `[…]`: Tests und ältere Aufrufer bauen `je_monat`
+    # selbst und kennen den Schlüssel nicht.
+    hinweise = [h for m in daten["je_monat"].values()
+                for h in (m.get("hinweise") or [])]
+    ohne_steuersatz = _feststellung(hinweise, "steuersatz_unbekannt")
+    zurueckgehalten = [h for h in hinweise if h.get("hart")]
     # Soll minus Haben: eine Gutschrift mindert die Summe, statt sie zu
     # erhöhen. Die Zahl unter der Tabelle soll dasselbe sagen wie die
     # Buchhaltung — was der Monat gekostet hat, nicht was durchgelaufen ist.
@@ -285,7 +322,13 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
     return {
         "rahmen": rahmen,
         "sauber": (pruef.sauber and not ohne_konto and not unbenannt
-                   and not ohne_datum),
+                   and not ohne_datum and not zurueckgehalten),
+        # Gelb: die Buchung geht mit, aber jemand sollte hinsehen.
+        "ohne_steuersatz": [h["beleg"] for h in ohne_steuersatz],
+        # Rot: die Buchung geht NICHT mit — oder sie wäre falsch.
+        "zurueckgehalten": [{"beleg": h.get("beleg"), "grund": h["grund"],
+                             "text": h["text"]} for h in zurueckgehalten],
+        "zurueckgehalten_text": _hinweistext(zurueckgehalten),
         "ohne_belegdatum": len(ohne_datum),
         "ohne_belegdatum_belege": sorted({z["quelle"] for z in ohne_datum})[:8],
         "vermischt": pruef.vermischt,

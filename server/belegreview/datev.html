@@ -298,6 +298,17 @@ function befundzeilen(b){
   const z = [];
   if (b.vermischt && b.vermischt.length)
     z.push(["hart","!","Zwei Kontenrahmen in einem Stapel", b.vermischt_text]);
+  if (b.zurueckgehalten && b.zurueckgehalten.length)
+    z.push(["hart","!",
+      `${b.zurueckgehalten.length} Buchung(en) bleiben aus dem Stapel`,
+      b.zurueckgehalten_text]);
+  if (b.ohne_steuersatz && b.ohne_steuersatz.length)
+    z.push(["zu","–", `${b.ohne_steuersatz.length} Beleg(e) ohne Steuersatz`,
+      "Sie gehen ohne Steuerschlüssel mit, damit keine Vorsteuer gezogen "
+      + "wird, die niemand gelesen hat: "
+      + b.ohne_steuersatz.slice(0,6).join(", ")
+      + (b.ohne_steuersatz.length > 6 ? " …" : "")
+      + " — die Kanzlei trägt den Satz nach."]);
   if (b.ohne_kontierung && b.ohne_kontierung.length)
     z.push(["zu","–", `${b.ohne_kontierung.length} Beleg(e) ohne Konto`,
       "Sie fehlen im Stapel: " + b.ohne_kontierung.slice(0,6).join(", ") +
