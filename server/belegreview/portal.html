@@ -2751,17 +2751,18 @@ async function ladeDetail(stamm){
 
     html += rechenproben(f.proben);
 
-    // Kontonummern und Buchungsschlüssel sind Kanzlei-Vokabular — Nina
-    // sieht stattdessen den einen Satz, dass es erledigt ist.
-    if (b && meineRolle === "kanzlei"){
-      html += `<div class="sekt"><span class="lbl">Das geht an DATEV</span><div class="datev">
-        <div class="box"><i>Betrag</i><b>${b.umsatz} €</b></div>
-        <div class="box"><i>Konto</i><b>${b.konto}</b></div>
-        <div class="box"><i>Gegenkonto</i><b>${b.gegenkonto}</b></div>
-        <div class="box"><i>Steuer</i><b>${b.bu_schluessel || "—"}</b></div>
-        ${b.belegfeld1 ? `<div class="box"><i>Beleg</i><b>${b.belegfeld1}</b></div>` : ""}
-        <div class="box" style="flex:1"><i>Buchungstext</i><b style="font-size:12px">${b.buchungstext || "—"}</b></div>
-      </div></div>`;
+    /* Kontonummern und Buchungsschlüssel sind Kanzlei-Vokabular — Nina
+       sieht stattdessen den einen Satz, dass es erledigt ist. Ein Bon mit
+       zwei Steuersätzen wird zu zwei Zeilen; deshalb zeigt die Karte die
+       Zeilen des Stapels und fällt nur dann auf die eine Vorstufe zurück,
+       wenn keine da sind. */
+    const zeilen = Array.isArray(d.stapelzeilen) ? d.stapelzeilen : [];
+    if ((zeilen.length || b) && meineRolle === "kanzlei"){
+      const gezeigt = zeilen.length ? zeilen.map(stapelzeile) : [stapelzeile(b)];
+      html += `<div class="sekt"><span class="lbl">Das geht an DATEV</span>
+        <p style="font-size:13px;color:var(--gc-desc);margin:0 0 8px">So steht der Beleg
+        im Stapel für deine Kanzlei.</p>
+        ${gezeigt.join("")}</div>`;
     }
 
     const siegelZeit = rev ? rev.zeit : (aufn ? aufn.zeit : null);
@@ -2819,6 +2820,33 @@ const feld = (k,v) => `<div class="feld"><span>${k}</span><b>${v}</b></div>`;
    das Rückgeld unten stehen unabhängig von ihm auf dem Beleg. Deshalb steht
    hier nicht „nicht bestanden", sondern welche Rechnung mit welchen Zahlen
    nicht aufgeht — und in welcher Zeile die Zahl gefunden wurde. */
+/* ————— EINE ZEILE DES BUCHUNGSSTAPELS —————
+   Nimmt beide Formen an: eine Zeile aus `stapelzeilen` (die Wahrheit für
+   die Datei) und die einzeilige Vorstufe `buchungssatz` (Rückfall, solange
+   ein Beleg noch keine Zeile hergibt). „S" und „H" stehen ausgeschrieben
+   da — wer den Stapel prüft, soll nicht raten, in welche Richtung gebucht
+   wird. Der Steuerschlüssel steht als Prozentsatz, wie er auf dem Beleg
+   steht; ein Automatikkonto rechnet die Steuer selbst und trägt keinen. */
+const SCHLUESSEL_STEUERSATZ = {"9": "19 %", "8": "7 %", "7": "5 %", "5": "16 %"};
+function stapelzeile(z){
+  if (!z) return "";
+  const betrag = z.umsatz ?? "";
+  const haben = (z.sh || z.soll_haben || "S") === "H";
+  const bu = z.bu ?? z.bu_schluessel ?? "";
+  const steuer = SCHLUESSEL_STEUERSATZ[String(bu)] || "";
+  const text = z.text ?? z.buchungstext ?? "";
+  const kontoName = z.konto_name ? " " + z.konto_name : "";
+  return `<div class="datev" style="margin-bottom:8px">
+    <div class="box"><i>Betrag</i><b>${esc(betrag)} € ${haben ? "Haben" : "Soll"}</b></div>
+    <div class="box"><i>Konto</i><b>${esc(z.konto ?? "—")}${esc(kontoName)}</b></div>
+    <div class="box"><i>Gegenkonto</i><b>${esc(z.gegenkonto ?? "—")}</b></div>
+    <div class="box"><i>Steuer</i><b>${steuer ? "Steuer " + steuer : "ohne Steuer"}</b></div>
+    ${z.belegfeld1 ? `<div class="box"><i>Beleg</i><b>${esc(z.belegfeld1)}</b></div>` : ""}
+    <div class="box" style="flex:1"><i>Buchungstext</i>
+      <b style="font-size:12px">${esc(text) || "—"}</b></div>
+  </div>`;
+}
+
 function rechenproben(proben){
   if (!proben || !proben.length) return "";
   const zu = proben.filter(p => !p.bestanden).length;
@@ -3209,9 +3237,17 @@ async function ladeZahlen(){
 
   html += kennzahlKacheln(lauf);
 
+  /* Der Knopf lädt eine Vorschau — die Übergabe an die Kanzlei ist ein
+     eigener Schritt, den die Kanzlei geht. Stand hier vorher nichts dazu,
+     hielt man den geladenen Stapel für die Übergabe selbst. Liegt der
+     Monat schon drüben, steht das Datum statt des Hinweises da. */
+  const uebergeben = d.uebergeben_am;
   html += `<div class="sektion lbl">Für die Kanzlei</div><div class="karte">
     <p style="color:var(--gc-desc);font-size:13px">Der fertige Buchungsstapel dieses Monats —
     im Format, das DATEV versteht.</p>
+    <p style="color:var(--gc-desc);font-size:13px;margin-top:4px">${uebergeben
+      ? "Bei der Kanzlei seit " + esc(zeitKurz(uebergeben)) + "."
+      : "Dieser Stapel ist eine Vorschau — übergeben wird er von deiner Kanzlei."}</p>
     <button class="chip" style="margin-top:10px" id="stapel-knopf">Stapel herunterladen</button>
     <span id="stapel-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span></div>`;
 

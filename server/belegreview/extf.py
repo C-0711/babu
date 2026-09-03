@@ -51,6 +51,31 @@ SPALTEN = [
 ]
 
 
+def buchungstext(review: dict) -> str:
+    """Der rohe Buchungstext eines Belegs — eine Quelle für alle Wege.
+
+    Wortgleich stand diese Bildung zweimal im Haus: hier in
+    `buchungszeilen` (die Wahrheit für die Stapeldatei) und in
+    `babu_web.datev_buchungssatz` (die Anzeige im Portal). Zwei Kopien
+    derselben Regel driften auseinander, sobald jemand nur eine anfasst —
+    und dann zeigt das Portal einen anderen Text, als in der Datei steht.
+
+    Roh heißt: ohne Entschärfung und ohne die 60-Zeichen-Grenze. Beides
+    gehört an die Stelle, die den Text in die Datei schreibt, nicht an
+    seine Bildung.
+    """
+    v = review.get("vlm") or {}
+    f = review.get("felder") or {}
+    text = (v.get("buchungstext") or "").strip()
+    if text:
+        return text
+    einordnung = ((review.get("semantik") or {}).get("belegart") or "").strip()
+    lieferant = (v.get("lieferant") or f.get("lieferant") or "").strip()
+    teile = _datum_teile(f.get("datum") or "")
+    kurz = f"{teile[0]:02d}.{teile[1]:02d}." if teile else ""
+    return " ".join(x for x in (einordnung, kurz, lieferant) if x)
+
+
 def _de(betrag: float) -> str:
     return f"{betrag:.2f}".replace(".", ",")
 

@@ -1838,7 +1838,35 @@ def api_beleg(stamm: str, request: Request) -> Response:
                 d["bewirtung"] = json.loads(roh)
             except Exception:  # noqa: BLE001
                 pass
+    # Der Beleg, wie er im Stapel für die Kanzlei steht — also die Wahrheit
+    # aus `extf`, nicht die einzeilige Vorstufe. Ein Bon mit 19 % und 7 %
+    # wird dort zu ZWEI Zeilen; die Anzeige zeigte bisher nur eine und
+    # unterschlug die zweite. `buchungssatz` bleibt daneben stehen: die App
+    # liest ihn seit dem ersten Tag, und dieser Vertrag wird nicht gebrochen.
+    d["stapelzeilen"] = _stapelzeilen(d, un)
     return JSONResponse(d)
+
+
+def _stapelzeilen(review: dict, un: str) -> list[dict]:
+    """Die Buchungszeilen eines Belegs, so wie sie in den Stapel gehen.
+
+    Fehlschläge bleiben still: die Detailansicht soll auch dann aufgehen,
+    wenn sich zu einem halb gelesenen Beleg noch keine Zeile bilden lässt.
+    """
+    if not review:
+        return []
+    try:
+        import extf  # noqa: PLC0415
+        import monatsabschluss as ma  # noqa: PLC0415
+        profil = ma.umsatz_profil(db_einstellungen(salon_von_aktiv(un)))
+        klein = not profil.get("braucht_ustva")
+        try:
+            return extf.buchungszeilen(review, kleinunternehmerin=klein)
+        except TypeError:
+            # Ältere Fassung ohne den Kleinunternehmerinnen-Schalter.
+            return extf.buchungszeilen(review)
+    except Exception:  # noqa: BLE001
+        return []
 
 
 @app.get("/api/beleg/{stamm}/bild")
@@ -4641,6 +4669,28 @@ async def api_registrierung_einrichten(request: Request) -> Response:
     return JSONResponse({"ok": True, "email": email, "startpasswort": passwort})
 
 
+def _berater_mandant() -> tuple[str, str]:
+    """Berater- und Mandantennummer für den Stapelkopf.
+
+    Sie sagen der Kanzlei-Software, WESSEN Buchhaltung sie gerade
+    importiert. Aus der Serverumgebung kamen sie, solange es einen Betrieb
+    je Server gab; beim Acting-as ist das die falsche Antwort — zwei
+    Mandanten bekämen dieselbe Nummer und liefen im DATEV-Import
+    ineinander. Deshalb schlägt die `mandant`-Zeile die Umgebung (Plan 21,
+    Abschnitt 4.4); wo sie nichts hergibt, bleibt es beim bisherigen Weg.
+
+    Herausgelöst aus `api_export`, weil inzwischen mehr als ein Weg den
+    Stapelkopf braucht und zwei Kopien dieser Reihenfolge auseinanderdriften.
+    """
+    import extf  # noqa: PLC0415
+    stamm = _mandant_stammdaten() or {}
+    berater = (stamm.get("berater_nr") or "").strip() \
+        or os.environ.get("BABU_BERATER", extf.BERATER)
+    mandant_nr = (stamm.get("mandant_nr") or "").strip() \
+        or os.environ.get("BABU_MANDANT", extf.MANDANT)
+    return berater, mandant_nr
+
+
 @app.get("/api/export/{monat}.csv")
 def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response:
     """DATEV-Buchungsstapel (EXTF v13, CP1252/CRLF). festschreiben=1 legt den
@@ -4669,18 +4719,7 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
                 if tag.startswith(monat)]
     import monatsabschluss as ma  # noqa: PLC0415
     profil = ma.umsatz_profil(db_einstellungen(salon_von_aktiv(un)))
-    # Berater- und Mandantennummer stehen im Stapelkopf und sagen der
-    # Kanzlei-Software, WESSEN Buchhaltung sie gerade importiert. Aus der
-    # Serverumgebung kamen sie, solange es einen Betrieb je Server gab; beim
-    # Acting-as ist das die falsche Antwort — zwei Mandanten bekämen
-    # dieselbe Nummer und liefen im DATEV-Import ineinander. Deshalb schlägt
-    # die `mandant`-Zeile die Umgebung (Plan 21, Abschnitt 4.4); wo sie
-    # nichts hergibt, bleibt es beim bisherigen Weg.
-    stamm = _mandant_stammdaten() or {}
-    berater = (stamm.get("berater_nr") or "").strip() \
-        or os.environ.get("BABU_BERATER", extf.BERATER)
-    mandant_nr = (stamm.get("mandant_nr") or "").strip() \
-        or os.environ.get("BABU_MANDANT", extf.MANDANT)
+    berater, mandant_nr = _berater_mandant()
     # Der Mischungs-Melder (BABU-57). Hier verlassen die Konten das Haus —
     # was hier durchrutscht, fällt erst beim Steuerberater auf, nach dem
     # Import. Ein Stapel mit zwei Kontenrahmen wird deshalb gar nicht erst
@@ -4832,6 +4871,14 @@ def api_monat(monat: str, request: Request) -> Response:
         "anzahl": len(export_zeilen),
         "brutto": round(sum(z["brutto"] or 0 for z in export_zeilen), 2),
     }
+    # Seit wann der Stapel dieses Monats bei der Kanzlei liegt. Der
+    # festgeschriebene Stapel liegt als `export/<monat>/stapel.json` in der
+    # Belegbox; wann er dorthin kam, sagt der Index (`zeiten`) — dieselbe
+    # Quelle, aus der die Kanzlei-Übersicht ihren Monatsstand zieht. Ohne
+    # diese Angabe stünde auf der Zahlen-Seite nur ein Knopf und niemand
+    # wüsste, ob der Monat schon draußen ist.
+    daten["uebergeben_am"] = ((idx.get("zeiten") or {})
+                              .get(f"export/{monat}/stapel.json") or {}).get("zeit")
     return JSONResponse(daten)
 
 
@@ -5033,24 +5080,25 @@ def datev_buchungssatz(d: dict) -> dict | None:
     # JJJJ-MM-TT vom Zielbild-Weg (Gemma schreibt ISO seit 27.08.2026) — ein
     # reiner Punkt-Split ließ Belegdatum und Buchungstext für Zielbild-
     # Belege leer.
-    datum = f.get("datum") or ""
-    teile = extf._datum_teile(datum)
-    belegdatum = extf._ttmm(datum)
-    belegfeld1 = re.sub(r"[^A-Za-z0-9$%&*+-/]", "", f.get("beleg_nr") or "")[:36] or None
+    belegdatum = extf._ttmm(f.get("datum") or "")
+    # Belegfeld 1 lässt DATEV nur wenige Zeichen zu. Die Regel dafür steht
+    # in `extf._belegfeld1` und wird von dort geholt: die frühere Kopie hier
+    # enthielt versehentlich einen Zeichenbereich `+` bis `/` und ließ damit
+    # Komma und Punkt durch — Zeichen, die DATEV im Belegfeld nicht annimmt.
+    belegfeld1 = extf._belegfeld1(f.get("beleg_nr"))
 
     # Sprechender Buchungstext: Gemma-Vorschlag, sonst aus Einordnung + Datum +
     # vollem Lieferantennamen zusammengesetzt — „Rotenberger“ allein sagt in
-    # drei Monaten niemandem mehr etwas.
-    vlm = d.get("vlm") or {}
-    text = (vlm.get("buchungstext") or "").strip()
-    if not text:
-        einordnung = ((d.get("semantik") or {}).get("belegart") or "").strip()
-        lieferant = (vlm.get("lieferant") or f.get("lieferant") or "").strip()
-        datum_kurz = f"{teile[0]:02d}.{teile[1]:02d}." if teile else ""
-        text = " ".join(x for x in (einordnung, datum_kurz, lieferant) if x)
+    # drei Monaten niemandem mehr etwas. Gebildet wird er in `extf`, damit
+    # Anzeige und Stapeldatei denselben Text tragen; gekürzt wird er hier.
+    text = extf.buchungstext(d)
+    # Eine Gutschrift ist kein Aufwand, sondern seine Rückgabe: negativer
+    # Betrag heißt Haben, und die Zahl selbst geht ohne Vorzeichen in den
+    # Stapel — DATEV liest das Vorzeichen aus dem Soll/Haben-Kennzeichen,
+    # nicht aus dem Betrag. Ein „-142,60 Soll“ wäre doppelt verneint.
     return {
-        "umsatz": f"{brutto:.2f}".replace(".", ","),
-        "soll_haben": "S",
+        "umsatz": f"{abs(brutto):.2f}".replace(".", ","),
+        "soll_haben": "H" if brutto < 0 else "S",
         "konto": konto,
         "gegenkonto": "70099",
         "bu_schluessel": e.get("steuerschluessel"),

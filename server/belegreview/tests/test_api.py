@@ -200,6 +200,62 @@ def test_beleg_detail_superset_von_review(client):
     assert review["buchungssatz"] == golden["buchungssatz"]
 
 
+def test_beleg_detail_traegt_stapelzeilen_neben_dem_buchungssatz(client):
+    """Der Bon mit zwei Steuersätzen wird zu ZWEI Zeilen im Stapel.
+
+    `buchungssatz` kennt nur eine und nennt den Gesamtbetrag — die Anzeige
+    im Portal unterschlug damit die zweite Zeile. `stapelzeilen` kommt
+    zusätzlich mit; der alte Schlüssel bleibt unverändert daneben stehen,
+    weil die App ihn seit dem ersten Tag liest.
+    """
+    _anmelden(client)
+    detail = client.get(f"/api/beleg/{STAMM}").json()
+    zeilen = detail["stapelzeilen"]
+    assert [(z["umsatz"], z["bu"]) for z in zeilen] == [("85,40", "8"), ("57,20", "9")]
+    # Der Gesamtbetrag steht in KEINER der beiden Zeilen — genau das ist
+    # der Unterschied, den die Anzeige zeigen soll.
+    assert all(z["umsatz"] != "142,60" for z in zeilen)
+    golden = json.loads(GOLDEN.read_text())
+    assert detail["buchungssatz"] == golden["buchungssatz"]
+    liste = client.get("/api/belege").json()["belege"]
+    eintrag = next(z for z in liste if z["stamm"] == STAMM)
+    assert eintrag["buchungstext"] == golden["buchungssatz"]["buchungstext"]
+
+
+def test_datev_buchungssatz_gutschrift_ist_haben(client):
+    """Eine Gutschrift ist kein Aufwand, sondern seine Rückgabe.
+
+    Negatives Brutto heißt Haben; der Betrag selbst geht ohne Vorzeichen in
+    den Stapel, weil DATEV die Richtung aus dem Soll/Haben-Kennzeichen
+    liest. Ein „-142,60 Soll" wäre doppelt verneint und bucht in die
+    falsche Richtung.
+    """
+    import babu_web  # noqa: PLC0415
+    review = json.loads(GOLDEN.read_text())
+    review["felder"] = dict(review["felder"], brutto=-142.6)
+    satz = babu_web.datev_buchungssatz(review)
+    assert satz["soll_haben"] == "H"
+    assert satz["umsatz"] == "142,60"
+    # Gegenprobe: positiv bleibt Soll.
+    assert babu_web.datev_buchungssatz(json.loads(GOLDEN.read_text()))["soll_haben"] == "S"
+
+
+def test_belegfeld_regex_laesst_kein_komma_durch(client):
+    """Belegfeld 1 nimmt DATEV nur mit wenigen Zeichen an.
+
+    Die frühere Kopie der Regel in `datev_buchungssatz` enthielt den
+    Zeichenbereich `+` bis `/` und ließ damit Komma, Punkt und Doppelpunkt
+    durch. Jetzt gilt die eine Regel aus `extf` für beide Wege.
+    """
+    import babu_web  # noqa: PLC0415
+    review = json.loads(GOLDEN.read_text())
+    review["felder"] = dict(review["felder"], beleg_nr="R,1.2:3;4 5/6")
+    feld = babu_web.datev_buchungssatz(review)["belegfeld1"]
+    assert feld == "R12345/6"
+    for zeichen in (",", ".", ":", ";", " "):
+        assert zeichen not in feld
+
+
 def test_beleg_detail_suffix_match(client):
     _anmelden(client)
     r = client.get(f"/api/beleg/{LOKALER_NAME}")
