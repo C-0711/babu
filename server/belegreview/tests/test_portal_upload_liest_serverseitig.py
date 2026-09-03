@@ -284,6 +284,132 @@ def test_hochladen_stoesst_die_hintergrund_lesung_an(welt, monkeypatch):
     assert gesehen["pfad"] == r.json()["datei"]
 
 
+# ————— Der Schnitt in zwei Hälften (Teilscheibe I1) —————
+#
+# `_beleg_serverseitig_lesen` ist seit dem Massenimport nur noch die Hülle
+# um `_beleg_einschaetzen` + `_beleg_review_ablegen`. Die Tests darüber
+# prüfen die Hülle; hier steht, dass die Hälften einzeln dasselbe ergeben —
+# sonst wäre der Schnitt eine Verhaltensänderung mit Tarnkappe.
+
+def test_die_haelften_ergeben_dasselbe_review_wie_die_huelle(welt, monkeypatch):
+    import json
+    bw, bare = welt
+    import gemma_buchung
+    monkeypatch.setattr(gemma_buchung, "runde", lambda *a, **k: GEBUCHT)
+
+    stamm = "20260827-200000-abcdef-beleg"
+    pfad = f"docs/2026-08/{stamm}.jpg"
+    daten = b"\xff\xd8\xff\xe0" + b"x" * 300
+    _ablegen(bare, pfad, daten)
+    asyncio.run(bw._beleg_serverseitig_lesen(pfad, daten, ".jpg", UN))
+    ueber_huelle = json.loads(bw.git_show(f"review/{stamm}.json"))
+
+    zwei = "20260827-201000-abcdef-beleg"
+    zwei_pfad = f"docs/2026-08/{zwei}.jpg"
+    _ablegen(bare, zwei_pfad, daten + b"anders")
+
+    async def von_hand():
+        ergebnis, zeilen = await bw._beleg_einschaetzen(
+            daten, ".jpg", UN, "2026-08")
+        assert ergebnis["status"] == "gebucht"
+        review, md = bw._review_aus_einschaetzung(
+            zwei_pfad, ergebnis["buchung"], zeilen, "beleg")
+        hinweis = bw._doppelgaenger_hinweis(ergebnis["buchung"])
+        if hinweis:
+            review["felder"]["offen"].append(hinweis)
+        assert await bw._beleg_review_ablegen(zwei_pfad, review, md, UN) is True
+    asyncio.run(von_hand())
+    ueber_haelften = json.loads(bw.git_show(f"review/{zwei}.json"))
+
+    # Bis auf den Dateipfad und den Doppelgänger-Hinweis (der zweite Beleg
+    # SIEHT den ersten, der erste sah niemanden) ist beides dasselbe.
+    ueber_haelften["datei"] = ueber_huelle["datei"]
+    assert ueber_haelften["felder"].pop("offen") != []      # der Hinweis kam an
+    ueber_haelften["felder"]["offen"] = ueber_huelle["felder"]["offen"]
+    assert ueber_haelften == ueber_huelle
+
+
+def test_einschaetzen_meldet_ein_unlesbares_format_statt_zu_schweigen(welt, monkeypatch):
+    """Die Hülle wirft `.xml` weg; der Import muss unterscheiden können,
+    OB gelesen wurde — deshalb ein benannter Stand statt `None`."""
+    bw, _ = welt
+    import gemma_buchung
+    monkeypatch.setattr(gemma_buchung, "runde",
+                        lambda *a, **k: pytest.fail("darf nicht gerufen werden"))
+    ergebnis, zeilen = asyncio.run(
+        bw._beleg_einschaetzen(b"<xml/>", ".xml", UN, "2026-08"))
+    assert ergebnis == {"status": "unlesbar_format"}
+    assert zeilen == []
+
+
+def test_ein_pdf_ohne_textebene_gilt_als_unlesbares_format(welt, monkeypatch):
+    bw, _ = welt
+    import abschluss_lesen
+    import gemma_buchung
+    monkeypatch.setattr(abschluss_lesen, "seiten_text", lambda pfad: [])
+    monkeypatch.setattr(gemma_buchung, "runde",
+                        lambda *a, **k: pytest.fail("darf nicht gerufen werden"))
+    ergebnis, _ = asyncio.run(
+        bw._beleg_einschaetzen(b"%PDF-1.4", ".pdf", UN, "2026-08"))
+    assert ergebnis == {"status": "unlesbar_format"}
+
+
+# ————— `_review_ueberschreibbar`: die drei Fälle —————
+
+def test_ohne_review_darf_geschrieben_werden(welt):
+    bw, _ = welt
+    assert bw._review_ueberschreibbar("gibt-es-nicht") is True
+
+
+def test_ein_echtes_review_bleibt_stehen(welt, monkeypatch):
+    import json
+    bw, _ = welt
+    echt = {"buchung": {"status": "gebucht", "buchung": {}}}
+    monkeypatch.setattr(bw, "git_show",
+                        lambda pfad: json.dumps(echt).encode())
+    assert bw._review_ueberschreibbar("stamm") is False
+
+
+@pytest.mark.parametrize("stand", ["fragen", "aufgeben"])
+def test_ein_platzhalter_darf_ersetzt_werden_solange_niemand_geantwortet_hat(
+        welt, monkeypatch, stand):
+    import json
+    bw, _ = welt
+    platzhalter = {"buchung": {"status": stand}}
+    monkeypatch.setattr(bw, "git_show", lambda pfad: (
+        json.dumps(platzhalter).encode() if pfad.endswith(f"stamm.json") else None))
+    assert bw._review_ueberschreibbar("stamm") is True
+
+    # Sobald ein Mensch etwas eingetragen hat, ist Schluss.
+    monkeypatch.setattr(bw, "git_show", lambda pfad: (
+        json.dumps(platzhalter).encode() if pfad.endswith("stamm.json")
+        else b'{"brutto": 4.2}'))
+    assert bw._review_ueberschreibbar("stamm") is False
+
+
+def test_ein_kaputtes_review_wird_nicht_angefasst(welt, monkeypatch):
+    """Was sich nicht lesen lässt, wird nicht überschrieben — im Zweifel
+    steht dort etwas, das jemand braucht."""
+    bw, _ = welt
+    monkeypatch.setattr(bw, "git_show", lambda pfad: b"{kein json")
+    assert bw._review_ueberschreibbar("stamm") is False
+
+
+def test_ablegen_meldet_wenn_es_nicht_geschrieben_hat(welt, monkeypatch):
+    import json
+    bw, bare = welt
+    stamm = "20260827-210000-abcdef-beleg"
+    pfad = f"docs/2026-08/{stamm}.jpg"
+    _ablegen(bare, pfad, b"\xff\xd8\xff\xe0" + b"x" * 300)
+    echt = {"buchung": {"status": "gebucht", "buchung": {}}}
+    import boxschreiber
+    boxschreiber.schreiben({f"review/{stamm}.json": json.dumps(echt).encode()},
+                           None, f"review: {stamm}", UN)
+    review, md = bw._review_aus_einschaetzung(pfad, GEBUCHT["buchung"], [], "beleg")
+    assert asyncio.run(bw._beleg_review_ablegen(pfad, review, md, UN)) is False
+    assert json.loads(bw.git_show(f"review/{stamm}.json")) == echt
+
+
 def test_ablage_stoesst_die_hintergrund_lesung_an(welt, monkeypatch):
     bw, _ = welt
     monkeypatch.setattr(bw, "angemeldet", lambda request: UN)

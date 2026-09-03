@@ -154,7 +154,13 @@ def test_belege_liste_und_etag(client):
     stati = {z["stamm"]: z["status"] for z in d["belege"]}
     assert stati[STAMM] == "nachfrage"           # offen: Trinkgeld-Differenz
     assert stati["20260812-211943-99b8fb-beleg-test"] == "erfasst"
-    assert stati["20260813-000000-abcdef-kaputt"] == "nachfrage"   # Stub → „neu fotografieren"
+    # Der Stub trägt `dokumentklasse: "unlesbar"` — seit Teilscheibe I1 ist
+    # das der Status, und zwar unabhängig davon, was in `offen` steht. Ein
+    # Beleg, aus dem nichts zu lesen war, ist keine Frage, die sich
+    # beantworten ließe. Beide Stände zählen im Portal, in `_box_befund`
+    # und in der Kanzlei-Monatsspalte als „offen" — es verschiebt sich das
+    # Wort, nicht die Zahl.
+    assert stati["20260813-000000-abcdef-kaputt"] == "unlesbar"
     weingaertle = next(z for z in d["belege"] if z["stamm"] == STAMM)
     assert weingaertle["lieferant"] == "Rotenberger Weingärtle"
     assert weingaertle["brutto"] == 142.6
@@ -168,7 +174,11 @@ def test_belege_liste_und_etag(client):
 def test_belege_filter(client):
     _anmelden(client)
     r = client.get("/api/belege", params={"status": "nachfrage"})
-    assert {z["stamm"] for z in r.json()["belege"]} == {STAMM, "20260813-000000-abcdef-kaputt"}
+    assert {z["stamm"] for z in r.json()["belege"]} == {STAMM}
+    # Der Stub steht seit I1 unter „unlesbar" (siehe oben) und ist damit
+    # weiter auffindbar — nur unter dem Wort, das auf ihn passt.
+    r = client.get("/api/belege", params={"status": "unlesbar"})
+    assert {z["stamm"] for z in r.json()["belege"]} == {"20260813-000000-abcdef-kaputt"}
     r = client.get("/api/belege", params={"monat": "2026-07"})
     assert r.json()["gesamt"] == 0
 

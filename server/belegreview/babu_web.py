@@ -161,6 +161,25 @@ def _im_box_kontext(box: bx.Box, ziel, *args):
     return ziel(*args)
 
 
+def _im_mandanten_kontext(box: bx.Box, mandant_id: int, ziel, *args):
+    """Wie `_im_box_kontext` — und zusätzlich mit dem Mandanten selbst.
+
+    Der Unterschied ist klein und teuer. `_im_box_kontext` setzt NUR die
+    Box. Wer daraus etwas liest, liest richtig. Wer aber BUCHT, fragt
+    unterwegs `salon_von_aktiv()` nach dem Profil und `kontenrahmen_von()`
+    nach dem Rahmen — und beide hängen an `_AKTIVER_MANDANT`, nicht an der
+    Box. Ein Faden mit nur gesetzter Box bucht die Belege des Mandanten
+    also mit dem Profil und dem Kontenrahmen der KANZLEI: die Belege lägen
+    richtig, die Konten wären falsch, und keiner Zahl sähe man das an.
+
+    Deshalb setzt der Massenimport beides. `_im_box_kontext` bleibt
+    unverändert — die Ansichten, die es benutzen, lesen nur.
+    """
+    _AKTIVE_BOX.set(box)
+    _AKTIVER_MANDANT.set(mandant_id)
+    return ziel(*args)
+
+
 # ---------------------------------------------------------------------------
 # Portal-State (Lesestatus, Einstellungen): kein Audit-Material, gehört nicht
 # als Rauschen in die Belegbox-Historie.
@@ -208,6 +227,15 @@ def _sqlite_schema(conn) -> None:
          angelegt TEXT, letzter_login TEXT)""")
     conn.execute("""CREATE TABLE IF NOT EXISTS abschluss_status
         (un TEXT PRIMARY KEY, jahr INTEGER, json TEXT NOT NULL,
+         zeit TEXT NOT NULL)""")
+    # Der Stand eines Massenimports je Mandant — damit ein Neustart nicht
+    # vergisst, was gerade lief. Genau eine Zeile je Mandant: ein zweiter
+    # Lauf überschreibt den ersten, denn was zählt, ist der letzte.
+    # Absichtlich OHNE Fremdschlüssel auf `mandant(id)`: die Nummer steht
+    # hier als Text, wie in `audit_log.mandant_id`, und ein gelöschter
+    # Mandant soll den Stand nicht mitreißen.
+    conn.execute("""CREATE TABLE IF NOT EXISTS import_status
+        (mandant_id TEXT PRIMARY KEY, lauf TEXT, json TEXT NOT NULL,
          zeit TEXT NOT NULL)""")
     conn.execute("""CREATE TABLE IF NOT EXISTS team
         (id INTEGER PRIMARY KEY AUTOINCREMENT, un TEXT NOT NULL,
@@ -862,6 +890,15 @@ def _status_ableiten(review: dict | None, bewirtung_da: bool,
         if minuten is not None and minuten > BELEG_HAENGT_NACH_MIN:
             return "unlesbar"
         return "erfasst"
+    # Ein Review, das selbst sagt „daraus war nichts zu machen" (der
+    # Massenimport legt solche an, siehe `_review_unlesbar`). Das steht VOR
+    # der `offen`-Logik, weil es keine Frage ist, die sich beantworten
+    # ließe: der Beleg muss angesehen werden. Bestandsdaten kennen die
+    # Klasse „unlesbar" nur aus der alten Zweitlesung, und die trug immer
+    # auch offene Punkte — der Status war dort schon „nachfrage", was am
+    # Ende dieselbe Spalte im Portal ist.
+    if review.get("dokumentklasse") == "unlesbar":
+        return "unlesbar"
     f = review.get("felder") or {}
     # Trinkgeld-Differenzen sind Information, keine Frage — das Trinkgeld hat
     # die Bild-Lane bereits erfasst. Eine Frage bleibt nur die Bewirtung selbst
@@ -1999,24 +2036,26 @@ _BILD_MIME = {".jpg": "image/jpeg", ".jpeg": "image/jpeg",
              ".png": "image/png", ".heic": "image/heic"}
 
 
-async def _beleg_serverseitig_lesen(pfad: str, daten: bytes, endung: str, un: str) -> None:
-    """Die EINE Lesung nachgeholt — für Belege, die ohne App ankommen.
+async def _beleg_einschaetzen(daten: bytes, endung: str, un: str,
+                              monat: str) -> tuple[dict, list]:
+    """Die erste Hälfte der Lesung: aus Bytes wird Gemmas Einschätzung.
 
-    Am iPhone liest Vision den Beleg, bevor er ankommt; ein Portal-Upload
-    (`/api/hochladen`, `/ablage`) hat keine App davor und bekam deshalb
-    bisher NIE ein Review — der Beleg blieb für immer auf „Wird gelesen"
-    stehen (P0-4). Hier holt der Server das serverseitig nach: ein PDF mit
-    Textebene liefert seine Zeilen wie gewohnt, ein Foto/Scan hat keinen
-    Vision-Text und geht deshalb als Bild direkt an Gemma — derselbe
-    multimodale Fallback-Weg, den `gemma_buchung.py` für das Telefon ohne
-    Vision-Lesung schon kennt.
+    Ein PDF mit Textebene liefert seine Zeilen wie gewohnt, ein Foto/Scan
+    hat keinen Vision-Text und geht deshalb als Bild direkt an Gemma —
+    derselbe multimodale Fallback-Weg, den `gemma_buchung.py` für das
+    Telefon ohne Vision-Lesung schon kennt.
 
-    Schreibt bei „gebucht" ein Review, sonst nichts — bei „fragen"/
-    „aufgeben" bleibt der Beleg „erfasst", bis der Timeout (2b) oder
-    „Nochmal versuchen" ihn erneut hierher schickt.
+    Gibt (Ergebnis, Zeilen) zurück und schreibt NICHTS. Getrennt vom
+    Ablegen, weil der Massenimport (belegimport.py) beides braucht, aber
+    dazwischen anders entscheidet als der Portal-Upload: dort wird auch aus
+    „fragen" und „aufgeben" ein Review, hier nicht.
+
+    Ein Format, aus dem sich nichts machen lässt (`.xml`, ein PDF ohne
+    Textebene, das keins ist), kommt als `{"status": "unlesbar_format"}`
+    zurück — kein Aufruf an die Buchhaltung, kein Absturz.
     """
     import gemma_buchung  # noqa: PLC0415
-    zeilen: list[str] = []
+    zeilen: list = []
     bild: tuple[bytes, str] | None = None
     if endung == ".pdf":
         try:
@@ -2032,11 +2071,10 @@ async def _beleg_serverseitig_lesen(pfad: str, daten: bytes, endung: str, un: st
     elif endung in _BILD_MIME:
         bild = (daten, _BILD_MIME[endung])
     else:
-        return  # kein lesbares Format (z. B. .xml) — kein Versuch, kein Review.
+        return {"status": "unlesbar_format"}, []
     if not zeilen and bild is None:
-        return
+        return {"status": "unlesbar_format"}, []
 
-    monat = time.strftime("%Y-%m")
     ktx = await _einschaetzungs_kontext(un, monat)
     profil = db_einstellungen(salon_von_aktiv(un))
     rahmen = kontenrahmen_von(un)
@@ -2049,40 +2087,78 @@ async def _beleg_serverseitig_lesen(pfad: str, daten: bytes, endung: str, un: st
                 ktx["offene_abbuchungen"])
 
     ergebnis = await run_in_threadpool(_lesen)
-    if ergebnis.get("status") != "gebucht":
-        # "fragen"/"aufgeben": niemand am Portal beantwortet Rückfragen —
-        # kein Review, der Beleg bleibt "erfasst".
-        return
+    return ergebnis, zeilen
 
-    stamm = Path(pfad).name.rsplit(".", 1)[0]
-    # Idempotenz: zwischen dem Ablegen des Fotos und dem Ende dieser Lesung
-    # kann Nina den Beleg längst über /api/angaben von Hand eingetragen haben
-    # — oder ein zweiter Auslöser ("Nochmal versuchen" während die erste
-    # Lesung noch läuft) war schneller. Der Hintergrund-Task darf eine
-    # bestehende Angabe nie überschreiben.
-    if await run_in_threadpool(git_show, f"review/{stamm}.json") is not None:
-        return
 
-    buchung = ergebnis["buchung"]
-    klasse = str(buchung.get("dokumentklasse") or "beleg")
-    review, md = _review_aus_einschaetzung(pfad, buchung, zeilen, klasse)
-    # Doppelgänger: gleicher Tag, gleicher Betrag wie ein Beleg im Index —
-    # fragen, nicht blocken (genau wie in /api/aufnahme).
+def _review_ueberschreibbar(stamm: str) -> bool:
+    """Darf für diesen Beleg ein Review geschrieben werden?
+
+    Ja, wenn noch keins da ist — das ist der Normalfall und war bis zum
+    Massenimport der einzige.
+
+    Ja auch dann, wenn das vorhandene Review ein PLATZHALTER ist: eine
+    Rückfrage oder ein „konnte nicht gelesen werden" aus dem Import, das
+    noch niemand beantwortet hat. Solche Reviews entstehen erst mit
+    `belegimport`; im Bestand gibt es sie nicht, deshalb ändert diese
+    Lockerung an vorhandenen Daten nichts.
+
+    Nein, sobald eine `review/<stamm>.angaben.json` daneben liegt: dann hat
+    ein Mensch den Beleg angesehen und etwas eingetragen. Das darf keine
+    zweite Lesung wegwischen — auch keine, die es besser meint.
+    """
+    roh = git_show(f"review/{stamm}.json")
+    if roh is None:
+        return True
     try:
-        idx_d = await run_in_threadpool(index_aktuell)
+        review = json.loads(roh)
+    except Exception:  # noqa: BLE001
+        return False        # unlesbar heißt: Finger weg, nicht überschreiben
+    stand = ((review.get("buchung") or {}) if isinstance(review, dict) else {}).get("status")
+    if stand not in ("fragen", "aufgeben"):
+        return False
+    return git_show(f"review/{stamm}.angaben.json") is None
+
+
+def _doppelgaenger_hinweis(buchung: dict) -> str | None:
+    """Liegt schon ein Beleg mit demselben Tag und demselben Betrag da?
+
+    Fragen, nicht blocken (genau wie in `/api/aufnahme`): zwei Bons über
+    12,50 € am selben Tag kommen vor, zweimal derselbe Bon auch. Wer das
+    unterscheiden kann, ist der Mensch.
+    """
+    try:
+        idx_d = index_aktuell()
         for z in idx_d["belege"].values():
             if (buchung.get("datum") and buchung.get("betrag_eur")
                     and z.get("datum") == buchung["datum"]
                     and z.get("brutto") == buchung["betrag_eur"]):
-                review["felder"]["offen"].append(
-                    f"Sieht aus wie ein Doppelgänger von "
-                    f"{z.get('lieferant') or z['stamm']} vom "
-                    f"{buchung['datum']} — bitte prüfen, ob derselbe Beleg "
-                    "zweimal fotografiert wurde.")
-                break
+                return (f"Sieht aus wie ein Doppelgänger von "
+                        f"{z.get('lieferant') or z['stamm']} vom "
+                        f"{buchung['datum']} — bitte prüfen, ob derselbe Beleg "
+                        "zweimal fotografiert wurde.")
     except Exception:  # noqa: BLE001
         pass
+    return None
 
+
+async def _beleg_review_ablegen(pfad: str, review: dict, md: str,
+                                un: str) -> bool:
+    """Die zweite Hälfte: Review, Markdown und Vektor in die Box.
+
+    Gibt zurück, ob wirklich geschrieben wurde — `False` heißt, der Beleg
+    hatte schon ein Review, das stehen bleiben muss (siehe
+    `_review_ueberschreibbar`).
+
+    Kein dritter Blick auf review/<stamm>.json unmittelbar vor dem
+    Schreiben: der theoretische Rest der Race (zwei Lesungen exakt
+    gleichzeitig zu Ende) überschreibt sich mit demselben, deterministisch
+    gleichen Ergebnis — richtet also keinen Schaden an. Die Prüfung im
+    Wächter deckt den eigentlichen Fall ab: eine manuelle Angabe oder eine
+    bereits abgeschlossene zweite Lesung.
+    """
+    stamm = Path(pfad).name.rsplit(".", 1)[0]
+    if not await run_in_threadpool(_review_ueberschreibbar, stamm):
+        return False
     dateien: dict[str, bytes] = {
         f"review/{stamm}.json": json.dumps(review, ensure_ascii=False, indent=1).encode(),
         f"review/{stamm}.md": md.encode(),
@@ -2092,16 +2168,45 @@ async def _beleg_serverseitig_lesen(pfad: str, daten: bytes, endung: str, un: st
         dateien[f"review/{stamm}.embedding.json"] = json.dumps(semantik).encode()
 
     import boxschreiber  # noqa: PLC0415
-    # Kein dritter Blick auf review/<stamm>.json unmittelbar vor diesem
-    # Schreiben: der theoretische Rest der Race (zwei Lesungen exakt
-    # gleichzeitig zu Ende) überschreibt sich mit demselben, deterministisch
-    # gleichen Ergebnis — richtet also keinen Schaden an. Die Prüfung oben
-    # deckt den eigentlichen Fall ab: eine manuelle Angabe oder eine bereits
-    # abgeschlossene zweite Lesung.
     await run_in_threadpool(boxschreiber.schreiben, _box(), dateien, None,
                             f"lesen: {stamm}", un)
     with _box().index_schloss:
         _box().invalidieren()
+    return True
+
+
+async def _beleg_serverseitig_lesen(pfad: str, daten: bytes, endung: str, un: str) -> None:
+    """Die EINE Lesung nachgeholt — für Belege, die ohne App ankommen.
+
+    Am iPhone liest Vision den Beleg, bevor er ankommt; ein Portal-Upload
+    (`/api/hochladen`, `/ablage`) hat keine App davor und bekam deshalb
+    bisher NIE ein Review — der Beleg blieb für immer auf „Wird gelesen"
+    stehen (P0-4).
+
+    Seit dem Massenimport ist das nur noch die Hülle um die beiden Hälften
+    `_beleg_einschaetzen` und `_beleg_review_ablegen`; das Verhalten ist
+    Zeile für Zeile dasselbe geblieben.
+
+    Schreibt bei „gebucht" ein Review, sonst nichts — bei „fragen"/
+    „aufgeben" bleibt der Beleg „erfasst", bis der Timeout (2b) oder
+    „Nochmal versuchen" ihn erneut hierher schickt. (Der Import macht das
+    anders: dort wird auch daraus ein sichtbarer Beleg, weil eine Kanzlei
+    tausend Dateien nicht einzeln nachsehen kann.)
+    """
+    monat = time.strftime("%Y-%m")
+    ergebnis, zeilen = await _beleg_einschaetzen(daten, endung, un, monat)
+    if ergebnis.get("status") != "gebucht":
+        # "fragen"/"aufgeben"/kein lesbares Format: niemand am Portal
+        # beantwortet Rückfragen — kein Review, der Beleg bleibt "erfasst".
+        return
+
+    buchung = ergebnis["buchung"]
+    klasse = str(buchung.get("dokumentklasse") or "beleg")
+    review, md = _review_aus_einschaetzung(pfad, buchung, zeilen, klasse)
+    hinweis = await run_in_threadpool(_doppelgaenger_hinweis, buchung)
+    if hinweis:
+        review["felder"]["offen"].append(hinweis)
+    await _beleg_review_ablegen(pfad, review, md, un)
 
 
 async def _hintergrund_lesen(pfad: str, daten: bytes, endung: str, un: str) -> None:
@@ -2336,7 +2441,13 @@ async def api_beleg_erneut_lesen(stamm: str, request: Request) -> Response:
     eintrag = (await run_in_threadpool(index_aktuell))["belege"].get(stamm)
     if eintrag is None:
         return JSONResponse({"fehler": "unbekannter Beleg"}, status_code=404)
-    if eintrag["status"] not in ("erfasst", "unlesbar"):
+    # „erfasst"/„unlesbar" heißt: da ist nichts, was verloren gehen könnte.
+    # Dazu der Platzhalter aus dem Massenimport — eine unbeantwortete
+    # Rückfrage steht zwar auf „nachfrage", trägt aber keine Buchung, die
+    # eine neue Lesung wegwischen würde. Ein echtes Review (oder eins mit
+    # nachgetragenen Angaben) bleibt gesperrt.
+    if (eintrag["status"] not in ("erfasst", "unlesbar")
+            and not await run_in_threadpool(_review_ueberschreibbar, stamm)):
         return JSONResponse(
             {"fehler": "Für diesen Beleg gibt es nichts erneut zu lesen."},
             status_code=409)
@@ -2649,6 +2760,121 @@ def _review_aus_einschaetzung(pfad: str, buchung: dict, zeilen: list,
         "zusammenfassung": buchung.get("buchungstext"),
     }
     return review, beleg_markdown(review)
+
+
+# Woher ein Beleg kam, in einem Satz für Menschen — steht im Review unter
+# `felder.herkunft.quelle` und ist das, was das ⓘ anzeigt.
+IMPORT_QUELLE = "Import durch die Kanzlei"
+# Wie viele Fragen ein Platzhalter-Review höchstens trägt und wie lang eine
+# sein darf. Wer fünf Fragen zu einem Beleg hat, hat keine Frage, sondern
+# ein unlesbares Blatt — und eine Frage über 200 Zeichen liest niemand.
+PLATZHALTER_FRAGEN_MAX = 4
+PLATZHALTER_FRAGE_LAENGE = 200
+UNLESBAR_HINWEIS = "Konnte nicht gelesen werden — bitte ansehen."
+
+
+def _review_platzhalter(pfad: str, zeilen: list, klasse: str, offen: list,
+                        buchung: dict, grund: str) -> tuple[dict, str]:
+    """Ein Review ohne Buchung — derselbe Bauplan wie
+    `_review_aus_einschaetzung`, nur mit leeren Feldern.
+
+    Warum es das überhaupt gibt: der Massenimport legt hunderte Belege auf
+    einmal ab. Ein Beleg, den die Buchhaltung nicht durchbekommen hat, darf
+    danach nicht als „wird gelesen" in der Liste stehen und dort für immer
+    bleiben — er soll DASTEHEN, mit der Frage daneben, die ihn aufhält.
+
+    Alle Zahlenfelder bleiben `None`. Das trägt der Rest des Hauses: der
+    Index nimmt `None` überall entgegen, `datev_buchungssatz` und
+    `extf.buchungszeilen` geben ohne Konto und ohne Betrag nichts zurück,
+    und in den Stapel kommt ohnehin nur, was auf „geprüft" steht.
+    """
+    felder = {
+        "lieferant": None,
+        "beleg_nr": None,
+        "datum": None,
+        "netto": None, "ust": None, "brutto": None,
+        "ust_satz": None,
+        "gutschrift": False,
+        "summenprobe_ok": None,
+        "bewirtungssignal": False,
+        "offen": list(offen),
+        "herkunft": {"quelle": IMPORT_QUELLE},
+    }
+    review = {
+        "datei": pfad,
+        "engine": "Gemma (Import)",
+        "dokumentklasse": klasse,
+        "gelesen": len(zeilen),
+        "ocr_text": "\n".join(
+            str(z.get("text") or "") if isinstance(z, dict) else str(z)
+            for z in zeilen),
+        "zeilen_geo": ([z for z in zeilen if isinstance(z, dict)] or None),
+        "zeilen": len(zeilen),
+        "felder": felder,
+        "buchung": buchung,
+        "einschaetzung": {
+            "kategorie": None,
+            "konto": None,
+            "konto_skr04": None,
+            "belegart": None,
+            "steuerschluessel": None,
+            "kontierung_grund": grund,
+            "hinweise": [],
+        },
+        "semantik": None,
+        "vlm": None,
+        "zusammenfassung": None,
+    }
+    return review, beleg_markdown(review)
+
+
+def _fragen_als_text(fragen: list) -> list[str]:
+    """Gemmas Rückfragen als schlichte Sätze — höchstens vier, je kurz.
+
+    `gemma_buchung.runde` liefert bei „fragen" eine Liste von Wörterbüchern
+    (`{"frage": …, "optionen": […]}`), gelegentlich auch nackte Zeichen-
+    ketten. Beides kommt hier als Liste von Sätzen heraus, denn das Portal
+    zeigt `felder.offen` und nichts anderes.
+    """
+    aus = []
+    for f in fragen or []:
+        text = (f.get("frage") if isinstance(f, dict) else f) or ""
+        text = str(text).strip()[:PLATZHALTER_FRAGE_LAENGE]
+        if text:
+            aus.append(text)
+        if len(aus) >= PLATZHALTER_FRAGEN_MAX:
+            break
+    return aus
+
+
+def _review_aus_rueckfrage(pfad: str, fragen: list,
+                           zeilen: list) -> tuple[dict, str]:
+    """Die Buchhaltung hat gelesen, aber gefragt statt gebucht.
+
+    Der Beleg steht danach auf „nachfrage" und trägt die Frage im Klartext
+    — im Portal und in der Monatsspalte der Kanzlei. Beantwortet wird sie
+    über `POST /api/angaben/{stamm}` wie jede andere.
+    """
+    offen = _fragen_als_text(fragen) or ["Bitte kurz ansehen und ergänzen."]
+    return _review_platzhalter(
+        pfad, zeilen, "beleg", offen,
+        {"status": "fragen", "fragen": list(fragen or [])},
+        "Die Buchhaltung hat nachgefragt, statt zu buchen.")
+
+
+def _review_unlesbar(pfad: str, hinweis: str,
+                     zeilen: list) -> tuple[dict, str]:
+    """Aus diesem Blatt war nichts zu machen — und das soll man sehen.
+
+    Dokumentklasse „unlesbar": `_status_ableiten` macht daraus sofort den
+    Status „unlesbar", unabhängig davon, was in `felder.offen` steht. Der
+    Beleg liegt damit sichtbar in der Liste, statt als „wird gelesen" zu
+    verschwinden.
+    """
+    return _review_platzhalter(
+        pfad, zeilen, "unlesbar", [UNLESBAR_HINWEIS],
+        {"status": "aufgeben", "hinweis": str(hinweis or "")[:400]},
+        "Nicht lesbar — kein Konto, kein Betrag.")
 
 
 def beleg_markdown(review: dict) -> str:
@@ -5350,6 +5576,35 @@ def db_abschluss_lesen(un: str) -> dict | None:
     with _DB_LOCK, _db() as c:
         zeile = c.execute("SELECT json FROM abschluss_status WHERE un=?",
                           (un,)).fetchone()
+    if not zeile:
+        return None
+    try:
+        return json.loads(zeile[0])
+    except ValueError:
+        return None
+
+
+def db_import_snapshot(mandant_id: int, status: dict) -> None:
+    """Den Stand eines Massenimports festhalten — genau eine Zeile je Mandant.
+
+    Dasselbe Muster wie `db_abschluss_snapshot`, aus demselben Grund: der
+    Lauf lebt in einem Faden im Prozess, und ein Neustart soll nicht
+    vergessen, dass 200 Belege unterwegs waren. `mandant_id` steht als
+    Text, wie in `audit_log`.
+    """
+    with _DB_LOCK, _db() as c:
+        c.execute(db.upsert("import_status",
+                            ("mandant_id", "lauf", "json", "zeit"),
+                            ("mandant_id",)),
+                  (str(mandant_id), str(status.get("lauf") or ""),
+                   json.dumps(status, ensure_ascii=False),
+                   time.strftime("%Y-%m-%dT%H:%M:%S")))
+
+
+def db_import_lesen(mandant_id: int) -> dict | None:
+    with _DB_LOCK, _db() as c:
+        zeile = c.execute("SELECT json FROM import_status WHERE mandant_id=?",
+                          (str(mandant_id),)).fetchone()
     if not zeile:
         return None
     try:

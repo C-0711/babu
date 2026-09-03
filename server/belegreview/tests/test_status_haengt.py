@@ -189,3 +189,97 @@ def test_erneut_lesen_auf_unbekanntem_beleg_gibt_404(route_welt, monkeypatch):
     _mit_belegen(monkeypatch, {})
     r = c.post("/api/beleg/nie-gehoert-davon/erneut-lesen")
     assert r.status_code == 404
+
+
+# ————— Der Platzhalter aus dem Massenimport (Teilscheibe I1) —————
+#
+# Ein Beleg, den die Buchhaltung nicht durchbekommen hat, bekommt beim
+# Massenimport trotzdem ein Review — sonst stünde er für immer auf „wird
+# gelesen". Zwei Formen: eine Rückfrage („nachfrage") und ein unlesbares
+# Blatt („unlesbar"). Beide dürfen später ersetzt werden, ein echtes
+# Review nie.
+
+def test_dokumentklasse_unlesbar_schlaegt_die_offen_logik():
+    """Ein Review, das selbst sagt „daraus war nichts zu machen", ist
+    unlesbar — auch mit leerer Fragenliste. Ohne diese Regel stünde ein
+    unlesbarer Beleg als „geprüft" in der Liste."""
+    review, _ = bw._review_unlesbar("docs/2026-09/x.jpg", "nichts drauf", [])
+    assert review["dokumentklasse"] == "unlesbar"
+    assert bw._status_ableiten(review, False, _vor(1)) == "unlesbar"
+    review["felder"]["offen"] = []
+    assert bw._status_ableiten(review, False, _vor(1)) == "unlesbar"
+
+
+def test_eine_rueckfrage_ist_nachfrage_und_traegt_die_frage():
+    review, _ = bw._review_aus_rueckfrage(
+        "docs/2026-09/x.jpg", [{"frage": "Wofür war das?", "optionen": []}], [])
+    assert review["dokumentklasse"] == "beleg"
+    assert review["felder"]["offen"] == ["Wofür war das?"]
+    assert bw._status_ableiten(review, False, _vor(1)) == "nachfrage"
+
+
+def test_ein_platzhalter_traegt_keine_zahlen_und_kein_konto():
+    """Der Rest des Hauses muss `None` vertragen — Buchungssatz und
+    DATEV-Zeilen kommen dann gar nicht erst zustande."""
+    import extf
+    for review, _ in (bw._review_unlesbar("docs/2026-09/x.jpg", "leer", []),
+                      bw._review_aus_rueckfrage("docs/2026-09/x.jpg", [], [])):
+        assert review["felder"]["brutto"] is None
+        assert review["einschaetzung"]["konto_skr04"] is None
+        assert review["felder"]["herkunft"]["quelle"] == "Import durch die Kanzlei"
+        assert bw.datev_buchungssatz(review) is None
+        assert extf.buchungszeilen(review) == []
+        assert bw.beleg_markdown(review)      # darf nicht werfen
+
+
+def test_die_fragen_werden_gekuerzt_und_gedeckelt():
+    lang = "x" * 500
+    review, _ = bw._review_aus_rueckfrage(
+        "docs/2026-09/x.jpg",
+        [{"frage": lang}, "zwei", "drei", "vier", "fünf", "sechs"], [])
+    offen = review["felder"]["offen"]
+    assert len(offen) == 4
+    assert len(offen[0]) == 200
+
+
+def test_ohne_fragen_steht_wenigstens_ein_satz_da():
+    """Eine leere Fragenliste würde den Beleg auf „geprüft" stellen — ohne
+    dass jemand ihn angesehen hätte."""
+    review, _ = bw._review_aus_rueckfrage("docs/2026-09/x.jpg", [], [])
+    assert review["felder"]["offen"]
+    assert bw._status_ableiten(review, False, _vor(1)) == "nachfrage"
+
+
+def test_erneut_lesen_akzeptiert_einen_platzhalter(route_welt, monkeypatch):
+    """Eine unbeantwortete Rückfrage aus dem Import steht auf „nachfrage" —
+    und darf trotzdem noch einmal gelesen werden, weil nichts verloren
+    geht."""
+    import json as _json
+    c, gesehen = route_welt
+    platzhalter, _ = bw._review_aus_rueckfrage("docs/2026-08/stamm-x.jpg",
+                                               [{"frage": "Wofür?"}], [])
+    monkeypatch.setattr(bw, "git_show", lambda pfad: (
+        None if pfad.endswith(".angaben.json")
+        else _json.dumps(platzhalter).encode() if pfad.endswith(".json")
+        else b"\xff\xd8\xff\xe0daten"))
+    _mit_belegen(monkeypatch, {"stamm-x": {"status": "nachfrage",
+                                           "datei": "docs/2026-08/stamm-x.jpg"}})
+    r = c.post("/api/beleg/stamm-x/erneut-lesen")
+    assert r.status_code == 200, r.text
+    assert gesehen["pfad"] == "docs/2026-08/stamm-x.jpg"
+
+
+def test_erneut_lesen_laesst_eine_echte_rueckfrage_in_ruhe(route_welt, monkeypatch):
+    """Gegenprobe: ein gebuchtes Review mit offener Frage ist KEIN
+    Platzhalter — dort gibt es nichts erneut zu lesen."""
+    import json as _json
+    c, gesehen = route_welt
+    echt = {"buchung": {"status": "gebucht", "buchung": {}},
+            "felder": {"offen": ["Wofür war das?"]}}
+    monkeypatch.setattr(bw, "git_show", lambda pfad: (
+        _json.dumps(echt).encode() if pfad.endswith(".json")
+        else b"\xff\xd8\xff\xe0daten"))
+    _mit_belegen(monkeypatch, {"stamm-x": {"status": "nachfrage",
+                                           "datei": "docs/2026-08/stamm-x.jpg"}})
+    assert c.post("/api/beleg/stamm-x/erneut-lesen").status_code == 409
+    assert gesehen == {}
