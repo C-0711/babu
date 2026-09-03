@@ -378,3 +378,16 @@ def test_beleg_mit_angaben_zeigt_daten_nicht_erfasst(client):
     assert detail["felder"]["datum"] == "2026-02-23"
     # Frontend prüft: if (status !== "erfasst") → zeigt Felder.
     # Ohne den Fix wäre status="erfasst", und alles bliebe versteckt.
+
+
+def test_die_belegliste_nennt_das_konto_mit_bezeichnung(client):
+    """Befund 03.09.2026: die Tabelle zeigte nur den Oberbegriff („Auto“),
+    obwohl der Beleg längst auf dem richtigen Konto lag. Jetzt liefert die
+    Liste zur Nummer auch die SKR04-Bezeichnung."""
+    import skr04_konten
+    belege = client.get("/api/belege").json()["belege"]
+    mit = [b for b in belege if b.get("konto_skr04")]
+    assert mit, "die Golden-Welt hat Belege mit Konto"
+    for b in mit:
+        assert b["konto_name"] == skr04_konten.name(b["konto_skr04"])
+        assert b["konto_name"]

@@ -2485,19 +2485,23 @@ function belegTabellenKopf(){
     <th class="sort" data-sort="datum">Datum</th>
     <th class="sort" data-sort="lieferant">Laden</th>
     <th class="sort num" data-sort="brutto">Betrag</th>
-    <th>Kategorie</th>
+    <th>Konto</th>
     <th>Status</th>
   </tr></thead>`;
 }
 
 function belegTabellenzeile(z){
   const [marke, art] = statusMarke(z);
-  const kat = z.belegart ? String(z.belegart).split("(")[0].trim() : "";
+  /* Das Konto, auf das gebucht wurde — Nummer und Bezeichnung. Der
+     Oberbegriff („Auto“) steht nur, solange noch kein Konto feststeht. */
+  const kat = z.konto_skr04
+    ? `<span class="num">${esc(z.konto_skr04)}</span> ${esc(z.konto_name || "")}`
+    : esc(z.belegart ? String(z.belegart).split("(")[0].trim() : "");
   return `<tr class="beleg-tr" onclick="location.hash='#detail/${z.stamm}'">
     <td class="num">${z.datum ? datumKurz(z.datum) : ""}</td>
     <td>${esc(z.lieferant || "Beleg")}</td>
     <td class="num">${euro(z.brutto)}</td>
-    <td>${esc(kat)}</td>
+    <td>${kat}</td>
     <td><span class="marke ${art}">${marke}</span></td>
   </tr>`;
 }

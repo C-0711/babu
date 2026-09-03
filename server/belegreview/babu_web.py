@@ -39,6 +39,7 @@ import audit  # noqa: E402
 import box as bx  # noqa: E402
 import db  # noqa: E402
 import kontenrahmen as kr  # noqa: E402
+import skr04_konten as skr  # noqa: E402
 import kontierung as kt  # noqa: E402
 import mandanten  # noqa: E402
 
@@ -1059,6 +1060,10 @@ def _index_bauen(head: str) -> None:
                          (review.get("semantik") or {}).get("belegart")) if review else None,
             "dokumentklasse": (review or {}).get("dokumentklasse") if review else None,
             "konto_skr04": e.get("konto_skr04"),
+            # Die Bezeichnung des Kontos, auf das gebucht wurde („4530 Kfz-
+            # Kosten“) — der Oberbegriff allein („Auto“) sagt der Kanzlei
+            # nichts, sobald der Beleg auf dem richtigen Konto liegt.
+            "konto_name": skr.name(e.get("konto_skr04")) if e.get("konto_skr04") else None,
             # Das „wofür" in Ninas Worten — daraus wird erst das Konto.
             "kategorie": e.get("kategorie"),
             "steuerschluessel": e.get("steuerschluessel"),
