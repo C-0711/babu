@@ -235,7 +235,7 @@ def erloese_monat(kassenblaetter: list[dict], monat: str | None = None,
             neunzehn += aus_bank
     abgleich = {"kasse_karte": _rund(ec), "konto_karte": bank["brutto"],
                 "differenz": differenz, "fehlt_im_kassenbuch": _rund(aus_bank),
-                "quellen": bank["quellen"]} if (ec or bank["brutto"]) else None
+                "quellen": bank["quellen"]} if umsaetze else None  # ohne Kontoauszug kein Abgleich
     return {
         "tage": len(kassenblaetter),
         "aus_bank": _rund(aus_bank),

@@ -346,6 +346,9 @@ def test_kontoauszug_liefert_den_umsatz_wenn_kein_kassenbuch_da_ist():
     e4 = ma.erloese_monat([{"einnahmenBar": 1108.0, "ecZahlungen": 700.0}], monat="2026-07", umsaetze=umsaetze)
     assert e4["aus_bank"] == 1795.78 and e4["brutto_gesamt"] == 3603.78
     assert e4["abgleich"]["kasse_karte"] == 700.0 and e4["abgleich"]["konto_karte"] == 2495.78
+    # Ohne Kontoauszug gibt es nichts abzugleichen — kein „700 € weniger".
+    e5 = ma.erloese_monat([{"einnahmenBar": 1108.0, "ecZahlungen": 700.0}], monat="2026-08", umsaetze=[])
+    assert e5["abgleich"] is None and e5["brutto_gesamt"] == 1808.0
     d4 = ma.bwa("2026-07", e4, [], None)
     assert d4["umsatz_quelle"] == "Kassenbuch + Kontoauszug: Salonkee"
     # Kleinunternehmerin: steuerfrei, nicht 19 %.
