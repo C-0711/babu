@@ -81,6 +81,13 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   als `python3 -m json.tool --sort-keys`, Dateien unter `~/golden/`) bleibt
   das Ritual bei Änderungen am Buchungsweg; der Auftraggeber verzichtet
   ausdrücklich darauf, wenn er es sagt.
+- **Seit 03.09.2026 ist die H200V Worker im Rancher-Cluster `dev-01`.** Gemma
+  (:11435) und Embeddings (:11436) sind k3s-Pods mit hostPort; babu-web,
+  babu-postgres, insp-app, babu-eingang, babu-tunnel und `~/inspektor-store`
+  laufen AUSSERHALB des Clusters und stehen in keinem Manifest
+  (`gitlab.mediacockpit.dev/0711/h200-migration-manifests`). Nach jedem
+  Cluster-Eingriff aus dem Container `:11435/v1/models`, `:11436` und den
+  Git-Endpunkt auf `:7808` prüfen.
 - Migrationen laufen beim ersten `_db()`-Open, nicht beim Containerstart:
   `schema_version` erst nach einem Request prüfen.
 - H200V nur über OpenVPN (`ssh h200v`). Kein sqlite3-CLI auf dem Server;
