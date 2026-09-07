@@ -37,9 +37,12 @@ VLM_FRIST = float(os.environ.get("VLM_FRIST", "120"))
 VLM_MAX_TOKENS = int(os.environ.get("VLM_MAX_TOKENS", "4000"))
 # Ein Foto ist für Gemma ~280 Bild-Token: der Encoder verkleinert auf 896 px.
 # Ein Kassenbon ist 4.000 px hoch — auf 896 bleibt ein Fünftel der Zeilenhöhe.
-# Deshalb gehen lange Blätter zusätzlich als vergrößerte Ausschnitte mit
-# (vLLM erlaubt 4 Bilder je Prompt): ganz + bis zu 3 Streifen mit Überlappung.
-BILD_KACHELN_MAX = 3
+# Deshalb gehen lange Blätter zusätzlich als vergrößerte Ausschnitte mit:
+# ganz + bis zu 2 Streifen mit Überlappung, also 3 Bilder. vLLM erlaubt 4 —
+# aber beim zweiten Aufruf mit 4 Bildern antwortete der Dienst am 04.09.2026
+# mit 500 und war danach zwei Minuten weg (Neustart). Mit 3 Bildern lief es
+# in allen Messungen. 0 schaltet die Ausschnitte ab (BABU_BILD_KACHELN=0).
+BILD_KACHELN_MAX = int(os.environ.get("BABU_BILD_KACHELN", "2"))
 BILD_KACHEL_AB = 1.6          # Seitenverhältnis Höhe/Breite, ab dem gekachelt wird
 BILD_UEBERLAPPUNG = 0.08
 
@@ -620,7 +623,7 @@ def bild_kacheln(daten: bytes, mime: str) -> list[tuple[bytes, str]]:
     if mime == "image/jpeg" and h / max(b, 1) < BILD_KACHEL_AB:
         return [(daten, mime)]
     aus = [(jpeg(im), "image/jpeg")]
-    if h / max(b, 1) >= BILD_KACHEL_AB:
+    if BILD_KACHELN_MAX >= 2 and h / max(b, 1) >= BILD_KACHEL_AB:
         n = min(BILD_KACHELN_MAX, max(2, round(h / b)))
         schritt = h / n
         rand = int(schritt * BILD_UEBERLAPPUNG)
