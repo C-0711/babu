@@ -5223,19 +5223,11 @@ async def api_buchung_einschaetzung(request: Request) -> Response:
                               "antwort": str(a.get("antwort", ""))[:200]})
     monat = str(body.get("monat") or "")
     ktx = await _einschaetzungs_kontext(un, monat)
-    rahmen = kontenrahmen_von(un)
-
-    def _lesen() -> dict:
-        # Dieselbe Bremse wie beim Portal-Upload und im Massenimport — bis
-        # zum 04.09.2026 lief die Telefon-Route als einzige daran vorbei.
-        with _LLM_SEMAPHORE:
-            return gemma_buchung.runde(
-                zeilen, profil, antworten, rahmen, ktx["umsaetze"],
-                ktx["nachbarn"], None, None, ktx["vertraege_ktx"],
-                ktx["personal_ktx"], ktx["offene_abbuchungen"])
-
     try:
-        ergebnis = await run_in_threadpool(_lesen)
+        ergebnis = await run_in_threadpool(
+            gemma_buchung.runde, zeilen, profil, antworten,
+            kontenrahmen_von(un), ktx["umsaetze"], ktx["nachbarn"], None, None,
+            ktx["vertraege_ktx"], ktx["personal_ktx"], ktx["offene_abbuchungen"])
     except Exception as ex:  # noqa: BLE001
         print(f"[einschaetzung] {un}: {ex!r}", flush=True)
         return JSONResponse({"fehler": "Die Buchhaltung ist gerade nicht zu "
@@ -5631,7 +5623,7 @@ def chat(body: dict, request: Request) -> Response:
     payload = {
         "model": GEMMA_MODELL,
         "temperature": 0.2,
-        "max_tokens": 1500,
+        "max_tokens": 700,
         "messages": [
             {"role": "system", "content":
                 "Du bist der Assistent von babu (0711 Intelligence) für "
@@ -5772,7 +5764,7 @@ def _ocr_seite(jpeg: bytes, name: str) -> str:
     b64 = base64.b64encode(jpeg).decode()
     r = requests.post(abschluss_lesen.LLM_API, timeout=OCR_LESE_FRIST, json={
         "model": abschluss_lesen.LLM_MODELL,
-        "temperature": 0, "max_tokens": 8000,
+        "temperature": 0, "max_tokens": 3000,
         "messages": [
             {"role": "system", "content":
                 "Schreibe den gesamten Text dieses Blatts wortgetreu ab, "
@@ -5786,10 +5778,7 @@ def _ocr_seite(jpeg: bytes, name: str) -> str:
             ]},
         ]})
     r.raise_for_status()
-    wahl = r.json()["choices"][0]
-    if wahl.get("finish_reason") == "length":
-        print(f"[ocr] {name}: Abschrift an der Token-Grenze abgeschnitten", flush=True)
-    return str(wahl["message"]["content"] or "").strip()
+    return str(r.json()["choices"][0]["message"]["content"] or "").strip()
 
 
 def klartext_der_unterlage(pfad) -> str:
@@ -5875,13 +5864,8 @@ def _abschluss_jobs_aufraeumen() -> None:
             del _ABSCHLUSS_JOBS[name]
 
 
-# Gemma (:11435) hat 64 Plätze; die Bremse hier schützt nur vor einem Sturm
-# aus Massenimport und Hintergrundjobs (ein 40-Seiten-Scan hält seinen Platz
-# minutenlang). Gemessen 04.09.2026: vier Belege parallel 3,4 s statt 6,9 s
-# nacheinander, die Latenz je Anfrage steigt dabei kaum. Bis dahin stand hier
-# eine 1 „wegen des Review-Watchers“ — den gibt es seit dem 27.08. nicht mehr.
-_LLM_SEMAPHORE = threading.BoundedSemaphore(
-    int(os.environ.get("BABU_LLM_PLAETZE", "4")))
+# vLLM (:11435/:11436) teilt sich mit dem Review-Watcher — nie parallel fluten.
+_LLM_SEMAPHORE = threading.Semaphore(1)
 
 
 def db_abschluss_snapshot(un: str, jahr: int | None, status: dict) -> None:
@@ -8632,8 +8616,7 @@ def api_termin_vorschlag(body: dict, request: Request) -> Response:
     roh: dict = {}
     try:
         r = requests.post(GEMMA_API, json={
-            "model": GEMMA_MODELL, "temperature": 0.1, "max_tokens": 600,
-            "response_format": {"type": "json_object"},
+            "model": GEMMA_MODELL, "temperature": 0.1, "max_tokens": 300,
             "messages": [{"role": "user", "content": ka.frage_bauen(text, heute)}],
         }, timeout=90)
         r.raise_for_status()
@@ -9384,8 +9367,7 @@ def _wa_wunsch_lesen(text: str, heute, kundin: str) -> dict:
     import whatsapp as wam  # noqa: PLC0415
     try:
         r = requests.post(GEMMA_API, json={
-            "model": GEMMA_MODELL, "temperature": 0.1, "max_tokens": 600,
-            "response_format": {"type": "json_object"},
+            "model": GEMMA_MODELL, "temperature": 0.1, "max_tokens": 300,
             "messages": [{"role": "user",
                           "content": wam.frage_bauen(text, heute, kundin)}],
         }, timeout=90)
@@ -10505,8 +10487,7 @@ def api_marke_entwerfen(request: Request) -> Response:
     try:
         with _LLM_SEMAPHORE:
             r = requests.post(GEMMA_API, json={
-                "model": GEMMA_MODELL, "temperature": 0.6, "max_tokens": 600,
-                "response_format": {"type": "json_object"},
+                "model": GEMMA_MODELL, "temperature": 0.6, "max_tokens": 300,
                 "messages": [{"role": "user", "content": frage}],
             }, timeout=90)
         r.raise_for_status()

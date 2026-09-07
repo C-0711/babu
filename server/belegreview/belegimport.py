@@ -82,11 +82,6 @@ IMPORT_BUENDEL = 20
 #: Kanzlei-Belegen anstehen. Die Pause liegt AUSSERHALB des LLM-Semaphors,
 #: sonst wäre sie eine Sperre und keine Pause.
 IMPORT_ATEMPAUSE_SEK = 1.0
-# So viele Belege liest der Lauf GLEICHZEITIG (Gemma hat 64 Plätze, die
-# Bremse in babu_web 4). Gemessen 04.09.2026: vier parallel 3,4 s statt
-# 6,9 s. Gelesen wird parallel, abgelegt nacheinander — die Box ist ein
-# Git-Repository, und zwei Schreiber zugleich wären dort ein Fehler.
-IMPORT_PARALLEL = int(os.environ.get("BABU_IMPORT_PARALLEL", "3"))
 #: Wie lange ein beendeter Lauf im Speicher bleibt — so lange fragt das
 #: Portal ihn ab. Danach fliegt er raus; der Endstand steht in der
 #: Datenbank (`db_import_snapshot`).
@@ -367,76 +362,40 @@ def _lesen(bw, un: str, box, status: dict) -> None:
     _festhalten(bw, status)
     offen = sorted([d for d in status["dateien"] if d["stand"] == "abgelegt"],
                    key=lambda d: d["name"])
-    from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
-    breite = max(1, IMPORT_PARALLEL)
-    fertig = 0
-    for start in range(0, len(offen), breite):
+    for n, d in enumerate(offen, 1):
         if status.get("abbruch_gewuenscht"):
             return
-        gruppe = offen[start:start + breite]
-        for d in gruppe:
-            d["stand"] = "liest"
+        d["stand"] = "liest"
         begonnen = time.monotonic()
-        # Lesen parallel: jede Lesung hält ihren Platz an `_LLM_SEMAPHORE`
-        # selbst (in `_beleg_einschaetzen`), der Pool hier ist nur die Breite.
-        if breite == 1:
-            gelesen = [_einen_einschaetzen(bw, un, status, d) for d in gruppe]
-        else:
-            # Pool-Fäden erben den Kontext NICHT (aktiver Mandant, Box) —
-            # jede Lesung bekommt eine Kopie, sonst läse sie die falsche Box.
-            import contextvars  # noqa: PLC0415
-            with ThreadPoolExecutor(max_workers=breite) as pool:
-                auftraege = [pool.submit(contextvars.copy_context().run,
-                                         _einen_einschaetzen, bw, un, status, d)
-                             for d in gruppe]
-                gelesen = [a.result() for a in auftraege]
-        dauer = round(time.monotonic() - begonnen, 2)
-        # Ablegen nacheinander — was gelesen ist, wird auch geschrieben,
-        # selbst wenn währenddessen Abbruch gedrückt wurde.
-        for d, (ergebnis, zeilen) in zip(gruppe, gelesen):
-            d["dauer_s"] = dauer
-            _einen_ablegen(bw, un, status, d, ergebnis, zeilen)
-            fertig += 1
-            if fertig % 5 == 0:
-                _festhalten(bw, status)
-        # AUSSERHALB des LLM-Semaphors: eine Pause, die eine Sperre hält,
-        # ist keine Pause.
+        _einen_lesen(bw, un, status, d)
+        d["dauer_s"] = round(time.monotonic() - begonnen, 2)
+        if n % 5 == 0:
+            _festhalten(bw, status)
+        # AUSSERHALB des LLM-Semaphors (der steckt in `_beleg_einschaetzen`):
+        # eine Pause, die eine Sperre hält, ist keine Pause.
         time.sleep(IMPORT_ATEMPAUSE_SEK)
 
 
 def _einen_lesen(bw, un: str, status: dict, d: dict) -> None:
-    """Einen Beleg lesen und ablegen — was auch immer dabei herauskommt."""
-    ergebnis, zeilen = _einen_einschaetzen(bw, un, status, d)
-    _einen_ablegen(bw, un, status, d, ergebnis, zeilen)
-
-
-def _einen_einschaetzen(bw, un: str, status: dict, d: dict) -> tuple[dict, list]:
-    """Die Lesung allein — läuft im Pool, schreibt nichts in die Box.
+    """Einen Beleg lesen und ablegen — was auch immer dabei herauskommt.
 
     Kein eigener Timeout: die Grenze ist `gemma_buchung.VLM_FRIST` (120 s),
     und ein zweiter Wecker darüber würde nur eine Lesung abschneiden, die
     gerade noch rechtzeitig gewesen wäre. Was wirft oder zu lange braucht,
-    wird „unlesbar“ — und der Lauf geht weiter.
+    wird „unlesbar" — und der Lauf geht weiter.
     """
     daten = bw.git_show(d["datei"])
     if daten is None:
-        return {"status": "verloren"}, []
-    endung = Path(d["datei"]).suffix.lower()
-    try:
-        return asyncio.run(
-            bw._beleg_einschaetzen(daten, endung, un, status["monat"]))  # noqa: SLF001
-    except Exception as ex:  # noqa: BLE001
-        print(f"[import] {d['datei']}: {ex!r}", flush=True)
-        return {"status": "aufgeben", "hinweis": str(ex)[:200]}, []
-
-
-def _einen_ablegen(bw, un: str, status: dict, d: dict,
-                   ergebnis: dict, zeilen: list) -> None:
-    """Das Ergebnis einer Lesung in die Box schreiben — nacheinander."""
-    if ergebnis.get("status") == "verloren":
         d["stand"] = "fehler"
         d["grund"] = GRUND_VERLOREN
         return
+    endung = Path(d["datei"]).suffix.lower()
+    try:
+        ergebnis, zeilen = asyncio.run(
+            bw._beleg_einschaetzen(daten, endung, un, status["monat"]))  # noqa: SLF001
+    except Exception as ex:  # noqa: BLE001
+        print(f"[import] {d['datei']}: {ex!r}", flush=True)
+        ergebnis, zeilen = {"status": "aufgeben", "hinweis": str(ex)[:200]}, []
     status["gelesen"] += 1
 
     review, md, neu, grund = _entscheiden(bw, d["datei"], ergebnis, zeilen)

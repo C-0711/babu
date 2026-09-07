@@ -99,7 +99,6 @@ def welt(tmp_path, monkeypatch):
 
     monkeypatch.setattr(bi, "IMPORT_TMP", tmp_path / "import-tmp")
     monkeypatch.setattr(bi, "IMPORT_ATEMPAUSE_SEK", 0)
-    monkeypatch.setattr(bi, "IMPORT_PARALLEL", 1)   # der Parallel-Test setzt es selbst
     bi._IMPORT_JOBS.clear()
     bi._IMPORT_SHAS.clear()
     bi._START_VERSUCHE.clear()
@@ -695,36 +694,3 @@ def test_die_import_endungen_sind_die_upload_endungen_ohne_xml():
     """Die Liste steht doppelt (Import-Kreis, siehe `belegimport`) — hier
     wird sie zusammengehalten."""
     assert set(bi.IMPORT_ENDUNGEN) == set(babu_web.HOCHLADEN_ENDUNGEN) - {".xml"}
-
-
-def test_der_lauf_liest_mehrere_belege_gleichzeitig(welt, k, monkeypatch):
-    """Gemessen 04.09.2026: vier Belege parallel 3,4 s statt 6,9 s. Gelesen
-    wird zu dritt, abgelegt nacheinander — und jede Lesung sieht den
-    richtigen Mandanten, obwohl sie in einem fremden Faden läuft."""
-    import threading
-    import time
-    import gemma_buchung
-    monkeypatch.setattr(bi, "IMPORT_PARALLEL", 3)
-    zaehler = {"jetzt": 0, "max": 0, "boxen": set()}
-    schloss = threading.Lock()
-
-    def falsche_runde(zeilen, einstellungen, antworten, rahmen, *a, **kw):
-        with schloss:
-            zaehler["jetzt"] += 1
-            zaehler["max"] = max(zaehler["max"], zaehler["jetzt"])
-            zaehler["boxen"].add(babu_web._AKTIVE_BOX.get(None) is not None)
-        time.sleep(0.15)
-        with schloss:
-            zaehler["jetzt"] -= 1
-        return dict(GEBUCHT, buchung=dict(GEBUCHT["buchung"],
-                                           lieferant=f"Laden {len(zeilen)}"))
-    monkeypatch.setattr(gemma_buchung, "runde", falsche_runde)
-    for i in range(6):
-        _hoch(k, welt["nina"], f"bon{i}.jpg", JPEG + str(i).encode())
-    status = _lauf_jetzt(KANZLEI, welt["nina"])
-
-    assert status["stand"] == "fertig"
-    assert status["gelesen"] == 6
-    assert zaehler["max"] >= 2, zaehler
-    assert zaehler["boxen"] == {True}
-    assert all(d["stand"] != "abgelegt" for d in status["dateien"])
