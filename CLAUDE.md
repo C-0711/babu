@@ -43,6 +43,22 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   Salonkee-Auszahlungen (Mai 17.745 €, Juni 12.292 €, Juli 3.448 €).
   Kontoauszüge liegen als `auszuege/<monat>/*.umsaetze.json` in der Box.
 
+## Verbindlich: Fachwissen gehört in den Wissenscontainer (seit 07.09.2026)
+
+- Buchhalterisches Fachwissen (was ein Beleg ist, Konten, Sätze, Umlagen,
+  was eine Gutschrift wirtschaftlich bedeutet) steht in
+  `werkzeuge/kompendium/kontierung-grundwissen.md` — Quelle im Repo, Kopie
+  auf der H200V unter `~/kompendium/` (babu-web liest sie beim Start;
+  Änderung = Datei kopieren + Container neu starten). Neue Abschnitte VOR
+  der generierten Kontenübersicht (`<!-- skr04-atome … -->`).
+- In `gemma_buchung.REGELN` steht nur VERHALTEN (welche Frage, nicht
+  abgeben, was in den Buchungstext). Kontonummern nur im Katalog
+  (`kontierung.py`), das Modell vergibt nie welche.
+- Fall Minijob-Zentrale (Guthaben 119 €): Kategorien `sozialabgaben`
+  (6110) und `pauschsteuer_minijob` (6036), Guthaben = Aufwandskorrektur,
+  eine Frage „ausgezahlt oder verrechnet?". Test
+  `tests/test_minijob_guthaben.py`.
+
 ## Rollen, Mandanten, DATEV
 
 - Rollen `admin`/`kanzlei`/`salon`/`mitarbeit`; PAT-Konten über
