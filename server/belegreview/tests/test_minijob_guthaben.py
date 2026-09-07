@@ -15,13 +15,31 @@ def test_der_katalog_kennt_sozialabgaben_und_pauschsteuer():
     assert "sozialabgaben:" in text and "Minijob" in text and "KEIN Lohn" in text
 
 
-def test_die_regel_nennt_den_auszug_und_die_eine_frage():
+def test_die_regel_nennt_nur_das_verhalten_und_verweist_aufs_wissen():
     r = gb.REGELN
-    assert "Minijob-Zentrale" in r and "Beitragskontoauszug" in r
-    assert 'NICHT status "abgeben"' in r
+    assert "Minijob-Zentrale" in r and 'NICHT status "abgeben"' in r
     assert "ausgezahlt oder mit dem nächsten Beitrag verrechnet" in r
     assert "Mit Beiträgen verrechnet" in r and "Noch offen" in r
-    assert "heißt NIE Erlös" in r
+    assert "Kontierungswissen" in r
+    # Das Fachwissen (Umlagen, Prozentsätze, Konten) steht NICHT im Prompt …
+    assert "Insolvenzgeldumlage" not in r and "U1" not in r
+
+
+def test_das_fachwissen_steht_im_wissenscontainer():
+    """… sondern in der Wissensdatei, deren Quelle jetzt im Repo liegt und
+    die `kompendium.kontierungswissen()` stehend in jeden Buchungsprompt
+    legt. Vorher lag sie nur auf dem Server, unversioniert."""
+    from pathlib import Path
+    quelle = Path(__file__).resolve().parents[3] / "werkzeuge" / "kompendium" / "kontierung-grundwissen.md"
+    w = quelle.read_text(encoding="utf-8")
+    assert "## Sozialabgaben und Minijob-Zentrale" in w
+    for wort in ("Knappschaft-Bahn-See", "Insolvenzgeldumlage", "6110", "6036",
+                 "keine Betriebseinnahme", "gutschrift: true", "Ausgezahlt", "verrechnet"):
+        assert wort in w, wort
+    # der Abschnitt steht VOR der generierten Kontenübersicht, damit das
+    # Build-Skript ihn beim Anhängen nicht überschreibt
+    assert w.index("## Sozialabgaben") < w.index("<!-- skr04-atome: kontenuebersicht start -->")
+    assert len(w) < 30000                       # kompendium.kontierungswissen() kappt dort
 
 
 def test_ein_guthaben_wird_zur_abgabenkorrektur_nicht_zur_einnahme():
