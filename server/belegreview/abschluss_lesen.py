@@ -27,6 +27,7 @@ LLM_API = os.environ.get("BABU_LLM_API",
                          "http://127.0.0.1:11435/v1/chat/completions")
 LLM_MODELL = os.environ.get("BABU_LLM_MODELL", "gemma4-mm")
 LLM_TIMEOUT = 180
+LLM_MAX_TOKENS = 4000        # 04.09.2026: 1.500 reichten für lange Blätter nicht
 SEITEN_CAP = 40
 TEXT_SCHWELLE = 200          # Zeichen auf Seite 1 → Text-Lane
 BILD_MAX_KANTE = 1600
@@ -132,10 +133,22 @@ def llm_json(nachrichten: list[dict], timeout: int = LLM_TIMEOUT) -> dict:
     import requests
     r = requests.post(LLM_API, timeout=timeout, json={
         "model": LLM_MODELL, "messages": nachrichten,
-        "temperature": 0, "max_tokens": 1500,
+        "temperature": 0, "max_tokens": LLM_MAX_TOKENS,
+        "response_format": {"type": "json_object"},
     })
     r.raise_for_status()
-    text = r.json()["choices"][0]["message"]["content"]
+    wahl = r.json()["choices"][0]
+    if wahl.get("finish_reason") == "length":
+        raise ValueError(f"Antwort an der Token-Grenze ({LLM_MAX_TOKENS}) abgeschnitten")
+    text = wahl["message"]["content"] or ""
+    if text.strip().startswith("```"):
+        text = re.sub(r"^\s*```[a-zA-Z]*\s*|\s*```\s*$", "", text.strip())
+    try:
+        d = json.loads(text)
+        if isinstance(d, dict):
+            return d
+    except json.JSONDecodeError:
+        pass
     m = re.search(r"\{.*\}", text, re.S)
     if not m:
         raise ValueError("keine JSON-Antwort")

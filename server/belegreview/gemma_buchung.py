@@ -30,6 +30,18 @@ import kontierung
 VLM_API = os.environ.get("VLM_API", "http://127.0.0.1:11435/v1/chat/completions")
 VLM_MODELL = os.environ.get("VLM_MODELL", "gemma4-mm")
 VLM_FRIST = float(os.environ.get("VLM_FRIST", "120"))
+# Gemessen 04.09.2026: ein Bon mit 20 Positionen braucht ~1.500 Ausgabe-Token.
+# Mit 1.200 endete die Antwort mitten im JSON, der Parser gab leer zurück, und
+# Nina sah „Magst du kurz sagen, worum es geht?“ — ein Limit, das wie ein
+# Verständnisproblem aussah. Die H200 langweilt sich; 4.000 kosten nichts.
+VLM_MAX_TOKENS = int(os.environ.get("VLM_MAX_TOKENS", "4000"))
+# Ein Foto ist für Gemma ~280 Bild-Token: der Encoder verkleinert auf 896 px.
+# Ein Kassenbon ist 4.000 px hoch — auf 896 bleibt ein Fünftel der Zeilenhöhe.
+# Deshalb gehen lange Blätter zusätzlich als vergrößerte Ausschnitte mit
+# (vLLM erlaubt 4 Bilder je Prompt): ganz + bis zu 3 Streifen mit Überlappung.
+BILD_KACHELN_MAX = 3
+BILD_KACHEL_AB = 1.6          # Seitenverhältnis Höhe/Breite, ab dem gekachelt wird
+BILD_UEBERLAPPUNG = 0.08
 
 # Die Fächer der Ablage — Gemmas Klassifizierung muss eines davon treffen.
 DOKUMENTKLASSEN = ("beleg", "vertrag", "behoerde", "kontoauszug")
@@ -369,8 +381,11 @@ def prompt_bauen(profil: str, zeilen: list[str], antworten: list[dict],
                          "Zusammenhänge — NICHT mitbuchen):\n" + "\n".join(
             f"  {b.get('datum', '?')}  {b.get('brutto', '?')} €  {str(b.get('lieferant', ''))[:50]}"
             for b in nachbarn))
-    kopf = ("liegt dir als FOTO bei. Lies ihn selbst, vollständig: Kopf, "
-            "jede Einzelposition, Summen, Steuerzeilen, Währung, Zahlweise."
+    kopf = ("liegt dir als FOTO bei — das ganze Blatt und, bei langen "
+            "Belegen, zusätzlich vergrößerte Ausschnitte DESSELBEN Blatts "
+            "(Überlappungen nicht doppelt zählen). Lies ihn selbst, "
+            "vollständig: Kopf, jede Einzelposition, Summen, Steuerzeilen, "
+            "Währung, Zahlweise."
             if mit_bild else
             "als strukturiertes Dokument (Layout-Lesung):" if markdown else
             "die erkannten Textzeilen in Lesereihenfolge:")
@@ -393,6 +408,13 @@ def buchung_pruefen(roh: dict, rahmen: str = "SKR04") -> dict:
     Kategorie, die es nicht gibt, wird zur Rückfrage statt zur Buchung.
     """
     status = roh.get("status")
+    if status == "abgeschnitten":
+        # Die Antwort endete an der Token-Grenze (finish_reason "length").
+        # Das ist KEIN Verständnisproblem — und darf nicht so aussehen.
+        return {"status": "fragen", "fragen": [{
+            "frage": "Der Beleg ist sehr lang, ich habe nicht alles erfasst. "
+                     "Worum geht es im Kern?",
+            "optionen": []}]}
     if status in ("abgeben", "aufgeben"):
         return {"status": "aufgeben",
                 "hinweis": str(roh.get("hinweis") or "Das gehört auf den "
@@ -545,16 +567,80 @@ def gemischt(buchung: dict) -> bool:
 
 # ── Eine Runde ───────────────────────────────────────────────────────────────
 
+def json_aus(text: str) -> dict:
+    """Das JSON-Objekt aus einer Modellantwort — mit oder ohne ```-Zaun.
+    Gemessen 04.09.2026: gemma4-mm setzt den Zaun bei JEDER Antwort, auch
+    wenn der Prompt „NUR JSON“ verlangt; mit `response_format` fällt er weg."""
+    if not text:
+        return {}
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\s*", "", text)
+        text = re.sub(r"\s*```\s*$", "", text)
+    try:
+        d = json.loads(text)
+        return d if isinstance(d, dict) else {}
+    except json.JSONDecodeError:
+        pass
+    m = re.search(r"\{.*\}", text, re.S)
+    if not m:
+        return {}
+    try:
+        d = json.loads(m.group(0))
+        return d if isinstance(d, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def bild_kacheln(daten: bytes, mime: str) -> list[tuple[bytes, str]]:
+    """Das Foto, wie es ans Modell geht: ganz und — bei einem langen Blatt —
+    zusätzlich in bis zu BILD_KACHELN_MAX waagerechten Streifen, jeder als
+    JPEG. HEIC wird dabei zu JPEG (der Modelldienst kennt kein HEIC).
+    Fällt bei jedem Fehler auf das unveränderte Original zurück."""
+    try:
+        import io  # noqa: PLC0415
+        from PIL import Image  # noqa: PLC0415
+        try:
+            import pillow_heif  # noqa: PLC0415
+            pillow_heif.register_heif_opener()
+        except Exception:  # noqa: BLE001
+            pass
+        im = Image.open(io.BytesIO(daten))
+        im.load()
+        im = im.convert("RGB")
+    except Exception:  # noqa: BLE001
+        return [(daten, mime)]
+
+    def jpeg(img) -> bytes:
+        puffer = io.BytesIO()
+        img.save(puffer, "JPEG", quality=88)
+        return puffer.getvalue()
+
+    b, h = im.size
+    if mime == "image/jpeg" and h / max(b, 1) < BILD_KACHEL_AB:
+        return [(daten, mime)]
+    aus = [(jpeg(im), "image/jpeg")]
+    if h / max(b, 1) >= BILD_KACHEL_AB:
+        n = min(BILD_KACHELN_MAX, max(2, round(h / b)))
+        schritt = h / n
+        rand = int(schritt * BILD_UEBERLAPPUNG)
+        for i in range(n):
+            oben = max(0, int(i * schritt) - rand)
+            unten = min(h, int((i + 1) * schritt) + rand)
+            aus.append((jpeg(im.crop((0, oben, b, unten))), "image/jpeg"))
+    return aus
+
+
 def _gemma(prompt: str, bild: tuple[bytes, str] | None = None,
            system: str | None = None) -> dict:
     if bild is not None:
         import base64  # noqa: PLC0415
-        daten, mime = bild
         inhalt = [
             {"type": "image_url", "image_url":
-                {"url": f"data:{mime};base64,{base64.b64encode(daten).decode()}"}},
-            {"type": "text", "text": prompt},
+                {"url": f"data:{m};base64,{base64.b64encode(d).decode()}"}}
+            for d, m in bild_kacheln(*bild)
         ]
+        inhalt.append({"type": "text", "text": prompt})
     else:
         inhalt = prompt
     # Der stehende Teil als eigene System-Nachricht: sie steht bei jedem
@@ -563,20 +649,24 @@ def _gemma(prompt: str, bild: tuple[bytes, str] | None = None,
     # gemeinsamen Anfang also nicht.
     nachrichten = ([{"role": "system", "content": system}] if system else [])
     nachrichten.append({"role": "user", "content": inhalt})
-    koerper = {"model": VLM_MODELL, "temperature": 0.1, "max_tokens": 1200,
+    koerper = {"model": VLM_MODELL, "temperature": 0.1,
+               "max_tokens": VLM_MAX_TOKENS,
+               # JSON-Modus des Modelldienstes: kein Zaun, kein Text drumherum.
+               "response_format": {"type": "json_object"},
                "messages": nachrichten}
     req = urllib.request.Request(
         VLM_API, json.dumps(koerper).encode(),
         {"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=VLM_FRIST) as a:
-        text = json.load(a)["choices"][0]["message"]["content"]
-    m = re.search(r"\{.*\}", text, re.S)
-    if not m:
-        return {}
-    try:
-        return json.loads(m.group(0))
-    except json.JSONDecodeError:
-        return {}
+        wahl = json.load(a)["choices"][0]
+    text = wahl["message"]["content"] or ""
+    # Der Abbruchgrund zählt: „length“ heißt, die Antwort ist unvollständig —
+    # das ist etwas anderes als „unbrauchbar“.
+    if wahl.get("finish_reason") == "length":
+        print(f"[gemma] Antwort an der Token-Grenze ({VLM_MAX_TOKENS}) "
+              f"abgeschnitten", flush=True)
+        return {"status": "abgeschnitten"}
+    return json_aus(text)
 
 
 def runde(zeilen: list[str], einstellungen: dict, antworten: list[dict],
