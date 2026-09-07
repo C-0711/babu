@@ -23,8 +23,8 @@ from geld import rund as _rund
 # hat („Sonstiger Betriebsbedarf wird zu häufig verwendet").
 KOSTENGRUPPEN: list[tuple[str, str, tuple[str, ...]]] = [
     ("personal", "Löhne und Gehälter", ("6000", "6010", "6020", "6030",
-                                        "6035", "6040", "6110", "6120",
-                                        "6130")),
+                                        "6035", "6036", "6040", "6110",
+                                        "6120", "6130")),
     ("material", "Material und Ware", ("5100", "5200", "5400", "5800",
                                        "5900")),
     ("raum", "Raum", ("6305", "6310", "6315", "6320", "6325", "6330",

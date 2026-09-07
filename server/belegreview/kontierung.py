@@ -242,6 +242,24 @@ _K = [
               None, None,
               hinweis="Forderung, kein Aufwand — wird mit dem Lohn "
                       "verrechnet. Konten noch nicht bestätigt."),
+    # Beitragsnachweis und Beitragskontoauszug der Minijob-Zentrale
+    # (Knappschaft-Bahn-See) oder einer Krankenkasse: pauschale Kranken- und
+    # Rentenversicherung, Umlagen U1/U2, Insolvenzgeldumlage. Das ist eine
+    # Abgabe, kein Lohn — und ein GUTHABEN darauf ist eine Korrektur dieser
+    # Abgaben, nie eine Einnahme (Ninas Minijob-Guthaben 119 €, 07.09.2026).
+    Kategorie("sozialabgaben", "Sozialabgaben und Umlagen (Minijob-Zentrale, Kasse)",
+              "4130", "6110",
+              hinweis="Beitragsnachweis/Beitragskontoauszug der Minijob-"
+                      "Zentrale oder Krankenkasse: pauschale KV/RV, Umlagen "
+                      "U1/U2, Insolvenzgeldumlage — Abgaben, KEIN Lohn, 0 % "
+                      "USt. Ein Guthaben ist eine Korrektur dieser Abgaben "
+                      "(gutschrift: true), keine Einnahme. Konten noch nicht "
+                      "bestätigt."),
+    Kategorie("pauschsteuer_minijob", "Pauschale Steuer für Minijobs",
+              "4199", "6036",
+              hinweis="Die 2 % pauschale Lohnsteuer aus dem Beitragsnachweis "
+                      "der Minijob-Zentrale, als eigene Position. Konten noch "
+                      "nicht bestätigt."),
 ]
 
 KATEGORIEN: dict[str, Kategorie] = {k.code: k for k in _K}

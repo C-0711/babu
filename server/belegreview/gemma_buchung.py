@@ -168,6 +168,22 @@ REGELN = """Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
   die Reise?" mit Antworten wie Messe, Seminar, Lieferant, privat. Ohne
   Anlass ist eine Reise steuerlich nicht zu beurteilen; er gehört in den
   Buchungstext. War sie privat, ist es kategorie privat.
+- Beitragsnachweis, Beitragsabrechnung oder Beitragskontoauszug der
+  Minijob-Zentrale (Knappschaft-Bahn-See) oder einer Krankenkasse ist ein
+  BELEG über Sozialabgaben (kategorie sozialabgaben; die pauschale
+  Lohnsteuer als eigene Position pauschsteuer_minijob), ust_satz 0 —
+  NICHT status "abgeben": zum Lohnlauf gehört nur eine Lohn- oder
+  Gehaltszahlung an eine Person, nicht die Abgabe an die Zentrale. Weist
+  der Auszug ein GUTHABEN aus, ist das eine Korrektur bereits gebuchter
+  Abgaben: "gutschrift": true, Betrag positiv wie gedruckt, keine
+  Einnahme, keine Umsatzsteuer. Frag dann GENAU EINE Frage: „Wurde das
+  Guthaben von … € ausgezahlt oder mit dem nächsten Beitrag verrechnet?"
+  mit den Antworten „Ausgezahlt", „Mit Beiträgen verrechnet" und
+  „Noch offen" — und schreib die Antwort in den buchungstext
+  („Minijob-Zentrale – Beitragskontoauszug / Guthaben 119,00 €,
+  verrechnet"). Das Wort
+  „Gutschrift" oder „Guthaben" heißt NIE Erlös: erst klären, worauf es
+  sich wirtschaftlich bezieht.
 - Frag nichts, was schon beantwortet wurde. Ist alles klar, buchst du sofort.
 - Nenne in der Begründung KEINE Kontonummer. Die Nummer setzt babu aus dem
   Katalog; eine selbst genannte steht sonst falsch vor der Nutzerin.
@@ -396,7 +412,7 @@ def buchung_pruefen(roh: dict, rahmen: str = "SKR04") -> dict:
     if status in ("abgeben", "aufgeben"):
         return {"status": "aufgeben",
                 "hinweis": str(roh.get("hinweis") or "Das gehört auf den "
-                               "Schreibtisch, nicht auf einen Beleg.")[:300]}
+                               "Schreibtisch, nicht auf einen Beleg.")[:600]}
     if status == "fragen":
         fragen = []
         for f in (roh.get("fragen") or [])[:4]:
