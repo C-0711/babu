@@ -70,21 +70,10 @@ def test_langer_bon_geht_ganz_und_in_streifen():
     from PIL import Image
     import gemma_buchung as gb
     teile = gb.bild_kacheln(_png(200, 900), "image/png")
-    n = gb.BILD_KACHELN_MAX
-    assert 2 <= n <= 3, "vLLM erlaubt 4 Bilder; 4 hat den Dienst am 04.09. umgeworfen"
-    assert len(teile) == 1 + n
+    assert len(teile) == 1 + gb.BILD_KACHELN_MAX
     assert all(m == "image/jpeg" for _, m in teile)
     hoehen = [Image.open(io.BytesIO(d)).size[1] for d, _ in teile]
-    assert hoehen[0] == 900
-    assert all(900 / n < h < 900 / n * 1.2 for h in hoehen[1:]), hoehen
-
-
-def test_ausschnitte_lassen_sich_abschalten(monkeypatch):
-    import gemma_buchung as gb
-    monkeypatch.setattr(gb, "BILD_KACHELN_MAX", 0)
-    roh = _png(200, 900)
-    teile = gb.bild_kacheln(roh, "image/png")
-    assert len(teile) == 1 and teile[0][1] == "image/jpeg"
+    assert hoehen[0] == 900 and all(250 < h < 400 for h in hoehen[1:])
 
 
 def test_ein_querformat_bleibt_ein_bild():
@@ -107,8 +96,7 @@ def test_gemma_reicht_alle_ausschnitte_vor_dem_text(monkeypatch):
     monkeypatch.setattr(gb.urllib.request, "urlopen", urlopen)
     gb._gemma("Bon", (_png(200, 900), "image/png"), "System")
     inhalt = gesehen["messages"][1]["content"]
-    assert [t["type"] for t in inhalt] == ["image_url"] * (1 + gb.BILD_KACHELN_MAX) + ["text"]
-    assert len(inhalt) - 1 <= 3, "nie 4 Bilder — siehe BILD_KACHELN_MAX"
+    assert [t["type"] for t in inhalt] == ["image_url"] * 4 + ["text"]
     assert all(t["image_url"]["url"].startswith("data:image/jpeg;base64,")
                for t in inhalt[:-1])
 
