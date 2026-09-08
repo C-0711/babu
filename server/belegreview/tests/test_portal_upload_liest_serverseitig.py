@@ -438,6 +438,9 @@ def test_ablage_stoesst_die_hintergrund_lesung_an(welt, monkeypatch):
     bw, _ = welt
     monkeypatch.setattr(bw, "angemeldet", lambda request: UN)
     monkeypatch.setattr(bw, "box_mitglied", lambda un: True)
+    # `/ablage` geht seit 08.09.2026 durch `_box_wache` statt durch eine
+    # eigene Prüfung — die Wache fragt zusätzlich `zugelassen`.
+    monkeypatch.setattr(bw, "zugelassen", lambda un: True)
     gesehen = {}
     monkeypatch.setattr(bw, "_hintergrund_lesen_starten",
                         lambda pfad, daten, endung, un: gesehen.update(

@@ -284,3 +284,60 @@ def test_ohne_ablage_gibt_das_hochladen_kein_gewoehnliches_nein(welt):
         content=b"\xff\xd8\xff\xe0bild")
     assert r.status_code == 409, r.text
     assert "eingerichtet" in r.json()["fehler"]
+
+
+# ————— Die Routen, die früher an der Wache vorbeigingen —————
+
+def test_der_chat_liest_aus_der_box_des_fragenden(welt, monkeypatch):
+    """`/chat` prüfte seine Grenze selbst und las dahinter immer die
+    Default-Box — er hätte jedem Betrieb aus Ninas Zahlen geantwortet.
+
+    Gemessen wird nicht die Antwort (die kommt von Gemma), sondern welche
+    Box beim Zusammentragen des Fallwissens aktiv ist. Genau das wäre
+    abgeflossen.
+    """
+    bw = welt["bw"]
+    import wissen
+    aktive: list[str] = []
+    # `weltblock` ist die Stelle, an der der Chat den Bestand des Betriebs
+    # zusammenträgt — dort muss die richtige Box aktiv sein.
+    monkeypatch.setattr(wissen, "weltblock",
+                        lambda *a, **k: aktive.append(bw._box().ref) or "")  # noqa: SLF001
+    monkeypatch.setattr(bw, "_recherche", lambda frage: "")
+
+    _login(bw, welt["anna"]).post("/chat", json={"frage": "Was gab ich aus?"})
+    _login(bw, welt["bea"]).post("/chat", json={"frage": "Was gab ich aus?"})
+
+    assert aktive == ["inspektor/ws-anna/babu", "inspektor/ws-bea/babu"], aktive
+
+
+def test_ein_konto_ohne_ablage_kommt_auch_in_den_chat_nicht(welt):
+    """Dieselbe Tür wie für die Belege — auch beim Chat."""
+    r = _login(welt["bw"], welt["ohne"]).post(
+        "/chat", json={"frage": "Wie viel habe ich verdient?"})
+    assert r.status_code == 409, r.text
+
+
+def test_der_onboarding_vertrag_landet_beim_richtigen_salon(welt, monkeypatch):
+    """Eine Mitarbeiterin unterschreibt — in der Box IHRES Salons.
+
+    Der Weg hat kein angemeldetes Konto (er läuft über einen Einladungs-
+    schlüssel), also lief auch keine Wache und setzte keine Box: der
+    Arbeitsvertrag wäre bis 08.09.2026 in der Default-Box gelandet, egal
+    für welchen Betrieb unterschrieben wurde.
+    """
+    bw = welt["bw"]
+    geschrieben: list[tuple[str, str]] = []
+
+    def _merken(box, pfad, daten, nachricht, un, **rest):
+        geschrieben.append((box.ref, pfad))
+        return "commit-egal"
+
+    import boxschreiber
+    monkeypatch.setattr(boxschreiber, "schreiben", _merken)
+
+    # Die Auflösung ist der springende Punkt — sie muss Beas Box liefern,
+    # obwohl niemand angemeldet ist.
+    nummer, fehler = bw._eigener_mandant(welt["bea"])  # noqa: SLF001
+    assert fehler is None and nummer == welt["bea_id"]
+    assert bx.box_von(welt["bea"], nummer).ref == "inspektor/ws-bea/babu"

@@ -72,20 +72,33 @@ bx.store_quelle(lambda: STORE)
 # Rückfall ab der zweiten Box in die falsche Ablage schriebe, steht hier
 # vollständig, wo er heute greift:
 #
-# A) Neun Routen gehen an die Box, ohne durch `_box_wache` zu kommen. Sie
-#    prüfen ihre Grenze selbst (`box_mitglied`, `ERLAUBT`, Meta-Signatur)
-#    oder haben von Haus aus keinen angemeldeten Zugang:
-#      POST /ablage                              angemeldet + box_mitglied
-#      GET  /api/kontenrahmen                    _api_wache
-#      POST /api/kontenrahmen                    _api_wache
-#      GET  /review/{stamm}                      wer + box_mitglied/ERLAUBT
-#      GET  /review/{stamm}/protokoll            wer + box_mitglied/ERLAUBT
-#      POST /chat                                angemeldet + box_mitglied
-#      POST /api/auswertung/lesen                Einladungsschlüssel, kein Konto
-#      POST /api/onboarding/{marke}/{schritt_id} Onboarding-Schlüssel
-#      POST /api/whatsapp/webhook                Meta-Signatur, kein Konto
-#    Jede davon meint die eine Box dieses Servers. Ab Phase 3 muss jede
-#    einzeln entscheiden, welchen Mandanten sie bedient.
+# A) Die Liste, die hier bis 08.09.2026 stand, ist abgearbeitet. Neun
+#    Routen gingen an die Box, ohne durch `_box_wache` zu kommen — jede mit
+#    ihrer eigenen Grenze, jede auf die eine Box dieses Servers gemünzt.
+#    Was mit ihnen geschehen ist:
+#
+#      POST /ablage                     -> `_box_wache`, und die Antwort
+#                                          trägt `_box().ref` statt BABU_REF
+#      POST /chat                       -> `_box_wache`
+#      GET  /review/{stamm}             -> `_box_wache`
+#      GET  /review/{stamm}/protokoll   -> `_box_wache`
+#      GET/POST /api/kontenrahmen       -> fielen von selbst mit zu: sie
+#                                          fassen keine Box an, hingen aber
+#                                          über `_mandant_stammdaten` am
+#                                          Mandanten — und den setzt jetzt
+#                                          `_api_wache` (`_eigener_mandant`)
+#      POST /api/onboarding/{…}         -> löst die Box aus dem Salon der
+#                                          Einladung auf; ohne eindeutige
+#                                          Box wird der Vertrag NICHT
+#                                          abgelegt statt in die falsche
+#
+#    Zwei bleiben ohne Wache, geprüft und begründet:
+#      POST /api/auswertung/lesen    liest aus AUSWERTUNG_TMP, fasst keine
+#                                    Box an und läuft vor jedem Konto — es
+#                                    gibt dort nichts zu trennen.
+#      POST /api/whatsapp/webhook    schreibt in die Portal-DB, nicht in
+#                                    die Box; sein `un` ist über
+#                                    `_wa_konto_zu` schon der Betrieb.
 #
 # B) Hintergrund-Threads (`threading.Thread`) — eine ContextVar wandert
 #    NICHT in einen neuen Thread. Alle sieben Startstellen (Vertrag lesen,
@@ -2440,27 +2453,19 @@ async def ablage(request: Request) -> Response:
     Wire-Format der App: multipart Feld "file" (+ optional "notiz"),
     Antwort {ok, ref, commit, datei}; txt → 400 (Verbindungstest-Semantik).
     """
-    un = angemeldet(request)   # App schickt Bearer; Portal-Cookie geht auch
-    if un is None:
-        return JSONResponse({"fehler": "Token fehlt oder ungültig"}, status_code=401)
-    # Dieselbe Tür wie überall sonst: wer für die Belegbox freigeschaltet ist,
-    # darf einreichen.
+    # Dieselbe Tür wie überall sonst — und seit 08.09.2026 buchstäblich
+    # dieselbe: `_box_wache`.
     #
-    # Hier stand vorher nur `un not in ERLAUBT`. Diese Liste stammt aus der
-    # Zeit vor den Konten und enthält GitChain-Namen wie „christoph0711.io".
-    # Wer sich in der App mit E-Mail anmeldet, heißt aber „nina@0711.io" und
-    # stand nie darin — jedes Foto bekam 403 und blieb im Gerät liegen,
-    # während Portal-Uploads durchgingen, weil die eine andere Tür benutzen.
-    # Von außen sah das aus wie „die App lädt nicht hoch".
-    #
-    # ERLAUBT bleibt als zusätzlicher Weg für den PAT-Zugang: GitChain-Namen
-    # stehen in keiner Nutzertabelle.
-    if not (box_mitglied(un) or un in ERLAUBT):
-        print(f"[ablage] 403: '{un}' ist für keine Belegbox freigeschaltet",
-              flush=True)
-        return JSONResponse(
-            {"fehler": "Dein Zugang ist noch nicht für eine Belegbox "
-                       "freigeschaltet."}, status_code=403)
+    # Vorher stand hier eine eigene Prüfung (`box_mitglied(un) or un in
+    # ERLAUBT`) und dahinter `_box()`, also immer die Default-Box. Solange
+    # es einen Betrieb gab, war das dasselbe; mit dem zweiten wäre es der
+    # Weg gewesen, auf dem seine Belege bei Nina landen. Die Wache löst den
+    # eigenen Mandanten mit auf, `ERLAUBT` deckt `box_mitglied` selbst ab
+    # (dort `salon_von(un) in ERLAUBT`), und der PAT-Zugang kommt darüber
+    # weiter herein.
+    un, fehler = _box_wache(request)   # App schickt Bearer; Cookie geht auch
+    if fehler:
+        return fehler
     # Multipart landet über eine Spool-Datei auf der Platte, kippt den
     # Prozess also nicht über den Speicher. Trotzdem gilt hier dieselbe
     # Grenze wie überall: sagt der Kopf schon, dass es zu viel wird, wird
@@ -2490,9 +2495,7 @@ async def ablage(request: Request) -> Response:
     schon = await run_in_threadpool(_blob_schon_da, daten)
     if schon:
         return JSONResponse({"ok": True, "dublette": True, "commit": None,
-                             "ref": os.environ.get(
-                                 "BABU_REF", "inspektor/ws-christoph0711.io/babu"),
-                             "datei": schon,
+                             "ref": _box().ref, "datei": schon,
                              "hinweis": "War schon da — nichts doppelt abgelegt."})
     notiz = str(form.get("notiz") or "").strip()[:200]
     import boxschreiber  # noqa: PLC0415
@@ -2513,9 +2516,9 @@ async def ablage(request: Request) -> Response:
     # nicht.
     _hintergrund_lesen_starten(
         f"docs/{monat}/{dateiname}", daten, endung, un)
-    return JSONResponse({"ok": True,
-                         "ref": os.environ.get("BABU_REF",
-                                               "inspektor/ws-christoph0711.io/babu"),
+    # Der Ref DIESER Box, nicht der aus der Umgebung: sonst bekäme Betrieb
+    # zwei die Adresse von Betrieb eins zurückgemeldet.
+    return JSONResponse({"ok": True, "ref": _box().ref,
                          "commit": commit, "datei": f"docs/{monat}/{dateiname}"})
 
 
@@ -5382,13 +5385,14 @@ async def api_buchung_einschaetzung(request: Request) -> Response:
 
 @app.get("/review/{stamm}")
 def review(stamm: str, request: Request) -> Response:
-    un = wer(request)
-    if un is None:
-        return JSONResponse({"fehler": "Token fehlt oder ungültig"}, status_code=401)
-    # Dieselbe Tür wie beim Einreichen: die App holt hier ihre
-    # Ergebnisse ab, und wer einreichen darf, darf auch lesen.
-    if not (box_mitglied(un) or un in ERLAUBT):
-        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    # Dieselbe Tür wie beim Einreichen — seit 08.09.2026 wörtlich dieselbe:
+    # die App holt hier ihre Ergebnisse ab, und ohne `_box_wache` läse sie
+    # sie immer aus der Default-Box. `angemeldet` (in der Wache) ist eine
+    # Obermenge von `wer`: es kommt der Portal-Cookie dazu, genau wie
+    # nebenan beim Protokoll.
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
     if not NAME_RE.match(stamm):
         return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
     stamm = re.sub(r"\.(jpg|jpeg|png|pdf)$", "", stamm, flags=re.I)
@@ -5421,12 +5425,12 @@ def review_protokoll(stamm: str, request: Request) -> Response:
     """
     # Cookie oder Bearer: das Protokoll gehört ins Portal genauso wie in die
     # App — es ist dieselbe Frage („was hat babu da gelesen?“), nur an einem
-    # anderen Bildschirm gestellt.
-    un = angemeldet(request)
-    if un is None:
-        return JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
-    if not (box_mitglied(un) or un in ERLAUBT):
-        return JSONResponse({"fehler": BOX_GESPERRT}, status_code=403)
+    # anderen Bildschirm gestellt. Über `_box_wache` (seit 08.09.2026), weil
+    # das Protokoll in der Box liegt und damit demselben Betrieb gehört wie
+    # der Beleg darüber.
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
     if not NAME_RE.match(stamm):
         return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
     stamm = re.sub(r"\.(jpg|jpeg|png|pdf)$", "", stamm, flags=re.I)
@@ -5720,12 +5724,14 @@ def chat(body: dict, request: Request) -> Response:
     # Sync-Route: läuft im Starlette-Threadpool, damit requests/subprocess
     # den Event-Loop nicht blockieren (workers=1). Auch der sse()-Generator
     # unten wird von StreamingResponse im Threadpool iteriert.
-    un = angemeldet(request)   # Cookie (Portal) ODER Bearer (App) — Wire-Format unverändert
-    if un is None:
-        return JSONResponse({"fehler": "Token fehlt oder ungültig"}, status_code=401)
-    # Der Chat antwortet aus den Belegen — also gilt hier dieselbe Grenze.
-    if not zugelassen(un) or not box_mitglied(un):
-        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    # Der Chat antwortet aus den Belegen — also gilt hier dieselbe Tür wie
+    # für die Belege selbst. Seit 08.09.2026 wörtlich dieselbe: vorher
+    # stand hier eine eigene Prüfung und dahinter immer die Default-Box,
+    # der Chat hätte also jedem Betrieb aus Ninas Zahlen geantwortet.
+    # Cookie (Portal) ODER Bearer (App) — Wire-Format unverändert.
+    un, fehler = _box_wache(request)
+    if fehler:
+        return fehler
     frage = str(body.get("frage", "")).strip()
     if not frage or len(frage) > 2000:
         return JSONResponse({"fehler": "frage fehlt oder zu lang"}, status_code=400)
@@ -9149,6 +9155,25 @@ async def _vertrag_ablegen(un: str, marke: str, person: dict) -> None:
     import boxschreiber  # noqa: PLC0415
     # Roh und richtig: `un` ist der Salon aus der Einladung, durchgereicht
     # vom Onboarding-Weg — kein angemeldeter Zugang.
+    #
+    # Und genau deshalb ist hier keine Wache gelaufen, die die Box gesetzt
+    # hätte: der Vertrag wäre bis 08.09.2026 in der Default-Box gelandet,
+    # egal für welchen Salon die neue Mitarbeiterin unterschreibt. Die
+    # Einladung nennt den Betrieb, also lässt sich seine Box daraus
+    # auflösen — dieselbe Auflösung wie beim Hochladen.
+    eigener, mehrdeutig = _eigener_mandant(un)
+    if mehrdeutig is not None:
+        print(f"[onboarding] {un}: mehrere Mandanten — Vertrag NICHT abgelegt",
+              flush=True)
+        return
+    if eigener is not None:
+        try:
+            _AKTIVE_BOX.set(bx.box_von(un, eigener))
+            _AKTIVER_MANDANT.set(eigener)
+        except bx.KeineBox:
+            print(f"[onboarding] {un}: Belegbox fehlt — Vertrag NICHT abgelegt",
+                  flush=True)
+            return
     e = db_einstellungen(un)
     try:
         vertrag = av.vertrag_bauen({
