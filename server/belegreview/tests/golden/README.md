@@ -9,6 +9,15 @@ Baseline vor dem Portal-Umbau — die iOS-Verträge sind eingefroren.
   deterministisch (Temperatur 0.2); geprüft wird die **Protokollform**: Zeilen `data: {"d": …}`,
   Abschluss `data: [DONE]`, Content-Type `text/event-stream`.
 
+Dazu seit dem 08.09.2026:
+
+- `routen.txt` — **alle** Adressen der App, je Zeile ein Verfahren und ein Pfad,
+  alphabetisch. Bewacht von `tests/test_routen_vollstaendig.py`, damit beim
+  Zerlegen von `babu_web.py` in eigene Router keine Adresse still verloren geht;
+  eingehängte Router zählen mit. Wer eine Route absichtlich hinzufügt oder
+  entfernt, ändert die Datei bewusst mit — wer sie nur verschiebt, fasst sie
+  nicht an.
+
 Abruf (auf der H200V, Service-PAT):
 
 ```bash
