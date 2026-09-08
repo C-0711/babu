@@ -112,3 +112,68 @@ def test_ein_vertrag_wird_nicht_als_beleg_nachgelesen(welt, monkeypatch):
                     content=b"\xff\xd8\xff\xe0bild")
     assert r.status_code == 200 and r.json()["art"] == "vertrag"
     assert gesehen == []
+
+
+def _lesen_mit(monkeypatch, antwort):
+    """Gemmas Antwort festlegen und den echten Nachlese-Weg fahren lassen."""
+    import gemma_buchung
+    monkeypatch.setattr(gemma_buchung, "runde", lambda *a, **k: antwort)
+
+
+def test_eine_rueckfrage_wird_sichtbar_statt_unlesbar(welt, monkeypatch):
+    """Der Bon von Merz & Benzing (Blumen 58,99 €) ist gestochen scharf, und
+    Gemma stellt dazu genau die Frage, die die Regeln verlangen: Dekoration
+    oder Geschenk? Bis zum 08.09.2026 schrieb der Nachlese-Weg dafür GAR
+    kein Review — der Beleg lief in den Timeout und hieß „unlesbar"."""
+    import asyncio
+    client, _bare, babu_web = welt
+    _lesen_mit(monkeypatch, {"status": "fragen", "fragen": [
+        {"frage": "Bleiben die Blumen im Salon oder bekommt sie jemand?",
+         "optionen": ["Sie stehen im Salon", "Geschenk an eine Kundin"]}]})
+    r = client.post("/api/aufnahme", params={"name": "blumen.jpg", "text": BON},
+                    content=b"\xff\xd8\xff\xe0bild")
+    assert r.status_code == 200
+    pfad = r.json()["datei"]
+    asyncio.run(babu_web._beleg_serverseitig_lesen(
+        pfad, b"\xff\xd8\xff\xe0bild", ".jpg", "christoph0711.io"))
+
+    stamm = pfad.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+    eintrag = babu_web.index_aktuell()["belege"][stamm]
+    assert eintrag["status"] == "nachfrage", eintrag["status"]
+    assert any("Blumen" in o for o in eintrag["offen"]), eintrag["offen"]
+
+
+def test_aufgeben_schreibt_weiterhin_kein_review(welt, monkeypatch):
+    """Gegenprobe zum Fix: geändert wird NUR der Frage-Fall. „Das gehört auf
+    den Schreibtisch" und ein Format ohne Text bleiben ohne Review — sonst
+    entstünde für jede hochgeladene XML ein sichtbarer Beleg."""
+    import asyncio
+    client, _bare, babu_web = welt
+    _lesen_mit(monkeypatch, {"status": "aufgeben",
+                             "hinweis": "Das ist eine Lohnabrechnung."})
+    r = client.post("/api/aufnahme", params={"name": "lohn.jpg", "text": BON},
+                    content=b"\xff\xd8\xff\xe0bild")
+    pfad = r.json()["datei"]
+    asyncio.run(babu_web._beleg_serverseitig_lesen(
+        pfad, b"\xff\xd8\xff\xe0bild", ".jpg", "christoph0711.io"))
+
+    stamm = pfad.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+    assert stamm not in babu_web.index_aktuell()["reviews"]
+
+
+def test_gebucht_bleibt_gebucht(welt, monkeypatch):
+    import asyncio
+    client, _bare, babu_web = welt
+    _lesen_mit(monkeypatch, {"status": "gebucht", "buchung": {
+        "dokumentklasse": "beleg", "konto": "5400", "kategorie": "wareneinkauf",
+        "kategorie_name": "Wareneinkauf", "betrag_eur": 141.0,
+        "datum": "2026-09-08", "lieferant": "Wagner GmbH", "ust_satz": 19}})
+    r = client.post("/api/aufnahme", params={"name": "bon.jpg", "text": BON},
+                    content=b"\xff\xd8\xff\xe0bild")
+    pfad = r.json()["datei"]
+    asyncio.run(babu_web._beleg_serverseitig_lesen(
+        pfad, b"\xff\xd8\xff\xe0bild", ".jpg", "christoph0711.io"))
+
+    stamm = pfad.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+    eintrag = babu_web.index_aktuell()["belege"][stamm]
+    assert eintrag["status"] == "geprüft" and eintrag["brutto"] == 141.0

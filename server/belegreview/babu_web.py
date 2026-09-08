@@ -2257,17 +2257,35 @@ async def _beleg_serverseitig_lesen(pfad: str, daten: bytes, endung: str, un: st
     `_beleg_einschaetzen` und `_beleg_review_ablegen`; das Verhalten ist
     Zeile für Zeile dasselbe geblieben.
 
-    Schreibt bei „gebucht" ein Review, sonst nichts — bei „fragen"/
-    „aufgeben" bleibt der Beleg „erfasst", bis der Timeout (2b) oder
-    „Nochmal versuchen" ihn erneut hierher schickt. (Der Import macht das
-    anders: dort wird auch daraus ein sichtbarer Beleg, weil eine Kanzlei
-    tausend Dateien nicht einzeln nachsehen kann.)
+    Drei Wege, wie beim Massenimport (`belegimport._entscheiden`): gebucht
+    ist gebucht, gefragt ist gefragt, alles andere ist unlesbar.
+
+    Bis zum 08.09.2026 schrieb dieser Weg NUR bei „gebucht" ein Review, mit
+    der Begründung „niemand am Portal beantwortet Rückfragen". Das galt, als
+    es dafür keine Oberfläche gab. Heute zeigen App und Portal offene Fragen
+    — und die Alternative war schlecht: ohne Review lief der Beleg in den
+    Timeout und hieß danach „unlesbar". Gemessen an Ninas Box: der Bon von
+    Merz & Benzing (Blumen 58,99 €) ist gestochen scharf, Gemma stellt dazu
+    genau die Frage, die die Regeln verlangen (Dekoration oder Geschenk?) —
+    und der Beleg stand als „unlesbar" da. Das ist keine Lesung, die
+    scheiterte, sondern eine, die gewartet hat.
     """
     monat = time.strftime("%Y-%m")
     ergebnis, zeilen = await _beleg_einschaetzen(daten, endung, un, monat)
-    if ergebnis.get("status") != "gebucht":
-        # "fragen"/"aufgeben"/kein lesbares Format: niemand am Portal
-        # beantwortet Rückfragen — kein Review, der Beleg bleibt "erfasst".
+    stand = ergebnis.get("status")
+
+    if stand == "fragen":
+        review, md = _review_aus_rueckfrage(
+            pfad, ergebnis.get("fragen") or [], zeilen)
+        await _beleg_review_ablegen(pfad, review, md, un)
+        return
+    if stand != "gebucht":
+        # „aufgeben" und ein Format ohne Text bleiben wie bisher ohne Review:
+        # eine hochgeladene XML ist kein Beleg, und daraus einen sichtbaren
+        # Eintrag zu machen wäre eine Meldung über nichts
+        # (`test_portal_upload_liest_serverseitig` hält das fest). Nur der
+        # Massenimport macht daraus einen Eintrag — dort sieht eine Kanzlei
+        # tausend Dateien nicht einzeln durch.
         return
 
     buchung = ergebnis["buchung"]

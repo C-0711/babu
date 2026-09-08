@@ -170,24 +170,48 @@ def test_unbekanntes_format_wird_gar_nicht_erst_versucht(welt, monkeypatch):
     assert f"review/{stamm}.json" not in _stand(bare)
 
 
-# ————— "fragen"/"aufgeben": niemand am Portal antwortet — kein Review —————
+# ————— "fragen" wird sichtbar, "aufgeben" bleibt still —————
+#
+# Bis zum 08.09.2026 stand hier: „niemand am Portal antwortet — kein
+# Review", für BEIDE Fälle. Das galt, solange es keine Oberfläche für offene
+# Fragen gab. Heute zeigen App und Portal sie, und die Alternative war
+# schlecht: ohne Review lief der Beleg in den Timeout und hieß danach
+# „unlesbar". In Ninas Box traf das den Bon von Merz & Benzing (Blumen
+# 58,99 €) — gestochen scharf, und Gemma stellte dazu genau die Frage, die
+# die Regeln verlangen (Dekoration oder Geschenk?).
+#
+# „aufgeben" bleibt ohne Review: das ist kein wartender Beleg, sondern
+# einer, der hier nicht hingehört.
 
-@pytest.mark.parametrize("ergebnis", [
-    {"status": "fragen", "fragen": [{"frage": "?", "optionen": []}]},
-    {"status": "aufgeben", "hinweis": "zu viele Fragen"},
-])
-def test_fragen_und_aufgeben_schreiben_kein_review(welt, monkeypatch, ergebnis):
+def test_eine_frage_wird_zum_sichtbaren_beleg(welt, monkeypatch):
     bw, bare = welt
     import gemma_buchung
-    monkeypatch.setattr(gemma_buchung, "runde", lambda *a, **k: ergebnis)
+    monkeypatch.setattr(gemma_buchung, "runde", lambda *a, **k: {
+        "status": "fragen",
+        "fragen": [{"frage": "Bleiben die Blumen im Salon?", "optionen": []}]})
+    stamm = "20260827-160000-abcdef-beleg"
+    pfad = f"docs/2026-08/{stamm}.jpg"
+    daten = b"\xff\xd8\xff\xe0" + b"x" * 300
+    _ablegen(bare, pfad, daten)
+    asyncio.run(bw._beleg_serverseitig_lesen(pfad, daten, ".jpg", UN))
+    assert f"review/{stamm}.json" in _stand(bare)
+    eintrag = bw.index_aktuell()["belege"][stamm]
+    assert eintrag["status"] == "nachfrage"
+    assert any("Blumen" in o for o in eintrag["offen"]), eintrag["offen"]
+
+
+def test_aufgeben_schreibt_weiterhin_kein_review(welt, monkeypatch):
+    bw, bare = welt
+    import gemma_buchung
+    monkeypatch.setattr(gemma_buchung, "runde", lambda *a, **k: {
+        "status": "aufgeben", "hinweis": "zu viele Fragen"})
     stamm = "20260827-160000-abcdef-beleg"
     pfad = f"docs/2026-08/{stamm}.jpg"
     daten = b"\xff\xd8\xff\xe0" + b"x" * 300
     _ablegen(bare, pfad, daten)
     asyncio.run(bw._beleg_serverseitig_lesen(pfad, daten, ".jpg", UN))
     assert f"review/{stamm}.json" not in _stand(bare)
-    eintrag = bw.index_aktuell()["belege"][stamm]
-    assert eintrag["status"] == "erfasst"
+    assert bw.index_aktuell()["belege"][stamm]["status"] == "erfasst"
 
 
 # ————— Ein hängender/werfender Aufruf blockiert und crasht nicht —————
