@@ -44,23 +44,31 @@ struct KontoMenuView: View {
         NavigationStack {
             List {
                 Section {
-                    HStack(spacing: 11) {
-                        Image(systemName: zeichen)
-                            .font(.system(size: 26))
-                            .foregroundStyle(farbe)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(store.verbundenAls ?? "Noch nicht verbunden")
-                                .font(.callout.weight(.medium))
-                                .foregroundStyle(GC.fg)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.7)
-                                .textSelection(.enabled)
-                            Text(unterzeile)
-                                .font(.caption)
-                                .foregroundStyle(store.zugangAbgelaufen ? GC.warn : GC.muted)
+                    // Die Zeile sagt „Mit E-Mail und Passwort verbinden" —
+                    // also muss sie auch dorthin führen. Sie war reine
+                    // Anzeige, und der einzige Weg zum Anmelden lag ganz
+                    // unten in den Einstellungen: wer nicht verbunden ist,
+                    // tippt genau hier und passiert nichts.
+                    NavigationLink {
+                        EinstellungenView()
+                    } label: {
+                        HStack(spacing: 11) {
+                            Image(systemName: zeichen)
+                                .font(.system(size: 26))
+                                .foregroundStyle(farbe)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(store.verbundenAls ?? "Noch nicht verbunden")
+                                    .font(.callout.weight(.medium))
+                                    .foregroundStyle(GC.fg)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
+                                Text(unterzeile)
+                                    .font(.caption)
+                                    .foregroundStyle(store.zugangAbgelaufen ? GC.warn : GC.muted)
+                            }
                         }
+                        .padding(.vertical, 4)
                     }
-                    .padding(.vertical, 4)
                 }
 
                 // Was zusammengehört, steht zusammen: was die Zahlen angeht,
