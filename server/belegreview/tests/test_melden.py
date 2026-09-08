@@ -15,7 +15,13 @@ HEUTE = dt.date(2026, 9, 3)
 
 
 def frist(faellig="2026-09-10", art="ustva", name="Umsatzsteuer August 2026"):
-    return {"art": art, "name": name, "faellig": faellig}
+    """Ein Termin in der Form, die `fristen.fristen_jahr` wirklich liefert.
+
+    Bis zum 08.09.2026 stand hier `{"faellig": …, "name": …}` — eine Form, die
+    es nirgends gab. Der Test war grün, die Funktion feuerte im Betrieb nie.
+    Deshalb prüft `test_die_form_stimmt_mit_fristen_ueberein` unten, dass diese
+    Fixture und das echte Modul dieselben Felder benutzen."""
+    return {"art": art, "titel": name, "datum": faellig}
 
 
 def vertrag(datum="2026-10-03", partner="Hausverwaltung Sonnenberg",
@@ -237,3 +243,36 @@ def test_belegjagd_summe_ist_positiv_trotz_soll_vorzeichen():
     m = melden.belegjagd_meldung(fragen, HEUTE)
     assert "230,00" in m[0]["text"]
     assert "-" not in m[0]["text"].split("€")[0]
+
+
+def test_die_form_stimmt_mit_fristen_ueberein():
+    """Der Wächter gegen genau den Fehler, der hier vier Wochen lag: eine
+    Fixture, die sich ihre eigene Wirklichkeit baut. Was `fristen` liefert,
+    muss `melden` lesen können — sonst schweigt babu und niemand merkt es."""
+    import sys
+    from pathlib import Path as _P
+    sys.path.insert(0, str(_P(__file__).resolve().parent.parent))
+    import fristen
+
+    echt = fristen.fristen_jahr(2026, fristen.termin_profil({}))
+    assert echt, "ohne Termine prüft dieser Test nichts"
+    for feld in ("datum", "titel", "art"):
+        assert feld in echt[0], f"fristen liefert kein {feld!r}: {sorted(echt[0])}"
+        assert feld in frist(), f"die Fixture kennt {feld!r} nicht"
+
+    # Und der Beweis am lebenden Objekt: ein echter Termin, sieben Tage vor
+    # seiner Fälligkeit, muss eine Meldung ergeben.
+    ziel = echt[0]
+    heute = dt.date.fromisoformat(ziel["datum"]) - dt.timedelta(days=7)
+    m = melden.fristen_meldungen([ziel], heute)
+    assert len(m) == 1, f"echter Termin ergibt keine Meldung: {ziel}"
+    assert m[0]["titel"] == ziel["titel"]
+    assert "in 7 Tagen" in m[0]["text"]
+
+
+def test_alte_gespeicherte_form_wird_noch_gelesen():
+    """Ein Zustand, der vor dem 08.09.2026 abgelegt wurde, trägt die alten
+    Feldnamen. Er darf nicht still verschwinden."""
+    alt = {"art": "ustva", "name": "Umsatzsteuer August 2026", "faellig": "2026-09-10"}
+    m = melden.fristen_meldungen([alt], HEUTE)
+    assert len(m) == 1 and m[0]["titel"] == "Umsatzsteuer August 2026"

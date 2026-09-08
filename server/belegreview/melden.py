@@ -43,16 +43,25 @@ def _tage_text(tage: int) -> str:
 
 
 def fristen_meldungen(termine: list[dict], heute: dt.date) -> list[dict]:
-    """Steuertermine — der Klassiker, der Geld kostet, wenn er durchrutscht."""
+    """Steuertermine — der Klassiker, der Geld kostet, wenn er durchrutscht.
+
+    Die Felder heißen `datum` und `titel`, weil `fristen.fristen_jahr` sie so
+    liefert. Bis zum 08.09.2026 stand hier `faellig` und `name` — Felder, die
+    es dort nie gab. Der Rückgabewert war deshalb IMMER leer: babu hat in
+    seiner ganzen Laufzeit keine einzige Steuerfrist von sich aus gemeldet,
+    und niemandem ist es aufgefallen, weil die Testfixture ihre eigene Form
+    erfand statt der echten. `faellig`/`name` bleiben als Rückfall stehen —
+    ältere gespeicherte Stände können sie tragen.
+    """
     meldungen = []
     for t in termine or []:
-        faellig = _datum((t or {}).get("faellig"))
+        faellig = _datum((t or {}).get("datum") or (t or {}).get("faellig"))
         if faellig is None:
             continue
         tage = (faellig - heute).days
         if tage not in FRIST_VORLAUF:
             continue
-        name = str(t.get("name") or t.get("art") or "Ein Termin")
+        name = str(t.get("titel") or t.get("name") or t.get("art") or "Ein Termin")
         meldungen.append({
             "schluessel": f"frist:{t.get('art')}:{faellig.isoformat()}",
             "art": "frist",
