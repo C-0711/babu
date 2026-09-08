@@ -59,6 +59,26 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   eine Frage „ausgezahlt oder verrechnet?". Test
   `tests/test_minijob_guthaben.py`.
 
+## Verbindlich: Posteingang (seit 07.09.2026)
+
+- **`server/posteingang/` ist ein EIGENER Dienst, nicht Teil von babu-web.**
+  Port 25 braucht andere Rechte, und ein Absturz im Mailempfang darf die
+  Belegannahme nicht mitreißen. Eigenes Image, eigener Compose-Abschnitt
+  hinter `profiles: ["posteingang"]` (startet also nicht bei `up -d`).
+- **Er schreibt NIE in die Belegbox**, sondern reicht jede Sendung über
+  `POST /api/aufnahme` (Anhänge) und `POST /api/dokumente` (der Mailtext)
+  weiter. Grund: die Box ist ein Git-Repo mit EINEM Index, und
+  `boxschreiber._commit_und_push` schützt nur innerhalb eines Prozesses.
+  Genau ein Dienst darf Eigentümer sein.
+- **Die Empfangsadresse ist ein Zufallswort, nie ein Name** (`post_adresse`,
+  `postadresse.py`). An sie schreiben Lieferanten und Ämter — eine
+  Absenderliste kann es nicht geben, also IST die Nichterratbarkeit die
+  Zugangskontrolle. Der lokale Teil ist über keine Route wählbar.
+- Unbekannter Empfänger = **550**. Alles andere (babu-web weg, Rate-Limit,
+  Ablegefehler) = **4xx**, sonst ist die Post verloren.
+- **Noch nicht in Betrieb**: MX, Portweiterleitung 25 und Reverse-DNS
+  fehlen. Die Liste steht in `server/posteingang/README.md`.
+
 ## Rollen, Mandanten, DATEV
 
 - Rollen `admin`/`kanzlei`/`salon`/`mitarbeit`; PAT-Konten über
@@ -133,7 +153,9 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   `/tmp/babu-venv/bin/python -m pytest tests/ -q -p no:cacheprovider`,
   Timeout 600 s (~4 min, 2164 grün). Python 3.12 mit fastapi, httpx,
   pytest, requests, python-multipart, pypdfium2, pillow-heif, pillow,
-  psycopg. Postgres-Lauf über eine Wegwerfinstanz (`initdb --locale=C
+  psycopg, aiosmtpd (nur für den einen SMTP-Test in
+  `tests/test_posteingang.py`; fehlt es, wird genau der übersprungen).
+  Postgres-Lauf über eine Wegwerfinstanz (`initdb --locale=C
   --encoding=UTF8`, `BABU_TEST_DB_URL`).
 - **Nie generisches `pkill -f pytest`** — parallel laufende Agenten teilen
   den Rechner. Eine Suite je Worktree.

@@ -163,7 +163,7 @@ def test_runner_faehrt_einmal_und_dann_nicht_mehr():
     assert "0001_initial.sql" in erst
     assert db.schema_anwenden(conn, "sqlite") == [], "zweiter Lauf muss leer sein"
     stand = conn.execute("SELECT nummer, datei FROM schema_version").fetchall()
-    assert stand == [(1, "0001_initial.sql"), (2, "0002_kanzlei_mandant_audit.sql"), (3, "0003_kanzlei_ohne_nutzer_fk.sql"), (4, "0004_import_status.sql")]
+    assert stand == [(1, "0001_initial.sql"), (2, "0002_kanzlei_mandant_audit.sql"), (3, "0003_kanzlei_ohne_nutzer_fk.sql"), (4, "0004_import_status.sql"), (5, "0005_post_adresse.sql")]
     conn.close()
 
 
@@ -194,8 +194,9 @@ def test_runner_holt_eine_nachgereichte_migration_nach(tmp_path):
 def _schema_aus_inline(pfad: Path) -> dict[str, set[str]]:
     """Alles, was der Code im Betrieb von selbst anlegt.
 
-    Das sind zwei Stellen: die 24 Tabellen aus `babu_web._sqlite_schema()`
-    (19 eigene plus audit/passwort_reset/kanzlei/mandant/kanzlei_mitglied)
+    Das sind zwei Stellen: die 25 Tabellen aus `babu_web._sqlite_schema()`
+    (19 eigene plus audit/passwort_reset/kanzlei/mandant/kanzlei_mitglied
+    und post_adresse)
     und `meldung_puffer`, das `gitlab_meldungen` beim ersten Puffern
     nachzieht. Ausdrücklich mit `"sqlite"` geöffnet und nicht über
     `babu_web._db()`: dieser Vergleich gilt dem SQLite-Weg, auch wenn die
@@ -234,7 +235,7 @@ def test_migration_bildet_die_inline_tabellen_ab(tmp_path):
     assert set(inline) == set(migriert), (
         f"nur inline: {set(inline) - set(migriert)}; "
         f"nur Migration: {set(migriert) - set(inline)}")
-    assert len(inline) == 25, f"25 Tabellen erwartet, {len(inline)} gefunden"
+    assert len(inline) == 26, f"26 Tabellen erwartet, {len(inline)} gefunden"
     for tabelle in sorted(inline):
         assert inline[tabelle] == migriert[tabelle], tabelle
 
@@ -283,7 +284,7 @@ def test_pg_schema_steht_und_traegt_alle_tabellen(pg, pg_schema):
         (pg_schema,)).fetchall()
     namen = {z[0] for z in zeilen}
     assert "schema_version" in namen
-    assert len(namen - {"schema_version"}) == 25
+    assert len(namen - {"schema_version"}) == 26
 
 
 @pytest.mark.pg
@@ -343,7 +344,7 @@ def test_pg_migration_ist_idempotent(pg_url, pg_schema):
     conn = psycopg.connect(pg_url)
     conn.execute(f'SET search_path TO "{pg_schema}"')
     conn.commit()
-    assert db.schema_anwenden(conn, "postgres") == ["0001_initial.sql", "0002_kanzlei_mandant_audit.sql", "0003_kanzlei_ohne_nutzer_fk.sql", "0004_import_status.sql"]
+    assert db.schema_anwenden(conn, "postgres") == ["0001_initial.sql", "0002_kanzlei_mandant_audit.sql", "0003_kanzlei_ohne_nutzer_fk.sql", "0004_import_status.sql", "0005_post_adresse.sql"]
     assert db.schema_anwenden(conn, "postgres") == []
     conn.close()
 

@@ -1,0 +1,6 @@
+# Der Posteingang hat absichtlich fast keine Abhängigkeiten: er nimmt Mail
+# an und reicht sie über HTTP weiter. Keine Datenbank, kein Treiber, keine
+# Passwortdatei — babu-web bleibt der einzige Eigentümer der Portal-Daten.
+# Beim Heben einer Version: Suite fahren.
+aiosmtpd==1.4.6
+requests==2.34.2

@@ -42,6 +42,7 @@ import kontenrahmen as kr  # noqa: E402
 import skr04_konten as skr  # noqa: E402
 import kontierung as kt  # noqa: E402
 import mandanten  # noqa: E402
+import postadresse  # noqa: E402
 
 SEITE = Path(os.environ.get("BABU_SEITE", str(Path.home() / "babu-web" / "index.html")))
 # BABU_STORE — derselbe Wert wie `box.STORE_STANDARD`, nur unter dem Namen,
@@ -394,6 +395,9 @@ def _sqlite_schema(conn) -> None:
     # Fremdschlüssel zeigen auf `nutzer`, und eine Datenbank mit echten
     # Fremdschlüsseln verlangt die Zieltabelle zum Anlegezeitpunkt.
     mandanten.schema(conn)
+    # Die Empfangsadressen des Posteingangs. NACH `mandanten`: ihr
+    # Fremdschlüssel zeigt auf `mandant(id)`.
+    postadresse.schema(conn)
 
 
 @contextmanager
@@ -1415,6 +1419,12 @@ app.include_router(kanzlei_routen.router)
 import marke_routen  # noqa: E402,PLC0415
 
 app.include_router(marke_routen.router)
+
+# Die Empfangsadressen des Posteingangs (server/posteingang/) — anlegen,
+# sehen, stilllegen, und die eine Frage, die der Mailserver stellt.
+import posteingang_routen  # noqa: E402,PLC0415
+
+app.include_router(posteingang_routen.router)
 
 
 @app.get("/datev")
@@ -3236,7 +3246,11 @@ WOHIN_TEXT = {
 }
 
 
-DOKUMENT_ENDUNGEN = {".pdf", ".jpg", ".jpeg", ".png"}
+# `.txt` seit dem Posteingang (07.09.2026): der Mailtext selbst ist
+# Schriftverkehr und wird als Dokument abgelegt, auch wenn kein Anhang dabei
+# war. Er löst keinen Lesejob aus — die hängen an `art` (vertrag/behoerde),
+# nicht an der Endung.
+DOKUMENT_ENDUNGEN = {".pdf", ".jpg", ".jpeg", ".png", ".txt"}
 DOKUMENT_PFAD_RE = re.compile(r"^dokumente/[A-Za-z0-9._/ -]{1,200}$")
 # Ein DATEV-Nachschlagewerk darf auch Markdown und Klartext sein — die
 # Hilfe-Center-Seiten kommen als .md, nicht als Scan.

@@ -71,6 +71,12 @@ services:
       # Das Passwort steht nicht in der URL, sondern in der Secret-Datei;
       # `db.verbindung()` liest sie und reicht es psycopg getrennt herein.
       BABU_DB_PASSWORT_DATEI: /run/secrets/babu_pg_passwort
+      # Posteingang: dasselbe gemeinsame Geheimnis wie im Mailserver. Nur
+      # damit antwortet `/api/posteingang/aufloesen` überhaupt — ohne es ist
+      # die Route tot, und das ist der richtige Ruhezustand, solange kein
+      # Mailserver läuft.
+      BABU_POSTEINGANG_TOKEN: "${BABU_POSTEINGANG_TOKEN:-}"
+      BABU_POST_DOMAENE: "post.babu.0711.io"
       # Gürtel und Hosenträger: falls ein gemountetes Repo einem anderen
       # Besitzer gehört, soll git lesen statt verweigern.
       GIT_CONFIG_COUNT: "1"
@@ -84,6 +90,50 @@ services:
       - ~/gitchain-eingang/.pat_babu:/data/gitchain-eingang/.pat_babu:ro
       - ~/Youtube/.env:/data/Youtube/.env:ro                        # Gemini-Schlüssel für die Bild-Generierung
       - ~/kompendium:/data/kompendium:ro                            # Branchen-Kompendium: Vektoren + Atome + Grundwissen
+    restart: unless-stopped
+
+  # Der Posteingang: ein eigener Mailserver, der Post an die Zufallsadressen
+  # aus `post_adresse` annimmt und über die HTTP-API von babu-web ablegt.
+  # Quelle und Betriebsanleitung: server/posteingang/README.md.
+  #
+  # `profiles` — der Dienst startet NICHT bei `docker compose up -d`. Das ist
+  # Absicht: er ist gebaut und lokal geprüft, aber die Portfreigabe im Netz
+  # (MX, Weiterleitung 25, Reverse-DNS) ist noch nicht gemacht, und ein
+  # SMTP-Empfänger ohne MX nimmt nichts an und fällt nur auf. Scharf
+  # schalten mit `docker compose --profile posteingang up -d posteingang`.
+  posteingang:
+    profiles: ["posteingang"]
+    build:
+      context: ../posteingang
+      dockerfile: Dockerfile
+    image: babu-posteingang
+    container_name: babu-posteingang
+    # host wie babu-web — der Dienst muss babu-web auf 127.0.0.1:7844
+    # erreichen, und das bindet nur auf localhost. Er hört selbst auf 2525;
+    # die Weiterleitung 25 -> 2525 macht der Host (README.md), damit hier
+    # kein Prozess mit Portrechten fremde Mail entgegennimmt.
+    network_mode: host
+    depends_on:
+      - babu-web
+    environment:
+      BABU_URL: "http://127.0.0.1:7844"
+      BABU_POST_DOMAENE: "post.babu.0711.io"
+      POSTEINGANG_HOST: "0.0.0.0"
+      POSTEINGANG_PORT: "2525"
+      # Beide Geheimnisse stehen NICHT hier, sondern in der `.env` neben
+      # dieser Datei (0600). Anlegen: siehe README.md. Leer ist erlaubt und
+      # führt NICHT dazu, dass ein halb konfigurierter Dienst startet —
+      # `posteingang.main()` bricht dann mit einem Satz ab. Ein `:?` hier
+      # wäre falsch: Compose löst das auch für abgeschaltete Profile auf und
+      # zerlegte damit jedes gewöhnliche `docker compose up -d`.
+      BABU_POSTEINGANG_PAT: "${BABU_POSTEINGANG_PAT:-}"
+      BABU_POSTEINGANG_TOKEN: "${BABU_POSTEINGANG_TOKEN:-}"
+      # Grenzen; die Vorgaben im Code sind dieselben Zahlen und gelten,
+      # wenn hier nichts steht.
+      POSTEINGANG_SENDUNG_MAX: "26214400"
+      POSTEINGANG_ANHANG_MAX: "15728640"
+      POSTEINGANG_RATE_IP: "60"
+      POSTEINGANG_RATE_ADRESSE: "120"
     restart: unless-stopped
 
 # Die Datei liegt auf dem Host mit 0600 und gehört christoph.bertsch. Als

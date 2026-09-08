@@ -131,6 +131,14 @@ def _sitzung(c):
         yield eigene
 
 
+#: Öffentlich für die Nachbarmodule, die an DERSELBEN Verbindung hängen
+#: (heute `postadresse`). Eine zweite `verbindung_quelle` daneben wäre eine
+#: zweite Wahrheit darüber, welche Datenbank gerade gemeint ist — und beim
+#: Test, der `babu_web.PORTAL_DB` umbiegt, liefe eine davon auf die falsche
+#: Datei. Deshalb genau eine Anmeldung, hier.
+sitzung = _sitzung
+
+
 def _jetzt_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
