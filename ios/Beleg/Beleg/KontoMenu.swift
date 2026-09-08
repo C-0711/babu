@@ -64,102 +64,21 @@ struct KontoMenuView: View {
                 }
 
                 // Was zusammengehört, steht zusammen: was die Zahlen angeht,
-                // dann was den Salon angeht, dann das Konto selbst.
-                Section("Buchhaltung") {
-                    // Der Wischstapel für offene Belege. Stand bisher nur auf
-                    // der Dokumentenliste, und dort auch nur, solange etwas
-                    // offen war — wer ihn einmal gesehen hatte, fand ihn nie
-                    // wieder. Hier steht er immer; ist nichts offen, sagt die
-                    // Ansicht das ehrlich, statt einen toten Knopf zu zeigen.
-                    blattZeile("Belege aufräumen", "rectangle.stack") {
-                        zeigeAufraeumen = true
+                // dann was den Salon angeht, dann das Konto selbst. Welche
+                // Zeilen es in diesem Bau gibt, sagt `Ausbaustufe` — nicht
+                // dieser Bildschirm.
+                ForEach(abschnitte, id: \.self) { abschnitt in
+                    Section {
+                        ForEach(punkte(abschnitt), id: \.self) { punkt in
+                            zeile(punkt)
+                        }
+                    } header: {
+                        if let titel = abschnitt.titel { Text(titel) }
+                    } footer: {
+                        if abschnitt == .konto {
+                            Text("Den fertigen Stand bekommt dein Steuerbüro am Monatsende automatisch aus der Belegbox.")
+                        }
                     }
-                    NavigationLink {
-                        RechnungenTab()
-                    } label: {
-                        Label("Rechnungen", systemImage: "eurosign.circle")
-                    }
-                    blattZeile("Vorlagen", "doc.on.doc") { zeigeVorlagen = true }
-                    blattZeile("Dein Briefkopf", "paintpalette") {
-                        zeigeBriefkopf = true
-                    }
-                    NavigationLink {
-                        AbschlussView()
-                    } label: {
-                        Label("Monatsabschluss", systemImage: "chart.bar.doc.horizontal")
-                    }
-                    NavigationLink {
-                        ExportView()
-                    } label: {
-                        Label("Export für die Buchhaltung", systemImage: "square.and.arrow.up")
-                    }
-                }
-
-                Section("Dein Salon") {
-                    // Name, Anschrift, Steuernummer: bisher nur im Portal im
-                    // Browser zu ändern, obwohl die App hierher verwies.
-                    NavigationLink {
-                        BetriebsangabenView()
-                    } label: {
-                        Label("Dein Betrieb", systemImage: "building.2")
-                    }
-                    NavigationLink {
-                        KundinnenView()
-                    } label: {
-                        Label("Kundinnen", systemImage: "person.crop.circle")
-                    }
-                    NavigationLink {
-                        PreiseView()
-                    } label: {
-                        Label("Deine Preise", systemImage: "tag")
-                    }
-                    NavigationLink {
-                        KartenzahlungView()
-                    } label: {
-                        Label("Kartenzahlung", systemImage: "creditcard")
-                    }
-                    NavigationLink {
-                        TeamView()
-                    } label: {
-                        Label("Dein Team", systemImage: "person.2")
-                    }
-                    NavigationLink {
-                        VertragskisteView()
-                    } label: {
-                        Label("Deine Verträge", systemImage: "shippingbox")
-                    }
-                    NavigationLink {
-                        KontoauszugView()
-                    } label: {
-                        Label("Kontoauszug", systemImage: "building.columns")
-                    }
-                    NavigationLink {
-                        MarketingView()
-                    } label: {
-                        Label("Marketing", systemImage: "megaphone")
-                    }
-                }
-
-                Section {
-                    // Funktionen wurden bisher zufällig entdeckt — diese Seite
-                    // zählt einmal alles auf, nach Anlass statt nach Technik.
-                    NavigationLink {
-                        WasBabuKannView { zurueck() }
-                    } label: {
-                        Label("Was babu alles kann", systemImage: "list.bullet.rectangle")
-                    }
-                    NavigationLink {
-                        MeldungenListe()
-                    } label: {
-                        Label("Meine Meldungen", systemImage: "exclamationmark.bubble")
-                    }
-                    NavigationLink {
-                        EinstellungenView()
-                    } label: {
-                        Label("Einstellungen", systemImage: "gearshape")
-                    }
-                } footer: {
-                    Text("Den fertigen Stand bekommt dein Steuerbüro am Monatsende automatisch aus der Belegbox.")
                 }
             }
             .warmerGrund()
@@ -183,6 +102,71 @@ struct KontoMenuView: View {
             .fullScreenCover(isPresented: $zeigeAufraeumen) {
                 AufraeumenView().environmentObject(store)
             }
+        }
+    }
+
+    // MARK: - Die Zeilen dieses Baus
+
+    /// Nur Abschnitte, in denen in diesem Bau überhaupt etwas steht — sonst
+    /// bliebe im schmalen Bau eine leere Überschrift stehen.
+    private var abschnitte: [Kontomenuepunkt.Abschnitt] {
+        [.buchhaltung, .salon, .konto].filter { !punkte($0).isEmpty }
+    }
+
+    private func punkte(_ abschnitt: Kontomenuepunkt.Abschnitt) -> [Kontomenuepunkt] {
+        Ausbaustufe.kontomenue.filter { $0.abschnitt == abschnitt }
+    }
+
+    /// Eine Zeile: entweder ein Blatt oder ein Weiterschieben.
+    @ViewBuilder
+    private func zeile(_ punkt: Kontomenuepunkt) -> some View {
+        if punkt.alsBlatt {
+            blattZeile(punkt.titel, punkt.symbol) { blattOeffnen(punkt) }
+        } else {
+            NavigationLink {
+                ziel(punkt)
+            } label: {
+                Label(punkt.titel, systemImage: punkt.symbol)
+            }
+        }
+    }
+
+    private func blattOeffnen(_ punkt: Kontomenuepunkt) {
+        switch punkt {
+        // Der Wischstapel für offene Belege. Stand bisher nur auf der
+        // Dokumentenliste, und dort auch nur, solange etwas offen war — wer
+        // ihn einmal gesehen hatte, fand ihn nie wieder. Hier steht er immer;
+        // ist nichts offen, sagt die Ansicht das ehrlich.
+        case .aufraeumen: zeigeAufraeumen = true
+        case .vorlagen:   zeigeVorlagen = true
+        case .briefkopf:  zeigeBriefkopf = true
+        default: break
+        }
+    }
+
+    @ViewBuilder
+    private func ziel(_ punkt: Kontomenuepunkt) -> some View {
+        switch punkt {
+        case .rechnungen:      RechnungenTab()
+        case .monatsabschluss: AbschlussView()
+        case .export:          ExportView()
+        // Was babu über den Betrieb weiß, was noch fehlt und woher es das
+        // hat — an einer Stelle, statt über zwei Bildschirme verstreut.
+        case .betrieb:         BetriebsprofilView()
+        case .kundinnen:       KundinnenView()
+        case .preise:          PreiseView()
+        case .kartenzahlung:   KartenzahlungView()
+        case .team:            TeamView()
+        case .vertraege:       VertragskisteView()
+        case .kontoauszug:     KontoauszugView()
+        case .marketing:       MarketingView()
+        // Funktionen wurden bisher zufällig entdeckt — diese Seite zählt
+        // einmal alles auf, nach Anlass statt nach Technik.
+        case .wasBabuKann:     WasBabuKannView { zurueck() }
+        case .meldungen:       MeldungenListe()
+        case .einstellungen:   EinstellungenView()
+        // Blätter — kommen hier nie an, siehe `alsBlatt`.
+        case .aufraeumen, .vorlagen, .briefkopf: EmptyView()
         }
     }
 

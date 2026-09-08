@@ -6,8 +6,13 @@ options:
   deploymentTarget:
     iOS: "17.0"
   developmentLanguage: de
-targets:
-  Beleg:
+
+# Zwei Ziele aus EINEM Ordner: „Beleg" ist die schmale App (der Scanner, das
+# Hirn, der Profilbauer, das DATEV-Büchlein), „BelegPro" kann dazu den ganzen
+# Betrieb. Der Unterschied ist eine einzige Einstellung — BABU_PRO — und was
+# sie bewirkt, steht in Beleg/Ausbaustufe.swift. Keine Datei wird ausgelassen.
+targetTemplates:
+  App:
     type: application
     platform: iOS
     sources: [Beleg]
@@ -21,9 +26,25 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
-        PRODUCT_BUNDLE_IDENTIFIER: io.0711.beleg
         MARKETING_VERSION: 0.1.0
         CURRENT_PROJECT_VERSION: 1
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
+
+targets:
+  Beleg:
+    templates: [App]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.0711.beleg
+        # Der Name auf dem Homescreen. Steht nicht in der Info.plist, weil
+        # sich beide Apps dieselbe Datei teilen.
+        BABU_ANZEIGENAME: babu
+  BelegPro:
+    templates: [App]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.0711.beleg.pro
+        BABU_ANZEIGENAME: babu Pro
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) BABU_PRO"

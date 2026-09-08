@@ -28,53 +28,64 @@ struct WasBabuKannView: View {
                           "Bon fotografieren — babu liest ihn, ordnet ihn ein "
                           + "und legt ihn ab. Auch Verträge und Post vom Amt.",
                           .erfassen)
-                zumReiter("Kassenbuch", "banknote",
-                          "Was am Tag bar in die Kasse kam und rausging. "
-                          + "Eine Frage nach der anderen, eine Zahl pro Schritt.",
-                          .kasse)
-                zumReiter("Termine", "calendar",
-                          "Der Kalender des Salons: Termine eintragen, "
-                          + "absagen und nach der Behandlung abrechnen.",
-                          .termine)
-            }
-
-            Section("Wenn Geld reinkommt") {
-                zurAnsicht("Rechnungen", "eurosign.circle",
-                           "Stuhlmiete, Hochzeit, Firmenkundin: eine Rechnung "
-                           + "schreiben und sehen, was noch offen ist.") {
-                    RechnungenTab()
+                // Kassenbuch und Termine gibt es nur im großen Bau. Eine Zeile,
+                // die auf einen Reiter zeigt, den es nicht gibt, führte ins
+                // Leere — deshalb steht sie dort auch nicht.
+                if Ausbaustufe.erreichbar(.kasse) {
+                    zumReiter("Kassenbuch", "banknote",
+                              "Was am Tag bar in die Kasse kam und rausging. "
+                              + "Eine Frage nach der anderen, eine Zahl pro Schritt.",
+                              .kasse)
                 }
-                zurAnsicht("Deine Preise", "tag",
-                           "Was deine Leistungen kosten. Daraus rechnet babu "
-                           + "beim Abrechnen die Beträge aus.") {
-                    PreiseView()
-                }
-                zurAnsicht("Kartenzahlung", "creditcard",
-                           "Ob dieses iPhone Karten annehmen kann — und was "
-                           + "dafür noch fehlt.") {
-                    KartenzahlungView()
+                if Ausbaustufe.erreichbar(.termine) {
+                    zumReiter("Termine", "calendar",
+                              "Der Kalender des Salons: Termine eintragen, "
+                              + "absagen und nach der Behandlung abrechnen.",
+                              .termine)
                 }
             }
 
-            Section("Dein Salon") {
-                zurAnsicht("Kundinnen", "person.crop.circle",
-                           "Der Karteikasten hinterm Spiegel: Nummern, Notizen, "
-                           + "Allergien, Farbformeln.") {
-                    KundinnenView()
+            // Zwei Abschnitte, die es nur im großen Bau gibt: Geld einnehmen
+            // und den Salon führen. Im schmalen Bau steht die Liste ohne sie.
+            if Ausbaustufe.voll {
+                Section("Wenn Geld reinkommt") {
+                    zurAnsicht("Rechnungen", "eurosign.circle",
+                               "Stuhlmiete, Hochzeit, Firmenkundin: eine Rechnung "
+                               + "schreiben und sehen, was noch offen ist.") {
+                        RechnungenTab()
+                    }
+                    zurAnsicht("Deine Preise", "tag",
+                               "Was deine Leistungen kosten. Daraus rechnet babu "
+                               + "beim Abrechnen die Beträge aus.") {
+                        PreiseView()
+                    }
+                    zurAnsicht("Kartenzahlung", "creditcard",
+                               "Ob dieses iPhone Karten annehmen kann — und was "
+                               + "dafür noch fehlt.") {
+                        KartenzahlungView()
+                    }
                 }
-                zurAnsicht("Personal", "person.2",
-                           "Wer im Salon arbeitet, was er kostet — und die "
-                           + "Verträge dazu.") {
-                    TeamView()
-                }
-                zurAnsicht("Deine Verträge", "shippingbox",
-                           "Miete, Strom, Leasing: was jeden Monat sicher abgeht.") {
-                    VertragskisteView()
-                }
-                zurAnsicht("Marketing", "megaphone",
-                           "Aushang, Beitrag, Gutschein, Preisliste — in deiner "
-                           + "Farbe und mit deinem Zeichen.") {
-                    MarketingView()
+
+                Section("Dein Salon") {
+                    zurAnsicht("Kundinnen", "person.crop.circle",
+                               "Der Karteikasten hinterm Spiegel: Nummern, Notizen, "
+                               + "Allergien, Farbformeln.") {
+                        KundinnenView()
+                    }
+                    zurAnsicht("Personal", "person.2",
+                               "Wer im Salon arbeitet, was er kostet — und die "
+                               + "Verträge dazu.") {
+                        TeamView()
+                    }
+                    zurAnsicht("Deine Verträge", "shippingbox",
+                               "Miete, Strom, Leasing: was jeden Monat sicher abgeht.") {
+                        VertragskisteView()
+                    }
+                    zurAnsicht("Marketing", "megaphone",
+                               "Aushang, Beitrag, Gutschein, Preisliste — in deiner "
+                               + "Farbe und mit deinem Zeichen.") {
+                        MarketingView()
+                    }
                 }
             }
 
@@ -102,9 +113,9 @@ struct WasBabuKannView: View {
                           + "absetzen?“ Antwort in deiner Sprache.",
                           .fragen)
                 zurAnsicht("Dein Betrieb", "building.2",
-                           "Name, Anschrift, Finanzamt, Steuernummer — das, "
-                           + "was auf jeder Rechnung steht.") {
-                    BetriebsangabenView()
+                           "Was babu über deinen Betrieb weiß und was noch "
+                           + "fehlt: Anschrift, Finanzamt, Steuernummer.") {
+                    BetriebsprofilView()
                 }
             } header: {
                 Text("Und außerdem")

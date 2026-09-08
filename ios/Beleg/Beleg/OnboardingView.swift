@@ -11,7 +11,8 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 18) {
             Spacer()
 
-            Text("babu")
+            // „babu" oder „babu Pro" — dieselbe Begrüßung, der richtige Name.
+            Text(Ausbaustufe.name)
                 .font(.system(size: 34, weight: .semibold, design: .serif))
                 .foregroundStyle(GC.fg)
 

@@ -35,8 +35,23 @@ swiftc -o "$ZIEL/protokoll" ../Beleg/Beleg/Protokollsatz.swift protokoll/main.sw
 "$ZIEL/protokoll"
 
 echo "— Einrichtungs-Harness —"
-swiftc -o "$ZIEL/einrichtung" ../Beleg/Beleg/Einrichtungsschritte.swift einrichtung/main.swift
+# Einrichtungsschritte filtert seit dem Schnitt nach Ausbaustufe — deshalb
+# gehoert die Datei mit auf die Uebersetzungszeile.
+swiftc -o "$ZIEL/einrichtung" ../Beleg/Beleg/Ausbaustufe.swift \
+       ../Beleg/Beleg/Einrichtungsschritte.swift einrichtung/main.swift
 "$ZIEL/einrichtung"
+
+echo "— Zuschnitt-Harness (schmaler Bau) —"
+# Zwei Apps aus einem Ordner: welche Reiter und welche Menuezeilen in welchem
+# Bau erscheinen. Dieselbe Quelle zweimal uebersetzt, einmal mit BABU_PRO.
+swiftc -o "$ZIEL/zuschnitt-schmal" ../Beleg/Beleg/Ausbaustufe.swift \
+       ../Beleg/Beleg/Einrichtungsschritte.swift zuschnitt/main.swift
+"$ZIEL/zuschnitt-schmal"
+
+echo "— Zuschnitt-Harness (babu Pro) —"
+swiftc -DBABU_PRO -o "$ZIEL/zuschnitt-voll" ../Beleg/Beleg/Ausbaustufe.swift \
+       ../Beleg/Beleg/Einrichtungsschritte.swift zuschnitt/main.swift
+"$ZIEL/zuschnitt-voll"
 
 echo "— Chattexte-Harness —"
 swiftc -o "$ZIEL/chat" ../Beleg/Beleg/Chattexte.swift chat/main.swift

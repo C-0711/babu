@@ -21,6 +21,29 @@ struct Meldungszeile: Identifiable, Decodable {
     var id: Int { iid }
 }
 
+/// Ein Satz über den Betrieb, den babu aus den eingereichten Unterlagen
+/// gezogen hat (`GET /api/salon-check`). Die Ampel sagt, wie es steht.
+struct Betriebskarte: Identifiable, Hashable {
+    let id: String
+    let titel: String
+    let satz: String
+    let wert: String?
+    /// „gruen", „gelb", „rot" oder „grau" — grau heißt: dazu weiß babu
+    /// noch nichts.
+    let ampel: String
+
+    init?(_ json: [String: Any]) {
+        guard let id = json["id"] as? String,
+              let titel = json["titel"] as? String,
+              let satz = json["satz"] as? String else { return nil }
+        self.id = id
+        self.titel = titel
+        self.satz = satz
+        self.wert = json["wert"] as? String
+        self.ampel = json["ampel"] as? String ?? "grau"
+    }
+}
+
 extension AblageService {
 
     // MARK: - Termine
@@ -376,6 +399,19 @@ extension AblageService {
               let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any]
         else { return nil }
         return json.compactMapValues { $0 as? String }
+    }
+
+    /// Was babu aus den eingereichten Unterlagen über den Betrieb gelesen hat
+    /// (`GET /api/salon-check`). Liegt noch nichts vor, kommt eine leere Liste
+    /// zurück — das ist kein Fehler, sondern der Anfang.
+    static func betriebsbildLaden(jahr: Int?, basis: URL, pat: String) async
+            -> (karten: [Betriebskarte], quellen: [String])? {
+        let pfad = jahr.map { "api/salon-check?jahr=\($0)" } ?? "api/salon-check"
+        guard let json = await holen(pfad, basis: basis, pat: pat) else { return nil }
+        let karten = (json["karten"] as? [[String: Any]] ?? []).compactMap(Betriebskarte.init)
+        let quellen = (json["quellen"] as? [[String: Any]] ?? [])
+            .compactMap { $0["datei"] as? String }
+        return (karten, quellen)
     }
 
     // MARK: - Dein Team

@@ -162,6 +162,15 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
 - **Nie `git stash`** — der Stash-Stapel ist mit allen Worktrees geteilt.
 - iOS-Simulator: `xcodebuild -project ios/Beleg/Beleg.xcodeproj -scheme Beleg
   -destination 'platform=iOS Simulator,name=iPhone 16e' -derivedDataPath /tmp/bsim build`
+- **Zwei Ziele aus einem Ordner** (seit 08.09.2026): `Beleg` = babu
+  (`io.0711.beleg`, Scanner + Hirn + Profilbauer + DATEV-Büchlein),
+  `BelegPro` = babu Pro (`io.0711.beleg.pro`, dazu Termine, Kasse, Kundinnen,
+  Rechnungen, Preise, Team, Verträge, Marketing, Briefkopf, Kartenzahlung).
+  Der Unterschied steht **nur** in `ios/Beleg/Beleg/Ausbaustufe.swift`
+  (Compile-Flag `BABU_PRO`) — keine Datei wird ausgelassen, keine Ansicht
+  gelöscht. Wer einen Reiter oder eine Menüzeile hinzufügt, trägt sie dort
+  ein. Beide Ziele bauen, `ios/Tests/zuschnitt` hält den Zuschnitt fest
+  (läuft zweimal, mit und ohne Flag).
 - Ninas iPhone (UDID `00008130-001411E00146001C`):
   `… 'generic/platform=iOS' DEVELOPMENT_TEAM=8L87Z2GRSG CODE_SIGN_STYLE=Automatic
   -allowProvisioningUpdates -derivedDataPath /tmp/bbuild` + `xcrun devicectl

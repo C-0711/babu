@@ -132,7 +132,8 @@ struct EinstellungenView: View {
             Button("Ja, abmelden", role: .destructive) { abmelden() }
         } message: {
             Text("Es geht nichts verloren: Alles, was schon in deiner Belegbox "
-                 + "liegt, bleibt dort. Neue Belege und Kassenbuchblätter "
+                 + "liegt, bleibt dort. Neue Belege "
+                 + (Ausbaustufe.erreichbar(.kasse) ? "und Kassenbuchblätter " : "")
                  + "kommen von diesem Telefon aus aber nicht mehr an, und "
                  + "Fragen bleiben unbeantwortet. Wieder anmelden kannst du "
                  + "dich jederzeit mit E-Mail und Passwort.")
@@ -280,7 +281,9 @@ struct EinstellungenView: View {
         } footer: {
             Text("Abmelden heißt: Dieses Telefon schickt nichts mehr in deine "
                  + "Belegbox. Es heißt NICHT, dass etwas gelöscht wird — deine "
-                 + "Belege, dein Kassenbuch und dein Konto bleiben, wie sie sind.")
+                 + "Belege, "
+                 + (Ausbaustufe.erreichbar(.kasse) ? "dein Kassenbuch " : "deine Dokumente ")
+                 + "und dein Konto bleiben, wie sie sind.")
         }
         // Die Rückfrage dazu hängt am Form, nicht hier: eine Section ist keine
         // eigene Ansicht, ihre Modifier landen je Zeile — und ein Alert je

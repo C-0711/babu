@@ -50,7 +50,7 @@ struct CaptureTab: View {
     }
 
     private var einrichtungsschritte: [Einrichtungsschritt] {
-        Einrichtung.schritte(
+        Einrichtung.sichtbareSchritte(
             kontoVerbunden: store.verbundenAls != nil && !store.zugangAbgelaufen,
             angaben: kontoAngaben,
             ersterBeleg: store.belege.contains { $0.istDemo != true },
@@ -95,7 +95,7 @@ struct CaptureTab: View {
                     Group {
                         switch welches {
                         case .konto: EinstellungenView()
-                        case .betrieb: BetriebsangabenView()
+                        case .betrieb: BetriebsprofilView()
                         }
                     }
                     // Beide Ansichten werden sonst geschoben und haben von
@@ -347,7 +347,9 @@ struct CaptureTab: View {
         case .konto: blatt = .konto
         case .betrieb, .steuernummer: blatt = .betrieb
         case .ersterBeleg: zeigeScanner = true
-        case .kassenbuch: store.tab = .kasse
+        // Diese Zeile steht nur im großen Bau — im schmalen filtert
+        // `sichtbareSchritte` sie weg, damit kein toter Knopf bleibt.
+        case .kassenbuch: if Ausbaustufe.erreichbar(Reiter.kasse) { store.tab = .kasse }
         }
     }
 

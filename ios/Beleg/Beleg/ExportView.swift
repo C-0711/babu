@@ -148,7 +148,11 @@ struct ExportView: View {
             angabe("Buchungen", enthalten.isEmpty
                    ? "keine" : "\(enthalten.count) · \(fmtEur(summe))")
             angabe("Belegfotos", "nein — nur die Buchungszeilen")
-            angabe("Kassenbuch", "nein — die Tagesblätter gehen einzeln")
+            // Das Kassenbuch gibt es nur im großen Bau — im schmalen wäre
+            // die Zeile eine Auskunft über etwas, das es nicht gibt.
+            if Ausbaustufe.erreichbar(.kasse) {
+                angabe("Kassenbuch", "nein — die Tagesblätter gehen einzeln")
+            }
             if ausserhalb > 0 {
                 Text(ausserhalb == 1
                      ? "Ein Beleg trägt ein Datum außerhalb dieses Monats."
@@ -297,7 +301,7 @@ struct ExportView: View {
         anbei die Buchungen für \(monatsName()).
 
         \(enthalten.count) Buchungen, zusammen \(fmtEur(summe)).
-        Belegfotos und Kassenbuch sind nicht in der Datei — die liegen in \
+        \(Ausbaustufe.erreichbar(.kasse) ? "Belegfotos und Kassenbuch sind" : "Belegfotos sind") nicht in der Datei — die liegen in \
         der Belegbox.
 
         Viele Grüße

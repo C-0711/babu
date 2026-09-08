@@ -734,17 +734,20 @@ extension AppStore {
     /// Belegbox, sind Auditmaterial und gehen eine App-Einstellung nichts
     /// an. Ein Zurücksetzen, das Belege löscht, wäre kein Testwerkzeug,
     /// sondern ein Unfall.
+    ///
+    /// Was hier steht, muss es auch geben: der schmale Bau kennt weder
+    /// Kassenberichte noch Rechnungsvorlagen, Kundinnen oder Termine.
     static let werkseinstellungGeht = [
         "Das Onboarding — der Begrüßungsbildschirm kommt wieder",
-        "Belege und Kassenberichte auf diesem Gerät",
-        "Chatverlauf und Rechnungsvorlagen",
+        Ausbaustufe.voll ? "Belege und Kassenberichte auf diesem Gerät"
+                         : "Belege auf diesem Gerät",
+        Ausbaustufe.voll ? "Chatverlauf und Rechnungsvorlagen" : "Dein Chatverlauf",
         "Deine Einrichtungsangaben (Betrieb, Steuernummer, Versteuerung)",
     ]
     static let werkseinstellungBleibt = [
         "Deine Anmeldung — du bleibst verbunden",
         "Deine Belegbox mit allen abgelegten Belegen",
-        "Kundinnen, Termine und Preise",
-    ]
+    ] + (Ausbaustufe.voll ? ["Kundinnen, Termine und Preise"] : [])
 
     /// Zurück auf Anfang, ohne das Konto zu verlieren.
     ///

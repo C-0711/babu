@@ -43,24 +43,14 @@ struct MainTabs: View {
     @EnvironmentObject var store: AppStore
 
     var body: some View {
+        // Welche Reiter es gibt, steht in `Ausbaustufe` — an einer Stelle für
+        // beide Bauarten. Der schmale Bau hat drei: Erfassen, Dokumente, Fragen.
         TabView(selection: $store.tab) {
-            CaptureTab()
-                .tabItem { Label("Erfassen", systemImage: "viewfinder") }
-                .tag(AppStore.Tab.erfassen)
-            ListeView()
-                // Nicht mehr nur Belege: Kontoauszüge, Verträge und Post
-                // vom Amt liegen hier ebenso, jedes in seiner Art.
-                .tabItem { Label("Dokumente", systemImage: "doc.text") }
-                .tag(AppStore.Tab.belege)
-            TermineTab()
-                .tabItem { Label("Termine", systemImage: "calendar") }
-                .tag(AppStore.Tab.termine)
-            KasseTab()
-                .tabItem { Label("Kassenbuch", systemImage: "banknote") }
-                .tag(AppStore.Tab.kasse)
-            FragenTab()
-                .tabItem { Label("Fragen", systemImage: "questionmark.bubble") }
-                .tag(AppStore.Tab.fragen)
+            ForEach(Ausbaustufe.reiter, id: \.self) { reiter in
+                inhalt(reiter)
+                    .tabItem { Label(reiter.titel, systemImage: reiter.symbol) }
+                    .tag(reiter.tab)
+            }
         }
         // Einmal beim Start fragen, als wer dieses Gerät angemeldet ist —
         // damit das Zeichen oben rechts von Anfang an die Wahrheit sagt und
@@ -70,6 +60,35 @@ struct MainTabs: View {
         .onOpenURL { url in
             store.tab = .erfassen
             store.geteilteDatei = url
+        }
+    }
+
+    /// Was hinter einem Reiter steckt.
+    @ViewBuilder
+    private func inhalt(_ reiter: Reiter) -> some View {
+        switch reiter {
+        case .erfassen:  CaptureTab()
+        // Nicht mehr nur Belege: Kontoauszüge, Verträge und Post vom Amt
+        // liegen hier ebenso, jedes in seiner Art.
+        case .dokumente: ListeView()
+        case .termine:   TermineTab()
+        case .kasse:     KasseTab()
+        case .fragen:    FragenTab()
+        }
+    }
+}
+
+extension Reiter {
+    /// Die Marke, die der Reiter im Zustand trägt. `AppStore.Tab` kennt mehr
+    /// Fälle als es Reiter gibt (alte gespeicherte Stände) — deshalb zwei
+    /// Aufzählungen und diese eine Übersetzung.
+    var tab: AppStore.Tab {
+        switch self {
+        case .erfassen:  return .erfassen
+        case .dokumente: return .belege
+        case .termine:   return .termine
+        case .kasse:     return .kasse
+        case .fragen:    return .fragen
         }
     }
 }

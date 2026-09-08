@@ -108,6 +108,20 @@ enum Einrichtung {
         ]
     }
 
+    /// Dieselben Schritte, aber nur die, die in DIESEM Bau irgendwohin führen.
+    ///
+    /// Das Kassenbuch gibt es nur im großen Bau. Im schmalen stünde die Zeile
+    /// da, ließe sich antippen und täte nichts — und „Kassenbuch begonnen"
+    /// bliebe für immer offen, sodass die Karte nie verschwände.
+    static func sichtbareSchritte(kontoVerbunden: Bool,
+                                  angaben: [String: String]?,
+                                  ersterBeleg: Bool,
+                                  kassenbuchBegonnen: Bool) -> [Einrichtungsschritt] {
+        schritte(kontoVerbunden: kontoVerbunden, angaben: angaben,
+                 ersterBeleg: ersterBeleg, kassenbuchBegonnen: kassenbuchBegonnen)
+            .filter { Ausbaustufe.voll || $0.ziel != .kassenbuch }
+    }
+
     /// Alles erledigt heißt: die Karte darf verschwinden und bleibt weg.
     static func alleErledigt(_ schritte: [Einrichtungsschritt]) -> Bool {
         !schritte.isEmpty && schritte.allSatisfy(\.istErledigt)

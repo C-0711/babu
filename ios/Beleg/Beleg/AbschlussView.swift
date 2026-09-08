@@ -67,12 +67,19 @@ struct AbschlussView: View {
         .foregroundStyle(GC.fg)
     }
 
+    /// Ohne Einnahmen keine Zahlen. Wo sie herkommen, hängt vom Bau ab: der
+    /// große hat das Kassenbuch, der schmale nur den Kontoauszug — und ein
+    /// Hinweis auf ein Kassenbuch, das es dort nicht gibt, wäre ein toter Rat.
     private var hinweisKarte: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Für diesen Monat fehlt dein Kassenbuch")
+            Text(Ausbaustufe.erreichbar(.kasse)
+                 ? "Für diesen Monat fehlt dein Kassenbuch"
+                 : "Für diesen Monat fehlen deine Einnahmen")
                 .font(.headline)
                 .fontDesign(.serif)
-            Text("Ohne die Tageseinnahmen können wir weder deine Zahlen noch die Umsatzsteuer rechnen. Trag sie im Kassenbuch ein — eine Zahl pro Frage.")
+            Text(Ausbaustufe.erreichbar(.kasse)
+                 ? "Ohne die Tageseinnahmen können wir weder deine Zahlen noch die Umsatzsteuer rechnen. Trag sie im Kassenbuch ein — eine Zahl pro Frage."
+                 : "Ohne sie können wir weder deine Zahlen noch die Umsatzsteuer rechnen. Fotografier deinen Kontoauszug — babu holt sich die Einnahmen daraus.")
                 .font(.footnote)
                 .foregroundStyle(GC.desc)
         }
