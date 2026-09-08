@@ -27,7 +27,7 @@ func pruefe(_ was: String, _ bedingung: Bool) {
 let schmaleReiter: [Reiter] = [.erfassen, .dokumente, .fragen]
 let schmalesMenue: [Kontomenuepunkt] = [
     .aufraeumen, .monatsabschluss, .export,   // das DATEV-Büchlein
-    .betrieb, .kontoauszug,                   // der Profilbauer
+    .betrieb, .vertraege, .kontoauszug,       // Profil, Papiere, Konto
     .wasBabuKann, .meldungen, .einstellungen, // das Konto selbst
 ]
 // Der volle heutige Umfang — hier darf nie etwas verschwinden.
@@ -65,10 +65,12 @@ if Ausbaustufe.voll {
     pruefe("kein Kassenbuch-Reiter", !Ausbaustufe.erreichbar(Reiter.kasse))
 
     print("— Konto-Menü —")
-    pruefe("genau die acht Zeilen des schmalen Baus",
+    pruefe("genau die neun Zeilen des schmalen Baus",
            Ausbaustufe.kontomenue == schmalesMenue)
+    // Verträge fehlen hier bewusst: sie BLEIBEN im schmalen Bau
+    // (Entscheidung 08.09.2026) und stehen deshalb in `schmalesMenue`.
     for weg in [Kontomenuepunkt.rechnungen, .vorlagen, .briefkopf, .kundinnen,
-                .preise, .kartenzahlung, .team, .vertraege, .marketing] {
+                .preise, .kartenzahlung, .team, .marketing] {
         pruefe("„\(weg.titel)“ steht nicht im Menü",
                !Ausbaustufe.erreichbar(weg))
     }

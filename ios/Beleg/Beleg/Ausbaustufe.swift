@@ -90,10 +90,14 @@ enum Kontomenuepunkt: String, CaseIterable, Hashable {
     var nurVoll: Bool {
         switch self {
         case .rechnungen, .vorlagen, .briefkopf, .kundinnen, .preise,
-             .kartenzahlung, .team, .vertraege, .marketing:
+             .kartenzahlung, .team, .marketing:
             return true
+        // Verträge und Versicherungen bleiben im schmalen Bau (Entscheidung
+        // des Auftraggebers, 08.09.2026). Ein Mietvertrag oder eine Police
+        // ist ein DOKUMENT, kein Salonbetrieb — und die Kündigungsfrist, an
+        // die babu erinnert, gehört zum Kern dessen, was es leisten soll.
         case .aufraeumen, .monatsabschluss, .export, .betrieb, .kontoauszug,
-             .wasBabuKann, .meldungen, .einstellungen:
+             .vertraege, .wasBabuKann, .meldungen, .einstellungen:
             return false
         }
     }
