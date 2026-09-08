@@ -22,12 +22,21 @@ def bw(tmp_path_factory):
     babu_web.PORTAL_DB = tmp_path_factory.mktemp("db") / "portal.db"
     babu_web.wer_token = lambda token: {"test-pat": "christoph0711.io"}.get(token)
     # rolle() ist seit dem fail-closed-Fallback (Plan 21, Abschnitt 7) ohne
-    # BABU_ROLLEN "salon" — dieses Modul testet gerade die Verwaltung, die
-    # laut Docstring oben "Rolle kanzlei" für den PAT-Weg voraussetzt.
+    # BABU_ROLLEN "salon" — dieses Modul testet gerade die Verwaltung und
+    # braucht den PAT-Weg deshalb mit einer Verwaltungsrolle.
+    #
+    # Seit 08.09.2026 steht hier `admin` statt `kanzlei`, und zwar weil es
+    # in der Produktion so ist: `BABU_ROLLEN` auf der H200V führt
+    # `christoph0711.io:admin`. Solange `_reichweite` einer Kanzlei ohne
+    # Mandanten noch Zugriff auf alles gab, fiel der Unterschied nicht auf;
+    # jetzt fällt er auf, und die Antwort ist, die Wirklichkeit abzubilden.
+    # Was eine Kanzlei für IHRE Mandanten darf, prüfen
+    # `test_passwort_reset.py` und `test_kanzlei_routen.py`.
+    #
     # Kein monkeypatch möglich (modulweite Fixture) — von Hand zurücksetzen,
     # damit es nicht in andere Testmodule dieses Prozesses durchschlägt.
     alte_rollen = babu_web.ROLLEN
-    babu_web.ROLLEN = {"christoph0711.io": "kanzlei"}
+    babu_web.ROLLEN = {"christoph0711.io": "admin"}
     yield babu_web
     babu_web.ROLLEN = alte_rollen
 

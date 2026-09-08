@@ -228,12 +228,20 @@ def test_bestehende_zugaenge_verlieren_die_box_nicht(welt):
 
 
 def test_verwaltung_richtet_die_box_ein(welt):
-    """Aus einer Registrierung wird ein echter Zugang — mit einem Schalter."""
+    """Aus einer Registrierung wird ein echter Zugang — mit einem Schalter.
+
+    Es ist der BETREIBER, der das tut: wer sich selbst registriert hat,
+    gehört noch zu keiner Kanzlei, also reicht auch keine Kanzlei an ihn
+    heran (siehe `test_kanzlei_ohne_mandanten_sieht_nur_sich_selbst`). Der
+    Weg einer Kanzlei zu einem neuen Betrieb ist
+    `POST /api/kanzlei/mandanten` — der legt die Mandantenzeile gleich mit
+    an, und damit die Zuständigkeit.
+    """
     bw = welt
     fremde = _fremde(bw, "neu@salon.de")
     assert fremde.get("/api/belege").status_code == 403
 
-    verwaltung = _inhaberin(bw)          # PAT-Zugang hat Rolle kanzlei
+    verwaltung = _admin(bw)
     r = verwaltung.post("/api/nutzer-aktion",
                         json={"email": "neu@salon.de", "aktion": "box_freigeben"})
     assert r.status_code == 200
@@ -299,8 +307,14 @@ def test_fremdes_konto_ohne_box_sieht_die_meldungsliste_nicht(welt):
 
 
 def test_von_der_verwaltung_angelegte_konten_haben_die_box(welt):
+    """Ein von Hand angelegter Zugang bekommt die Belegbox sofort — sonst
+    stünde die neue Kollegin vor einer verschlossenen Tür.
+
+    Auch das ist eine Betreiber-Handlung, aus demselben Grund wie in
+    `test_verwaltung_richtet_die_box_ein`.
+    """
     bw = welt
-    verwaltung = _inhaberin(bw)
+    verwaltung = _admin(bw)
     r = verwaltung.post("/api/nutzer", json={"email": "kollegin@kanzlei.de",
                                              "name": "Kollegin", "rolle": "salon"})
     assert r.status_code == 200
@@ -382,22 +396,64 @@ def test_salon_sieht_die_verwaltung_nicht(welt, methode, pfad, kwargs):
     assert r.status_code == 403, f"{pfad} steht einem Salon-Konto offen"
 
 
-def test_kanzlei_ohne_mandanten_hat_alt_verhalten(welt):
-    """Der heutige Ein-Betrieb (`christoph0711.io`, Rolle `kanzlei`, keine
-    einzige `kanzlei_mitglied`-Zeile) darf auf allen vier Routen genau wie
-    vor Plan 21 arbeiten — das ist die Zusicherung aus `_reichweite`:
-    ohne betreute Mandanten sieht ein Verwalter weiterhin alles."""
-    verwaltung = _inhaberin(welt)          # PAT-Zugang, Rolle kanzlei
-    assert verwaltung.get("/api/nutzer").status_code == 200
-    assert verwaltung.get("/api/registrierungen").status_code == 200
+def test_kanzlei_ohne_mandanten_sieht_nur_sich_selbst(welt):
+    """Eine Kanzlei ohne betreute Mandanten reicht nicht in fremde Betriebe.
 
-    r = verwaltung.post("/api/nutzer", json={
-        "email": "alt-verhalten@salon.de", "name": "Alt", "rolle": "salon"})
+    Bis 08.09.2026 stand hier das Gegenteil: `_reichweite` gab ohne
+    Mandanten `None` zurück, und `None` heißt in `_in_reichweite` nicht nur
+    „sehen", sondern „anfassen". Jeder NEU angelegte Kanzlei-Zugang konnte
+    damit ab Sekunde eins fremde Konten sperren und fremden Betrieben ein
+    Startpasswort vergeben. Begründet war die Ausnahme damit, dass sonst
+    Nina aus der Liste von `christoph0711.io` fiele — dieser Zugang ist
+    aber `admin` und wird eine Zeile früher abgefangen. Sie half also
+    niemandem.
+
+    Was bleibt: die Kanzlei sieht ihren eigenen Zugang. Der Betreiber
+    (`admin`) behält den globalen Blick, siehe
+    `test_admin_sieht_weiter_alle_konten`.
+    """
+    verwaltung = _kanzlei_ohne_mandanten(welt)
+
+    # Die Listen bleiben offen — aber sie sind leer bis auf den eigenen Zugang.
+    r = verwaltung.get("/api/nutzer")
     assert r.status_code == 200, r.text
+    fremde = [n["email"] for n in r.json().get("nutzer", [])
+              if n["email"] != "kanzlei-ohne@buero.de"]
+    assert fremde == [], f"sieht fremde Konten: {fremde}"
 
+    # Und sie fasst niemanden an, den sie nicht betreut.
+    welt.nutzer_anlegen("fremder@salon.de", "Fremd", "Fremder Salon", "salon")
     r = verwaltung.post("/api/nutzer-aktion", json={
-        "email": "alt-verhalten@salon.de", "aktion": "box_sperren"})
+        "email": "fremder@salon.de", "aktion": "box_sperren"})
+    assert r.status_code == 403, r.text
+
+
+def test_admin_sieht_weiter_alle_konten(welt):
+    """Die Gegenprobe zur vorigen Prüfung: der Betreiber betreibt die
+    Plattform, nicht einen Betrieb — sein Blick bleibt global."""
+    welt.nutzer_anlegen("fremder@salon.de", "Fremd", "Fremder Salon", "salon")
+    betreiber = _admin(welt)
+    r = betreiber.get("/api/nutzer")
     assert r.status_code == 200, r.text
+    assert "fremder@salon.de" in [n["email"] for n in r.json().get("nutzer", [])]
+
+
+def _kanzlei_ohne_mandanten(bw):
+    """Ein frisch angelegter Kanzlei-Zugang, der noch keinen Betrieb betreut.
+
+    Genau der Fall, den `_reichweite` bis 08.09.2026 zu mächtig machte —
+    und genau der Fall, der bei jedem neuen Steuerbüro als Erstes entsteht.
+    """
+    passwort = "kanzlei-passwort-lang-genug"
+    bw.nutzer_anlegen("kanzlei-ohne@buero.de", "Neues Büro", "", "kanzlei",
+                      passwort=passwort)
+    client = _neuer_client(bw)
+    bw._LOGIN_VERSUCHE.clear()
+    r = client.post("/api/login", json={"email": "kanzlei-ohne@buero.de",
+                                        "passwort": passwort})
+    assert r.status_code == 200, r.text
+    assert r.json()["rolle"] == "kanzlei"
+    return client
 
 
 def _admin(bw):

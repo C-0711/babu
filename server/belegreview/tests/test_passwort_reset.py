@@ -176,6 +176,21 @@ def _login(bw, email, passwort):
     return client
 
 
+def _betreut(bw, kanzlei_un, salon_un, name="Betreuter Salon"):
+    """Die Kanzlei nimmt diesen Betrieb als Mandanten an.
+
+    Ohne diese Zeile reicht sie seit 08.09.2026 nicht an ihn heran, und das
+    ist der Sinn der Sache: bis dahin gab `_reichweite` einer Kanzlei OHNE
+    Mandanten Zugriff auf jeden Betrieb im System. Die Prüfungen hier
+    testen den Reset-Weg — nicht das Loch — also stellen sie die
+    Zuständigkeit her, statt sie vorauszusetzen.
+    """
+    import mandanten
+    kid = mandanten.kanzlei_anlegen(f"Büro {kanzlei_un}", kanzlei_un)
+    mandanten.mandant_anlegen(kid, name, salon_un)
+    return kid
+
+
 # ————— Wer ein Klartext-Startpasswort bekommt —————
 
 def test_admin_bekommt_immer_das_startpasswort(welt):
@@ -211,6 +226,7 @@ def test_kanzlei_bekommt_fuer_fremden_salon_nur_einen_link(welt):
     bw = welt
     _, kanzlei_pw = _konto(bw, "kanzlei@babu.local", "kanzlei")
     _konto(bw, "inhaberin@fremder-salon.de", "salon")
+    _betreut(bw, "kanzlei@babu.local", "inhaberin@fremder-salon.de")
     kanzlei = _login(bw, "kanzlei@babu.local", kanzlei_pw)
 
     r = kanzlei.post("/api/nutzer-aktion",
@@ -227,6 +243,7 @@ def test_der_link_setzt_das_passwort_und_gilt_nur_einmal(welt):
     bw = welt
     _, kanzlei_pw = _konto(bw, "kanzlei@babu.local", "kanzlei")
     _konto(bw, "inhaberin@fremder-salon.de", "salon", passwort="das-alte-passwort")
+    _betreut(bw, "kanzlei@babu.local", "inhaberin@fremder-salon.de")
     kanzlei = _login(bw, "kanzlei@babu.local", kanzlei_pw)
     link = kanzlei.post(
         "/api/nutzer-aktion",
@@ -262,6 +279,7 @@ def test_ein_abgelaufener_link_wird_am_einloesen_abgelehnt(welt):
     bw = welt
     _, kanzlei_pw = _konto(bw, "kanzlei@babu.local", "kanzlei")
     _konto(bw, "inhaberin@fremder-salon.de", "salon")
+    _betreut(bw, "kanzlei@babu.local", "inhaberin@fremder-salon.de")
     kanzlei = _login(bw, "kanzlei@babu.local", kanzlei_pw)
     link = kanzlei.post(
         "/api/nutzer-aktion",
@@ -297,6 +315,7 @@ def test_anfordern_wird_gebremst(welt):
     bw = welt
     _, kanzlei_pw = _konto(bw, "kanzlei@babu.local", "kanzlei")
     _konto(bw, "inhaberin@fremder-salon.de", "salon")
+    _betreut(bw, "kanzlei@babu.local", "inhaberin@fremder-salon.de")
     kanzlei = _login(bw, "kanzlei@babu.local", kanzlei_pw)
 
     letzte = None
@@ -331,6 +350,7 @@ def test_eingeloeste_zeilen_werden_beim_naechsten_anfordern_aufgeraeumt(welt):
     bw = welt
     _, kanzlei_pw = _konto(bw, "kanzlei@babu.local", "kanzlei")
     _konto(bw, "inhaberin@fremder-salon.de", "salon")
+    _betreut(bw, "kanzlei@babu.local", "inhaberin@fremder-salon.de")
     kanzlei = _login(bw, "kanzlei@babu.local", kanzlei_pw)
 
     link = kanzlei.post(
@@ -364,6 +384,7 @@ def test_der_link_gibt_kein_konto_frei_das_es_nicht_gab(welt):
     bw = welt
     _, kanzlei_pw = _konto(bw, "kanzlei@babu.local", "kanzlei")
     _konto(bw, "inhaberin@fremder-salon.de", "salon")
+    _betreut(bw, "kanzlei@babu.local", "inhaberin@fremder-salon.de")
     kanzlei = _login(bw, "kanzlei@babu.local", kanzlei_pw)
     link = kanzlei.post(
         "/api/nutzer-aktion",

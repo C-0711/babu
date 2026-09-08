@@ -210,6 +210,13 @@ def test_details_enthalten_kein_geheimes_reset_token(welt):
     bw = welt
     _, kanzlei_pw = _konto(bw, "kanzlei@babu.local", "kanzlei")
     _konto(bw, "fremd@anderer-salon.de", "salon")
+    # Die Kanzlei betreut diesen Betrieb — seit 08.09.2026 reicht sie sonst
+    # gar nicht an ihn heran (`_reichweite`). Geprüft wird hier der Inhalt
+    # des Protokolls, nicht die Grenze.
+    import mandanten
+    mandanten.mandant_anlegen(
+        mandanten.kanzlei_anlegen("Büro", "kanzlei@babu.local"),
+        "Anderer Salon", "fremd@anderer-salon.de")
     verwaltung = _login(bw, "kanzlei@babu.local", kanzlei_pw)
 
     r = verwaltung.post("/api/nutzer-aktion",

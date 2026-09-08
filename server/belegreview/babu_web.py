@@ -4379,11 +4379,13 @@ def _verwalter_box_wache(request: Request):
 # Der Betreiber (`admin`) behält den globalen Blick — er betreibt die
 # Plattform, nicht einen Betrieb.
 #
-# Und der heutige Ein-Betrieb bleibt Zeile für Zeile, wie er ist: wer in
-# GAR KEINER Kanzlei Mitglied ist, sieht wie bisher alles. Ohne diese
-# Ausnahme verschwände Nina aus der Verwaltungsliste von christoph0711.io,
-# sobald diese Zeilen live gehen — es gibt dort ja weder `kanzlei`- noch
-# `mandant`-Zeilen, aus denen eine Reichweite käme.
+# Bis 08.09.2026 stand hier eine Ausnahme: wer in GAR KEINER Kanzlei
+# Mitglied ist, sieht alles. Sie sollte verhindern, dass Nina aus der
+# Verwaltungsliste von `christoph0711.io` verschwindet — aber dieser Zugang
+# ist `admin` (BABU_ROLLEN, auf der H200V nachgesehen) und wird schon eine
+# Zeile darüber abgefangen. Die Ausnahme half also niemandem und gab jedem
+# NEUEN Kanzlei-Zugang ab Sekunde eins die Macht, fremde Konten
+# abzuschalten und fremde Startpasswörter zu vergeben. Sie ist raus.
 # ---------------------------------------------------------------------------
 
 def _meine_mandanten(un: str) -> list[dict]:
@@ -4396,12 +4398,11 @@ def _reichweite(un: str) -> set[str] | None:
     """Welche Betriebe darf dieser Verwalter sehen? `None` heißt: alle."""
     if rolle(un) == "admin":
         return None
-    meine = _meine_mandanten(un)
-    if not meine:
-        return None
     # Der eigene Betrieb gehört dazu — sonst fiele der Zugang, mit dem
     # gerade jemand arbeitet, aus seiner eigenen Verwaltungsliste heraus.
-    return {salon_von_aktiv(un)} | {m["besitzer_un"] for m in meine}
+    # Ohne Mandanten bleibt genau er übrig: eine Kanzlei ohne Mandat sieht
+    # sich selbst, nicht die Betriebe der anderen.
+    return {salon_von_aktiv(un)} | {m["besitzer_un"] for m in _meine_mandanten(un)}
 
 
 def _in_reichweite(un: str, ziel_un: str) -> bool:
