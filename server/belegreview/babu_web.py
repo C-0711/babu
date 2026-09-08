@@ -1188,9 +1188,7 @@ def _index_bauen(head: str) -> None:
             oid_cache[oid] = None
     dokumente: list[dict] = []
     for pfad, oid in pfade.items():
-        if not pfad.startswith("dokumente/") or pfad.endswith(".meta.json") \
-                or pfad.endswith(".erklaerung.json") \
-                or pfad.endswith(".vertrag.json"):
+        if not pfad.startswith("dokumente/") or pfad.endswith(DOKUMENT_BEIAKTEN):
             continue
         meta = oid_cache.get(meta_pfade.get(pfad + ".meta.json", "")) or {}
         erklaerung = oid_cache.get(erklaerung_pfade.get(pfad + ".erklaerung.json", ""))
@@ -3180,6 +3178,117 @@ def _beleg_vektoren() -> tuple[list[str], object]:
     return staemme, matrix
 
 
+def dokument_markdown(pfad: str, meta: dict | None,
+                      erklaerung: dict | None, vertrag: dict | None) -> str:
+    """Der Text eines Dokuments — für die Einbettung UND fürs Zitieren.
+
+    Dasselbe Prinzip wie `beleg_markdown`: EIN Text für zwei Leser. Was die
+    Suche findet, ist exakt das, was der Chat danach im Wortlaut zitiert und
+    was ein Mensch in der Dokumentenliste liest.
+
+    Warum es das braucht: bis 08.09.2026 wurden nur Belege und das
+    Kompendium eingebettet. Verträge und Post vom Amt wurden gelesen und
+    erklärt — aber der Chat konnte sie nicht finden. In Ninas Box gemessen:
+    276 von 276 Belegen mit Vektor, 13 Dokumente mit null.
+
+    Kontoauszüge bleiben bewusst draußen: ihr Inhalt ist eine Umsatzliste,
+    keine Prosa, und sie steht dem Chat ohnehin monatsweise im Weltblock zur
+    Verfügung. Ein Vektor über Buchungszeilen fände nichts, was dort nicht
+    schon stünde.
+    """
+    m, e, v = meta or {}, erklaerung or {}, vertrag or {}
+    name = pfad.rsplit("/", 1)[-1]
+    kopf = [f"# {m.get('titel') or name}", "",
+            f"- Art: {m.get('art') or 'dokument'}"]
+    if e.get("absender") or m.get("absender"):
+        kopf.append(f"- Von: {e.get('absender') or m.get('absender')}")
+    if e.get("datum") or m.get("datum"):
+        kopf.append(f"- Datum: {e.get('datum') or m.get('datum')}")
+    if v.get("partner"):
+        kopf.append(f"- Vertragspartner: {v['partner']}")
+    if v.get("betrag_monat"):
+        kopf.append(f"- Betrag: {v['betrag_monat']} € {v.get('zahlweise') or ''}".strip())
+    if v.get("kuendigungsfrist"):
+        kopf.append(f"- Kündigungsfrist: {v['kuendigungsfrist']}")
+    if v.get("laufzeit_bis"):
+        kopf.append(f"- Läuft bis: {v['laufzeit_bis']}")
+    absaetze = [str(x).strip() for x in
+                (e.get("einfach"), e.get("was_tun"), e.get("bis_wann"),
+                 v.get("einfach")) if str(x or "").strip()]
+    return "\n".join(kopf) + ("\n\n" + "\n\n".join(absaetze) if absaetze else "") + "\n"
+
+
+def _dokument_beiakte(pfad: str, endung: str) -> dict | None:
+    roh = git_show(pfad + endung)
+    try:
+        return json.loads(roh) if roh else None
+    except ValueError:
+        return None
+
+
+def _dokument_text(pfad: str) -> str | None:
+    """Der Text zu einem Dokumentpfad, aus seinen Beiakten gebaut."""
+    meta = _dokument_beiakte(pfad, ".meta.json")
+    erk = _dokument_beiakte(pfad, ".erklaerung.json")
+    ver = _dokument_beiakte(pfad, ".vertrag.json")
+    if not (meta or erk or ver):
+        return None
+    return dokument_markdown(pfad, meta, erk, ver)
+
+
+def _dokument_vektoren() -> tuple[list[str], object]:
+    """Alle Dokument-Vektoren der Box als Matrix — wie `_beleg_vektoren`."""
+    b = _box()
+    stand = b.dokument_vektoren
+    r = subprocess.run(["git", "-C", str(b.store), "rev-parse", "HEAD"],
+                       capture_output=True, text=True, timeout=10)
+    head = r.stdout.strip() or None
+    if head and stand["kopf"] == head:
+        return stand["pfade"], stand["matrix"]
+    import numpy as np  # noqa: PLC0415
+    ls = subprocess.run(["git", "-C", str(b.store), "ls-tree", "-r",
+                         "--name-only", "HEAD", "dokumente"],
+                        capture_output=True, text=True, timeout=20)
+    pfade: list[str] = []
+    vektoren = []
+    for name in (ls.stdout.splitlines() if ls.returncode == 0 else []):
+        if not name.endswith(".embedding.json"):
+            continue
+        try:
+            v = np.asarray(json.loads(git_show(name))["vektor"], dtype=np.float32)
+            norm = float(np.linalg.norm(v))
+        except Exception:  # noqa: BLE001
+            continue
+        if norm > 0:
+            pfade.append(name[:-len(".embedding.json")])
+            vektoren.append(v / norm)
+    matrix = np.vstack(vektoren) if vektoren else None
+    stand.update(kopf=head, pfade=pfade, matrix=matrix)
+    return pfade, matrix
+
+
+def dokument_vektor_ablegen(pfad: str, un: str) -> bool:
+    """Den Vektor eines Dokuments nachziehen — nach jedem Lesejob.
+
+    Rückgabe sagt, ob geschrieben wurde. Ein fehlender Embedding-Dienst ist
+    kein Grund, den Vertrag oder die Erklärung zu verwerfen: der Nachtrag
+    (`backfill_embeddings.py`) holt ihn später.
+    """
+    import boxschreiber  # noqa: PLC0415
+    text = _dokument_text(pfad)
+    if not text:
+        return False
+    emb = embedding_rechnen(text)
+    if not emb:
+        print(f"[embed] {pfad}: kein Vektor (Dienst schläft?)", flush=True)
+        return False
+    boxschreiber.schreiben(
+        _box(), pfad + ".embedding.json",
+        json.dumps(emb, ensure_ascii=False).encode(),
+        f"embedding: {pfad.rsplit('/', 1)[-1]}", un)
+    return True
+
+
 def _wissen_beiakten() -> dict[str, dict]:
     """Titel und Thema je hochgeladenem Wissens-Dokument, aus den `.meta.json`.
 
@@ -3322,6 +3431,29 @@ def _recherche(frage: str) -> str:
         if volle:
             bloecke.append("ZUR FRAGE PASSENDE EIGENE BELEGE (im Wortlaut):\n\n"
                            + "\n\n".join(volle))
+    # Dieselbe Suche über die Unterlagen: Verträge und Post vom Amt. Sie
+    # wurden immer schon gelesen und erklärt, waren aber für den Chat nicht
+    # auffindbar — in Ninas Box 13 Dokumente ohne einen einzigen Vektor.
+    try:
+        dok_pfade, dok_matrix = _dokument_vektoren()
+    except Exception:  # noqa: BLE001
+        dok_pfade, dok_matrix = [], None
+    if dok_matrix is not None:
+        import numpy as np  # noqa: PLC0415
+        q = np.asarray(emb["vektor"], dtype=np.float32)
+        q /= np.linalg.norm(q)
+        scores = dok_matrix @ q
+        volle = []
+        for i in np.argsort(-scores)[:3]:
+            if scores[i] < 0.35:
+                break
+            text = _dokument_text(dok_pfade[i])
+            if text:
+                volle.append(text[:900])
+        if volle:
+            bloecke.append("ZUR FRAGE PASSENDE EIGENE UNTERLAGEN "
+                           "(Verträge, Post vom Amt — im Wortlaut):\n\n"
+                           + "\n\n".join(volle))
     return "\n\n".join(bloecke)
 
 
@@ -3427,7 +3559,8 @@ def api_dokument(pfad: str, request: Request) -> Response:
 
 
 # Sidecars eines Dokuments — beim Löschen gehen sie mit.
-DOKUMENT_BEIAKTEN = (".meta.json", ".erklaerung.json", ".vertrag.json")
+DOKUMENT_BEIAKTEN = (".meta.json", ".erklaerung.json", ".vertrag.json",
+                     ".embedding.json")
 
 
 @app.post("/api/dokument-loeschen")
@@ -7570,6 +7703,8 @@ def _vertrag_job(pfad: str, daten: bytes, name: str, un: str) -> None:
             pfad + ".vertrag.json",
             json.dumps(vertrag, ensure_ascii=False, indent=1).encode(),
             f"vertrag: {name}", un)
+        # Der Vertrag ist jetzt lesbar — also auch auffindbar machen.
+        dokument_vektor_ablegen(pfad, un)
         with _box().index_schloss:
             _box().invalidieren()
     except Exception as e:  # noqa: BLE001
@@ -7585,6 +7720,7 @@ def _brief_job(pfad: str, daten: bytes, name: str, un: str) -> None:
             pfad + ".erklaerung.json",
             json.dumps(erklaerung, ensure_ascii=False, indent=1).encode(),
             f"erklaerung: {name}", un)
+        dokument_vektor_ablegen(pfad, un)
         with _box().index_schloss:
             _box().invalidieren()
     except Exception as e:  # noqa: BLE001

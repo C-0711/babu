@@ -97,6 +97,13 @@ class Box:
     beleg_vektoren: dict = field(
         default_factory=lambda: {"kopf": None, "staemme": [], "matrix": None},
         repr=False)
+    # Dasselbe für die Dokumente (Verträge, Post vom Amt). Eigener Stand
+    # statt einer gemeinsamen Matrix: die beiden Bestände wachsen getrennt,
+    # werden getrennt nachgetragen, und im Chat sollen sie getrennt zitiert
+    # werden („passende Belege" gegen „passende Unterlagen").
+    dokument_vektoren: dict = field(
+        default_factory=lambda: {"kopf": None, "pfade": [], "matrix": None},
+        repr=False)
     blob_stand: dict = field(default_factory=lambda: {"kopf": None, "pfade": {}},
                              repr=False)
     seiten_cache: dict = field(default_factory=dict, repr=False)
