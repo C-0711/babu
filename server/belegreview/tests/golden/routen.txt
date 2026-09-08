@@ -59,6 +59,8 @@ GET /api/monatslauf
 GET /api/nutzer
 GET /api/onboarding/{marke}
 GET /api/onboarding/{marke}/vertrag/text
+GET /api/posteingang/adresse/{mandant_id}
+GET /api/posteingang/aufloesen
 GET /api/rechnungen
 GET /api/registrierungen
 GET /api/rueckmeldungen
@@ -164,6 +166,8 @@ POST /api/onboarding/{marke}/ausweis-bild
 POST /api/onboarding/{marke}/{schritt_id}
 POST /api/passwort
 POST /api/passwort-reset
+POST /api/posteingang/adresse/{mandant_id}
+POST /api/posteingang/adresse/{mandant_id}/stilllegen
 POST /api/rechnung/{nummer}/bezahlt
 POST /api/rechnung/{nummer}/pdf
 POST /api/rechnung/{nummer}/storno
