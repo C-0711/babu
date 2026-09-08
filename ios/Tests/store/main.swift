@@ -84,6 +84,41 @@ Task { @MainActor in
         }
     }
 
+    // ————— Ein Konto ohne Ablage sagt nicht „alles bereit" —————
+    //
+    // Bis 08.09.2026 galt jeder Status außer 401 als gewöhnlicher
+    // Fehlschlag: der Beleg landete auf dem Wiederhol-Stapel und ging bei
+    // JEDEM App-Start erneut los, obwohl der Server ihn nie annehmen
+    // konnte. Ein selbst angelegtes Konto (noch ohne Ablage) trifft das
+    // immer.
+    print("— Konto ohne Ablage —")
+    do {
+        let store = AppStore()
+        store.ablageAktiv = true
+        store.zugangAbgelaufen = false
+
+        store.pruefeZugang(.keineAblage)
+        pruefe(store.ablageFehlt, "403/409 heißt: die Ablage fehlt noch")
+        pruefe(!store.ablageAktiv, "und die App hört auf zu klopfen")
+        pruefe(!store.zugangAbgelaufen,
+               "der Zugang selbst gilt weiter — das ist kein Anmeldeproblem")
+
+        // Ist die Ablage da, verschwindet der Zustand von selbst wieder.
+        store.pruefeZugang(.uebertragen)
+        pruefe(!store.ablageFehlt, "ein geglückter Upload räumt den Hinweis weg")
+
+        // Ein echter Serverfehler bleibt ein Fehler und wird weiter versucht.
+        store.ablageAktiv = true
+        store.pruefeZugang(.abgelehnt(500))
+        pruefe(store.ablageAktiv && !store.ablageFehlt,
+               "500 ist keine fehlende Ablage")
+
+        // Und ein abgelaufener Zugang bleibt ein abgelaufener Zugang.
+        store.pruefeZugang(.tokenFehler)
+        pruefe(store.zugangAbgelaufen && !store.ablageFehlt,
+               "401 bleibt „bitte neu verbinden\"")
+    }
+
     print("")
     if fehler > 0 { print("\(fehler) Prüfung(en) fehlgeschlagen."); exit(1) }
     print("Alle Prüfungen bestanden.")

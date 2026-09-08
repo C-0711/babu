@@ -1598,6 +1598,27 @@ def _eigener_mandant(un: str) -> tuple[int | None, JSONResponse | None]:
     return int(meine[0]["id"]), None
 
 
+def _hat_ablage(un: str) -> bool:
+    """Kann dieser Zugang gerade wirklich einen Beleg ablegen?
+
+    Dieselbe Kette wie beim Hochladen, nur ohne Request: erst der eigene
+    Mandant, dann dessen `box_ref`, sonst die Mitgliedschaft an der
+    Default-Box. Beantwortet die Frage, die die App stellen muss, bevor sie
+    „alles bereit" sagt — und zwar so, wie der Server sie beim nächsten
+    Beleg beantworten wird, nicht anhand des Flags `nutzer.box`.
+    """
+    eigener, fehler = _eigener_mandant(un)
+    if fehler is not None:
+        return False               # mehrdeutig — auch das ist „noch nicht"
+    if eigener is not None:
+        try:
+            bx.box_von(un, eigener)
+        except bx.KeineBox:
+            return False
+        return True
+    return box_mitglied(un)
+
+
 def _box_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]:
     """Zusätzlich zur Anmeldung: Diese Belegbox muss ihm auch gehören.
 
@@ -1756,7 +1777,18 @@ def api_app_anmelden(body: dict, request: Request) -> Response:
         c.execute("UPDATE nutzer SET letzter_login=? WHERE email=?",
                   (_jetzt_iso(), email))
     print(f"[app] Gerät verbunden: {email} ({geraet or 'ohne Namen'})", flush=True)
-    return JSONResponse({"schluessel": token, "un": email, "rolle": n["rolle"]})
+    # `box` sagt, ob es für dieses Konto überhaupt schon eine Ablage gibt.
+    # Ohne dieses Feld meldete die App nach jeder geglückten Anmeldung
+    # „Verbunden ✓ — alles bereit", auch wenn der Server jeden Upload mit
+    # 403 oder 409 abweist — und legte den Beleg dann bei jedem Start
+    # wieder auf den Stapel. Ein selbst registriertes Konto (`/api/signup`,
+    # `box=False`) trifft das immer.
+    #
+    # Gefragt wird dieselbe Auflösung wie beim Hochladen, nicht das Flag
+    # `nutzer.box`: entscheidend ist, was der Server beim nächsten Beleg
+    # tatsächlich tut.
+    return JSONResponse({"schluessel": token, "un": email, "rolle": n["rolle"],
+                         "box": _hat_ablage(email)})
 
 
 @app.post("/api/passwort")

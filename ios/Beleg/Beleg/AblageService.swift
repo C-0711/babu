@@ -13,6 +13,13 @@ import Security
 enum AblageErgebnis: Equatable {
     case uebertragen          // 2xx — bzw. beim Verbindungstest: Server + Token OK
     case tokenFehler          // 401
+    /// 403/409 — der Zugang stimmt, aber es gibt (noch) keine Ablage für
+    /// ihn. Das war bis 08.09.2026 ein `abgelehnt(403)` und damit ein
+    /// gewöhnlicher Fehlschlag: der Beleg landete auf dem Wiederhol-Stapel
+    /// und wurde bei JEDEM App-Start erneut geschickt, obwohl sich daran
+    /// nie etwas ändern konnte. Als eigener Fall kann die App stattdessen
+    /// aufhören zu klopfen und es sagen.
+    case keineAblage
     case abgelehnt(Int)       // sonstiger HTTP-Status
     case nichtErreichbar      // Netzfehler (kein WLAN, falsches Netz, Timeout)
 }
@@ -88,6 +95,7 @@ enum AblageService {
             switch http.statusCode {
             case 200..<300: return (.uebertragen, daten)
             case 401: return (.tokenFehler, nil)
+            case 403, 409: return (.keineAblage, daten)
             default: return (.abgelehnt(http.statusCode), nil)
             }
         } catch {

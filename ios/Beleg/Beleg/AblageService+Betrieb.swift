@@ -205,9 +205,14 @@ extension AblageService {
     /// Konto-Anmeldung der App: E-Mail + Passwort → Geräteschlüssel.
     /// Der Schlüssel kommt genau einmal zurück und wandert in die Keychain —
     /// die Nutzerin sieht ihn nie.
+    ///
+    /// `ablage` sagt, ob es fuer dieses Konto ueberhaupt schon eine Ablage
+    /// gibt. Ohne diese Auskunft meldete die App nach jeder geglueckten
+    /// Anmeldung „alles bereit" — auch dann, wenn der Server jeden Beleg
+    /// abweist, weil die Ablage noch eingerichtet wird.
     static func appAnmelden(email: String, passwort: String, geraet: String,
                             basis: URL) async -> (schluessel: String?, un: String?,
-                                                  fehler: String?) {
+                                                  ablage: Bool, fehler: String?) {
         var request = URLRequest(url: basis.appendingPathComponent("api/app-anmelden"))
         request.httpMethod = "POST"
         request.timeoutInterval = 30
@@ -219,12 +224,16 @@ extension AblageService {
             let code = (antwort as? HTTPURLResponse)?.statusCode ?? 0
             let json = (try? JSONSerialization.jsonObject(with: daten)) as? [String: Any]
             if code == 200, let schluessel = json?["schluessel"] as? String {
-                return (schluessel, json?["un"] as? String, nil)
+                // Ältere Server kennen das Feld nicht — dort gilt weiter,
+                // was bis 08.09.2026 überall galt: Anmeldung geglückt heißt
+                // Ablage da.
+                let ablage = json?["box"] as? Bool ?? true
+                return (schluessel, json?["un"] as? String, ablage, nil)
             }
-            return (nil, nil, json?["fehler"] as? String
+            return (nil, nil, false, json?["fehler"] as? String
                     ?? "Das hat gerade nicht geklappt — später noch einmal versuchen.")
         } catch {
-            return (nil, nil, "Gerade keine Verbindung — Internet prüfen und noch einmal versuchen.")
+            return (nil, nil, false, "Gerade keine Verbindung — Internet prüfen und noch einmal versuchen.")
         }
     }
 

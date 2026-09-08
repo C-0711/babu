@@ -43,6 +43,11 @@ final class AppStore: ObservableObject {
     /// Der Server hat den Zugang abgelehnt (Konto abgeschaltet oder Schlüssel
     /// zurückgezogen). Dann darf die App nicht weiter „Verbunden ✓" behaupten.
     @Published var zugangAbgelaufen = false
+    /// Angemeldet, aber es gibt noch keine Ablage für diesen Betrieb (der
+    /// Server antwortet 403/409). Nicht persistiert: die Antwort kommt beim
+    /// nächsten Aufruf ohnehin wieder, und ein gespeichertes „fehlt" wäre
+    /// falsch, sobald die Ablage eingerichtet ist.
+    @Published var ablageFehlt = false
     /// Die Rolle des angemeldeten Kontos — „salon" oder „mitarbeit".
     /// Wird beim Nachfragen mitgeliefert und im Konto angezeigt, damit
     /// sichtbar ist, WOMIT man angemeldet ist, nicht nur DASS.
@@ -670,7 +675,10 @@ final class AppStore: ObservableObject {
             let ergebnis = await AblageService.verbindungstest(basis: url, pat: pat)
             switch ergebnis {
             case .tokenFehler: self.zugangAbgelaufen = true
-            case .uebertragen: self.zugangAbgelaufen = false
+            case .uebertragen:
+                self.zugangAbgelaufen = false
+                self.ablageFehlt = false
+            case .keineAblage: self.pruefeZugang(ergebnis)
             default: break   // offline sagt nichts über den Zugang aus
             }
         }
@@ -679,10 +687,20 @@ final class AppStore: ObservableObject {
     /// Sagt der Server „dein Zugang gilt nicht", hört die App auf, das
     /// Gegenteil zu behaupten — sonst wandern Belege still ins Leere.
     func pruefeZugang(_ ergebnis: AblageErgebnis) {
-        if ergebnis == .tokenFehler {
+        switch ergebnis {
+        case .tokenFehler:
             zugangAbgelaufen = true
-        } else if ergebnis == .uebertragen {
+        case .uebertragen:
             zugangAbgelaufen = false
+            ablageFehlt = false
+        case .keineAblage:
+            // Der Zugang stimmt, die Ablage fehlt. Weiter zu klopfen ändert
+            // daran nichts — also aufhören und es sagen. Die Fotos bleiben
+            // auf dem Gerät und gehen los, sobald die Ablage da ist.
+            ablageFehlt = true
+            ablageAktiv = false
+        default:
+            break
         }
     }
 

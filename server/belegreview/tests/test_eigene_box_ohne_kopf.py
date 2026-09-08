@@ -242,3 +242,45 @@ def test_der_kopf_schlaegt_den_eigenen_mandanten(welt):
     fremd = mandanten.mandant_anlegen(dritte, "Salon Fremd", "fremd@salon.de")
     r = client.get("/api/belege", headers={"X-Mandant": str(fremd)})
     assert r.status_code == 403, r.text
+
+
+# ————— Was die App beim Anmelden erfährt —————
+
+def test_das_anmelden_sagt_ob_es_schon_eine_ablage_gibt(welt):
+    """`POST /api/app-anmelden` trägt seit 08.09.2026 ein Feld `box`.
+
+    Ohne dieses Feld meldete die App nach jeder geglückten Anmeldung
+    „Verbunden ✓ — alles bereit", setzte `ablageAktiv` und schickte jeden
+    Beleg gegen eine Wand — bei jedem App-Start aufs Neue, denn 403 galt
+    ihr nicht als Zugangsproblem. Ein selbst registriertes Konto
+    (`/api/signup` legt `box=False` an) trifft das immer.
+    """
+    from fastapi.testclient import TestClient
+    bw = welt["bw"]
+    client = TestClient(bw.app, base_url="https://testserver")
+
+    def anmelden(email):
+        bw._LOGIN_VERSUCHE.clear()  # noqa: SLF001
+        r = client.post("/api/app-anmelden",
+                        json={"email": email, "passwort": PASSWORT,
+                              "geraet": "iPhone"})
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    assert anmelden(welt["anna"])["box"] is True     # Mandat mit Box
+    assert anmelden(welt["ohne"])["box"] is False    # Box wird eingerichtet
+    assert anmelden(welt["allein"])["box"] is True   # Default-Box wie heute
+
+
+def test_ohne_ablage_gibt_das_hochladen_kein_gewoehnliches_nein(welt):
+    """409, nicht 403: „hier fehlt noch etwas" ist kein „du darfst nicht".
+
+    Die App unterscheidet daran, ob sie es weiter versuchen soll — 401
+    heißt neu verbinden, 403/409 heißt aufhören zu klopfen und es sagen.
+    """
+    bw = welt["bw"]
+    r = _login(bw, welt["ohne"]).post(
+        "/api/aufnahme", params={"name": "bon.jpg", "text": BON},
+        content=b"\xff\xd8\xff\xe0bild")
+    assert r.status_code == 409, r.text
+    assert "eingerichtet" in r.json()["fehler"]

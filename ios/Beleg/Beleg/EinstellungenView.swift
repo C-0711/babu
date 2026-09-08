@@ -316,12 +316,23 @@ struct EinstellungenView: View {
                 KeychainHelfer.speicherePAT(schluessel)
                 verbunden = true
                 store.verbundenAls = ergebnis.un
-                store.ablageAktiv = true
                 store.zugangAbgelaufen = false
+                store.ablageFehlt = !ergebnis.ablage
+                store.ablageAktiv = ergebnis.ablage
                 email = ""
                 passwort = ""
-                testErgebnis = "Verbunden ✓ — alles bereit."
-                store.ablageRetry()
+                // Nur „alles bereit" sagen, wenn es das auch ist. Ein
+                // selbst angelegtes Konto hat noch keine Ablage; bis
+                // 08.09.2026 behauptete die App trotzdem, es sei alles
+                // fertig, und schickte jeden Beleg gegen eine Wand.
+                if ergebnis.ablage {
+                    testErgebnis = "Verbunden ✓ — alles bereit."
+                    store.ablageRetry()
+                } else {
+                    testErgebnis = "Verbunden ✓ — deine Ablage wird noch "
+                        + "eingerichtet. Fotografier ruhig weiter: alles "
+                        + "bleibt auf dem Telefon und geht los, sobald sie da ist."
+                }
             } else {
                 kontoFehler = ergebnis.fehler
             }
@@ -343,9 +354,17 @@ struct EinstellungenView: View {
             case .uebertragen:
                 testErgebnis = "Verbunden ✓ — alles bereit."
                 store.zugangAbgelaufen = false
+                store.ablageFehlt = false
             case .tokenFehler:
                 testErgebnis = "Die Verbindung stimmt nicht mehr — bitte neu mit deinem Konto verbinden."
                 store.zugangAbgelaufen = true
+            case .keineAblage:
+                // Das ist kein Fehler, sondern ein Zwischenstand: das Konto
+                // stimmt, die Ablage wird noch eingerichtet.
+                testErgebnis = "Dein Konto stimmt — deine Ablage wird noch "
+                    + "eingerichtet. Bis dahin bleibt alles auf dem Telefon."
+                store.zugangAbgelaufen = false
+                store.ablageFehlt = true
             case .abgelehnt: testErgebnis = "Die Belegbox meldet einen Fehler — später noch einmal versuchen."
             case .nichtErreichbar: testErgebnis = "Keine Verbindung — Internet prüfen und noch einmal versuchen."
             }
