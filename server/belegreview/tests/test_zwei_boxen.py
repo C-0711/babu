@@ -227,3 +227,43 @@ def test_die_ref_konvention_trifft_den_produktivpfad(monkeypatch):
     monkeypatch.setattr(bx, "KLON_WURZEL", Path("/srv/boxen"))
     assert bx.klon_aus_ref("inspektor/ws-nina.de/babu") == Path("/srv/boxen/ws-nina.de")
 
+
+
+def test_der_produktiv_ref_bleibt_die_default_box(tmp_path, monkeypatch):
+    """Steht der Produktiv-Ref an einer Mandantenzeile, ist das dieselbe Box.
+
+    Der Fall ist nicht ausgedacht: Ninas Mandantenzeile (id 2,
+    SupremeStudio) trägt auf der H200V genau `BABU_REF`. Sobald der Server
+    anfängt, den Mandanten einer Inhaberin aufzulösen, liefe sie ohne diese
+    Regel über `box_aus_ref` — und bekäme eine ZWEITE Arbeitskopie
+    (`<KLON_WURZEL>/ws-christoph0711.io` statt `~/babu-web/box`) mit einem
+    zweiten Schreibschloss auf demselben Remote. Zwei Schreiber, ein
+    Repository: genau der Fehler, gegen den die Registry gebaut ist.
+    """
+    bx.registry_leeren()
+    monkeypatch.setattr(babu_web, "STORE", tmp_path / "babu.git")
+    monkeypatch.setattr(boxschreiber, "KLON", tmp_path / "klon")
+    monkeypatch.setattr(boxschreiber, "REF", "inspektor/ws-christoph0711.io/babu")
+    monkeypatch.setattr(bx, "KLON_WURZEL", tmp_path / "boxen")
+
+    ueber_mandant = bx.box_aus_ref(2, "inspektor/ws-christoph0711.io/babu")
+    assert ueber_mandant is bx.default_box(), "zweites Box-Objekt für dieselbe Box"
+    assert ueber_mandant.klon == boxschreiber.KLON
+    assert ueber_mandant.schloss is bx.default_box().schloss
+    # Und mit führendem/abschließendem Schrägstrich genauso — der Ref kommt
+    # aus einer Datenbankspalte, nicht aus einer Konstanten.
+    assert bx.box_aus_ref(2, "/inspektor/ws-christoph0711.io/babu/") is bx.default_box()
+    bx.registry_leeren()
+
+
+def test_ein_fremder_ref_bleibt_eine_eigene_box(tmp_path, monkeypatch):
+    """Die Gegenprobe: jeder ANDERE Ref bekommt weiter seine eigene Box."""
+    bx.registry_leeren()
+    monkeypatch.setattr(babu_web, "STORE", tmp_path / "babu.git")
+    monkeypatch.setattr(boxschreiber, "REF", "inspektor/ws-christoph0711.io/babu")
+    monkeypatch.setattr(bx, "KLON_WURZEL", tmp_path / "boxen")
+
+    fremd = bx.box_aus_ref(3, "inspektor/ws-jenny.de/babu")
+    assert fremd is not bx.default_box()
+    assert fremd.klon == tmp_path / "boxen" / "ws-jenny.de"
+    bx.registry_leeren()

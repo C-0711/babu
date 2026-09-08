@@ -1485,6 +1485,12 @@ def _api_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]
                   flush=True)
             return None, JSONResponse({"fehler": MANDANT_FREMD}, status_code=403)
         _AKTIVER_MANDANT.set(mandant_id)
+    else:
+        eigener, fehler = _eigener_mandant(un)
+        if fehler:
+            return None, fehler
+        if eigener is not None:
+            _AKTIVER_MANDANT.set(eigener)
     return un, None
 
 
@@ -1543,6 +1549,53 @@ def _mandant_aus_kontext(request: Request, un: str) -> int | None:
     if mandant_id <= 0:
         return None
     return mandant_id if box_mitglied(un, mandant_id) else None
+
+
+MANDANT_MEHRDEUTIG = (
+    "Dein Betrieb ist bei mehreren Steuerbüros eingetragen. Solange das so "
+    "ist, wissen wir nicht, in welche Ablage deine Belege gehören — "
+    "schreib uns kurz, dann klären wir das.")
+
+
+def _eigener_mandant(un: str) -> tuple[int | None, JSONResponse | None]:
+    """Zu welcher Mandantenzeile gehört DIESER Zugang — ohne `X-Mandant`?
+
+    Das ist die Frage, die den Mehrbetrieb überhaupt erst möglich macht.
+    Bis 08.09.2026 stellte sie niemand: ohne Kopf löste `box_von(un, None)`
+    immer auf die **Default-Box** auf — und die App schickt nie einen Kopf.
+    Jeder zweite Betrieb hätte seine Belege damit in die Box des ersten
+    geladen.
+
+    Vier Antworten, und keine davon ist ein stiller Rückfall:
+
+    * **kein Mandat** → `None`: alles bleibt, wie es war (Default-Box). Das
+      ist der heutige Ein-Betrieb und der PAT-Zugang, der gar keine
+      `nutzer`-Zeile hat.
+    * **ein Mandat mit Box** → dessen Nummer.
+    * **ein Mandat ohne Box** (`box_ausstehend`) → dessen Nummer *trotzdem*.
+      `box_von` wirft dann `KeineBox`, und daraus wird in `_box_wache` der
+      schon vorhandene 409 „wird noch eingerichtet". Genau das ist der
+      Punkt: ehrlich warten statt in eine fremde Box schreiben.
+    * **mehrere Mandate** → 409. Zwei Steuerbüros für denselben Betrieb
+      sind erlaubt (die UNIQUE-Grenze gilt nur je Kanzlei), aber dann ist
+      „welche Box?" keine Frage, die der Server raten darf.
+
+    `salon_von` und nicht `salon_von_aktiv`: hier wird gerade bestimmt,
+    WELCHER Mandant aktiv ist — die aktive Fassung wäre zirkulär. Für eine
+    Mitarbeiterin ist es die Zeile ihrer Inhaberin, und das ist richtig:
+    sie arbeitet in der Box des Salons mit.
+    """
+    import mandanten  # noqa: PLC0415 — nur der Mehr-Box-Weg braucht die Tabelle
+    meine = mandanten.mandate_von_besitzer(salon_von(un))
+    if not meine:
+        return None, None
+    if len(meine) > 1:
+        nummern = [m["id"] for m in meine]
+        print(f"[wache] 409: '{un}' hängt an mehreren Mandanten {nummern}",
+              flush=True)
+        return None, JSONResponse({"fehler": MANDANT_MEHRDEUTIG},
+                                  status_code=409)
+    return int(meine[0]["id"]), None
 
 
 def _box_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]:

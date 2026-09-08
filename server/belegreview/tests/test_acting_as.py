@@ -108,6 +108,7 @@ def welt2(tmp_path, monkeypatch):
     nina = _konto(babu_web, "nina@0711.io")
     berta = _konto(babu_web, "berta@0711.io")
     carla = _konto(babu_web, "carla@0711.io")
+    ohne = _konto(babu_web, "ohne@0711.io")
 
     sued = mandanten.kanzlei_anlegen("Kanzlei Süd", kanzlei)
     nord = mandanten.kanzlei_anlegen("Kanzlei Nord", fremde)
@@ -117,7 +118,13 @@ def welt2(tmp_path, monkeypatch):
     berta_id = mandanten.mandant_anlegen(sued, "Salon Berta", berta,
                                          berater_nr="12345", mandant_nr="4712")
     carla_id = mandanten.mandant_anlegen(nord, "Salon Carla", carla)
-    ohne_box_id = mandanten.mandant_anlegen(sued, "Salon Ohne", "sued@kanzlei.de")
+    # Ein Mandant, dessen Belegbox noch aussteht — mit EIGENEM Konto, so
+    # wie er in Wirklichkeit aussieht (Mandant 1 „Jenny from the Block"
+    # auf der H200V). Bis 08.09.2026 stand hier das Kanzlei-Konto selbst
+    # als Inhaber; seit der Server den eigenen Mandanten eines Zugangs
+    # auflöst, hieße das: die Kanzlei hat selbst ein Mandat ohne Box und
+    # bekäme auf JEDEN Aufruf ohne Kopf ein „wird noch eingerichtet".
+    ohne_box_id = mandanten.mandant_anlegen(sued, "Salon Ohne", ohne)
     mandanten.box_verknuepfen(nina_id, "inspektor/ws-nina/babu")
     mandanten.box_verknuepfen(berta_id, "inspektor/ws-berta/babu")
     mandanten.box_verknuepfen(carla_id, "inspektor/ws-carla/babu")
@@ -125,7 +132,7 @@ def welt2(tmp_path, monkeypatch):
     yield {"bw": babu_web, "kanzlei": kanzlei, "sachbearbeiter": sachbearbeiter,
            "fremde": fremde, "nina": nina, "berta": berta, "carla": carla,
            "sued": sued, "nord": nord, "nina_id": nina_id, "berta_id": berta_id,
-           "carla_id": carla_id, "ohne_box_id": ohne_box_id}
+           "carla_id": carla_id, "ohne": ohne, "ohne_box_id": ohne_box_id}
     bx.registry_leeren()
 
 

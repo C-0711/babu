@@ -253,6 +253,30 @@ def mandanten_fuer(un: str, c=None) -> list[dict]:
     return [_zeile(MANDANT_SPALTEN, r) for r in rohe]
 
 
+def mandate_von_besitzer(un: str, c=None) -> list[dict]:
+    """Die Mandate DIESES Betriebs — die Gegenrichtung zu `mandanten_fuer`.
+
+    `mandanten_fuer` fragt aus der Kanzlei heraus („welche Betriebe betreue
+    ich?"). Hier wird aus dem Betrieb heraus gefragt („zu welcher
+    Mandantenzeile gehöre ich?") — und das ist die Frage, die der Server
+    beantworten muss, wenn eine Inhaberin ohne `X-Mandant`-Kopf hochlädt:
+    ihre Belege gehören in IHRE Box, nicht in die des ersten Kunden.
+
+    Beendete Mandate zählen nicht: ein gekündigtes Mandat ist keine
+    Zuständigkeit mehr, und die Box daran ist Geschichte.
+
+    Dieselbe Abfrage stand bis 08.09.2026 als rohes SQL in
+    `werkzeuge/betrieb_anlegen.py` — ein Werkzeug, das anders liest als der
+    Server, prüft das Falsche. Sie steht jetzt nur noch hier.
+    """
+    sql = ("SELECT id, kanzlei_id, name, besitzer_un, box_ref, kontenrahmen, "
+           "berater_nr, mandant_nr, status, angelegt FROM mandant "
+           "WHERE besitzer_un = ? AND status <> 'beendet' ORDER BY id")
+    with _sitzung(c) as cc:
+        rohe = cc.execute(sql, (un,)).fetchall()
+    return [_zeile(MANDANT_SPALTEN, r) for r in rohe]
+
+
 def kanzlei_mitglied(un: str, mandant_id: int, c=None) -> bool:
     """Darf dieser Zugang für diesen Mandanten arbeiten?
 

@@ -133,6 +133,67 @@ def test_mandanten_einer_kanzlei_nach_status(db):
     assert [m["name"] for m in offen] == ["Beta"]
 
 
+# ————— Die Gegenrichtung: aus dem Betrieb heraus gefragt —————
+#
+# `mandanten_fuer` fragt aus der Kanzlei heraus. Beim Hochladen ohne
+# `X-Mandant`-Kopf braucht der Server die andere Richtung: zu welcher
+# Mandantenzeile gehört DIESER Betrieb? Ohne sie landete jeder Beleg in
+# der Default-Box — also in der des ersten Kunden.
+
+def test_ohne_mandat_ist_die_liste_leer(db):
+    assert mandanten.mandate_von_besitzer("nina@0711.io", c=db) == []
+
+
+def test_das_eigene_mandat_wird_gefunden(db):
+    kid = mandanten.kanzlei_anlegen("Kanzlei Süd", "kanzlei@0711.io", c=db)
+    mid = mandanten.mandant_anlegen(kid, "Salon Nina", "nina@0711.io", c=db)
+    mandanten.box_verknuepfen(mid, "inspektor/ws-nina/babu", c=db)
+
+    meine = mandanten.mandate_von_besitzer("nina@0711.io", c=db)
+    assert [m["id"] for m in meine] == [mid]
+    assert meine[0]["box_ref"] == "inspektor/ws-nina/babu"
+    # Und der Nachbarbetrieb bleibt draußen.
+    assert mandanten.mandate_von_besitzer("salon-b@0711.io", c=db) == []
+
+
+def test_ein_mandat_ohne_box_zaehlt_mit(db):
+    """`box_ausstehend` ist eine Zuständigkeit — nur eben noch ohne Box.
+
+    Das ist wichtig: der Aufrufer muss diesen Fall SEHEN, um ihn ehrlich
+    als „wird noch eingerichtet" zu beantworten. Fiele die Zeile hier
+    heraus, bekäme der Betrieb stillschweigend die Default-Box.
+    """
+    kid = mandanten.kanzlei_anlegen("Kanzlei Süd", "kanzlei@0711.io", c=db)
+    mid = mandanten.mandant_anlegen(kid, "Salon Nina", "nina@0711.io", c=db)
+    meine = mandanten.mandate_von_besitzer("nina@0711.io", c=db)
+    assert [m["id"] for m in meine] == [mid]
+    assert meine[0]["status"] == "box_ausstehend"
+    assert not meine[0]["box_ref"]
+
+
+def test_ein_beendetes_mandat_zaehlt_nicht_mehr(db):
+    """Ein gekündigtes Mandat ist keine Zuständigkeit, und die Box daran
+    ist Geschichte."""
+    kid = mandanten.kanzlei_anlegen("Kanzlei Süd", "kanzlei@0711.io", c=db)
+    mid = mandanten.mandant_anlegen(kid, "Salon Nina", "nina@0711.io", c=db)
+    mandanten.status_setzen(mid, "beendet", c=db)
+    assert mandanten.mandate_von_besitzer("nina@0711.io", c=db) == []
+
+
+def test_zwei_kanzleien_ergeben_zwei_mandate(db):
+    """Die UNIQUE-Grenze verhindert nur Doppel INNERHALB einer Kanzlei.
+
+    Zwei Kanzleien können denselben Betrieb führen — dann ist die Frage
+    „welche Box?" nicht mehr eindeutig, und der Aufrufer muss das merken
+    können, statt sich eine auszusuchen.
+    """
+    a = mandanten.kanzlei_anlegen("Kanzlei Süd", "kanzlei@0711.io", c=db)
+    b = mandanten.kanzlei_anlegen("Kanzlei Nord", "sachbearbeiter@0711.io", c=db)
+    mandanten.mandant_anlegen(a, "Nina bei Süd", "nina@0711.io", c=db)
+    mandanten.mandant_anlegen(b, "Nina bei Nord", "nina@0711.io", c=db)
+    assert len(mandanten.mandate_von_besitzer("nina@0711.io", c=db)) == 2
+
+
 def test_ohne_verbindung_und_ohne_c_gibt_es_eine_klare_meldung(monkeypatch):
     monkeypatch.setattr(mandanten, "_VERBINDUNG", None)
     with pytest.raises(RuntimeError, match="keine Datenbank"):

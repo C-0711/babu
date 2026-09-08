@@ -21,6 +21,11 @@ der nicht „historisch gewachsen" lautet:
 * `_betrieb_von`      — urteilt über FREMDE Zugänge („wem gehört dieses
                         Konto?"); der aktive Mandant wäre dort die falsche
                         Antwort für jeden von ihnen.
+* `_eigener_mandant`  — bestimmt gerade erst, WELCHER Mandant aktiv ist
+                        (seit 08.09.2026, für den Upload ohne
+                        `X-Mandant`-Kopf). `salon_von_aktiv` wäre hier
+                        zirkulär: sie fragt nach dem Ergebnis, das diese
+                        Funktion erst herstellt.
 """
 import ast
 from pathlib import Path
@@ -28,7 +33,8 @@ from pathlib import Path
 QUELLE = Path(__file__).resolve().parent.parent / "babu_web.py"
 BAUM = ast.parse(QUELLE.read_text())
 
-ERLAUBT = {"salon_von_aktiv", "box_mitglied", "_betrieb_von"}
+ERLAUBT = {"salon_von_aktiv", "box_mitglied", "_betrieb_von",
+           "_eigener_mandant"}
 
 
 def _rufe_gesamt(name: str) -> list[int]:

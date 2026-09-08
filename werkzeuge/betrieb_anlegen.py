@@ -401,14 +401,12 @@ def box_nachtragen(plan: Plan) -> Bericht:
     if bw.nutzer_holen(p.email) is None:
         raise Abbruch(f"Für {p.email} gibt es kein Konto — hier ist noch "
                       f"nichts nachzutragen.")
-    with bw._db_sitzung() as c:  # noqa: SLF001
-        if p.kanzlei_id is not None:
-            zeilen = c.execute("SELECT id FROM mandant WHERE kanzlei_id=? AND "
-                               "besitzer_un=?", (p.kanzlei_id, p.email)
-                               ).fetchall()
-        else:
-            zeilen = c.execute("SELECT id FROM mandant WHERE besitzer_un=?",
-                               (p.email,)).fetchall()
+    # Über `mandanten.mandate_von_besitzer` statt über rohes SQL: es ist
+    # dieselbe Frage, die der Server beim Hochladen stellt, und ein
+    # Werkzeug, das anders liest als der Server, prüft das Falsche.
+    zeilen = mandanten.mandate_von_besitzer(p.email)
+    if p.kanzlei_id is not None:
+        zeilen = [z for z in zeilen if int(z["kanzlei_id"]) == p.kanzlei_id]
     if not zeilen:
         raise Abbruch(f"Zu {p.email} gibt es keine Mandantenzeile, an die "
                       f"eine Box gehören könnte.")
@@ -417,7 +415,7 @@ def box_nachtragen(plan: Plan) -> Bericht:
                       f"mit --kanzlei-id sagen, welche gemeint ist.")
 
     b = Bericht(titel="Nachgetragen", email=p.email, trocken=p.trocken,
-                mandant_id=int(zeilen[0][0]))
+                mandant_id=int(zeilen[0]["id"]))
     m = mandanten.mandant_holen(b.mandant_id)
     b.kanzlei_id = int(m["kanzlei_id"])
     b.schritte.append(Schritt("box", f"Belegbox {p.box_ref} an Mandant "

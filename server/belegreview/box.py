@@ -229,7 +229,22 @@ def remote_aus_ref(ref: str) -> str:
 
 
 def box_aus_ref(mandant_id: int | None, ref: str) -> Box:
-    """Box zu einem `mandant.box_ref` — über die Konventionen oben."""
+    """Box zu einem `mandant.box_ref` — über die Konventionen oben.
+
+    Trägt die Mandantenzeile den Produktiv-Ref, ist das die Default-Box und
+    keine zweite: sonst entstünde für denselben Store eine ZWEITE
+    Arbeitskopie (`~/babu-web/boxen/ws-…` statt `~/babu-web/box`) mit
+    eigenem Schreibschloss — zwei Schreiber auf einem Remote, genau der
+    Fehler, gegen den die Registry oben gebaut ist.
+
+    Das ist kein hypothetischer Fall: Ninas Mandantenzeile (id 2,
+    SupremeStudio) trägt auf der H200V genau diesen Ref. Ohne diese drei
+    Zeilen bekäme sie in dem Moment eine zweite Arbeitskopie, in dem der
+    Server anfängt, ihren Mandanten aufzulösen.
+    """
+    import boxschreiber  # noqa: PLC0415 — nur für den Vergleich mit dem Produktiv-Ref
+    if ref.strip("/") == boxschreiber.REF.strip("/"):
+        return default_box()
     store = store_aus_ref(ref)
     klon = klon_aus_ref(ref)
     remote = remote_aus_ref(ref)
