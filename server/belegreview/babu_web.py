@@ -2705,6 +2705,22 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
     with _box().index_schloss:
         _box().invalidieren()
 
+    # Kam kein Ergebnis mit, hat dieser Beleg noch GAR KEINE Lesung — der
+    # Nutzer hat die Fragen abgebrochen, die Einschätzung lief in einen
+    # Fehler, oder die App ist älter als das Zielbild. Ohne Nachlesen läge
+    # das Foto im Archiv und der Index stempelte es nach
+    # BELEG_HAENGT_NACH_MIN als „unlesbar" — neun von Ninas 278 Belegen
+    # standen am 08.09.2026 so da, darunter gestochen scharfe Bons.
+    #
+    # Das ist KEINE zweite Lesung: die verbietet das Zielbild für Belege,
+    # die schon eine haben. Hier gibt es keine. Denselben Weg geht der
+    # Portal-Upload (`/api/hochladen`) seit jeher.
+    if art == "beleg" and not (isinstance(ergebnis, dict)
+                               and isinstance(ergebnis.get("buchung"), dict)):
+        print(f"[aufnahme] {pfad}: ohne Ergebnis eingegangen, lese nach",
+              flush=True)
+        _hintergrund_lesen_starten(pfad, daten, endung, un)
+
     # Verträge und Briefe liest babu im Hintergrund weiter — wie bisher.
     if art == "vertrag":
         threading.Thread(target=_im_box_kontext,
@@ -10902,7 +10918,7 @@ def api_monatsabschluss(monat: str, request: Request) -> Response:
         "monat": monat,
         "erloese": erloese,
         "bwa": ma.bwa(monat, erloese, belege, vorjahr,
-                      personal_monat=(team_personalkosten(un)
+                      personal_monat=(team_personalkosten(salon_von_aktiv(un))
                                       or _zahl(einstellungen.get("personal_monat"))),
                       vertraege=vertraege_aktuell()),
         "ustva": ma.ustva_entwurf(monat, erloese, vorsteuer, profil),
@@ -11255,7 +11271,7 @@ def api_bwa_erstellen(monat: str, request: Request) -> Response:
     import monatsabschluss as ma  # noqa: PLC0415
     import vordrucke  # noqa: PLC0415
     erloese, profil, belege, einstellungen = _berichtsdaten(un, monat)
-    personal = (team_personalkosten(un)
+    personal = (team_personalkosten(salon_von_aktiv(un))
                 or _zahl(einstellungen.get("personal_monat")))
     vertraege = vertraege_aktuell()
     bwa = ma.bwa(monat, erloese, belege, None,
