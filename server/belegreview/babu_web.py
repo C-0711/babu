@@ -13168,6 +13168,82 @@ def api_gedaechtnis_vergessen(request: Request) -> Response:
     return JSONResponse({"ok": True, "vergessen": max(anzahl, 0)})
 
 
+def _belege_mit_posten(idx: dict) -> list[dict]:
+    """Die Belege, jeder mit seinen Einzelposten.
+
+    Die Positionen werden beim Buchen gelesen und liegen im Review unter
+    `buchung.buchung.positionen`; im Index steht davon nichts, weil den
+    keine Liste braucht. Für den Chat sind sie genau die Auskunft, die
+    fehlte: „was habe ich bei Wella gekauft?" ist mit einem Gesamtbetrag
+    nicht beantwortet.
+    """
+    reviews = idx.get("reviews") or {}
+    belege = []
+    for stamm, zeile in idx["belege"].items():
+        eintrag = dict(zeile)
+        buchung = ((reviews.get(stamm) or {}).get("buchung") or {}).get("buchung") or {}
+        posten = buchung.get("positionen")
+        if isinstance(posten, list) and posten:
+            eintrag["posten"] = posten
+        belege.append(eintrag)
+    return belege
+
+
+def _bank_je_monat(idx: dict) -> dict:
+    """Der Kontoauszug als Monatsauswertung.
+
+    485 Einzelbuchungen wären eine Wand aus Text. Was zählt, ist: wie viel
+    kam herein, wie viel ging hinaus, und welcher Kartenanbieter hat
+    ausgezahlt — Letzteres IST der Umsatz (siehe die verbindliche Vorgabe
+    „Kasse gegen Konto" und `monatsabschluss.ERLOES_QUELLEN`).
+    """
+    import monatsabschluss as ma  # noqa: PLC0415
+    ergebnis: dict[str, dict] = {}
+    for monat, umsaetze in (idx.get("umsaetze") or {}).items():
+        if not umsaetze:
+            continue
+        erloese = ma.bank_erloese(umsaetze)
+        eingang = sum(float(u.get("betrag") or 0) for u in umsaetze
+                      if float(u.get("betrag") or 0) > 0)
+        ausgang = sum(-float(u.get("betrag") or 0) for u in umsaetze
+                      if float(u.get("betrag") or 0) < 0)
+        ergebnis[monat] = {
+            "buchungen": len(umsaetze),
+            "eingang": round(eingang, 2),
+            "ausgang": round(ausgang, 2),
+            "erloes_brutto": erloese.get("brutto"),
+            "quellen": erloese.get("quellen") or {},
+            "sonstige": erloese.get("sonstige"),
+            "sonstige_anzahl": erloese.get("sonstige_anzahl"),
+        }
+    return ergebnis
+
+
+def _vorjahr_kennzahlen() -> dict:
+    """Die Zahlen des letzten abgeschlossenen Jahres aus dem Salon-Check.
+
+    Zwei Jahre werden probiert: das Vorjahr und das davor. Wer im Januar
+    fragt, hat für das gerade vergangene Jahr noch keinen Abschluss —
+    dann ist das vorletzte die beste vorhandene Antwort.
+    """
+    for zurueck in (1, 2):
+        jahr = int(time.strftime("%Y")) - zurueck
+        roh = git_show(f"abschluss/{jahr}/kennzahlen.json")
+        if not roh:
+            continue
+        try:
+            daten = json.loads(roh)
+        except ValueError:
+            continue
+        if isinstance(daten, dict) and (daten.get("zahlen") or {}):
+            # `jahr` steht in der Datei, ist dort aber oft None — dann gilt
+            # der Ordner, aus dem sie kommt.
+            if not daten.get("jahr"):
+                daten["jahr"] = jahr
+            return daten
+    return {}
+
+
 def _welt_fuer(un: str) -> dict:
     """Alles, was babu über diesen Salon weiß — für das Fallwissen des Chats."""
     inhaber = salon_von_aktiv(un)
@@ -13218,7 +13294,9 @@ def _welt_fuer(un: str) -> dict:
     return {
         "einstellungen": einstellungen,
         "zahlen_monate": zahlen_monate,
-        "belege": list(idx["belege"].values()),
+        "belege": _belege_mit_posten(idx),
+        "bank": _bank_je_monat(idx),
+        "vorjahr": _vorjahr_kennzahlen(),
         "kassenblaetter": list(idx["kassenblaetter"].values()),
         "vertraege": vertraege_aktuell(),
         "rechnungen": list(idx.get("rechnungen", {}).values()),

@@ -14,7 +14,30 @@ from __future__ import annotations
 
 import re
 
+# Das Budget für `kontext()` — die zur Frage AUSGEWÄHLTE Fassung, die es
+# noch für Wege ohne stehenden Prompt gibt. Der Weltblock hat sein eigenes.
 BUDGET = 14000
+
+# Was der stehende Weltblock höchstens wiegen darf.
+#
+# Bis zum 08.09.2026 stand hier gar keine Grenze: `weltblock()` hat BUDGET
+# nie angesehen, und niemandem fiel auf, dass der Block bei Nina längst
+# 25.515 Zeichen wog — fast das Doppelte. Das war kein Schaden (gemma4
+# fährt 262.144 Token Kontext, und der Block liegt byte-stabil im
+# Prefix-Cache, kostet je Frage also fast nichts), aber eine Grenze, die
+# niemand prüft, ist keine Grenze.
+#
+# Deshalb jetzt eine, die groß genug ist, um im Alltag NIE zu greifen, und
+# klein genug, um Weglaufen zu melden: 200.000 Zeichen sind rund 50.000
+# Token, also ein Fünftel des Fensters. Greift sie doch, wird am ENDE
+# gekürzt und die Kürzung benannt — vorn zu kürzen würde bei jedem neuen
+# Beleg den ganzen Prefix-Cache entwerten.
+WELTBLOCK_BUDGET = 200000
+
+# Wie viele Einzelposten je Beleg mitgehen. „3x Koleston 60ml" ist die
+# Auskunft, nach der sie fragt („was habe ich bei Wella gekauft?"); die
+# vollständige Kassenrolle eines Großmarkt-Einkaufs ist es nicht.
+POSTEN_JE_BELEG = 8
 
 # Stichwörter je Bereich. Bewusst großzügig und in der Sprache der Nutzerin —
 # sie fragt nach „Quittung", nicht nach „Belegposition".
@@ -39,6 +62,12 @@ STICHWORTE: dict[str, tuple[str, ...]] = {
                "ausgegeben", "ausgaben", "gekauft", "kosten", "wie viel"),
     "post": ("finanzamt", "amt", "brief", "bescheid", "schreiben", "behörde",
              "prüfung", "post", "kanzlei", "steuerberater"),
+    "bank": ("konto", "kontoauszug", "bank", "überweisung", "abbuchung",
+             "eingegangen", "ausgezahlt", "auszahlung", "salonkee", "sumup",
+             "zettle", "lastschrift", "kartenzahlung", "gutschrift"),
+    "vorjahr": ("letztes jahr", "vorjahr", "voriges jahr", "im vergleich",
+                "besser als", "schlechter als", "jahresabschluss", "abschluss",
+                "steuererklärung", "wareneinsatz", "abschreibung", "afa"),
 }
 
 
@@ -234,67 +263,235 @@ def _zahlen(welt: dict, grenze: int) -> str:
 
 
 def _post(welt: dict, grenze: int) -> str:
+    """Die Post vom Amt — mit dem, was drinsteht, nicht nur mit dem Titel.
+
+    Bis zum 08.09.2026 stand hier je Brief nur die Überschrift. Die
+    Erklärungen liegen als `.erklaerung.json` neben jedem Dokument, sind
+    vollständig und in ihrer Sprache geschrieben — der Chat kannte sie
+    trotzdem nicht und musste auf „was will das Finanzamt von mir?"
+    passen, obwohl die Antwort daneben lag.
+    """
     dokumente = welt.get("dokumente") or []
     briefe = [d for d in dokumente if d.get("art") in ("behoerde", "kanzlei")]
     if not briefe:
         return ""
     zeilen = ["POST (Amt und Kanzlei):"]
-    for d in briefe[:10]:
+    for d in briefe[:20]:
         teil = f"  {d.get('titel')}"
         erk = d.get("erklaerung") or {}
         if erk.get("einfach"):
-            teil += " — " + str(erk["einfach"])[:200]
+            teil += "\n      Worum es geht: " + str(erk["einfach"])[:600]
+        if erk.get("was_tun"):
+            was = erk["was_tun"]
+            if isinstance(was, (list, tuple)):
+                was = "; ".join(str(w) for w in was)
+            teil += "\n      Zu tun: " + str(was)[:400]
         if erk.get("bis_wann"):
-            teil += f" (bis {_tag(erk['bis_wann'])})"
+            teil += "\n      Bis: " + _tag(erk["bis_wann"])
         if sum(len(z) for z in zeilen) + len(teil) > grenze:
             break
         zeilen.append(teil)
     return "\n".join(zeilen)
 
 
+def _bank(welt: dict, grenze: int) -> str:
+    """Was auf dem Konto ankam und was abging — je Monat.
+
+    485 Buchungen von Januar bis Juli lagen in der Box und fehlten dem Chat
+    komplett. Seit dem 07.09.2026 rechnet der Monatsabschluss Ninas Umsatz
+    sogar daraus (die Salonkee-Auszahlungen), und auf „was hat Salonkee im
+    Mai ausgezahlt?" konnte er trotzdem nichts sagen.
+
+    Was hier steht, ist die Auswertung, nicht der Auszug: welcher Anbieter
+    wie viel ausgezahlt hat (das IST der Umsatz, siehe
+    `monatsabschluss.ERLOES_QUELLEN`) und was sonst noch herein- und
+    hinausging. 485 Einzelbuchungen wären eine Wand aus Text, aus der
+    niemand — auch kein Modell — die Frage beantwortet.
+    """
+    monate = welt.get("bank") or {}
+    if not monate:
+        return ""
+    zeilen = ["KONTOAUSZÜGE (was wirklich auf dem Konto war):"]
+    for monat in sorted(monate):
+        m = monate[monat] or {}
+        teil = (f"  {monat}: {m.get('buchungen', 0)} Buchungen · "
+                f"eingegangen {_euro(m.get('eingang'))} · "
+                f"abgegangen {_euro(m.get('ausgang'))}")
+        quellen = m.get("quellen") or {}
+        if quellen:
+            teil += ("\n      davon Umsatz aus Auszahlungen: "
+                     + ", ".join(f"{name} {_euro(betrag)}"
+                                 for name, betrag in sorted(quellen.items()))
+                     + f" (zusammen {_euro(m.get('erloes_brutto'))})")
+        if m.get("sonstige_anzahl"):
+            teil += (f"\n      übrige Eingänge (kein Umsatz — Erstattungen, "
+                     f"Einlagen): {m.get('sonstige_anzahl')} über "
+                     f"{_euro(m.get('sonstige'))}")
+        if sum(len(z) for z in zeilen) + len(teil) > grenze:
+            break
+        zeilen.append(teil)
+    return "\n".join(zeilen)
+
+
+def _vorjahr(welt: dict, grenze: int) -> str:
+    """Die harten Zahlen des letzten Jahres aus dem Salon-Check.
+
+    „Läuft es besser als letztes Jahr?" ist die Frage, die eine Inhaberin
+    wirklich hat. Der Salon-Check hat die Zahlen aus ihren
+    Steuerunterlagen gezogen und in `abschluss/<jahr>/kennzahlen.json`
+    abgelegt; der Chat kannte sie nicht.
+    """
+    vj = welt.get("vorjahr") or {}
+    zahlen = vj.get("zahlen") or {}
+    if not zahlen or not any(v is not None for v in zahlen.values()):
+        return ""
+    jahr = vj.get("jahr") or "letztes Jahr"
+    zeilen = [f"DAS LETZTE ABGESCHLOSSENE JAHR ({jahr}, aus ihren "
+              f"Steuerunterlagen gelesen):"]
+    for schluessel, name in (("umsatz", "Umsatz"),
+                             ("gewinn", "Gewinn"),
+                             ("wareneinsatz", "Wareneinsatz"),
+                             ("personal", "Personal"),
+                             ("raumkosten", "Raumkosten"),
+                             ("ust_zahllast", "Umsatzsteuer-Zahllast"),
+                             ("vorauszahlungen", "Vorauszahlungen"),
+                             ("einkommensteuer", "Einkommensteuer")):
+        if zahlen.get(schluessel) is not None:
+            zeilen.append(f"  {name}: {_euro(zahlen[schluessel])}")
+    unsicher = vj.get("unsicher") or []
+    if unsicher:
+        zeilen.append("  Nicht sicher gelesen (nicht als Tatsache verwenden): "
+                      + ", ".join(str(u) for u in unsicher))
+    afa = vj.get("afa_liste") or []
+    if afa:
+        zeilen.append(f"  Abschreibungsliste ({len(afa)} Gegenstände):")
+        for a in afa[:20]:
+            zeilen.append(f"    {a.get('bezeichnung') or '—'} · "
+                          f"angeschafft {a.get('angeschafft') or '—'} · "
+                          f"{_euro(a.get('wert'))}"
+                          + (f" · Restwert {_euro(a['restwert'])}"
+                             if a.get("restwert") is not None else ""))
+    return "\n".join(zeilen)[:grenze]
+
+
 BEREICHE = {
     "beleg": _belege, "kasse": _kasse, "vertrag": _vertraege,
     "rechnung": _rechnungen, "team": _team, "frist": _fristen,
-    "zahlen": _zahlen, "post": _post,
+    "zahlen": _zahlen, "post": _post, "bank": _bank, "vorjahr": _vorjahr,
 }
 
 # Wenn die Frage kein Thema trifft, kommt trotzdem ein Überblick — in dieser
 # Reihenfolge, damit auch „wie läuft es gerade?" eine Antwort bekommt.
-GRUNDORDNUNG = ("zahlen", "kasse", "beleg", "rechnung", "frist", "vertrag",
-                "team", "post")
+GRUNDORDNUNG = ("zahlen", "vorjahr", "kasse", "bank", "beleg", "rechnung",
+                "frist", "vertrag", "team", "post")
 
 
-def weltblock(welt: dict) -> str:
+def _posten_zeile(b: dict) -> str:
+    """Die Einzelposten eines Belegs, in einer Zeile.
+
+    Bis zum 08.09.2026 stand je Beleg nur eine Zeile — Datum, Lieferant,
+    Betrag, Belegart, Konto. Auf „was habe ich bei Wella gekauft?" konnte
+    der Chat deshalb nur den Gesamtbetrag nennen, obwohl die Positionen
+    beim Buchen gelesen wurden und im Review liegen.
+    """
+    posten = b.get("posten") or []
+    if not posten:
+        return ""
+    stuecke = []
+    for p in posten[:POSTEN_JE_BELEG]:
+        if not isinstance(p, dict):
+            continue
+        name = str(p.get("bezeichnung") or "").strip()
+        if not name:
+            continue
+        stueck = name[:60]
+        if p.get("betrag") is not None:
+            stueck += f" {_euro(p['betrag'])}"
+        stuecke.append(stueck)
+    if not stuecke:
+        return ""
+    rest = len(posten) - len(stuecke)
+    return ("\n      darauf: " + " · ".join(stuecke)
+            + (f" · und {rest} weitere Posten" if rest > 0 else ""))
+
+
+def _register(belege: list) -> str:
+    """Das Beleg-Register: eine Zeile je Beleg, älteste zuerst.
+
+    Die Reihenfolge ist Absicht und darf nicht gedreht werden: ein neuer
+    Beleg verlängert den Text nur am Ende, statt ihn vorn umzusortieren —
+    nur so bleibt der stehende Anfang byte-gleich und der Prefix-Cache von
+    vLLM trägt.
+    """
+    if not belege:
+        return ""
+    zeilen = [f"BELEG-REGISTER ({len(belege)} in der Box, älteste zuerst):"]
+    for b in sorted(belege, key=lambda x: (x.get("monat") or "",
+                                           x.get("datum") or "",
+                                           x.get("lieferant") or "")):
+        teil = (f"  {b.get('datum') or b.get('monat') or '—'} · "
+                f"{b.get('lieferant') or 'unbekannt'} · {_euro(b.get('brutto'))}"
+                f" · {b.get('belegart') or ''}")
+        if b.get("konto_skr04"):
+            teil += f" · Konto {b['konto_skr04']}"
+        if b.get("offen"):
+            teil += " · offen: " + "; ".join(str(o) for o in b["offen"][:2])
+        teil += _posten_zeile(b)
+        zeilen.append(teil)
+    return "\n".join(zeilen)
+
+
+def weltblock(welt: dict, budget: int = WELTBLOCK_BUDGET) -> str:
     """ALLES über diesen Salon, unabhängig von der Frage — für den
     stehenden Anfang des Chat-Prompts.
 
     Byte-stabil, solange sich die Box nicht ändert: dieselben Daten ergeben
     denselben Text, und der trifft bei jeder Frage den Prefix-Cache von
     vLLM. Deshalb wird hier nichts nach der Frage ausgewählt und das
-    Beleg-Register steht ganz hinten, älteste zuerst — ein neuer Beleg
-    verlängert den Text nur am Ende, statt ihn vorn umzusortieren."""
+    Beleg-Register steht ganz hinten, älteste zuerst.
+
+    Gekürzt wird — wenn überhaupt, siehe WELTBLOCK_BUDGET — am ENDE des
+    Registers und mit einem Satz darüber, wie viele Belege fehlen. Ein
+    stillschweigend abgeschnittener Bestand ist schlimmer als ein
+    genannter: das Modell hielte den Rest für vollständig.
+    """
     teile = [_betrieb(welt)]
     for bereich in GRUNDORDNUNG:
         if bereich == "beleg":
             continue
         teile.append(BEREICHE[bereich](welt, 8000))
 
+    kopf = "\n\n".join(t for t in teile if t)
     belege = welt.get("belege") or []
-    if belege:
-        zeilen = [f"BELEG-REGISTER ({len(belege)} in der Box, älteste zuerst):"]
-        for b in sorted(belege, key=lambda x: (x.get("monat") or "",
-                                               x.get("datum") or "",
-                                               x.get("lieferant") or "")):
-            teil = (f"  {b.get('datum') or b.get('monat') or '—'} · "
-                    f"{b.get('lieferant') or 'unbekannt'} · {_euro(b.get('brutto'))}"
-                    f" · {b.get('belegart') or ''}")
-            if b.get("konto_skr04"):
-                teil += f" · Konto {b['konto_skr04']}"
-            if b.get("offen"):
-                teil += " · offen: " + "; ".join(str(o) for o in b["offen"][:2])
-            zeilen.append(teil)
-        teile.append("\n".join(zeilen))
-    return "\n\n".join(t for t in teile if t) or "Zu diesem Salon ist noch nichts erfasst."
+    register = _register(belege)
+    if not register:
+        return kopf or "Zu diesem Salon ist noch nichts erfasst."
+
+    ganz = kopf + "\n\n" + register if kopf else register
+    if len(ganz) <= budget:
+        return ganz
+    # Zu groß. Erst die Einzelposten opfern — sie sind das Zusatzwissen,
+    # das Register selbst ist die Auskunft.
+    ohne_posten = [{k: v for k, v in b.items() if k != "posten"} for b in belege]
+    register = _register(ohne_posten)
+    ganz = kopf + "\n\n" + register if kopf else register
+    if len(ganz) <= budget:
+        return ganz
+    # Immer noch zu groß: hinten kürzen und es sagen.
+    zeilen = register.split("\n")
+    behalten = [zeilen[0]]
+    laenge = len(kopf) + 2 + len(zeilen[0])
+    for zeile in zeilen[1:]:
+        if laenge + len(zeile) + 120 > budget:
+            break
+        behalten.append(zeile)
+        laenge += len(zeile) + 1
+    fehlend = len(zeilen) - len(behalten)
+    behalten.append(f"  … und {fehlend} weitere Belege, die hier nicht mehr "
+                    f"hineinpassen — frag danach, dann werden sie einzeln "
+                    f"herausgesucht.")
+    register = "\n".join(behalten)
+    return kopf + "\n\n" + register if kopf else register
 
 
 def kontext(frage: str, welt: dict, budget: int = BUDGET) -> str:
