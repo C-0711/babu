@@ -1079,6 +1079,13 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 @keyframes blink{50%{opacity:0}}
 #chat-anker{display:none;align-items:center;gap:8px;background:var(--gc-accent-subtle);
   border-radius:8px;padding:6px 12px;margin-bottom:8px;font-size:12.5px}
+/* „Von vorn anfangen" und die Liste dessen, was babu behalten hat. Beides
+   leise: es soll da sein, wenn sie es sucht, und sonst nicht stören. */
+#chat-neu{font-size:12px;color:var(--gc-desc);text-decoration:underline}
+#gemerkt{margin-top:22px;font-size:12.5px;color:var(--gc-desc)}
+#gemerkt ul{list-style:none;margin:6px 0 0}
+#gemerkt li{display:flex;align-items:center;gap:8px;padding:4px 0}
+#gemerkt li button{color:var(--gc-desc);font-size:14px;line-height:1}
 #chat-anker button{color:var(--gc-muted)}
 .quellen{font-size:11.5px;color:var(--gc-muted);margin-top:4px}
 
@@ -2224,6 +2231,8 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     </div>
     <div id="chat-anker"><span id="chat-anker-text"></span><button id="chat-anker-weg" aria-label="Anker entfernen">✕</button></div>
     <div id="chatlog"></div>
+    <button type="button" id="chat-neu" hidden>Von vorn anfangen</button>
+    <div id="gemerkt"></div>
   </section>
 
   <!-- Dieselben zwei Wege wie auf der Anmeldemaske, nur unten auf jeder
@@ -2580,7 +2589,7 @@ $("#reset-zur-anmeldung").addEventListener("click", () => {
 });
 
 /* ————— Router ————— */
-const ansichten = { gesperrt: gesperrtLaden, heute: ladeHeute, belege: ladeBelege, fragen: () => {},
+const ansichten = { gesperrt: gesperrtLaden, heute: ladeHeute, belege: ladeBelege, fragen: ladeFragen,
                     aufraeumen: ladeAufraeumen, post: ladePost, ablage: ladeAblage, export: ladeExport, auslagen: ladeAuslagen, team: ladeTeam,
                     abschluss: ladeAbschluss,
                     zahlen: ladeZahlen, bank: ladeBank, saloncheck: ladeSalonCheck,
@@ -3649,6 +3658,78 @@ async function protokollZeigen(stamm){
 }
 
 /* ————— FRAGEN ————— */
+/* Das Gespräch überlebt jetzt das Neuladen.
+   Bis zum 08.09.2026 schickte diese Seite nur die Frage — eine Nachfrage
+   wie „und wie viel war das nochmal?" lief ins Leere, und wer neu lud,
+   fing bei null an. Der Verlauf steht deshalb im Gerät und reist mit;
+   babu führt ihn zusätzlich selbst, damit er auch auf einem anderen
+   Gerät weitergeht. Die Nummer des Fadens kommt zurück und geht wieder
+   hin — daran hängt beides zusammen. */
+const CHAT_SPEICHER = "babu_chat";
+const CHAT_ZUEGE = 6;              /* so viele Frage-Antwort-Paare reisen mit */
+let chatVerlauf = [];              /* [{rolle, text}] */
+let chatFaden = null;
+let chatGezeichnet = false;
+
+function chatHolen(){
+  try{
+    const d = JSON.parse(localStorage.getItem(CHAT_SPEICHER) || "{}");
+    chatVerlauf = Array.isArray(d.verlauf) ? d.verlauf : [];
+    chatFaden = d.faden || null;
+  }catch{ chatVerlauf = []; chatFaden = null; }
+}
+function chatMerken(){
+  /* Nur die letzten Züge behalten — mehr braucht niemand, und der Platz
+     im Gerät ist knapp bemessen. */
+  try{ localStorage.setItem(CHAT_SPEICHER, JSON.stringify(
+    {verlauf: chatVerlauf.slice(-40), faden: chatFaden})); }catch{}
+}
+function chatZeichnen(){
+  const log = $("#chatlog");
+  log.innerHTML = "";
+  chatVerlauf.forEach(n => {
+    const d = document.createElement("div");
+    d.className = "msg " + (n.rolle === "user" ? "ich" : "babu");
+    d.textContent = n.text;
+    log.appendChild(d);
+  });
+  $("#chat-neu").hidden = !chatVerlauf.length;
+}
+function ladeFragen(){
+  if (!chatGezeichnet){ chatHolen(); chatZeichnen(); chatGezeichnet = true; }
+  ladeGemerktes();
+}
+$("#chat-neu").addEventListener("click", () => {
+  /* Nur das Gespräch hier beginnt neu. Was babu sich gemerkt hat, bleibt —
+     das steht darunter und wird dort einzeln weggeräumt. */
+  chatVerlauf = []; chatFaden = null; chatMerken(); chatZeichnen();
+});
+
+/* Was babu behalten hat — sichtbar und wegwerfbar. Ein Gedächtnis, das
+   man nicht sehen kann, ist keines, dem man trauen sollte. */
+async function ladeGemerktes(){
+  const ziel = $("#gemerkt");
+  if (!ziel) return;
+  try{
+    const r = await api("/api/gedaechtnis");
+    if (!r.ok) { ziel.innerHTML = ""; return; }
+    const liste = (await r.json()).merksaetze || [];
+    if (!liste.length){ ziel.innerHTML = ""; return; }
+    ziel.innerHTML = `<div class="lbl">Das habe ich mir gemerkt</div><ul>`
+      + liste.map(m => `<li><span></span><button type="button" title="Vergiss das"
+          onclick="vergessen(${m.id})">✕</button></li>`).join("")
+      + `</ul>`;
+    /* Der Text kommt aus ihrer eigenen Eingabe — der wird gesetzt und
+       nicht eingebaut. */
+    ziel.querySelectorAll("li span").forEach(
+      (s, i) => { s.textContent = liste[i].text; });
+  }catch{ ziel.innerHTML = ""; }
+}
+async function vergessen(nr){
+  try{ await api("/api/gedaechtnis/" + nr + "/vergessen", {method:"POST"}); }catch{}
+  ladeGemerktes();
+}
+
 let anker = null;
 function fragenZuBeleg(stamm, name){
   anker = stamm;
@@ -3674,9 +3755,14 @@ $("#chatform").addEventListener("submit", async ev => {
   log.appendChild(antwort);
   antwort.scrollIntoView({block:"end"});
   if (anker) frage = `Zum Beleg ${anker}: ${frage}`;
+  const mitgereist = chatVerlauf.slice(-CHAT_ZUEGE * 2);
+  chatVerlauf.push({rolle:"user", text:frage});
+  chatMerken();
+  $("#chat-neu").hidden = false;
   try{
     const r = await api("/chat",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({frage, stream:true})});
+      body:JSON.stringify({frage, verlauf: mitgereist, gespraech: chatFaden,
+                           stream:true})});
     if (!r.ok || !r.body) throw new Error();
     const leser = r.body.getReader(); const dec = new TextDecoder();
     let puffer = "";
@@ -3692,6 +3778,7 @@ $("#chatform").addEventListener("submit", async ev => {
         if (roh === "[DONE]") continue;
         try{
           const j = JSON.parse(roh);
+          if (j.gespraech){ chatFaden = j.gespraech; chatMerken(); }
           if (j.d) antwort.textContent += j.d;
           if (j.antwort) antwort.textContent = j.antwort;
           if (j.fehler) antwort.textContent = "Da ist die Antwort abgerissen — magst du nochmal fragen?";
@@ -3703,6 +3790,14 @@ $("#chatform").addEventListener("submit", async ev => {
     antwort.textContent = "Da ist die Antwort abgerissen — magst du nochmal fragen?";
   }
   antwort.classList.remove("tippt");
+  /* Erst die fertige Antwort in den Verlauf: eine halbe hilft beim
+     nächsten Mal niemandem. Riss sie ganz ab, bleibt nur die Frage —
+     dann fragt sie eben nochmal, und das steht dann auch so da. */
+  if (antwort.textContent.trim())
+    chatVerlauf.push({rolle:"assistant", text:antwort.textContent});
+  chatMerken();
+  /* Hat sie babu etwas zu merken gegeben, steht es jetzt unten. */
+  ladeGemerktes();
 });
 
 /* ————— ZAHLEN (Auswertung mit Vormonats-Vergleich + DATEV-Stapel) ————— */
