@@ -8,6 +8,10 @@ struct CaptureTab: View {
     @EnvironmentObject var store: AppStore
     @State private var zeigeScanner = false
     @State private var startMehrseitig = false
+    /// So viele Seiten liest die App aus einem PDF. Jede kostet einen
+    /// Vision-Durchlauf; ein Steuerbescheid hat selten mehr, ein
+    /// versehentlich geteiltes Handbuch dafür Hunderte.
+    private let PDF_SEITEN_MAX = 20
     /// Gemmas Ergebnis direkt nach der Aufnahme — ohne Zwischenkarte.
     @State private var zeigeFragenDirekt = false
     /// Nur beim ersten Öffnen von selbst aufmachen — wer die Kamera schließt,
@@ -199,21 +203,35 @@ struct CaptureTab: View {
             Task { await verarbeite(entzerrt(bild)) }
             return
         }
-        guard let doc = PDFDocument(data: daten), let seite = doc.page(at: 0) else {
+        guard let doc = PDFDocument(data: daten), doc.pageCount > 0 else {
             ladeFehler = "Damit können wir nichts anfangen — bitte ein Foto oder ein PDF wählen."
             return
         }
-        let feld = seite.bounds(for: .mediaBox)
-        let skala = min(2200 / max(feld.width, feld.height), 3.0)
-        let groesse = CGSize(width: feld.width * skala, height: feld.height * skala)
-        let bild = UIGraphicsImageRenderer(size: groesse).image { ctx in
-            UIColor.white.setFill()
-            ctx.fill(CGRect(origin: .zero, size: groesse))
-            ctx.cgContext.translateBy(x: 0, y: groesse.height)
-            ctx.cgContext.scaleBy(x: skala, y: -skala)
-            seite.draw(with: .mediaBox, to: ctx.cgContext)
+        // JEDE Seite, nicht nur die erste. Bis zum 08.09.2026 stand hier
+        // `doc.page(at: 0)` — bei einem zweiseitigen Schreiben (Anschreiben
+        // vorne, Tabelle hinten, so kommt Post vom Amt) ging die Hälfte
+        // verloren, ohne dass es jemand merkte. Vision liest die Seiten
+        // einzeln, `verarbeiteSeiten` setzt sie mit Seitenmarkern zusammen —
+        // derselbe Weg, den der Scanner für mehrseitige Belege längst geht.
+        let seiten = (0..<min(doc.pageCount, PDF_SEITEN_MAX)).compactMap { nr -> UIImage? in
+            guard let seite = doc.page(at: nr) else { return nil }
+            let feld = seite.bounds(for: .mediaBox)
+            guard feld.width > 0, feld.height > 0 else { return nil }
+            let skala = min(2200 / max(feld.width, feld.height), 3.0)
+            let groesse = CGSize(width: feld.width * skala, height: feld.height * skala)
+            return UIGraphicsImageRenderer(size: groesse).image { ctx in
+                UIColor.white.setFill()
+                ctx.fill(CGRect(origin: .zero, size: groesse))
+                ctx.cgContext.translateBy(x: 0, y: groesse.height)
+                ctx.cgContext.scaleBy(x: skala, y: -skala)
+                seite.draw(with: .mediaBox, to: ctx.cgContext)
+            }
         }
-        Task { await verarbeite(bild) }
+        guard !seiten.isEmpty else {
+            ladeFehler = "Aus diesem PDF ließ sich keine Seite öffnen."
+            return
+        }
+        Task { await verarbeiteSeiten(seiten) }
     }
 
     // MARK: - Bereit
