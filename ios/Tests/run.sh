@@ -35,9 +35,9 @@ swiftc -o "$ZIEL/protokoll" ../Beleg/Beleg/Protokollsatz.swift protokoll/main.sw
 "$ZIEL/protokoll"
 
 echo "— Einrichtungs-Harness —"
-# Einrichtungsschritte filtert seit dem Schnitt nach Ausbaustufe — deshalb
-# gehoert die Datei mit auf die Uebersetzungszeile.
-swiftc -o "$ZIEL/einrichtung" ../Beleg/Beleg/Ausbaustufe.swift \
+# Seit die Karte nur noch den Anfang zeigt, filtert Einrichtungsschritte
+# nicht mehr nach Ausbaustufe — die Datei steht wieder fuer sich allein.
+swiftc -o "$ZIEL/einrichtung" \
        ../Beleg/Beleg/Einrichtungsschritte.swift einrichtung/main.swift
 "$ZIEL/einrichtung"
 

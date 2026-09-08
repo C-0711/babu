@@ -53,19 +53,24 @@ struct CaptureTab: View {
         var id: String { rawValue }
     }
 
+    private var kontoDa: Bool {
+        store.verbundenAls != nil && !store.zugangAbgelaufen
+    }
+
+    private var belegDa: Bool {
+        store.belege.contains { $0.istDemo != true }
+    }
+
     private var einrichtungsschritte: [Einrichtungsschritt] {
-        Einrichtung.sichtbareSchritte(
-            kontoVerbunden: store.verbundenAls != nil && !store.zugangAbgelaufen,
-            angaben: kontoAngaben,
-            ersterBeleg: store.belege.contains { $0.istDemo != true },
-            kassenbuchBegonnen: !store.kassenberichte.isEmpty)
+        Einrichtung.anfangsschritte(kontoVerbunden: kontoDa, ersterBeleg: belegDa)
     }
 
     /// Erst zeigen, wenn wir wirklich nachgesehen haben. Sonst blitzt die
-    /// Karte bei jeder eingerichteten Nutzerin kurz auf und behauptet „—".
+    /// Karte bei jeder eingerichteten Nutzerin kurz auf.
     private var zeigeEinrichtung: Bool {
         guard !einrichtungFertig, angabenGeholt else { return false }
-        return !Einrichtung.alleErledigt(einrichtungsschritte)
+        return !Einrichtung.anfangGeschafft(kontoVerbunden: kontoDa,
+                                            ersterBeleg: belegDa)
     }
 
     var body: some View {
@@ -251,11 +256,8 @@ struct CaptureTab: View {
             }
             if zeigeEinrichtung {
                 ScrollView {
-                    EinrichtungsKarte(
-                        schritte: einrichtungsschritte,
-                        kontoVerbunden: store.verbundenAls != nil
-                                        && !store.zugangAbgelaufen,
-                        wahl: weiterZu)
+                    EinrichtungsKarte(schritte: einrichtungsschritte,
+                                      wahl: weiterZu)
                         .padding(.horizontal, 20)
                         .padding(.top, 10)
                 }
@@ -352,9 +354,12 @@ struct CaptureTab: View {
         }
     }
 
-    /// Sobald einmal alles steht, ist die Karte für immer weg.
+    /// Sobald verbunden ist und der erste Beleg liegt, ist die Karte für
+    /// immer weg — auch wenn später jemand alle Belege löscht. Was danach
+    /// noch fehlt, wächst im Profil nach und mahnt nicht auf der Startseite.
     private func einrichtungNachsehen() {
-        if angabenGeholt, Einrichtung.alleErledigt(einrichtungsschritte) {
+        if angabenGeholt, Einrichtung.anfangGeschafft(kontoVerbunden: kontoDa,
+                                                      ersterBeleg: belegDa) {
             einrichtungFertig = true
         }
     }

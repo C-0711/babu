@@ -1,14 +1,19 @@
 import SwiftUI
 
-/// Dein Betrieb — an einer Stelle.
+/// Dein Betrieb — an einer Stelle, und sie wächst.
 ///
 /// Bisher lag das an zwei Orten: die Angaben im Formular „Dein Betrieb", und
 /// was aus den hochgeladenen Unterlagen herausgelesen wurde, nur im Browser.
 /// Wer wissen wollte, was babu über den Salon weiß, musste beides kennen.
 ///
-/// Hier steht es zusammen: was schon feststeht, was noch fehlt — und dass
-/// beides aus dem wächst, was fotografiert und eingereicht wird. Geändert
-/// wird weiter im Formular darunter; eine zweite Ablage gibt es nicht.
+/// Seit dem 08.09.2026 zeigt diese Ansicht nicht mehr, was fehlt, sondern was
+/// da ist — und woher es kommt. Das ist keine Kosmetik: die Karte „Dein
+/// Anfang" auf der Startseite verschwindet jetzt, sobald verbunden ist und
+/// der erste Beleg liegt, und alles Weitere wächst hier nach. Wo babu eine
+/// Angabe aus einer Unterlage gelesen hat, steht die Unterlage dabei. Wo
+/// nicht, steht nichts dabei — Herkunft wird nicht erfunden.
+///
+/// Kein Balken, keine Prozente, kein „5 von 7". Das Profil ist keine Prüfung.
 struct BetriebsprofilView: View {
     @EnvironmentObject var store: AppStore
 
@@ -16,28 +21,22 @@ struct BetriebsprofilView: View {
     @State private var laedt = true
     @State private var karten: [Betriebskarte] = []
     @State private var quellen: [String] = []
+    @State private var wachstum = Profilwachstum()
+    @State private var vertraege = 0
 
-    private var fehlend: [String] {
-        Einrichtung.fehlendeBetriebsfelder(angaben ?? [:])
+    private var bekannt: [(feld: Profilfeld, wert: String)] {
+        Einrichtung.bekannteFelder(angaben ?? [:])
     }
 
-    private var bekannt: [(name: String, wert: String)] {
-        guard let angaben else { return [] }
-        return Einrichtung.betriebsfelder.compactMap { feld in
-            let wert = (angaben[feld.schluessel] ?? "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            return wert.isEmpty ? nil : (feld.name, wert)
-        }
+    private var naechstes: [(quelle: Lernquelle, satz: String)] {
+        Einrichtung.naechstes(angaben ?? [:])
     }
 
-    private var steuernummer: String? {
-        guard let angaben else { return nil }
-        for schluessel in ["steuernummer", "ust_id"] {
-            let wert = (angaben[schluessel] ?? "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !wert.isEmpty { return wert }
-        }
-        return nil
+    /// Wie viele Unterlagen zu diesem Bild beigetragen haben. Belege auf dem
+    /// Gerät zählen mit — sie sind der häufigste Weg, auf dem etwas dazukommt.
+    private var beitraege: Int {
+        wachstum.unterlagen.count + vertraege
+            + store.belege.filter { $0.istDemo != true }.count
     }
 
     var body: some View {
@@ -59,9 +58,8 @@ struct BetriebsprofilView: View {
                 }
             } else {
                 bekanntAbschnitt
-                if !fehlend.isEmpty || steuernummer == nil { fehltAbschnitt }
+                if !naechstes.isEmpty { naechstesAbschnitt }
                 if !karten.isEmpty { ausUnterlagenAbschnitt }
-                herkunftAbschnitt
                 aendernAbschnitt
             }
         }
@@ -71,78 +69,107 @@ struct BetriebsprofilView: View {
         .task { await laden() }
     }
 
-    // MARK: - Was feststeht
+    // MARK: - Was babu schon weiß
 
     private var bekanntAbschnitt: some View {
         Section {
-            if bekannt.isEmpty && steuernummer == nil {
-                Text("Noch nichts. Fotografiere einen Brief vom Finanzamt oder "
-                     + "trag die Angaben unten selbst ein — dann steht es hier.")
+            if bekannt.isEmpty {
+                Text("Noch nichts. Fotografier einen Brief vom Finanzamt — "
+                     + "babu holt sich heraus, was es braucht. Oder trag die "
+                     + "Angaben unten selbst ein.")
                     .font(.footnote)
                     .foregroundStyle(GC.desc)
             } else {
-                ForEach(bekannt, id: \.name) { eintrag in
-                    angabe(eintrag.name, eintrag.wert)
-                }
-                if let steuernummer {
-                    angabe("Steuernummer", steuernummer)
+                ForEach(bekannt, id: \.feld.schluessel) { eintrag in
+                    angabe(eintrag.feld, eintrag.wert)
                 }
             }
         } header: {
             Text("Das weiß babu über deinen Betrieb")
+        } footer: {
+            if beitraege > 0 {
+                Text(wachstumssatz)
+            }
         }
     }
 
-    private func angabe(_ name: String, _ wert: String) -> some View {
+    /// Der leise Satz darunter: das Bild wächst mit jedem Dokument. Ohne
+    /// Zahl, die etwas verlangt — die Zahl sagt, was schon da ist.
+    private var wachstumssatz: String {
+        var teile = ["\(beitraege) "
+                     + (beitraege == 1 ? "Unterlage hat" : "Unterlagen haben")
+                     + " zu diesem Bild beigetragen."]
+        if !wachstum.herkunft.isEmpty {
+            teile.append("Mit jeder weiteren wird es vollständiger.")
+        } else {
+            teile.append("Je mehr du fotografierst, desto mehr steht hier "
+                         + "von selbst.")
+        }
+        return teile.joined(separator: " ")
+    }
+
+    private func angabe(_ feld: Profilfeld, _ wert: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 15))
                 .foregroundStyle(GC.ok)
                 .padding(.top, 2)
             VStack(alignment: .leading, spacing: 2) {
-                Text(name)
+                Text(feld.name)
                     .font(.caption)
                     .foregroundStyle(GC.muted)
                 Text(wert)
                     .font(.subheadline)
                     .foregroundStyle(GC.fg)
                     .fixedSize(horizontal: false, vertical: true)
+                // Nur wo babu die Unterlage wirklich kennt. Was von Hand
+                // eingetragen wurde, steht ohne Zusatz da — eine erfundene
+                // Herkunft wäre schlimmer als gar keine.
+                if let woher = herkunft(feld) {
+                    Text(woher)
+                        .font(.caption2)
+                        .foregroundStyle(GC.accent)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 1)
+                }
             }
         }
         .padding(.vertical, 2)
     }
 
-    // MARK: - Was fehlt
-
-    private var fehltAbschnitt: some View {
-        Section {
-            ForEach(fehlend, id: \.self) { name in
-                HStack(spacing: 10) {
-                    Image(systemName: "circle.dashed")
-                        .font(.system(size: 15))
-                        .foregroundStyle(GC.warn)
-                    Text(name)
-                        .font(.subheadline)
-                        .foregroundStyle(GC.fg)
-                }
-                .padding(.vertical, 2)
+    private func herkunft(_ feld: Profilfeld) -> String? {
+        for schluessel in [feld.schluessel, feld.ersatz].compactMap({ $0 }) {
+            if let h = wachstum.herkunft[schluessel] {
+                return "Kennt babu aus deiner Unterlage „\(h.unterlage)“."
             }
-            if steuernummer == nil {
-                HStack(spacing: 10) {
-                    Image(systemName: "circle.dashed")
-                        .font(.system(size: 15))
-                        .foregroundStyle(GC.warn)
-                    Text("Steuernummer")
+        }
+        return nil
+    }
+
+    // MARK: - Was als Nächstes dazukommt
+
+    private var naechstesAbschnitt: some View {
+        Section {
+            ForEach(naechstes, id: \.quelle) { eintrag in
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: eintrag.quelle.symbol)
+                        .font(.system(size: 14))
+                        .foregroundStyle(eintrag.quelle == .nurSelbst
+                                         ? GC.muted : GC.accent)
+                        .frame(width: 20)
+                        .padding(.top, 1)
+                    Text(eintrag.satz)
                         .font(.subheadline)
-                        .foregroundStyle(GC.fg)
+                        .foregroundStyle(GC.body)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.vertical, 2)
+                .padding(.vertical, 3)
             }
         } header: {
-            Text("Das fehlt noch")
+            Text("Das kommt als Nächstes dazu")
         } footer: {
-            Text("Meist steht es auf einem Brief vom Finanzamt. Fotografier ihn "
-                 + "einfach — babu holt sich heraus, was es braucht.")
+            Text("Nichts davon musst du heute erledigen. Es kommt von selbst, "
+                 + "sobald die Unterlage einmal durch die Kamera geht.")
         }
     }
 
@@ -194,47 +221,6 @@ struct BetriebsprofilView: View {
         }
     }
 
-    // MARK: - Woher das kommt
-
-    private var herkunftAbschnitt: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Du fotografierst, babu baut daraus das Bild deines Betriebs.")
-                    .font(.subheadline)
-                    .foregroundStyle(GC.fg)
-                herkunftZeile("doc.text.viewfinder",
-                              "Briefe vom Finanzamt — Steuernummer, Finanzamt, "
-                              + "wie du angemeldet bist")
-                herkunftZeile("shippingbox",
-                              "Verträge — Miete, Strom, Leasing")
-                herkunftZeile("building.columns",
-                              "Kontoauszüge — was regelmäßig abgeht")
-                herkunftZeile("rectangle.stack",
-                              "Belege — woran du verdienst und was du ausgibst")
-            }
-            .padding(.vertical, 2)
-        } header: {
-            Text("Woher babu das hat")
-        } footer: {
-            Text("Je mehr du einreichst, desto vollständiger wird dieses Bild — "
-                 + "und desto weniger musst du selbst eintippen.")
-        }
-    }
-
-    private func herkunftZeile(_ symbol: String, _ satz: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: symbol)
-                .font(.system(size: 13))
-                .foregroundStyle(GC.accent)
-                .frame(width: 20)
-                .padding(.top, 2)
-            Text(satz)
-                .font(.caption)
-                .foregroundStyle(GC.desc)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
     // MARK: - Selbst ändern
 
     private var aendernAbschnitt: some View {
@@ -256,6 +242,15 @@ struct BetriebsprofilView: View {
         guard let url = URL(string: store.ablageURL),
               let pat = KeychainHelfer.ladePAT() else { return }
         angaben = await AblageService.stammdatenLaden(basis: url, pat: pat)
+        if let gewachsen = await AblageService.profilwachstumLaden(basis: url,
+                                                                   pat: pat) {
+            wachstum = gewachsen
+        }
+        // Verträge zählen als Beitrag zum Bild: jeder bringt einen Partner,
+        // einen Betrag und eine Kündigungsfrist mit.
+        if let geld = await AblageService.vertraegeLaden(basis: url, pat: pat) {
+            vertraege = geld.vertraege.count
+        }
         // Der Salon-Check läuft über ein abgeschlossenes Jahr. Gibt es dafür
         // noch nichts, kommt eine leere Liste — dann bleibt der Abschnitt weg,
         // statt eine leere Überschrift zu zeigen.

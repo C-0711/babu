@@ -53,10 +53,17 @@ if Ausbaustufe.voll {
     pruefe("kein Punkt der Aufzählung fehlt",
            Set(Ausbaustufe.kontomenue) == Set(Kontomenuepunkt.allCases))
     print("— Einrichtung —")
-    pruefe("fünf Schritte, das Kassenbuch dabei",
-           Einrichtung.sichtbareSchritte(kontoVerbunden: true, angaben: [:],
-                                         ersterBeleg: false,
-                                         kassenbuchBegonnen: false).count == 5)
+    // BEWUSST GEÄNDERT am 08.09.2026. Hier stand: „fünf Schritte, das
+    // Kassenbuch dabei" — geprüft an `sichtbareSchritte`, das die
+    // Kassenbuch-Zeile im schmalen Bau wegfilterte, damit dort kein toter
+    // Knopf stand. Die Karte zeigt jetzt in BEIDEN Bauten nur noch den
+    // Anfang: verbinden und einmal auslösen. Damit ist der Filter gegen-
+    // standslos — die Zeile gibt es nirgends mehr. Der volle Stand aller
+    // fünf Schritte wird weiter berechnet (`schritte`, geprüft im
+    // Einrichtungs-Harness), er steht nur nicht mehr auf der Startseite.
+    pruefe("auch im großen Bau nur der Anfang",
+           Einrichtung.anfangsschritte(kontoVerbunden: true,
+                                       ersterBeleg: false).count == 2)
 } else {
     print("— Reiter —")
     pruefe("genau drei: Erfassen, Dokumente, Fragen",
@@ -79,24 +86,24 @@ if Ausbaustufe.voll {
     }
 
     print("— Einrichtung —")
-    let schritte = Einrichtung.sichtbareSchritte(kontoVerbunden: true, angaben: [:],
-                                                 ersterBeleg: false,
-                                                 kassenbuchBegonnen: false)
-    pruefe("vier Schritte — das Kassenbuch führte ins Leere",
-           schritte.count == 4)
-    pruefe("und es steht wirklich nicht mehr drin",
-           !schritte.contains { $0.ziel == .kassenbuch })
-    pruefe("ohne Kassenbuch kann die Karte trotzdem fertig werden",
-           Einrichtung.alleErledigt(
-               Einrichtung.sichtbareSchritte(
-                   kontoVerbunden: true,
-                   angaben: ["betrieb_name": "Salon Nina",
-                             "anschrift": "Musterweg 3, 70000 Stuttgart",
-                             "rechtsform": "Einzelunternehmen",
-                             "finanzamt": "Stuttgart", "telefon": "0711 1234",
-                             "email": "nina@0711.io", "kleinunternehmer": "Nein",
-                             "steuernummer": "12/345/67890"],
-                   ersterBeleg: true, kassenbuchBegonnen: false)))
+    // BEWUSST GEÄNDERT am 08.09.2026, siehe die Begründung im Pro-Zweig.
+    // Die Sorge, die hier stand, bleibt geprüft — nur an der richtigen
+    // Stelle: im schmalen Bau darf keine Zeile der Karte auf ein Ziel
+    // zeigen, das es hier gar nicht gibt.
+    let anfang = Einrichtung.anfangsschritte(kontoVerbunden: true,
+                                             ersterBeleg: false)
+    pruefe("zwei Schritte, in beiden Bauten dieselben", anfang.count == 2)
+    pruefe("kein Kassenbuch — es führte hier ins Leere",
+           !anfang.contains { $0.ziel == .kassenbuch })
+    pruefe("jede Zeile der Karte führt an eine Stelle, die es hier gibt",
+           anfang.allSatisfy { schritt in
+               switch schritt.ziel {
+               case .kassenbuch: return Ausbaustufe.erreichbar(Reiter.kasse)
+               case .konto, .betrieb, .steuernummer, .ersterBeleg: return true
+               }
+           })
+    pruefe("die Karte kann fertig werden, ohne dass eine Angabe ausgefüllt ist",
+           Einrichtung.anfangGeschafft(kontoVerbunden: true, ersterBeleg: true))
 }
 
 print("— Beide Bauten —")

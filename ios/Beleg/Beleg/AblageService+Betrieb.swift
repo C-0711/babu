@@ -44,6 +44,32 @@ struct Betriebskarte: Identifiable, Hashable {
     }
 }
 
+/// Woher babu eine einzelne Betriebsangabe hat: aus welcher Unterlage sie
+/// gelesen wurde und woran babu sie erkannt hat.
+///
+/// Kommt aus `GET /api/abschluss/status`, Liste `felder`. Nur Einträge mit
+/// Quelle zählen — der Rest sagt nichts über die Herkunft, und Herkunft
+/// erfindet die App nicht.
+struct Angabenherkunft: Identifiable, Hashable {
+    let schluessel: String
+    /// Der Dateiname, unter dem die Unterlage eingereicht wurde. Das sind
+    /// ihre eigenen Worte, kein Vokabular von uns.
+    let unterlage: String
+    /// Woran babu es erkannt hat — schon in Klartext, so wie es gelesen wurde.
+    let grund: String
+    var id: String { schluessel }
+}
+
+/// Was babu aus den eingereichten Unterlagen gelernt hat: welche Angabe aus
+/// welcher Unterlage, und welche Unterlagen dazu beigetragen haben.
+struct Profilwachstum {
+    var herkunft: [String: Angabenherkunft] = [:]
+    /// Die Dateien, die babu gelesen hat — für „aus vier Unterlagen".
+    var unterlagen: [String] = []
+
+    var istLeer: Bool { herkunft.isEmpty && unterlagen.isEmpty }
+}
+
 extension AblageService {
 
     // MARK: - Termine
@@ -421,6 +447,36 @@ extension AblageService {
         let quellen = (json["quellen"] as? [[String: Any]] ?? [])
             .compactMap { $0["datei"] as? String }
         return (karten, quellen)
+    }
+
+    /// Woher die Angaben im Profil stammen (`GET /api/abschluss/status`).
+    ///
+    /// Der Salon-Check merkt sich zu jedem gelesenen Feld die Unterlage und
+    /// den Grund (`schluessel`, `quelle`, `regel`) — das ist die einzige
+    /// Stelle, an der diese Herkunft überhaupt steht. Weder die
+    /// Betriebsangaben noch die Auswertung führen sie mit; was von Hand
+    /// eingetragen wurde, sieht dort aus wie Gelesenes. Deshalb bleibt hier
+    /// vieles ohne Herkunft — und dann steht auch keine da.
+    static func profilwachstumLaden(basis: URL, pat: String) async
+            -> Profilwachstum? {
+        guard let json = await holen("api/abschluss/status", basis: basis,
+                                     pat: pat) else { return nil }
+        var wachstum = Profilwachstum()
+        for eintrag in json["felder"] as? [[String: Any]] ?? [] {
+            guard let schluessel = eintrag["schluessel"] as? String,
+                  let quelle = (eintrag["quelle"] as? String)?
+                      .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !quelle.isEmpty else { continue }
+            // Der erste Eintrag gewinnt: der Salon-Check hat die Unterlagen
+            // schon nach Verlässlichkeit sortiert, als er sie geerntet hat.
+            guard wachstum.herkunft[schluessel] == nil else { continue }
+            wachstum.herkunft[schluessel] = Angabenherkunft(
+                schluessel: schluessel, unterlage: quelle,
+                grund: (eintrag["regel"] as? String) ?? "")
+        }
+        wachstum.unterlagen = (json["dokumente"] as? [[String: Any]] ?? [])
+            .compactMap { $0["datei"] as? String }
+        return wachstum
     }
 
     // MARK: - Dein Team

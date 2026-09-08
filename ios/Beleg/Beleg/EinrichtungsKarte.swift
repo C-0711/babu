@@ -1,15 +1,15 @@
 import SwiftUI
 
-/// Die Karte auf der Startseite, solange beim Einrichten noch etwas fehlt.
+/// Die Karte auf der Startseite — nur für den Anfang, nicht für die Dauer.
 ///
-/// Eine leere App mit fünf Reitern sagt nicht, was zu tun ist. Diese Karte
-/// sagt es — in fünf Zeilen, jede mit ihrem echten Stand dahinter, und jede
-/// führt an die Stelle, an der es weitergeht. Ist alles erledigt, ist sie weg.
+/// Eine leere App sagt nicht, was zu tun ist. Diese Karte sagt es, und dann
+/// geht sie: zwei Zeilen, verbinden und einmal auslösen. Alles Weitere —
+/// Betriebsangaben, Steuernummer, Kassenbuch — lernt babu aus dem, was
+/// fotografiert wird, und steht im Profil. Eine Liste, die oben stehen
+/// bleibt, bis ein Mensch sie abgearbeitet hat, ist eine Mahnung; sie
+/// misst ihn an dem, was ihm fehlt, statt an dem, was schon da ist.
 struct EinrichtungsKarte: View {
     let schritte: [Einrichtungsschritt]
-    /// Ohne Verbindung lässt sich über zwei Zeilen nichts sagen — dann gehört
-    /// ein Satz darunter, der das erklärt, statt eines geratenen „offen".
-    let kontoVerbunden: Bool
     var wahl: (Einrichtungsziel) -> Void
 
     var body: some View {
@@ -18,7 +18,8 @@ struct EinrichtungsKarte: View {
                 .font(.headline)
                 .fontDesign(.serif)
                 .foregroundStyle(GC.fg)
-            Text("Das steht noch an. Tipp eine Zeile an, dann geht es dort weiter.")
+            Text("Zwei Dinge, dann läuft es. Tipp eine Zeile an, "
+                 + "dann geht es dort weiter.")
                 .font(.caption)
                 .foregroundStyle(GC.desc)
                 .padding(.top, 3)
@@ -31,14 +32,13 @@ struct EinrichtungsKarte: View {
                 }
             }
 
-            if !kontoVerbunden {
-                Text("Was zu deinem Betrieb gehört, liegt in deinem babu-Konto. "
-                     + "Sobald du verbunden bist, steht es hier.")
-                    .font(.caption2)
-                    .foregroundStyle(GC.muted)
-                    .padding(.top, 10)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text("Alles andere — deine Angaben, deine Steuernummer, deine "
+                 + "Bankverbindung — liest babu nach und nach aus dem heraus, "
+                 + "was du fotografierst.")
+                .font(.caption2)
+                .foregroundStyle(GC.muted)
+                .padding(.top, 10)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .gcCard()
     }
