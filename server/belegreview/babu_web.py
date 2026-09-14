@@ -3279,7 +3279,10 @@ def _review_aus_einschaetzung(pfad: str, buchung: dict, zeilen: list,
         # (bestätigt vom Auftraggeber am 03.09.2026, siehe extf).
         "zahlungsart": buchung.get("zahlungsart") or None,
         "summenprobe_ok": summenprobe_ok,
-        "bewirtungssignal": False,
+        # Bei Bewirtung (§4 Abs. 5 Nr. 2 EStG) müssen Anlass und
+        # Teilnehmer nachgefragt werden — das Signal setzt den Beleg
+        # auf "nachfrage" bis zur Beantwortung (Issue #83).
+        "bewirtungssignal": buchung.get("kategorie") == "bewirtung",
         "offen": [],
         "herkunft": {"quelle": "Einschätzung auf dem Telefon — "
                                "Vision-Zeilen, von Gemma gebucht"},

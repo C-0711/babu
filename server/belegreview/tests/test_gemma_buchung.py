@@ -437,3 +437,51 @@ def test_blumen_werden_nach_verbleib_getrennt():
     # Der Katalog muss die Kategorie auch anbieten, sonst kann das Modell
     # sie nicht wählen.
     assert "dekoration" in gemma_buchung.katalog_text("SKR04")
+
+
+def test_bewirtung_setzt_bewirtungssignal_im_review():
+    """Bewirtungsbelege (§4 Abs. 5 Nr. 2 EStG) brauchen Anlass und Teilnehmer.
+    Das bewirtungssignal muss gesetzt werden, damit der Beleg auf "nachfrage"
+    geht, bis diese Angaben ergänzt sind (Issue #83)."""
+    import babu_web  # noqa: PLC0415
+    buchung = {
+        "kategorie": "bewirtung",
+        "kategorie_name": "Bewirtung (70 %)",
+        "konto": "6640",
+        "lieferant": "Restaurant",
+        "datum": "2026-09-14",
+        "betrag": 100.0,
+        "betrag_eur": 100.0,
+        "waehrung": "EUR",
+        "ust_satz": 19,
+        "buchungstext": "Bewirtung Geschäftsessen",
+        "begruendung": "Geschäftsessen",
+        "positionen": [],
+    }
+    review, _ = babu_web._review_aus_einschaetzung(
+        "docs/2026-09/test.jpg", buchung, ["Restaurant"], "beleg")
+    assert review["felder"]["bewirtungssignal"] is True, \
+        "Bewirtungsbelege müssen bewirtungssignal=True setzen"
+
+
+def test_keine_bewirtung_kein_signal():
+    """Normale Belege (nicht Bewirtung) dürfen kein bewirtungssignal setzen."""
+    import babu_web  # noqa: PLC0415
+    buchung = {
+        "kategorie": "material",
+        "kategorie_name": "Salonbedarf",
+        "konto": "6800",
+        "lieferant": "Lieferant",
+        "datum": "2026-09-14",
+        "betrag": 50.0,
+        "betrag_eur": 50.0,
+        "waehrung": "EUR",
+        "ust_satz": 19,
+        "buchungstext": "Material",
+        "begruendung": "Salonbedarf",
+        "positionen": [],
+    }
+    review, _ = babu_web._review_aus_einschaetzung(
+        "docs/2026-09/test.jpg", buchung, ["Material"], "beleg")
+    assert review["felder"]["bewirtungssignal"] is False, \
+        "Nur Bewirtungsbelege setzen bewirtungssignal"
