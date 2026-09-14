@@ -107,19 +107,15 @@ Jeder Schritt mit Datum in `audit_log` (`audit.audit(<betreiber>, "loeschung", z
 Der Code des Plans ist seit 14.09.2026 komplett gebaut und deployt. Diese fünf Schritte
 brauchen Zugänge, die nur der Betreiber hat. Reihenfolge ist egal, bis auf 1 → 5.
 
-**1. App Store Connect: App-Eintrag anlegen.** appstoreconnect.apple.com → Apps → „+" →
-Neue App: Plattform iOS, Name (muss im Store weltweit eindeutig sein — „babu" wird
-womöglich abgelehnt, dann „babu Belege"), Primärsprache Deutsch, Bundle-ID `io.0711.beleg`
-(steht in der Liste, weil Xcode sie beim Gerätebau angelegt hat), SKU frei (`babu-beleg`).
-Danach TestFlight → Interne Tests → Gruppe „Pilot" mit dir und Nina. Dann auf dem Mac:
-
-    ios/archiv.sh Beleg
-
-lädt Build 0.1.0 (2) hoch (Team 8L87Z2GRSG in Xcode angemeldet, oder `ASC_KEY_ID`,
-`ASC_ISSUER_ID`, `ASC_KEY_PFAD` für den Weg ohne Dialog). Vor jedem weiteren Upload
-`CURRENT_PROJECT_VERSION` in `ios/Beleg/project.yml` **und** `project.pbxproj` hochzählen.
-Externe Tester (Beta App Review) erst mit Schritt 3: Apple will die Datenschutz-URL
-`https://babu.0711.io/datenschutz` und ein Testkonto in den Notizen.
+**1. App Store Connect — erledigt 14.09.2026.** App „babu Belege" (Apple-ID 6811956687,
+Bundle `io.0711.beleg`, SKU `babu-beleg`; „babu" allein ist im Store vergeben), Build 0.1.0 (2)
+per `ios/archiv.sh Beleg` hochgeladen und verarbeitet, interne Gruppe „Pilot" mit automatischer
+Verteilung, christoph@0711.io als Tester. Beta-App-Infos (Beschreibung, Feedback nina@0711.io,
+Datenschutz-URL `/datenschutz`) gespeichert. Offen: Nina als App-Store-Connect-Nutzerin
+(Users and Access, braucht ihren echten Namen) oder externe Gruppe nach der Beta-Review;
+Review-Kontakt braucht eine Telefonnummer und ein Testkonto; Händlerstatus (DSA) im Bereich
+Business vor einer Store-Einreichung. Vor jedem weiteren Upload `CURRENT_PROJECT_VERSION` in
+`ios/Beleg/project.yml` **und** `project.pbxproj` hochzählen.
 
 **2. Mail-Dienst — erledigt 14.09.2026.** Resend, Team „0711" (Anmeldung per Google mit
 binary@0711.io), Domain `babu.0711.io` verifiziert (Region Irland, DKIM `resend._domainkey.babu`,
