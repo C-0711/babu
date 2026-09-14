@@ -135,10 +135,12 @@ Erprobungsfassung ist. `recht.fertig()` ist damit wahr, `ios/archiv.sh` warnt ni
 Die Anwältin ersetzt die Texte vor dem allgemeinen Start an derselben Stelle; danach Suite
 (`tests/test_recht.py`) und Deploy. AVV als PDF je Betrieb ablegen, nicht im Repo.
 
-**4. Kanzlei-Konto GKM — angelegt 14.09.2026.** Konto `j.neef@gkm-group.de` (Rolle
-`kanzlei`, Kanzlei-Id 8 „GKM Group Bonn", Inhaber). Das Startpasswort wurde nie ausgegeben;
-der Einstieg läuft über „Passwort vergessen" im Portal: `POST /api/passwort-vergessen`
-mit der Adresse schickt den Link per Mail. Danach zwei Testbetriebe nach Abschnitt 1.
+**4. Kanzlei-Konto GKM — angelegt 14.09.2026.** Kanzlei-Id 8 „Kanzlei GKM", Inhaber
+Jonas Neef, Konto `neefjonas@aol.com` (Rolle `kanzlei`); der Link zum Passwort setzen ging am
+14.09. per Mail raus (landet auf `/portal#reset/…`, die Karte „Passwort setzen" im Portal).
+Zweiter Inhaber-Zugang `j.neef@gkm-group.de`, ohne verschickten Link. Startpasswörter wurden
+nie ausgegeben; bei Bedarf „Passwort vergessen" im Portal. Danach zwei Testbetriebe nach
+Abschnitt 1.
 
 **5. DATEV-Import bei GKM Neff.** Ninas Monat über `/datev` als Stapel exportieren
 (Prüfbefund muss leer sein), Import bei der Kanzlei, #REW-Meldungen als Protokoll
