@@ -1749,8 +1749,12 @@ def api_login(body: dict, request: Request) -> Response:
         c.execute("UPDATE nutzer SET letzter_login=? WHERE email=?",
                   (_jetzt_iso(), email))
     exp = int(time.time()) + SESSION_DAUER
+    # `box` wie in `/api/app-anmelden`: die Antwort, die der Server beim
+    # nächsten Beleg geben wird — nicht das Flag `nutzer.box`. Ein Betrieb,
+    # dessen Belegbox noch eingerichtet wird, bekommt hier `false` statt
+    # leerer Kacheln und 409 bei jedem Klick.
     antwort = JSONResponse({"un": email, "rolle": n["rolle"],
-                            "box": box_mitglied(email)})
+                            "box": _hat_ablage(email)})
     antwort.set_cookie(SESSION_COOKIE, _signieren(email, exp), max_age=SESSION_DAUER,
                        httponly=True, secure=SESSION_SECURE, samesite="lax", path="/")
     return antwort
@@ -1861,7 +1865,10 @@ def api_ich(request: Request) -> Response:
     else:
         betreute = len([m for m in mandanten.mandanten_fuer(un)
                         if m["status"] != "beendet"])
-    antwort = JSONResponse({"un": un, "rolle": meine_rolle, "box": box_mitglied(un),
+    # `box` über `_hat_ablage`, nicht `box_mitglied`: dieselbe Antwort wie
+    # beim Hochladen. Für Kanzlei- und PAT-Konten ohne eigenes Mandat fällt
+    # es auf die Mitgliedschaft zurück — für sie ändert sich nichts.
+    antwort = JSONResponse({"un": un, "rolle": meine_rolle, "box": _hat_ablage(un),
                             "hat_passwort": bool(nutzer_holen(un)),
                             "mandanten": betreute})
     if request.cookies.get(SESSION_COOKIE):

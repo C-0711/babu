@@ -341,3 +341,32 @@ def test_der_onboarding_vertrag_landet_beim_richtigen_salon(welt, monkeypatch):
     nummer, fehler = bw._eigener_mandant(welt["bea"])  # noqa: SLF001
     assert fehler is None and nummer == welt["bea_id"]
     assert bx.box_von(welt["bea"], nummer).ref == "inspektor/ws-bea/babu"
+
+
+def test_auch_login_und_ich_sagen_ob_es_eine_ablage_gibt(welt):
+    """Bis 14.09.2026 sagte nur `/api/app-anmelden` die Wahrheit über die
+    Ablage; `/api/login` und `/api/ich` meldeten weiter das alte Flag
+    `nutzer.box`. Das Portal zeigte einem Betrieb, dessen Box noch
+    eingerichtet wird, leere Kacheln statt „wird eingerichtet"."""
+    bw = welt["bw"]
+    from fastapi.testclient import TestClient
+
+    def login(email):
+        client = TestClient(bw.app, base_url="https://testserver")
+        bw._LOGIN_VERSUCHE.clear()  # noqa: SLF001
+        r = client.post("/api/login", json={"email": email, "passwort": PASSWORT})
+        assert r.status_code == 200, r.text
+        return client, r.json()
+
+    _, a = login(welt["anna"])
+    assert a["box"] is True                         # Mandat mit Box
+    client, o = login(welt["ohne"])
+    assert o["box"] is False                        # Box wird eingerichtet
+    assert client.get("/api/ich").json()["box"] is False
+    client, al = login(welt["allein"])
+    assert al["box"] is True                        # Default-Box wie heute
+    assert client.get("/api/ich").json()["box"] is True
+    # Die Kanzlei hat kein eigenes Mandat: für sie zählt weiter die Mitgliedschaft.
+    client, b = login(welt["buero"])
+    assert b["box"] is bw.box_mitglied(welt["buero"])
+    assert client.get("/api/ich").json()["box"] is bw.box_mitglied(welt["buero"])
