@@ -8,6 +8,13 @@ eine Meldung geht nie verloren, und Nina liest immer sofort „angekommen".
 Labels sind die Zustandsmaschine (Spec 2026-08-26-nina-meldeschleife):
     offen ohne Prozess-Label = gemeldet · in-arbeit · zur-abnahme = bitte prüfen
     braucht-christoph zeigt Nina schlicht „in Arbeit" · geschlossen = erledigt
+
+Seit dem 14.09.2026 trägt jedes Issue zusätzlich ein Betriebs-Label
+(`betrieb-<mandant_id>`, für den Ein-Betrieb ohne Mandantenzeile
+`betrieb-default`). Es ist die Grenze zwischen den Betrieben: gelesen,
+freigegeben und beanstandet wird nur, was das eigene Label trägt. `von-nina`
+bleibt daneben stehen — der autonome Fixlauf filtert darauf, und die Meldung
+soll dort weiter ankommen.
 """
 from __future__ import annotations
 
@@ -23,16 +30,40 @@ import db
 import rueckmeldung as rm
 
 ART_LABEL = {"fehler": "bug", "wunsch": "wunsch"}
+BETRIEB_DEFAULT = "betrieb-default"
 
 
-def als_issue(m: rm.Meldung) -> dict:
-    """Die Nutzlast für POST /projects/:id/issues — Ninas Worte, unsere Labels."""
+def betrieb_label(mandant_id) -> str:
+    """Das Label, das eine Meldung ihrem Betrieb zuordnet.
+
+    Die Mandantennummer und nicht das Konto: das Konto ist eine E-Mail mit
+    Sonderzeichen, und eine Mitarbeiterin meldet für denselben Betrieb wie
+    ihre Inhaberin. Ohne Mandantenzeile (der Ein-Betrieb, PAT-Zugänge) ist
+    es `betrieb-default` — genau die Box, in die diese Zugänge auch laden."""
+    if mandant_id is None:
+        return BETRIEB_DEFAULT
+    return f"betrieb-{int(mandant_id)}"
+
+
+def gehoert_zu(issue: dict, betrieb: str) -> bool:
+    """Trägt das Issue das Betriebs-Label? Ohne das darf niemand daran."""
+    return betrieb in set(issue.get("labels") or [])
+
+
+def als_issue(m: rm.Meldung, betrieb: str | None = None) -> dict:
+    """Die Nutzlast für POST /projects/:id/issues — Ninas Worte, unsere Labels.
+
+    `betrieb` ist das Label aus `betrieb_label()`. GitLab legt ein
+    unbekanntes Label beim Anlegen selbst an, es braucht keine Vorbereitung."""
     if not m.text.strip():
         raise ValueError("leere Meldung")
+    labels = [ART_LABEL.get(m.art, "bug"), "von-nina"]
+    if betrieb:
+        labels.append(betrieb)
     return {
         "title": rm.titel_aus(m.text),
         "description": rm.koerper_aus(m),
-        "labels": f"{ART_LABEL.get(m.art, 'bug')},von-nina",
+        "labels": ",".join(labels),
     }
 
 

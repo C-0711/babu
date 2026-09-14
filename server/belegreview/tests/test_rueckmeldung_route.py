@@ -38,7 +38,8 @@ def test_gitlab_da_wird_issue(klient, monkeypatch):
         "bild": base64.b64encode(b"jpegbytes").decode()})
     assert r.status_code == 200
     assert r.json()["issue"] == "91"
-    assert gesehen["issue"]["labels"] == "bug,von-nina"
+    # Seit 14.09.2026 trägt die Meldung ihr Betriebs-Label (Ein-Betrieb: default).
+    assert gesehen["issue"]["labels"] == "bug,von-nina,betrieb-default"
     assert gesehen["bild"] == b"jpegbytes"
 
 
@@ -106,11 +107,11 @@ def test_erfolgreiche_meldung_invalidiert_cache(klient, monkeypatch):
     monkeypatch.setattr(gm, "issue_anlegen", lambda *a, **k: (True, "64"))
     # Cache vorher füllen — simuliert den Fall, dass Nina kurz vor dem Melden
     # die Liste aufgerufen hat (und dort ihre neue Meldung noch nicht sieht).
-    bw._MELDUNGEN_CACHE.update(stand=999999.0, daten=[{"iid": 1, "titel": "alt"}])
+    bw._meldungen_cache("betrieb-default").update(stand=999999.0, daten=[{"iid": 1, "titel": "alt"}])
     r = c.post("/api/rueckmeldung", json={"text": "Neue Meldung fehlt in der Liste."})
     assert r.status_code == 200
     # Cache muss ungültig sein (stand=0.0), damit der nächste GET frisch holt.
-    assert bw._MELDUNGEN_CACHE["stand"] == 0.0
+    assert bw._meldungen_cache("betrieb-default")["stand"] == 0.0
 
 
 def test_gepufferte_meldung_invalidiert_cache_nicht(klient, monkeypatch):
@@ -120,8 +121,8 @@ def test_gepufferte_meldung_invalidiert_cache_nicht(klient, monkeypatch):
     noch gültigen Cache zu verwenden."""
     c, bw, gm = klient
     monkeypatch.setattr(gm, "issue_anlegen", lambda *a, **k: (False, "weg"))
-    bw._MELDUNGEN_CACHE.update(stand=999999.0, daten=[{"iid": 1, "titel": "alt"}])
+    bw._meldungen_cache("betrieb-default").update(stand=999999.0, daten=[{"iid": 1, "titel": "alt"}])
     r = c.post("/api/rueckmeldung", json={"text": "GitLab ist weg."})
     assert r.status_code == 200
     # Cache muss unverändert bleiben (stand immer noch 999999.0).
-    assert bw._MELDUNGEN_CACHE["stand"] == 999999.0
+    assert bw._meldungen_cache("betrieb-default")["stand"] == 999999.0

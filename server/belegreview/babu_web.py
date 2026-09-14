@@ -7138,13 +7138,16 @@ async def api_rueckmeldung(request: Request) -> Response:
         geraet=str(body.get("geraet") or "")[:80] or None,
         fassung=str(body.get("fassung") or "")[:40] or None,
     )
+    betrieb = _betrieb_label()
     try:
-        issue = gm.als_issue(meldung)
+        issue = gm.als_issue(meldung, betrieb=betrieb)
     except ValueError as ex:
         return JSONResponse({"fehler": str(ex)}, status_code=400)
 
     ok, was = await run_in_threadpool(gm.issue_anlegen, issue, bild)
     if not ok:
+        # Der Puffer trägt das fertige Issue samt Betriebs-Label mit — beim
+        # Nachtragen muss niemand mehr wissen, wer damals angemeldet war.
         await run_in_threadpool(
             _rueckmeldung_puffern,
             {"issue": issue, "bild_b64": body.get("bild") or None})
@@ -7152,7 +7155,7 @@ async def api_rueckmeldung(request: Request) -> Response:
         # Wenn GitLab wieder da ist, gleich Liegengebliebenes mitnehmen.
         await run_in_threadpool(_rueckmeldung_nachtragen)
         # Cache ungültig machen, damit die neue Meldung sofort in der Liste erscheint.
-        _MELDUNGEN_CACHE.update(stand=0.0)
+        _meldungen_cache(betrieb).update(stand=0.0)
     print(f"[rückmeldung] {un}: {issue['title'][:60]} — "
           f"{'issue ' + was if ok else 'gepuffert (' + was + ')'}", flush=True)
     return JSONResponse({"ok": True, "titel": issue["title"],
@@ -7163,8 +7166,24 @@ async def api_rueckmeldung(request: Request) -> Response:
 #
 # 60 s Cache, weil die App die Liste bei jedem Öffnen zieht und GitLab auf
 # derselben Maschine wohnt wie der Rest — kein Grund, es im Takt zu löchern.
-_MELDUNGEN_CACHE: dict = {"stand": 0.0, "daten": None}
+#
+# Ein Eintrag JE BETRIEB (Schlüssel = Betriebs-Label). Bis 14.09.2026 war es
+# ein einziger Eintrag für alle — und damit sah jeder Betrieb die Liste, die
+# der vorige gerade geholt hatte.
+_MELDUNGEN_CACHE: dict[str, dict] = {}
 _STATUS_RANG = {"bitte-pruefen": 0, "in-arbeit": 1, "gemeldet": 2, "erledigt": 3}
+
+
+def _betrieb_label() -> str:
+    """Das Betriebs-Label des laufenden Requests — aus dem aktiven Mandanten,
+    den `_api_wache` gesetzt hat (auch beim Acting-as der Kanzlei). Ohne
+    Mandantenzeile ist es `betrieb-default`, wie die Box, in die geladen wird."""
+    import gitlab_meldungen as gm  # noqa: PLC0415
+    return gm.betrieb_label(_AKTIVER_MANDANT.get(None))
+
+
+def _meldungen_cache(betrieb: str) -> dict:
+    return _MELDUNGEN_CACHE.setdefault(betrieb, {"stand": 0.0, "daten": None})
 
 
 def _letzte_claude_notiz(iid: int) -> str | None:
@@ -7188,13 +7207,17 @@ async def api_rueckmeldungen(request: Request) -> Response:
     if fehler:
         return fehler
     import gitlab_meldungen as gm  # noqa: PLC0415
+    betrieb = _betrieb_label()
+    cache = _meldungen_cache(betrieb)
     jetzt = time.time()
-    if _MELDUNGEN_CACHE["daten"] is not None and jetzt - _MELDUNGEN_CACHE["stand"] < 60:
-        return JSONResponse({"meldungen": _MELDUNGEN_CACHE["daten"]})
+    if cache["daten"] is not None and jetzt - cache["stand"] < 60:
+        return JSONResponse({"meldungen": cache["daten"]})
     await run_in_threadpool(_rueckmeldung_nachtragen)
-    issues = await run_in_threadpool(gm.issues_holen)
+    # Beide Labels zugleich: GitLab verknüpft sie mit UND — nur die Meldungen
+    # DIESES Betriebs, und nur die aus dem Rückmeldeknopf.
+    issues = await run_in_threadpool(gm.issues_holen, f"von-nina,{betrieb}")
     if issues is None:
-        alt = _MELDUNGEN_CACHE["daten"]
+        alt = cache["daten"]
         return JSONResponse({"meldungen": alt or [],
                              "hinweis": "gerade nicht erreichbar" if alt is None else None})
     eintraege = []
@@ -7209,16 +7232,22 @@ async def api_rueckmeldungen(request: Request) -> Response:
     eintraege.sort(key=lambda e: (_STATUS_RANG[e["status"]], -e["iid"]))
     erledigt = [e for e in eintraege if e["status"] == "erledigt"][:20]
     eintraege = [e for e in eintraege if e["status"] != "erledigt"] + erledigt
-    _MELDUNGEN_CACHE.update(stand=jetzt, daten=eintraege)
+    cache.update(stand=jetzt, daten=eintraege)
     return JSONResponse({"meldungen": eintraege})
 
 
-def _meldung_im_zustand(iid: int, erwartet: str):
-    """Vor jedem Schreiben den Ist-Zustand prüfen — kein blindes Überschreiben."""
+def _meldung_im_zustand(iid: int, erwartet: str, betrieb: str):
+    """Vor jedem Schreiben den Ist-Zustand prüfen — kein blindes Überschreiben.
+
+    Zuerst die Zugehörigkeit: eine Meldung eines anderen Betriebs gibt es
+    aus Sicht dieses Betriebs nicht — deshalb 404 und nicht 403, das
+    verriete, dass die Nummer vergeben ist."""
     import gitlab_meldungen as gm  # noqa: PLC0415
     issue = gm.issue_holen(iid)
     if issue is None:
         return None, JSONResponse({"fehler": "gerade nicht erreichbar"}, status_code=503)
+    if not gm.gehoert_zu(issue, betrieb):
+        return None, JSONResponse({"fehler": "Meldung nicht gefunden"}, status_code=404)
     if gm.status_von(issue) != erwartet:
         return None, JSONResponse({"fehler": "die Meldung ist nicht (mehr) zur "
                                    "Prüfung offen"}, status_code=409)
@@ -7231,7 +7260,8 @@ async def api_rueckmeldung_freigeben(iid: int, request: Request) -> Response:
     if fehler:
         return fehler
     import gitlab_meldungen as gm  # noqa: PLC0415
-    _, fehler = await run_in_threadpool(_meldung_im_zustand, iid, "bitte-pruefen")
+    betrieb = _betrieb_label()
+    _, fehler = await run_in_threadpool(_meldung_im_zustand, iid, "bitte-pruefen", betrieb)
     if fehler:
         return fehler
     await run_in_threadpool(gm.notiz, iid, f"fachlich freigegeben von {un}")
@@ -7242,7 +7272,7 @@ async def api_rueckmeldung_freigeben(iid: int, request: Request) -> Response:
         return JSONResponse(
             {"fehler": "GitLab hat die Freigabe gerade nicht angenommen — "
                        "bitte gleich noch einmal."}, status_code=503)
-    _MELDUNGEN_CACHE.update(stand=0.0)
+    _meldungen_cache(betrieb).update(stand=0.0)
     return JSONResponse({"ok": True})
 
 
@@ -7260,7 +7290,8 @@ async def api_rueckmeldung_beanstanden(iid: int, request: Request) -> Response:
         return JSONResponse({"fehler": "Sag kurz, was noch nicht stimmt — ein "
                              "Satz genügt."}, status_code=400)
     import gitlab_meldungen as gm  # noqa: PLC0415
-    _, fehler = await run_in_threadpool(_meldung_im_zustand, iid, "bitte-pruefen")
+    betrieb = _betrieb_label()
+    _, fehler = await run_in_threadpool(_meldung_im_zustand, iid, "bitte-pruefen", betrieb)
     if fehler:
         return fehler
     notiz_ok = await run_in_threadpool(
@@ -7278,7 +7309,7 @@ async def api_rueckmeldung_beanstanden(iid: int, request: Request) -> Response:
         return JSONResponse(
             {"fehler": "GitLab hat die Beanstandung gerade nicht angenommen "
                        "— bitte gleich noch einmal."}, status_code=503)
-    _MELDUNGEN_CACHE.update(stand=0.0)
+    _meldungen_cache(betrieb).update(stand=0.0)
     return JSONResponse({"ok": True})
 
 

@@ -124,3 +124,17 @@ def test_puffer_bricht_beim_ersten_fehlschlag_ab(monkeypatch, tmp_path):
         rest = [json.loads(r)["issue"]["title"]
                 for (r,) in conn.execute("select nutzlast from meldung_puffer")]
     assert rest == ["zwei"]
+
+
+def test_betriebs_label_trennt_die_betriebe():
+    """Seit 14.09.2026: jede Meldung trägt ihr Betriebs-Label, `von-nina`
+    bleibt daneben (der Fixlauf filtert darauf)."""
+    assert gm.betrieb_label(2) == "betrieb-2"
+    assert gm.betrieb_label(None) == "betrieb-default"
+    m = rm.Meldung(text="Die Summe stimmt nicht.", art="fehler")
+    assert gm.als_issue(m, betrieb="betrieb-2")["labels"] == "bug,von-nina,betrieb-2"
+    # Ohne Label (alte Aufrufer, Puffer von vor dem Umbau) bleibt es beim Alten.
+    assert gm.als_issue(m)["labels"] == "bug,von-nina"
+    assert gm.gehoert_zu({"labels": ["bug", "betrieb-2"]}, "betrieb-2")
+    assert not gm.gehoert_zu({"labels": ["bug", "betrieb-2"]}, "betrieb-5")
+    assert not gm.gehoert_zu({}, "betrieb-default")
