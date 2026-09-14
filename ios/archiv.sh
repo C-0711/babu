@@ -61,8 +61,15 @@ if [ "$MODUS" = "--nur-ipa" ]; then
 else
   echo "── Upload zu App Store Connect ──"
 fi
+LOG="$ARCHIV_DIR/$SCHEMA-export.log"
 xcodebuild -exportArchive -archivePath "$ARCHIV" -exportOptionsPlist "$OPTIONEN" \
-  -exportPath "$EXPORT" -allowProvisioningUpdates $AUTH 2>&1 | grep -E 'error:|EXPORT (SUCCEEDED|FAILED)|Upload|\*\*' || true
+  -exportPath "$EXPORT" -allowProvisioningUpdates $AUTH > "$LOG" 2>&1 || true
+grep -E 'error:|EXPORT (SUCCEEDED|FAILED)|Upload' "$LOG" || true
+if ! grep -q 'EXPORT SUCCEEDED' "$LOG"; then
+  echo "Export fehlgeschlagen — Einzelheiten in $LOG:"
+  grep -iE 'error|reason|description' "$LOG" | grep -v '^error: exportArchive' | head -8
+  exit 1
+fi
 if [ "$MODUS" = "--nur-ipa" ]; then
   ls -la "$EXPORT"/*.ipa
 else
