@@ -66,6 +66,7 @@ GET /api/registrierungen
 GET /api/rueckmeldungen
 GET /api/salon-check
 GET /api/salon-check/bericht
+GET /api/signup-offen
 GET /api/team
 GET /api/team-foto/{person_id}
 GET /api/termine
@@ -82,6 +83,7 @@ GET /auswertung/{schluessel}
 GET /bilder/{name}
 GET /datev
 GET /einkauf
+GET /healthz
 GET /openapi.json
 GET /portal
 GET /portal/icon-{groesse}.png

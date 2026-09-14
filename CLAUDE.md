@@ -112,8 +112,14 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
 - Deploy: **immer `rsync server/ h200v:~/babu-docker/` komplett, nie eine
   Einzeldatei** (ein gemischter Build fiel nur auf, weil ein neues
   API-Feld live fehlte) → `cd ~/babu-docker/docker && docker compose build
-  && docker compose up -d` → geänderte Routen live durchrufen und ein neues
-  Feld direkt abfragen. Golden-Diff (`/api/belege` + `/api/abgleich/<monat>`
+  && docker compose up -d` → `GET /healthz` muss 200 mit `stand: ok` liefern
+  (seit 14.09.2026; `arbeit_offen` vor dem nächsten Deploy auf 0 warten) →
+  geänderte Routen live durchrufen und ein neues Feld direkt abfragen.
+  `docker/wache.sh` läuft im Host-Cron alle 2 min und startet bei
+  `unhealthy` neu. `BABU_SIGNUP=0` in Compose: kein Selbstbedienungs-Konto
+  im Pilot. Rückmeldungen tragen seit 14.09. ein Label je Betrieb
+  (`betrieb-<mandant_id>`, Ein-Betrieb `betrieb-default`); jeder sieht nur
+  seine. Golden-Diff (`/api/belege` + `/api/abgleich/<monat>`
   als `python3 -m json.tool --sort-keys`, Dateien unter `~/golden/`) bleibt
   das Ritual bei Änderungen am Buchungsweg; der Auftraggeber verzichtet
   ausdrücklich darauf, wenn er es sagt.
