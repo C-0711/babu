@@ -1014,12 +1014,16 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       </form>
       <details id="pw-vergessen">
         <summary>Passwort vergessen?</summary>
-        <p class="hilfetext">Halb so wild: Trag deine E-Mail-Adresse ein, dann bekommst du
-        einen Link, mit dem du ein neues Passwort setzt.</p>
-        <label class="nurvorlesen" for="pwv-email">E-Mail</label>
-        <input id="pwv-email" type="email" placeholder="E-Mail" autocomplete="email" style="margin-top:10px">
-        <button type="button" id="pwv-senden" class="voll" style="background:var(--gc-accent-subtle);color:var(--gc-fg);margin-top:0">Link schicken</button>
-        <p class="hilfetext" id="pwv-antwort" role="status" aria-live="polite" hidden></p>
+        <div id="pwv-formular" hidden>
+          <p class="hilfetext">Halb so wild: Trag deine E-Mail-Adresse ein, dann bekommst du
+          einen Link, mit dem du ein neues Passwort setzt.</p>
+          <label class="nurvorlesen" for="pwv-email">E-Mail</label>
+          <input id="pwv-email" type="email" placeholder="E-Mail" autocomplete="email" style="margin-top:10px">
+          <button type="button" id="pwv-senden" class="voll" style="background:var(--gc-accent-subtle);color:var(--gc-fg);margin-top:0">Link schicken</button>
+          <p class="hilfetext" id="pwv-antwort" role="status" aria-live="polite" hidden></p>
+        </div>
+        <p class="hilfetext" id="pwv-hinweis">Halb so wild: Sag deiner babu-Ansprechperson kurz Bescheid —
+        du bekommst ein neues Startpasswort und wählst danach wieder dein eigenes.</p>
       </details>
       <details id="code-login">
         <summary>Mit Zugangscode anmelden (Einrichtung)</summary>
@@ -1581,6 +1585,8 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       <button class="chip" id="pw-speichern">Passwort ändern</button>
       <span id="pw-status" style="font-size:12px;margin-left:8px;color:var(--gc-muted)"></span>
     </div>
+    <div class="sektion lbl" id="einst-geraete-lbl" hidden>Verbundene Telefone</div>
+    <div class="karte" id="einst-geraete" hidden><div class="skelett"></div></div>
     <div class="sektion lbl">Dein Paket</div>
     <div class="karte" id="einst-paket"><div class="skelett"></div></div>
     <div class="sektion lbl">Sag mir Bescheid</div>
@@ -4297,6 +4303,9 @@ async function ladeEinstellungen(){
     const eigenesKonto = !!ich.hat_passwort;
     $("#einst-pw-lbl").hidden = !eigenesKonto;
     $("#einst-pw").hidden = !eigenesKonto;
+    $("#einst-geraete-lbl").hidden = !eigenesKonto;
+    $("#einst-geraete").hidden = !eigenesKonto;
+    if (eigenesKonto) geraeteLaden();
     const testAn = localStorage.getItem("babu_testmodus") === "1";
     $("#einst-testmodus").checked = testAn;
     $("#einst-test").hidden = !testAn;
@@ -4313,6 +4322,24 @@ async function ladeEinstellungen(){
       `<b>${esc(p.name)}</b> <span style="font-size:12px;color:var(--gc-muted)">(in der Erprobung kostenlos)</span>` +
       (p.hinweise || []).map(h => `<p style="color:var(--gc-desc);font-size:13px;margin-top:6px">${esc(h)}</p>`).join("");
   }catch{}
+}
+/* Die Telefone, die mit dem Konto verbunden sind — mit einem Weg, eines zu
+   trennen (verloren, verkauft, verliehen). Kennungen nur in data-Attributen,
+   nie in onclick. */
+async function geraeteLaden(){
+  const k = $("#einst-geraete");
+  try{
+    const d = await (await api("/api/geraete")).json();
+    const g = d.geraete || [];
+    if (!g.length){ k.innerHTML = `<p style="color:var(--gc-desc);font-size:13px">Noch kein Telefon verbunden. In der App unter Einstellungen mit E-Mail und Passwort verbinden.</p>`; return; }
+    k.innerHTML = g.map(x => `<div class="feld"><span>${esc(x.name)}<br><small style="color:var(--gc-muted)">verbunden ${esc((x.verbunden||"").slice(0,10))}${x.zuletzt ? " · zuletzt " + esc(x.zuletzt.slice(0,10)) : ""}</small></span><button class="chip" data-geraet="${esc(x.id)}">Trennen</button></div>`).join("")
+      + `<p style="color:var(--gc-desc);font-size:13px;margin-top:8px">Ein getrenntes Telefon meldet sich beim nächsten Öffnen der App neu an.</p>`;
+    k.querySelectorAll("button[data-geraet]").forEach(b => b.addEventListener("click", async () => {
+      b.disabled = true;
+      try{ await api("/api/geraete/" + encodeURIComponent(b.dataset.geraet), {method:"DELETE"}); }catch{}
+      geraeteLaden();
+    }));
+  }catch{ k.innerHTML = `<p style="color:var(--gc-desc);font-size:13px">Gerade nicht abrufbar.</p>`; }
 }
 async function einstellungSpeichern(objekt){
   try{ await api("/api/einstellungen", {method:"POST",
@@ -7407,7 +7434,12 @@ const REG_SCHRITTE = [
    „Neu bei babu?" nicht. Bleibt die Antwort aus, bleibt die Karte, wie sie ist. */
 fetch("/api/signup-offen", {credentials:"same-origin"})
   .then(r => r.ok ? r.json() : null)
-  .then(j => { if (j && j.offen === false) $("#reg-einstieg").hidden = true; })
+  .then(j => {
+    if (!j) return;
+    if (j.offen === false) $("#reg-einstieg").hidden = true;
+    /* Das Formular nur, wenn wirklich eine Mail rausgeht — sonst der alte Hinweis. */
+    if (j.passwort_vergessen === true){ $("#pwv-formular").hidden = false; $("#pwv-hinweis").hidden = true; }
+  })
   .catch(() => {});
 $("#reg-start").addEventListener("click", () => {
   // Die Fragen ERSETZEN das Login — nicht darunterkleben.

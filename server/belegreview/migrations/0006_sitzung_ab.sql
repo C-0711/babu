@@ -1,0 +1,16 @@
+-- 0006_sitzung_ab — ein neues Passwort beendet die alten Sitzungen.
+--
+-- Abbild der Inline-Anweisung aus `babu_web._sqlite_schema()` (dort als
+-- ALTER TABLE mit OperationalError-Fang, wie `gehoert_zu` und `box`).
+-- Dieselbe Regel wie in 0001–0005: Postgres-Dialekt hier,
+-- `db._fuer_sqlite()` übersetzt zurück, `tests/test_db_dialekt.py` legt beide
+-- Schemata nebeneinander und vergleicht Spalte für Spalte.
+--
+-- Bis 14.09.2026 trug das Sitzungs-Cookie nur `un|exp`: wer sein Passwort
+-- änderte oder per Link zurücksetzte, ließ jede offene Sitzung 30 Tage
+-- weiterlaufen — auch die auf dem Gerät, wegen dem er es zurückgesetzt hat.
+-- Jetzt trägt das Cookie seine Ausgabezeit, und diese Spalte sagt, ab wann
+-- eine Sitzung ausgegeben sein muss, um zu gelten. NULL = nie ein Passwort
+-- geändert, alles gilt wie bisher. Kein IF NOT EXISTS: SQLite kennt es
+-- nicht, und der Runner fährt jede Datei genau einmal.
+ALTER TABLE nutzer ADD COLUMN sitzung_ab TEXT;

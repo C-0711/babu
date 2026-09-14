@@ -1,4 +1,5 @@
 DELETE /api/anlagen/{kennung}
+DELETE /api/geraete/{gid}
 GET /
 GET /api/abgleich/{monat}
 GET /api/ablage
@@ -26,6 +27,7 @@ GET /api/einstellungen
 GET /api/export/{monat}.csv
 GET /api/fehlende-belege
 GET /api/fristen/{jahr}
+GET /api/geraete
 GET /api/gespraech/{gespraech_id}
 GET /api/gespraeche
 GET /api/historie

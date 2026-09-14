@@ -281,6 +281,13 @@ def _sqlite_schema(conn) -> None:
         conn.execute("ALTER TABLE nutzer ADD COLUMN box INTEGER NOT NULL DEFAULT 1")
     except sqlite3.OperationalError:
         pass
+    # Ein neues Passwort beendet die alten Sitzungen (14.09.2026, Migration
+    # 0006): Sitzungs-Cookies, die vor diesem Zeitpunkt ausgegeben wurden,
+    # gelten nicht mehr. NULL = nie geändert, alles wie bisher.
+    try:
+        conn.execute("ALTER TABLE nutzer ADD COLUMN sitzung_ab TEXT")
+    except sqlite3.OperationalError:
+        pass
     # Termine enthalten Kundennamen — personenbezogen, also löschbar und
     # damit NICHT in der Belegbox (dort bleibt jede Fassung für immer).
     conn.execute("""CREATE TABLE IF NOT EXISTS termin
@@ -597,24 +604,54 @@ def _geheimnis() -> bytes:
 
 
 def _signieren(un: str, exp: int) -> str:
-    nutz = base64.urlsafe_b64encode(f"{un}|{exp}".encode()).decode().rstrip("=")
+    # Drittes Feld seit 14.09.2026: die Ausgabezeit. Daran misst
+    # `_sitzung_gilt`, ob das Cookie vor dem letzten Passwortwechsel entstand.
+    nutz = base64.urlsafe_b64encode(f"{un}|{exp}|{int(time.time())}".encode()).decode().rstrip("=")
     sig = hmac.new(_geheimnis(), nutz.encode(), hashlib.sha256).hexdigest()
     return f"{nutz}.{sig}"
 
 
-def _pruefen(wert: str) -> str | None:
+def _cookie_felder(wert: str) -> tuple[str, int, int] | None:
+    """(un, exp, ausgabe) aus einem gültig signierten Cookie — sonst None.
+    Ältere Cookies ohne drittes Feld gelten als Ausgabe 0: sie bleiben gültig,
+    bis das Konto das erste Mal ein Passwort ändert."""
     try:
         nutz, sig = wert.split(".", 1)
         erwartet = hmac.new(_geheimnis(), nutz.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(sig, erwartet):
             return None
         roh = base64.urlsafe_b64decode(nutz + "=" * (-len(nutz) % 4)).decode()
-        un, exp = roh.split("|", 1)
-        if int(exp) < time.time():
+        teile = roh.split("|")
+        un, exp = teile[0], int(teile[1])
+        ausgabe = int(teile[2]) if len(teile) > 2 else 0
+        if exp < time.time():
             return None
-        return un.lower() or None
+        return (un.lower(), exp, ausgabe) if un else None
     except Exception:  # noqa: BLE001
         return None
+
+
+def _pruefen(wert: str) -> str | None:
+    felder = _cookie_felder(wert)
+    return felder[0] if felder else None
+
+
+def _sitzung_gilt(un: str, ausgabe: int) -> bool:
+    """Wurde das Cookie NACH dem letzten Passwortwechsel ausgegeben?
+
+    `nutzer.sitzung_ab` (Migration 0006) ist der Zeitpunkt des letzten
+    Wechsels; NULL heißt nie, und PAT-Konten haben gar keine Zeile — beide
+    gelten. Ein Wechsel und eine neue Anmeldung in derselben Sekunde sind
+    kein Widerspruch (>=)."""
+    n = nutzer_holen(un)
+    if not n or not n.get("sitzung_ab"):
+        return True
+    try:
+        import calendar  # noqa: PLC0415
+        ab = calendar.timegm(time.strptime(n["sitzung_ab"], "%Y-%m-%dT%H:%M:%SZ"))
+    except ValueError:
+        return True
+    return ausgabe >= ab
 
 
 _SCHLEIFE = re.compile(r"^http://(?:127\.0\.0\.1|localhost):(\d+)$")
@@ -648,9 +685,14 @@ def angemeldet(request: Request) -> str | None:
     """Cookie ODER Bearer — Portal und App teilen dieselben /api/*-Routen."""
     cookie = request.cookies.get(SESSION_COOKIE)
     if cookie:
-        un = _pruefen(cookie)
-        if un:
+        felder = _cookie_felder(cookie)
+        if felder:
+            un, _, ausgabe = felder
             if request.method not in ("GET", "HEAD") and not _origin_ok(request):
+                return None
+            # Ein Cookie von vor dem letzten Passwortwechsel gilt nicht mehr —
+            # sonst liefe die Sitzung auf dem verlorenen Telefon 30 Tage weiter.
+            if not _sitzung_gilt(un, ausgabe):
                 return None
             return un
     return wer(request)
@@ -698,13 +740,13 @@ def _jetzt_iso() -> str:
 def nutzer_holen(email: str) -> dict | None:
     with _DB_LOCK, _db() as c:
         z = c.execute("""SELECT email, name, salon, rolle, pw, aktiv, gehoert_zu, angelegt,
-                         letzter_login, box FROM nutzer WHERE email=?""",
+                         letzter_login, box, sitzung_ab FROM nutzer WHERE email=?""",
                       (email.strip().lower(),)).fetchone()
     if not z:
         return None
     return {"email": z[0], "name": z[1], "salon": z[2], "rolle": z[3], "pw": z[4],
             "aktiv": bool(z[5]), "gehoert_zu": z[6], "angelegt": z[7],
-            "letzter_login": z[8], "box": bool(z[9])}
+            "letzter_login": z[8], "box": bool(z[9]), "sitzung_ab": z[10]}
 
 
 def nutzer_anlegen(email: str, name: str, salon: str, rolle_neu: str,
@@ -1828,7 +1870,52 @@ async def api_passwort(request: Request) -> Response:
     if len(neu) < 8:
         return JSONResponse({"fehler": "Mindestens 8 Zeichen, bitte."}, status_code=400)
     with _DB_LOCK, _db() as c:
-        c.execute("UPDATE nutzer SET pw=? WHERE email=?", (pw_hash(neu), un))
+        c.execute("UPDATE nutzer SET pw=?, sitzung_ab=? WHERE email=?",
+                  (pw_hash(neu), _jetzt_iso(), un))
+    # Alle anderen Sitzungen sind damit beendet — diese hier bekommt ein
+    # frisches Cookie, sonst flöge die Person aus dem Portal, in dem sie
+    # gerade ihr Passwort geändert hat.
+    antwort = JSONResponse({"ok": True})
+    if request.cookies.get(SESSION_COOKIE):
+        exp = int(time.time()) + SESSION_DAUER
+        antwort.set_cookie(SESSION_COOKIE, _signieren(un, exp), max_age=SESSION_DAUER,
+                           httponly=True, secure=SESSION_SECURE, samesite="lax", path="/")
+    return antwort
+
+
+@app.get("/api/geraete")
+def api_geraete(request: Request) -> Response:
+    """Die Telefone, die mit diesem Konto verbunden sind (seit 14.09.2026).
+
+    Bis dahin lief ein Geräteschlüssel unbegrenzt, und niemand konnte sehen,
+    welche Geräte es gab, geschweige denn eines trennen. `id` ist der Hash
+    des Schlüssels, nicht der Schlüssel — damit lässt sich nichts anmelden."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    with _DB_LOCK, _db() as c:
+        zeilen = c.execute("""SELECT hash, geraet, erstellt, zuletzt FROM app_schluessel
+                              WHERE un=? ORDER BY erstellt DESC""", (un,)).fetchall()
+    return JSONResponse({"geraete": [
+        {"id": z[0], "name": z[1] or "Unbenanntes Telefon",
+         "verbunden": z[2], "zuletzt": z[3]} for z in zeilen]})
+
+
+@app.delete("/api/geraete/{gid}")
+def api_geraet_trennen(gid: str, request: Request) -> Response:
+    """Ein Telefon trennen: der Schlüssel ist sofort tot, das Gerät meldet
+    „Zugang gilt nicht mehr" und muss sich neu verbinden. Nur die eigenen —
+    ein fremder Hash ist 404, nicht 403."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    with _DB_LOCK, _db() as c:
+        da = c.execute("SELECT 1 FROM app_schluessel WHERE hash=? AND un=?",
+                       (gid, un)).fetchone()
+        if not da:
+            return JSONResponse({"fehler": "Gerät nicht gefunden"}, status_code=404)
+        c.execute("DELETE FROM app_schluessel WHERE hash=? AND un=?", (gid, un))
+    audit.audit(un, "geraet_getrennt", ziel_un=un, geraet=gid[:12])
     return JSONResponse({"ok": True})
 
 
@@ -3944,8 +4031,13 @@ def signup_offen() -> bool:
 
 @app.get("/api/signup-offen")
 def api_signup_offen() -> Response:
-    """Sagt der Anmeldeseite, ob sie „Konto anlegen" zeigen soll."""
-    return JSONResponse({"offen": signup_offen()})
+    """Sagt der Anmeldeseite, ob sie „Konto anlegen" zeigen soll — und ob
+    „Passwort vergessen?" ein Formular sein darf: das ist es nur, wenn ein
+    Mailversand eingerichtet ist. Sonst verspräche das Formular einen Link,
+    der nur im Postausgang landet, und die Seite zeigt den alten Hinweis."""
+    import postfach  # noqa: PLC0415
+    return JSONResponse({"offen": signup_offen(),
+                         "passwort_vergessen": postfach.eingerichtet()})
 
 
 @app.post("/api/signup")
@@ -4765,7 +4857,8 @@ def _passwort_neu(aufrufer: str, email: str) -> Response:
     if eigener_betrieb:
         passwort = startpasswort()
         with _DB_LOCK, _db() as c:
-            c.execute("UPDATE nutzer SET pw=? WHERE email=?", (pw_hash(passwort), email))
+            c.execute("UPDATE nutzer SET pw=?, sitzung_ab=? WHERE email=?",
+                      (pw_hash(passwort), _jetzt_iso(), email))
         audit.audit(aufrufer, "passwort_neu", ziel_un=email, weg="startpasswort",
                     mandant_id=_mandant_zu(aufrufer, email))
         return JSONResponse({"ok": True, "email": email, "startpasswort": passwort})
@@ -4891,8 +4984,8 @@ async def api_passwort_reset_einloesen(request: Request) -> Response:
         return JSONResponse({"fehler": "Dieses Konto gibt es nicht mehr."},
                             status_code=404)
     with _DB_LOCK, _db() as c:
-        c.execute("UPDATE nutzer SET pw=? WHERE email=?",
-                  (pw_hash(passwort), zeile["un"]))
+        c.execute("UPDATE nutzer SET pw=?, sitzung_ab=? WHERE email=?",
+                  (pw_hash(passwort), _jetzt_iso(), zeile["un"]))
         c.execute("UPDATE passwort_reset SET eingeloest=? WHERE id=?",
                   (_jetzt_iso(), zeile["id"]))
         # Ein neues Passwort entwertet die Geräteschlüssel (seit 14.09.2026):
