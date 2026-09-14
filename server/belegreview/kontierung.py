@@ -172,7 +172,7 @@ _K = [
                       "sich dort."),
     Kategorie("telekom", "Telefon und Internet", "4920", "6805", geprueft=True),
     Kategorie("buerobedarf", "Bürobedarf", "4930", "6815", geprueft=True),
-    Kategorie("porto", "Porto und Versand", "4910", "6800",
+    Kategorie("porto", "Porto und Versand", "4910", "6800", geprueft=True,
               hinweis="Briefmarken, Frankierung, Paketversand, Zollgebühren "
                       "des Versenders. Briefmarken tragen keine Umsatzsteuer, "
                       "Expressdienste schon — was der Beleg ausweist, gilt."),

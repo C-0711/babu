@@ -186,6 +186,7 @@ Bewirtung: SKR04 6640 / SKR03 4650
 Kfz-Kosten: SKR04 6530 / SKR03 4530
 Telefon und Internet: SKR04 6805 / SKR03 4920
 Bürobedarf: SKR04 6815 / SKR03 4930
+Porto und Versand: SKR04 6800 / SKR03 4910
 Fachliteratur: SKR04 6820 / SKR03 4940
 Steuerberatung und Buchführung: SKR04 6830 / SKR03 4955
 Rechts- und Beratungskosten: SKR04 6825 / SKR03 4950
