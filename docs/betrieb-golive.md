@@ -101,3 +101,47 @@ in der Datenschutzerklärung mit 30 Tagen Frist genannt.
    Mac-Kopie behält Altes — dort von Hand `box-<kurzname>-*.bundle` entfernen.
 
 Jeder Schritt mit Datum in `audit_log` (`audit.audit(<betreiber>, "loeschung", ziel_un=…)`).
+
+## 6. Was vor dem ersten fremden Betrieb noch von Hand kommt
+
+Der Code des Plans ist seit 14.09.2026 komplett gebaut und deployt. Diese fünf Schritte
+brauchen Zugänge, die nur der Betreiber hat. Reihenfolge ist egal, bis auf 1 → 5.
+
+**1. App Store Connect: App-Eintrag anlegen.** appstoreconnect.apple.com → Apps → „+" →
+Neue App: Plattform iOS, Name (muss im Store weltweit eindeutig sein — „babu" wird
+womöglich abgelehnt, dann „babu Belege"), Primärsprache Deutsch, Bundle-ID `io.0711.beleg`
+(steht in der Liste, weil Xcode sie beim Gerätebau angelegt hat), SKU frei (`babu-beleg`).
+Danach TestFlight → Interne Tests → Gruppe „Pilot" mit dir und Nina. Dann auf dem Mac:
+
+    ios/archiv.sh Beleg
+
+lädt Build 0.1.0 (2) hoch (Team 8L87Z2GRSG in Xcode angemeldet, oder `ASC_KEY_ID`,
+`ASC_ISSUER_ID`, `ASC_KEY_PFAD` für den Weg ohne Dialog). Vor jedem weiteren Upload
+`CURRENT_PROJECT_VERSION` in `ios/Beleg/project.yml` **und** `project.pbxproj` hochzählen.
+Externe Tester (Beta App Review) erst mit Schritt 3: Apple will die Datenschutz-URL
+`https://babu.0711.io/datenschutz` und ein Testkonto in den Notizen.
+
+**2. Mail-Dienst.** Konto bei einem Dienst mit SMTP-Relay, SPF/DKIM/DMARC für die
+Absenderdomain eintragen, Zugang in `~/babu-docker/docker/.env` auf der H200V nach der
+Vorlage `server/docker/.env.beispiel` (0600), dann `docker compose up -d`. Prüfen:
+`GET /api/signup-offen` muss `"passwort_vergessen": true` liefern; danach einmal
+„Passwort vergessen" mit einem Testkonto Ende-zu-Ende. `BABU_SUPPORT_MAIL` in derselben
+Datei schaltet die Support-Kopie scharf.
+
+**3. Rechtstexte.** Impressum, Datenschutzerklärung und Erprobungsbedingungen der
+Anwältin als Klartext in `server/belegreview/recht.py` (`TEXTE`, je Art Überschrift und
+Text; Absätze mit Leerzeile). `recht.fertig()` wird damit wahr, die Seiten `/impressum`,
+`/datenschutz`, `/agb` zeigen den Text statt des Platzhalter-Hinweises, und `ios/archiv.sh`
+hört auf zu warnen. Suite laufen lassen (`tests/test_recht.py`, Sprachregel), deployen.
+AVV als PDF je Betrieb ablegen — nicht im Repo.
+
+**4. Kanzlei-Konto GKM Neff.** Im Portal als Admin: Zugänge verwalten → „Zugang anlegen",
+Rolle `kanzlei`, Mailadresse der Kanzlei. Das Startpasswort wird nur dort angezeigt
+(nie ausgeben, nie mailen; bei Verlust „Neues Startpasswort"). Mit Schritt 2 kommt die
+Einladung des ersten Mandanten per Mail an, ohne ihn liegt der Link in der Antwort des
+Portals. Danach zwei Testbetriebe nach Abschnitt 1.
+
+**5. DATEV-Import bei GKM Neff.** Ninas Monat über `/datev` als Stapel exportieren
+(Prüfbefund muss leer sein), Import bei der Kanzlei, #REW-Meldungen als Protokoll
+mitnehmen — sie werden in den Prüfbefund übersetzt (`datev_seite.py`). Erst danach
+`POST /api/datev/uebergeben` für echte Betriebe.

@@ -18,3 +18,6 @@ __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
+
+# Zugangsdaten des Mail-Dienstes — nur auf der H200V, Vorlage ist .env.beispiel
+server/docker/.env
