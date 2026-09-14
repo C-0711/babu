@@ -119,7 +119,20 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   `unhealthy` neu. `BABU_SIGNUP=0` in Compose: kein Selbstbedienungs-Konto
   im Pilot. Rückmeldungen tragen seit 14.09. ein Label je Betrieb
   (`betrieb-<mandant_id>`, Ein-Betrieb `betrieb-default`); jeder sieht nur
-  seine. Golden-Diff (`/api/belege` + `/api/abgleich/<monat>`
+  seine.
+- **Nachlese beim Start (seit 14.09.2026, vom Auftraggeber freigegeben):**
+  60 s nach jedem Start liest babu-web einmalig Belege ohne jede Lesung
+  nach (3 min bis 14 Tage alt, höchstens 20 je Box, 60 gesamt, sequenziell,
+  `[nachlese]` im Log). Das ist kein Watcher und keine zweite Lesung — es
+  ist der Weg von „Nochmal versuchen". `BABU_NACHLESE=0` schaltet ab.
+- **Messwerte statt Vermutungen:** `/api/kpi/<monat>` → `betrieb.schloesser`
+  (Warte-/Haltezeit von `_DB_LOCK` und `_LLM_SEMAPHORE`), `gemma_fehler`,
+  `gemma_timeout`, `login_429`. `_DB_LOCK` und Gemma-Plätze
+  (`BABU_LLM_PLAETZE`, Standard 1) werden erst nach zwei Wochen Messung
+  angefasst. Login-Bremse: 20/min je IP, 5/min je Konto.
+- **Sicherung:** `docker/sichern.sh` (Cron 17 3), Kopie nächtlich auf den
+  Mac (launchd `io.0711.babu-sicherung`), Restore-Ritual
+  `docs/betrieb/restore-probe.md`. Betriebs-Runbook: `docs/betrieb-golive.md`. Golden-Diff (`/api/belege` + `/api/abgleich/<monat>`
   als `python3 -m json.tool --sort-keys`, Dateien unter `~/golden/`) bleibt
   das Ritual bei Änderungen am Buchungsweg; der Auftraggeber verzichtet
   ausdrücklich darauf, wenn er es sagt.
