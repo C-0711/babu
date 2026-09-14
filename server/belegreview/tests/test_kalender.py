@@ -16,8 +16,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import kalender as ka  # noqa: E402
 
+from datetime import datetime, timedelta
 
-def termin(start="2026-09-03T10:00", minuten=60, wer="Jana", id=1):
+# Ein Tag in der Zukunft: der Server nimmt keine Termine in der Vergangenheit an,
+# und ein festes Datum wäre nach dem ersten Kalendertag rot (so geschehen am 04.09.2026).
+TAG = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+
+
+def termin(start=f"{TAG}T10:00", minuten=60, wer="Jana", id=1):
     return {"id": id, "start": start, "minuten": minuten, "wer": wer,
             "kundin": "Frau Holder", "leistung": "Schnitt"}
 
@@ -25,38 +31,38 @@ def termin(start="2026-09-03T10:00", minuten=60, wer="Jana", id=1):
 # ————— Zwei zur selben Zeit —————
 
 def test_ueberschneidung_bei_derselben_stylistin():
-    bestehend = [termin(start="2026-09-03T10:00", minuten=60)]
-    neu = termin(start="2026-09-03T10:30", minuten=30, id=2)
+    bestehend = [termin(start=f"{TAG}T10:00", minuten=60)]
+    neu = termin(start=f"{TAG}T10:30", minuten=30, id=2)
     assert ka.stoert(neu, bestehend) is not None
 
 
 def test_direkt_danach_ist_keine_ueberschneidung():
-    bestehend = [termin(start="2026-09-03T10:00", minuten=60)]
-    neu = termin(start="2026-09-03T11:00", minuten=30, id=2)
+    bestehend = [termin(start=f"{TAG}T10:00", minuten=60)]
+    neu = termin(start=f"{TAG}T11:00", minuten=30, id=2)
     assert ka.stoert(neu, bestehend) is None
 
 
 def test_verschiedene_stylistinnen_stoeren_sich_nicht():
-    bestehend = [termin(start="2026-09-03T10:00", wer="Jana")]
-    neu = termin(start="2026-09-03T10:00", wer="Mira", id=2)
+    bestehend = [termin(start=f"{TAG}T10:00", wer="Jana")]
+    neu = termin(start=f"{TAG}T10:00", wer="Mira", id=2)
     assert ka.stoert(neu, bestehend) is None
 
 
 def test_ein_termin_stoert_sich_nicht_selbst():
     """Beim Verschieben darf der eigene Termin nicht im Weg stehen."""
-    bestehend = [termin(id=7, start="2026-09-03T10:00")]
-    verschoben = termin(id=7, start="2026-09-03T10:15")
+    bestehend = [termin(id=7, start=f"{TAG}T10:00")]
+    verschoben = termin(id=7, start=f"{TAG}T10:15")
     assert ka.stoert(verschoben, bestehend) is None
 
 
 def test_abgesagte_termine_blockieren_nicht():
     bestehend = [dict(termin(), abgesagt=True)]
-    assert ka.stoert(termin(start="2026-09-03T10:15", id=2), bestehend) is None
+    assert ka.stoert(termin(start=f"{TAG}T10:15", id=2), bestehend) is None
 
 
 def test_die_meldung_nennt_wen_es_trifft():
-    bestehend = [termin(start="2026-09-03T10:00")]
-    meldung = ka.stoert(termin(start="2026-09-03T10:30", id=2), bestehend)
+    bestehend = [termin(start=f"{TAG}T10:00")]
+    meldung = ka.stoert(termin(start=f"{TAG}T10:30", id=2), bestehend)
     assert "Jana" in meldung and "10:00" in meldung
 
 
@@ -64,13 +70,13 @@ def test_die_meldung_nennt_wen_es_trifft():
 
 def test_ein_termin_braucht_eine_dauer():
     with pytest.raises(ka.KalenderFehler):
-        ka.pruefen({"start": "2026-09-03T10:00", "minuten": 0, "wer": "Jana"})
+        ka.pruefen({"start": f"{TAG}T10:00", "minuten": 0, "wer": "Jana"})
 
 
 def test_unsinnige_dauer_wird_abgewiesen():
     for minuten in (-30, 24 * 60 + 1):
         with pytest.raises(ka.KalenderFehler):
-            ka.pruefen({"start": "2026-09-03T10:00", "minuten": minuten,
+            ka.pruefen({"start": f"{TAG}T10:00", "minuten": minuten,
                         "wer": "Jana"})
 
 
@@ -80,53 +86,53 @@ def test_kaputte_zeit_wird_abgewiesen():
 
 
 def test_ein_geprueffter_termin_hat_ein_ende():
-    t = ka.pruefen(termin(start="2026-09-03T10:00", minuten=45))
-    assert t["ende"] == "2026-09-03T10:45"
+    t = ka.pruefen(termin(start=f"{TAG}T10:00", minuten=45))
+    assert t["ende"] == f"{TAG}T10:45"
 
 
 # ————— Der Tag —————
 
 def test_der_tag_zaehlt_termine_und_minuten():
-    tag = ka.tag("2026-09-03", [termin(minuten=60), termin(minuten=30, id=2,
-                                                           start="2026-09-03T12:00")])
+    tag = ka.tag(f"{TAG}", [termin(minuten=60), termin(minuten=30, id=2,
+                                                           start=f"{TAG}T12:00")])
     assert tag["termine"] == 2
     assert tag["minuten"] == 90
     assert "1 Std 30 min" == tag["dauer_text"]
 
 
 def test_abgesagte_zaehlen_nicht_mit():
-    tag = ka.tag("2026-09-03", [termin(), dict(termin(id=2), abgesagt=True)])
+    tag = ka.tag(f"{TAG}", [termin(), dict(termin(id=2), abgesagt=True)])
     assert tag["termine"] == 1
 
 
 def test_ein_leerer_tag_ist_kein_fehler():
-    tag = ka.tag("2026-09-03", [])
+    tag = ka.tag(f"{TAG}", [])
     assert tag["termine"] == 0 and tag["minuten"] == 0
 
 
 # ————— Termin trifft Geld: das, was kein Buchungsanbieter kann —————
 
 def test_was_eine_gebuchte_stunde_einbringt():
-    tag = ka.tag("2026-09-03", [termin(minuten=120)], umsatz=240.0)
+    tag = ka.tag(f"{TAG}", [termin(minuten=120)], umsatz=240.0)
     assert tag["pro_stunde"] == 120.0
 
 
 def test_ohne_umsatz_keine_erfundene_zahl():
-    assert ka.tag("2026-09-03", [termin()])["pro_stunde"] is None
+    assert ka.tag(f"{TAG}", [termin()])["pro_stunde"] is None
 
 
 def test_umsatz_ohne_termine_ergibt_keine_division():
     """Laufkundschaft: Geld kam rein, gebucht war nichts."""
-    tag = ka.tag("2026-09-03", [], umsatz=180.0)
+    tag = ka.tag(f"{TAG}", [], umsatz=180.0)
     assert tag["pro_stunde"] is None
     assert tag["umsatz"] == 180.0
 
 
 def test_der_satz_zum_tag_kommt_ohne_technik_aus():
-    for tag in (ka.tag("2026-09-03", []),
-                ka.tag("2026-09-03", [termin()], umsatz=90.0),
-                ka.tag("2026-09-03", [termin(), termin(id=2,
-                                                       start="2026-09-03T14:00")])):
+    for tag in (ka.tag(f"{TAG}", []),
+                ka.tag(f"{TAG}", [termin()], umsatz=90.0),
+                ka.tag(f"{TAG}", [termin(), termin(id=2,
+                                                       start=f"{TAG}T14:00")])):
         satz = tag["satz"]
         # Ein Satz, kein Datenfeld: er darf mit einer Zahl anfangen
         # („2 Termine, …"), aber nicht mit Kleinbuchstaben oder Klammern.
@@ -172,12 +178,12 @@ def welt(tmp_path, monkeypatch):
 def test_termin_eintragen_und_wiederfinden(welt):
     client, _ = welt
     r = client.post("/api/termine", json={
-        "start": "2026-09-03T10:00", "minuten": 60, "wer": "Jana",
+        "start": f"{TAG}T10:00", "minuten": 60, "wer": "Jana",
         "kundin": "Frau Holder", "leistung": "Schnitt und Farbe"})
     assert r.status_code == 200
-    assert r.json()["ende"] == "2026-09-03T11:00"
+    assert r.json()["ende"] == f"{TAG}T11:00"
 
-    d = client.get("/api/termine", params={"von": "2026-09-03"}).json()
+    d = client.get("/api/termine", params={"von": f"{TAG}"}).json()
     assert d["tage"][0]["termine"] == 1
     assert d["tage"][0]["liste"][0]["kundin"] == "Frau Holder"
 
@@ -185,9 +191,9 @@ def test_termin_eintragen_und_wiederfinden(welt):
 def test_der_server_laesst_keine_doppelbelegung_zu(welt):
     """Der Fehler, der einen Salontag ruiniert."""
     client, _ = welt
-    client.post("/api/termine", json={"start": "2026-09-03T10:00", "minuten": 60,
+    client.post("/api/termine", json={"start": f"{TAG}T10:00", "minuten": 60,
                                       "wer": "Jana", "kundin": "Frau Holder"})
-    r = client.post("/api/termine", json={"start": "2026-09-03T10:30",
+    r = client.post("/api/termine", json={"start": f"{TAG}T10:30",
                                           "minuten": 30, "wer": "Jana",
                                           "kundin": "Frau Betz"})
     assert r.status_code == 409
@@ -196,22 +202,22 @@ def test_der_server_laesst_keine_doppelbelegung_zu(welt):
 
 def test_verschieben_geht_trotzdem(welt):
     client, _ = welt
-    id_ = client.post("/api/termine", json={"start": "2026-09-03T10:00",
+    id_ = client.post("/api/termine", json={"start": f"{TAG}T10:00",
                                             "minuten": 60, "wer": "Jana"}).json()["id"]
-    r = client.post("/api/termine", json={"id": id_, "start": "2026-09-03T10:15",
+    r = client.post("/api/termine", json={"id": id_, "start": f"{TAG}T10:15",
                                           "minuten": 60, "wer": "Jana"})
     assert r.status_code == 200, "der eigene Termin darf sich nicht selbst blockieren"
 
 
 def test_absagen_laesst_die_luecke_sichtbar(welt):
     client, _ = welt
-    id_ = client.post("/api/termine", json={"start": "2026-09-03T10:00",
+    id_ = client.post("/api/termine", json={"start": f"{TAG}T10:00",
                                             "minuten": 60, "wer": "Jana"}).json()["id"]
     assert client.post(f"/api/termin/{id_}/absagen").status_code == 200
-    d = client.get("/api/termine", params={"von": "2026-09-03"}).json()
+    d = client.get("/api/termine", params={"von": f"{TAG}"}).json()
     assert d["tage"][0]["termine"] == 0
     # Der Platz ist wieder frei.
-    assert client.post("/api/termine", json={"start": "2026-09-03T10:00",
+    assert client.post("/api/termine", json={"start": f"{TAG}T10:00",
                                              "minuten": 60,
                                              "wer": "Jana"}).status_code == 200
 
@@ -219,7 +225,7 @@ def test_absagen_laesst_die_luecke_sichtbar(welt):
 def test_loeschen_entfernt_die_kundendaten(welt):
     """Personenbezogenes muss wirklich weggehen (Art. 17 DSGVO)."""
     client, bw = welt
-    id_ = client.post("/api/termine", json={"start": "2026-09-03T10:00",
+    id_ = client.post("/api/termine", json={"start": f"{TAG}T10:00",
                                             "minuten": 60, "wer": "Jana",
                                             "kundin": "Frau Holder"}).json()["id"]
     assert client.post(f"/api/termin/{id_}/loeschen").status_code == 200
@@ -230,7 +236,7 @@ def test_loeschen_entfernt_die_kundendaten(welt):
 def test_termine_liegen_nicht_in_der_belegbox(welt):
     """In einem Termin steht ein Kundenname — in Git bliebe er für immer."""
     client, _ = welt
-    client.post("/api/termine", json={"start": "2026-09-03T10:00", "minuten": 60,
+    client.post("/api/termine", json={"start": f"{TAG}T10:00", "minuten": 60,
                                       "wer": "Jana", "kundin": "Frau Holder"})
     jahre = client.get("/api/ablage").json()["jahre"]
     alles = " ".join(str(j) for j in jahre)
@@ -239,47 +245,47 @@ def test_termine_liegen_nicht_in_der_belegbox(welt):
 
 def test_fremdes_konto_sieht_keine_termine(welt):
     client, bw = welt
-    client.post("/api/termine", json={"start": "2026-09-03T10:00", "minuten": 60,
+    client.post("/api/termine", json={"start": f"{TAG}T10:00", "minuten": 60,
                                       "wer": "Jana", "kundin": "Frau Holder"})
     from fastapi.testclient import TestClient
     fremd = TestClient(bw.app, base_url="https://testserver")
     bw._REG_ZULETZT.clear()
     fremd.post("/api/signup", json={"salon": "Fremd", "email": "fremd@x.de",
                                     "passwort": "passwort-lang"})
-    assert fremd.get("/api/termine", params={"von": "2026-09-03"}).status_code == 403
+    assert fremd.get("/api/termine", params={"von": f"{TAG}"}).status_code == 403
 
 
 # ————— Freie Lücken: das rechnet babu, nicht das Modell —————
 
 def test_ein_leerer_tag_ist_voller_luecken():
-    frei = ka.freie_luecken("2026-09-03", [], dauer=60)
+    frei = ka.freie_luecken(f"{TAG}", [], dauer=60)
     assert frei[0] == "09:00"
     assert len(frei) == 6          # gedeckelt, nicht endlos
 
 
 def test_belegte_zeit_faellt_raus():
-    t = [termin(start="2026-09-03T09:00", minuten=120, wer="Jana")]
-    frei = ka.freie_luecken("2026-09-03", t, dauer=60, wer="Jana")
+    t = [termin(start=f"{TAG}T09:00", minuten=120, wer="Jana")]
+    frei = ka.freie_luecken(f"{TAG}", t, dauer=60, wer="Jana")
     assert "09:00" not in frei and "10:00" not in frei
     assert "11:00" in frei
 
 
 def test_die_luecke_muss_lang_genug_sein():
-    t = [termin(start="2026-09-03T09:00", minuten=30, wer="Jana"),
-         termin(start="2026-09-03T10:00", minuten=30, wer="Jana", id=2)]
+    t = [termin(start=f"{TAG}T09:00", minuten=30, wer="Jana"),
+         termin(start=f"{TAG}T10:00", minuten=30, wer="Jana", id=2)]
     # Zwischen 09:30 und 10:00 ist nur eine halbe Stunde frei.
-    assert "09:30" not in ka.freie_luecken("2026-09-03", t, dauer=60, wer="Jana")
-    assert "09:30" in ka.freie_luecken("2026-09-03", t, dauer=30, wer="Jana")
+    assert "09:30" not in ka.freie_luecken(f"{TAG}", t, dauer=60, wer="Jana")
+    assert "09:30" in ka.freie_luecken(f"{TAG}", t, dauer=30, wer="Jana")
 
 
 def test_nach_ladenschluss_gibt_es_nichts():
-    frei = ka.freie_luecken("2026-09-03", [], dauer=60)
+    frei = ka.freie_luecken(f"{TAG}", [], dauer=60)
     assert all(z < "17:01" for z in frei)
 
 
 def test_eine_andere_stylistin_hat_eigene_luecken():
-    t = [termin(start="2026-09-03T09:00", minuten=180, wer="Jana")]
-    assert "09:00" in ka.freie_luecken("2026-09-03", t, dauer=60, wer="Mira")
+    t = [termin(start=f"{TAG}T09:00", minuten=180, wer="Jana")]
+    assert "09:00" in ka.freie_luecken(f"{TAG}", t, dauer=60, wer="Mira")
 
 
 # ————— Was die KI liefert, wird geprüft —————
@@ -289,9 +295,9 @@ HEUTE = dt.date(2026, 9, 1)
 
 def test_ein_brauchbarer_wunsch_geht_durch():
     w = ka.wunsch_pruefen({"kundin": "Frau Holder", "leistung": "Farbe",
-                           "datum": "2026-09-03", "uhrzeit": "14:00",
+                           "datum": f"{TAG}", "uhrzeit": "14:00",
                            "minuten": 120}, HEUTE)
-    assert w["datum"] == "2026-09-03" and w["minuten"] == 120
+    assert w["datum"] == f"{TAG}" and w["minuten"] == 120
     assert w["sicher"] is True
 
 
@@ -306,7 +312,7 @@ def test_unsinnige_dauer_faellt_auf_den_normalfall_zurueck():
 
 
 def test_ohne_kundin_ist_es_nicht_sicher():
-    w = ka.wunsch_pruefen({"datum": "2026-09-03"}, HEUTE)
+    w = ka.wunsch_pruefen({"datum": f"{TAG}"}, HEUTE)
     assert w["sicher"] is False
 
 
@@ -391,7 +397,7 @@ def test_leerer_satz_wird_abgewiesen(welt):
 
 def test_alternativen_sind_ueber_den_tag_verteilt():
     """Vier Viertelstunden am Stück sind dieselbe Antwort viermal."""
-    frei = ka.freie_luecken("2026-09-03", [], dauer=60, hoechstens=4)
+    frei = ka.freie_luecken(f"{TAG}", [], dauer=60, hoechstens=4)
     assert frei[0] == "09:00"
     assert frei[-1] >= "16:00", f"letzter Vorschlag zu früh: {frei}"
     # Kein Vorschlag klebt am nächsten.
@@ -401,24 +407,24 @@ def test_alternativen_sind_ueber_den_tag_verteilt():
 
 def test_frei_ist_eine_eigene_frage_nicht_die_vorschlagsliste():
     """14:00 kann frei sein, ohne in der Auswahl vorzukommen."""
-    assert "14:00" not in ka.freie_luecken("2026-09-03", [], dauer=120)
-    assert ka.ist_frei("2026-09-03", [], "14:00", 120) is True
+    assert "14:00" not in ka.freie_luecken(f"{TAG}", [], dauer=120)
+    assert ka.ist_frei(f"{TAG}", [], "14:00", 120) is True
 
 
 def test_belegtes_ist_nicht_frei():
-    t = [termin(start="2026-09-03T14:00", minuten=60, wer="Jana")]
-    assert ka.ist_frei("2026-09-03", t, "14:30", 60, "Jana") is False
-    assert ka.ist_frei("2026-09-03", t, "15:00", 60, "Jana") is True
+    t = [termin(start=f"{TAG}T14:00", minuten=60, wer="Jana")]
+    assert ka.ist_frei(f"{TAG}", t, "14:30", 60, "Jana") is False
+    assert ka.ist_frei(f"{TAG}", t, "15:00", 60, "Jana") is True
 
 
 def test_nach_ladenschluss_ist_nichts_frei():
-    assert ka.ist_frei("2026-09-03", [], "17:30", 60) is False
-    assert ka.ist_frei("2026-09-03", [], "08:00", 60) is False
+    assert ka.ist_frei(f"{TAG}", [], "17:30", 60) is False
+    assert ka.ist_frei(f"{TAG}", [], "08:00", 60) is False
 
 
 def test_oeffnungszeiten_kommen_aus_den_einstellungen():
     assert ka.oeffnung_aus({"oeffnet": "08:00", "schliesst": "20:00"}) == ("08:00", "20:00")
-    frei = ka.freie_luecken("2026-09-03", [], dauer=60,
+    frei = ka.freie_luecken(f"{TAG}", [], dauer=60,
                             oeffnung=("08:00", "20:00"))
     assert frei[0] == "08:00" and frei[-1] >= "18:00"
 

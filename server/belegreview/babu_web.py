@@ -3929,11 +3929,30 @@ def api_registrierung(daten: dict, request: Request) -> Response:
     return JSONResponse({"ok": True})
 
 
+def signup_offen() -> bool:
+    """Darf sich jemand selbst ein Konto anlegen?
+
+    Im Pilot (ab 14.09.2026) nicht: Konten legt die Kanzlei im Portal an,
+    Betriebe kommen auf Einladung. `BABU_SIGNUP=0` in der Compose-Datei
+    schließt die Tür; ohne die Variable bleibt sie offen, damit die Tests
+    und die lokale Vorschau wie bisher Konten anlegen können."""
+    return os.environ.get("BABU_SIGNUP", "1") != "0"
+
+
+@app.get("/api/signup-offen")
+def api_signup_offen() -> Response:
+    """Sagt der Anmeldeseite, ob sie „Konto anlegen" zeigen soll."""
+    return JSONResponse({"offen": signup_offen()})
+
+
 @app.post("/api/signup")
 def api_signup(daten: dict, request: Request) -> Response:
     """Ganz normales Self-Signup: Konto mit eigenem Passwort, sofort angemeldet.
     Steuerdaten aus der Strecke landen direkt in den Einstellungen; die
     Verwaltung sieht den Neuzugang in der Anfragen-Historie."""
+    if not signup_offen():
+        # 404, nicht 403: die Tür gibt es im Pilot nicht, sie ist nicht nur zu.
+        return JSONResponse({"fehler": "nicht gefunden"}, status_code=404)
     if not _origin_ok(request):
         return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
     ip = _client_ip(request)
@@ -5348,6 +5367,58 @@ def kennzahlen_monat(monat: str) -> dict:
         # seit die Kennzahlen in der Auswertung stehen, wäre das eine grüne
         # Kachel, hinter der nichts gemessen wird.
     }
+
+
+@app.get("/healthz")
+def healthz() -> Response:
+    """Das Lebenszeichen — für den Compose-Healthcheck und `docker/wache.sh`.
+
+    `/healthz` und nicht `/health`: das gehört dem pm2-Dienst `babu-eingang`
+    auf :7843, und der Tunnel routet danach. Bewusst ein synchrones `def`:
+    die Route läuft durch denselben Threadpool wie alle anderen. Ist der
+    erschöpft — etwa weil alle Fäden am `_DB_LOCK` warten —, hängt sie mit,
+    und genau das ist das Signal, das der Healthcheck sehen soll.
+
+    Drei Prüfungen, zwei davon hart: Datenbank (Schloss + `SELECT 1`) und
+    Box-Klon sind 503, Gemma ist nur ein Feld — ohne Gemma nimmt babu-web
+    Belege weiter an und liest sie nach, deshalb `stand: degraded` mit 200.
+    Ohne Anmeldung, ohne Geheimnisse in der Antwort.
+    """
+    befund: dict = {"db": "ok", "box": "ok", "gemma": "ok",
+                    "seit_s": round(time.time() - _METRIK["start"]),
+                    "arbeit_offen": len(_HINTERGRUND_TASKS)}
+    status = 200
+    # Kein `with _DB_LOCK`: der würde ohne Frist warten. `acquire(timeout=)`
+    # meldet ein festgefahrenes Schloss als 503 statt selbst hängen zu bleiben.
+    # Im Block nichts rufen, das das Schloss selbst nimmt.
+    if not _DB_LOCK.acquire(timeout=5):
+        befund["db"] = "schloss"
+        status = 503
+    else:
+        try:
+            with _db() as c:
+                c.execute("SELECT 1").fetchone()
+        except Exception as ex:  # noqa: BLE001
+            print(f"[healthz] db: {ex!r}", flush=True)
+            befund["db"] = "weg"
+            status = 503
+        finally:
+            _DB_LOCK.release()
+    try:
+        klon = Path(bx.default_box().klon)
+        if not klon.is_dir():
+            raise FileNotFoundError(str(klon))
+    except Exception as ex:  # noqa: BLE001
+        print(f"[healthz] box: {ex!r}", flush=True)
+        befund["box"] = "weg"
+        status = 503
+    try:
+        requests.get(GEMMA_API.rsplit("/chat/completions", 1)[0] + "/models", timeout=2)
+    except Exception:  # noqa: BLE001
+        befund["gemma"] = "weg"
+    befund["stand"] = ("gestoert" if status != 200
+                       else "degraded" if befund["gemma"] != "ok" else "ok")
+    return JSONResponse(befund, status_code=status)
 
 
 @app.get("/api/kpi/{monat}")

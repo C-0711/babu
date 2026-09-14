@@ -7377,6 +7377,12 @@ const REG_SCHRITTE = [
    platzhalter:"mindestens 8 Zeichen",
    hilfe:"Damit meldest du dich ab jetzt an — in App und Portal."},
 ];
+/* Im Pilot legt die Kanzlei die Konten an — dann gibt es die Karte
+   „Neu bei babu?" nicht. Bleibt die Antwort aus, bleibt die Karte, wie sie ist. */
+fetch("/api/signup-offen", {credentials:"same-origin"})
+  .then(r => r.ok ? r.json() : null)
+  .then(j => { if (j && j.offen === false) $("#reg-einstieg").hidden = true; })
+  .catch(() => {});
 $("#reg-start").addEventListener("click", () => {
   // Die Fragen ERSETZEN das Login — nicht darunterkleben.
   $("#login-felder").hidden = true;

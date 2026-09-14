@@ -42,6 +42,9 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    logging:
+      driver: json-file
+      options: {max-size: "20m", max-file: "3"}
 
   babu-web:
     build:
@@ -60,6 +63,10 @@ services:
       HOME: /data
       BABU_ERLAUBT: "christoph0711.io,nina0711.io"
       BABU_ROLLEN: "christoph0711.io:admin"
+      # Pilot ab 14.09.2026: kein Selbstbedienungs-Konto. Betriebe kommen auf
+      # Einladung, Konten legt die Kanzlei im Portal an. `POST /api/signup`
+      # antwortet 404, die Anmeldeseite zeigt „Konto anlegen" nicht.
+      BABU_SIGNUP: "0"
       # --- Postgres scharf schalten (Plan 21, Phase 1) -------------------
       # Erst hochfahren, dann EINMAL von Hand umziehen
       #   docker compose up -d postgres
@@ -91,6 +98,23 @@ services:
       - ~/Youtube/.env:/data/Youtube/.env:ro                        # Gemini-Schlüssel für die Bild-Generierung
       - ~/kompendium:/data/kompendium:ro                            # Branchen-Kompendium: Vektoren + Atome + Grundwissen
     restart: unless-stopped
+    # Lebenszeichen (seit 14.09.2026): `GET /healthz` prüft Datenbank, Box-Klon
+    # und Gemma. Direkt auf 127.0.0.1:7844, am Tunnel vorbei; kein curl im
+    # Image, deshalb Python. `start_period` 90 s: Kompendium und erster Index
+    # brauchen nach dem Start Zeit. `restart: unless-stopped` greift nur bei
+    # Prozessende — bei `unhealthy` startet `docker/wache.sh` (Host-Cron) neu.
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7844/healthz', timeout=8)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    # Ohne Grenze wächst das json-file-Log, bis die Platte voll ist — und eine
+    # volle Platte ist ein Ausfall. Zeitstempel liefert `docker logs -t`.
+    logging:
+      driver: json-file
+      options: {max-size: "50m", max-file: "5"}
 
   # Der Posteingang: ein eigener Mailserver, der Post an die Zufallsadressen
   # aus `post_adresse` annimmt und über die HTTP-API von babu-web ablegt.
