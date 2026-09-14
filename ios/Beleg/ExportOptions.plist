@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Export fürs Hochladen zu App Store Connect (TestFlight). Wird von
+	     ios/archiv.sh benutzt; für beide Ziele dieselbe Datei. -->
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>teamID</key>
+	<string>8L87Z2GRSG</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<!-- `upload`: xcodebuild lädt selbst hoch; `export` schriebe nur die
+	     .ipa auf die Platte (archiv.sh schaltet mit --nur-ipa um). -->
+	<key>destination</key>
+	<string>upload</string>
+	<key>uploadSymbols</key>
+	<true/>
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+</dict>
+</plist>

@@ -44,10 +44,12 @@ final class AppStore: ObservableObject {
     /// zurückgezogen). Dann darf die App nicht weiter „Verbunden ✓" behaupten.
     @Published var zugangAbgelaufen = false
     /// Angemeldet, aber es gibt noch keine Ablage für diesen Betrieb (der
-    /// Server antwortet 403/409). Nicht persistiert: die Antwort kommt beim
-    /// nächsten Aufruf ohnehin wieder, und ein gespeichertes „fehlt" wäre
-    /// falsch, sobald die Ablage eingerichtet ist.
-    @Published var ablageFehlt = false
+    /// Server antwortet 403/409). Seit 14.09.2026 persistiert: jeder neue
+    /// Betrieb steht tagelang genau in diesem Zustand (die Ablage wird von
+    /// Hand angelegt), und die Startseite soll das auch nach einem Neustart
+    /// sagen. Sobald die Ablage da ist, räumt der nächste Verbindungstest
+    /// oder Upload das Feld wieder auf — `pruefeZugang` setzt es zurück.
+    @Published var ablageFehlt = false { didSet { speichern() } }
     /// Die Rolle des angemeldeten Kontos — „salon" oder „mitarbeit".
     /// Wird beim Nachfragen mitgeliefert und im Konto angezeigt, damit
     /// sichtbar ist, WOMIT man angemeldet ist, nicht nur DASS.
@@ -90,6 +92,7 @@ final class AppStore: ObservableObject {
             verbundenRolle = z.verbundenRolle
             testmodus = z.testmodus ?? false
             profil = z.profil ?? [:]
+            ablageFehlt = z.ablageFehlt ?? false
             // Ältere Stände: Demo-Belege am festen Demo-Siegel nachträglich
             // markieren, damit sie nie im echten Stapel landen.
             let demoSiegel: Set<String> = ["77b2e0c4 9a11 f38d", "0d31f6a8 5be2 c974"]
@@ -126,6 +129,8 @@ final class AppStore: ObservableObject {
         var testmodus: Bool?
         // Neu ab 24.08.2026: das Salon-Profil fürs Telefon.
         var profil: [String: String]?
+        // Neu ab 14.09.2026: „Ablage wird noch eingerichtet" überlebt den Neustart.
+        var ablageFehlt: Bool?
     }
 
     private var zustand: Zustand {
@@ -135,7 +140,8 @@ final class AppStore: ObservableObject {
                 kassenberichte: kassenberichte, chatVerlauf: chatVerlauf,
                 verbundenAls: verbundenAls, verbundenRolle: verbundenRolle,
                 vorlagen: vorlagen,
-                testmodus: testmodus, profil: profil)
+                testmodus: testmodus, profil: profil,
+                ablageFehlt: ablageFehlt)
     }
 
     /// Entprellt auf ~0,25 s, damit Serien-Änderungen nicht pro Mutation schreiben.

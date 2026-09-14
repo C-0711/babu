@@ -89,3 +89,33 @@ struct EinrichtungsKarte: View {
         }
     }
 }
+
+/// „Deine Ablage wird noch eingerichtet" — der Zustand jedes neuen Betriebs
+/// zwischen Anmeldung und dem Handgriff, der seine Ablage anlegt. Keine
+/// Fehlermeldung: fotografieren geht, alles wartet sicher auf dem Telefon
+/// und geht von selbst los, sobald die Ablage da ist.
+struct AblageWartetKarte: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "tray.and.arrow.down")
+                .font(.title3)
+                .foregroundStyle(GC.accent)
+                .padding(.top, 2)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Deine Ablage wird noch eingerichtet")
+                    .font(.headline)
+                    .fontDesign(.serif)
+                    .foregroundStyle(GC.fg)
+                Text("Fotografieren kannst du schon jetzt — deine Belege warten sicher auf dem Telefon und gehen von selbst los, sobald alles bereit ist. babu meldet sich.")
+                    .font(.footnote)
+                    .foregroundStyle(GC.desc)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(GC.accentSubtle, in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityElement(children: .combine)
+    }
+}

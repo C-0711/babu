@@ -254,6 +254,15 @@ struct CaptureTab: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 8)
             }
+            // Jeder neue Betrieb steht am Anfang genau hier: angemeldet, aber
+            // die Ablage wird noch von Hand angelegt. Das muss die Startseite
+            // sagen — auch nach einem Neustart —, sonst sieht die Nutzerin
+            // „alles bereit" und wundert sich, warum nichts ankommt.
+            if store.ablageFehlt {
+                AblageWartetKarte()
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
+            }
             if zeigeEinrichtung {
                 ScrollView {
                     EinrichtungsKarte(schritte: einrichtungsschritte,

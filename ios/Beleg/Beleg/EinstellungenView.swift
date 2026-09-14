@@ -79,7 +79,12 @@ struct EinstellungenView: View {
                     Text("Ohne Verbindung bleiben Belege in der Warteschlange und werden nachgereicht, sobald es wieder klappt.")
                 }
 
+                // Nur in Entwicklungs-Builds: „Dieses Gerät leer räumen" gehört
+                // nicht vor eingeladene Betriebe. Ein TestFlight-Build ist
+                // Release — dort gibt es den Abschnitt nicht.
+                #if DEBUG
                 testphase
+                #endif
 
                 Section {
                 } footer: {

@@ -99,3 +99,23 @@ print([g[0]['udid'] for k,g in d.items() if g and 'iOS' in k][0])")" "$ZIEL/stor
 # aus wie „keine Fehlschläge" — wer nur ✗ zählt, zählt bei einem gar nicht
 # gelaufenen Harness null.
 echo "Alle Harnesse durchgelaufen."
+
+echo "— Verteilungs-Harness (TestFlight) —"
+# Was Apple beim Upload prueft, hier vorher: Team gesetzt, Build-Nummer in
+# project.yml und in allen vier Konfigurationen der pbxproj gleich, das
+# Datenschutz-Manifest im Quellordner (die synchronisierte Gruppe packt es in
+# beide Ziele), keine ATS-Ausnahme mehr, Export-Optionen vorhanden.
+P=../Beleg
+TEAM=$(sed -nE 's/^ *DEVELOPMENT_TEAM: *(.*)$/\1/p' $P/project.yml)
+BUILD=$(sed -nE 's/^ *CURRENT_PROJECT_VERSION: *(.*)$/\1/p' $P/project.yml)
+v() { if [ "$2" = "1" ]; then echo "  ✓ $1"; else echo "  ✗ $1"; exit 1; fi; }
+v "Team in project.yml: $TEAM" "$([ -n "$TEAM" ] && echo 1)"
+v "Team in allen vier Konfigurationen" "$([ "$(grep -c "DEVELOPMENT_TEAM = $TEAM;" $P/Beleg.xcodeproj/project.pbxproj)" = 4 ] && echo 1)"
+v "Build-Nummer $BUILD in allen vier Konfigurationen" "$([ "$(grep -c "CURRENT_PROJECT_VERSION = $BUILD;" $P/Beleg.xcodeproj/project.pbxproj)" = 4 ] && echo 1)"
+v "Build-Nummer ist nicht mehr die verbrauchte 1" "$([ "$BUILD" != "1" ] && echo 1)"
+v "PrivacyInfo.xcprivacy liegt im Quellordner" "$([ -f $P/Beleg/PrivacyInfo.xcprivacy ] && echo 1)"
+v "Privacy-Manifest ist gueltiges plist" "$(plutil -lint -s $P/Beleg/PrivacyInfo.xcprivacy >/dev/null 2>&1 && echo 1)"
+v "keine ATS-Ausnahme in Info.plist" "$(! grep -q NSAllowsLocalNetworking $P/Support/Info.plist && echo 1)"
+v "Export-Compliance beantwortet" "$(grep -q ITSAppUsesNonExemptEncryption $P/Support/Info.plist && echo 1)"
+v "ExportOptions.plist vorhanden und gueltig" "$(plutil -lint -s $P/ExportOptions.plist >/dev/null 2>&1 && echo 1)"
+v "archiv.sh ausfuehrbar" "$([ -x ../archiv.sh ] && echo 1)"

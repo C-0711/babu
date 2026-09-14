@@ -26,11 +26,17 @@ targetTemplates:
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        # Version und Build stehen HIER und in project.pbxproj (vier
+        # Konfigurationen) — ios/Tests/run.sh prüft, dass beide gleich sind.
+        # Jeder TestFlight-Upload braucht eine neue Build-Nummer; 1 ist
+        # verbraucht (Ad-hoc-Verteilung bis 14.09.2026).
         MARKETING_VERSION: 0.1.0
-        CURRENT_PROJECT_VERSION: 1
+        CURRENT_PROJECT_VERSION: 2
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
+        # Das Team von 0711 Intelligence — ohne das kein Archiv, kein Upload.
+        DEVELOPMENT_TEAM: 8L87Z2GRSG
 
 targets:
   Beleg:
