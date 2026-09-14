@@ -133,20 +133,36 @@ darf dabei weiterlaufen, er steht nicht im Weg.
 
 ### Sicherung
 
-Postgres und Belegbox sind getrennte Sicherungsziele. **Seit 03.09.2026
-läuft die Postgres-Sicherung auf dem Host in `~/babu-sichern.sh`** — im
-selben Skript, das schon die tägliche Box-Spiegelung erledigt, kein
-zweiter Cron-Eintrag und kein eigener Container:
+**Seit 14.09.2026 läuft `server/docker/sichern.sh` aus dem Repo** (Cron
+`17 3 * * *` auf der H200V, deployt mit dem üblichen `rsync server/`).
+Vorher `~/babu-sichern.sh` auf dem Host — das beim Umräumen des Home am
+12.09. vom Cron-Pfad getrennt wurde; zwei Tage ohne Sicherung, unbemerkt.
+Das Skript schreibt nach `~/backups/babu/` (14 Stände rollierend, Bundles 7):
 
-```bash
-docker exec babu-postgres pg_dump -U babu -d babu -Fc > ~/backups/babu/pg-$(date +%Y%m%d).dump
-```
+1. **Belegboxen** — Spiegel `babu-box.git` wie bisher UND ein `git bundle`
+   je Box und Tag (eine Datei, außer Haus tauglich). Welche Boxen: die
+   Default-Box plus alles, was in `mandant.box_ref` steht.
+2. **Postgres** — `pg_dump -Fc` im Container; dazu `portal.db`, solange sie
+   als Rückweg liegt.
+3. **Bilder** — Logos, Team-Fotos, Ausweise, Postausgang (liegen bewusst
+   nicht in Git).
+4. **Geheimnisse** — `.session_geheimnis`, `.pg_passwort`, `.gitlab_token`,
+   `.pat_babu`, `docker/.env` als `age`-Archiv für den Schlüssel des Mac
+   (`~/.config/babu/sicherung.key` — nur dort). Alle sind neu ausstellbar,
+   die Sicherung spart Zeit, keine Daten.
 
-14 Stände bleiben rollierend erhalten (ältere räumt dasselbe Skript weg,
-wie beim Box-Spiegel).
+Am Ende steht `stand.txt` (Zeitpunkt, Fehlerzahl). **Außer Haus holt der
+Mac** nächtlich per launchd (`server/docker/sicherung-holen.sh`,
+`io.0711.babu-sicherung.plist`) nach `~/Backups/babu/` und meldet sich,
+wenn die jüngste Sicherung älter als 48 h ist oder Fehler trägt. Time
+Machine macht daraus die dritte Kopie.
 
-Zurückspielen:
+**Zurückspielen** (auf dem Server, ganze Datenbank):
 `docker exec -i babu-postgres pg_restore -U babu -d babu --clean < ~/backups/babu/pg-<JJJJMMTT>.dump`
+— eine Box: `git clone ~/backups/babu/box-babu-<JJJJMMTT>.bundle` und den
+Inhalt ans Gateway pushen. **Die Probe, dass das wirklich klappt, ist ein
+Ritual mit Protokoll:** `docs/betrieb/restore-probe.md` — einmal vor dem
+Go-Live (14.09.2026 bestanden), danach am Monatsersten.
 
 ### Neue SQL-Zeilen schreiben
 

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- launchd auf dem Mac: holt täglich 04:30 die Sicherung von der H200V.
+	     Einrichten (einmalig, mit dem Pfad des eigenen Checkouts):
+	       sed "s#REPO#$PWD#" server/docker/io.0711.babu-sicherung.plist \
+	         > ~/Library/LaunchAgents/io.0711.babu-sicherung.plist
+	       launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.0711.babu-sicherung.plist
+	     Prüfen: launchctl print gui/$(id -u)/io.0711.babu-sicherung | head
+	     Sofort einmal laufen lassen: launchctl kickstart gui/$(id -u)/io.0711.babu-sicherung -->
+	<key>Label</key>
+	<string>io.0711.babu-sicherung</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>REPO/server/docker/sicherung-holen.sh</string>
+	</array>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>4</integer>
+		<key>Minute</key>
+		<integer>30</integer>
+	</dict>
+	<!-- ssh und rsync liegen unter /usr/bin; ~/.ssh/config kennt h200v. -->
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>/tmp/babu-sicherung.out</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/babu-sicherung.err</string>
+</dict>
+</plist>
