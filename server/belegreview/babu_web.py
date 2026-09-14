@@ -215,7 +215,72 @@ def _im_mandanten_kontext(box: bx.Box, mandant_id: int, ziel, *args):
 # die ihn erneut nimmt (`salon_von_aktiv` etwa).
 # ---------------------------------------------------------------------------
 
-_DB_LOCK = threading.Lock()
+class _MessSchloss:
+    """Ein Schloss (oder eine Semaphore) mit Messung — seit 14.09.2026.
+
+    Dieselbe Oberfläche wie `threading.Lock`: `with`, `acquire(timeout=)`,
+    `release`, `locked`. Dazu vier Zahlen, die `/api/kpi` ausgibt: wie oft
+    genommen, wie lange insgesamt und höchstens gewartet, wie lange höchstens
+    gehalten. Ohne diese Zahlen lässt sich nicht entscheiden, ob `_DB_LOCK`
+    unter Postgres ein Engpass ist und ob Gemma mehr als einen Platz
+    verträgt — beides wird erst nach zwei Wochen Messung angefasst.
+
+    Der Name `_DB_LOCK` bleibt; `tests/test_kein_schloss_im_schloss.py`
+    verfolgt weiter die `with _DB_LOCK`-Blöcke. Die Zähler sind nicht
+    selbst geschützt — sie sind Statistik, kein Zustand.
+    """
+
+    def __init__(self, name: str, roh) -> None:
+        self.name = name
+        self._roh = roh
+        self._lokal = threading.local()
+        self.anzahl = 0
+        self.warte_s = 0.0
+        self.warte_max_s = 0.0
+        self.halte_max_s = 0.0
+
+    def acquire(self, blocking: bool = True, timeout=None) -> bool:
+        t0 = time.perf_counter()
+        if timeout is None or timeout < 0:
+            ok = self._roh.acquire(blocking)
+        else:
+            ok = self._roh.acquire(blocking, timeout)
+        gewartet = time.perf_counter() - t0
+        if ok:
+            self.anzahl += 1
+            self.warte_s += gewartet
+            if gewartet > self.warte_max_s:
+                self.warte_max_s = gewartet
+            self._lokal.seit = time.perf_counter()
+        return ok
+
+    def release(self) -> None:
+        seit = getattr(self._lokal, "seit", None)
+        if seit is not None:
+            gehalten = time.perf_counter() - seit
+            if gehalten > self.halte_max_s:
+                self.halte_max_s = gehalten
+            self._lokal.seit = None
+        self._roh.release()
+
+    def locked(self) -> bool:
+        return self._roh.locked()
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, *_) -> None:
+        self.release()
+
+    def werte(self) -> dict:
+        return {"anzahl": self.anzahl,
+                "warte_mittel_ms": round(self.warte_s / self.anzahl * 1000, 2) if self.anzahl else 0,
+                "warte_max_ms": round(self.warte_max_s * 1000, 1),
+                "halte_max_ms": round(self.halte_max_s * 1000, 1)}
+
+
+_DB_LOCK = _MessSchloss("db", threading.Lock())
 
 
 def _sqlite_schema(conn) -> None:
@@ -491,7 +556,9 @@ app = FastAPI(title="babu-web", docs_url=None, redoc_url=None)
 
 # Betriebs-Zähler (KPI, in-memory seit Prozessstart)
 _METRIK = {"start": time.time(), "requests": 0, "fehler_5xx": 0, "davon_304": 0,
-           "dauer_summe": 0.0}
+           "dauer_summe": 0.0,
+           # Seit 14.09.2026: was Gemma und die Anmeldung erzählen.
+           "gemma_fehler": 0, "gemma_timeout": 0, "login_429": 0}
 
 
 @app.middleware("http")
@@ -505,12 +572,21 @@ async def _metrik_mw(request: Request, call_next):
                                 status_code=308)
     t0 = time.perf_counter()
     antwort = await call_next(request)
+    dauer = time.perf_counter() - t0
     _METRIK["requests"] += 1
-    _METRIK["dauer_summe"] += time.perf_counter() - t0
+    _METRIK["dauer_summe"] += dauer
     if antwort.status_code >= 500:
         _METRIK["fehler_5xx"] += 1
     if antwort.status_code == 304:
         _METRIK["davon_304"] += 1
+    # Eine Zugriffszeile für alles, was schiefging oder lange dauerte — mit
+    # Konto und Betrieb (seit 14.09.2026). `request.state` statt der
+    # ContextVars: Starlette kopiert den Kontext in den Threadpool, was die
+    # Wache dort setzt, käme hier nicht zurück; das Request-Objekt ist dasselbe.
+    if antwort.status_code >= 400 or dauer > 2.0:
+        print(f"[http] {antwort.status_code} {request.method} {request.url.path} "
+              f"{dauer:.1f}s un={getattr(request.state, 'un', '-')} "
+              f"mandant={getattr(request.state, 'mandant', '-')}", flush=True)
     return antwort
 
 # whoami-Cache: Token-Hash → (un, bis) — schont gitchain.de bei App-Polling.
@@ -1553,6 +1629,7 @@ def _api_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]
     if not zugelassen(un):
         print(f"[wache] 403: '{un}' weder Allowlist noch aktives Konto", flush=True)
         return None, JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    request.state.un = un          # für die Zugriffszeile in `_metrik_mw`
     gewuenscht = _mandant_gewuenscht(request)
     if gewuenscht:
         mandant_id = _mandant_aus_kontext(request, un)
@@ -1561,12 +1638,14 @@ def _api_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]
                   flush=True)
             return None, JSONResponse({"fehler": MANDANT_FREMD}, status_code=403)
         _AKTIVER_MANDANT.set(mandant_id)
+        request.state.mandant = mandant_id
     else:
         eigener, fehler = _eigener_mandant(un)
         if fehler:
             return None, fehler
         if eigener is not None:
             _AKTIVER_MANDANT.set(eigener)
+            request.state.mandant = eigener
     return un, None
 
 
@@ -1788,28 +1867,54 @@ def _zaehler_aufraeumen(tabelle: dict, jetzt: float, alter: float) -> None:
             tabelle.pop(schluessel, None)
 
 
+# Die Bremse (seit 14.09.2026 zweistufig): je IP großzügig — ein Salon hinter
+# einer NAT-Adresse sperrte sich mit 5/min gegenseitig aus —, je Konto streng,
+# denn ein Angreifer mit wechselnden Adressen hatte je Konto gar kein
+# Kontingent. Beides im selben Fenster von 60 s, beides im Prozess (ein
+# Neustart setzt es zurück — bei 20 Betrieben harmlos).
+LOGIN_JE_IP = 20
+LOGIN_JE_KONTO = 5
+
+
+def _login_bremse(ip: str, email: str) -> JSONResponse | None:
+    jetzt = time.time()
+    schluessel = [(ip, LOGIN_JE_IP)]
+    if email:
+        schluessel.append((f"konto:{email}", LOGIN_JE_KONTO))
+    for k, grenze in schluessel:
+        versuche = [t for t in _LOGIN_VERSUCHE.get(k, []) if jetzt - t < 60]
+        if len(versuche) >= grenze:
+            _LOGIN_VERSUCHE[k] = versuche
+            _METRIK["login_429"] += 1
+            return JSONResponse({"fehler": "Zu viele Versuche — bitte eine Minute warten."},
+                                status_code=429)
+        versuche.append(jetzt)
+        _LOGIN_VERSUCHE[k] = versuche
+    _zaehler_aufraeumen(_LOGIN_VERSUCHE, jetzt, 60)
+    return None
+
+
+def _login_erfolg(ip: str, email: str) -> None:
+    """Geglückt: das Kontingent gehört den Fehlversuchen, nicht den Erfolgen."""
+    _LOGIN_VERSUCHE.pop(ip, None)
+    _LOGIN_VERSUCHE.pop(f"konto:{email}", None)
+
+
 @app.post("/api/login")
 def api_login(body: dict, request: Request) -> Response:
     if not _origin_ok(request):
         return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
     ip = _client_ip(request)
-    jetzt = time.time()
-    versuche = [t for t in _LOGIN_VERSUCHE.get(ip, []) if jetzt - t < 60]
-    if len(versuche) >= 5:
-        _LOGIN_VERSUCHE[ip] = versuche
-        return JSONResponse({"fehler": "Zu viele Versuche — bitte eine Minute warten."},
-                            status_code=429)
-    versuche.append(jetzt)
-    _LOGIN_VERSUCHE[ip] = versuche
-    _zaehler_aufraeumen(_LOGIN_VERSUCHE, jetzt, 60)
     email = str(body.get("email", "")).strip().lower()
     passwort = str(body.get("passwort", ""))
+    gebremst = _login_bremse(ip, email)
+    if gebremst is not None:
+        return gebremst
     n = nutzer_holen(email) if email else None
     if not n or not n["aktiv"] or not pw_pruefen(passwort, n["pw"]):
         return JSONResponse({"fehler": "E-Mail oder Passwort stimmt nicht."},
                             status_code=401)
-    # Geglückt: das Kontingent gehört den Fehlversuchen, nicht den Erfolgen.
-    _LOGIN_VERSUCHE.pop(ip, None)
+    _login_erfolg(ip, email)
     with _DB_LOCK, _db() as c:
         c.execute("UPDATE nutzer SET letzter_login=? WHERE email=?",
                   (_jetzt_iso(), email))
@@ -1832,23 +1937,17 @@ def api_app_anmelden(body: dict, request: Request) -> Response:
     in der Antwort, gespeichert wird nur sein Hash. Kein Schlüssel-Gefrickel
     mehr für die Nutzerin."""
     ip = _client_ip(request)
-    jetzt = time.time()
-    versuche = [t for t in _LOGIN_VERSUCHE.get(ip, []) if jetzt - t < 60]
-    if len(versuche) >= 5:
-        _LOGIN_VERSUCHE[ip] = versuche
-        return JSONResponse({"fehler": "Zu viele Versuche — bitte eine Minute warten."},
-                            status_code=429)
-    versuche.append(jetzt)
-    _LOGIN_VERSUCHE[ip] = versuche
-    _zaehler_aufraeumen(_LOGIN_VERSUCHE, jetzt, 60)
     email = str(body.get("email", "")).strip().lower()
     passwort = str(body.get("passwort", ""))
     geraet = str(body.get("geraet", "") or "")[:80]
+    gebremst = _login_bremse(ip, email)
+    if gebremst is not None:
+        return gebremst
     n = nutzer_holen(email) if email else None
     if not n or not n["aktiv"] or not pw_pruefen(passwort, n["pw"]):
         return JSONResponse({"fehler": "E-Mail oder Passwort stimmt nicht."},
                             status_code=401)
-    _LOGIN_VERSUCHE.pop(ip, None)     # geglückt — siehe /api/login
+    _login_erfolg(ip, email)
     token = secrets.token_urlsafe(32)
     with _DB_LOCK, _db() as c:
         c.execute("INSERT INTO app_schluessel VALUES (?,?,?,?,?)",
@@ -2542,7 +2641,11 @@ async def _hintergrund_lesen(pfad: str, daten: bytes, endung: str, un: str) -> N
     try:
         async with asyncio.timeout(BELEG_LESE_FRIST_SEK):
             await _beleg_serverseitig_lesen(pfad, daten, endung, un)
+    except TimeoutError as ex:
+        _METRIK["gemma_timeout"] += 1
+        print(f"[lesen] {pfad}: Zeitüberschreitung {ex!r}", flush=True)
     except Exception as ex:  # noqa: BLE001
+        _METRIK["gemma_fehler"] += 1
         print(f"[lesen] {pfad}: {ex!r}", flush=True)
 
 
@@ -2554,6 +2657,114 @@ _HINTERGRUND_TASKS: set = set()
 
 def _hintergrund_lesen_starten(pfad: str, daten: bytes, endung: str, un: str) -> None:
     task = asyncio.create_task(_hintergrund_lesen(pfad, daten, endung, un))
+    _HINTERGRUND_TASKS.add(task)
+    task.add_done_callback(_HINTERGRUND_TASKS.discard)
+
+
+# ── Nachlese beim Start (14.09.2026, vom Auftraggeber freigegeben) ──────────
+#
+# Jeder Deploy ist ein Neustart, und alles, was gerade gelesen wurde, lebt nur
+# im Prozess (`_HINTERGRUND_TASKS`). Bis heute strandete so ein Beleg als
+# „unlesbar" nach BELEG_HAENGT_NACH_MIN, und niemand las nach. Kein Watcher:
+# genau EIN Durchgang nach dem Start, sequenziell, gedeckelt — derselbe Weg
+# wie „Nochmal versuchen" und der Portal-Upload. Idempotent, weil
+# `_review_ueberschreibbar` nichts überschreibt, was ein Review hat.
+NACHLESE_VERZOEGERUNG_S = float(os.environ.get("BABU_NACHLESE_VERZOEGERUNG", "60") or 60)
+NACHLESE_MAX = int(os.environ.get("BABU_NACHLESE_MAX", "60") or 60)
+NACHLESE_JE_BOX = 20
+NACHLESE_MIN_ALTER_MIN = 3          # nichts, was gerade noch läuft
+NACHLESE_MAX_ALTER_MIN = 14 * 1440  # Altfälle sind Handarbeit, kein Startsturm
+
+
+def _nachlese_kandidaten(idx: dict) -> list[dict]:
+    """Belege ohne jede Lesung: `status` erfasst/unlesbar UND kein Review
+    (`dokumentklasse` None). Ein „unlesbar" MIT Review (Massenimport) bleibt
+    liegen — das ist ein Urteil, kein Versäumnis."""
+    aus = []
+    for z in idx["belege"].values():
+        if z.get("status") not in ("erfasst", "unlesbar") or z.get("dokumentklasse") is not None:
+            continue
+        alter = _minuten_seit(z.get("hochgeladen"))
+        if alter is None or alter < NACHLESE_MIN_ALTER_MIN or alter > NACHLESE_MAX_ALTER_MIN:
+            continue
+        aus.append(z)
+    aus.sort(key=lambda z: z.get("hochgeladen") or "")
+    return aus[:NACHLESE_JE_BOX]
+
+
+def _nachlese_boxen() -> list[tuple[bx.Box, int | None, str]]:
+    """Die Default-Box und jede Mandanten-Box — je einmal, mit dem Konto,
+    unter dem gelesen wird (der Besitzer; für die Default-Box das erste
+    Konto der Allowlist)."""
+    boxen: list[tuple[bx.Box, int | None, str]] = []
+    gesehen: set[str] = set()
+    try:
+        with _DB_LOCK, _db() as c:
+            zeilen = c.execute("""SELECT id, box_ref, besitzer_un FROM mandant
+                                  WHERE box_ref IS NOT NULL AND box_ref <> ''
+                                    AND status <> 'beendet' ORDER BY id""").fetchall()
+    except Exception as ex:  # noqa: BLE001
+        print(f"[nachlese] Mandanten nicht lesbar: {ex!r}", flush=True)
+        zeilen = []
+    for mid, ref, un in zeilen:
+        try:
+            box = bx.box_aus_ref(int(mid), ref)
+        except Exception as ex:  # noqa: BLE001
+            print(f"[nachlese] Box {ref} nicht erreichbar: {ex!r}", flush=True)
+            continue
+        if box.ref in gesehen:
+            continue
+        gesehen.add(box.ref)
+        boxen.append((box, int(mid), un))
+    standard = bx.default_box()
+    if standard.ref not in gesehen:
+        boxen.append((standard, None, next(iter(sorted(ERLAUBT)), "babu")))
+    return boxen
+
+
+async def _beim_start_nachlesen() -> None:
+    await asyncio.sleep(NACHLESE_VERZOEGERUNG_S)   # erst Healthcheck und erste Requests
+    loop = asyncio.get_running_loop()
+    gesamt = 0
+    for box, mandant_id, un in _nachlese_boxen():
+        if gesamt >= NACHLESE_MAX:
+            break
+        ctx = contextvars.copy_context()
+        ctx.run(_AKTIVE_BOX.set, box)
+        if mandant_id is not None:
+            ctx.run(_AKTIVER_MANDANT.set, mandant_id)
+        try:
+            idx = await loop.run_in_executor(None, ctx.run, index_aktuell)
+        except Exception as ex:  # noqa: BLE001
+            print(f"[nachlese] {box.ref}: Index nicht lesbar: {ex!r}", flush=True)
+            continue
+        kandidaten = _nachlese_kandidaten(idx)
+        if not kandidaten:
+            continue
+        print(f"[nachlese] {box.ref}: {len(kandidaten)} Beleg(e) ohne Lesung", flush=True)
+        for z in kandidaten:
+            if gesamt >= NACHLESE_MAX:
+                break
+            daten = await loop.run_in_executor(None, ctx.run, git_show, z["datei"])
+            if daten is None:
+                continue
+            endung = Path(z["datei"]).suffix.lower()
+            gesamt += 1
+            # Sequenziell und im Kontext der Box: nicht 60 Aufgaben auf einmal,
+            # die alle einen Faden am `_LLM_SEMAPHORE` parken.
+            task = asyncio.create_task(_hintergrund_lesen(z["datei"], daten, endung, un),
+                                       context=ctx)
+            _HINTERGRUND_TASKS.add(task)
+            task.add_done_callback(_HINTERGRUND_TASKS.discard)
+            await task
+    print(f"[nachlese] fertig: {gesamt} nachgelesen", flush=True)
+
+
+@app.on_event("startup")
+async def _start_nachlese() -> None:
+    if os.environ.get("BABU_NACHLESE", "1") == "0":
+        return
+    task = asyncio.create_task(_beim_start_nachlesen())
     _HINTERGRUND_TASKS.add(task)
     task.add_done_callback(_HINTERGRUND_TASKS.discard)
 
@@ -5633,7 +5844,15 @@ def api_kpi(monat: str, request: Request) -> Response:
                     "requests": _METRIK["requests"],
                     "fehler_5xx_quote": round(_METRIK["fehler_5xx"] / _METRIK["requests"], 4) if _METRIK["requests"] else 0,
                     "quote_304": round(_METRIK["davon_304"] / _METRIK["requests"], 3) if _METRIK["requests"] else 0,
-                    "mittlere_dauer_ms": round(_METRIK["dauer_summe"] / _METRIK["requests"] * 1000, 1) if _METRIK["requests"] else 0},
+                    "mittlere_dauer_ms": round(_METRIK["dauer_summe"] / _METRIK["requests"] * 1000, 1) if _METRIK["requests"] else 0,
+                    # Seit 14.09.2026: die Engpässe, über die erst nach zwei
+                    # Wochen Messung entschieden wird (Plan B3/B5).
+                    "schloesser": {"db": _DB_LOCK.werte(), "llm": _LLM_SEMAPHORE.werte()},
+                    "llm_plaetze": LLM_PLAETZE,
+                    "gemma_fehler": _METRIK["gemma_fehler"],
+                    "gemma_timeout": _METRIK["gemma_timeout"],
+                    "login_429": _METRIK["login_429"],
+                    "arbeit_offen": len(_HINTERGRUND_TASKS)},
     })
 
 
@@ -5778,6 +5997,7 @@ async def api_buchung_einschaetzung(request: Request) -> Response:
             kontenrahmen_von(un), ktx["umsaetze"], ktx["nachbarn"], None, None,
             ktx["vertraege_ktx"], ktx["personal_ktx"], ktx["offene_abbuchungen"])
     except Exception as ex:  # noqa: BLE001
+        _METRIK["gemma_fehler"] += 1
         print(f"[einschaetzung] {un}: {ex!r}", flush=True)
         return JSONResponse({"fehler": "Die Buchhaltung ist gerade nicht zu "
                              "erreichen — gleich noch einmal."}, status_code=502)
@@ -6266,6 +6486,7 @@ def chat(body: dict, request: Request) -> Response:
         r.raise_for_status()
         antwort = r.json()["choices"][0]["message"]["content"].strip()
     except Exception:  # noqa: BLE001
+        _METRIK["gemma_fehler"] += 1
         return JSONResponse({"fehler": "Gemma nicht erreichbar"}, status_code=502)
     return JSONResponse({"antwort": mit_beratungsgrenze(antwort, frage)})
 
@@ -6416,8 +6637,13 @@ def _abschluss_jobs_aufraeumen() -> None:
             del _ABSCHLUSS_JOBS[name]
 
 
-# vLLM (:11435/:11436) teilt sich mit dem Review-Watcher — nie parallel fluten.
-_LLM_SEMAPHORE = threading.Semaphore(1)
+# vLLM (:11435/:11436) ist ein geteilter Pod — nie parallel fluten. Ein Platz
+# für den ganzen Prozess, also für alle Betriebe zusammen. `BABU_LLM_PLAETZE`
+# ist der Schalter für später (aus d8b3445, OHNE den JSON-Modus, der am
+# 04.09. den Pod umwarf); umgestellt wird erst, wenn die Messung in /api/kpi
+# eine p95-Wartezeit über 60 s zeigt UND die Fehlerquote bei null liegt.
+LLM_PLAETZE = max(1, int(os.environ.get("BABU_LLM_PLAETZE", "1") or 1))
+_LLM_SEMAPHORE = _MessSchloss("llm", threading.Semaphore(LLM_PLAETZE))
 
 
 def db_abschluss_snapshot(un: str, jahr: int | None, status: dict) -> None:

@@ -448,9 +448,14 @@ def test_rate_limit_trifft_nicht_den_ganzen_salon(bw, client, monkeypatch):
     # Diese eine IP ist jetzt dran …
     assert client.post("/api/login", json={"email": "a@b.de", "passwort": "x"},
                        headers=fremd).status_code == 429
-    # … alle anderen aber nicht.
-    assert client.post("/api/login", json={"email": "a@b.de", "passwort": "x"},
+    # … alle anderen aber nicht — ein ANDERES Konto von einer anderen IP darf weiter.
+    assert client.post("/api/login", json={"email": "c@d.de", "passwort": "x"},
                        headers={"cf-connecting-ip": "198.51.100.7"}).status_code == 401
+    # Seit 14.09.2026 gilt die Bremse auch je Konto: DIESELBE Adresse von einer
+    # anderen IP ist ebenfalls zu — ein Angreifer mit wechselnden Adressen hatte
+    # je Konto vorher gar kein Kontingent.
+    assert client.post("/api/login", json={"email": "a@b.de", "passwort": "x"},
+                       headers={"cf-connecting-ip": "198.51.100.8"}).status_code == 429
 
 
 def test_kopfzeile_nur_vom_tunnel_geglaubt(bw):

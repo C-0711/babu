@@ -269,13 +269,32 @@ final class AppStore: ObservableObject {
         if verbundenRolle != antwort.rolle { verbundenRolle = antwort.rolle }
     }
 
+    /// Wartezeit vor dem nächsten Versuch je Beleg (nicht persistiert). Bis
+    /// 14.09.2026 stieß JEDER Wechsel in den Vordergrund ALLE offenen Uploads
+    /// erneut an — bei 20 Telefonen nach einem Deploy eine Lastspitze, und
+    /// bei einem Beleg, der aus gutem Grund abgelehnt wird, ein Dauerfeuer.
+    /// Jetzt verdoppelt sich die Pause je Fehlschlag (30 s … 30 min); der
+    /// Knopf „Jetzt ablegen" in der Liste geht weiter sofort.
+    private var naechsterVersuch: [UUID: Date] = [:]
+    private var fehlversuche: [UUID: Int] = [:]
+
     func ablageRetry() {
         guard ablageAktiv else { return }
+        let jetzt = Date()
         for b in belege where b.ablageStatus == .ausstehend || b.ablageStatus == .fehlgeschlagen {
             let id = b.id
+            if let ab = naechsterVersuch[id], ab > jetzt { continue }
             Task { await self.uebertrage(id) }
         }
         kassenRetry()
+    }
+
+    /// Nach einem Fehlschlag: die nächste Pause, doppelt so lang wie die letzte.
+    private func versuchVerschieben(_ id: UUID) {
+        let n = (fehlversuche[id] ?? 0) + 1
+        fehlversuche[id] = n
+        let pause = min(30.0 * pow(2.0, Double(n - 1)), 1800)
+        naechsterVersuch[id] = Date().addingTimeInterval(pause)
     }
 
     /// Läuft gerade ein Upload für diese ID? Verhindert doppelte
@@ -335,8 +354,11 @@ final class AppStore: ObservableObject {
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
                 await self.auditLaden(id)
             }
+            fehlversuche[id] = nil
+            naechsterVersuch[id] = nil
         default:
             belege[j].ablageStatus = .fehlgeschlagen
+            versuchVerschieben(id)
         }
     }
 

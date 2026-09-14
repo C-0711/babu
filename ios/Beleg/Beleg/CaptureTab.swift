@@ -232,6 +232,12 @@ struct CaptureTab: View {
                 seite.draw(with: .mediaBox, to: ctx.cgContext)
             }
         }
+        // Seiten jenseits der Grenze fielen bis 14.09.2026 stumm weg — ein
+        // 30-seitiger Vertrag ging halb durch, und niemand merkte es. Jetzt
+        // steht es dabei; gelesen werden trotzdem nur die ersten Seiten.
+        if doc.pageCount > PDF_SEITEN_MAX {
+            ladeFehler = "Das PDF hat \(doc.pageCount) Seiten — babu liest die ersten \(PDF_SEITEN_MAX). Den Rest bitte als eigenes Dokument hochladen."
+        }
         guard !seiten.isEmpty else {
             ladeFehler = "Aus diesem PDF ließ sich keine Seite öffnen."
             return
