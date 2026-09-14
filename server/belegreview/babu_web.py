@@ -1399,6 +1399,26 @@ def portal_seite() -> FileResponse:
     return FileResponse(WURZEL / "portal.html", media_type="text/html", headers=HTML_FRISCH)
 
 
+# Impressum, Datenschutz, Nutzungsbedingungen — eigene Seiten ohne Anmeldung
+# (seit 14.09.2026). Apple verlangt für die Beta App Review eine
+# Datenschutz-Adresse, die App verlinkt sie, das Portal holt dieselben Texte
+# über /api/recht. Eine Quelle: recht.py.
+@app.get("/impressum")
+@app.get("/datenschutz")
+@app.get("/agb")
+def recht_seite(request: Request) -> Response:
+    import recht  # noqa: PLC0415
+    art = request.url.path.strip("/")
+    return Response(content=recht.seite(art), media_type="text/html; charset=utf-8",
+                    headers=HTML_FRISCH)
+
+
+@app.get("/api/recht")
+def api_recht() -> Response:
+    import recht  # noqa: PLC0415
+    return JSONResponse(recht.als_json())
+
+
 @app.get("/portal/manifest.json")
 def portal_manifest() -> FileResponse:
     return FileResponse(WURZEL / "portal.manifest.json", media_type="application/manifest+json")

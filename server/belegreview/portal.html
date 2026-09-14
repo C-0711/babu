@@ -3005,8 +3005,16 @@ const RECHT_TEXTE = {
     + "wie lange sie bleiben, wer sie sonst noch sieht und welche Rechte du "
     + "hast. Den verbindlichen Wortlaut setzen Nina und ihre Kanzlei ein."]
 };
-function rechtZeigen(art){
-  const [titel, text] = RECHT_TEXTE[art] || RECHT_TEXTE.impressum;
+/* Seit 14.09.2026 kommen die Texte aus einer Quelle (/api/recht, dieselbe wie
+   die Seiten /impressum und /datenschutz). RECHT_TEXTE oben bleibt der
+   Rückfall, wenn die Antwort ausbleibt. */
+let RECHT_GEHOLT = null;
+async function rechtZeigen(art){
+  if (!RECHT_GEHOLT){
+    try{ const r = await fetch("/api/recht", {credentials:"same-origin"}); if (r.ok) RECHT_GEHOLT = await r.json(); }catch{}
+  }
+  const g = RECHT_GEHOLT && RECHT_GEHOLT[art];
+  const [titel, text] = g ? [g.titel, g.text] : (RECHT_TEXTE[art] || RECHT_TEXTE.impressum);
   $("#recht-titel").textContent = titel;
   $("#recht-text").textContent = text;
   $("#rechtblatt").hidden = false;

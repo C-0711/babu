@@ -1,6 +1,7 @@
 DELETE /api/anlagen/{kennung}
 DELETE /api/geraete/{gid}
 GET /
+GET /agb
 GET /api/abgleich/{monat}
 GET /api/ablage
 GET /api/ablage/suche
@@ -64,6 +65,7 @@ GET /api/onboarding/{marke}/vertrag/text
 GET /api/posteingang/adresse/{mandant_id}
 GET /api/posteingang/aufloesen
 GET /api/rechnungen
+GET /api/recht
 GET /api/registrierungen
 GET /api/rueckmeldungen
 GET /api/salon-check
@@ -83,9 +85,11 @@ GET /app
 GET /app/{name}
 GET /auswertung/{schluessel}
 GET /bilder/{name}
+GET /datenschutz
 GET /datev
 GET /einkauf
 GET /healthz
+GET /impressum
 GET /openapi.json
 GET /portal
 GET /portal/icon-{groesse}.png

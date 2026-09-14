@@ -37,6 +37,11 @@ if [ "$(grep -c "CURRENT_PROJECT_VERSION = $BUILD;" "$HIER/Beleg/Beleg.xcodeproj
   echo "Build-Nummer $BUILD aus project.yml steht nicht in allen vier Konfigurationen von project.pbxproj."; exit 3
 fi
 [ -f "$HIER/Beleg/Beleg/PrivacyInfo.xcprivacy" ] || { echo "PrivacyInfo.xcprivacy fehlt — Apple nimmt das Archiv nicht an."; exit 3; }
+# Rechtstexte: Platzhalter sind für interne Tester in Ordnung, für die Beta
+# App Review (externe Einladung) nicht — Apple liest die Datenschutz-Seite.
+if ! (cd "$HIER/../server/belegreview" && python3 -c "import recht, sys; sys.exit(0 if recht.fertig() else 1)" 2>/dev/null); then
+  echo "HINWEIS: Impressum/Datenschutz/AGB sind noch Platzhalter (server/belegreview/recht.py) — dieser Build taugt nur für interne Tester."
+fi
 
 # Bash 3.2 (macOS) verträgt ein leeres Array unter `set -u` nicht — deshalb ein
 # String, der leer bleiben darf, und unten ungequotet eingesetzt wird.

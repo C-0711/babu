@@ -86,6 +86,22 @@ struct EinstellungenView: View {
                 testphase
                 #endif
 
+                // Die drei Seiten, die jede Nutzerin ohne Konto lesen kann —
+                // dieselben, die Apple bei der Einreichung verlangt.
+                Section {
+                    if let ds = URL(string: store.ablageURL + "/datenschutz") {
+                        Link("Datenschutz", destination: ds)
+                    }
+                    if let ab = URL(string: store.ablageURL + "/agb") {
+                        Link("Nutzungsbedingungen", destination: ab)
+                    }
+                    if let im = URL(string: store.ablageURL + "/impressum") {
+                        Link("Impressum", destination: im)
+                    }
+                } header: {
+                    Text("Rechtliches")
+                }
+
                 Section {
                 } footer: {
                     HStack(spacing: 6) {
