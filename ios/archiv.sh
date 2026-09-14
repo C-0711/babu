@@ -38,16 +38,18 @@ if [ "$(grep -c "CURRENT_PROJECT_VERSION = $BUILD;" "$HIER/Beleg/Beleg.xcodeproj
 fi
 [ -f "$HIER/Beleg/Beleg/PrivacyInfo.xcprivacy" ] || { echo "PrivacyInfo.xcprivacy fehlt — Apple nimmt das Archiv nicht an."; exit 3; }
 
-AUTH=()
+# Bash 3.2 (macOS) verträgt ein leeres Array unter `set -u` nicht — deshalb ein
+# String, der leer bleiben darf, und unten ungequotet eingesetzt wird.
+AUTH=""
 if [ -n "${ASC_KEY_ID:-}" ]; then
-  AUTH=(-authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" -authenticationKeyPath "$ASC_KEY_PFAD")
+  AUTH="-authenticationKeyID $ASC_KEY_ID -authenticationKeyIssuerID $ASC_ISSUER_ID -authenticationKeyPath $ASC_KEY_PFAD"
 fi
 
 echo "── $SCHEMA $VERSION ($BUILD): Archiv ──"
 rm -rf "$ARCHIV" "$EXPORT"
 xcodebuild -project "$HIER/Beleg/Beleg.xcodeproj" -scheme "$SCHEMA" -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "$ARCHIV" \
-  -allowProvisioningUpdates "${AUTH[@]}" archive 2>&1 | grep -E 'error:|warning: .*Beleg/|ARCHIVE (SUCCEEDED|FAILED)|\*\*' || true
+  -allowProvisioningUpdates $AUTH archive 2>&1 | grep -E 'error:|warning: .*Beleg/|ARCHIVE (SUCCEEDED|FAILED)|\*\*' || true
 [ -d "$ARCHIV" ] || { echo "Kein Archiv entstanden."; exit 1; }
 
 if [ "$MODUS" = "--nur-ipa" ]; then
@@ -60,7 +62,7 @@ else
   echo "── Upload zu App Store Connect ──"
 fi
 xcodebuild -exportArchive -archivePath "$ARCHIV" -exportOptionsPlist "$OPTIONEN" \
-  -exportPath "$EXPORT" -allowProvisioningUpdates "${AUTH[@]}" 2>&1 | grep -E 'error:|EXPORT (SUCCEEDED|FAILED)|Upload|\*\*' || true
+  -exportPath "$EXPORT" -allowProvisioningUpdates $AUTH 2>&1 | grep -E 'error:|EXPORT (SUCCEEDED|FAILED)|Upload|\*\*' || true
 if [ "$MODUS" = "--nur-ipa" ]; then
   ls -la "$EXPORT"/*.ipa
 else
