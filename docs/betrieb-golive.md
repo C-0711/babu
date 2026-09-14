@@ -128,18 +128,17 @@ Bei „not verified" oder 535 im Log: Domain-Status unter resend.com/domains, Sc
 anlegen und per `pbpaste | ssh h200v …` in die `.env` (nie im Klartext ausgeben).
 Offen: `BABU_SUPPORT_MAIL` in derselben Datei, sobald es ein Support-Postfach gibt.
 
-**3. Rechtstexte.** Impressum, Datenschutzerklärung und Erprobungsbedingungen der
-Anwältin als Klartext in `server/belegreview/recht.py` (`TEXTE`, je Art Überschrift und
-Text; Absätze mit Leerzeile). `recht.fertig()` wird damit wahr, die Seiten `/impressum`,
-`/datenschutz`, `/agb` zeigen den Text statt des Platzhalter-Hinweises, und `ios/archiv.sh`
-hört auf zu warnen. Suite laufen lassen (`tests/test_recht.py`, Sprachregel), deployen.
-AVV als PDF je Betrieb ablegen — nicht im Repo.
+**3. Rechtstexte — Erprobungsfassung seit 14.09.2026.** Impressum, Datenschutz und
+Nutzungsbedingungen stehen als vom Auftraggeber freigegebene Testfassungen in
+`server/belegreview/recht.py` (`TEXTE`), jede sagt in der ersten Zeile, dass sie eine
+Erprobungsfassung ist. `recht.fertig()` ist damit wahr, `ios/archiv.sh` warnt nicht mehr.
+Die Anwältin ersetzt die Texte vor dem allgemeinen Start an derselben Stelle; danach Suite
+(`tests/test_recht.py`) und Deploy. AVV als PDF je Betrieb ablegen, nicht im Repo.
 
-**4. Kanzlei-Konto GKM Neff.** Im Portal als Admin: Zugänge verwalten → „Zugang anlegen",
-Rolle `kanzlei`, Mailadresse der Kanzlei. Das Startpasswort wird nur dort angezeigt
-(nie ausgeben, nie mailen; bei Verlust „Neues Startpasswort"). Mit Schritt 2 kommt die
-Einladung des ersten Mandanten per Mail an, ohne ihn liegt der Link in der Antwort des
-Portals. Danach zwei Testbetriebe nach Abschnitt 1.
+**4. Kanzlei-Konto GKM — angelegt 14.09.2026.** Konto `j.neef@gkm-group.de` (Rolle
+`kanzlei`, Kanzlei-Id 8 „GKM Group Bonn", Inhaber). Das Startpasswort wurde nie ausgegeben;
+der Einstieg läuft über „Passwort vergessen" im Portal: `POST /api/passwort-vergessen`
+mit der Adresse schickt den Link per Mail. Danach zwei Testbetriebe nach Abschnitt 1.
 
 **5. DATEV-Import bei GKM Neff.** Ninas Monat über `/datev` als Stapel exportieren
 (Prüfbefund muss leer sein), Import bei der Kanzlei, #REW-Meldungen als Protokoll
