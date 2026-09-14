@@ -121,12 +121,16 @@ lädt Build 0.1.0 (2) hoch (Team 8L87Z2GRSG in Xcode angemeldet, oder `ASC_KEY_I
 Externe Tester (Beta App Review) erst mit Schritt 3: Apple will die Datenschutz-URL
 `https://babu.0711.io/datenschutz` und ein Testkonto in den Notizen.
 
-**2. Mail-Dienst.** Konto bei einem Dienst mit SMTP-Relay, SPF/DKIM/DMARC für die
-Absenderdomain eintragen, Zugang in `~/babu-docker/docker/.env` auf der H200V nach der
-Vorlage `server/docker/.env.beispiel` (0600), dann `docker compose up -d`. Prüfen:
-`GET /api/signup-offen` muss `"passwort_vergessen": true` liefern; danach einmal
-„Passwort vergessen" mit einem Testkonto Ende-zu-Ende. `BABU_SUPPORT_MAIL` in derselben
-Datei schaltet die Support-Kopie scharf.
+**2. Mail-Dienst — erledigt 14.09.2026.** Resend, Team „0711" (Anmeldung per Google mit
+binary@0711.io), Domain `babu.0711.io` verifiziert (Region Irland, DKIM `resend._domainkey.babu`,
+MX + SPF auf `send.babu`, alle drei bei Cloudflare in der Zone `0711.io`). API-Schlüssel
+„babu-web H200V" (nur Sending access) steht als `BABU_SMTP_PASSWORT` in
+`~/babu-docker/docker/.env` (Host `smtp.resend.com`, Port 587, Nutzer `resend`); Vorlage
+`server/docker/.env.beispiel`. Erster echter Passwort-Link ging an christoph@0711.io.
+Prüfen nach jedem Neustart: `GET /api/signup-offen` → `"passwort_vergessen": true`.
+Bei „not verified" oder 535 im Log: Domain-Status unter resend.com/domains, Schlüssel neu
+anlegen und per `pbpaste | ssh h200v …` in die `.env` (nie im Klartext ausgeben).
+Offen: `BABU_SUPPORT_MAIL` in derselben Datei, sobald es ein Support-Postfach gibt.
 
 **3. Rechtstexte.** Impressum, Datenschutzerklärung und Erprobungsbedingungen der
 Anwältin als Klartext in `server/belegreview/recht.py` (`TEXTE`, je Art Überschrift und
