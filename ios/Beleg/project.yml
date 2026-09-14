@@ -31,7 +31,7 @@ targetTemplates:
         # Jeder TestFlight-Upload braucht eine neue Build-Nummer; 1 ist
         # verbraucht (Ad-hoc-Verteilung bis 14.09.2026).
         MARKETING_VERSION: 0.1.0
-        CURRENT_PROJECT_VERSION: 3
+        CURRENT_PROJECT_VERSION: 4
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic

@@ -27,7 +27,50 @@ enum ProtokollAntwort {
     case keineVerbindung
 }
 
+/// Antwort auf einen Abgleich-Auftrag — drei Fälle, weil die Schlange bei
+/// jedem anders weitermacht: fertig, endgültig abgelehnt (verwerfen, nicht
+/// ewig wiederholen), oder später nochmal (kein Netz, Server kurz weg).
+enum AbgleichAntwort: Equatable {
+    case erledigt
+    case abgelehnt(String)
+    case spaeterNochmal
+}
+
 extension AblageService {
+
+    /// Einen Auftrag aus der Abgleich-Schlange an den Server geben.
+    ///
+    /// 404 heißt: den Beleg gibt es dort nicht (mehr) — etwa im Portal
+    /// schon gelöscht. Das ist erledigt, nicht gescheitert. 400 ist eine
+    /// Ablehnung, die sich durch Wiederholen nicht ändert. Alles ab 500
+    /// und jeder Netzfehler ist „später nochmal".
+    static func abgleichen(_ auftrag: AbgleichAuftrag, basis: URL,
+                           pat: String) async -> AbgleichAntwort {
+        guard let pfad = Abgleich.pfad(auftrag),
+              let url = URL(string: pfad, relativeTo: basis) else {
+            return .abgelehnt("kein Servername")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: Abgleich.rumpf(auftrag))
+        do {
+            let (daten, antwort) = try await URLSession.shared.data(for: request)
+            guard let http = antwort as? HTTPURLResponse else { return .spaeterNochmal }
+            let grund = ((try? JSONSerialization.jsonObject(with: daten) as? [String: Any])?["fehler"]
+                         as? String) ?? "Status \(http.statusCode)"
+            switch http.statusCode {
+            case 200..<300: return .erledigt
+            case 404:       return .erledigt
+            case 400..<500: return .abgelehnt(grund)
+            default:        return .spaeterNochmal
+            }
+        } catch {
+            return .spaeterNochmal
+        }
+    }
 
     /// Aufnahme mit Einsortierung: egal was fotografiert wurde — der Server
     /// entscheidet aus dem gelesenen Text, wohin es gehört, und sagt es zurück.

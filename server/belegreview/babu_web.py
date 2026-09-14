@@ -1077,7 +1077,8 @@ def _offen_nach_angaben(offen: list, angaben: dict | None) -> list:
     """
     a = angaben or {}
     etwas_gespeichert = bool(a.get("beantwortet") or a.get("kategorie")
-                             or a.get("notiz"))
+                             or a.get("notiz") or a.get("bestaetigt")
+                             or a.get("konto_skr04"))
     if etwas_gespeichert:
         return []
     return list(offen or [])
@@ -1257,6 +1258,16 @@ def _index_bauen(head: str) -> None:
                     _kategorie_anwenden(review, ergaenzung["kategorie"])
                     eintrag["konto_skr04"] = \
                         review["einschaetzung"].get("konto_skr04")
+            # Seit 14.09.2026 schickt auch die App ihr Konto und ihren
+            # Steuerschlüssel hierher (Abgleich): gleicher Weg wie die
+            # Kanzlei-Korrektur, nur unter dem Namen der Inhaberin.
+            for kk in ("konto_skr04", "steuerschluessel"):
+                if ergaenzung.get(kk):
+                    eintrag[kk] = ergaenzung[kk]
+                    if review is not None:
+                        review.setdefault("einschaetzung", {})[kk] = ergaenzung[kk]
+            if ergaenzung.get("bestaetigt"):
+                eintrag["bestaetigt"] = True
         korrektur = oid_cache.get(korrektur_pfade.get(stamm, ""))
         if isinstance(korrektur, dict):
             eintrag["korrigiert"] = True
@@ -2177,6 +2188,11 @@ def api_beleg(stamm: str, request: Request) -> Response:
                 d["felder"].get("offen"), ang)
             if ang.get("kategorie"):
                 _kategorie_anwenden(d, ang["kategorie"])
+            for kk in ("konto_skr04", "steuerschluessel"):
+                if ang.get(kk):
+                    d.setdefault("einschaetzung", {})[kk] = ang[kk]
+            if ang.get("bestaetigt"):
+                d["bestaetigt"] = True
             d["ergaenzt"] = True
             d["angaben"] = ang
             d["buchungssatz"] = datev_buchungssatz(d) if d else None
@@ -10980,9 +10996,44 @@ async def api_angaben(stamm: str, request: Request) -> Response:
     notiz = str(body.get("notiz", "")).strip()[:200]
     if notiz:
         daten["notiz"] = notiz
-    if not daten["beantwortet"] and not notiz and not kategorie:
+    # Seit 14.09.2026 kommt auch die App hierher (Abgleich): ihr Konto ist
+    # eine Nummer, keine Kategorie. Kennt der Katalog die Nummer, wird sie
+    # zur Kategorie — dann läuft alles Weitere wie bei Ninas Auswahl im
+    # Portal. Sonst gilt sie als Konto im Rahmen des Betriebs, wie eine
+    # Kanzlei-Korrektur, nur unter dem Namen der Inhaberin.
+    konto = str(body.get("konto", "")).strip()
+    if konto:
+        if not re.match(r"^\d{4,8}$", konto):
+            return JSONResponse({"fehler": "Konto prüfen"}, status_code=400)
+        import kontierung as kt  # noqa: PLC0415
+        passend = [code for code in kt.KATEGORIEN if kt.konto(code, "SKR04") == konto]
+        if passend and not kategorie:
+            daten["kategorie"] = passend[0]
+        daten["konto_skr04"] = konto
+    schluessel = str(body.get("steuerschluessel", "")).strip()[:2]
+    if schluessel:
+        daten["steuerschluessel"] = schluessel
+    status = str(body.get("status", "")).strip()
+    if status in ("bestaetigt", "korrigiert"):
+        daten["bestaetigt"] = True
+    if (not daten["beantwortet"] and not notiz and not kategorie
+            and not konto and not schluessel and not daten.get("bestaetigt")):
         return JSONResponse({"fehler": "Bitte mindestens eine Angabe ausfüllen."},
                             status_code=400)
+
+    # Mischen statt überschreiben: die App schickt jede Änderung einzeln
+    # (erst den Betrag, später das Konto). Bis 14.09.2026 ersetzte jeder
+    # Aufruf die Datei ganz — der zweite hätte den ersten gelöscht.
+    vorher = await run_in_threadpool(git_show, f"review/{stamm}.angaben.json")
+    if vorher is not None:
+        try:
+            alt_daten = json.loads(vorher)
+        except Exception:  # noqa: BLE001
+            alt_daten = {}
+        if isinstance(alt_daten, dict):
+            beantwortet = list(dict.fromkeys(
+                list(alt_daten.get("beantwortet") or []) + daten["beantwortet"]))
+            daten = {**alt_daten, **daten, "beantwortet": beantwortet}
 
     import boxschreiber  # noqa: PLC0415
     try:

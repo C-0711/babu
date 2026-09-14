@@ -65,6 +65,11 @@ final class AppStore: ObservableObject {
     /// neben „Verbindung testen" liegt.
     @Published var testmodus = false { didSet { speichern() } }
 
+    /// Abgleich: was am Telefon geändert wurde und noch nicht in der
+    /// Belegbox ist (Ninas Fund 14.09.2026 — Löschen und Ändern blieben
+    /// lokal). Regeln in Abgleich.swift, Abarbeitung in `abgleichVerarbeiten`.
+    @Published var abgleich: [AbgleichAuftrag] = [] { didSet { speichern() } }
+
     private var geladen = false
     private var speicherTask: Task<Void, Never>?
 
@@ -93,6 +98,7 @@ final class AppStore: ObservableObject {
             testmodus = z.testmodus ?? false
             profil = z.profil ?? [:]
             ablageFehlt = z.ablageFehlt ?? false
+            abgleich = z.abgleich ?? []
             // Ältere Stände: Demo-Belege am festen Demo-Siegel nachträglich
             // markieren, damit sie nie im echten Stapel landen.
             let demoSiegel: Set<String> = ["77b2e0c4 9a11 f38d", "0d31f6a8 5be2 c974"]
@@ -131,6 +137,8 @@ final class AppStore: ObservableObject {
         var profil: [String: String]?
         // Neu ab 14.09.2026: „Ablage wird noch eingerichtet" überlebt den Neustart.
         var ablageFehlt: Bool?
+        // Neu ab 14.09.2026: Änderungen, die noch nicht in der Belegbox sind.
+        var abgleich: [AbgleichAuftrag]?
     }
 
     private var zustand: Zustand {
@@ -141,7 +149,7 @@ final class AppStore: ObservableObject {
                 verbundenAls: verbundenAls, verbundenRolle: verbundenRolle,
                 vorlagen: vorlagen,
                 testmodus: testmodus, profil: profil,
-                ablageFehlt: ablageFehlt)
+                ablageFehlt: ablageFehlt, abgleich: abgleich)
     }
 
     /// Entprellt auf ~0,25 s, damit Serien-Änderungen nicht pro Mutation schreiben.
@@ -338,6 +346,13 @@ final class AppStore: ObservableObject {
             daten: daten, dateiname: uploadName, gelesenerText: belege[i].ocrText,
             ergebnis: belege[i].ergebnisJson, basis: url, pat: pat)
         pruefeZugang(ergebnis)
+        if ergebnis == .uebertragen, let serverDatei {
+            // Wer den Beleg währenddessen gelöscht oder geändert hat, wartet
+            // in der Schlange auf genau diesen Namen.
+            abgleich = Abgleich.stammNachtragen(
+                abgleich, belegID: id,
+                stamm: (serverDatei as NSString).deletingPathExtension)
+        }
         guard let j = belege.firstIndex(where: { $0.id == id }) else { return }
         switch ergebnis {
         case .uebertragen:
@@ -411,6 +426,9 @@ final class AppStore: ObservableObject {
         b.bewirtungPersonen = personen.trimmingCharacters(in: .whitespacesAndNewlines)
         if b.siegel != nil { siegeln(&b, status: b.status) }
         belege[i] = b
+        abgleichEinreihen(b, art: .bewirtung,
+                          felder: ["anlass": b.bewirtungAnlass ?? "",
+                                   "personen": b.bewirtungPersonen ?? ""])
     }
 
     func siegeln(_ beleg: inout Beleg, status: BelegStatus) {
@@ -433,6 +451,10 @@ final class AppStore: ObservableObject {
         belege[i] = b
         geprueft += 1
         if let d = dauer { pruefSekunden.append(d) }
+        var felder = ["status": korrigiert ? "korrigiert" : "bestaetigt",
+                      "steuerschluessel": b.steuerschluessel]
+        if let k = b.konto, !k.isEmpty { felder["konto"] = k }
+        abgleichEinreihen(b, art: .angaben, felder: felder)
     }
 
     /// Kernfelder von Hand korrigieren — die Lesung kann danebenliegen
@@ -455,6 +477,9 @@ final class AppStore: ObservableObject {
         b.steuerPositionen = nil
         if b.siegel != nil { siegeln(&b, status: b.status) }
         belege[i] = b
+        var felder = ["brutto": Abgleich.betragText(b.brutto), "lieferant": b.lieferant]
+        if let iso = Abgleich.isoDatum(b.datumText) { felder["datum"] = iso }
+        abgleichEinreihen(b, art: .angaben, felder: felder)
     }
 
     /// ISO in das Format bringen, das die App führt.
@@ -548,8 +573,77 @@ final class AppStore: ObservableObject {
     }
 
     /// Beleg entfernen — fixierte (exportierte) Belege sind unantastbar.
+    ///
+    /// Seit 14.09.2026 geht das Löschen auch an die Belegbox: Was dort schon
+    /// liegt (oder gerade hochgeladen wird), bekommt einen Lösch-Auftrag;
+    /// was nie dort war, verschwindet einfach — samt allen wartenden
+    /// Aufträgen dazu.
     func loeschen(id: UUID) {
-        belege.removeAll { $0.id == id && $0.status != .fixiert }
+        guard let b = belege.first(where: { $0.id == id }), b.status != .fixiert else { return }
+        belege.removeAll { $0.id == id }
+        let warServer = b.ablageStatus == .uebertragen || uploadLaeuft.contains(id)
+        if warServer {
+            abgleichEinreihen(b, art: .loeschen, felder: [:])
+        } else {
+            abgleich.removeAll { $0.belegID == id }
+        }
+    }
+
+    // MARK: - Abgleich mit der Belegbox
+
+    /// Einen Auftrag einreihen. Demo-Belege haben keine Box; ein Beleg ohne
+    /// Ablage bekommt seinen Servernamen, sobald der Upload durch ist.
+    private func abgleichEinreihen(_ b: Beleg, art: AbgleichAuftrag.Art,
+                                   felder: [String: String]) {
+        guard b.istDemo != true else { return }
+        let stamm = b.ablageStatus == .uebertragen
+            ? (b.ablageDateiname as NSString?)?.deletingPathExtension : nil
+        abgleich = Abgleich.einreihen(
+            AbgleichAuftrag(belegID: b.id, art: art, stamm: stamm, felder: felder),
+            in: abgleich)
+        Task { await self.abgleichVerarbeiten() }
+    }
+
+    private var abgleichLaeuft = false
+    private var abgleichNaechster: [UUID: Date] = [:]
+
+    /// Die Schlange abarbeiten — beim Einreihen, beim Sichtbarwerden und
+    /// nach jedem Upload. Nacheinander, älteste zuerst; ein Auftrag ohne
+    /// Servernamen wartet auf seinen Upload; ein endgültig abgelehnter
+    /// wird verworfen, ein Netzfehler verschiebt ihn mit wachsender Pause.
+    func abgleichVerarbeiten() async {
+        guard !abgleichLaeuft, ablageAktiv,
+              let url = URL(string: ablageURL),
+              let pat = KeychainHelfer.ladePAT() else { return }
+        abgleichLaeuft = true
+        defer { abgleichLaeuft = false }
+        let jetzt = Date()
+        for auftrag in abgleich.sorted(by: { $0.erstellt < $1.erstellt }) {
+            guard Abgleich.pfad(auftrag) != nil else { continue }
+            if let ab = abgleichNaechster[auftrag.id], ab > jetzt { continue }
+            // Angaben zu einem Beleg, der noch nicht übertragen ist, kommen
+            // mit dem Upload mit — oder mit dem Namen, den er dann bekommt.
+            if auftrag.art != .loeschen,
+               let b = belege.first(where: { $0.id == auftrag.belegID }),
+               b.ablageStatus != .uebertragen { continue }
+            let antwort = await AblageService.abgleichen(auftrag, basis: url, pat: pat)
+            switch antwort {
+            case .erledigt:
+                abgleich.removeAll { $0.id == auftrag.id }
+                abgleichNaechster[auftrag.id] = nil
+            case .abgelehnt:
+                // Ändert sich durch Wiederholen nicht — weg damit. Der
+                // Beleg selbst bleibt, wie er ist; das Portal zeigt den Grund.
+                abgleich.removeAll { $0.id == auftrag.id }
+                abgleichNaechster[auftrag.id] = nil
+            case .spaeterNochmal:
+                if let i = abgleich.firstIndex(where: { $0.id == auftrag.id }) {
+                    abgleich[i].versuche += 1
+                    abgleichNaechster[auftrag.id] = Date().addingTimeInterval(
+                        Abgleich.pause(nachVersuchen: abgleich[i].versuche))
+                }
+            }
+        }
     }
 
     var exportierbar: [Beleg] {
@@ -688,6 +782,7 @@ final class AppStore: ObservableObject {
     /// ob es etwas zu tun gibt.
     func beimSichtbarwerden() {
         ablageRetry()        // offene Belegbox-Uploads nachholen
+        Task { await self.abgleichVerarbeiten() }   // Löschen/Ändern nachreichen
         auditNachladen()     // Prüfstempel für Übertragene holen
         zugangNachsehen()    // gilt der Zugang überhaupt noch?
     }

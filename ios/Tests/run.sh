@@ -53,6 +53,12 @@ swiftc -DBABU_PRO -o "$ZIEL/zuschnitt-voll" ../Beleg/Beleg/Ausbaustufe.swift \
        ../Beleg/Beleg/Einrichtungsschritte.swift zuschnitt/main.swift
 "$ZIEL/zuschnitt-voll"
 
+echo "— Abgleich-Harness —"
+# Was die App am Bestand ändert, muss in der Belegbox ankommen (Ninas Fund
+# 14.09.2026). Reine Regeln der Warteschlange, ohne Netz.
+swiftc -o "$ZIEL/abgleich" ../Beleg/Beleg/Abgleich.swift abgleich/main.swift
+"$ZIEL/abgleich"
+
 echo "— Chattexte-Harness —"
 swiftc -o "$ZIEL/chat" ../Beleg/Beleg/Chattexte.swift chat/main.swift
 "$ZIEL/chat"
