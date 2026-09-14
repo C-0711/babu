@@ -117,6 +117,17 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   als `python3 -m json.tool --sort-keys`, Dateien unter `~/golden/`) bleibt
   das Ritual bei Änderungen am Buchungsweg; der Auftraggeber verzichtet
   ausdrücklich darauf, wenn er es sagt.
+- **Golden-Anmeldung und Service-PAT (seit 14.09.2026):** `~/gitchain-eingang/.pat_babu`
+  ist ein GitChain-Geräte-Token (Gerät „babu-web Box-Push (H200V)"). boxschreiber
+  pusht damit, und `POST /api/anmelden {pat}` meldet `christoph0711.io` an — die
+  `/api/*`-Routen nehmen KEIN Bearer, nur das Cookie danach; Bearer geht nur auf
+  `/review/<stamm>`. Neuen Token nur über den Device-Flow mit **Google-Login**
+  (sonst `un: ''` → 401), Poll mit User-Agent-Header, Wert bleibt auf dem Server.
+  Bei „Token ungültig" zuerst insp-app prüfen: `INSP_STATE_DIR` und
+  `REPO_BASE_PATH` im Prozess (`/proc/$(pm2 pid insp-app)/environ`), Start nur
+  über `ops/deploy.sh`-Weg (`. ~/.config/insp-oauth.env` + `pm2 startOrReload
+  inspektor/ecosystem.config.cjs --only insp-app --update-env`). `~/inspektor-store`
+  ist ein Symlink auf `~/gitchain/tresor` und zugleich der ro-Mount des Containers.
 - **Seit 03.09.2026 ist die H200V Worker im Rancher-Cluster `dev-01`.** Gemma
   (:11435) und Embeddings (:11436) sind k3s-Pods mit hostPort; babu-web,
   babu-postgres, insp-app, babu-eingang, babu-tunnel und `~/inspektor-store`

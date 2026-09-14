@@ -44,7 +44,16 @@ der Oberfläche.
 
 ## 2. ⚠️ Betrieb: dieser Branch ist die Quelle
 
-Produktiv auf der H200V ist `main`, Stand **`3696d72`** (03.09. 03:45; Welle 4
+**Nachtrag 14.09.2026:** Produktiv ist `main` Stand **`dd9784e`** (Deploy 14.09. 09:08,
+Golden: abgleich byte-gleich mit 03.09., `/api/belege` nur durch neue Belege
+verschieden). Darin: Mandanten-Isolation (Belegbox je Betrieb, Kanzlei sieht nur
+Mandanten), zwei App-Ziele `Beleg`/`BelegPro` (beide auf Ninas iPhone), Onboarding-
+Werkzeug `werkzeuge/betrieb_anlegen.py`, Posteingang-Routen (Migration 0005), Router-
+Aufteilung. Vorfall 11.–14.09. (insp-app ohne `INSP_STATE_DIR`, Store ohne Symlink) und
+der Weg zum Service-PAT stehen in `CLAUDE.md` unter „Betrieb H200V". Der Rest dieses
+Abschnitts beschreibt den Stand vom 03.09. und ist historisch.
+
+Produktiv auf der H200V war `main`, Stand **`3696d72`** (03.09. 03:45; Welle 4
 plus Fix: Kanzlei-Seite ohne Fremdschlüssel auf `nutzer`, Migration 0003 —
 Golden byte-identisch) —
 **seit diesem Deploy spricht babu-web mit Postgres 16** (Container
