@@ -471,6 +471,9 @@ def db_einstellung_setzen(un: str, schluessel: str, wert: str) -> None:
                   (un, schluessel, wert))
 GITCHAIN_ID = os.environ.get("GITCHAIN_ID_HOST", "https://gitchain.de").rstrip("/")
 GEMMA_API = os.environ.get("GEMMA_API", "http://127.0.0.1:11435/v1/chat/completions")
+# Das Support-Postfach: bekommt eine Kopie jeder Rückmeldung (seit 14.09.2026).
+# Leer = keine Kopie; der Issue-Weg läuft unabhängig davon.
+SUPPORT_MAIL = os.environ.get("BABU_SUPPORT_MAIL", "").strip()
 GEMMA_MODELL = os.environ.get("GEMMA_MODELL", "gemma4-mm")
 EMBED_API = os.environ.get("EMBED_API", "http://127.0.0.1:11436/v1/embeddings")
 EMBED_MODELL = os.environ.get("EMBED_MODELL", "embeddinggemma")
@@ -4784,6 +4787,74 @@ def _passwort_neu(aufrufer: str, email: str) -> Response:
     return JSONResponse({"ok": True, "email": email, "link": link})
 
 
+@app.post("/api/passwort-vergessen")
+async def api_passwort_vergessen(request: Request) -> Response:
+    """„Passwort vergessen?" — ohne Anmeldung, ohne Betreiber.
+
+    Bis 14.09.2026 gab es den Reset-Link nur über `/api/nutzer-aktion`, also
+    nur, wenn jemand mit Verwaltungsrechten ihn anstieß. Für fünf Betriebe
+    war das ein Anruf, für zwanzig wäre es ein Betrieb. Jetzt fordert die
+    Person ihn selbst an; die Mechanik ist dieselbe wie in `_passwort_neu`
+    (Zeile, Frist, Bremse), nur geht der Link per Mail statt in die Antwort.
+
+    Antwortet IMMER 200 — auch für Adressen, die es nicht gibt oder die
+    gerade gebremst sind. Sonst wäre die Route ein Verzeichnis, welche
+    E-Mails ein Konto haben. Je IP gilt dieselbe Bremse wie beim Einlösen.
+    """
+    import passwort_reset as pr  # noqa: PLC0415
+    import postfach  # noqa: PLC0415
+    if not _origin_ok(request):
+        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    ip = _client_ip(request)
+    jetzt = time.time()
+    versuche = [t for t in _RESET_VERSUCHE.get(ip, []) if jetzt - t < 60]
+    if len(versuche) >= 5:
+        _RESET_VERSUCHE[ip] = versuche
+        return JSONResponse({"fehler": "Zu viele Versuche — bitte eine Minute warten."},
+                            status_code=429)
+    versuche.append(jetzt)
+    _RESET_VERSUCHE[ip] = versuche
+    _zaehler_aufraeumen(_RESET_VERSUCHE, jetzt, 60)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    email = str(body.get("email") or "").strip().lower()
+    antwort = JSONResponse({"ok": True})
+    if not email or "@" not in email:
+        return antwort
+    n = nutzer_holen(email)
+    if n is None or not n["aktiv"]:
+        print(f"[passwort] vergessen: kein aktives Konto für {email}", flush=True)
+        return antwort
+    if not _reset_anfordern_erlaubt(email):
+        print(f"[passwort] vergessen: {email} gebremst", flush=True)
+        return antwort
+    _reset_aufraeumen(email)
+    token, modell = pr.anfordern(email)
+    with _DB_LOCK, _db() as c:
+        c.execute("""INSERT INTO passwort_reset (token_hash, un, erstellt, laeuft_ab)
+                     VALUES (?,?,?,?)""",
+                  (modell.token_hash, modell.un, modell.erstellt.isoformat(),
+                   modell.laeuft_ab.isoformat()))
+    link = f"{PORTAL_ORIGIN.rstrip('/')}/portal#reset/{token}"
+    text = (f"Hallo,\n\n"
+            f"du möchtest ein neues Passwort für babu setzen. Hier entlang:\n\n"
+            f"    {link}\n\n"
+            f"Der Link gilt {pr.FRIST.days} Tage und nur einmal. Sobald du ein neues "
+            f"Passwort gesetzt hast, meldest du dich in App und Portal damit an; "
+            f"ein Telefon, das noch verbunden war, fragt einmal neu nach.\n\n"
+            f"Wenn du das nicht warst, ignoriere diese Nachricht einfach — dein "
+            f"Passwort bleibt, wie es ist.\n")
+    ok, hinweis = await run_in_threadpool(
+        postfach.senden, email, "Neues Passwort für babu", text,
+        stempel=time.strftime("%Y%m%d-%H%M%S"))
+    print(f"[passwort] vergessen: Link an {email}: {hinweis}", flush=True)
+    audit.audit(email, "passwort_vergessen", ziel_un=email,
+                weg="mail" if ok else "postausgang")
+    return antwort
+
+
 @app.post("/api/passwort-reset")
 async def api_passwort_reset_einloesen(request: Request) -> Response:
     """Das Gegenstück zum Link aus `_passwort_neu`: neues Passwort, zweimal,
@@ -4824,6 +4895,12 @@ async def api_passwort_reset_einloesen(request: Request) -> Response:
                   (pw_hash(passwort), zeile["un"]))
         c.execute("UPDATE passwort_reset SET eingeloest=? WHERE id=?",
                   (_jetzt_iso(), zeile["id"]))
+        # Ein neues Passwort entwertet die Geräteschlüssel (seit 14.09.2026):
+        # wer sein Passwort zurücksetzt, hat meist einen Grund — ein verlorenes
+        # Telefon, ein Verdacht. Der Schlüssel lief bis dahin unbegrenzt; jetzt
+        # meldet sich jedes Gerät einmal neu an. Die Sitzungs-Cookies folgen
+        # mit `nutzer.sitzung_ab` (Migration 0006).
+        c.execute("DELETE FROM app_schluessel WHERE un=?", (zeile["un"],))
     # Ohne `mandant_id`: diese Route läuft ohne Anmeldung (der Link IST die
     # Berechtigung), es gibt also keinen Aufrufer, aus dessen Kanzleien sich
     # ein Mandant ableiten ließe. Die Zeile davor — wer den Link erzeugt
@@ -7236,6 +7313,20 @@ async def api_rueckmeldung(request: Request) -> Response:
         _meldungen_cache(betrieb).update(stand=0.0)
     print(f"[rückmeldung] {un}: {issue['title'][:60]} — "
           f"{'issue ' + was if ok else 'gepuffert (' + was + ')'}", flush=True)
+    # Eine Kopie ans Support-Postfach (seit 14.09.2026), wenn eines eingetragen
+    # ist: bei zwanzig Betrieben soll eine Meldung nicht nur in unserem
+    # Issue-Tracker landen. Nur eine Kopie — der Status läuft weiter über das
+    # Issue, und ein fehlgeschlagener Versand ändert an der Zusage nichts.
+    if SUPPORT_MAIL:
+        import postfach  # noqa: PLC0415
+        kopie = (f"{issue['description']}\n\n"
+                 f"Betrieb: {betrieb}\n"
+                 f"Vorgang: {'#' + was if ok else 'gepuffert — ' + was}\n")
+        _, hinweis = await run_in_threadpool(
+            postfach.senden, SUPPORT_MAIL,
+            f"[babu] Rückmeldung von {un}: {issue['title'][:80]}", kopie,
+            stempel=time.strftime("%Y%m%d-%H%M%S"))
+        print(f"[rückmeldung] Kopie an Support: {hinweis}", flush=True)
     return JSONResponse({"ok": True, "titel": issue["title"],
                          "issue": was if ok else None})
 

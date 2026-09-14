@@ -126,3 +126,28 @@ def test_gepufferte_meldung_invalidiert_cache_nicht(klient, monkeypatch):
     assert r.status_code == 200
     # Cache muss unverändert bleiben (stand immer noch 999999.0).
     assert bw._meldungen_cache("betrieb-default")["stand"] == 999999.0
+
+
+def test_kopie_an_das_support_postfach(klient, monkeypatch, tmp_path):
+    """Seit 14.09.2026: ist BABU_SUPPORT_MAIL gesetzt, geht eine Kopie jeder
+    Meldung dorthin — zusätzlich zum Issue, nie stattdessen. Ohne Postfach
+    passiert nichts."""
+    import postfach
+    c, bw, gm = klient
+    monkeypatch.setattr(gm, "issue_anlegen", lambda *a, **k: (True, "77"))
+    monkeypatch.setattr(postfach, "HOST", "")
+    monkeypatch.setattr(postfach, "POSTAUSGANG", tmp_path / "postausgang")
+
+    monkeypatch.setattr(bw, "SUPPORT_MAIL", "")
+    assert c.post("/api/rueckmeldung", json={"text": "Ohne Postfach keine Kopie."}).status_code == 200
+    assert not (tmp_path / "postausgang").exists()
+
+    monkeypatch.setattr(bw, "SUPPORT_MAIL", "support@babu.test")
+    r = c.post("/api/rueckmeldung", json={"text": "Die Summe stimmt nicht.", "ansicht": "Dokumente"})
+    assert r.status_code == 200 and r.json()["issue"] == "77"
+    mails = list((tmp_path / "postausgang").glob("*.eml"))
+    assert len(mails) == 1
+    inhalt = mails[0].read_bytes().decode("utf-8", "replace")
+    assert "support@babu.test" in inhalt
+    assert "Die Summe stimmt nicht" in inhalt.replace("=\r\n", "").replace("=\n", "")
+    assert "betrieb-default" in inhalt.replace("=\r\n", "").replace("=\n", "")

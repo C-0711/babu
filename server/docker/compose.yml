@@ -67,6 +67,19 @@ services:
       # Einladung, Konten legt die Kanzlei im Portal an. `POST /api/signup`
       # antwortet 404, die Anmeldeseite zeigt „Konto anlegen" nicht.
       BABU_SIGNUP: "0"
+      # Mailversand (Passwort vergessen, Kanzlei-Einladung, Support-Kopie).
+      # Die Zugangsdaten stehen in der `.env` neben dieser Datei (0600, nie im
+      # Repo); ein Mail-Dienst mit SMTP-Relay (Postmark, Brevo, Mailgun).
+      # Leer heißt: keine Mail geht raus, jede landet als Datei im
+      # Postausgang unter ~/babu-web/postausgang — und die Kanzlei sieht den
+      # Einladungslink weiter in ihrer Antwort.
+      BABU_SMTP_HOST: "${BABU_SMTP_HOST:-}"
+      BABU_SMTP_PORT: "${BABU_SMTP_PORT:-587}"
+      BABU_SMTP_NUTZER: "${BABU_SMTP_NUTZER:-}"
+      BABU_SMTP_PASSWORT: "${BABU_SMTP_PASSWORT:-}"
+      BABU_ABSENDER: "${BABU_ABSENDER:-babu <post@babu.0711.io>}"
+      # Das Support-Postfach bekommt eine Kopie jeder Rückmeldung; leer = keine.
+      BABU_SUPPORT_MAIL: "${BABU_SUPPORT_MAIL:-}"
       # --- Postgres scharf schalten (Plan 21, Phase 1) -------------------
       # Erst hochfahren, dann EINMAL von Hand umziehen
       #   docker compose up -d postgres

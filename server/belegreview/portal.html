@@ -1014,8 +1014,12 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       </form>
       <details id="pw-vergessen">
         <summary>Passwort vergessen?</summary>
-        <p class="hilfetext">Halb so wild: Sag deiner babu-Ansprechperson kurz Bescheid —
-        du bekommst ein neues Startpasswort und wählst danach wieder dein eigenes.</p>
+        <p class="hilfetext">Halb so wild: Trag deine E-Mail-Adresse ein, dann bekommst du
+        einen Link, mit dem du ein neues Passwort setzt.</p>
+        <label class="nurvorlesen" for="pwv-email">E-Mail</label>
+        <input id="pwv-email" type="email" placeholder="E-Mail" autocomplete="email" style="margin-top:10px">
+        <button type="button" id="pwv-senden" class="voll" style="background:var(--gc-accent-subtle);color:var(--gc-fg);margin-top:0">Link schicken</button>
+        <p class="hilfetext" id="pwv-antwort" role="status" aria-live="polite" hidden></p>
       </details>
       <details id="code-login">
         <summary>Mit Zugangscode anmelden (Einrichtung)</summary>
@@ -2128,6 +2132,26 @@ $("#anmelden-code").addEventListener("click", async () => {
   }catch{ f.textContent = "Gerade keine Verbindung — gleich nochmal versuchen."; f.style.display = "block"; }
 });
 $("#zugangscode").addEventListener("keydown", e => { if(e.key==="Enter") $("#anmelden-code").click(); });
+
+/* ————— Passwort vergessen (seit 14.09.2026) ————— */
+/* Die Antwort ist immer dieselbe, ob es das Konto gibt oder nicht — sonst
+   wäre das Formular ein Verzeichnis der Adressen, die eines haben. */
+$("#pwv-senden").addEventListener("click", async () => {
+  const email = $("#pwv-email").value.trim();
+  const a = $("#pwv-antwort");
+  if (!email){ a.textContent = "Bitte deine E-Mail-Adresse eintragen."; a.hidden = false; return; }
+  $("#pwv-senden").disabled = true;
+  try{
+    const r = await fetch("/api/passwort-vergessen", {method:"POST", credentials:"same-origin",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({email})});
+    a.textContent = r.status === 429
+      ? "Das ging gerade zu schnell — bitte eine Minute warten."
+      : "Wenn es ein Konto mit dieser Adresse gibt, ist der Link jetzt unterwegs. Schau auch im Spam-Ordner nach.";
+  }catch{ a.textContent = "Gerade keine Verbindung — gleich nochmal versuchen."; }
+  a.hidden = false;
+  $("#pwv-senden").disabled = false;
+});
+$("#pwv-email").addEventListener("keydown", e => { if(e.key==="Enter") $("#pwv-senden").click(); });
 
 /* ————— Passwort-Reset (Plan 21, §7) ————— */
 /* Kein Eintrag im ansichten-Router weiter unten: der setzt eine laufende
@@ -4283,8 +4307,10 @@ async function ladeEinstellungen(){
     $("#einst-kanzlei").value = e.kanzlei_name || "";
     $("#einst-betrieb").value = e.betrieb_name || "";
     const p = e.paket_empfehlung;
+    /* Ohne Preis: in der Erprobung ist babu kostenlos, und eine Beispielzahl
+       liest jeder als Angebot. Die Einstufung selbst bleibt sichtbar. */
     if (p) $("#einst-paket").innerHTML =
-      `<b>${esc(p.name)}</b> — ${p.preis_beispiel} € im Monat <span style="font-size:12px;color:var(--gc-muted)">(Beispielpreis — endgültige Preise folgen)</span>` +
+      `<b>${esc(p.name)}</b> <span style="font-size:12px;color:var(--gc-muted)">(in der Erprobung kostenlos)</span>` +
       (p.hinweise || []).map(h => `<p style="color:var(--gc-desc);font-size:13px;margin-top:6px">${esc(h)}</p>`).join("");
   }catch{}
 }
@@ -7491,6 +7517,14 @@ function ladeEinrichtung(){
   // schicken, bevor das Formular überhaupt zu sehen war.
   if (location.hash.startsWith("#reset/")){
     zeigeReset(decodeURIComponent(location.hash.slice("#reset/".length)));
+    return;
+  }
+  // Aus der App kommt man mit dieser Adresse: direkt zum aufgeklappten
+  // Formular, ohne erst die Anmeldemaske zu lesen.
+  if (location.hash === "#passwort-vergessen"){
+    zeigeLogin();
+    $("#pw-vergessen").open = true;
+    $("#pwv-email").focus();
     return;
   }
   try{

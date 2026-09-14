@@ -237,6 +237,13 @@ struct EinstellungenView: View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
             SecureField("Passwort", text: $passwort)
+            // Der Weg zum neuen Passwort führt über das Portal — dort steht
+            // dasselbe Formular, das die Mail mit dem Link verschickt. Die
+            // App braucht dafür keinen eigenen Bildschirm, nur die Tür.
+            if let portal = URL(string: store.ablageURL + "/portal#passwort-vergessen") {
+                Link("Passwort vergessen?", destination: portal)
+                    .font(.footnote)
+            }
             Button {
                 verbinden()
             } label: {

@@ -168,6 +168,7 @@ POST /api/onboarding/{marke}/ausweis-bild
 POST /api/onboarding/{marke}/{schritt_id}
 POST /api/passwort
 POST /api/passwort-reset
+POST /api/passwort-vergessen
 POST /api/posteingang/adresse/{mandant_id}
 POST /api/posteingang/adresse/{mandant_id}/stilllegen
 POST /api/rechnung/{nummer}/bezahlt
