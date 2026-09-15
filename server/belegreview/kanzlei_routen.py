@@ -740,6 +740,47 @@ def _verknuepfen_gebremst(un: str) -> bool:
     return False
 
 
+def _reset_link_anlegen(bw, mail: str) -> str | None:
+    """Ein einmaliger Link zum Passwort setzen — in der Datenbank nur der
+    Hash, im Klartext nur in der Nachricht. Gemeinsamer Kern der Einladung
+    an einen Betrieb und der an ein Kanzlei-Mitglied (seit 15.09.2026)."""
+    import passwort_reset as pr  # noqa: PLC0415
+    if not bw._reset_anfordern_erlaubt(mail):  # noqa: SLF001
+        return None
+    bw._reset_aufraeumen(mail)  # noqa: SLF001
+    token, modell = pr.anfordern(mail)
+    with _sitzung() as c:
+        c.execute("""INSERT INTO passwort_reset (token_hash, un, erstellt, laeuft_ab)
+                     VALUES (?,?,?,?)""",
+                  (modell.token_hash, modell.un, modell.erstellt.isoformat(),
+                   modell.laeuft_ab.isoformat()))
+    return f"{bw.PORTAL_ORIGIN.rstrip('/')}/portal#reset/{token}"
+
+
+def _mitglied_einladen(bw, kanzlei_name: str, mail: str) -> str | None:
+    """Die Einladung an eine Mitarbeiterin der Kanzlei — derselbe Weg wie
+    beim Betrieb, nur der Text sagt, wohin sie eingeladen ist."""
+    import passwort_reset as pr  # noqa: PLC0415
+    import postfach  # noqa: PLC0415
+    link = _reset_link_anlegen(bw, mail)
+    if link is None:
+        return None
+    text = (f"Hallo,\n\n"
+            f"„{kanzlei_name}“ hat dich als Mitarbeiterin bzw. Mitarbeiter in babu "
+            f"eingetragen. Beim ersten Öffnen legst du dein Passwort fest:\n\n"
+            f"    {link}\n\n"
+            f"Der Link gilt {pr.FRIST.days} Tage und nur einmal. Danach meldest du "
+            f"dich unter {bw.PORTAL_ORIGIN.rstrip('/')}/portal mit dieser "
+            f"E-Mail-Adresse und deinem Passwort an und siehst die Betriebe "
+            f"deiner Kanzlei.\n\n"
+            f"Wenn du damit nichts anfangen kannst, ignoriere diese Nachricht "
+            f"einfach — ohne den Link passiert nichts.\n")
+    ok, hinweis = postfach.senden(mail, f"Dein Zugang zu babu bei {kanzlei_name}",
+                                  text, stempel=time.strftime("%Y%m%d-%H%M%S"))
+    print(f"[kanzlei] Mitglied {mail}: {hinweis}", flush=True)
+    return link
+
+
 def _einladung_verschicken(bw, mandant_name: str, mail: str) -> str | None:
     """Der Link, mit dem der Salon sein eigenes Passwort setzt.
 
@@ -754,16 +795,9 @@ def _einladung_verschicken(bw, mandant_name: str, mail: str) -> str | None:
     """
     import passwort_reset as pr  # noqa: PLC0415
     import postfach  # noqa: PLC0415
-    if not bw._reset_anfordern_erlaubt(mail):  # noqa: SLF001
+    link = _reset_link_anlegen(bw, mail)
+    if link is None:
         return None
-    bw._reset_aufraeumen(mail)  # noqa: SLF001
-    token, modell = pr.anfordern(mail)
-    with _sitzung() as c:
-        c.execute("""INSERT INTO passwort_reset (token_hash, un, erstellt, laeuft_ab)
-                     VALUES (?,?,?,?)""",
-                  (modell.token_hash, modell.un, modell.erstellt.isoformat(),
-                   modell.laeuft_ab.isoformat()))
-    link = f"{bw.PORTAL_ORIGIN.rstrip('/')}/portal#reset/{token}"
     text = (f"Hallo,\n\n"
             f"dein Steuerbüro hat für „{mandant_name}“ einen Zugang zu babu "
             f"eingerichtet. Beim ersten Öffnen legst du dein Passwort fest:\n\n"
@@ -777,6 +811,114 @@ def _einladung_verschicken(bw, mandant_name: str, mail: str) -> str | None:
                                   text, stempel=time.strftime("%Y%m%d-%H%M%S"))
     print(f"[kanzlei] Einladung an {mail}: {hinweis}", flush=True)
     return link
+
+
+# ---------------------------------------------------------------------------
+# Mitarbeiter der Kanzlei (seit 15.09.2026). Bis dahin stellte der Betreiber
+# jeden Sachbearbeiter von Hand in `kanzlei_mitglied`; jetzt macht das die
+# Inhaberin selbst. Wer Mitglied ist, sieht alle Mandanten der Kanzlei — eine
+# Zuordnung je Mandant gibt es (noch) nicht, siehe `docs/betrieb-golive.md`.
+# ---------------------------------------------------------------------------
+
+def _mitglieder_lesen(kanzlei_ids: list[int], c) -> list[dict]:
+    zeilen = []
+    for kid in kanzlei_ids:
+        for z in c.execute(
+                "SELECT m.un, m.rolle, m.angelegt, n.name FROM kanzlei_mitglied m "
+                "LEFT JOIN nutzer n ON n.email = m.un "
+                "WHERE m.kanzlei_id = ? ORDER BY m.rolle, m.un", (kid,)).fetchall():
+            zeilen.append({"kanzlei_id": kid, "email": z[0], "rolle": z[1],
+                           "seit": z[2], "name": z[3] or ""})
+    return zeilen
+
+
+@router.get("/mitglieder")
+def api_mitglieder(request: Request) -> JSONResponse:
+    """Wer in dieser Kanzlei arbeitet — für jedes Mitglied sichtbar."""
+    un, fehler = _wache(request)
+    if fehler:
+        return fehler
+    with _sitzung() as c:
+        kanzleien = _kanzleien_von(un, c)
+        zeilen = _mitglieder_lesen(kanzleien, c)
+        inhaber = _eigene_kanzlei(un, c) is not None
+    return JSONResponse({"mitglieder": zeilen, "darf_verwalten": inhaber, "ich": un})
+
+
+@router.post("/mitglieder")
+async def api_mitglied_anlegen(request: Request) -> JSONResponse:
+    """Eine Mitarbeiterin einladen — nur die Inhaberin der Kanzlei."""
+    bw = _bw()
+    if not bw._origin_ok(request):  # noqa: SLF001
+        return _fehler("nicht erlaubt", 403)
+    un, fehler = _wache(request)
+    if fehler:
+        return fehler
+    koerper = await _koerper(request)
+    if koerper is None:
+        return _fehler("JSON erwartet")
+    import einladung as ei  # noqa: PLC0415
+    mail = str(koerper.get("email") or "").strip().lower()[:200]
+    name = str(koerper.get("name") or "").strip()[:120]
+    if not ei.mail_gueltig(mail):
+        return _fehler("Diese E-Mail-Adresse sieht nicht richtig aus.")
+    with _sitzung() as c:
+        kanzlei_id = _eigene_kanzlei(un, c)
+        if kanzlei_id is None:
+            return _fehler("Mitarbeiter einladen kann nur die Inhaberin der Kanzlei.", 403)
+        kanzlei = mandanten.kanzlei_holen(kanzlei_id, c=c) or {}
+        if c.execute("SELECT 1 FROM kanzlei_mitglied WHERE kanzlei_id=? AND un=?",
+                     (kanzlei_id, mail)).fetchone():
+            return _fehler("Diese Adresse gehört schon zur Kanzlei.", 409)
+    vorhanden = bw.nutzer_holen(mail)
+    if vorhanden is not None and vorhanden["rolle"] not in ("kanzlei", "admin"):
+        # Ein Betriebskonto in die Kanzlei zu heben, hieße: dieser Betrieb
+        # sähe alle anderen Mandanten. Das bleibt ein Handweg des Betreibers.
+        return _fehler("Diese Adresse gehört zu einem Betrieb, nicht zu einer Kanzlei.", 409)
+    neu = vorhanden is None
+    if neu:
+        bw.nutzer_anlegen(mail, name, str(kanzlei.get("name") or "Kanzlei"),
+                          "kanzlei", box=False)
+    with _sitzung() as c:
+        mandanten.mitglied_anlegen(kanzlei_id, mail, "sachbearbeiter", c=c)
+    link = _mitglied_einladen(bw, str(kanzlei.get("name") or "deine Kanzlei"), mail)
+    audit.audit(un, "kanzlei_mitglied_anlegen", ziel_un=mail, kanzlei_id=kanzlei_id,
+                konto_neu=neu, eingeladen=bool(link))
+    return JSONResponse({"ok": True, "email": mail, "rolle": "sachbearbeiter",
+                         "konto_neu": neu, "eingeladen": bool(link)})
+
+
+@router.post("/mitglieder/entfernen")
+async def api_mitglied_entfernen(request: Request) -> JSONResponse:
+    """Eine Mitarbeiterin aus der Kanzlei nehmen — nur die Inhaberin, nie sich
+    selbst, nie einen Inhaber. Das Konto bleibt; ohne Mitgliedschaft sieht es
+    keinen Mandanten mehr."""
+    bw = _bw()
+    if not bw._origin_ok(request):  # noqa: SLF001
+        return _fehler("nicht erlaubt", 403)
+    un, fehler = _wache(request)
+    if fehler:
+        return fehler
+    koerper = await _koerper(request)
+    if koerper is None:
+        return _fehler("JSON erwartet")
+    mail = str(koerper.get("email") or "").strip().lower()[:200]
+    if mail == un:
+        return _fehler("Sich selbst kann man nicht entfernen.")
+    with _sitzung() as c:
+        kanzlei_id = _eigene_kanzlei(un, c)
+        if kanzlei_id is None:
+            return _fehler("Mitarbeiter entfernen kann nur die Inhaberin der Kanzlei.", 403)
+        z = c.execute("SELECT rolle FROM kanzlei_mitglied WHERE kanzlei_id=? AND un=?",
+                      (kanzlei_id, mail)).fetchone()
+        if z is None:
+            return _fehler("Diese Adresse gehört nicht zur Kanzlei.", 404)
+        if z[0] == "inhaber":
+            return _fehler("Eine Inhaberin lässt sich hier nicht entfernen.")
+        c.execute("DELETE FROM kanzlei_mitglied WHERE kanzlei_id=? AND un=?",
+                  (kanzlei_id, mail))
+    audit.audit(un, "kanzlei_mitglied_entfernen", ziel_un=mail, kanzlei_id=kanzlei_id)
+    return JSONResponse({"ok": True})
 
 
 @router.post("/mandanten")

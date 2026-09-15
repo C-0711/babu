@@ -6765,7 +6765,22 @@ async function ladeMandanten(){
     </div>
     <button class="hin" style="margin-top:10px" onclick="mdAnlegen()">Einladen</button>
     <div id="md-neu-ergebnis"></div></div>`;
+  /* Seit 15.09.2026: wer in der Kanzlei arbeitet, trägt die Inhaberin
+     selbst ein — vorher ging das nur über den Betreiber. */
+  html += `<div class="sektion lbl" style="margin-top:22px">Mitarbeiter der Kanzlei</div><div class="karte">
+    <p style="color:var(--gc-desc);font-size:13px;margin:0 0 10px">Wer hier steht, sieht alle Betriebe der Kanzlei.
+    Eingeladene setzen ihr Passwort über den Link in der E-Mail.</p>
+    <div id="ka-mitarbeiter"><div class="skelett"></div></div>
+    <div id="ka-mit-form" hidden style="display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin-top:10px">
+      <label class="nurvorlesen" for="ka-mit-name">Name</label>
+      <input id="ka-mit-name" placeholder="Name" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+      <label class="nurvorlesen" for="ka-mit-mail">E-Mail</label>
+      <input id="ka-mit-mail" placeholder="E-Mail" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
+    </div>
+    <button id="ka-mit-knopf" hidden class="hin" style="margin-top:10px" onclick="kaMitarbeiterAnlegen()">Einladen</button>
+    <div id="ka-mit-ergebnis"></div></div>`;
   ziel.innerHTML = html;
+  ladeMitarbeiter();
   // Was im Anlege-Formular steht, überlebt Reiterwechsel und Neuzeichnen.
   for (const [k, v] of Object.entries(_mdEntwurf)){ const f = $("#md-neu-" + k); if (f) f.value = v; }
   for (const k of ["name", "mail", "rahmen", "berater", "nummer"]){
@@ -6863,6 +6878,49 @@ async function mdVerknuepfen(id){
     aus.innerHTML = r.ok ? `<p style="color:var(--gc-ok);margin-top:8px">Verknüpft — der Mandant ist jetzt aktiv.</p>`
                          : `<p style="color:var(--gc-danger);margin-top:8px">${esc(d.fehler || "Ging gerade nicht.")}</p>`;
     if (r.ok) ladeMandanten();
+  }catch{}
+}
+let KA_MITARBEITER = [];
+async function ladeMitarbeiter(){
+  const ziel = $("#ka-mitarbeiter"); if (!ziel) return;
+  let d;
+  try{ const r = await api("/api/kanzlei/mitglieder"); if (!r.ok){ ziel.innerHTML = ""; return; } d = await r.json(); }
+  catch{ ziel.innerHTML = ""; return; }
+  KA_MITARBEITER = d.mitglieder || [];
+  const rolleText = {inhaber: "Inhaberin", sachbearbeiter: "Sachbearbeitung"};
+  ziel.innerHTML = KA_MITARBEITER.length
+    ? `<table class="md-tabelle"><tbody>` + KA_MITARBEITER.map((m, i) => `<tr>
+        <td>${esc(m.name || "")}<div style="color:var(--gc-desc);font-size:12px">${esc(m.email)}</div></td>
+        <td style="color:var(--gc-desc)">${rolleText[m.rolle] || esc(m.rolle)}</td>
+        <td style="text-align:right">${d.darf_verwalten && m.rolle !== "inhaber" && m.email !== d.ich
+          ? `<button class="chip" onclick="kaMitarbeiterEntfernen(${i})">Entfernen</button>` : ""}</td>
+      </tr>`).join("") + `</tbody></table>`
+    : `<p style="color:var(--gc-desc)">Noch niemand eingetragen.</p>`;
+  $("#ka-mit-form").hidden = !d.darf_verwalten;
+  $("#ka-mit-knopf").hidden = !d.darf_verwalten;
+}
+async function kaMitarbeiterAnlegen(){
+  const aus = $("#ka-mit-ergebnis");
+  const body = {name: $("#ka-mit-name").value.trim(), email: $("#ka-mit-mail").value.trim()};
+  try{
+    const r = await api("/api/kanzlei/mitglieder", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok){ aus.innerHTML = `<p style="color:var(--gc-danger);margin-top:8px">${esc(d.fehler || "Ging gerade nicht.")}</p>`; return; }
+    $("#ka-mit-name").value = ""; $("#ka-mit-mail").value = "";
+    await ladeMitarbeiter();
+    $("#ka-mit-ergebnis").innerHTML = `<p style="color:var(--gc-ok);margin-top:8px">${esc(d.email)} ist eingetragen${d.eingeladen ? " — die Einladung ist unterwegs." : "."}</p>`;
+  }catch{ aus.innerHTML = `<p style="color:var(--gc-danger);margin-top:8px">Gerade keine Verbindung.</p>`; }
+}
+async function kaMitarbeiterEntfernen(i){
+  const m = KA_MITARBEITER[i]; if (!m) return;
+  if (!confirm(`${m.email} aus der Kanzlei entfernen?`)) return;
+  try{
+    const r = await api("/api/kanzlei/mitglieder/entfernen", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({email: m.email})});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok){ $("#ka-mit-ergebnis").innerHTML = `<p style="color:var(--gc-danger);margin-top:8px">${esc(d.fehler || "Ging gerade nicht.")}</p>`; return; }
+    await ladeMitarbeiter();
   }catch{}
 }
 async function mdAnlegen(){

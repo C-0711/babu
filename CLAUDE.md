@@ -110,7 +110,8 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   `babu-web` ist gestoppt und NUR Rückweg. **Nie anfassen:** `insp-app`
   (Belegbox-Gateway :7808) und `belege-review` (ANDERES Projekt).
 - Deploy: **immer `rsync server/ h200v:~/babu-docker/` komplett, nie eine
-  Einzeldatei** (ein gemischter Build fiel nur auf, weil ein neues
+  Einzeldatei** (seit 15.09.2026 dazu `rsync werkzeuge/ h200v:~/babu-docker/werkzeuge/`,
+  der Ordner ist als `/app/werkzeuge` in den Container gemountet) (ein gemischter Build fiel nur auf, weil ein neues
   API-Feld live fehlte) → `cd ~/babu-docker/docker && docker compose build
   && docker compose up -d` → `GET /healthz` muss 200 mit `stand: ok` liefern
   (seit 14.09.2026; `arbeit_offen` vor dem nächsten Deploy auf 0 warten) →
@@ -120,6 +121,10 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   im Pilot. Rückmeldungen tragen seit 14.09. ein Label je Betrieb
   (`betrieb-<mandant_id>`, Ein-Betrieb `betrieb-default`); jeder sieht nur
   seine.
+- **Box-Anleger (seit 15.09.2026):** `docker/box-anleger.sh` läuft im Host-Cron jede
+  Minute und legt für Mandanten mit `box_ausstehend` das leere Repo im Workspace an,
+  dann `betrieb_anlegen.py --nur-box`. Belegboxen entstehen damit ohne Handarbeit;
+  insp-app bleibt unberührt. Log `~/logs/box-anleger.log`, `--probe` zeigt nur.
 - **Nachlese beim Start (seit 14.09.2026, vom Auftraggeber freigegeben):**
   60 s nach jedem Start liest babu-web einmalig Belege ohne jede Lesung
   nach (3 min bis 14 Tage alt, höchstens 20 je Box, 60 gesamt, sequenziell,

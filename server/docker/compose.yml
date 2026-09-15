@@ -108,6 +108,7 @@ services:
       - ~/babu-web:/data/babu-web                                   # portal.db, Box-Klon, Session-Geheimnis, Logos, index.html
       - ~/inspektor-store:/data/inspektor-store:ro                  # Bare-Store, nur lesen (Schreiben geht über :7808)
       - ~/gitchain-eingang/.pat_babu:/data/gitchain-eingang/.pat_babu:ro
+      - ~/babu-docker/werkzeuge:/app/werkzeuge:ro                   # betrieb_anlegen.py für den Box-Anleger (rsync werkzeuge/ mit)
       - ~/Youtube/.env:/data/Youtube/.env:ro                        # Gemini-Schlüssel für die Bild-Generierung
       - ~/kompendium:/data/kompendium:ro                            # Branchen-Kompendium: Vektoren + Atome + Grundwissen
     restart: unless-stopped

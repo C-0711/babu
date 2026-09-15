@@ -14,25 +14,17 @@ Belegbox an.** Selbstbedienung gibt es nicht (`BABU_SIGNUP=0`).
    Das Konto entsteht mit `box_ausstehend`, und die **Einladungsmail geht automatisch**
    (`kanzlei_routen._einladung_verschicken`) — sobald `BABU_SMTP_*` gesetzt ist. Vorher liegt
    sie als `.eml` in `~/babu-web/postausgang/` und der Link steht in der Antwort der Kanzlei.
-2. **Betreiber, auf der H200V: die Belegbox.** Das Gateway `insp-app` wird nicht
-   ferngesteuert; die Box entsteht dort von Hand als leeres Repo unter dem Workspace:
-
-   ```bash
-   ssh h200v
-   cd ~/gitchain/tresor/inspektor/ws-christoph0711.io/
-   git init --bare --initial-branch=main <kurzname>.git
-   ```
-
-   Der `box_ref` lautet dann `inspektor/ws-christoph0711.io/<kurzname>`.
-3. **Betreiber: Box verknüpfen und nachprüfen**, aus dem Container heraus (dort liegen
-   Postgres-Zugang und Store):
-
-   ```bash
-   ssh h200v 'docker exec babu-web python werkzeuge/betrieb_anlegen.py --nur-box \
-     --email <inhaberin@…> --box-ref inspektor/ws-christoph0711.io/<kurzname>'
-   ```
-
-   Rückgabe 0 = alles da. 3 = die Box fehlt noch am erwarteten Pfad (Schritt 2 prüfen).
+2. **Die Belegbox legt seit 15.09.2026 der Box-Anleger an** (`server/docker/box-anleger.sh`,
+   Cron jede Minute auf dem Host, Log `~/logs/box-anleger.log`). Er sieht jeden Mandanten im
+   Zustand `box_ausstehend`, legt im Workspace ein leeres Repo `<kurzname>-<id>.git` an
+   (`~/gitchain/tresor/inspektor/ws-christoph0711.io/`), ruft `betrieb_anlegen.py --nur-box`
+   im Container und setzt den Mandanten damit auf `aktiv`. Der Kurzname ist der Betriebsname
+   in Kleinbuchstaben plus Mandanten-Nummer. `box-anleger.sh --probe` zeigt, was er täte.
+   Das Gateway `insp-app` bleibt unberührt; ein leeres Repo im Workspace genügt ihm.
+3. **Wenn der Anleger hakt:** `FEHLER`-Zeile im Log lesen. `--nur-box` mit Rückgabe 3 heißt,
+   die Box liegt nicht am erwarteten Pfad (Rechte im Workspace prüfen). Von Hand geht es
+   weiter wie früher: `git init --bare --initial-branch=main <kurzname>.git` im Workspace, dann
+   `docker exec babu-web python werkzeuge/betrieb_anlegen.py --nur-box --email <inhaberin> --box-ref inspektor/ws-christoph0711.io/<kurzname>`.
    Alternativ im Portal: Verwaltung → Mandant → „Belegbox verknüpfen" (nur Betreiber-Ebene).
 4. **Die Inhaberin**: setzt über den Link ihr Passwort, lädt TestFlight, installiert babu,
    meldet sich in der App unter Einstellungen an. Bis Schritt 3 steht auf ihrer Startseite
@@ -134,6 +126,11 @@ Nutzungsbedingungen stehen als vom Auftraggeber freigegebene Testfassungen in
 Erprobungsfassung ist. `recht.fertig()` ist damit wahr, `ios/archiv.sh` warnt nicht mehr.
 Die Anwältin ersetzt die Texte vor dem allgemeinen Start an derselben Stelle; danach Suite
 (`tests/test_recht.py`) und Deploy. AVV als PDF je Betrieb ablegen, nicht im Repo.
+
+**Mitarbeiter der Kanzlei (seit 15.09.2026):** die Inhaberin lädt sie selbst ein — Kanzlei-Seite →
+Mandanten → Karte „Mitarbeiter der Kanzlei", Name und E-Mail, „Einladen". Der Link zum Passwort
+setzen geht per Mail; Rolle Sachbearbeitung, sieht alle Mandanten der Kanzlei. Entfernen dort
+ebenfalls. Betreiber-Handweg nur noch, wenn ein bestehendes Betriebskonto in eine Kanzlei soll.
 
 **4. Kanzlei-Konto GKM — angelegt 14.09.2026.** Kanzlei-Id 8 „Kanzlei GKM", Inhaber
 Jonas Neef, Konto `neefjonas@aol.com` (Rolle `kanzlei`); der Link zum Passwort setzen ging am

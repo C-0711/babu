@@ -60,7 +60,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 WURZEL = Path(__file__).resolve().parent.parent
-BELEGREVIEW = WURZEL / "server" / "belegreview"
+# Im Repo liegt der Server unter server/belegreview; im Container ist dieser
+# Ordner als /app/werkzeuge eingehängt und babu_web liegt direkt darüber.
+BELEGREVIEW = next((k for k in (WURZEL / "server" / "belegreview", WURZEL)
+                    if (k / "babu_web.py").is_file()), WURZEL / "server" / "belegreview")
 if str(BELEGREVIEW) not in sys.path:
     sys.path.insert(0, str(BELEGREVIEW))
 

@@ -37,6 +37,7 @@ GET /api/kanzlei/mandanten
 GET /api/kanzlei/mandanten/{mandant_id}
 GET /api/kanzlei/mandanten/{mandant_id}/import
 GET /api/kanzlei/mandanten/{mandant_id}/monate
+GET /api/kanzlei/mitglieder
 GET /api/kanzlei/uebersicht
 GET /api/kanzlei/warteschlange
 GET /api/kasse/vorschlag
@@ -146,6 +147,8 @@ POST /api/kanzlei/mandanten/{mandant_id}/import/dateien
 POST /api/kanzlei/mandanten/{mandant_id}/import/fortsetzen
 POST /api/kanzlei/mandanten/{mandant_id}/import/start
 POST /api/kanzlei/mandanten/{mandant_id}/status
+POST /api/kanzlei/mitglieder
+POST /api/kanzlei/mitglieder/entfernen
 POST /api/kanzleiwechsel
 POST /api/kassenbuch
 POST /api/kontenrahmen
