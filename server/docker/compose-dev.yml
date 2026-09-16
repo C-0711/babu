@@ -16,6 +16,10 @@
 #   cd ~/babu-src/server/docker && docker compose -f compose-dev.yml up -d --build
 # Rückweg:
 #   docker compose -f compose-dev.yml down
+# `name: babu-dev` ist PFLICHT: ohne ihn hieße das Projekt wie beim Live-Stack
+# „docker" (Ordnername) und ein `down` in einem der beiden Staples würde
+# Container des jeweils anderen entfernen.
+name: babu-dev
 services:
   babu-web-dev:
     build:
