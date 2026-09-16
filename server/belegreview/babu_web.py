@@ -304,6 +304,11 @@ def _sqlite_schema(conn) -> None:
     conn.execute("""CREATE TABLE IF NOT EXISTS registrierungen
         (id INTEGER PRIMARY KEY AUTOINCREMENT, zeit TEXT NOT NULL,
          daten TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'neu')""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS warteliste
+        (email TEXT PRIMARY KEY, art TEXT NOT NULL DEFAULT 'salon',
+         name TEXT, salon TEXT, telefon TEXT, bemerkung TEXT,
+         anfragen INTEGER NOT NULL DEFAULT 1, zeit TEXT NOT NULL,
+         status TEXT NOT NULL DEFAULT 'wartet')""")
     conn.execute("""CREATE TABLE IF NOT EXISTS nutzer
         (email TEXT PRIMARY KEY, name TEXT, salon TEXT,
          rolle TEXT NOT NULL DEFAULT 'salon', pw TEXT NOT NULL,
@@ -4353,6 +4358,145 @@ def api_registrierungen(request: Request) -> Response:
                   for z in c.execute(
                       "SELECT id, zeit, daten, status FROM registrierungen ORDER BY id DESC")]
     return JSONResponse({"registrierungen": zeilen})
+
+
+# ── Warteliste ──────────────────────────────────────────────────────────────
+# Seit 16.09.2026: Zugang nur auf Einladung. Wer sich anmelden möchte — Salon
+# oder Kanzlei —, hinterlässt E-Mail und Art; die Verwaltung entscheidet und
+# richtet den Zugang mit Startpasswort ein. Derselbe Handgriff wie bei den
+# „Anfragen“ aus der Startseiten-Strecke, nur dass hier nichts außer der
+# Adresse anfällt (kein Passwort, keine Unterlagen, kein Konto).
+
+_WARTELISTE_FELDER = ("email", "art", "name", "salon", "telefon", "bemerkung")
+_WARTELISTE_ARTEN = ("salon", "kanzlei")
+
+
+@app.post("/api/warteliste")
+async def api_warteliste_anmelden(request: Request) -> Response:
+    """Öffentlich: ein Eintrag auf die Warteliste — mehr nicht.
+
+    Die Antwort ist bewusst immer freundlich und gleich, egal ob die Adresse
+    schon wartet, schon ein Konto hat oder gebremst wird. Das Formular darf
+    weder Melder für bestehende Konten sein (siehe einladung.py) noch eine
+    Versandwerkzeug für fremde Postfächer — deshalb IP-Bremse und
+    Wiederanmeldung = Zähler hoch, keine neue Zeile.
+    """
+    import einladung as ei  # noqa: PLC0415
+    if not _origin_ok(request):
+        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    ip = _client_ip(request)
+    jetzt = time.time()
+    if jetzt - _REG_ZULETZT.get(ip, 0.0) < 30:
+        return JSONResponse({"fehler": "kurz warten, dann nochmal"}, status_code=429)
+    try:
+        koerper = json.loads(await koerper_lesen(request, 8 * 1024))
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    sauber = {k: str(koerper.get(k, "") or "").strip()[:200]
+              for k in _WARTELISTE_FELDER}
+    email = sauber["email"].lower()
+    if not ei.mail_gueltig(email):
+        return JSONResponse({"fehler": "Diese E-Mail-Adresse sieht nicht "
+                                       "richtig aus."}, status_code=400)
+    art = sauber["art"] if sauber["art"] in _WARTELISTE_ARTEN else "salon"
+    with _DB_LOCK, _db() as c:
+        vorhanden = c.execute("SELECT anfragen FROM warteliste WHERE email=?",
+                              (email,)).fetchone()
+        if vorhanden:
+            # Dieselbe Adresse meldet sich nochmal — Wunsch ernst nehmen,
+            # Zeile aber nicht vervielfachen.
+            c.execute("""UPDATE warteliste SET art=?, name=?, salon=?, telefon=?,
+                         bemerkung=?, anfragen=anfragen+1, zeit=?,
+                         status='wartet' WHERE email=?""",
+                      (art, sauber["name"], sauber["salon"], sauber["telefon"],
+                       sauber["bemerkung"], _jetzt_iso(), email))
+        else:
+            c.execute("""INSERT INTO warteliste (email, art, name, salon, telefon,
+                         bemerkung, zeit) VALUES (?,?,?,?,?,?,?)""",
+                      (email, art, sauber["name"], sauber["salon"],
+                       sauber["telefon"], sauber["bemerkung"], _jetzt_iso()))
+    _REG_ZULETZT[ip] = jetzt
+    _zaehler_aufraeumen(_REG_ZULETZT, jetzt, 3600)
+    print(f"[warteliste] {art} <{email}>", flush=True)
+    return JSONResponse({"ok": True, "hinweis":
+        "Danke! Wir melden uns an diese Adresse, sobald ein Platz frei ist."})
+
+
+@app.get("/api/warteliste")
+def api_warteliste_lesen(request: Request) -> Response:
+    un, fehler = _verwalter_wache(request)
+    if fehler:
+        return fehler
+    with _DB_LOCK, _db() as c:
+        zeilen = [dict(zip(("email", "art", "name", "salon", "telefon",
+                            "bemerkung", "anfragen", "zeit", "status"), z))
+                  for z in c.execute(
+                      "SELECT email, art, name, salon, telefon, bemerkung, "
+                      "anfragen, zeit, status FROM warteliste "
+                      "ORDER BY status='wartet' DESC, zeit DESC")]
+    return JSONResponse({"warteliste": zeilen})
+
+
+@app.post("/api/warteliste/einrichten")
+async def api_warteliste_einrichten(request: Request) -> Response:
+    """Verwaltung: aus einem Wartelisten-Eintrag wird ein Zugang.
+
+    Salon → Betriebskonto mit Belegbox (der Box-Anleger richtet sie nach,
+    wie bei jedem Mandanten). Kanzlei → Konto mit Rolle „kanzlei“; Kanzlei
+    und Mandanten legt die Inhaberin danach im Portal an.
+    """
+    un, fehler = _verwalter_wache(request)
+    if fehler or not un:
+        return fehler or JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
+    try:
+        koerper = json.loads(await koerper_lesen(request, 8 * 1024))
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON mit email erwartet"}, status_code=400)
+    email = str(koerper.get("email", "") or "").strip().lower()[:200]
+    rolle_neu = "kanzlei" if koerper.get("art") == "kanzlei" else "salon"
+    with _DB_LOCK, _db() as c:
+        z = c.execute("SELECT art, name, salon, telefon FROM warteliste "
+                      "WHERE email=?", (email,)).fetchone()
+    if not z:
+        return JSONResponse({"fehler": "Diese Adresse steht nicht auf der "
+                                       "Warteliste."}, status_code=404)
+    art, name, salon, telefon = z
+    betrieb = salon or name or (email.split("@")[0])
+    passwort = nutzer_anlegen(email, name or "", betrieb, rolle_neu)
+    if passwort is None:
+        return JSONResponse({"fehler": "Für diese E-Mail gibt es schon einen "
+                                       "Zugang."}, status_code=409)
+    for schluessel, wert in (("betrieb_name", betrieb), ("telefon", telefon),
+                             ("email", email)):
+        if wert:
+            db_einstellung_setzen(email, schluessel, str(wert)[:200])
+    with _DB_LOCK, _db() as c:
+        c.execute("UPDATE warteliste SET status='eingerichtet' WHERE email=?",
+                  (email,))
+    audit.audit(un, "warteliste_einrichten", ziel_un=email)
+    print(f"[warteliste] eingerichtet: {art} <{email}>", flush=True)
+    return JSONResponse({"ok": True, "email": email, "startpasswort": passwort})
+
+
+@app.post("/api/warteliste/ablehnen")
+async def api_warteliste_ablehnen(request: Request) -> Response:
+    """Verwaltung: höflich Nein — der Eintrag bleibt mit Stand „abgelehnt“."""
+    un, fehler = _verwalter_wache(request)
+    if fehler or not un:
+        return fehler or JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
+    try:
+        koerper = json.loads(await koerper_lesen(request, 8 * 1024))
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON mit email erwartet"}, status_code=400)
+    email = str(koerper.get("email", "") or "").strip().lower()[:200]
+    with _DB_LOCK, _db() as c:
+        n = c.execute("UPDATE warteliste SET status='abgelehnt' WHERE email=?",
+                      (email,)).rowcount
+    if not n:
+        return JSONResponse({"fehler": "Diese Adresse steht nicht auf der "
+                                       "Warteliste."}, status_code=404)
+    audit.audit(un, "warteliste_ablehnen", ziel_un=email)
+    return JSONResponse({"ok": True})
 
 
 def _einstellungen_mit_paket(un: str) -> dict:

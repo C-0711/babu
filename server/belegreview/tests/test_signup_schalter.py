@@ -42,10 +42,12 @@ def test_im_pilot_gibt_es_die_tuer_nicht(klient, monkeypatch):
     assert bw.nutzer_holen("neu@example.org") is None
 
 
-def test_die_anmeldeseite_fragt_nach():
+def test_die_anmeldeseite_ist_die_warteliste():
+    """Seit 16.09.2026 fragt die Anmeldeseite nicht mehr, ob sie „Konto
+    anlegen" zeigen soll — die Karte ist immer da und ist die Warteliste."""
     portal = (Path(__file__).resolve().parents[1] / "portal.html").read_text()
     assert "/api/signup-offen" in portal
-    assert '$("#reg-einstieg").hidden = true' in portal
+    assert 'id="wl-senden"' in portal
 
 
 def test_passwort_vergessen_formular_nur_mit_mailversand(klient, monkeypatch):

@@ -1034,9 +1034,17 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     </div>
     <div class="lkarte" id="reg-einstieg">
       <b>Neu bei babu?</b>
-      <p>Leg dir jetzt deinen Zugang an — ein paar kurze Fragen,
-      dann bist du drin. Dauert zwei Minuten.</p>
-      <button id="reg-start" class="zart">Konto anlegen</button>
+      <p>babu ist im Aufbau — Zugänge gibt es auf Einladung. Trag deine
+      E-Mail-Adresse ein, wir melden uns, sobald ein Platz frei ist.</p>
+      <label class="nurvorlesen" for="wl-email">E-Mail</label>
+      <input id="wl-email" type="email" placeholder="E-Mail" autocomplete="email" style="margin-top:8px">
+      <label class="nurvorlesen" for="wl-art">Ich bin</label>
+      <select id="wl-art" style="margin-top:8px">
+        <option value="salon">Salon / Betrieb</option>
+        <option value="kanzlei">Steuerbüro / Kanzlei</option>
+      </select>
+      <button id="wl-senden" class="zart" style="margin-top:12px">Auf die Warteliste ›</button>
+      <p class="hilfetext" id="wl-antwort" role="status" aria-live="polite" hidden></p>
     </div>
   </div>
   <div id="reg-bereich" hidden></div>
@@ -6392,16 +6400,36 @@ let _verwSeite = 1;
 
 async function ladeVerwaltung(){
   const ziel = $("#verwaltung-inhalt");
-  let regs = [];
+  let regs = [], warte = [];
   try{
     const r1 = await api("/api/registrierungen");
     if (r1.status === 403){ ziel.innerHTML = `<div class="leer"><b>Nur für die Verwaltung.</b></div>`; return; }
     regs = (await r1.json()).registrierungen || [];
+    const rw = await api("/api/warteliste");
+    if (rw.ok) warte = (await rw.json()).warteliste || [];
     _verwNutzer = (await (await api("/api/nutzer")).json()).nutzer || [];
   }catch{ return; }
   _verwSeite = 1;
 
   let html = "";
+  /* Warteliste (seit 16.09.2026): Anmeldung nur auf Einladung. Salon oder
+     Kanzlei hinterlässt E-Mail — hier entsteht daraus der Zugang. */
+  const warteOffen = warte.filter(w => w.status === "wartet");
+  html += `<div class="sektion lbl">Warteliste (${warteOffen.length})</div>`;
+  if (!warteOffen.length){
+    html += `<div class="karte" style="color:var(--gc-desc)">Niemand wartet gerade.</div>`;
+  }
+  for (const w of warteOffen){
+    const artName = w.art === "kanzlei" ? "Steuerbüro / Kanzlei" : "Salon / Betrieb";
+    html += `<div class="karte nachfrage" id="wl-${warteId(w.email)}">
+      <h3>${esc(w.salon || w.name || artName)} — ${artName}</h3>
+      <p>${esc(w.email)}${w.telefon ? " · " + esc(w.telefon) : ""}</p>
+      ${w.anfragen > 1 ? `<p style="margin-top:4px;font-size:12px;color:var(--gc-muted)">hat sich ${w.anfragen}× gemeldet (zuletzt ${esc(w.zeit)})</p>` : ""}
+      ${w.bemerkung ? `<p style="margin-top:4px;font-size:12px;color:var(--gc-desc)">${esc(w.bemerkung)}</p>` : ""}
+      <button class="hin" style="margin-top:10px" onclick="wartelisteEinrichten('${esc(w.email)}','${esc(w.art)}')">Zugang einladen ›</button>
+      <button class="hin" style="margin-top:10px;margin-left:8px;background:transparent;color:var(--gc-muted)" onclick="wartelisteAblehnen('${esc(w.email)}')">Nicht jetzt</button>
+    </div>`;
+  }
   const offen = regs.filter(r => r.status === "neu");
   html += `<div class="sektion lbl">Anfragen (${offen.length})</div>`;
   if (!offen.length){
@@ -7384,6 +7412,34 @@ async function anfrageEinrichten(id){
     }
   }catch{}
 }
+/* Warteliste: aus dem Eintrag wird ein Zugang mit Startpasswort — derselbe
+   Handgriff wie bei den Anfragen, nur dass die E-Mail der Schlüssel ist. */
+function warteId(email){ return email.replace(/[^a-z0-9]/g, "_"); }
+async function wartelisteEinrichten(email, art){
+  try{
+    const r = await api("/api/warteliste/einrichten", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({email, art})});
+    const d = await r.json();
+    const karte = $("#wl-" + warteId(email));
+    if (r.ok){
+      karte.classList.remove("nachfrage");
+      karte.insertAdjacentHTML("beforeend", startpasswortKarte(d.email, d.startpasswort));
+      karte.querySelectorAll("button.hin").forEach(b => b.remove());
+    } else {
+      karte.insertAdjacentHTML("beforeend",
+        `<p style="color:var(--gc-danger);margin-top:8px">${d.fehler || "Ging gerade nicht."}</p>`);
+    }
+  }catch{}
+}
+async function wartelisteAblehnen(email){
+  if (!confirm("Eintrag auf 'nicht jetzt' setzen? Die Adresse bleibt erreichbar.")) return;
+  try{
+    const r = await api("/api/warteliste/ablehnen", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({email})});
+    if (r.ok) ladeVerwaltung();
+    else { const d = await r.json(); alert(d.fehler || "Ging gerade nicht."); }
+  }catch{}
+}
 async function nutzerAktion(email, aktion, rolleNeu){
   try{
     const r = await api("/api/nutzer-aktion", {method:"POST",
@@ -7496,70 +7552,51 @@ const REG_SCHRITTE = [
    platzhalter:"mindestens 8 Zeichen",
    hilfe:"Damit meldest du dich ab jetzt an — in App und Portal."},
 ];
-/* Im Pilot legt die Kanzlei die Konten an — dann gibt es die Karte
-   „Neu bei babu?" nicht. Bleibt die Antwort aus, bleibt die Karte, wie sie ist. */
+/* Seit 16.09.2026 gibt es kein Selbstbedienungs-Konto mehr: die Karte
+   „Neu bei babu?" ist die Warteliste. E-Mail + Art rein, wir laden ein.
+   /api/signup-offen wird weiterhin gefragt — nur für „Passwort vergessen". */
 fetch("/api/signup-offen", {credentials:"same-origin"})
   .then(r => r.ok ? r.json() : null)
   .then(j => {
     if (!j) return;
-    if (j.offen === false) $("#reg-einstieg").hidden = true;
     /* Das Formular nur, wenn wirklich eine Mail rausgeht — sonst der alte Hinweis. */
     if (j.passwort_vergessen === true){ $("#pwv-formular").hidden = false; $("#pwv-hinweis").hidden = true; }
   })
   .catch(() => {});
-$("#reg-start").addEventListener("click", () => {
-  // Die Fragen ERSETZEN das Login — nicht darunterkleben.
-  $("#login-felder").hidden = true;
-  document.querySelector("#login p").textContent =
-    "Ein paar kurze Fragen — dann ist dein Zugang fertig.";
-  const bereich = $("#reg-bereich");
-  bereich.hidden = false;
-  bereich.innerHTML = `
-    <button id="reg-abbruch" style="color:var(--gc-muted);font-size:13px;margin-bottom:14px">‹ Ich habe schon einen Zugang</button>
-    <div id="reg-stepper" class="lkarte"></div>`;
-  $("#reg-abbruch").addEventListener("click", () => location.reload());
-  const ziel = $("#reg-stepper");
-  strecke(ziel, REG_SCHRITTE, "Konto anlegen", null, async werte => {
-    ziel.innerHTML = `<p style="color:var(--gc-desc)">Dein Zugang wird angelegt …</p>`;
-    try{
-      const r = await fetch("/api/signup", {method:"POST", credentials:"same-origin",
-        headers:{"Content-Type":"application/json"}, body: JSON.stringify(werte)});
-      const d = await r.json().catch(() => ({}));
-      if (r.ok){
-        // Sofort drin — Konto ist angelegt und angemeldet.
-        sitzungUebernehmen(d);
-        // Antworten aus dem Paket-Fragebogen der Startseite übernehmen.
-        try{
-          const q = JSON.parse(sessionStorage.getItem("babu-paket") || "null");
-          if (q){
-            const map = {};
-            if (q.medizinisch) map.ust_befreiung_medizinisch = q.medizinisch;
-            if (q.steuerbuero) map.steuerberater_modus =
-              q.steuerbuero === "Eigenes Steuerbüro" ? "Mein Steuerbüro bleibt" : "Alles über babu";
-            if (q.filialen) map.filialen = q.filialen;
-            if (q.firmen) map.mehrere_unternehmen = q.firmen;
-            if (q.abschluss) map.abschluss_art =
-              q.abschluss === "Einfache Gewinnrechnung" ? "EÜR" : q.abschluss;
-            if (Object.keys(map).length) einstellungSpeichern(map);
-            sessionStorage.removeItem("babu-paket");
-          }
-        }catch{}
-        ziel.innerHTML = `<div class="haken"><div class="kreis stempel">✓</div><div class="txt">
-          <b>Fertig, ${(werte.name||"").split(" ")[0] || "willkommen"}!</b>
-          <span>Dein Zugang ist angelegt — es geht direkt los.</span></div></div>`;
-        setTimeout(() => { location.hash = "#heute"; zeigeApp(); }, 900);
-      } else if (r.status === 409){
-        ziel.innerHTML = `<p style="color:var(--gc-desc)">${d.fehler}</p>
-          <button class="chip" style="margin-top:10px" onclick="location.reload()">Zur Anmeldung ›</button>`;
-      } else {
-        ziel.innerHTML = `<p style="color:var(--gc-danger)">${d.fehler || "Das hat gerade nicht geklappt — bitte später nochmal."}</p>
-          <button class="chip" style="margin-top:10px" onclick="location.reload()">Nochmal</button>`;
-      }
-    }catch{
-      ziel.innerHTML = `<p style="color:var(--gc-danger)">Gerade keine Verbindung — bitte später nochmal.</p>`;
+$("#wl-senden").addEventListener("click", async () => {
+  const email = $("#wl-email").value.trim();
+  const art = $("#wl-art").value;
+  const antwort = $("#wl-antwort");
+  antwort.hidden = false;
+  if (!email || email.indexOf("@") < 1){
+    antwort.textContent = "Ohne E-Mail-Adresse können wir uns nicht melden.";
+    antwort.style.color = "var(--gc-danger)";
+    return;
+  }
+  antwort.textContent = "Wird geschickt …";
+  antwort.style.color = "var(--gc-desc)";
+  try{
+    const r = await fetch("/api/warteliste", {method:"POST", credentials:"same-origin",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({email, art})});
+    const d = await r.json().catch(() => ({}));
+    if (r.ok){
+      antwort.textContent = d.hinweis || "Danke! Wir melden uns.";
+      antwort.style.color = "var(--gc-fg)";
+      $("#wl-email").value = "";
+    } else {
+      antwort.textContent = d.fehler || "Das hat gerade nicht geklappt — später nochmal.";
+      antwort.style.color = "var(--gc-danger)";
     }
-  });
+  }catch{
+    antwort.textContent = "Gerade keine Verbindung — später nochmal.";
+    antwort.style.color = "var(--gc-danger)";
+  }
 });
+/* Der alte Selbstbedienungs-Stepper („Konto anlegen", #reg-start → /api/signup)
+   ist mit der Warteliste 2026-09-16 weggefallen. REG_SCHRITTE bleibt stehen —
+   die Startseiten-Strecke (/api/auswertung/anfordern) nutzt dasselbe strecke()-
+   Werkzeug weiter. */
 
 /* ————— Einrichtung (nach dem Login): Steuerdaten, sofort gespeichert ————— */
 const EINRICHTUNG_SCHRITTE = [
