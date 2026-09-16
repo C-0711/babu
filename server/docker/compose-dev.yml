@@ -1,0 +1,60 @@
+# babu-web DEV-Lane — der zweite Container neben dem Produktiven.
+#
+# Vorbild: ib-dev (clara848/IB-Platform, ib-dev-poll.timer). Der Unterschied:
+# babu-live wird weiter per rsync deployed (Ritual in CLAUDE.md), diese Lane
+# hier ist rein additiv — sie fasst die Produktiv-Volumes NIE an:
+#
+#   * eigene SQLite `~/babu-dev/babu-web/portal.db` (kein BABU_DB_URL, keine
+#     Postgres, kein `.pg_passwort`-Secret — Dev bleibt SQLite-Rückweg)
+#   * eigene Box: eigener Klon-WURZEL-Ordner, eigener Store-Pfad. Der
+#     Git-Gateway :7808 kennt `ws-dev/babu` nicht → `/healthz` meldet die Box
+#     als 503 (`box: weg`), genau wie beim ersten Start des Produktiven vor
+#     der ersten Box-Anlage. Niemand schreibt nach ~/inspektor-store.
+#   * eigener Port BABU_PORT=7847 (7845/7846 sind auf der H200V belegt)
+#
+# Betrieb auf der H200V (Clone liegt in ~/babu-src, update per poll-timer):
+#   cd ~/babu-src/server/docker && docker compose -f compose-dev.yml up -d --build
+# Rückweg:
+#   docker compose -f compose-dev.yml down
+services:
+  babu-web-dev:
+    build:
+      context: ../..
+      dockerfile: server/docker/Dockerfile
+    image: babu-web-dev
+    container_name: babu-web-dev
+    network_mode: host
+    user: "1001:1000"
+    environment:
+      HOME: /data
+      BABU_PORT: "7847"
+      # Eigene, funktionsfähige Dev-Box ohne den Git-Gateway: Store UND
+      # Remote zeigen auf denselben lokalen Pfad im Dev-Volume (once:
+      # `git init --bare` dort, macht der Poll beim ersten Lauf). Lese- wie
+      # Schreibweg bleiben damit vollständig von ~/inspektor-store getrennt.
+      BABU_BOX_KLON: /data/babu-web/box
+      BABU_BOX_KLON_WURZEL: /data/babu-web/boxen
+      BABU_STORE: /data/dev-store/ws-dev/babu.git
+      BABU_STORE_WURZEL: /data/dev-store
+      BABU_BOX_REMOTE: /data/dev-store/ws-dev/babu.git
+      BABU_REF: "inspektor/ws-dev/babu"
+      # Dev sichtbar machen: Selbstbedienung AN (anders als im Pilot), damit
+      # die Lane ohne Kanzlei-Konto benutzbar ist.
+      BABU_SIGNUP: "1"
+      # Mail: nichts geht raus, landet unter /data/babu-web/postausgang.
+      BABU_ABSENDER: ""
+      BABU_SUPPORT_MAIL: ""
+    volumes:
+      - ~/babu-dev/babu-web:/data/babu-web
+      - ~/babu-docker/werkzeuge:/app/werkzeuge:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:7847/healthz', timeout=8)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    logging:
+      driver: json-file
+      options: {max-size: "20m", max-file: "3"}

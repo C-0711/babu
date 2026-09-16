@@ -12095,4 +12095,8 @@ def api_gespraeche_loeschen(request: Request) -> Response:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=7844, workers=1)
+    # 7844 ist und bleibt der Live-Port. BABU_PORT gibt der Dev-Lane auf der
+    # H200V (compose-dev.yml) ihren eigenen Port — ohne die Variable ändert
+    # sich nichts, auch nicht im Container oder beim lokalen Start.
+    uvicorn.run(app, host="127.0.0.1",
+                port=int(os.environ.get("BABU_PORT", "7844")), workers=1)
