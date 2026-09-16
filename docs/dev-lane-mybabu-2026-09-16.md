@@ -44,4 +44,3 @@ antwortet nicht).
     rm -rf ~/babu-src ~/babu-dev
     # Tunnel: die drei mybabu-Zeilen aus ~/.cloudflared/babu-0711.yml streichen,
     # pm2 restart babu-tunnel  (Backup: babu-0711.yml.bak-vor-mybabu-20260916)
-# Dev-Lane probe 11:02:02
