@@ -69,6 +69,7 @@ from starlette.concurrency import run_in_threadpool
 import audit
 import box as bx
 import mandanten
+import startguide
 
 router = APIRouter(prefix="/api/kanzlei")
 
@@ -769,10 +770,8 @@ def _mitglied_einladen(bw, kanzlei_name: str, mail: str) -> str | None:
             f"„{kanzlei_name}“ hat dich als Mitarbeiterin bzw. Mitarbeiter in babu "
             f"eingetragen. Beim ersten Öffnen legst du dein Passwort fest:\n\n"
             f"    {link}\n\n"
-            f"Der Link gilt {pr.FRIST.days} Tage und nur einmal. Danach meldest du "
-            f"dich unter {bw.PORTAL_ORIGIN.rstrip('/')}/portal mit dieser "
-            f"E-Mail-Adresse und deinem Passwort an und siehst die Betriebe "
-            f"deiner Kanzlei.\n\n"
+            + startguide.schritte(bw.PORTAL_ORIGIN, art="kanzlei")
+            + f"\nDer Link gilt {pr.FRIST.days} Tage und nur einmal.\n\n"
             f"Wenn du damit nichts anfangen kannst, ignoriere diese Nachricht "
             f"einfach — ohne den Link passiert nichts.\n")
     ok, hinweis = postfach.senden(mail, f"Dein Zugang zu babu bei {kanzlei_name}",
@@ -802,7 +801,8 @@ def _einladung_verschicken(bw, mandant_name: str, mail: str) -> str | None:
             f"dein Steuerbüro hat für „{mandant_name}“ einen Zugang zu babu "
             f"eingerichtet. Beim ersten Öffnen legst du dein Passwort fest:\n\n"
             f"    {link}\n\n"
-            f"Der Link gilt {pr.FRIST.days} Tage und nur einmal. Danach meldest "
+            + startguide.schritte(bw.PORTAL_ORIGIN)
+            + f"\nDer Link gilt {pr.FRIST.days} Tage und nur einmal. Danach meldest "
             f"du dich ganz normal mit dieser E-Mail-Adresse und deinem Passwort "
             f"an.\n\n"
             f"Wenn du damit nichts anfangen kannst, ignoriere diese Nachricht "

@@ -45,15 +45,15 @@ def eingerichtet() -> bool:
 
 
 def _nachricht(an: str, betreff: str, text: str) -> EmailMessage:
-    m = EmailMessage()
-    m["From"] = ABSENDER
-    m["To"] = an
-    m["Subject"] = betreff
+    import maildesign  # noqa: PLC0415
+    m = maildesign.mail(an, betreff, text, von=ABSENDER)
     m["Date"] = formatdate(localtime=True)
     m["Message-ID"] = make_msgid(domain="babu.0711.io")
-    # Reiner Text. Eine Mail mit Bildern und Schriften landet öfter im Spam,
-    # und der Anriss soll auch dann lesbar sein, wenn nichts nachgeladen wird.
-    m.set_content(text)
+    # Zwei Fassungen derselben Wörter: schlichter Text (Bildschirmleser,
+    # schlichte Clients, Spam-Filter) und das Design der Startseite als
+    # HTML-Alternative. Kein Bild, kein Webfont, kein Nachladen — eine Mail,
+    # die etwas nachlädt, landet öfter im Spam, und der Anriss soll auch
+    # dann lesbar sein, wenn nichts geladen wird.
     return m
 
 

@@ -5356,9 +5356,10 @@ async def api_passwort_vergessen(request: Request) -> Response:
     text = (f"Hallo,\n\n"
             f"du möchtest ein neues Passwort für babu setzen. Hier entlang:\n\n"
             f"    {link}\n\n"
-            f"Der Link gilt {pr.FRIST.days} Tage und nur einmal. Sobald du ein neues "
-            f"Passwort gesetzt hast, meldest du dich in App und Portal damit an; "
-            f"ein Telefon, das noch verbunden war, fragt einmal neu nach.\n\n"
+            "    1. Knopf antippen — Passwort zweimal eingeben, fertig.\n"
+            "    2. Danach meldest du dich in App und Portal ganz normal damit an;\n"
+            "       ein Telefon, das noch verbunden war, fragt einmal neu nach.\n"
+            f"\nDer Link gilt {pr.FRIST.days} Tage und nur einmal.\n\n"
             f"Wenn du das nicht warst, ignoriere diese Nachricht einfach — dein "
             f"Passwort bleibt, wie es ist.\n")
     ok, hinweis = await run_in_threadpool(
