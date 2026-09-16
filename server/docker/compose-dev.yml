@@ -32,6 +32,10 @@ services:
     environment:
       HOME: /data
       BABU_PORT: "7847"
+      # Origin-Pruefung: die Dev-Lane antwortet unter dev.mybabu.io (seit
+      # 16.09.2026) — ohne BABU_ORIGIN wuerde jede POST-Route mit dem
+      # produktiven Default (babu.0711.io) abgewiesen.
+      BABU_ORIGIN: "https://dev.mybabu.io"
       # Eigene, funktionsfähige Dev-Box ohne den Git-Gateway: Store UND
       # Remote zeigen auf denselben lokalen Pfad im Dev-Volume (once:
       # `git init --bare` dort, macht der Poll beim ersten Lauf). Lese- wie
