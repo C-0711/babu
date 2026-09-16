@@ -19,8 +19,8 @@
 services:
   babu-web-dev:
     build:
-      context: ../..
-      dockerfile: server/docker/Dockerfile
+      context: ..          # = server/ — der Dockerfile liest docker/… und belegreview/
+      dockerfile: docker/Dockerfile
     image: babu-web-dev
     container_name: babu-web-dev
     network_mode: host
