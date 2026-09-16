@@ -109,7 +109,11 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   In pm2 bleiben nur `babu-eingang` und `babu-tunnel`; der pm2-Eintrag
   `babu-web` ist gestoppt und NUR Rückweg. **Nie anfassen:** `insp-app`
   (Belegbox-Gateway :7808) und `belege-review` (ANDERES Projekt).
-- Deploy: **immer `rsync server/ h200v:~/babu-docker/` komplett, nie eine
+  - **Achtung rsync + .env:** `docker/.env` auf der H200V (Support-Postfach,
+    SMTP-Zugänge) liegt IM rsync-Bereich — immer `--exclude=.env` mitgeben,
+    sonst löscht `--delete` sie beim nächsten Deploy.
+
+- Deploy: **immer `rsync server/ h200v:~/babu-docker/` komplett, nie eine- Deploy: **immer `rsync server/ h200v:~/babu-docker/` komplett, nie eine
   Einzeldatei** (seit 15.09.2026 dazu `rsync werkzeuge/ h200v:~/babu-docker/werkzeuge/`,
   der Ordner ist als `/app/werkzeuge` in den Container gemountet) (ein gemischter Build fiel nur auf, weil ein neues
   API-Feld live fehlte) → `cd ~/babu-docker/docker && docker compose build
