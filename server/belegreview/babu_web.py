@@ -4418,6 +4418,34 @@ async def api_warteliste_anmelden(request: Request) -> Response:
     _REG_ZULETZT[ip] = jetzt
     _zaehler_aufraeumen(_REG_ZULETZT, jetzt, 3600)
     print(f"[warteliste] {art} <{email}>", flush=True)
+    # Eine Kopie an Nina (BABU_SUPPORT_MAIL): sie entscheidet, wen wir
+    # einladen — ohne diese Mail müsste jemand die Liste im Portal
+    # zufällig finden. Wie bei der Rückmeldung: nur eine Kopie, ein
+    # Fehlschlag ändert nichts an der Zusage an die Adresse (die Mail
+    # liegt dann im Postausgang).
+    if SUPPORT_MAIL:
+        import postfach  # noqa: PLC0415
+        _art_name = "Steuerbüro / Kanzlei" if art == "kanzlei" else "Salon / Betrieb"
+        _text = (f"Hallo,\n\n"
+                 f"jemand möchte einen Zugang zu babu:\n\n"
+                 f"    {_art_name}\n"
+                 f"    {email}\n"
+                 + (f"    Name: {sauber['name']}\n" if sauber["name"] else "")
+                 + (f"    Betrieb: {sauber['salon']}\n" if sauber["salon"] else "")
+                 + (f"    Telefon: {sauber['telefon']}\n" if sauber["telefon"] else "")
+                 + (f"    Bemerkung: {sauber['bemerkung']}\n" if sauber["bemerkung"] else "")
+                 + (f"\n(Diese Adresse hat sich schon einmal gemeldet.)\n"
+                    if vorhanden else "")
+                 + f"\nEinladen: Portal → Verwaltung → Warteliste → „Zugang einladen“.\n")
+        try:
+            ok, hinweis = await run_in_threadpool(
+                postfach.senden, SUPPORT_MAIL,
+                f"Warteliste: {_art_name} — {email}", _text,
+                stempel=time.strftime("%Y%m%d-%H%M%S"))
+            print(f"[warteliste] Mail an {SUPPORT_MAIL}: {hinweis}", flush=True)
+        except Exception as ex:  # noqa: BLE001
+            print(f"[warteliste] Mail an {SUPPORT_MAIL} fehlgeschlagen: {ex!r}",
+                  flush=True)
     return JSONResponse({"ok": True, "hinweis":
         "Danke! Wir melden uns an diese Adresse, sobald ein Platz frei ist."})
 

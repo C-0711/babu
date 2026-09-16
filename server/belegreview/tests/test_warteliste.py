@@ -49,6 +49,26 @@ def test_anmeldung_landet_auf_der_warteliste(klient):
     assert bw.nutzer_holen("salon@example.org") is None
 
 
+def test_anmeldung_hinterlaesst_mail_fuer_nina(klient, monkeypatch, tmp_path):
+    """Mit eingetragenem Support-Postfach landet je Anmeldung eine .eml
+    im Postausgang — ohne SMTP bleibt sie dort liegen, die Zusage an die
+    Adresse bleibt dieselbe."""
+    import postfach
+    monkeypatch.setattr(postfach, "HOST", "")
+    monkeypatch.setattr(postfach, "POSTAUSGANG", tmp_path / "postausgang")
+    bw = klient[1]
+    monkeypatch.setattr(bw, "SUPPORT_MAIL", "nina@0711.io")
+    client = klient[0]
+    r = client.post("/api/warteliste", json=ANMELDUNG)
+    assert r.status_code == 200
+    maildateien = list((tmp_path / "postausgang").glob("*.eml"))
+    assert len(maildateien) == 1
+    inhalt = maildateien[0].read_text()
+    assert "salon@example.org" in inhalt
+    assert "SupremeStudio" in inhalt
+    assert "To: nina@0711.io" in inhalt
+
+
 def test_dieselbe_adresse_zaehlt_und_vervielfacht_nicht(klient):
     client, bw = klient
     client.post("/api/warteliste", json=ANMELDUNG)
