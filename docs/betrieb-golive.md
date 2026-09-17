@@ -113,9 +113,8 @@ Business vor einer Store-Einreichung. Vor jedem weiteren Upload `CURRENT_PROJECT
 `babu-0711`, Zone `mybabu.io` im selben Konto wie `0711.io`); babu.0711.io und www.mybabu.io
 bleiben erreichbar, die Herkunftsprüfung nimmt jeden Namen, unter dem die Seite geladen wurde.
 Resend: Domain `mybabu.io` angelegt, DNS bei Cloudflare (DKIM `resend._domainkey`, CNAMEs
-`rsend` und `send` auf forge.rmta.net). Sobald Resend „Verified" zeigt: in
-`~/babu-docker/docker/.env` `BABU_ABSENDER=babu <post@mybabu.io>` setzen, `docker compose up -d`,
-eine Passwort-vergessen-Mail probeschicken. App ab Build 5 mit mybabu.io als Standard; ältere
+`rsend` und `send` auf forge.rmta.net). Resend hat `mybabu.io` am 17.09. verifiziert; `BABU_ABSENDER=babu <post@mybabu.io>` steht in
+`~/babu-docker/docker/.env`, erste Reset-Mail unter dem neuen Absender ging an christoph@0711.io. App ab Build 5 mit mybabu.io als Standard; ältere
 Installationen wechseln beim Start von selbst. In App Store Connect noch umzustellen:
 Datenschutz- und Marketing-URL auf mybabu.io (TestFlight → Test Information).
 

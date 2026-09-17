@@ -170,9 +170,8 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
 - Vor schreibenden Rauchtests erst den Ist-Wert lesen — oder Testkonto.
 - **Zwei Namen, ein Server (seit 17.09.2026):** `BABU_ORIGIN=https://mybabu.io` in
   Compose; `_origin_ok` lässt jeden POST durch, dessen Origin zum Host der Anfrage
-  passt (CSRF-Frage, keine Liste). Mails tragen Links auf mybabu.io; der Absender
-  bleibt `post@babu.0711.io` (in `.env`), bis Resend `mybabu.io` verifiziert hat —
-  dann `BABU_ABSENDER` in `.env` umstellen und `up -d`.
+  passt (CSRF-Frage, keine Liste). Mails tragen Links auf mybabu.io und kommen von
+  `post@mybabu.io` (Resend, Domain verifiziert 17.09.; `BABU_ABSENDER` in `.env`).
 
 ## Sicherheit
 
