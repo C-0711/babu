@@ -28,6 +28,13 @@ from typing import Iterable
 # Wie viele Zeilen von oben zählen als „Kopf“ — der Aussteller steht dort,
 # nicht im Fuß. Mehrere Seiten-Marker („— Seite 1 von 3 —“) springen wir über.
 KOPF_ZEILEN = 18
+# Der engere Block, in dem der BETRIEBSNAME stehen muss, um beweisend zu
+# sein: Aussteller-Adresszeilen stehen ganz oben; der Empfänger beginnt mit
+# „an:“/„Rechnungsadresse:“/„Kunde:“ danach. Ein Name weiter unten oder in
+# einer Empfänger-Zeile ist der ADRESSAT einer Fremdrechnung — kein Beweis.
+NAME_BLOCK = 6
+_EMPFAENGER_ZEILE = re.compile(r"^\s*(an\s*:|rechnungsadresse|kunde\s*:|"
+                                r"lieferadresse|verkauf\s+an|to\s*:)", re.I)
 
 
 def _norm(text: str) -> str:
@@ -50,9 +57,10 @@ def eigen_merkmale(einstellungen: dict) -> dict[str, str]:
     return {"name": name, "steuernummer": stnr}
 
 
-def _kopf(zeilen: Iterable) -> str:
-    """Der Belegkopf als normierter Text — Zeilen dürfen Strings oder
-    {text, conf, box}-Objekte sein (beides schickt die App)."""
+def _kopf_zeilen(zeilen: Iterable) -> list[str]:
+    """Die Kopf-Zeilen als Texte (Strings oder {text,…}-Objekte), ohne
+    Seiten-Marker und Leerzeilen — die Vorstufe für _kopf und die
+    Empfänger-Prüfung."""
     texte = []
     for z in zeilen:
         t = z if isinstance(z, str) else (z or {}).get("text") if isinstance(z, dict) else None
@@ -62,7 +70,13 @@ def _kopf(zeilen: Iterable) -> str:
         texte.append(t)
         if len(texte) >= KOPF_ZEILEN:
             break
-    return _norm(" ".join(texte))
+    return texte
+
+
+def _empfaenger_aktiv(zeilen: list[str]) -> bool:
+    """Nennt der Kopf einen EMPFÄNGER („an: …“)? Dann ist alles darunter
+    Adressat — unser Name dort beweist nichts."""
+    return any(_EMPFAENGER_ZEILE.match(z) for z in zeilen)
 
 
 def aussteller(zeilen: list, einstellungen: dict) -> str | None:
@@ -78,13 +92,21 @@ def aussteller(zeilen: list, einstellungen: dict) -> str | None:
     demselben Fakt und gutschrift=True durch dieselbe Buchung.
     """
     merkmale = eigen_merkmale(einstellungen or {})
-    kopf = _kopf(zeilen or [])
-    if not kopf:
+    kopf_zeilen = _kopf_zeilen(zeilen or [])
+    if not kopf_zeilen:
         return None
+    kopf = _norm(" ".join(kopf_zeilen))
     name, stnr = merkmale["name"], merkmale["steuernummer"]
-    # Der Name muss aus MEHR als einem Buchstaben bestehen und darf nicht in
-    # „unbenannt“ enden — sonst träfe jedes Profil jeden Beleg.
-    if name and len(name) >= 4 and name != "unbenannt" and name in kopf:
+    # Der Name beweist den Aussteller nur im ALLERERSTEN Block (die ersten
+    # NAME_BLOCK Zeilen — dort stehen die Aussteller-Adresszeilen) UND nur
+    # wenn der Kopf keinen Empfänger-Abschnitt vor ihnen nennt: Steht
+    # „an: SupremeStudio“ in einer Fremdrechnung, ist der eigene Name der
+    # ADRESSAT, nicht der Aussteller. Steht unsere Steuernummer irgendwo im
+    # Kopf, entscheidet sie — sie ist per Gesetz eindeutig.
+    name_im_ersten_block = _norm(" ".join(kopf_zeilen[:NAME_BLOCK]))
+    name_vor_empfaenger = not _empfaenger_aktiv(kopf_zeilen[:NAME_BLOCK])
+    if (name and len(name) >= 4 and name != "unbenannt"
+            and name in name_im_ersten_block and name_vor_empfaenger):
         roh = str(einstellungen.get("betrieb_name") or
                   einstellungen.get("salon") or "").strip()
         return f"Betriebsname „{roh}“ steht oben auf dem Beleg"
