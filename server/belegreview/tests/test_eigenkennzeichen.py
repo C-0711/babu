@@ -49,20 +49,25 @@ def test_name_allein_reicht():
 
 
 def test_fremde_rechnung_an_uns_wird_nicht_als_eigene_erkannt():
-    # Der eigene Name steht hier nur als EMPFAENGER („an:“) — und der
-    # Kopf gehoert delilà. Der Abgleich prueft nur die obersten Zeilen;
-    # „an: SupremeStudio“ steht mit in den ersten Zeilen … deshalb ist
-    # der Name-Treffer hier moeglich. Die Steuernummer fehlt aber — und
-    # die REGELN sagen dem Modell, dass der AUSSTELLER oben steht.
-    # Erwartung: Treffer nur, wenn der Name WIRKLICH im Kopf steht.
+    """Der Grenzfall (17.09., in der Gegenprobe gefunden): Der eigene Name
+    steht als ADRESSAT („an: SupremeStudio“) einer Fremdrechnung — der Name
+    allein ist kein Beweis, sonst würde jede delilà-Rechnung an uns zur
+    Ausgangsrechnung. Beweisend sind nur: Name im ALLERERSTEN Block ohne
+    Empfänger-Abschnitt, oder die eigene Steuernummer im Kopf."""
     beweis = ek.aussteller(FREMDE_RECHNUNG, EINST)
-    # delilà oben, SupremeStudio als Adressat in Zeile 3 — der Name
-    # taucht im Fenster. Das ist der Grenzfall: wir akzeptieren ihn
-    # bewusst NICHT als Beweis, wenn die eigene Steuernummer fehlt und
-    # der Name nur als Adressat erscheint. Um das zu garantieren, reicht
-    # Name-Suche im Kopf nicht — deshalb pruefen wir hier nur, dass die
-    # STEUERNUMMER (das starke Merkmal) nicht herhaelt:
-    assert beweis is None or "Steuernummer" not in beweis
+    assert beweis is None, (
+        "Fremdrechnung an uns wurde als eigene erkannt: " + str(beweis))
+
+
+def test_eigene_rechnung_mit_empfaenger_abschnitt():
+    """Ninas echte Rechnung hat beides: eigenen Kopf OBEN und „Rosa Dragone“
+    als Kundin — und auf modernen Vorlagen auch „an:“-Zeilen. Der
+    Aussteller-Block steht VOR dem Empfänger, deshalb bleibt der Beweis."""
+    zeilen = ["SupremeBeauty", "Bogenstr. 29/1", "71634 Ludwigsburg",
+              "Steuernummer: 71015/73457", "RECHNUNG",
+              "an: Rosa Dragone, Jakobsplatz 6, 86152 Augsburg",
+              "Rechnungsnummer: 2022-01046-OL", "Gesamtbetrag: 2.289,00 EUR"]
+    assert ek.aussteller(zeilen, EINST) is not None
 
 
 def test_steuernummer_in_anderer_schreibweise():
