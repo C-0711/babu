@@ -68,6 +68,15 @@ class Kategorie:
 # heute die Fehler passieren.
 
 _K = [
+    # ── Erlöse — die Richtung, die wir SELBST stellen ────────────────────
+    # (seit 17.09.2026, Fall nullsiebenelf/Jonas: eine GmbH fakturiert —
+    # ohne Ertragskonto buchte babu eigene Ausgangsrechnungen als Aufwand.)
+    Kategorie("umsatzerloese", "Umsatzerlöse (eigene Leistungen)",
+              "8400", "4400", geprueft=True,
+              hinweis="Rechnung, die der Betrieb SELBST ausstellt — egal "
+                      "ob aus der babu-App, Papier oder als Kopie. Ertrag, "
+                      "kein Aufwand. Wareneinkauf/verbrauchsmaterial bleiben "
+                      "separate Aufwandsbuchungen."),
     # ── Einkauf und Verbrauch ────────────────────────────────────────────
     Kategorie("wareneinkauf", "Wareneinkauf (Weiterverkauf)",
               "3400", "5400", geprueft=True,

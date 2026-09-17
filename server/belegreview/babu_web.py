@@ -9133,15 +9133,50 @@ def _rechnungen_lesen() -> list[dict]:
 
 
 def _erloese_fuer(idx: dict, monat: str, un: str, blaetter: list[dict]) -> dict:
-    """Die Erlöse eines Monats aus allen drei Quellen: Kasse, Rechnungen und
-    Kontoauszug — der Kontoauszug nur ohne Kassenbuch (siehe monatsabschluss)."""
+    """Die Erlöse eines Monats aus allen Quellen: Kasse, Rechnungen,
+    Kontoauszug — und seit 17.09.2026 als Beleg gescannte Ausgangs-
+    rechnungen. Die Aufruferin zieht DOPPELTE ab: dieselbe Rechnung als
+    App-Rechnung und als Scan ist derselbe Umsatz (gleiches Datum UND
+    gleicher Betrag, Cent-genau — verschiedene Rechnungen gleichen
+    Betrags sind erlaubt, gleiche Rechnung doppelt nicht).
+    Kontoauszug nur ohne Kassenbuch (siehe monatsabschluss)."""
     import monatsabschluss as ma  # noqa: PLC0415
     profil = ma.umsatz_profil(db_einstellungen(salon_von_aktiv(un)))
+    beleg_erloese = []
+    for r in (idx.get("reviews", {}) or {}).values():
+        v = (r.get("vlm") or (r.get("buchung") or {}).get("buchung")) or {}
+        if not isinstance(v, dict):
+            continue
+        if v.get("kategorie") != "umsatzerloese":
+            continue
+        b = (r.get("buchung") or {}).get("buchung") or v
+        if (r.get("buchung") or {}).get("status") != "gebucht":
+            continue
+        beleg_erloese.append({
+            "brutto": abs(float(b.get("betrag_eur") or b.get("betrag") or 0)),
+            "ust_satz": int(b.get("ust_satz") or 0),
+            "datum": str(b.get("datum") or "")[:10]})
+    # Doppelte heraus: eine App-Rechnung mit gleichem Betrag im selben
+    # Monat (ist-Versteuerung zahlt später — der Monat des Zahlungseingangs
+    # ist auf dem Scan nicht zu sehen; Gleichheit hier: Betrag UND Monat
+    # des Rechnungsdatums) ist schon über `rechnungen` gezählt.
+    rechnungen = list(idx.get("rechnungen", {}).values())
+    if beleg_erloese and rechnungen:
+        import rechnungen as _re  # noqa: PLC0415
+        app_paare = set()
+        for r in rechnungen:
+            if not isinstance(r, dict):
+                continue
+            app_paare.add((round(abs(float(r.get("brutto") or 0)), 2),
+                           str(r.get("datum") or "")[:7]))
+        beleg_erloese = [b for b in beleg_erloese
+                         if (round(b["brutto"], 2), b["datum"][:7]) not in app_paare]
     return ma.erloese_monat(blaetter, monat=monat,
-                            rechnungen=list(idx.get("rechnungen", {}).values()),
+                            rechnungen=rechnungen,
                             versteuerung=_versteuerung(un),
                             umsaetze=idx.get("umsaetze", {}).get(monat, []),
-                            kleinunternehmerin=not profil.get("braucht_ustva", True))
+                            kleinunternehmerin=not profil.get("braucht_ustva", True),
+                            beleg_erloese=beleg_erloese)
 
 
 def _versteuerung(un: str) -> str:

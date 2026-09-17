@@ -32,7 +32,7 @@ VLM_MODELL = os.environ.get("VLM_MODELL", "gemma4-mm")
 VLM_FRIST = float(os.environ.get("VLM_FRIST", "120"))
 
 # Die Fächer der Ablage — Gemmas Klassifizierung muss eines davon treffen.
-DOKUMENTKLASSEN = ("beleg", "vertrag", "behoerde", "kontoauszug")
+DOKUMENTKLASSEN = ("beleg", "ausgangsrechnung", "vertrag", "behoerde", "kontoauszug")
 
 # Normal ist EIN Fragenpaket. Wer nach so vielen Antworten immer noch
 # fragt, bucht nicht mehr — der Beleg gehört auf den Schreibtisch.
@@ -138,6 +138,21 @@ REGELN = """Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
   Beleg einen tatsächlich abgezogenen Skontobetrag ausweist oder eine
   passende Kontobewegung den geminderten Betrag zeigt, buchst du den
   geminderten Betrag.
+- Eine AUSGANGSRECHNUNG — eine Rechnung, die DER BETRIEB SELBST ausstellt —
+  ist EINNAHME, niemals Ausgabe: kategorie umsatzerloese, gutschrift false,
+  dokumentklasse "ausgangsrechnung". Merkmale: eigener Briefkopf/Name des
+  Betriebs oben, eine RECHNUNGSNUMMER (nicht Bestell- oder Belegnummer eines
+  FREMDEN Lieferanten), ein KUNDE als Empfänger („an:"), Leistungsbezeichnung
+  eigener Tätigkeiten (Schnitt, Farbe, Stuhlmiete, Beratung), und „Zahlbar
+  bis"/Bankverbindung für Geld, das UNS zusteht. Gilt für Papier, PDF und
+  Kopien gleich — und für Auswertungen/Reports von Anbietern, die UNS
+  Geld gebracht haben (Salonkee-Auszahlungsreport, SumUp-Abrechnung), NUR
+  wenn sie eine eigene Leistung ausweisen; reine Gutschriften/Zahlungseingänge
+  sind geldtransit. Eine Gutschrift an einen Kunden (Storno unserer Rechnung)
+  ist kategorie umsatzerloese MIT „gutschrift": true. BUche NIE eine
+  Ausgangsrechnung auf eine Aufwandskategorie — wenn du unsicher bist, ob
+  ein Beleg ein- oder ausgeht, stell EINE Frage: „Haben WIR diese Rechnung
+  geschrieben oder kommt sie von einem Lieferanten?“
 - Sag, WIE bezahlt wurde (zahlungsart) — das steht fast immer auf dem Bon:
   „BAR", „Bar", „Barzahlung", Gegeben/Rückgeld → "bar" · „EC", „EC-Cash",
   „girocard", „Maestro", „VISA", „Mastercard", „SumUp", „Kartenzahlung",
@@ -183,7 +198,8 @@ REGELN = """Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
   Schreib, WARUM die Kategorie passt — bei einer Anschaffung mit dem
   Nettopreis je Gegenstand und der Grenze, die du angewendet hast.
 - Sag außerdem, WAS das Dokument ist (dokumentklasse): "beleg" (Bon oder
-  Rechnung über einen Kauf — der Regelfall), "vertrag", "behoerde" (Post vom
+  Rechnung über einen Kauf — der Regelfall), "ausgangsrechnung" (Rechnung,
+  die der Betrieb selbst ausstellt — Erlös), "vertrag", "behoerde" (Post vom
   Amt) oder "kontoauszug". Danach richtet sich, in welches Fach es kommt."""
 
 SCHEMA = """Antworte NUR mit einem JSON-Objekt, ohne Text davor oder danach:
@@ -193,7 +209,8 @@ oder     {"status": "fragen",
            "fragen": [{"frage": "…", "optionen": ["…", "…"]}]}
 oder     {"status": "gebucht",
            "kategorie": "<code aus der Liste>",
-           "dokumentklasse": "beleg | vertrag | behoerde | kontoauszug",
+           "dokumentklasse": "beleg | ausgangsrechnung | vertrag | behoerde | kontoauszug",
+           "kunde": "… (NUR bei ausgangsrechnung: wer hat von UNS geleistet — sonst leer)",
            "lieferant": "…", "datum": "JJJJ-MM-TT",
            "buchungstext": "…",
            "betrag": 0.0, "waehrung": "EUR",
@@ -479,6 +496,11 @@ def buchung_pruefen(roh: dict, rahmen: str = "SKR04") -> dict:
     return {"status": "gebucht", "buchung": {
         "dokumentklasse": klasse,
         "lieferant": str(roh.get("lieferant") or "")[:80] or None,
+        # Bei einer Ausgangsrechnung ist der EMPFÄNGER der Kunde — das Feld
+        # heißt kunde, damit niemand den eigenen Betrieb als „Lieferanten“
+        # liest. Eingangsbelege tragen es nicht.
+        "kunde": (str(roh.get("kunde") or "")[:80] or None)
+                 if klasse == "ausgangsrechnung" else None,
         "datum": str(roh.get("datum") or "")[:10] or None,
         "kategorie": kat.code,
         "kategorie_name": kat.name,

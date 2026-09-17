@@ -453,6 +453,18 @@ def buchungszeilen(review: dict, kleinunternehmerin: bool = False
     # steht in `basis` und gilt damit für jede Zeile dieses Belegs: den
     # Einzelsatz, jede Zeile des Mehrsatz-Splits und die Gutschrift im Haben.
     gegenkonto = KASSE if zahlungsart(review) == "bar" else GEGENKONTO
+    # Eine AUSGANGSRECHNUNG (seit 17.09.2026) steht auf der anderen Seite:
+    # Erlös im Haben, Forderung gegen den Debitor im Soll. Bar gezahlte
+    # Erlöse laufen gegen die Kasse wie beim Einkauf. Die Gutschrift an
+    # einen Kunden (Storno unserer Rechnung) hat gutschrift=True und dreht
+    # mit dem Vorzeichen zurück ins Soll — derselbe Mechanismus wie oben.
+    klasse = str((review.get("vlm") or {}).get("dokumentklasse")
+                 or (review.get("felder") or {}).get("dokumentklasse")
+                 or "").strip().lower()
+    ausgang = (klasse == "ausgangsrechnung"
+               or str(konto) in ERLOES_KONTEN)
+    if ausgang and zahlungsart(review) != "bar":
+        gegenkonto = DEBITOR[rahmen]
     basis = {"konto": konto, "gegenkonto": gegenkonto, "belegdatum": belegdatum,
              "belegfeld1": belegfeld1(review),
              "text": _text_saeubern(text)}
@@ -465,6 +477,10 @@ def buchungszeilen(review: dict, kleinunternehmerin: bool = False
 
     def _wert(betrag) -> float:
         w = float(betrag or 0)
+        if ausgang:
+            # Spiegelbild des Einkaufs: der Erlös steht im HABEN (negativ
+            # für _soll_haben), die Gutschrift an den Kunden zurück im SOLL.
+            return abs(w) if gutschrift else -abs(w)
         return -abs(w) if gutschrift else w
 
     if kleinunternehmerin:
@@ -1145,3 +1161,23 @@ def als_bytes(text: str, utf8_bom: bool = False) -> bytes:
     if utf8_bom:
         return b"\xef\xbb\xbf" + text.encode("utf-8")
     return text.encode("cp1252", errors="replace")
+
+# ── Ausgangsrechnungen: Buchungsrichtung und Debitoren ─────────────────────
+#
+# Seit 17.09.2026 (Fall nullsiebenelf/Jonas): Ein Betrieb, der selbst
+# fakturiert, legt seine Ausgangsrechnungen in babu ab — bis dahin buchte
+# der Stapel sie als Aufwand, weil es nur die Richtung gab. Jetzt:
+#
+#   Konto      8400 (Umsatzerlöse) — aus dem Katalog, wie jede Kategorie
+#   Gegenkonto 12000 (SKR04) / 8100 (SKR03): Debitoren — die offene Forderung,
+#              die die Kanzlei beim Zahlungseingang auflöst (Offene Posten).
+#              Bar gezahlte Erlöse gehen gegen die Kasse, wie beim Einkauf.
+#   Soll/Haben H (Haben) — der Erlös MEHRT das Ertragskonto; eine Gutschrift
+#              an den Kunden dreht Richtung UND Vorzeichen wie beim Kauf.
+#
+# Der Steuerschlüssel bleibt derselbe (`BU_SCHLUESSEL`): 9/8 sind im DATEV-
+# Import sowohl Vorsteuer- als auch Umsatzsteuer-Schlüssel — die Richtung
+# ergibt sich aus Konto und Soll/Haben, nicht aus dem Schlüssel.
+DEBITOR = {"SKR03": "8100", "SKR04": "1200"}
+ERLOES_KONTEN = {"8400", "4400", "4300", "4100", "4184"}  # Erlöse beider
+# Rahmen plus die Kleinunternehmer-/steuerfreien Konten aus erloeszeilen.

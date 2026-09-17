@@ -314,16 +314,18 @@ def test_ohne_angegebenen_rahmen_wird_nicht_geprueft():
 
 
 def test_ein_konto_das_babu_nicht_kennt_haelt_den_stapel_nicht_auf():
-    """Handkorrigierte Konten (8400 Erlöse) kann babu nicht beurteilen.
+    """Handkorrigierte Konten (3125, ein SKR04-Konto das babu nicht vergibt)
+    kann babu nicht beurteilen. (8400 war bis 17.09.2026 das Beispiel —
+    seitdem ist es babu-bekanntes SKR03-Erlöskonto.)
 
     Sie zu verwerfen wäre schlimmer als sie durchzulassen: der Melder soll
     Vermischung finden, nicht fremde Kontierung überstimmen."""
-    befund = extf.rahmen_pruefen([_im_rahmen("8400", "SKR03")], "SKR03")
+    befund = extf.rahmen_pruefen([_im_rahmen("3125", "SKR04")], "SKR04")
     assert befund.vermischt == []
-    assert befund.unbekannt == ["8400"]
-    text = extf.stapel([_im_rahmen("8400", "SKR03")], "2026-08",
-                       erzeugt=ERZEUGT, rahmen="SKR03")
-    assert text.split("\r\n")[2].split(";")[6] == "8400"
+    assert befund.unbekannt == ["3125"]
+    text = extf.stapel([_im_rahmen("3125", "SKR04")], "2026-08",
+                       erzeugt=ERZEUGT, rahmen="SKR04")
+    assert text.split("\r\n")[2].split(";")[6] == "3125"
 
 
 def test_auch_der_vermerkte_rahmen_des_belegs_wird_geglaubt():

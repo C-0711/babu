@@ -46,21 +46,31 @@ KOSTENGRUPPEN: list[tuple[str, str, tuple[str, ...]]] = [
 
 # Kein Aufwand — diese Konten gehören NICHT in die Kostenseite.
 #
-# Sie landeten bisher stillschweigend unter „Sonstiges" und drückten damit
+# Sie landeten bisher stillschweigend unter „Sonstiges“ und drückten damit
 # das Ergebnis: eine Privatentnahme ist keine Ausgabe des Betriebs, Geld
 # zwischen eigenen Konten schon gar nicht, und die Umsatzsteuer ist in der
 # Netto-Rechnung der BWA bereits aus den Erlösen heraus. Anlagevermögen
 # wirkt nur über die Abschreibung, nicht mit dem Kaufpreis.
 #
-# 1370 „Durchlaufende Posten" kam am 03.09.2026 dazu — der Weg ist am
+# 1370 „Durchlaufende Posten“ kam am 03.09.2026 dazu — der Weg ist am
 # selben Tag vom Auftraggeber bestätigt worden: dort steht seither
 # das Trinkgeld, das über die Karte hereinkam und ans Team weitergeht.
 # Es ist Geld, das den Betrieb nur durchquert — als Aufwand gezählt
 # drückte es das Ergebnis um einen Betrag, der nie ihm gehörte. Was davon
 # der Inhaberin bleibt, bucht `extf.kassenzeilen` auf ein Erlöskonto und
 # nicht hierher.
+#
+# Seit dem 17.09.2026 stehen hier auch die ERTRAGSKONTEN (8400/4400/4300):
+# Eine als Beleg gescannte Ausgangsrechnung trägt eins davon — in der BWA
+# ist ein Ertrag KEINE Kostenposition, er läuft über die Erlösseite
+# (erloese_monat zählt ihn dort). Würde er hier fehlen, fiele er unter
+# „Sonstiges“ und drückte das Ergebnis, als wäre er eine Ausgabe.
 NEUTRALE_KONTEN = ("1360", "1370", "1460", "2100", "2150", "2180", "3820",
-                   "3840", "0400", "0650", "0675")
+                   "3840", "0400", "0650", "0675",
+                   # Erträge — keine Kosten, siehe oben. (Die BWA arbeitet
+                   # auf SKR04-Konten; 8400 ist das SKR03-Pendant und fällt
+                   # hier nicht auf.)
+                   "4400", "4300", "4100", "4184")
 
 # Dieselbe Zuordnung nutzt babu_web für die Kategorie in der Belegliste
 # (P0-1, "Eine Zahl, eine Kategorie, überall dieselbe") — hier als eigene
@@ -168,7 +178,8 @@ def erloese_monat(kassenblaetter: list[dict], monat: str | None = None,
                   rechnungen: list[dict] | None = None,
                   versteuerung: str = "ist",
                   umsaetze: list[dict] | None = None,
-                  kleinunternehmerin: bool = False) -> dict:
+                  kleinunternehmerin: bool = False,
+                  beleg_erloese: list[dict] | None = None) -> dict:
     """Erlöse eines Monats — aus der Ladenkasse UND aus gestellten Rechnungen.
 
     Was nicht gefragt wurde, ist 19 % — der Normalfall. Eingelöste
@@ -180,6 +191,12 @@ def erloese_monat(kassenblaetter: list[dict], monat: str | None = None,
     Geld ankommt — bei `soll` mit dem Rechnungsdatum. Beide Quellen bleiben
     getrennt ausgewiesen (`aus_kasse` / `aus_rechnungen`), damit sichtbar
     ist, woher der Umsatz kam.
+
+    `beleg_erloese` (seit 17.09.2026) sind ALS BELEG gescannte Ausgangs-
+    rechnungen: {brutto, ust_satz, datum}. Sie zählen zusätzlich — die
+    Aufruferin hat DOPPELTE schon abgezogen (dieselbe Rechnung als App-
+    Rechnung und als Scan ist derselbe Umsatz). Ohne die Angabe zählt
+    nichts doppelt, weil keine Beleg-Erlöse vorliegen.
     """
     bar = ec = frei = sieben = gutschein_verkauf = gutschein_eingeloest = 0.0
     for b in kassenblaetter:
@@ -218,6 +235,29 @@ def erloese_monat(kassenblaetter: list[dict], monat: str | None = None,
     sieben += r_sieben
     frei += r_frei
 
+    # Als Beleg gescannte Ausgangsrechnungen (seit 17.09.2026) — derselbe
+    # Monat wie die Rechnungen: bei `ist` zählt die Zahlung, aber wann sie
+    # kam, steht auf dem Scan selten; der Monat des Belegs ist die ehrliche
+    # Angabe. Doppelte (App-Rechnung + Scan) hat die Aufruferin entfernt.
+    b_neunzehn = b_sieben = b_frei = b_gesamt = 0.0
+    for b in (beleg_erloese or []):
+        if not isinstance(b, dict):
+            continue
+        if monat is not None and str(b.get("datum") or "")[:7] != monat:
+            continue
+        brutto = abs(float(b.get("brutto") or 0))
+        satz = int(b.get("ust_satz") or 0)
+        if satz == 7:
+            b_sieben += brutto
+        elif satz == 19:
+            b_neunzehn += brutto
+        else:
+            b_frei += brutto
+        b_gesamt += brutto
+    neunzehn += b_neunzehn
+    sieben += b_sieben
+    frei += b_frei
+
     # Kasse GEGEN Konto, nicht entweder-oder: die Karte im Kassenbuch und die
     # Auszahlungen der Kartenanbieter auf dem Konto meinen dasselbe Geld.
     # Was das Konto MEHR zeigt als das Kassenbuch, ist Umsatz, der im
@@ -249,6 +289,7 @@ def erloese_monat(kassenblaetter: list[dict], monat: str | None = None,
         "gutschein_eingeloest": _rund(gutschein_eingeloest),
         "aus_kasse": aus_kasse,
         "aus_rechnungen": _rund(r_gesamt),
+        "aus_belegen": _rund(b_gesamt),
         "offen": _rund(offen),
         "brutto_gesamt": _rund(neunzehn + sieben + frei),
         "netto_gesamt": _rund(_netto(neunzehn, 19) + _netto(sieben, 7) + frei),
