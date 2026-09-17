@@ -86,6 +86,7 @@ GET /api/zahlungen
 GET /app
 GET /app/{name}
 GET /auswertung/{schluessel}
+GET /avv
 GET /bilder/{name}
 GET /datenschutz
 GET /datev

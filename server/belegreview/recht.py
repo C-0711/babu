@@ -122,12 +122,20 @@ def seite(art: str) -> str:
     """Eine eigenständige Seite im Ton der Landing-Seite — ohne Skript, ohne
     Anmeldung, damit Apple und jede Nutzerin sie ohne Konto lesen können."""
     titel, text = TEXTE[art]
+    return seite_aus(titel, text, [(a, TEXTE[a][0]) for a in ARTEN])
+
+
+def seite_aus(titel: str, text: str, nav: list[tuple[str, str]]) -> str:
+    """Dasselbe Blatt für einen Text aus einer ANDEREN Quelle (avv.py).
+
+    `nav` sind die (art, titel)-Paare der Nav-Zeile: die Seiten von avv.py
+    verlinken ihre eigenen Geschwister, nicht die von recht.py."""
     absaetze = "".join(f"<p>{html.escape(a.strip())}</p>"
                        for a in text.split("\n\n") if a.strip())
-    hinweis = ("" if fertig(art) else
+    hinweis = ("" if not text.startswith(PLATZHALTER) else
                '<p class="hinweis">Dieser Text ist noch ein Platzhalter. '
                'Der verbindliche Wortlaut folgt vor dem Start.</p>')
-    links = " · ".join(f'<a href="/{a}">{html.escape(TEXTE[a][0])}</a>' for a in ARTEN)
+    links = " · ".join(f'<a href="/{a}">{html.escape(t)}</a>' for a, t in nav)
     return f"""<!doctype html>
 <html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">

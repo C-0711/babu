@@ -1521,17 +1521,27 @@ def portal_seite() -> FileResponse:
     return FileResponse(WURZEL / "portal.html", media_type="text/html", headers=HTML_FRISCH)
 
 
-# Impressum, Datenschutz, Nutzungsbedingungen — eigene Seiten ohne Anmeldung
-# (seit 14.09.2026). Apple verlangt für die Beta App Review eine
-# Datenschutz-Adresse, die App verlinkt sie, das Portal holt dieselben Texte
-# über /api/recht. Eine Quelle: recht.py.
+# Impressum, Datenschutz, Nutzungsbedingungen, AVV — eigene Seiten ohne
+# Anmeldung (seit 14.09.2026; AVV seit 17.09.2026). Apple verlangt für die
+# Beta App Review eine Datenschutz-Adresse, die App verlinkt sie, das Portal
+# holt dieselben Texte über /api/recht. Eine Quelle: recht.py; der AVV liegt
+# in avv.py (Parteienblock austauschbar je Betrieb) und erscheint als
+# /avv-Seite und als PDF unter /app/avv.pdf.
 @app.get("/impressum")
 @app.get("/datenschutz")
 @app.get("/agb")
+@app.get("/avv")
 def recht_seite(request: Request) -> Response:
+    import avv  # noqa: PLC0415
     import recht  # noqa: PLC0415
     art = request.url.path.strip("/")
-    return Response(content=recht.seite(art), media_type="text/html; charset=utf-8",
+    quelle = avv if art in avv.ARTEN else recht
+    titel, text = quelle.TEXTE[art]
+    nav = [(a, quelle.TEXTE[a][0]) for a in quelle.ARTEN]
+    nav += [(a, recht.TEXTE[a][0]) for a in recht.ARTEN if a not in quelle.ARTEN] \
+        if quelle is avv else []
+    return Response(content=recht.seite_aus(titel, text, nav),
+                    media_type="text/html; charset=utf-8",
                     headers=HTML_FRISCH)
 
 
@@ -1567,6 +1577,10 @@ APP_DATEIEN = {
     "babu.ipa": "application/octet-stream",
     "manifest.plist": "application/xml",
     "icon.png": "image/png",
+    # Der Auftragsverarbeitungsvertrag als PDF (seit 17.09.2026): erzeugte
+    # Datei aus server/tools/avv_pdf.py, committet — der Container liefert
+    # sie nur aus und braucht deshalb keine PDF-Bibliothek.
+    "avv.pdf": "application/pdf",
 }
 
 

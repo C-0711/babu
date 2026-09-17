@@ -98,6 +98,9 @@ struct EinstellungenView: View {
                     if let im = URL(string: store.ablageURL + "/impressum") {
                         Link("Impressum", destination: im)
                     }
+                    if let avv = URL(string: store.ablageURL + "/app/avv.pdf") {
+                        Link("Auftragsverarbeitung (PDF)", destination: avv)
+                    }
                 } header: {
                     Text("Rechtliches")
                 }
