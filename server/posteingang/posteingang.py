@@ -455,7 +455,7 @@ class Posteingang:
         self.babu = babu or Babu()
         self.grenzen = grenzen or Grenzen.aus_umgebung()
         self.domaene = (domaene or os.environ.get("BABU_POST_DOMAENE")
-                        or "post.babu.0711.io").strip().lower()
+                        or "post.mybabu.io").strip().lower()
         self.rate_ip = Rate(self.grenzen.rate_ip, self.grenzen.fenster)
         self.rate_adresse = Rate(self.grenzen.rate_adresse, self.grenzen.fenster)
 

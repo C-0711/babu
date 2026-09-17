@@ -50,7 +50,7 @@ BEKANNTE_DATEIEN = {
 KEYCHAIN_SERVICE = "babu-pat"
 
 STANDARD_ORDNER = Path.home() / "JennyfromtheBlock" / "datev"
-STANDARD_ORIGIN = "https://babu.0711.io"
+STANDARD_ORIGIN = "https://mybabu.io"
 
 
 def thema_aus_dateiname(name: str) -> str | None:

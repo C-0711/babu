@@ -29,7 +29,7 @@ HOST = os.environ.get("BABU_SMTP_HOST", "").strip()
 PORT = int(os.environ.get("BABU_SMTP_PORT", "587") or 587)
 NUTZER = os.environ.get("BABU_SMTP_NUTZER", "").strip()
 PASSWORT = os.environ.get("BABU_SMTP_PASSWORT", "")
-ABSENDER = os.environ.get("BABU_ABSENDER", "babu <post@babu.0711.io>").strip()
+ABSENDER = os.environ.get("BABU_ABSENDER", "babu <post@mybabu.io>").strip()
 POSTAUSGANG = Path(os.environ.get(
     "BABU_POSTAUSGANG", str(Path.home() / "babu-web" / "postausgang")))
 TIMEOUT = 20
@@ -48,7 +48,7 @@ def _nachricht(an: str, betreff: str, text: str) -> EmailMessage:
     import maildesign  # noqa: PLC0415
     m = maildesign.mail(an, betreff, text, von=ABSENDER)
     m["Date"] = formatdate(localtime=True)
-    m["Message-ID"] = make_msgid(domain="babu.0711.io")
+    m["Message-ID"] = make_msgid(domain="mybabu.io")
     # Zwei Fassungen derselben Wörter: schlichter Text (Bildschirmleser,
     # schlichte Clients, Spam-Filter) und das Design der Startseite als
     # HTML-Alternative. Kein Bild, kein Webfont, kein Nachladen — eine Mail,

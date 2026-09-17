@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""babu-web — Upload-Seite + Review-Rückkanal für babu.0711.io.
+"""babu-web — Upload-Seite + Review-Rückkanal für mybabu.io (bis 17.09.2026 babu.0711.io).
 
 - GET /            → statische Upload-Seite (index.html im selben Ordner)
 - GET /review/{n}  → Review-JSON aus babu.git (Bearer-PAT nötig, whoami wie
@@ -50,7 +50,11 @@ SEITE = Path(os.environ.get("BABU_SEITE", str(Path.home() / "babu-web" / "index.
 STORE = bx.STORE_STANDARD
 GEHEIMNIS_PFAD = Path(os.environ.get("BABU_SESSION_GEHEIMNIS",
                                      str(Path.home() / "babu-web" / ".session_geheimnis")))
-PORTAL_ORIGIN = os.environ.get("BABU_ORIGIN", "https://babu.0711.io")
+PORTAL_ORIGIN = os.environ.get("BABU_ORIGIN", "https://mybabu.io")
+# Weitere Namen, unter denen der Server erreichbar ist (Komma-Liste), für den
+# Fall, dass der Host-Kopf hinter einem Proxy nicht durchkommt. Seit
+# 17.09.2026 reicht meist die Host-Prüfung in `_origin_ok`.
+WEITERE_ORIGINS = os.environ.get("BABU_ORIGINS", "").split(",")
 PORTAL_DB = Path(os.environ.get("BABU_PORTAL_DB", str(Path.home() / "babu-web" / "portal.db")))
 
 # Woher `box.default_box()` den Store nimmt. Als Funktion und nicht als Wert,
@@ -665,7 +669,7 @@ def wer(request: Request) -> str | None:
 
 SESSION_COOKIE = "babu_sitzung"
 SESSION_DAUER = 30 * 24 * 3600  # 30 Tage, gleitend
-# Produktiv immer Secure (babu.0711.io ist TLS); nur lokale Dev-Server ohne HTTPS
+# Produktiv immer Secure (mybabu.io ist TLS); nur lokale Dev-Server ohne HTTPS
 # dürfen das abschalten (BABU_COOKIE_SECURE=0).
 SESSION_SECURE = os.environ.get("BABU_COOKIE_SECURE", "1") != "0"
 
@@ -755,11 +759,24 @@ def _origin_ok(request: Request) -> bool:
         return True
     erlaubt = {PORTAL_ORIGIN.rstrip("/"),
                "http://127.0.0.1:7844", "http://localhost:7844"}
+    erlaubt |= {o.strip().rstrip("/") for o in WEITERE_ORIGINS if o.strip()}
     m = _SCHLEIFE.match(PORTAL_ORIGIN.rstrip("/"))
     if m:
         erlaubt |= {f"http://127.0.0.1:{m.group(1)}",
                     f"http://localhost:{m.group(1)}"}
-    return origin.rstrip("/") in erlaubt
+    origin = origin.rstrip("/")
+    if origin in erlaubt:
+        return True
+    # Seit 17.09.2026: derselbe Server läuft unter mehr als einem Namen
+    # (babu.0711.io UND mybabu.io, beide durch denselben Tunnel). Was der
+    # Browser als Origin schickt, muss zum Host passen, unter dem er die
+    # Seite geladen hat — das ist die eigentliche Frage des CSRF-Schutzes,
+    # und sie braucht keine Liste. Ein fremdes Skript kann den Host-Kopf
+    # einer Cross-Site-Anfrage nicht setzen; er kommt vom Browser.
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").strip()
+    if host and origin.split("://", 1)[-1].lower() == host.lower():
+        return True
+    return False
 
 
 def angemeldet(request: Request) -> str | None:
@@ -7312,8 +7329,8 @@ BILD_MAX = 3 * 1024 * 1024
 #    Zwischenstation.
 
 # Wohin der Link in der Mail zeigt. Muss von außen erreichbar sein — in der
-# Entwicklung ist das localhost, im Betrieb babu.0711.io.
-BASIS_URL = os.environ.get("BABU_BASIS_URL", "https://babu.0711.io").rstrip("/")
+# Entwicklung ist das localhost, im Betrieb mybabu.io.
+BASIS_URL = os.environ.get("BABU_BASIS_URL", "https://mybabu.io").rstrip("/")
 AUSWERTUNG_KORB_DAUER = 30 * 60        # eine halbe Stunde zum Hochladen
 AUSWERTUNG_DATEIEN_MAX = 12
 AUSWERTUNG_TMP = Path(os.environ.get(

@@ -36,7 +36,7 @@ final class AppStore: ObservableObject {
 
     // Belegbox-Übertragung (GitChain-Ablage) — Opt-in.
     // Öffentliche Route mit TLS via Cloudflare; funktioniert von überall.
-    static let ablageStandardURL = "https://babu.0711.io"
+    static let ablageStandardURL = "https://mybabu.io"
     @Published var ablageURL = AppStore.ablageStandardURL { didSet { speichern() } }
     @Published var ablageAktiv = false { didSet { speichern() } }
     @Published var verbundenAls: String? { didSet { speichern() } }   // E-Mail des Kontos
@@ -83,7 +83,8 @@ final class AppStore: ObservableObject {
             geprueft = z.geprueft
             pruefSekunden = z.pruefSekunden
             // Migration: alte LAN-/Brücken-URLs auf die öffentliche Route heben.
-            let alteURLs = ["http://192.168.145.10:7843", "http://192.168.5.93:7843"]
+            let alteURLs = ["http://192.168.145.10:7843", "http://192.168.5.93:7843",
+                            "https://babu.0711.io"]   // seit 17.09.2026 heißt der Server mybabu.io
             if let gespeichert = z.ablageURL, !alteURLs.contains(gespeichert) {
                 ablageURL = gespeichert
             } else {

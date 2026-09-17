@@ -44,7 +44,7 @@ router = APIRouter(prefix="/api/posteingang")
 #: Die Domäne, unter der der Posteingang Post annimmt. Steht hier nur, damit
 #: die Oberfläche eine vollständige Adresse anzeigen kann — geprüft wird sie
 #: im Mailserver, nicht hier.
-DOMAENE = (os.environ.get("BABU_POST_DOMAENE") or "post.babu.0711.io").strip()
+DOMAENE = (os.environ.get("BABU_POST_DOMAENE") or "post.mybabu.io").strip()
 
 
 def _dienst_token() -> str:

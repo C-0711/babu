@@ -8,7 +8,7 @@
 	     demselben Ordner entstehen und sich diese Datei teilen. -->
 	<key>CFBundleDisplayName</key>
 	<string>$(BABU_ANZEIGENAME)</string>
-	<!-- Die App spricht nur noch über https://babu.0711.io (Store.swift). Die
+	<!-- Die App spricht nur noch über https://mybabu.io (Store.swift). Die
 	     frühere Ausnahme für HTTP im lokalen Netz ist seit 14.09.2026 raus —
 	     vor der Einreichung darf sie nicht mehr drinstehen. -->
 	<!-- Nur die Verschlüsselung des Systems (HTTPS), keine eigene: damit

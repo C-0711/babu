@@ -67,6 +67,11 @@ services:
       # Einladung, Konten legt die Kanzlei im Portal an. `POST /api/signup`
       # antwortet 404, die Anmeldeseite zeigt „Konto anlegen" nicht.
       BABU_SIGNUP: "0"
+      # Seit 17.09.2026 heißt der Server mybabu.io; babu.0711.io bleibt als
+      # zweiter Name erreichbar (derselbe Tunnel), Links in Mails und die
+      # Absenderadresse tragen den neuen Namen.
+      BABU_ORIGIN: "https://mybabu.io"
+      BABU_BASIS_URL: "https://mybabu.io"
       # Mailversand (Passwort vergessen, Kanzlei-Einladung, Support-Kopie).
       # Die Zugangsdaten stehen in der `.env` neben dieser Datei (0600, nie im
       # Repo); ein Mail-Dienst mit SMTP-Relay (Postmark, Brevo, Mailgun).
@@ -77,7 +82,7 @@ services:
       BABU_SMTP_PORT: "${BABU_SMTP_PORT:-587}"
       BABU_SMTP_NUTZER: "${BABU_SMTP_NUTZER:-}"
       BABU_SMTP_PASSWORT: "${BABU_SMTP_PASSWORT:-}"
-      BABU_ABSENDER: "${BABU_ABSENDER:-babu <post@babu.0711.io>}"
+      BABU_ABSENDER: "${BABU_ABSENDER:-babu <post@mybabu.io>}"
       # Das Support-Postfach bekommt eine Kopie jeder Rückmeldung; leer = keine.
       BABU_SUPPORT_MAIL: "${BABU_SUPPORT_MAIL:-}"
       # --- Postgres scharf schalten (Plan 21, Phase 1) -------------------
@@ -96,7 +101,7 @@ services:
       # die Route tot, und das ist der richtige Ruhezustand, solange kein
       # Mailserver läuft.
       BABU_POSTEINGANG_TOKEN: "${BABU_POSTEINGANG_TOKEN:-}"
-      BABU_POST_DOMAENE: "post.babu.0711.io"
+      BABU_POST_DOMAENE: "post.mybabu.io"
       # Gürtel und Hosenträger: falls ein gemountetes Repo einem anderen
       # Besitzer gehört, soll git lesen statt verweigern.
       GIT_CONFIG_COUNT: "1"
@@ -155,7 +160,7 @@ services:
       - babu-web
     environment:
       BABU_URL: "http://127.0.0.1:7844"
-      BABU_POST_DOMAENE: "post.babu.0711.io"
+      BABU_POST_DOMAENE: "post.mybabu.io"
       POSTEINGANG_HOST: "0.0.0.0"
       POSTEINGANG_PORT: "2525"
       # Beide Geheimnisse stehen NICHT hier, sondern in der `.env` neben
