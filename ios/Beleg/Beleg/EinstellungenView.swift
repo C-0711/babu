@@ -104,9 +104,11 @@ struct EinstellungenView: View {
 
                 Section {
                 } footer: {
+                    // Sprachregel (HANDOVER §1): keine Systemnamen in der UI.
+                    // Bis 17.09.2026 stand hier „running on GitChain“.
                     HStack(spacing: 6) {
                         Image(systemName: "seal")
-                        Text("running on GitChain")
+                        Text("babu · 0711 Intelligence")
                     }
                     .frame(maxWidth: .infinity)
                     .font(.caption2.monospaced())

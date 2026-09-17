@@ -54,6 +54,13 @@ services:
       BABU_SUPPORT_MAIL: ""
     volumes:
       - ~/babu-dev/babu-web:/data/babu-web
+      # Startseite, Bilder und die /app-Seite aus dem Repo — sonst hätte die
+      # Dev-Lane kein index.html (Live mountet ~/babu-web, Dev hat kein eigenes).
+      # Die Persistenz-Daten (portal.db, box) liegen im ersten Mount weiter.
+      - ~/babu-src/server/babu-web/index.html:/data/babu-web/index.html:ro
+      - ~/babu-src/server/babu-web/einkauf.html:/data/babu-web/einkauf.html:ro
+      - ~/babu-src/server/babu-web/bilder:/data/babu-web/bilder:ro
+      - ~/babu-src/server/babu-web/app:/data/babu-web/app:ro
       - ~/babu-docker/werkzeuge:/app/werkzeuge:ro
     restart: unless-stopped
     healthcheck:
