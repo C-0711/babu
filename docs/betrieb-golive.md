@@ -109,6 +109,16 @@ Review-Kontakt braucht eine Telefonnummer und ein Testkonto; Händlerstatus (DSA
 Business vor einer Store-Einreichung. Vor jedem weiteren Upload `CURRENT_PROJECT_VERSION` in
 `ios/Beleg/project.yml` **und** `project.pbxproj` hochzählen.
 
+**2a. Umzug auf mybabu.io — 17.09.2026.** Der Server heißt jetzt mybabu.io (Cloudflare-Tunnel
+`babu-0711`, Zone `mybabu.io` im selben Konto wie `0711.io`); babu.0711.io und www.mybabu.io
+bleiben erreichbar, die Herkunftsprüfung nimmt jeden Namen, unter dem die Seite geladen wurde.
+Resend: Domain `mybabu.io` angelegt, DNS bei Cloudflare (DKIM `resend._domainkey`, CNAMEs
+`rsend` und `send` auf forge.rmta.net). Sobald Resend „Verified" zeigt: in
+`~/babu-docker/docker/.env` `BABU_ABSENDER=babu <post@mybabu.io>` setzen, `docker compose up -d`,
+eine Passwort-vergessen-Mail probeschicken. App ab Build 5 mit mybabu.io als Standard; ältere
+Installationen wechseln beim Start von selbst. In App Store Connect noch umzustellen:
+Datenschutz- und Marketing-URL auf mybabu.io (TestFlight → Test Information).
+
 **2. Mail-Dienst — erledigt 14.09.2026.** Resend, Team „0711" (Anmeldung per Google mit
 binary@0711.io), Domain `babu.0711.io` verifiziert (Region Irland, DKIM `resend._domainkey.babu`,
 MX + SPF auf `send.babu`, alle drei bei Cloudflare in der Zone `0711.io`). API-Schlüssel

@@ -1,7 +1,7 @@
 # babu — Projektanweisungen für Claude
 
 Salon-Buchhaltung: iOS-App „Beleg" (SwiftUI) + FastAPI-Server auf der H200V
-(babu.0711.io). Nutzerin: Nina (Salon-Inhaberin, Mandant „SupremeStudio").
+(mybabu.io; babu.0711.io bleibt als zweiter Name, derselbe Tunnel). Nutzerin: Nina (Salon-Inhaberin, Mandant „SupremeStudio").
 Seit 03.09.2026 dazu die Kanzlei-Seite: Steuerberater verwalten Mandanten,
 arbeiten in deren Belegbox und übergeben DATEV-Stapel. Sprache in UI,
 Commits und Antworten: **Deutsch**. Einstieg und Details: `HANDOVER.md`,
@@ -168,6 +168,11 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
 - H200V nur über OpenVPN (`ssh h200v`). Kein sqlite3-CLI auf dem Server;
   Postgres per `docker exec babu-postgres psql`.
 - Vor schreibenden Rauchtests erst den Ist-Wert lesen — oder Testkonto.
+- **Zwei Namen, ein Server (seit 17.09.2026):** `BABU_ORIGIN=https://mybabu.io` in
+  Compose; `_origin_ok` lässt jeden POST durch, dessen Origin zum Host der Anfrage
+  passt (CSRF-Frage, keine Liste). Mails tragen Links auf mybabu.io; der Absender
+  bleibt `post@babu.0711.io` (in `.env`), bis Resend `mybabu.io` verifiziert hat —
+  dann `BABU_ABSENDER` in `.env` umstellen und `up -d`.
 
 ## Sicherheit
 
