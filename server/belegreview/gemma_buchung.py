@@ -625,14 +625,47 @@ def runde(zeilen: list[str], einstellungen: dict, antworten: list[dict],
                 "hinweis": "So viele Fragen löst kein Beleg — der gehört auf "
                            "den Schreibtisch."}
     profil = profil_text(einstellungen)
+    # Eigen-Kennzeichen (seit 17.09.2026, Fall SupremeBeauty): Steht der
+    # Betrieb selbst oben auf dem Beleg — Name oder Steuernummer —, ist das
+    # ein Fakt, den Gemma nicht erfragen darf. Der Beweis reist als
+    # eingerückter Block im Prompt (variabler Teil, der Prefix bleibt byte-
+    # stabil); die REGELN sagen bereits, was damit zu tun ist.
+    import eigenkennzeichen as ek  # noqa: PLC0415
+    aussteller_beweis = ek.aussteller(zeilen, einstellungen or {})
+    eigen_fakt = ""
+    if aussteller_beweis:
+        eigen_fakt = ("\nFESTGESTELLT (nicht fragen — das steht auf dem Beleg):\n"
+                      "    " + aussteller_beweis + ". Der BETRIEB ist der "
+                      "AUSSTELLER: dokumentklasse „ausgangsrechnung“, "
+                      "kategorie umsatzerloese. Eine Gutschrift mit diesem "
+                      "Kopf ist umsatzerloese MIT gutschrift true.\n")
     roh = _gemma(prompt_bauen(profil, zeilen, antworten,
                               rahmen, umsaetze, nachbarn, markdown,
                               mit_bild=bild is not None,
                               vertraege=vertraege, personal=personal,
                               offene_abbuchungen=offene_abbuchungen,
-                              nachschlag=nachschlagen(zeilen, markdown)),
+                              nachschlag=nachschlagen(zeilen, markdown))
+                 + eigen_fakt,
                  bild, system=system_text(profil, rahmen))
     ergebnis = buchung_pruefen(roh, rahmen)
+    # Der Fakt ist beweisend — widerspricht das Modell ihm (andere Klasse
+    # oder Kategorie), übersteuert der Fakt. Kontonummer und Satz bleiben
+    # beim Katalog, und der Beweis kommt in die Begründung, damit die
+    # Buchhaltung nachvollziehen kann, warum nicht gefragt wurde.
+    if aussteller_beweis and ergebnis.get("status") == "gebucht":
+        b = ergebnis.get("buchung") or {}
+        if b.get("dokumentklasse") != "ausgangsrechnung" \
+                or b.get("kategorie") != "umsatzerloese":
+            import kontierung as kt  # noqa: PLC0415
+            b["dokumentklasse"] = "ausgangsrechnung"
+            b["kategorie"] = "umsatzerloese"
+            kat = kt.KATEGORIEN.get("umsatzerloese")
+            if kat is not None:
+                b["kategorie_name"] = kat.name
+                b["konto"] = kat.konto(rahmen)
+            b["begruendung"] = (f"{aussteller_beweis} — automatisch erkannt "
+                                f"(keine Rückfrage nötig). "
+                                + str(b.get("begruendung") or ""))[:300]
     if ergebnis["status"] == "unklar":
         return {"status": "fragen", "fragen": [{
             "frage": "Magst du kurz sagen, worum es bei diesem Beleg geht?",

@@ -99,7 +99,12 @@ def _fordert_zahlung(klein: str) -> list[str]:
 # Amt. Diese Reihenfolge entscheidet bei Gleichstand.
 VORRANG = ("behoerde", "kontoauszug", "vertrag", "beleg")
 
-ZIELE = {"beleg": "docs", "vertrag": "dokumente", "behoerde": "dokumente",
+# „ausgangsrechnung“ (seit 17.09.2026) teilt das Belegfach: Die eigene
+# Rechnung läuft über denselben Buchungsweg wie ein Kaufbeleg — nur die
+# Buchung steht auf der Erlösseite. Ein eigenes Fach wäre ein zweiter
+# Ort, den die Review-Suche nicht kennt.
+ZIELE = {"beleg": "docs", "ausgangsrechnung": "docs",
+         "vertrag": "dokumente", "behoerde": "dokumente",
          "kontoauszug": "auszuege"}
 
 # Ab hier gilt die Entscheidung als sicher genug, um nicht nachzufragen.

@@ -3120,7 +3120,12 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
         k = str(ergebnis.get("klasse")
                 or (ergebnis.get("buchung") or {}).get("dokumentklasse")
                 or "").strip().lower()
-        if k in ("beleg", "vertrag", "behoerde", "kontoauszug"):
+        # Seit 17.09.2026 gehört „ausgangsrechnung“ dazu: Gemmas Klasse
+        # übersteuert die Stichwort-Deutung auch bei der EIGENEN Rechnung —
+        # sie landet wie jeder Beleg in docs/ (der Buchungsweg), aber die
+        # Einsortierung sagt „von der Buchhaltung klassifiziert“ statt
+        # „Stichwort-Raten“.
+        if k in ("beleg", "ausgangsrechnung", "vertrag", "behoerde", "kontoauszug"):
             klasse = k
 
     entscheidung = einsortieren.entscheiden(gelesen)
@@ -6258,14 +6263,34 @@ async def api_buchung_einschaetzung(request: Request) -> Response:
               for k in ("betrieb_name", "rechtsform", "abschluss_art",
                         "kleinunternehmer")
               if isinstance(roh_profil, dict) and roh_profil.get(k)}
+    server_einstellungen = db_einstellungen(salon_von_aktiv(un or ""))
     if not profil:
-        profil = db_einstellungen(salon_von_aktiv(un))
+        profil = dict(server_einstellungen)
+    else:
+        # Eigen-Kennzeichen (17.09.2026): Der Telefon-Profilblock trägt
+        # betrieb_name — aber Steuernummer und Anschrift schickt er nicht.
+        # Der Aussteller-Abgleich (eigenkennzeichen.py) braucht sie; sie
+        # kommen aus dem Serverstand dazu, ohne das Telefonprofil zu
+        # überstimmen (was das Telefon sagt, gewinnt bei Doubletten).
+        for schluessel in ("steuernummer", "betrieb_name", "salon",
+                           "anschrift", "ust_id"):
+            if not profil.get(schluessel) and server_einstellungen.get(schluessel):
+                profil[schluessel] = str(server_einstellungen[schluessel])[:120]
     antworten = []
     for a in (body.get("antworten") or [])[:gemma_buchung.ANTWORTEN_MAX]:
         if isinstance(a, dict) and str(a.get("antwort", "")).strip():
             antworten.append({"frage": str(a.get("frage", ""))[:200],
                               "antwort": str(a.get("antwort", ""))[:200]})
+    # Monat für den Bestandskontext. Kam keiner oder keiner in Ordnung
+    # (unlesbares Belegdatum, Alt-Belege mit „0000-00-00“), gilt der
+    # UPLOAD-Monat statt gar keins — sonst fiele der ganze Kontext weg
+    # (Umsätze, Nachbarn, offene Abbuchungen), und genau der Beleg, der
+    # am meisten Kontext bräuchte, hätte keinen (Fall SupremeBeauty,
+    # 17.09.2026: drei Rückfragen auf einem Beleg mit eigener
+    # Steuernummer oben).
     monat = str(body.get("monat") or "")
+    if not re.match(r"^\d{4}-(0[1-9]|1[0-2])$", monat):
+        monat = time.strftime("%Y-%m")
     ktx = await _einschaetzungs_kontext(un, monat)
     try:
         ergebnis = await run_in_threadpool(
