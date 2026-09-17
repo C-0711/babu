@@ -163,7 +163,7 @@ def test_runner_faehrt_einmal_und_dann_nicht_mehr():
     assert "0001_initial.sql" in erst
     assert db.schema_anwenden(conn, "sqlite") == [], "zweiter Lauf muss leer sein"
     stand = conn.execute("SELECT nummer, datei FROM schema_version").fetchall()
-    assert stand == [(1, "0001_initial.sql"), (2, "0002_kanzlei_mandant_audit.sql"), (3, "0003_kanzlei_ohne_nutzer_fk.sql"), (4, "0004_import_status.sql"), (5, "0005_post_adresse.sql"), (6, "0006_sitzung_ab.sql"), (7, "0007_warteliste.sql")]
+    assert stand == [(1, "0001_initial.sql"), (2, "0002_kanzlei_mandant_audit.sql"), (3, "0003_kanzlei_ohne_nutzer_fk.sql"), (4, "0004_import_status.sql"), (5, "0005_post_adresse.sql"), (6, "0006_sitzung_ab.sql"), (7, "0007_warteliste.sql"), (8, "0008_warteliste_appleid.sql")]
     conn.close()
 
 
@@ -344,7 +344,7 @@ def test_pg_migration_ist_idempotent(pg_url, pg_schema):
     conn = psycopg.connect(pg_url)
     conn.execute(f'SET search_path TO "{pg_schema}"')
     conn.commit()
-    assert db.schema_anwenden(conn, "postgres") == ["0001_initial.sql", "0002_kanzlei_mandant_audit.sql", "0003_kanzlei_ohne_nutzer_fk.sql", "0004_import_status.sql", "0005_post_adresse.sql", "0006_sitzung_ab.sql", "0007_warteliste.sql"]
+    assert db.schema_anwenden(conn, "postgres") == ["0001_initial.sql", "0002_kanzlei_mandant_audit.sql", "0003_kanzlei_ohne_nutzer_fk.sql", "0004_import_status.sql", "0005_post_adresse.sql", "0006_sitzung_ab.sql", "0007_warteliste.sql", "0008_warteliste_appleid.sql"]
     assert db.schema_anwenden(conn, "postgres") == []
     conn.close()
 

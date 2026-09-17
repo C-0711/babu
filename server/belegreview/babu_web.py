@@ -312,7 +312,8 @@ def _sqlite_schema(conn) -> None:
         (email TEXT PRIMARY KEY, art TEXT NOT NULL DEFAULT 'salon',
          name TEXT, salon TEXT, telefon TEXT, bemerkung TEXT,
          anfragen INTEGER NOT NULL DEFAULT 1, zeit TEXT NOT NULL,
-         status TEXT NOT NULL DEFAULT 'wartet')""")
+         status TEXT NOT NULL DEFAULT 'wartet',
+         apple_id TEXT, app_status TEXT)""")
     conn.execute("""CREATE TABLE IF NOT EXISTS nutzer
         (email TEXT PRIMARY KEY, name TEXT, salon TEXT,
          rolle TEXT NOT NULL DEFAULT 'salon', pw TEXT NOT NULL,
@@ -360,6 +361,18 @@ def _sqlite_schema(conn) -> None:
     # gelten nicht mehr. NULL = nie geändert, alles wie bisher.
     try:
         conn.execute("ALTER TABLE nutzer ADD COLUMN sitzung_ab TEXT")
+    except sqlite3.OperationalError:
+        pass
+    # Die Apple-ID für die App-Einladung (17.09.2026, Migration 0008):
+    # TestFlight schickt an die Apple-ID, nicht an die babu-Adresse. Die
+    # Verwaltung trägt sie in die Wartelisten-Karte ein; `app_status` hält
+    # fest, wie weit die Einladung ist (eingetragen/eingeladen/drin).
+    try:
+        conn.execute("ALTER TABLE warteliste ADD COLUMN apple_id TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE warteliste ADD COLUMN app_status TEXT")
     except sqlite3.OperationalError:
         pass
     # Termine enthalten Kundennamen — personenbezogen, also löschbar und
@@ -4386,6 +4399,7 @@ def api_registrierungen(request: Request) -> Response:
 
 _WARTELISTE_FELDER = ("email", "art", "name", "salon", "telefon", "bemerkung")
 _WARTELISTE_ARTEN = ("salon", "kanzlei")
+_APP_STATUS = ("fehlt", "eingetragen", "eingeladen", "drin")
 
 
 @app.post("/api/warteliste")
@@ -4474,10 +4488,14 @@ def api_warteliste_lesen(request: Request) -> Response:
         return fehler
     with _DB_LOCK, _db() as c:
         zeilen = [dict(zip(("email", "art", "name", "salon", "telefon",
-                            "bemerkung", "anfragen", "zeit", "status"), z))
+                            "bemerkung", "anfragen", "zeit", "status",
+                            "apple_id", "app_status"), z))
                   for z in c.execute(
                       "SELECT email, art, name, salon, telefon, bemerkung, "
-                      "anfragen, zeit, status FROM warteliste "
+                      "anfragen, zeit, status, apple_id, "
+                      "COALESCE(app_status, CASE WHEN apple_id IS NULL "
+                      "THEN 'fehlt' ELSE 'eingetragen' END) "
+                      "FROM warteliste "
                       "ORDER BY status='wartet' DESC, zeit DESC")]
     return JSONResponse({"warteliste": zeilen})
 
@@ -4521,6 +4539,41 @@ async def api_warteliste_einrichten(request: Request) -> Response:
     audit.audit(un, "warteliste_einrichten", ziel_un=email)
     print(f"[warteliste] eingerichtet: {art} <{email}>", flush=True)
     return JSONResponse({"ok": True, "email": email, "startpasswort": passwort})
+
+
+@app.post("/api/warteliste/apple-id")
+async def api_warteliste_apple_id(request: Request) -> Response:
+    """Verwaltung: die Apple-ID-Adresse zu einem Wartelisten-Eintrag.
+
+    Die App-Einladung läuft über TestFlight, und die geht an die Apple-ID —
+    nicht an die babu-Adresse (startguide.testflight_absatz erklärt das dem
+    Salon). Die Verwaltung klebt die Adresse hier ein, sobald sie die Antwort
+    hat; der Abgleich-Dienst auf der H200V (Host-Cron, testflight_abgleich)
+    trägt sie von selbst bei Apple ein und setzt app_status weiter
+    (eingetragen → eingeladen → drin).
+    """
+    import einladung as ei  # noqa: PLC0415
+    un, fehler = _verwalter_wache(request)
+    if fehler or not un:
+        return fehler or JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
+    try:
+        koerper = json.loads(await koerper_lesen(request, 8 * 1024))
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON mit email erwartet"}, status_code=400)
+    email = str(koerper.get("email", "") or "").strip().lower()[:200]
+    apple = str(koerper.get("apple_id", "") or "").strip().lower()[:200]
+    if not apple or not ei.mail_gueltig(apple):
+        return JSONResponse({"fehler": "Das sieht nicht nach einer E-Mail-"
+                                       "Adresse aus."}, status_code=400)
+    with _DB_LOCK, _db() as c:
+        n = c.execute("""UPDATE warteliste SET apple_id=?, app_status='eingetragen'
+                         WHERE email=?""", (apple, email)).rowcount
+    if not n:
+        return JSONResponse({"fehler": "Diese Adresse steht nicht auf der "
+                                       "Warteliste."}, status_code=404)
+    audit.audit(un, "warteliste_apple_id", ziel_un=email, apple_id=apple)
+    print(f"[warteliste] Apple-ID für {email}: {apple}", flush=True)
+    return JSONResponse({"ok": True, "apple_id": apple, "app_status": "eingetragen"})
 
 
 @app.post("/api/warteliste/ablehnen")

@@ -193,6 +193,7 @@ POST /api/rueckmeldungen/{iid}/freigeben
 POST /api/signup
 POST /api/warteliste
 POST /api/warteliste/ablehnen
+POST /api/warteliste/apple-id
 POST /api/warteliste/einrichten
 POST /api/team
 POST /api/team-aktion

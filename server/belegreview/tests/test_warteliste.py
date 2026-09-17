@@ -142,6 +142,44 @@ def test_fremde_adresse_nicht_einrichtbar(verwaltung):
     assert r.status_code == 404
 
 
+def test_apple_id_eintragen_und_ablesen(verwaltung):
+    """Nina klebt die Apple-ID in die Karte — der Rest läuft vom Server."""
+    client, bw = verwaltung
+    client.post("/api/warteliste", json=ANMELDUNG)
+    r = client.post("/api/warteliste/apple-id", json={
+        "email": "salon@example.org", "apple_id": "salon.apple@icloud.com"})
+    assert r.status_code == 200
+    assert r.json()["app_status"] == "eingetragen"
+    zeile = [w for w in client.get("/api/warteliste").json()["warteliste"]
+             if w["email"] == "salon@example.org"]
+    assert zeile[0]["apple_id"] == "salon.apple@icloud.com"
+    assert zeile[0]["app_status"] == "eingetragen"
+
+
+def test_apple_id_ohne_adresse_wird_abgewiesen(verwaltung):
+    client, bw = verwaltung
+    client.post("/api/warteliste", json=ANMELDUNG)
+    r = client.post("/api/warteliste/apple-id", json={
+        "email": "salon@example.org", "apple_id": "keine-mail"})
+    assert r.status_code == 400
+
+
+def test_apple_id_nur_fuer_verwaltung(klient):
+    client, bw = klient
+    r = client.post("/api/warteliste/apple-id", json={
+        "email": "x@example.org", "apple_id": "a@b.de"})
+    assert r.status_code in (401, 403)
+
+
+def test_app_status_steht_auch_ohne_apple_id(verwaltung):
+    """Alte Zeilen ohne Apple-ID sagen 'fehlt' statt nichts."""
+    client, bw = verwaltung
+    client.post("/api/warteliste", json=ANMELDUNG)
+    zeile = [w for w in client.get("/api/warteliste").json()["warteliste"]
+             if w["email"] == "salon@example.org"]
+    assert zeile[0]["app_status"] == "fehlt"
+
+
 def test_die_anmeldeseite_ist_die_warteliste():
     portal = (Path(__file__).resolve().parents[1] / "portal.html").read_text()
     assert 'id="wl-senden"' in portal

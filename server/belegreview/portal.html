@@ -6421,11 +6421,21 @@ async function ladeVerwaltung(){
   }
   for (const w of warteOffen){
     const artName = w.art === "kanzlei" ? "Steuerbüro / Kanzlei" : "Salon / Betrieb";
+    const appBadge = {fehlt:'App-Einladung: Apple-ID fehlt noch',
+                      eingetragen:'App-Einladung: läuft (Apple-ID notiert)',
+                      eingeladen:'App-Einladung: wartet auf Klick in Apples Mail',
+                      drin:'App-Einladung: ist raus ✓'}[w.app_status] || '';
     html += `<div class="karte nachfrage" id="wl-${warteId(w.email)}">
       <h3>${esc(w.salon || w.name || artName)} — ${artName}</h3>
       <p>${esc(w.email)}${w.telefon ? " · " + esc(w.telefon) : ""}</p>
       ${w.anfragen > 1 ? `<p style="margin-top:4px;font-size:12px;color:var(--gc-muted)">hat sich ${w.anfragen}× gemeldet (zuletzt ${esc(w.zeit)})</p>` : ""}
       ${w.bemerkung ? `<p style="margin-top:4px;font-size:12px;color:var(--gc-desc)">${esc(w.bemerkung)}</p>` : ""}
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input id="ap-${warteId(w.email)}" type="email" placeholder="Apple-ID-Adresse (für die App)"
+               value="${esc(w.apple_id || "")}" style="flex:1;min-width:180px;padding:8px 10px;border:1px solid var(--gc-border);border-radius:8px;font-size:13px">
+        <button class="hin" style="margin-top:0" onclick="appleIdSpeichern('${esc(w.email)}')">App-Einladung starten ›</button>
+      </div>
+      ${appBadge ? `<p style="margin-top:6px;font-size:12px;color:${w.app_status==='drin'?'var(--gc-ok)':'var(--gc-muted)'}">${appBadge}</p>` : ""}
       <button class="hin" style="margin-top:10px" onclick="wartelisteEinrichten('${esc(w.email)}','${esc(w.art)}')">Zugang einladen ›</button>
       <button class="hin" style="margin-top:10px;margin-left:8px;background:transparent;color:var(--gc-muted)" onclick="wartelisteAblehnen('${esc(w.email)}')">Nicht jetzt</button>
     </div>`;
@@ -7439,6 +7449,23 @@ async function wartelisteAblehnen(email){
     if (r.ok) ladeVerwaltung();
     else { const d = await r.json(); alert(d.fehler || "Ging gerade nicht."); }
   }catch{}
+}
+/* Apple-ID aus der Karte speichern — danach macht der Abgleich auf dem
+   Server von selbst weiter (Team-Einladung → Pilot-Gruppe → TestFlight). */
+async function appleIdSpeichern(email){
+  const feld = $("#ap-" + warteId(email));
+  const apple = (feld.value || "").trim();
+  if (!apple || apple.indexOf("@") < 1){
+    alert("Ohne Apple-ID-Adresse geht die App-Einladung nicht raus — die Person bekommt sie per Antwort auf ihre Einladungs-Mail.");
+    return;
+  }
+  try{
+    const r = await api("/api/warteliste/apple-id", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({email, apple_id: apple})});
+    const d = await r.json();
+    if (r.ok) ladeVerwaltung();
+    else alert(d.fehler || "Ging gerade nicht.");
+  }catch{ alert("Gerade keine Verbindung — später nochmal."); }
 }
 async function nutzerAktion(email, aktion, rolleNeu){
   try{
