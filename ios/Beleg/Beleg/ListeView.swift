@@ -16,6 +16,8 @@ struct ListeView: View {
     /// Blätter schieben selbst — ein Link in einer Listenzeile bekommt vom
     /// System einen Pfeil, und der stand neben jeder Kachel.
     @State private var pfad = NavigationPath()
+    /// Suchtext für die Suche nach Name und Datum.
+    @State private var suchText = ""
     /// Die Wahl zwischen Liste und Blättern bleibt bestehen. Wer einmal
     /// entschieden hat, wie er sucht, will nicht bei jedem Start neu wählen.
     @AppStorage("dokumentansicht") private var ansichtRoh = Dokumentansicht.liste.rawValue
@@ -58,7 +60,15 @@ struct ListeView: View {
     }
 
     private var monatsBelege: [Beleg] {
-        gefiltert.filter { (belegMonatSchluessel($0.datumText) ?? "") == aktiverMonat }
+        let nachMonat = gefiltert.filter { (belegMonatSchluessel($0.datumText) ?? "") == aktiverMonat }
+        // Wenn kein Suchtext, alle Belege des Monats zeigen.
+        guard !suchText.isEmpty else { return nachMonat }
+        // Suche nach Name (Lieferant) oder Datum — beide in Kleinschrift.
+        let suche = suchText.lowercased()
+        return nachMonat.filter { beleg in
+            beleg.lieferant.lowercased().contains(suche) ||
+            beleg.datumText.contains(suche)
+        }
     }
 
     /// Die Server-Ablage des Fachs holen — lokale Aufnahmen, die schon
@@ -263,6 +273,9 @@ struct ListeView: View {
             .warmerGrund()
             .navigationTitle("Dokumente")
             .toolbarTitleDisplayMode(.inline)
+            .searchable(text: $suchText,
+                        placement: .navigationBarDrawer(displayMode: .always),
+                        prompt: "Name oder Datum suchen")
             .mitMeldenKnopf("Dokumente")
             .mitKontoMenu()
             .navigationDestination(for: UUID.self) { id in
