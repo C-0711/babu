@@ -111,7 +111,11 @@ def main(probe: bool) -> None:
         print(f"{email}: apple={apple} team={stand}")
         if probe:
             continue
-        if stand == "-":
+        elif stand == "-":
+            # Kein Team-Konto UND keine offene Einladung: einladen.
+            # ('abgelaufen'-Zeilen werden vom SELECT nicht mehr erfasst;
+            #  Neustart geht ueber die Wartelisten-Karte, die app_status
+            #  wieder auf 'eingetragen' setzt.)
             # lastName ist Pflicht und darf nur Buchstaben — leere Strings
             # UND Klammern lehnt Apple mit 409 ENTITY_ERROR.ATTRIBUTE ab
             # (gemessen 19.09. an info@supremebeauty.de), und ein 409 ist
@@ -147,9 +151,19 @@ def main(probe: bool) -> None:
             else:
                 print(f"  → FEHLER {code}: {json.dumps(antwort)[:200]}")
         elif stand == "eingeladen":
-            # Apple-Seite kennt die Einladung, aber der Nutzer hat sie noch
-            # nicht angenommen — nichts tun, naechster Lauf prueft wieder.
+            # Apple-Seite kennt die Einladung noch — nichts tun, der
+            # naechste Lauf prueft wieder.
             print("  → wartet auf Annahme der Apple-Mail")
+        elif stand == "-" and _status == "eingeladen":
+            # Wir haben eingeladen, aber Apple kennt die Adresse nicht
+            # mehr: Die Einladung ist nach 48 h abgelaufen (oder wurde
+            # geloescht) — typisches Zeichen dafuer, dass die Adresse
+            # keine (genutzte) Apple-ID ist oder die Person nicht
+            # reagiert hat. Status festhalten; der naechste Lauf laedt
+            # sie NICHT automatisch neu ein (Apple erlaubt nur eine
+            # offene Einladung je Adresse), Verwaltung entscheidet.
+            db_set(email, "abgelaufen")
+            print("  → Apple-Einladung abgelaufen (keine Annahme)")
 
 
 if __name__ == "__main__":

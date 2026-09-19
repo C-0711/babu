@@ -6424,6 +6424,7 @@ async function ladeVerwaltung(){
     const appBadge = {fehlt:'App-Einladung: Apple-ID fehlt noch',
                       eingetragen:'App-Einladung: läuft (Apple-ID notiert)',
                       eingeladen:'App-Einladung: wartet auf Klick in Apples Mail',
+                      abgelaufen:'App-Einladung: abgelaufen — vermutlich keine Apple-ID, neu einladen oder Adresse prüfen',
                       drin:'App-Einladung: ist raus ✓'}[w.app_status] || '';
     html += `<div class="karte nachfrage" id="wl-${warteId(w.email)}">
       <h3>${esc(w.salon || w.name || artName)} — ${artName}</h3>
