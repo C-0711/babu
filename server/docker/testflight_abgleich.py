@@ -99,7 +99,9 @@ def team_nutzer() -> dict[str, str]:
 
 def main(probe: bool) -> None:
     zeilen = db("""SELECT email, apple_id, app_status FROM warteliste
-                   WHERE apple_id IS NOT NULL AND app_status = 'eingetragen'""")
+                   WHERE apple_id IS NOT NULL
+                     AND status != 'abgelehnt'
+                     AND app_status IN ('eingetragen', 'eingeladen')""")
     if not zeilen:
         print("nichts zu tun")
         return
@@ -110,15 +112,22 @@ def main(probe: bool) -> None:
         if probe:
             continue
         if stand == "-":
+            # lastName ist Pflicht und darf nur Buchstaben — leere Strings
+            # UND Klammern lehnt Apple mit 409 ENTITY_ERROR.ATTRIBUTE ab
+            # (gemessen 19.09. an info@supremebeauty.de), und ein 409 ist
+            # KEIN "gab es schon": nur ein VOLUMES-Fehler meint das.
             code, antwort = api("POST", "/userInvitations", {
                 "data": {"type": "userInvitations",
                          "attributes": {
                              "firstName": (email.split("@")[0])[:40],
-                             "lastName": "", "email": apple,
+                             "lastName": "Kunde", "email": apple,
                              "roles": ["DEVELOPER"],
                              "allAppsVisible": True,
                              "provisioningAllowed": False}}})
-            if code in (201, 409):
+            schon_vorhanden = (
+                code == 201
+                or (code == 409 and "VOLUME" in json.dumps(antwort)))
+            if schon_vorhanden:
                 db_set(email, "eingeladen")
                 print(f"  → Team-Einladung an {apple} "
                       f"({'neu' if code == 201 else 'gab es schon'})")
@@ -137,6 +146,10 @@ def main(probe: bool) -> None:
                       f"TestFlight-Einladung geht raus")
             else:
                 print(f"  → FEHLER {code}: {json.dumps(antwort)[:200]}")
+        elif stand == "eingeladen":
+            # Apple-Seite kennt die Einladung, aber der Nutzer hat sie noch
+            # nicht angenommen — nichts tun, naechster Lauf prueft wieder.
+            print("  → wartet auf Annahme der Apple-Mail")
 
 
 if __name__ == "__main__":

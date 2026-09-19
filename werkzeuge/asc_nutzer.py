@@ -32,6 +32,10 @@ def liste():
 
 def einladen(email: str, vorname: str, nachname: str):
     # Einladungen laufen ueber /userInvitations
+    # nachname ist Pflicht und darf nur Buchstaben — leer oder mit
+    # Sonderzeichen lehnt Apple mit 409 ENTITY_ERROR.ATTRIBUTE ab, und ein
+    # 409 ist kein Erfolg (gemessen 19.09. an info@supremebeauty.de).
+    nachname = (nachname or "").strip() or "Kunde"
     body = {
         "data": {
             "type": "userInvitations",
@@ -48,9 +52,13 @@ def einladen(email: str, vorname: str, nachname: str):
         }
     }
     r = api("POST", "/userInvitations", body)
+    import json as _json
     if r["ok"]:
         d = r["daten"]["data"]
         print(f"EINGELADEN: {email} (Einladung {d['id']}, Rollen {d['attributes']['roles']})")
+    elif (r["status"] == 409
+          and "VOLUME" in _json.dumps(r.get("daten", {}))):
+        print(f"SCHON EINGELADEN: {email}")
     else:
         print("FEHLER", r["status"])
         print(r.get("fehler", "")[:600])
