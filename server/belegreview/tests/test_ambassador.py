@@ -107,12 +107,33 @@ def test_ambassador_voller_weg(kunde):
     r = tc.get("/api/ambassador/me")
     assert r.json()["offen"] == 0 and r.json()["gezahlt"] == 474
 
+    # 5b) Bestehendes Konto wird Ambassadorin — OHNE Startpasswort, mit Code
+    tc.post("/api/abmelden")
+    r = tc.post("/api/login", json={"email": "chef@example.org", "passwort": "test-test"})
+    assert r.status_code == 200, r.text
+    bw.nutzer_anlegen("erfa@example.org", "Erfahrener", "Salon Alt", "salon",
+                      passwort="ihr-altes-pw")
+    r = tc.post("/api/ambassador", json={"name": "Erfahrener",
+                                         "email": "erfa@example.org"})
+    assert r.status_code == 200, r.text
+    assert r.json()["bestehendes_konto"] is True
+    assert "startpasswort" not in r.json()
+    code2 = r.json()["code"]
+    # Sie meldet sich mit ihrem ALTEN Passwort an und sieht ihren Bereich
+    r = tc.post("/api/login", json={"email": "erfa@example.org",
+                                    "passwort": "ihr-altes-pw"})
+    assert r.status_code == 200
+    r = tc.get("/api/ambassador/me")
+    assert r.status_code == 200 and r.json()["code"] == code2
+
     # 6) Kein Zweitkonto für dieselbe E-Mail (Verwaltungs-Route → als Chef)
     tc.post("/api/abmelden")
     r = tc.post("/api/login", json={"email": "chef@example.org", "passwort": "test-test"})
     assert r.status_code == 200, r.text
     r = tc.post("/api/ambassador", json={"name": "Babs", "email": "babs@example.org"})
-    assert r.status_code == 409, r.text
+    assert r.status_code == 200, r.text
+    assert r.json()["code"] == code  # derselbe Code — kein Zweitcode
+    assert "Ist schon Ambassadorin" in r.json().get("hinweis", "")
 
 
 def test_landing_ohne_gueltigen_code(kunde):

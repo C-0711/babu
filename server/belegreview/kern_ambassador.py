@@ -64,42 +64,64 @@ async def api_ambassador_anlegen(request: Request) -> Response:
         return JSONResponse({"fehler": "Name und gültige E-Mail brauchen wir."},
                             status_code=400)
     code = _code_neu(name)
+    # Schon ein babu-Konto? Dann wird die Person DIREKT Ambassadorin —
+    # ohne zweites Konto und ohne Startpasswort (sie meldet sich wie
+    # gewohnt an). Neu angelegte bekommen wie bisher ein Startpasswort.
     # nutzer_anlegen nimmt _DB_LOCK SELBST — es darf NICHT in einem
     # with _DB_LOCK-Block stehen (threading.Lock ist nicht reentrant;
     # verschachtelt = Deadlock mit sich selbst, gemessen 21.09.).
-    passwort = bw.nutzer_anlegen(email, name, name, "salon")
-    if passwort is None:
-        return JSONResponse({"fehler": "Für diese E-Mail gibt es schon einen "
-                                       "Zugang."}, status_code=409)
+    passwort = None
+    if bw.nutzer_holen(email) is None:
+        passwort = bw.nutzer_anlegen(email, name, name, "salon")
     with bw._DB_LOCK, bw._db() as c:
-        while c.execute("SELECT 1 FROM ambassador WHERE code=?", (code,)).fetchone():
-            code = _code_neu(name)
-        c.execute("""INSERT INTO ambassador (code, email, name, erstellt)
-                     VALUES (?,?,?,?)""",
-                  (code, email, name, bw._jetzt_iso()))
-    audit.audit(un, "ambassador_anlegen", ziel_un=email, code=code)
+        schon = c.execute("SELECT code FROM ambassador WHERE email=?",
+                          (email,)).fetchone()
+        if schon:
+            schon_code = schon[0]
+            schon_da = True
+        else:
+            schon_da = False
+            while c.execute("SELECT 1 FROM ambassador WHERE code=?", (code,)).fetchone():
+                code = _code_neu(name)
+            c.execute("""INSERT INTO ambassador (code, email, name, erstellt)
+                         VALUES (?,?,?,?)""",
+                      (code, email, name, bw._jetzt_iso()))
+    # audit NACH dem Lock-Block — audit.audit nimmt denselben _DB_LOCK,
+    # innerhalb des with = Deadlock (derselbe Fehler wie bei nutzer_anlegen,
+    # gemessen 24.09. am Fall „bestehendes Konto").
+    audit.audit(un, "ambassador_anlegen_bereits_da" if schon_da
+                else "ambassador_anlegen", ziel_un=email, code=code)
+    if schon_da:
+        return JSONResponse({"ok": True, "code": schon_code, "email": email,
+                             "bestehendes_konto": True,
+                             "hinweis": "Ist schon Ambassadorin — Code bleibt derselbe."})
     # Mail mit Code + Link zu ihrer Seite — über postfach, wie die
     # Wartelisten-Kopie. Ein Fehlschlag blockiert das Anlegen nicht
     # (das Startpasswort steht ohnehin in der Antwort der Verwaltung).
     import postfach  # noqa: PLC0415
+    bestehend = passwort is None
     if postfach.eingerichtet():
         try:
+            zugang = (f"Dein Startpasswort: {passwort}\n"
+                      f"(Bitte beim ersten Anmelden ändern.)\n") if passwort \
+                     else "Du meldest dich wie gewohnt mit deinem Passwort an.\n"
             text = (f"Hallo {name},\n\n"
                     f"du bist jetzt babu-Ambassadorin. Dein Code: {code}\n\n"
-                    f"Dein Bereich: {bw.PORTAL_ORIGIN}/portal (danach „Ambassador“)\n"
+                    f"Dein Bereich: {bw.PORTAL_ORIGIN}/portal\n"
                     f"Damit erzeugst du Einladungslinks für Salons — 30 Tage "
                     f"babu Light für sie, Provision für dich, sobald sie "
-                    f"bleiben.\n\n"
-                    f"Dein Startpasswort: {passwort}\n"
-                    f"(Bitte beim ersten Anmelden ändern.)\n")
+                    f"bleiben.\n\n{zugang}\n")
             await bw.run_in_threadpool(
                 postfach.senden, email, "babu — dein Ambassador-Zug", text,
                 stempel=time.strftime("%Y%m%d-%H%M%S"))
         except Exception as ex:  # noqa: BLE001
             print(f"[ambassador] Mail an {email} fehlgeschlagen: {ex!r}", flush=True)
-    print(f"[ambassador] angelegt: {name} <{email}> Code {code}", flush=True)
-    return JSONResponse({"ok": True, "code": code, "email": email,
-                         "startpasswort": passwort})
+    print(f"[ambassador] angelegt: {name} <{email}> Code {code} "
+          f"({'bestehendes Konto' if bestehend else 'neu'})", flush=True)
+    antwort = {"ok": True, "code": code, "email": email, "bestehendes_konto": bestehend}
+    if passwort:
+        antwort["startpasswort"] = passwort
+    return JSONResponse(antwort)
 
 
 async def api_ambassador_liste(request: Request) -> Response:
