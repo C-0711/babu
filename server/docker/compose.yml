@@ -116,6 +116,7 @@ services:
       - ~/babu-docker/werkzeuge:/app/werkzeuge:ro                   # betrieb_anlegen.py für den Box-Anleger (rsync werkzeuge/ mit)
       - ~/Youtube/.env:/data/Youtube/.env:ro                        # Gemini-Schlüssel für die Bild-Generierung
       - ~/kompendium:/data/kompendium:ro                            # Branchen-Kompendium: Vektoren + Atome + Grundwissen
+      - ~/kompendium-barber:/data/kompendium-barber:ro  # Wissenscontainer des Portals babu Barber (portale/barber.py)
     restart: unless-stopped
     # Lebenszeichen (seit 14.09.2026): `GET /healthz` prüft Datenbank, Box-Klon
     # und Gemma. Direkt auf 127.0.0.1:7844, am Tunnel vorbei; kein curl im

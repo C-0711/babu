@@ -26,6 +26,7 @@ import re
 import urllib.request
 
 import kontierung
+import portale
 
 VLM_API = os.environ.get("VLM_API", "http://127.0.0.1:11435/v1/chat/completions")
 VLM_MODELL = os.environ.get("VLM_MODELL", "gemma4-mm")
@@ -42,21 +43,18 @@ ANTWORTEN_MAX = 8
 # ── Profil und Katalog als Prompt-Bausteine ──────────────────────────────────
 
 def profil_text(e: dict) -> str:
-    """Ladenprofil + Personenprofil aus den Einstellungen der Nutzerin."""
-    klein = (e.get("kleinunternehmer") or "Nein").strip().lower() == "ja"
-    return (
-        f"Salon „{e.get('betrieb_name') or 'unbenannt'}“, Friseursalon. "
-        f"Rechtsform: {e.get('rechtsform') or 'Einzelunternehmen'}. "
-        f"Gewinnermittlung: {e.get('abschluss_art') or 'EÜR'}. "
-        + ("Kleinunternehmerin nach §19 UStG — kein Vorsteuerabzug. "
-           if klein else
-           "Keine Kleinunternehmerin — Vorsteuerabzug, soweit ausgewiesen. ")
-        + "Die Inhaberin arbeitet selbst im Salon und führt ein tägliches "
-          "Kassenbuch; Bareinnahmen sind dort bereits erfasst."
-    )
+    """Ladenprofil + Personenprofil aus den Einstellungen der Nutzerin.
+
+    Der Wortlaut gehört dem Portal des Betriebs (`portale/`, Schlüssel
+    „portal" in den Einstellungen) — ohne Angabe ist es Friseur."""
+    return portale.hole((e or {}).get("portal")).profil_text(e)
 
 
-def katalog_text(rahmen: str = "SKR04") -> str:
+def katalog_text(rahmen: str = "SKR04", *,
+                 hinweise: dict[str, str] | None = None) -> str:
+    """Der Kategorienkatalog im Vorspann. `hinweise` (aus dem Portal)
+    ersetzt den Hinweis einer Kategorie; Reihenfolge, Codes und Konten
+    bleiben die des Katalogs in `kontierung.py`."""
     zeilen = []
     for k in kontierung.KATEGORIEN.values():
         try:
@@ -65,7 +63,8 @@ def katalog_text(rahmen: str = "SKR04") -> str:
             konto = None
         if not konto:
             continue  # unbestätigte Konten bekommt Gemma gar nicht erst
-        hinweis = f" — {k.hinweis}" if k.hinweis else ""
+        text = (hinweise or {}).get(k.code, k.hinweis)
+        hinweis = f" — {text}" if text else ""
         zeilen.append(f"  {k.code}: {k.name}{hinweis}")
     return "\n".join(zeilen)
 
@@ -236,7 +235,8 @@ def voller_prompt(*args, **kw) -> str:
             + prompt_bauen(*args, **kw))
 
 
-def system_text(profil: str, rahmen: str = "SKR04") -> str:
+def system_text(profil: str, rahmen: str = "SKR04", *,
+                portal: str | None = None) -> str:
     """Der STEHENDE Teil des Buchungs-Prompts — alles, was für jeden Beleg
     dieses Salons gleich ist: Auftrag, Profil, Kontierungswissen,
     Kategorienkatalog, Regeln und Antwortschema.
@@ -253,21 +253,23 @@ def system_text(profil: str, rahmen: str = "SKR04") -> str:
     Der Buchungsweg bekommt hier dieselbe Bauart — und dazu das
     Kontierungswissen (AfA-Nutzungsdauern, GWG-Grenzen, Salon-Konten),
     das ihm bisher ganz fehlte."""
+    p = portale.hole(portal)
     wissen = ""
     try:
         import kompendium  # noqa: PLC0415
-        wissen = kompendium.kontierungswissen()
+        wissen = (kompendium.kontierungswissen_von(p.KOMPENDIUM)
+                  if portale.eigener_container(p)
+                  else kompendium.kontierungswissen())
     except Exception:  # noqa: BLE001
         wissen = ""
     return (
-        "Du bist die Buchhaltung eines Friseursalons und verbuchst genau "
-        "EINEN Beleg.\n\n"
-        f"PROFIL: {profil}\n\n"
+        p.BUCHUNG_AUFTRAG
+        + f"PROFIL: {profil}\n\n"
         + (f"NACHSCHLAGEWISSEN (gilt für jeden Beleg dieses Salons):\n\n"
            f"{wissen}\n\n" if wissen else "")
         + "KATEGORIEN (wähle GENAU eine über ihren Code — Kontonummern "
           "vergibst nicht du):\n"
-        + katalog_text(rahmen) + "\n\n"
+        + katalog_text(rahmen, hinweise=p.KATEGORIE_HINWEISE) + "\n\n"
         + REGELN + "\n\n" + SCHEMA)
 
 
@@ -299,7 +301,7 @@ def _sachwoerter(zeilen: list[str], markdown: str | None) -> str:
 
 
 def nachschlagen(zeilen: list[str], markdown: str | None = None,
-                 k: int = 6) -> str:
+                 k: int = 6, *, portal: str | None = None) -> str:
     """Was im Kompendium zu DIESEM Beleg steht — Vektorsuche über die
     89.760 Atome aus AfA-Tabellen, BMF-Schreiben und Kontenrahmen.
 
@@ -321,11 +323,15 @@ def nachschlagen(zeilen: list[str], markdown: str | None = None,
         import babu_web  # noqa: PLC0415
         import kompendium  # noqa: PLC0415
         emb = babu_web.embedding_rechnen(
-            "Nutzungsdauer und Kontierung im Friseursalon: " + sache,
+            portale.hole(portal).NACHSCHLAG_PRAEFIX + sache,
             als_dokument=False)
         if not emb:
             return ""
-        treffer = [t for t in kompendium.suchen(emb["vektor"], k=k)
+        p = portale.hole(portal)
+        gefunden = (kompendium.suchen_in(emb["vektor"], p.KOMPENDIUM, k=k)
+                    if portale.eigener_container(p)
+                    else kompendium.suchen(emb["vektor"], k=k))
+        treffer = [t for t in gefunden
                    + babu_web._wissen_treffer(emb["vektor"], k=k)
                    if t["score"] >= NACHSCHLAG_SCHWELLE
                    and any(q in (t["quelle"] or "").lower()
@@ -625,6 +631,7 @@ def runde(zeilen: list[str], einstellungen: dict, antworten: list[dict],
                 "hinweis": "So viele Fragen löst kein Beleg — der gehört auf "
                            "den Schreibtisch."}
     profil = profil_text(einstellungen)
+    portal = (einstellungen or {}).get("portal")
     # Eigen-Kennzeichen (seit 17.09.2026, Fall SupremeBeauty): Steht der
     # Betrieb selbst oben auf dem Beleg — Name oder Steuernummer —, ist das
     # ein Fakt, den Gemma nicht erfragen darf. Der Beweis reist als
@@ -644,9 +651,10 @@ def runde(zeilen: list[str], einstellungen: dict, antworten: list[dict],
                               mit_bild=bild is not None,
                               vertraege=vertraege, personal=personal,
                               offene_abbuchungen=offene_abbuchungen,
-                              nachschlag=nachschlagen(zeilen, markdown))
+                              nachschlag=nachschlagen(zeilen, markdown,
+                                                      portal=portal))
                  + eigen_fakt,
-                 bild, system=system_text(profil, rahmen))
+                 bild, system=system_text(profil, rahmen, portal=portal))
     ergebnis = buchung_pruefen(roh, rahmen)
     # Der Fakt ist beweisend — widerspricht das Modell ihm (andere Klasse
     # oder Kategorie), übersteuert der Fakt. Kontonummer und Satz bleiben

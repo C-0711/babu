@@ -3812,21 +3812,25 @@ def _wissen_treffer(frage_vektor: list[float], k: int = 5) -> list[dict]:
     return treffer
 
 
-def _recherche(frage: str) -> str:
+def _recherche(frage: str, bestaende: tuple[str, ...] | None = None) -> str:
     """Was zur Frage nachgeschlagen wird — Branchen-Kompendium und eigene
     Belege, beide über denselben Frage-Vektor.
 
     Das ist der VARIABLE Teil des Prompts und steht deshalb hinten, nach
     dem stehenden Weltblock: er ändert sich mit jeder Frage und darf den
     Prefix-Cache nicht zerschneiden. Ohne Embedding-Dienst: leer, der Chat
-    antwortet dann wie bisher aus Weltblock und Grundwissen."""
+    antwortet dann wie bisher aus Weltblock und Grundwissen.
+
+    `bestaende` (seit 24.09.2026): die Wissenscontainer eines Portals mit
+    eigenem Container (portale/). Ohne Angabe der Hauptbestand wie bisher."""
     emb = embedding_rechnen(frage, als_dokument=False)
     if not emb:
         return ""
     import kompendium  # noqa: PLC0415
     bloecke: list[str] = []
     treffer = sorted(
-        (t for t in kompendium.suchen(emb["vektor"], k=5)
+        (t for t in (kompendium.suchen_in(emb["vektor"], bestaende, k=5)
+                      if bestaende else kompendium.suchen(emb["vektor"], k=5))
          + _wissen_treffer(emb["vektor"], k=5)
          if t["score"] >= 0.30),
         key=lambda t: -t["score"])[:5]
@@ -4309,7 +4313,11 @@ EINSTELLUNG_SCHLUESSEL = {"benachrichtigung_frage", "benachrichtigung_post",
                           "marke_farbe", "marke_schrift", "marke_ausrichtung",
                           "marke_linie", "marke_begruendung",
                           # Wann der Laden auf hat — der Kalender braucht es.
-                          "oeffnet", "schliesst"}
+                          "oeffnet", "schliesst",
+                          # Portal und Sprache (seit 24.09.2026): welche Kopie
+                          # von babu der Betrieb ist (portale/) und in welcher
+                          # Sprache er bedient wird. Verbucht wird immer deutsch.
+                          "portal", "sprache"}
 
 
 
@@ -4364,6 +4372,19 @@ async def api_einstellungen_setzen(request: Request) -> Response:
                        "ein Wechsel gilt erst ab dem nächsten 1. Januar und "
                        "braucht eine Bestätigung.",
              "route": "/api/kontenrahmen"}, status_code=409)
+    # Portal und Sprache nur mit bekannten Werten: ein Tippfehler ließe den
+    # Betrieb sonst still als Friseur auf Deutsch weiterlaufen.
+    import portale  # noqa: PLC0415
+    if "portal" in body:
+        if not portale.kennt(body["portal"]):
+            return JSONResponse({"fehler": "Dieses Portal gibt es nicht.",
+                                 "portale": sorted(portale.PORTALE)}, status_code=400)
+        body["portal"] = str(body["portal"]).strip().lower()
+    if "sprache" in body:
+        if str(body["sprache"]).strip().lower() not in portale.SPRACHEN:
+            return JSONResponse({"fehler": "Diese Sprache gibt es nicht.",
+                                 "sprachen": list(portale.SPRACHEN)}, status_code=400)
+        body["sprache"] = str(body["sprache"]).strip().lower()
     for schluessel, wert in body.items():
         if schluessel in EINSTELLUNG_SCHLUESSEL:
             db_einstellung_setzen(un, schluessel, str(wert)[:200])
@@ -6363,22 +6384,24 @@ def chat(body: dict, request: Request) -> Response:
     # wie viel Fallwissen mitgeht und was das Modell damit tun soll.
     art = frage_art(frage)
     import kompendium  # noqa: PLC0415
+    import portale  # noqa: PLC0415
     import wissen  # noqa: PLC0415
+    # Rolle, Wissenstitel und Auftrag gehören dem Portal des Betriebs.
+    p = portale.hole(db_einstellungen(salon_von_aktiv(un)).get("portal"))
     # EIN stehender Prompt-Anfang für ALLE Fragen: Anleitung, Grundwissen
     # und Weltblock sind byte-stabil, solange sich die Box nicht ändert —
     # gemma4 läuft mit Prefix-Caching, und derselbe Anfang wird nur einmal
     # vorgerechnet. Deshalb wird hier nichts mehr nach der Frage
     # ausgewählt; alles Variable (Recherche + Frage) steht hinten.
     weltblock = wissen.weltblock(_welt_fuer(un))
-    grund = kompendium.grundwissen()
-    recherche = _recherche(frage)
+    eigen = portale.eigener_container(p)
+    grund = (kompendium.grundwissen_von(p.KOMPENDIUM) if eigen
+             else kompendium.grundwissen())
+    recherche = (_recherche(frage, bestaende=p.KOMPENDIUM) if eigen
+                 else _recherche(frage))
     glossar = begriffe_erklaeren(frage)
     auftrag = (
-        "ALLGEMEINE FRAGE — beantworte sie aus deinem Wissen, nicht aus ihren "
-        "Unterlagen. Sie hat kein Steuerbüro mehr, das sie kurz anrufen kann; "
-        "erklär jedes Fachwort in einem Nebensatz. Schreib NICHT, dass die "
-        "Antwort nicht in ihren Unterlagen steht — danach ist nicht gefragt. "
-        "Die Salon-Angaben oben sind nur Hintergrund.\n\n"
+        p.CHAT_AUFTRAG_ALLGEMEIN
         if art == "allgemein" else "")
     if beratungsfall(frage):
         auftrag += (
@@ -6396,47 +6419,10 @@ def chat(body: dict, request: Request) -> Response:
         "max_tokens": 700,
         "messages": [
             {"role": "system", "content":
-                "Du bist der Assistent von babu (0711 Intelligence) für "
-                "Friseursalons. Du sprichst mit der Inhaberin. Antworte auf "
-                "Deutsch, knapp, konkret und in ganzen Sätzen. Keine "
-                "Sie-Anrede — neutrale Formen oder Du. Kein Technik-Vokabular, "
-                "keine Systemnamen.\n\n"
-                "DU BIST FÜR ALLES DA, was ihren Betrieb angeht — nicht nur "
-                "für Steuern:\n"
-                "· Ihre eigenen Zahlen und Unterlagen: Belege, Kasse, "
-                "Verträge, gestellte Rechnungen, Termine, Team, Post vom Amt. "
-                "Das beantwortest du AUSSCHLIESSLICH aus den mitgelieferten "
-                "Daten und nennst, worauf du dich stützt. Steht etwas nicht "
-                "darin, sagst du das offen und rätst nicht.\n"
-                "· Steuer und Recht im Salon-Alltag: Kleinunternehmer-Regel, "
-                "Kassenpflicht, was absetzbar ist, Aufbewahrung, Fristen. "
-                "Einfach erklärt, mit dem Hinweis, dass es eine erste "
-                "Einordnung ist.\n"
-                "· Führen und Organisieren: Preise und Kalkulation, "
-                "Terminplanung, Auslastung, Personal und Ausbildung, "
-                "Einkauf und Lieferanten, Kundinnenbindung, Reklamationen, "
-                "schwierige Gespräche, Werbung, Hygiene und Arbeitsschutz.\n"
-                "· Und wenn ihr der Kopf raucht: hör zu, ordne, und mach "
-                "einen ersten Schritt daraus. Sie führt einen Betrieb allein "
-                "— oft ist die Frage hinter der Frage die wichtigere.\n\n"
-                "SO ANTWORTEST DU: Erst die Antwort, dann die Begründung. "
-                "Beträge deutsch (1.234,56 €). Wenn du rechnest, zeig die "
-                "Rechnung. Bei mehreren Möglichkeiten nenne eine Empfehlung, "
-                "keine Liste von Optionen.\n\n"
-                "DEINE GRENZEN, und du benennst sie: Du bist keine "
-                "Steuerberatung, keine Rechtsberatung und keine ärztliche "
-                "Auskunft. Bei Kündigungen, Verträgen mit Folgen, "
-                "Betriebsprüfungen, Streit mit dem Finanzamt und allem, wo "
-                "Fristen laufen, verweist du auf ihre Ansprechperson — und "
-                "sagst trotzdem, was du zur Sache weißt, damit sie "
-                "vorbereitet ins Gespräch geht. Erfinde nie Zahlen, Paragrafen "
-                "oder Fristen. Was du nicht weißt, sagst du.\n\n"
-                "Wenn bei der Frage etwas NACHGESCHLAGEN mitkommt, stützt du "
-                "dich darauf und nennst die Quelle in Klammern."
-                + (("\n\nGRUNDWISSEN ZUR BRANCHE (Friseur und Beauty — "
-                    "destilliert, erste Einordnung):\n\n" + grund)
+                p.CHAT_ROLLE
+                + (("\n\n" + p.CHAT_WISSENSTITEL + "\n\n" + grund)
                    if grund else "")
-                + "\n\nWAS BABU ÜBER DIESEN SALON WEISS:\n\n" + weltblock},
+                + "\n\n" + p.CHAT_WELTTITEL + "\n\n" + weltblock},
             *verlauf,
             {"role": "user", "content": f"{auftrag}FRAGE: {frage}"},
         ],

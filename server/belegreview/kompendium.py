@@ -115,3 +115,111 @@ def kontierungswissen() -> str:
     wird. Genau daran scheiterten die Anschaffungs-Fälle: ohne die
     Nutzungsdauer ist „Gerät oder GWG?" nicht zu entscheiden."""
     return _datei("kontierung-grundwissen.md", 30000)
+
+
+# ── Weitere Bestände je Portal (seit 24.09.2026) ─────────────────────────────
+#
+# Jedes Portal (portale/) nennt seine Wissenscontainer als Verzeichnisnamen,
+# das eigene zuletzt — Barber etwa ("kompendium", "kompendium-barber"). Der
+# Hauptbestand oben bleibt, wie er ist; alle anderen liegen daneben im selben
+# Format (atome.jsonl, vektoren.npy, grundwissen.md, kontierung-grundwissen.md)
+# und werden erst beim ersten Zugriff geladen. Ohne `bestaende` verhält sich
+# jede Funktion hier genau wie vor dem 24.09.2026.
+
+HAUPTBESTAND = "kompendium"
+_WEITERE: dict[str, tuple] = {}      # Name → (Vektoren, Offsets) oder ()
+_WEITERE_TEXTE: dict[tuple[str, str], str] = {}
+
+
+def verzeichnis(name: str) -> Path:
+    """Wo ein Bestand liegt: der Hauptbestand wie bisher, jeder weitere als
+    Geschwister daneben (Host `~/kompendium-barber`, Container
+    `/data/kompendium-barber`)."""
+    return VERZEICHNIS if name == HAUPTBESTAND else VERZEICHNIS.parent / name
+
+
+def _weiteren_laden(name: str) -> tuple:
+    """Memmap + Offsets eines weiteren Bestands, einmal je Prozess. Leer,
+    wenn er fehlt oder Zeilen und Vektoren nicht zusammenpassen — dann
+    schweigt er, wie der Hauptbestand."""
+    if name in _WEITERE:
+        return _WEITERE[name]
+    with _LOCK:
+        if name in _WEITERE:
+            return _WEITERE[name]
+        d = verzeichnis(name)
+        stand: tuple = ()
+        if (d / "vektoren.npy").exists() and (d / "atome.jsonl").exists():
+            import numpy as np  # noqa: PLC0415
+            vektoren = np.load(d / "vektoren.npy", mmap_mode="r")
+            offsets, pos = [], 0
+            with open(d / "atome.jsonl", "rb") as f:
+                for zeile in f:
+                    offsets.append(pos)
+                    pos += len(zeile)
+            if len(offsets) == vektoren.shape[0]:
+                stand = (vektoren, offsets)
+        _WEITERE[name] = stand
+        return stand
+
+
+def _suchen_in(name: str, q, k: int) -> list[dict]:
+    if name == HAUPTBESTAND:
+        return suchen(list(q), k=k)
+    stand = _weiteren_laden(name)
+    if not stand:
+        return []
+    import numpy as np  # noqa: PLC0415
+    vektoren, offsets = stand
+    scores = vektoren @ q
+    treffer = []
+    with open(verzeichnis(name) / "atome.jsonl", "rb") as f:
+        for nr in np.argsort(-scores)[:k]:
+            f.seek(offsets[int(nr)])
+            try:
+                a = json.loads(f.readline())
+            except ValueError:
+                continue
+            treffer.append({"score": round(float(scores[nr]), 4),
+                            "quelle": a.get("quelle"), "loc": a.get("loc"),
+                            "text": a.get("text") or ""})
+    return treffer
+
+
+def suchen_in(frage_vektor: list[float], bestaende: tuple[str, ...],
+              k: int = 5) -> list[dict]:
+    """Die k passendsten Atome über mehrere Bestände zusammen."""
+    if not frage_vektor:
+        return []
+    import numpy as np  # noqa: PLC0415
+    q = np.asarray(frage_vektor, dtype=np.float32)
+    norm = float(np.linalg.norm(q))
+    if norm == 0:
+        return []
+    q = q / norm
+    alle = [t for name in bestaende for t in _suchen_in(name, q, k)]
+    return sorted(alle, key=lambda t: -t["score"])[:k]
+
+
+def _eigene_datei(bestaende: tuple[str, ...], datei: str, grenze: int) -> str:
+    """Grundwissen kommt aus dem EIGENEN Bestand des Portals (dem letzten).
+    Fehlt er, ist es leer — ein Portal leiht sich kein fremdes Grundwissen."""
+    name = bestaende[-1] if bestaende else HAUPTBESTAND
+    if name == HAUPTBESTAND:
+        return _datei(datei, grenze)
+    if (name, datei) not in _WEITERE_TEXTE:
+        try:
+            _WEITERE_TEXTE[(name, datei)] = (verzeichnis(name) / datei).read_text()[:grenze]
+        except OSError:
+            _WEITERE_TEXTE[(name, datei)] = ""
+    return _WEITERE_TEXTE[(name, datei)]
+
+
+def grundwissen_von(bestaende: tuple[str, ...]) -> str:
+    """Wie `grundwissen()`, aber aus dem eigenen Bestand eines Portals."""
+    return _eigene_datei(bestaende, "grundwissen.md", 60000)
+
+
+def kontierungswissen_von(bestaende: tuple[str, ...]) -> str:
+    """Wie `kontierungswissen()`, aber aus dem eigenen Bestand eines Portals."""
+    return _eigene_datei(bestaende, "kontierung-grundwissen.md", 30000)
