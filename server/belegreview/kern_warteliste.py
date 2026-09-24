@@ -4,11 +4,11 @@ Aus babu_web.py ausgeschnitten am 21.09.2026 (Refactor-Plan,
 docs/refactor-babu-web-plan.md, Schritt 1). REINER MOVE: kein Verhalten
 geändert, jeder Name, jede Route, jeder Test bleibt wie er war.
 
-Die Routen hängen an demselben `app`-Objekt wie alle anderen: dieses Modul
-importiert `babu_web` (der Kern) und registriert seine Routen DORT. Die
-Kern-Datei zieht sich dieses Modul am Datei-Ende herein — dadurch bleiben
-`TestClient(babu_web.app)` und alle `bw.<name>`-Zugriffe aus den Tests
-unangetastet.
+Die Routen hängen an demselben `app`-Objekt wie alle anderen: der Kern
+ruft `setup(app, bw)` und reicht sich selbst herein — KEIN `import
+babu_web` hier (lief der Server als `python babu_web.py`, erzeugte der
+Import ein ZWEITES Modul mit ZWEITEM app-Objekt, und die Routen landeten
+an der falschen App — gemessen 24.09., dev: 404 trotz grüner Suite).
 """
 import json
 import os
@@ -19,7 +19,17 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 
 import audit
-import babu_web as bw
+
+
+def setup(app, bw):
+    """Der Kern reicht sich selbst herein (app-Objekt + babu_web-Modul).
+    Alle `bw.`-Referenzen in den Routen unten laufen über das Modul-Global
+    `bw`, das hier gesetzt wird — BEVOR eine Route das erste Mal läuft."""
+    global _app
+    _app = app
+    globals()["bw"] = bw
+    globals()["app"] = app
+    _registrieren(app)
 
 
 # ── Registrierung / Signup ───────────────────────────────────────────────────
@@ -32,7 +42,6 @@ REG_FELDER = ("salon", "name", "email", "telefon", "anschrift", "rechtsform",
 # schreiben darauf; hier nur benutzen, NICHT neu definieren (zirkulär).
 
 
-@bw.app.post("/api/registrierung")
 def api_registrierung(daten: dict, request: Request) -> Response:
     if not bw._origin_ok(request):
         return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
@@ -64,7 +73,6 @@ def signup_offen() -> bool:
     return os.environ.get("BABU_SIGNUP", "1") != "0"
 
 
-@bw.app.get("/api/signup-offen")
 def api_signup_offen() -> Response:
     """Sagt der Anmeldeseite, ob sie „Konto anlegen" zeigen soll — und ob
     „Passwort vergessen?" ein Formular sein darf: das ist es nur, wenn ein
@@ -75,7 +83,6 @@ def api_signup_offen() -> Response:
                          "passwort_vergessen": postfach.eingerichtet()})
 
 
-@bw.app.post("/api/signup")
 def api_signup(daten: dict, request: Request) -> Response:
     """Ganz normales Self-Signup: Konto mit eigenem Passwort, sofort angemeldet.
     Steuerdaten aus der Strecke landen direkt in den Einstellungen; die
@@ -126,7 +133,6 @@ def api_signup(daten: dict, request: Request) -> Response:
     return antwort
 
 
-@bw.app.get("/api/registrierungen")
 def api_registrierungen(request: Request) -> Response:
     un, fehler = bw._api_wache(request)
     if fehler:
@@ -152,7 +158,6 @@ _WARTELISTE_ARTEN = ("salon", "kanzlei")
 _APP_STATUS = ("fehlt", "eingetragen", "eingeladen", "drin")
 
 
-@bw.app.post("/api/warteliste")
 async def api_warteliste_anmelden(request: Request) -> Response:
     """Öffentlich: ein Eintrag auf die Warteliste — mehr nicht.
 
@@ -247,7 +252,6 @@ async def api_warteliste_anmelden(request: Request) -> Response:
         "Danke! Wir melden uns an diese Adresse, sobald ein Platz frei ist."})
 
 
-@bw.app.get("/api/warteliste")
 def api_warteliste_lesen(request: Request) -> Response:
     un, fehler = bw._verwalter_wache(request)
     if fehler:
@@ -266,7 +270,6 @@ def api_warteliste_lesen(request: Request) -> Response:
     return JSONResponse({"warteliste": zeilen})
 
 
-@bw.app.post("/api/warteliste/einrichten")
 async def api_warteliste_einrichten(request: Request) -> Response:
     """Verwaltung: aus einem Wartelisten-Eintrag wird ein Zugang.
 
@@ -307,7 +310,6 @@ async def api_warteliste_einrichten(request: Request) -> Response:
     return JSONResponse({"ok": True, "email": email, "startpasswort": passwort})
 
 
-@bw.app.post("/api/warteliste/apple-id")
 async def api_warteliste_apple_id(request: Request) -> Response:
     """Verwaltung: die Apple-ID-Adresse zu einem Wartelisten-Eintrag.
 
@@ -342,7 +344,6 @@ async def api_warteliste_apple_id(request: Request) -> Response:
     return JSONResponse({"ok": True, "apple_id": apple, "app_status": "eingetragen"})
 
 
-@bw.app.post("/api/warteliste/ablehnen")
 async def api_warteliste_ablehnen(request: Request) -> Response:
     """Verwaltung: höflich Nein — der Eintrag bleibt mit Stand „abgelehnt“."""
     un, fehler = bw._verwalter_wache(request)
@@ -361,3 +362,32 @@ async def api_warteliste_ablehnen(request: Request) -> Response:
                                        "Warteliste."}, status_code=404)
     audit.audit(un, "warteliste_ablehnen", ziel_un=email)
     return JSONResponse({"ok": True})
+
+
+# Registriert von den Decorator-Ersetzungen oben:
+_ROUTEN = [
+]
+
+
+def _registrieren(app):
+    for methode, pfad, fn in _ROUTEN:
+        getattr(app, methode.lower())(pfad)(fn)
+
+
+# Registriert von den Decorator-Ersetzungen (setup hängt sie an):
+_ROUTEN = [
+    ("POST", "/api/registrierung", api_registrierung),
+    ("GET", "/api/signup-offen", api_signup_offen),
+    ("POST", "/api/signup", api_signup),
+    ("GET", "/api/registrierungen", api_registrierungen),
+    ("POST", "/api/warteliste", api_warteliste_anmelden),
+    ("GET", "/api/warteliste", api_warteliste_lesen),
+    ("POST", "/api/warteliste/einrichten", api_warteliste_einrichten),
+    ("POST", "/api/warteliste/apple-id", api_warteliste_apple_id),
+    ("POST", "/api/warteliste/ablehnen", api_warteliste_ablehnen),
+]
+
+
+def _registrieren(app):
+    for methode, pfad, fn in _ROUTEN:
+        getattr(app, methode.lower())(pfad)(fn)

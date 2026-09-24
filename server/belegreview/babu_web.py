@@ -12120,8 +12120,18 @@ def api_gespraeche_loeschen(request: Request) -> Response:
 # während dessen Import würde ins leere Modul greifen (zirkulär, gemessen 24.09.).
 _REG_ZULETZT: dict[str, float] = {}
 
-import kern_warteliste  # noqa: E402,F401  (registriert seine Routen an app)
-import kern_ambassador  # noqa: E402,F401  (Ambassador-Codes, Provision)
+import kern_warteliste  # noqa: E402,F401
+import kern_ambassador  # noqa: E402,F401
+
+kern_warteliste.setup(app, sys.modules[__name__])
+kern_ambassador.setup(app, sys.modules[__name__])
+
+# Der Kern reicht sich selbst per setup() — die Familien hängen ihre
+# Routen an DIESES app-Objekt und benutzen DIESES Modul. Kein
+# `import babu_web` in den Familien: als `python babu_web.py` läuft der
+# Kern als __main__, ein Import erzeugte ein ZWEITES Modul mit ZWEITEM
+# app-Objekt — die Routen landeten an der falschen App (gemessen 24.09.,
+# dev: 404 trotz Suite grün).
 
 
 if __name__ == "__main__":

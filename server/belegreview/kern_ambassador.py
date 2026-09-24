@@ -22,7 +22,18 @@ from fastapi import Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 import audit
-import babu_web as bw
+
+_app = None
+
+
+def setup(app, bw):
+    """Der Kern reicht sich selbst herein — siehe kern_warteliste.setup."""
+    global _app
+    _app = app
+    globals()["bw"] = bw
+    globals()["app"] = app
+    for methode, pfad, fn in _ROUTEN:
+        getattr(app, methode.lower())(pfad)(fn)
 
 # 25 % je Meilenstein (Vertriebskonzept 19.09.2026): gezeichnet + 3 Monate
 # gehalten = 50 % der Jahreszahlung. Jahreszahlung = 12 × Monatspreis des
@@ -38,7 +49,6 @@ def _code_neu(name: str) -> str:
     return f"{stamm}-{secrets.token_hex(2).upper()}"
 
 
-@bw.app.post("/api/ambassador")
 async def api_ambassador_anlegen(request: Request) -> Response:
     """Verwaltung: eine Ambassadorin anlegen — Konto, Code, Mail mit dem Zug."""
     un, fehler = bw._verwalter_wache(request)
@@ -92,7 +102,6 @@ async def api_ambassador_anlegen(request: Request) -> Response:
                          "startpasswort": passwort})
 
 
-@bw.app.get("/api/ambassador/liste")
 async def api_ambassador_liste(request: Request) -> Response:
     """Verwaltung: alle Ambassadorinnen mit ihrem Stand."""
     un, fehler = bw._verwalter_wache(request)
@@ -114,7 +123,6 @@ async def api_ambassador_liste(request: Request) -> Response:
     return JSONResponse({"ambassadorinnen": zeilen})
 
 
-@bw.app.get("/api/ambassador/me")
 async def api_ambassador_me(request: Request) -> Response:
     """Die Ambassadorin selbst: ihr Code, ihre Salons, ihr Saldo."""
     un, fehler = bw._api_wache(request)
@@ -137,7 +145,6 @@ async def api_ambassador_me(request: Request) -> Response:
                          "salons": salons})
 
 
-@bw.app.post("/api/ambassador/link")
 async def api_ambassador_link(request: Request) -> Response:
     """Ambassadorin: einen persönlichen Einladungslink erzeugen (optional mit
     Salon-Name/E-Mail) — der Salon löst ihn ein, die Zuordnung passiert dann."""
@@ -159,7 +166,6 @@ async def api_ambassador_link(request: Request) -> Response:
     return JSONResponse({"link": f"{bw.PORTAL_ORIGIN}/ambassador/{a[0]}/{slug}"})
 
 
-@bw.app.get("/ambassador/{code}/{slug}")
 async def ambassador_landing(code: str, slug: str) -> Response:
     """Die Landing-Seite des Salons: Code steht fest, ein Formular nimmt
     Name/E-Mail auf und legt die Warteliste-Zeile MIT herkunft_code an.
@@ -205,7 +211,6 @@ function einlosen(f){{
     return HTMLResponse(html)
 
 
-@bw.app.post("/api/ambassador/meilenstein")
 async def api_ambassador_meilenstein(request: Request) -> Response:
     """Verwaltung: einen Meilenstein anerkennen (manuelles Abhaken).
 
@@ -251,7 +256,6 @@ async def api_ambassador_meilenstein(request: Request) -> Response:
     return JSONResponse({"ok": True, "meilenstein": bis, "verdienst": betrag})
 
 
-@bw.app.post("/api/ambassador/gezahlt")
 async def api_ambassador_gezahlt(request: Request) -> Response:
     """Verwaltung: Quartalsauszahlung verbucht — Saldo auf 0 setzen."""
     un, fehler = bw._verwalter_wache(request)
@@ -273,3 +277,14 @@ async def api_ambassador_gezahlt(request: Request) -> Response:
         c.execute("UPDATE ambassador SET gezahlt = verdient WHERE code=?", (code,))
     audit.audit(un, "ambassador_gezahlt", code=code, betrag=offen)
     return JSONResponse({"ok": True, "gezahlt": offen})
+
+
+_ROUTEN = [
+    ("POST", "/api/ambassador", api_ambassador_anlegen),
+    ("GET", "/api/ambassador/liste", api_ambassador_liste),
+    ("GET", "/api/ambassador/me", api_ambassador_me),
+    ("POST", "/api/ambassador/link", api_ambassador_link),
+    ("GET", "/ambassador/{code}/{slug}", ambassador_landing),
+    ("POST", "/api/ambassador/meilenstein", api_ambassador_meilenstein),
+    ("POST", "/api/ambassador/gezahlt", api_ambassador_gezahlt),
+]
