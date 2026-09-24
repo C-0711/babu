@@ -12114,13 +12114,14 @@ def api_gespraeche_loeschen(request: Request) -> Response:
 # erreicht — gemessen 24.09. (dev-Container startete ohne Wartelisten-Routen).
 # Tests importieren das Modul und merkten den Fehler nicht — der Live-Beweis
 # (E2E gegen den echten Start) ist der einzige, der ihn zeigt.
+# Der IP-Bremen-Dict `_REG_ZULETZT` lebt HIER im Kern (die Tests schreiben
+# auf `babu_web._REG_ZULETZT`), die Familien benutzen `bw._REG_ZULETZT`.
+# Er MUSS vor den Familien-Importen stehen — ein Zugriff aus kern_warteliste
+# während dessen Import würde ins leere Modul greifen (zirkulär, gemessen 24.09.).
+_REG_ZULETZT: dict[str, float] = {}
+
 import kern_warteliste  # noqa: E402,F401  (registriert seine Routen an app)
 import kern_ambassador  # noqa: E402,F401  (Ambassador-Codes, Provision)
-
-# Die Tests schreiben auf `babu_web._REG_ZULETZT` (IP-Bremse ruecksetzen) —
-# der Name lebt jetzt im Familien-Modul, hier liegt derselbe Dict als Alias,
-# damit `bw._REG_ZULETZT.clear()` weiterhin derselbe Speicher ist.
-_REG_ZULETZT = kern_warteliste._REG_ZULETZT  # noqa: E305
 
 
 if __name__ == "__main__":

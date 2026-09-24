@@ -19,6 +19,7 @@ import pytest  # noqa: E402
 def kunde(tmp_path, monkeypatch):
     monkeypatch.setenv("BABU_SIGNUP", "1")
     monkeypatch.setattr(babu_web, "PORTAL_DB", tmp_path / "portal.db")
+    babu_web._REG_ZULETZT.clear()  # IP-Bremen aus früheren Tests zurücksetzen
     with babu_web._DB_LOCK, babu_web._db() as c:
         pass  # Schema anlegen (erste Verbindung initialisiert)
     return TestClient(babu_web.app, base_url="https://testserver"), babu_web

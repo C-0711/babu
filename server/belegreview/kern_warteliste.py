@@ -28,7 +28,8 @@ import babu_web as bw
 REG_FELDER = ("salon", "name", "email", "telefon", "anschrift", "rechtsform",
               "steuernummer", "finanzamt", "kleinunternehmer", "iban",
               "steuerberater", "nachricht")
-_REG_ZULETZT: dict[str, float] = {}
+# Der IP-Bremen-Dict lebt im KERN (babu_web._REG_ZULETZT) — die Tests
+# schreiben darauf; hier nur benutzen, NICHT neu definieren (zirkulär).
 
 
 @bw.app.post("/api/registrierung")
@@ -37,14 +38,14 @@ def api_registrierung(daten: dict, request: Request) -> Response:
         return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
     ip = bw._client_ip(request)
     jetzt = time.time()
-    if jetzt - _REG_ZULETZT.get(ip, 0.0) < 30:
+    if jetzt - bw._REG_ZULETZT.get(ip, 0.0) < 30:
         return JSONResponse({"fehler": "kurz warten, dann nochmal"}, status_code=429)
     sauber = {k: str(daten.get(k, "") or "")[:200].strip() for k in REG_FELDER}
     if not sauber["salon"] or "@" not in sauber["email"]:
         return JSONResponse({"fehler": "Salon-Name und E-Mail brauchen wir mindestens"},
                             status_code=400)
-    _REG_ZULETZT[ip] = jetzt
-    bw._zaehler_aufraeumen(_REG_ZULETZT, jetzt, 3600)
+    bw._REG_ZULETZT[ip] = jetzt
+    bw._zaehler_aufraeumen(bw._REG_ZULETZT, jetzt, 3600)
     with bw._DB_LOCK, bw._db() as c:
         c.execute("INSERT INTO registrierungen (zeit, daten) VALUES (?, ?)",
                   (time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -86,7 +87,7 @@ def api_signup(daten: dict, request: Request) -> Response:
         return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
     ip = bw._client_ip(request)
     jetzt = time.time()
-    if jetzt - _REG_ZULETZT.get(ip, 0.0) < 30:
+    if jetzt - bw._REG_ZULETZT.get(ip, 0.0) < 30:
         return JSONResponse({"fehler": "kurz warten, dann nochmal"}, status_code=429)
     sauber = {k: str(daten.get(k, "") or "")[:200].strip() for k in REG_FELDER}
     passwort = str(daten.get("passwort", "") or "")
@@ -101,8 +102,8 @@ def api_signup(daten: dict, request: Request) -> Response:
                          passwort=passwort, box=False) is None:
         return JSONResponse({"fehler": "Für diese E-Mail gibt es schon einen Zugang — melde dich einfach an."},
                             status_code=409)
-    _REG_ZULETZT[ip] = jetzt
-    bw._zaehler_aufraeumen(_REG_ZULETZT, jetzt, 3600)
+    bw._REG_ZULETZT[ip] = jetzt
+    bw._zaehler_aufraeumen(bw._REG_ZULETZT, jetzt, 3600)
     vorbelegung = {"betrieb_name": sauber["salon"], "rechtsform": sauber["rechtsform"],
                    "steuernummer": sauber["steuernummer"], "finanzamt": sauber["finanzamt"],
                    "kleinunternehmer": sauber["kleinunternehmer"],
@@ -166,7 +167,7 @@ async def api_warteliste_anmelden(request: Request) -> Response:
         return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
     ip = bw._client_ip(request)
     jetzt = time.time()
-    if jetzt - _REG_ZULETZT.get(ip, 0.0) < 30:
+    if jetzt - bw._REG_ZULETZT.get(ip, 0.0) < 30:
         return JSONResponse({"fehler": "kurz warten, dann nochmal"}, status_code=429)
     try:
         koerper = json.loads(await bw.koerper_lesen(request, 8 * 1024))
@@ -211,8 +212,8 @@ async def api_warteliste_anmelden(request: Request) -> Response:
                          VALUES (?,?,?,?)""",
                       (code_fund.group(1), email, sauber["salon"] or "",
                        bw._jetzt_iso()))
-    _REG_ZULETZT[ip] = jetzt
-    bw._zaehler_aufraeumen(_REG_ZULETZT, jetzt, 3600)
+    bw._REG_ZULETZT[ip] = jetzt
+    bw._zaehler_aufraeumen(bw._REG_ZULETZT, jetzt, 3600)
     print(f"[warteliste] {art} <{email}>", flush=True)
     # Eine Kopie an Nina (BABU_SUPPORT_MAIL): sie entscheidet, wen wir
     # einladen — ohne diese Mail müsste jemand die Liste im Portal
