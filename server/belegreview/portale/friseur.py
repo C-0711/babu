@@ -14,7 +14,16 @@ NAME = "babu"
 
 # Wissenscontainer: Verzeichnisse unter $HOME, das eigene zuletzt (auf der H200V `~/kompendium`,
 # im Container `/data/kompendium`).
+# Der Hauptbestand (`KOMPENDIUM_DIR`, im Container /data/kompendium). Seit
+# 25.09.2026 hängt Compose dort `~/kompendium-friseur` ein: der bisherige
+# Container Byte für Byte (91.459 Atome, Grundwissen, Kontierungswissen)
+# plus die 39 Gesetze im Wortlaut wie beim Barber. Der alte `~/kompendium`
+# bleibt unberührt liegen — Rückweg ist die Mount-Zeile in compose.yml.
 KOMPENDIUM: tuple[str, ...] = ("kompendium",)
+
+# Wörter, die vor der Suche im Container aus der Frage fallen (Regex). Leer:
+# Friseur sucht mit der Frage, wie sie gestellt ist.
+SUCH_OHNE = ""
 
 
 # ── Buchung ──────────────────────────────────────────────────────────────────

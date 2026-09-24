@@ -25,6 +25,13 @@ NAME = "babu Barber"
 # `werkzeuge/kompendium/container_bauen.py` aus `werkzeuge/kompendium/barber/`.
 KOMPENDIUM: tuple[str, ...] = ("kompendium-barber",)
 
+# Wörter, die vor der Suche im Container aus der Frage fallen (Regex) — die
+# Branche ist im eigenen Portal klar, und „Barber" in der Frage zieht die
+# Suche zu den Friseur-Dokumenten. Genau dieses Muster ist am 25.09.2026
+# gemessen (portale.suchfrage, ~/.beleglex/messungen/20260925-barber-container/).
+SUCH_OHNE = (r"\b(als\s+)?(barber(shop)?s?|barbier|herrenfriseur|friseur(salon)?|salon)\b"
+             r"|\b(im|in meinem|in meinen|meinem|meinen|mein)\s+(?=[?.!,]|$)")
+
 
 # ── Buchung ──────────────────────────────────────────────────────────────────
 

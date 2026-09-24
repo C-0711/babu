@@ -93,6 +93,7 @@ GET /avv
 GET /bilder/{name}
 GET /datenschutz
 GET /datev
+GET /barber
 GET /einkauf
 GET /healthz
 GET /impressum

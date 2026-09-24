@@ -115,7 +115,8 @@ services:
       - ~/gitchain-eingang/.pat_babu:/data/gitchain-eingang/.pat_babu:ro
       - ~/babu-docker/werkzeuge:/app/werkzeuge:ro                   # betrieb_anlegen.py für den Box-Anleger (rsync werkzeuge/ mit)
       - ~/Youtube/.env:/data/Youtube/.env:ro                        # Gemini-Schlüssel für die Bild-Generierung
-      - ~/kompendium:/data/kompendium:ro                            # Branchen-Kompendium: Vektoren + Atome + Grundwissen
+      # Seit 25.09.2026: die Kopie mit den 39 Gesetzen (portale/friseur.py). Rückweg: ~/kompendium
+      - ~/kompendium-friseur:/data/kompendium:ro                     # Branchen-Kompendium: Vektoren + Atome + Grundwissen
       - ~/kompendium-barber:/data/kompendium-barber:ro  # Wissenscontainer des Portals babu Barber (portale/barber.py)
     restart: unless-stopped
     # Lebenszeichen (seit 14.09.2026): `GET /healthz` prüft Datenbank, Box-Klon

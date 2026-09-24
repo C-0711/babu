@@ -283,6 +283,14 @@ NACHSCHLAG_QUELLEN = ("afa", "kontenplan", "skr04", "skr03", "bmf",
                       "ustg", "estg", "kontenrahmen", "steuerschluessel", "wissen")
 NACHSCHLAG_SCHWELLE = 0.40
 
+# Die Gesetzestexte der Portal-Container (seit 25.09.2026: 39 Gesetze im
+# Wortlaut, `werkzeuge/kompendium/barber/gesetze_holen.py`) sind für den
+# CHAT da. Ihre Dateinamen enthalten „ustg" oder „estg" und kämen sonst durch
+# den Quellenfilter oben in den Buchungsweg — eine Änderung an der Buchung,
+# die niemand bestellt hat. Also bleiben sie hier draußen, und der
+# Buchungs-Nachschlag ist Treffer für Treffer der von vorher.
+GESETZES_QUELLEN = ("gesetze/", "recht/")
+
 
 def _sachwoerter(zeilen: list[str], markdown: str | None) -> str:
     """Wonach gesucht wird: WAS gekauft wurde, ohne Beträge und Mengen.
@@ -328,12 +336,15 @@ def nachschlagen(zeilen: list[str], markdown: str | None = None,
         if not emb:
             return ""
         p = portale.hole(portal)
-        gefunden = (kompendium.suchen_in(emb["vektor"], p.KOMPENDIUM, k=k)
+        gefunden = (kompendium.suchen_in(emb["vektor"], p.KOMPENDIUM, k=k,
+                                         ohne=GESETZES_QUELLEN)
                     if portale.eigener_container(p)
-                    else kompendium.suchen(emb["vektor"], k=k))
+                    else [t for t in kompendium.suchen(emb["vektor"], k=k + 50)
+                          if not (t["quelle"] or "").startswith(GESETZES_QUELLEN)][:k])
         treffer = [t for t in gefunden
                    + babu_web._wissen_treffer(emb["vektor"], k=k)
                    if t["score"] >= NACHSCHLAG_SCHWELLE
+                   and not (t["quelle"] or "").startswith(GESETZES_QUELLEN)
                    and any(q in (t["quelle"] or "").lower()
                            for q in NACHSCHLAG_QUELLEN)][:2]
     except Exception:  # noqa: BLE001

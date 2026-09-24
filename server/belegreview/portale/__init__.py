@@ -39,8 +39,8 @@ NAMEN = (
     "profil_text", "BUCHUNG_AUFTRAG", "NACHSCHLAG_PRAEFIX", "KATEGORIE_HINWEISE",
     # Expertenchat
     "CHAT_ROLLE", "CHAT_AUFTRAG_ALLGEMEIN", "CHAT_WISSENSTITEL", "CHAT_WELTTITEL",
-    # Wissenscontainer (Verzeichnisname unter $HOME)
-    "KOMPENDIUM",
+    # Wissenscontainer (Verzeichnisname unter $HOME) und Suchfrage
+    "KOMPENDIUM", "SUCH_OHNE",
 )
 
 PORTALE: dict[str, ModuleType] = {m.SCHLUESSEL: m for m in (friseur, barber)}
@@ -83,6 +83,24 @@ def pruefen() -> list[str]:
                 fehler.append(f"{s}/{code}: Hinweis nennt eine Kontonummer "
                               "(Konten vergibt nur der Katalog)")
     return fehler
+
+
+def suchfrage(p: ModuleType, frage: str) -> str:
+    """Die Frage, mit der im Wissenscontainer gesucht wird.
+
+    Im eigenen Portal ist die Branche ohnehin klar; das Wort „Barber" in der
+    Frage zieht die Vektorsuche nur zu den Friseur-Dokumenten und drängt die
+    Vorschrift, die antwortet, nach hinten. Gemessen am 25.09.2026 im
+    Barber-Container: mit Branchenwort 10/12 und 5/10 Fragen mit der
+    richtigen Quelle unter den ersten fünf, ohne 12/12 und 8/10 (Kontrollsatz,
+    nicht zum Entwurf benutzt); keine Frage wurde schlechter
+    (~/.beleglex/messungen/20260925-barber-container/). Leer bei Friseur —
+    dort bleibt die Frage, wie sie ist."""
+    muster = getattr(p, "SUCH_OHNE", "")
+    if not muster:
+        return frage
+    import re  # noqa: PLC0415
+    return " ".join(re.sub(muster, " ", frage, flags=re.I).split()) or frage
 
 
 def eigener_container(p: ModuleType) -> bool:

@@ -30,6 +30,12 @@ def festes_wissen(monkeypatch):
                         lambda: "KONTIERUNGSWISSEN-PLATZHALTER")
     monkeypatch.setattr(kompendium, "grundwissen",
                         lambda: "GRUNDWISSEN-PLATZHALTER")
+    # Seit 25.09.2026 liest Friseur aus seiner eigenen Kopie (kompendium-friseur),
+    # deren Dateien Byte für Byte die alten sind — derselbe Platzhalter.
+    monkeypatch.setattr(kompendium, "kontierungswissen_von",
+                        lambda bestaende: "KONTIERUNGSWISSEN-PLATZHALTER")
+    monkeypatch.setattr(kompendium, "grundwissen_von",
+                        lambda bestaende: "GRUNDWISSEN-PLATZHALTER")
 
 
 def test_jedes_portal_ist_vollstaendig():
@@ -230,3 +236,64 @@ def test_der_barber_chat_der_app_sieht_container_und_belege_zusammen(tmp_path, m
     assert "TESTMARKE" not in gesagt[-1]["messages"][0]["content"]
     assert "PAngV" not in gesagt[-1]["messages"][-1]["content"]
     assert "Pomade 12,90" in gesagt[-1]["messages"][-1]["content"]  # die Belege bleiben
+
+
+def test_die_suchfrage_verliert_im_barber_portal_das_branchenwort():
+    b, f = portale.hole("barber"), portale.hole("friseur")
+    assert portale.suchfrage(b, "Muss ich als Barber meine Preise aushängen?") \
+        == "Muss ich meine Preise aushängen?"
+    assert portale.suchfrage(b, "Welche Gewerbesteuer zahlt mein Barbershop?") \
+        == "Welche Gewerbesteuer zahlt mein ?"   # so gemessen (Platz 1)
+    assert portale.suchfrage(b, "Barber") == "Barber"            # nie leer
+    frage = "Muss ich als Friseurin im Salon meine Preise aushängen?"
+    assert portale.suchfrage(f, frage) == frage                  # Friseur unverändert
+
+
+def test_der_buchungsweg_laesst_die_gesetzestexte_aus(tmp_path, monkeypatch):
+    """Die Gesetze sind für den Chat da. Ihr Dateiname enthält „ustg" und käme
+    sonst durch den Quellenfilter in den Buchungs-Nachschlag."""
+    import numpy as np
+    import babu_web
+    d = tmp_path / "kompendium"
+    d.mkdir()
+    atome = [{"id": 0, "quelle": "gesetze/ustg_1980.md", "loc": "txt#1", "text": "UStG § 12 Steuersätze"},
+             {"id": 1, "quelle": "branche/afa/AfA-Tabelle_94.xlsx", "loc": "S1", "text": "Bedienungsstühle 10 Jahre"}]
+    (d / "atome.jsonl").write_text("".join(json.dumps(a) + "\n" for a in atome))
+    np.save(d / "vektoren.npy", np.asarray([[1, 0, 0, 0], [0.9, 0.44, 0, 0]], dtype=np.float32))
+    monkeypatch.setattr(kompendium, "VERZEICHNIS", d)
+    monkeypatch.setattr(kompendium, "_VEKTOREN", None)
+    monkeypatch.setattr(kompendium, "_OFFSETS", [])
+    monkeypatch.setattr(kompendium, "_WEITERE", {})
+    # Ohne Ausschluss stünde das Gesetz vorn …
+    assert kompendium.suchen([1, 0, 0, 0], k=1)[0]["quelle"].startswith("gesetze/")
+    # … mit Ausschluss kommt der nächste echte Treffer nach, nicht weniger.
+    t = kompendium.suchen_in([1, 0, 0, 0], ("kompendium",), k=1, ohne=gemma_buchung.GESETZES_QUELLEN)
+    assert [x["quelle"] for x in t] == ["branche/afa/AfA-Tabelle_94.xlsx"]
+    monkeypatch.setattr(babu_web, "embedding_rechnen", lambda text, als_dokument=True: {"vektor": [1, 0, 0, 0]})
+    monkeypatch.setattr(babu_web, "_wissen_treffer", lambda v, k=5: [])
+    text = gemma_buchung.nachschlagen(["Friseurstuhl Hydraulik"], portal="friseur")
+    assert "AfA-Tabelle_94" in text and "gesetze/" not in text
+
+
+def test_die_barber_seite_wird_ausgeliefert(tmp_path, monkeypatch):
+    import babu_web
+    monkeypatch.setattr(babu_web, "SEITE", tmp_path / "index.html")
+    from fastapi.testclient import TestClient
+    c = TestClient(babu_web.app, base_url="https://testserver")
+    assert c.get("/barber").status_code == 404                 # ohne Datei: kommt bald
+    (tmp_path / "barber.html").write_text("<html>babu Barber</html>", encoding="utf-8")
+    r = c.get("/barber")
+    assert r.status_code == 200 and "babu Barber" in r.text
+    assert r.headers["content-type"].startswith("text/html")
+
+
+def test_die_gebaute_barber_seite_ist_vollstaendig():
+    """Die Seite im Repo ist mit `werbung/barber/seite_bauen.py` gebaut: jedes
+    Barber-Bild, echte Rechtslinks, kein Buhl, und jeder Satz hat Türkisch."""
+    seite = (HIER.parents[1] / "babu-web" / "barber.html").read_text(encoding="utf-8")
+    assert seite.count("/bilder/ba-") >= 18
+    for pfad in ("/impressum", "/datenschutz", "/agb"):
+        assert f'href="{pfad}"' in seite
+    assert "Buhl" not in seite and "Steuer-Backend" in seite
+    assert 'data-sprache="tr"' in seite and '"Dein Papierkram": "Evrak işlerin"' in seite
+    assert "/ablage" not in seite                               # kein öffentlicher Upload

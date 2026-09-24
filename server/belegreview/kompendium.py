@@ -163,9 +163,14 @@ def _weiteren_laden(name: str) -> tuple:
         return stand
 
 
-def _suchen_in(name: str, q, k: int) -> list[dict]:
+def _ausgeschlossen(t: dict, ohne: tuple[str, ...]) -> bool:
+    return bool(ohne) and (t.get("quelle") or "").startswith(ohne)
+
+
+def _suchen_in(name: str, q, k: int, ohne: tuple[str, ...] = ()) -> list[dict]:
     if name == HAUPTBESTAND:
-        return suchen(list(q), k=k)
+        treffer = suchen(list(q), k=k + 50 if ohne else k)
+        return [t for t in treffer if not _ausgeschlossen(t, ohne)][:k]
     stand = _weiteren_laden(name)
     if not stand:
         return []
@@ -174,21 +179,26 @@ def _suchen_in(name: str, q, k: int) -> list[dict]:
     scores = vektoren @ q
     treffer = []
     with open(verzeichnis(name) / "atome.jsonl", "rb") as f:
-        for nr in np.argsort(-scores)[:k]:
+        for nr in np.argsort(-scores):
+            if len(treffer) >= k:
+                break
             f.seek(offsets[int(nr)])
             try:
                 a = json.loads(f.readline())
             except ValueError:
                 continue
-            treffer.append({"score": round(float(scores[nr]), 4),
-                            "quelle": a.get("quelle"), "loc": a.get("loc"),
-                            "text": a.get("text") or ""})
+            t = {"score": round(float(scores[nr]), 4), "quelle": a.get("quelle"),
+                 "loc": a.get("loc"), "text": a.get("text") or ""}
+            if not _ausgeschlossen(t, ohne):
+                treffer.append(t)
     return treffer
 
 
 def suchen_in(frage_vektor: list[float], bestaende: tuple[str, ...],
-              k: int = 5) -> list[dict]:
-    """Die k passendsten Atome über mehrere Bestände zusammen."""
+              k: int = 5, ohne: tuple[str, ...] = ()) -> list[dict]:
+    """Die k passendsten Atome über mehrere Bestände zusammen. `ohne`:
+    Quellen-Präfixe, die übersprungen werden (der Buchungsweg lässt die
+    Gesetzestexte aus — sie sind für den Chat da)."""
     if not frage_vektor:
         return []
     import numpy as np  # noqa: PLC0415
@@ -197,7 +207,7 @@ def suchen_in(frage_vektor: list[float], bestaende: tuple[str, ...],
     if norm == 0:
         return []
     q = q / norm
-    alle = [t for name in bestaende for t in _suchen_in(name, q, k)]
+    alle = [t for name in bestaende for t in _suchen_in(name, q, k, ohne)]
     return sorted(alle, key=lambda t: -t["score"])[:k]
 
 
