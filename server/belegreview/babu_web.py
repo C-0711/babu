@@ -314,6 +314,29 @@ def _sqlite_schema(conn) -> None:
          anfragen INTEGER NOT NULL DEFAULT 1, zeit TEXT NOT NULL,
          status TEXT NOT NULL DEFAULT 'wartet',
          apple_id TEXT, app_status TEXT)""")
+    try:
+        conn.execute("""ALTER TABLE warteliste ADD COLUMN herkunft_code TEXT""")
+    except sqlite3.OperationalError:
+        pass  # Spalte existiert schon (jede Verbindung läuft durchs Schema)
+    # Ambassador (seit 21.09.2026): Salon wirbt Salon — Codes, Zuordnung,
+    # Provision. Schema in migrations/0009_ambassador.sql, dieselben Tabellen.
+    conn.execute("""CREATE TABLE IF NOT EXISTS ambassador
+        (code TEXT PRIMARY KEY,
+         email TEXT NOT NULL,
+         name TEXT NOT NULL,
+         erstellt TEXT NOT NULL,
+         aktiv INTEGER NOT NULL DEFAULT 1,
+         verdient INTEGER NOT NULL DEFAULT 0,
+         gezahlt INTEGER NOT NULL DEFAULT 0)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS ambassador_salon
+        (code TEXT NOT NULL,
+         email TEXT NOT NULL,
+         salon TEXT,
+         eingelöst TEXT NOT NULL,
+         meilenstein TEXT NOT NULL DEFAULT 'testet',
+         verdienst INTEGER NOT NULL DEFAULT 0,
+         PRIMARY KEY (code, email),
+         FOREIGN KEY (code) REFERENCES ambassador(code))""")
     conn.execute("""CREATE TABLE IF NOT EXISTS nutzer
         (email TEXT PRIMARY KEY, name TEXT, salon TEXT,
          rolle TEXT NOT NULL DEFAULT 'salon', pw TEXT NOT NULL,
@@ -12099,6 +12122,7 @@ if __name__ == "__main__":
 # Datei-Ende: alles, was die Familie braucht (Wächter, DB, Session, Nutzer),
 # ist bis dahin definiert. Reiner Move — kein Verhalten geändert.
 import kern_warteliste  # noqa: E402,F401  (registriert seine Routen an app)
+import kern_ambassador  # noqa: E402,F401  (Ambassador-Codes, Provision)
 
 # Die Tests schreiben auf `babu_web._REG_ZULETZT` (IP-Bremse ruecksetzen) —
 # der Name lebt jetzt im Familien-Modul, hier liegt derselbe Dict als Alias,

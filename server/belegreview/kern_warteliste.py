@@ -179,6 +179,13 @@ async def api_warteliste_anmelden(request: Request) -> Response:
         return JSONResponse({"fehler": "Diese E-Mail-Adresse sieht nicht "
                                        "richtig aus."}, status_code=400)
     art = sauber["art"] if sauber["art"] in _WARTELISTE_ARTEN else "salon"
+    # Ambassador-Code erkennen (21.09.2026): steht „Code XXX“ in der
+    # Bemerkung (so schickt ihn die Ambassador-Landing), wird die Zeile
+    # der Ambassadorin zugeordnet — einmalig, eine Zeile bleibt einem
+    # Code treu, auch wenn die Person sich mehrfach meldet.
+    import re as _re  # noqa: PLC0415
+    code_fund = _re.search(r"[Cc]ode\s+([A-Za-z0-9-]{4,60})",
+                           sauber["bemerkung"])
     with bw._DB_LOCK, bw._db() as c:
         vorhanden = c.execute("SELECT anfragen FROM warteliste WHERE email=?",
                               (email,)).fetchone()
@@ -192,9 +199,18 @@ async def api_warteliste_anmelden(request: Request) -> Response:
                        sauber["bemerkung"], bw._jetzt_iso(), email))
         else:
             c.execute("""INSERT INTO warteliste (email, art, name, salon, telefon,
-                         bemerkung, zeit) VALUES (?,?,?,?,?,?,?)""",
+                         bemerkung, zeit, herkunft_code) VALUES (?,?,?,?,?,?,?,?)""",
                       (email, art, sauber["name"], sauber["salon"],
-                       sauber["telefon"], sauber["bemerkung"], bw._jetzt_iso()))
+                       sauber["telefon"], sauber["bemerkung"], bw._jetzt_iso(),
+                       code_fund.group(1) if code_fund else None))
+        if code_fund and not vorhanden:
+            # Ambassador-Zuordnung: nur beim ERSTEN Eintrag (ein Salon
+            # gehört einem Code, Zähler-Hochsetzen ändert sie nicht).
+            c.execute("""INSERT OR IGNORE INTO ambassador_salon
+                         (code, email, salon, eingelöst)
+                         VALUES (?,?,?,?)""",
+                      (code_fund.group(1), email, sauber["salon"] or "",
+                       bw._jetzt_iso()))
     _REG_ZULETZT[ip] = jetzt
     bw._zaehler_aufraeumen(_REG_ZULETZT, jetzt, 3600)
     print(f"[warteliste] {art} <{email}>", flush=True)

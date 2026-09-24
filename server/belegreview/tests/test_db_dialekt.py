@@ -163,7 +163,7 @@ def test_runner_faehrt_einmal_und_dann_nicht_mehr():
     assert "0001_initial.sql" in erst
     assert db.schema_anwenden(conn, "sqlite") == [], "zweiter Lauf muss leer sein"
     stand = conn.execute("SELECT nummer, datei FROM schema_version").fetchall()
-    assert stand == [(1, "0001_initial.sql"), (2, "0002_kanzlei_mandant_audit.sql"), (3, "0003_kanzlei_ohne_nutzer_fk.sql"), (4, "0004_import_status.sql"), (5, "0005_post_adresse.sql"), (6, "0006_sitzung_ab.sql"), (7, "0007_warteliste.sql"), (8, "0008_warteliste_appleid.sql")]
+    assert stand == [(1, "0001_initial.sql"), (2, "0002_kanzlei_mandant_audit.sql"), (3, "0003_kanzlei_ohne_nutzer_fk.sql"), (4, "0004_import_status.sql"), (5, "0005_post_adresse.sql"), (6, "0006_sitzung_ab.sql"), (7, "0007_warteliste.sql"), (8, "0008_warteliste_appleid.sql"), (9, "0009_ambassador.sql")]
     conn.close()
 
 
@@ -235,7 +235,7 @@ def test_migration_bildet_die_inline_tabellen_ab(tmp_path):
     assert set(inline) == set(migriert), (
         f"nur inline: {set(inline) - set(migriert)}; "
         f"nur Migration: {set(migriert) - set(inline)}")
-    assert len(inline) == 27, f"27 Tabellen erwartet, {len(inline)} gefunden"
+    assert len(inline) == 29, f"29 Tabellen erwartet, {len(inline)} gefunden"
     for tabelle in sorted(inline):
         assert inline[tabelle] == migriert[tabelle], tabelle
 
@@ -284,7 +284,7 @@ def test_pg_schema_steht_und_traegt_alle_tabellen(pg, pg_schema):
         (pg_schema,)).fetchall()
     namen = {z[0] for z in zeilen}
     assert "schema_version" in namen
-    assert len(namen - {"schema_version"}) == 27
+    assert len(namen - {"schema_version"}) == 29
 
 
 @pytest.mark.pg
@@ -344,7 +344,7 @@ def test_pg_migration_ist_idempotent(pg_url, pg_schema):
     conn = psycopg.connect(pg_url)
     conn.execute(f'SET search_path TO "{pg_schema}"')
     conn.commit()
-    assert db.schema_anwenden(conn, "postgres") == ["0001_initial.sql", "0002_kanzlei_mandant_audit.sql", "0003_kanzlei_ohne_nutzer_fk.sql", "0004_import_status.sql", "0005_post_adresse.sql", "0006_sitzung_ab.sql", "0007_warteliste.sql", "0008_warteliste_appleid.sql"]
+    assert db.schema_anwenden(conn, "postgres") == ["0001_initial.sql", "0002_kanzlei_mandant_audit.sql", "0003_kanzlei_ohne_nutzer_fk.sql", "0004_import_status.sql", "0005_post_adresse.sql", "0006_sitzung_ab.sql", "0007_warteliste.sql", "0008_warteliste_appleid.sql", "0009_ambassador.sql"]
     assert db.schema_anwenden(conn, "postgres") == []
     conn.close()
 
