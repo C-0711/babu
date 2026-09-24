@@ -6,6 +6,7 @@ hat sich dabei kein Byte geändert. Die beiden Golden-Dateien sind VOR dem
 Umzug aus dem damaligen Code aufgezeichnet worden; wer sie anfassen muss,
 hat einen Text verändert statt verschoben.
 """
+import json
 import sys
 from pathlib import Path
 
@@ -106,8 +107,9 @@ def test_der_chat_vorspann_ist_byte_gleich_mit_dem_von_vor_dem_umzug(festes_wiss
 def test_barber_ist_eine_vollstaendige_kopie():
     b = portale.hole("barber")
     assert b.SCHLUESSEL == "barber" and portale.kennt("barber")
-    assert b.KOMPENDIUM[0] == "kompendium"      # erbt das neutrale Wissen
-    assert b.KOMPENDIUM[-1] == "kompendium-barber"
+    assert b.KOMPENDIUM == ("kompendium-barber",)   # eigener, vollständiger Container
+    assert portale.eigener_container(b)
+    assert not portale.eigener_container(portale.hole("friseur"))
     # Jeder Hinweis betrifft eine Kategorie, die es im Katalog gibt.
     import kontierung
     assert set(b.KATEGORIE_HINWEISE) <= set(kontierung.KATEGORIEN)
@@ -147,3 +149,84 @@ def test_portal_und_sprache_werden_geprueft_und_gespeichert(tmp_path, monkeypatc
     assert r.status_code == 200, r.text
     e = babu_web.db_einstellungen("christoph0711.io")
     assert e["portal"] == "barber" and e["sprache"] == "tr"
+
+
+# ————— Der Barber-Chat in der App: Wissenscontainer UND alle Belege —————
+
+def test_der_barber_chat_der_app_sieht_container_und_belege_zusammen(tmp_path, monkeypatch):
+    """Die App fragt über `POST /chat` mit Bearer — dieselbe Route wie das
+    Portal. Für einen Barber-Betrieb müssen in EINER Anfrage ankommen: die
+    Rolle und das Grundwissen des Barber-Containers (stehend), das ganze
+    Belegregister (Weltblock, stehend), die Treffer aus `kompendium-barber`
+    UND die passenden eigenen Belege im Wortlaut (variabel)."""
+    import numpy as np
+    import babu_web
+    haupt, barber = tmp_path / "kompendium", tmp_path / "kompendium-barber"
+    haupt.mkdir(); barber.mkdir()
+    atome = [{"id": 0, "quelle": "pangv_2022.md", "loc": "txt#12",
+              "text": "PAngV § 12 Preisangaben für Leistungen: Preisverzeichnis im Schaufenster."},
+             {"id": 1, "quelle": "arbzg.md", "loc": "txt#3", "text": "ArbZG § 3 Arbeitszeit."}]
+    (barber / "atome.jsonl").write_text("".join(json.dumps(a, ensure_ascii=False) + "\n" for a in atome))
+    np.save(barber / "vektoren.npy", np.eye(2, 4, dtype=np.float32))
+    (barber / "grundwissen.md").write_text("# Grundwissen Barbershop TESTMARKE")
+    monkeypatch.setattr(kompendium, "VERZEICHNIS", haupt)
+    monkeypatch.setattr(kompendium, "_VEKTOREN", None)
+    monkeypatch.setattr(kompendium, "_OFFSETS", [])
+    monkeypatch.setattr(kompendium, "_TEXTE", {})
+    monkeypatch.setattr(kompendium, "_WEITERE", {})
+    monkeypatch.setattr(kompendium, "_WEITERE_TEXTE", {})
+
+    monkeypatch.setattr(babu_web, "GEHEIMNIS_PFAD", tmp_path / ".g")
+    monkeypatch.setattr(babu_web, "PORTAL_DB", tmp_path / "p.db")
+    monkeypatch.setattr(babu_web, "wer_token",
+                        lambda t: "christoph0711.io" if t == "test-pat" else None)
+    monkeypatch.setattr(babu_web, "embedding_rechnen",
+                        lambda text, als_dokument=True: {"vektor": [1.0, 0.0, 0.0, 0.0]})
+    monkeypatch.setattr(babu_web, "_wissen_treffer", lambda v, k=5: [])
+    monkeypatch.setattr(babu_web, "_beleg_vektoren",
+                        lambda: (["s1"], np.asarray([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32)))
+    monkeypatch.setattr(babu_web, "_dokument_vektoren", lambda: ([], None))
+    monkeypatch.setattr(babu_web, "git_show",
+                        lambda pfad: b"BELEG Friseurbedarf Yilmaz: Pomade 12,90 EUR" if pfad == "review/s1.md" else None)
+    monkeypatch.setattr(babu_web, "_welt_fuer", lambda un: {
+        "einstellungen": {"betrieb_name": "Moes Barbershop"},
+        "belege": [{"stamm": "s1", "lieferant": "Friseurbedarf Yilmaz", "brutto": 12.9,
+                    "monat": "2026-09", "datum": "20.09.2026", "belegart": "Wareneinkauf", "offen": []}],
+        "kassenblaetter": [], "vertraege": [], "rechnungen": [], "team": [],
+        "fristen": [], "zahlen": {}, "dokumente": []})
+    gesagt = []
+
+    class Antwort:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+    monkeypatch.setattr(babu_web.requests, "post",
+                        lambda url, json=None, **kw: (gesagt.append(json), Antwort())[1])
+    babu_web._LOGIN_VERSUCHE.clear()
+    babu_web.db_einstellung_setzen("christoph0711.io", "portal", "barber")
+
+    from fastapi.testclient import TestClient
+    app = TestClient(babu_web.app, base_url="https://testserver")
+    r = app.post("/chat", json={"frage": "Muss ich meine Preise aushängen?"},
+                 headers={"Authorization": "Bearer test-pat"})
+    assert r.status_code == 200, r.text
+    system = gesagt[-1]["messages"][0]["content"]
+    frage = gesagt[-1]["messages"][-1]["content"]
+    assert "für Barbershops" in system                         # Rolle des Portals
+    assert "# Grundwissen Barbershop TESTMARKE" in system      # Grundwissen aus kompendium-barber
+    assert "Moes Barbershop" in system and "Yilmaz" in system  # Belegregister (Weltblock)
+    assert "PAngV § 12" in frage                               # Treffer aus kompendium-barber
+    assert "EIGENE BELEGE" in frage and "Pomade 12,90" in frage  # eigener Beleg im Wortlaut
+
+    # Gegenprobe: derselbe Betrieb als Friseur sieht den Barber-Container nicht.
+    babu_web.db_einstellung_setzen("christoph0711.io", "portal", "friseur")
+    app.post("/chat", json={"frage": "Muss ich meine Preise aushängen?"},
+             headers={"Authorization": "Bearer test-pat"})
+    assert "TESTMARKE" not in gesagt[-1]["messages"][0]["content"]
+    assert "PAngV" not in gesagt[-1]["messages"][-1]["content"]
+    assert "Pomade 12,90" in gesagt[-1]["messages"][-1]["content"]  # die Belege bleiben

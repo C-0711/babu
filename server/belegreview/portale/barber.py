@@ -17,10 +17,13 @@ from __future__ import annotations
 SCHLUESSEL = "barber"
 NAME = "babu Barber"
 
-# Wissenscontainer: Verzeichnisse unter $HOME, das eigene zuletzt. Der
-# Barber erbt aus `kompendium` das neutrale Wissen (BMF, DATEV, SKR04) und
-# hat in `kompendium-barber` sein eigenes Grundwissen.
-KOMPENDIUM: tuple[str, ...] = ("kompendium", "kompendium-barber")
+# Wissenscontainer: ein eigener, vollständiger — Kopie des Friseur-Containers
+# (91.459 Atome: Kontenplan, SKR04, DATEV, BMF, GoBD, Richtsätze, AfA) plus
+# 8.773 Atome aus 39 Gesetzen im amtlichen Wortlaut (AO, UStG, EStG, HwO,
+# Friseurmeister- und Ausbildungsverordnung, SGB IV/VI, MiLoG, JArbSchG,
+# PAngV, IfSG, AufenthG …) = 100.232 Atome, gebaut am 25.09.2026 mit
+# `werkzeuge/kompendium/container_bauen.py` aus `werkzeuge/kompendium/barber/`.
+KOMPENDIUM: tuple[str, ...] = ("kompendium-barber",)
 
 
 # ── Buchung ──────────────────────────────────────────────────────────────────
