@@ -211,6 +211,54 @@ function einlosen(f){{
     return HTMLResponse(html)
 
 
+async def api_ambassador_einladen(request: Request) -> Response:
+    """Ambassadorin verschickt die Einladung an einen Salon direkt aus dem
+    Portal — die Mail trägt ihren Namen, den Link und die 30-Tage-Zusage."""
+    un, fehler = bw._api_wache(request)
+    if fehler:
+        return fehler
+    try:
+        koerper = json.loads(await bw.koerper_lesen(request, 8 * 1024))
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON mit email erwartet"}, status_code=400)
+    email = str(koerper.get("email", "") or "").strip().lower()[:200]
+    salon = str(koerper.get("salon", "") or "").strip()[:120]
+    link = str(koerper.get("link", "") or "").strip()[:400]
+    if "@" not in email or not link:
+        return JSONResponse({"fehler": "email und link brauchen wir."}, status_code=400)
+    import einladung as ei  # noqa: PLC0415
+    if not ei.mail_gueltig(email):
+        return JSONResponse({"fehler": "Das sieht nicht nach einer E-Mail-Adresse aus."},
+                            status_code=400)
+    with bw._DB_LOCK, bw._db() as c:
+        a = c.execute("SELECT name FROM ambassador WHERE email=? AND aktiv=1",
+                      (un,)).fetchone()
+    if not a:
+        return JSONResponse({"fehler": "Du bist (noch) keine Ambassadorin."},
+                            status_code=404)
+    import postfach  # noqa: PLC0415
+    if not postfach.eingerichtet():
+        return JSONResponse({"fehler": "Der Versand ist gerade nicht eingerichtet — "
+                                       "schick den Link bitte selbst."}, status_code=503)
+    try:
+        anrede = f"Hallo {salon}," if salon else "Hallo,"
+        text = (f"{anrede}\n\n"
+                f"{a[0]} empfiehlt dir babu: Foto machen statt Belege sortieren.\n"
+                f"30 Tage testen — kostenlos, ohne Vertrag, ohne Kündigung.\n\n"
+                f"Dein Platz: {link}\n\n"
+                f"Der Code macht's möglich — einfach öffnen und sichern.\n")
+        await bw.run_in_threadpool(
+            postfach.senden, email,
+            "babu — 30 Tage testen (Empfehlung von " + a[0] + ")", text,
+            stempel=time.strftime("%Y%m%d-%H%M%S"))
+    except Exception as ex:  # noqa: BLE001
+        print(f"[ambassador] Einladung an {email} fehlgeschlagen: {ex!r}", flush=True)
+        return JSONResponse({"fehler": "Die Mail ging nicht raus — später nochmal."},
+                            status_code=503)
+    audit.audit(un, "ambassador_einladen", ziel_un=email)
+    return JSONResponse({"ok": True})
+
+
 async def api_ambassador_meilenstein(request: Request) -> Response:
     """Verwaltung: einen Meilenstein anerkennen (manuelles Abhaken).
 
@@ -284,6 +332,7 @@ _ROUTEN = [
     ("GET", "/api/ambassador/liste", api_ambassador_liste),
     ("GET", "/api/ambassador/me", api_ambassador_me),
     ("POST", "/api/ambassador/link", api_ambassador_link),
+    ("POST", "/api/ambassador/einladen", api_ambassador_einladen),
     ("GET", "/ambassador/{code}/{slug}", ambassador_landing),
     ("POST", "/api/ambassador/meilenstein", api_ambassador_meilenstein),
     ("POST", "/api/ambassador/gezahlt", api_ambassador_gezahlt),

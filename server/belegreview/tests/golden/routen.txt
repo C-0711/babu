@@ -115,6 +115,7 @@ POST /api/abschluss/karte-korrektur
 POST /api/abschluss/start
 POST /api/abschluss/uebernehmen
 POST /api/ambassador
+POST /api/ambassador/einladen
 POST /api/ambassador/gezahlt
 POST /api/ambassador/link
 POST /api/ambassador/meilenstein

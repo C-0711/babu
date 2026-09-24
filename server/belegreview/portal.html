@@ -1361,6 +1361,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     </div>
     <div id="heute-monatslauf"></div>
     <div id="heute-meldungen"></div>
+    <div id="heute-ambassador" hidden></div>
     <div id="heute-inhalt" class="spalten"><div class="skelett"></div><div class="skelett"></div></div>
     </div>
   </section>
@@ -2323,6 +2324,7 @@ async function ladeBleibtDir(monat){
 
 async function ladeHeute(){
   ladeAnstehendes();
+  ladeAmbassador();
   const monat = jetztMonat();
   ladeBleibtDir(monat);
   $("#heute-eyebrow").textContent = "DEIN " + monatName(monat).split(" ")[0].toUpperCase();
@@ -6441,6 +6443,44 @@ async function ladeVerwaltung(){
       <button class="hin" style="margin-top:10px;margin-left:8px;background:transparent;color:var(--gc-muted)" onclick="wartelisteAblehnen('${esc(w.email)}')">Nicht jetzt</button>
     </div>`;
   }
+
+  /* Ambassadorinnen (seit 21.09.2026): Salon wirbt Salon. Anlegen hier,
+     Meilensteine anerkennen in den Wartelisten-Karten passiert über den
+     eigenen Block unten — Auszahlung quartalsweise. */
+  let amb = null;
+  try{ const ra = await api("/api/ambassador/liste"); if (ra.ok) amb = (await ra.json()).ambassadorinnen || []; }catch{}
+  html += `<div class="sektion lbl">Ambassadorinnen (${(amb || []).length})</div>`;
+  html += `<div class="karte" style="margin-bottom:12px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="amb-name" type="text" placeholder="Name der Ambassadorin"
+        style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
+      <input id="amb-email" type="email" placeholder="E-Mail"
+        style="flex:1;min-width:180px;padding:9px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
+      <button class="hin" style="margin-top:0" onclick="ambassadorAnlegen()">Anlegen ›</button>
+    </div>
+    <p style="margin-top:6px;font-size:12px;color:var(--gc-desc)">Bekommt Code + Startpasswort per Mail — sie erzeugt damit Einladungslinks für Salons (30 Tage Light) und verdient 25 % bei Zeichnung, +25 % nach 3 Monaten.</p>
+  </div>`;
+  for (const a of (amb || [])){
+    html += `<div class="karte" style="margin-bottom:10px">
+      <h3>${esc(a.name)} <span style="font-family:ui-monospace,monospace;font-size:13px;background:var(--gc-muted);color:var(--gc-bg);padding:2px 8px;border-radius:6px">${esc(a.code)}</span></h3>
+      <p style="font-size:13px">${esc(a.email)}</p>
+      <p style="font-size:13px;margin-top:4px">Verdient: <b>${a.verdient} €</b> · Ausgezahlt: ${a.gezahlt} € · Offen: <b>${a.verdient - a.gezahlt} €</b></p>
+      ${(a.salons || []).length ? `<table style="width:100%;font-size:13px;margin-top:8px;border-collapse:collapse">
+        <thead><tr><th style="text-align:left;padding:4px">Salon</th><th style="text-align:left;padding:4px">Stand</th><th style="text-align:right;padding:4px">Anerkennen</th></tr></thead><tbody>
+        ${a.salons.map(s => `<tr>
+          <td style="padding:4px">${esc(s.salon || s.email)}</td>
+          <td style="padding:4px">${esc(s.meilenstein)}${s.verdienst ? ` · ${s.verdienst} €` : ""}</td>
+          <td style="padding:4px;text-align:right">${s.meilenstein === "testet"
+            ? `<button class="hin" style="margin-top:0;padding:5px 10px;font-size:12px" onclick="ambassadorMeilenstein('${esc(a.code)}','${esc(s.email)}','gezeichnet')">Gezeichnet +25 %</button>`
+            : s.meilenstein === "gezeichnet"
+            ? `<button class="hin" style="margin-top:0;padding:5px 10px;font-size:12px" onclick="ambassadorMeilenstein('${esc(a.code)}','${esc(s.email)}','gehalten')">3 Monate +25 %</button>`
+            : `✓ ${s.verdienst} €`}</td>
+        </tr>`).join("")}</tbody></table>`
+        : `<p style="font-size:12px;color:var(--gc-muted);margin-top:6px">noch keine Salons über ihren Code</p>`}
+      ${(a.verdient - a.gezahlt) > 0 ? `<button class="hin" style="margin-top:10px" onclick="ambassadorGezahlt('${esc(a.code)}')">Ausgezahlt (${a.verdient - a.gezahlt} €) ›</button>` : ""}
+    </div>`;
+  }
+
   const offen = regs.filter(r => r.status === "neu");
   html += `<div class="sektion lbl">Anfragen (${offen.length})</div>`;
   if (!offen.length){
@@ -7463,6 +7503,118 @@ async function appleIdSpeichern(email){
   try{
     const r = await api("/api/warteliste/apple-id", {method:"POST",
       headers:{"Content-Type":"application/json"}, body: JSON.stringify({email, apple_id: apple})});
+    const d = await r.json();
+    if (r.ok) ladeVerwaltung();
+    else alert(d.fehler || "Ging gerade nicht.");
+  }catch{ alert("Gerade keine Verbindung — später nochmal."); }
+}
+/* Ambassador: anlegen (Code + Startpasswort kommt per Mail bei ihr an),
+   Meilensteine anerkennen, Auszahlung verbuchen. */
+async function ambassadorAnlegen(){
+  const name = ($("#amb-name") || {}).value || "";
+  const email = ($("#amb-email") || {}).value || "";
+  if (!name.trim() || !email.includes("@")){ alert("Name und gültige E-Mail brauchen wir."); return; }
+  try{
+    const r = await api("/api/ambassador", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({name: name.trim(), email: email.trim()})});
+    const d = await r.json();
+    if (r.ok){ alert("Ambassadorin angelegt — Code " + d.code + ". Ihr Startpasswort " + d.startpasswort + " geht per Mail an " + email.trim() + "."); ladeVerwaltung(); }
+    else alert(d.fehler || "Ging gerade nicht.");
+  }catch{ alert("Gerade keine Verbindung — später nochmal."); }
+}
+async function ambassadorMeilenstein(code, email, meilenstein){
+  const betrag = meilenstein === "gezeichnet" ? 237 : 237;
+  if (!confirm("Meilenstein „" + meilenstein + "“ anerkennen — " + betrag + " € Guthaben für die Ambassadorin?")) return;
+  try{
+    const r = await api("/api/ambassador/meilenstein", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({code, email, meilenstein, betrag})});
+    const d = await r.json();
+    if (r.ok) ladeVerwaltung();
+    else alert(d.fehler || "Ging gerade nicht.");
+  }catch{ alert("Gerade keine Verbindung — später nochmal."); }
+}
+/* Ambassadorin-eigene Ansicht (nur sichtbar, wenn das Konto eine ist):
+   Code, Salons, Saldo — und der Einladungs-Generator nach dem
+   Design-Entwurf design/ambassador-bereich.html. */
+async function ladeAmbassador(){
+  const ziel = $("#heute-ambassador");
+  try{
+    const r = await api("/api/ambassador/me");
+    if (!r.ok){ ziel.hidden = true; return; }
+    const d = await r.json();
+    ziel.innerHTML = `
+      <div class="lbl" style="margin-top:24px">Dein Ambassador-Bereich</div>
+      <div class="karte" style="margin-top:10px">
+        <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">
+          <span style="font-size:28px;font-weight:700;color:var(--gc-accent)">${d.offen} €</span>
+          <span style="font-size:13px;color:var(--gc-desc)">offen · ${d.verdient} € verdient · ${d.gezahlt} € ausgezahlt</span>
+          <span style="font-family:ui-monospace,monospace;font-size:14px;background:var(--gc-muted);color:var(--gc-bg);padding:3px 10px;border-radius:6px">${esc(d.code)}</span>
+        </div>
+        <p style="margin-top:8px;font-size:13px;color:var(--gc-desc)">Ein Salon löst deinen Code ein → 30 Tage babu Light, kostenlos. Zeichnet er ab: <b>25 %</b> für dich. Bleibt er 3 Monate: nochmal <b>25 %</b> — gesamt 50 % der Jahreszahlung, für immer dir zugeordnet.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
+          <input id="amb-neu-salon" type="text" placeholder="Name des Salons (optional)"
+            style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
+          <input id="amb-neu-mail" type="email" placeholder="E-Mail der Besitzerin"
+            style="flex:1;min-width:180px;padding:9px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
+          <button class="hin" style="margin-top:0" onclick="ambassadorLinkErzeugen()">Link erzeugen ›</button>
+        </div>
+        <div id="amb-link-box" style="display:none;margin-top:10px">
+          <div id="amb-link" style="font-family:ui-monospace,monospace;font-size:13px;background:var(--gc-muted);color:var(--gc-bg);padding:10px 12px;border-radius:8px;word-break:break-all"></div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="hin" style="margin-top:0" onclick="ambassadorLinkKopieren()">Kopieren</button>
+            <button class="hin" style="margin-top:0;background:transparent;color:var(--gc-accent);border:1px solid var(--gc-accent)" onclick="ambassadorMailSenden()">Als Mail verschicken</button>
+            <span id="amb-mail-status" style="font-size:12px;color:var(--gc-desc);align-self:center"></span>
+          </div>
+        </div>
+        ${(d.salons || []).length ? `<table style="width:100%;font-size:13px;margin-top:14px;border-collapse:collapse">
+          <thead><tr><th style="text-align:left;padding:4px;color:var(--gc-desc)">Salon</th><th style="text-align:left;padding:4px;color:var(--gc-desc)">Stand</th><th style="text-align:right;padding:4px;color:var(--gc-desc)">Dein Verdienst</th></tr></thead>
+          <tbody>${d.salons.map(s => `<tr>
+            <td style="padding:5px 4px">${esc(s.salon || s.email)}</td>
+            <td style="padding:5px 4px">${s.meilenstein === "testet" ? "testet noch" : s.meilenstein === "gezeichnet" ? "gezeichnet ✓" : "3 Monate dabei ✓"}</td>
+            <td style="padding:5px 4px;text-align:right">${s.verdienst ? `<b>${s.verdienst} €</b>` : "—"}</td>
+          </tr>`).join("")}</tbody></table>`
+          : `<p style="font-size:12px;color:var(--gc-muted);margin-top:10px">Noch keine Einlösungen — verschicke deinen ersten Link.</p>`}
+      </div>`;
+    ziel.hidden = false;
+  }catch{ ziel.hidden = true; }
+}
+let _ambLink = "";
+async function ambassadorLinkErzeugen(){
+  const salon = ($("#amb-neu-salon") || {}).value || "";
+  const mail = ($("#amb-neu-mail") || {}).value || "";
+  try{
+    const r = await api("/api/ambassador/link", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({salon: salon.trim()})});
+    if (!r.ok){ alert((await r.json()).fehler || "Ging gerade nicht."); return; }
+    _ambLink = (await r.json()).link;
+    $("#amb-link").textContent = _ambLink;
+    $("#amb-link-box").style.display = "block";
+    _ambMailAn = mail.trim();
+  }catch{ alert("Gerade keine Verbindung — später nochmal."); }
+}
+let _ambMailAn = "";
+function ambassadorLinkKopieren(){
+  navigator.clipboard.writeText(_ambLink).then(() => {
+    $("#amb-mail-status").textContent = "Kopiert ✓";
+  });
+}
+async function ambassadorMailSenden(){
+  if (!_ambMailAn.includes("@")){ alert("Bitte oben die E-Mail der Besitzerin eintragen."); return; }
+  try{
+    const r = await api("/api/ambassador/einladen", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({email: _ambMailAn, salon: ($("#amb-neu-salon") || {}).value || "", link: _ambLink})});
+    const d = await r.json();
+    $("#amb-mail-status").textContent = r.ok ? "Einladung ist raus ✓" : (d.fehler || "Ging gerade nicht.");
+  }catch{ $("#amb-mail-status").textContent = "Gerade keine Verbindung."; }
+}
+async function ambassadorGezahlt(code){
+  if (!confirm("Auszahlung als verbucht markieren? Der Saldo geht auf null.")) return;
+  try{
+    const r = await api("/api/ambassador/gezahlt", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({code})});
     const d = await r.json();
     if (r.ok) ladeVerwaltung();
     else alert(d.fehler || "Ging gerade nicht.");
