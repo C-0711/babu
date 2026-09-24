@@ -12107,6 +12107,22 @@ def api_gespraeche_loeschen(request: Request) -> Response:
     return JSONResponse({"ok": True, "geloescht": max(anzahl, 0)})
 
 
+# ── Familien-Module (Refactor 21.09.2026, docs/refactor-babu-web-plan.md) ────
+# Die Routen der ausgegliederten Familien registrieren sich HIER an derselben
+# App. MUSS vor uvicorn.run() stehen: beim Start (python babu_web.py) läuft
+# uvicorn.run() in eine Blockade, die Import-Zeilen darunter würden nie
+# erreicht — gemessen 24.09. (dev-Container startete ohne Wartelisten-Routen).
+# Tests importieren das Modul und merkten den Fehler nicht — der Live-Beweis
+# (E2E gegen den echten Start) ist der einzige, der ihn zeigt.
+import kern_warteliste  # noqa: E402,F401  (registriert seine Routen an app)
+import kern_ambassador  # noqa: E402,F401  (Ambassador-Codes, Provision)
+
+# Die Tests schreiben auf `babu_web._REG_ZULETZT` (IP-Bremse ruecksetzen) —
+# der Name lebt jetzt im Familien-Modul, hier liegt derselbe Dict als Alias,
+# damit `bw._REG_ZULETZT.clear()` weiterhin derselbe Speicher ist.
+_REG_ZULETZT = kern_warteliste._REG_ZULETZT  # noqa: E305
+
+
 if __name__ == "__main__":
     import uvicorn
     # 7844 ist und bleibt der Live-Port. BABU_PORT gibt der Dev-Lane auf der
@@ -12116,15 +12132,3 @@ if __name__ == "__main__":
                 port=int(os.environ.get("BABU_PORT", "7844")), workers=1)
 
 
-# ── Familien-Module (Refactor 21.09.2026, docs/refactor-babu-web-plan.md) ────
-# Die Routen der Warteliste/Signup-Familie leben in kern_warteliste.py und
-# registrieren sich HIER an derselben App. Der Import steht bewusst am
-# Datei-Ende: alles, was die Familie braucht (Wächter, DB, Session, Nutzer),
-# ist bis dahin definiert. Reiner Move — kein Verhalten geändert.
-import kern_warteliste  # noqa: E402,F401  (registriert seine Routen an app)
-import kern_ambassador  # noqa: E402,F401  (Ambassador-Codes, Provision)
-
-# Die Tests schreiben auf `babu_web._REG_ZULETZT` (IP-Bremse ruecksetzen) —
-# der Name lebt jetzt im Familien-Modul, hier liegt derselbe Dict als Alias,
-# damit `bw._REG_ZULETZT.clear()` weiterhin derselbe Speicher ist.
-_REG_ZULETZT = kern_warteliste._REG_ZULETZT  # noqa: E305
