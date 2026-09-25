@@ -3,15 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>babu Barber — dein Papierkram macht sich von selbst</title>
-<meta name="description" content="Beleg fotografieren, grüner Haken, fertig. babu erledigt Belege, Kassenbuch und deine ganze Buchhaltung — mit oder ohne eigenes Steuerbüro. Gemacht für Barbershops — auf Deutsch und Türkisch.">
+<title>babu Werkstatt — dein Papierkram macht sich von selbst</title>
+<meta name="description" content="Beleg fotografieren, grüner Haken, fertig. babu erledigt Belege, Kassenbuch und deine ganze Buchhaltung — mit oder ohne eigenes Steuerbüro. Gemacht für Kfz-Werkstätten.">
 <style>
 /* ── babu Landing — Papier-Palette wie App & Portal, kein CDN ─────────── */
 :root{
   --gc-desk:#efece6; --gc-canvas:#faf9f5; --gc-chrome:#f4f1ec; --gc-bg:#ffffff;
   --gc-fg:#111111; --gc-body:#333333; --gc-desc:#555555; --gc-muted:#999999;
-  --gc-accent:#8a6c3a; --gc-accent-hover:#6f5630; --gc-accent-subtle:#f3ecdf;
-  --gc-ok:#6f8a6e; --gc-warn:#b0821f; --gc-border:#e5e7eb; --gc-gold:#c7a15a;
+  --gc-accent:#3d5a76; --gc-accent-hover:#2c4459; --gc-accent-subtle:#e7edf3;
+  --gc-ok:#6f8a6e; --gc-warn:#b0821f; --gc-border:#e5e7eb; --gc-gold:#c9953c;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -290,11 +290,6 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
 }
 @media (prefers-reduced-motion:reduce){.welt,.welt img{transition:none}}
 /* welten-css:ende */
-/* ── Barber: Kopfbild, Sprachumschalter ─────────────────────────────── */
-.sprache{display:flex;gap:4px}
-.sprache button{border:1px solid rgba(255,255,255,.5);background:rgba(18,16,12,.35);color:#fff;border-radius:99px;
-  padding:6px 12px;font:600 12px Inter,-apple-system,sans-serif;cursor:pointer}
-.sprache button[aria-pressed="true"]{background:#fff;border-color:#fff;color:var(--gc-fg)}
 .faq-quelle{display:block;font-size:12.5px;color:var(--gc-muted);margin-top:8px}
 </style>
 </head>
@@ -308,16 +303,16 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
       <img src="/bilder/fr-held.jpg" width="1600" height="893" loading="lazy" alt="Babs lacht in ihrem hellen Salon mit einer Stammkundin, die einen Kaffee hält">
       <span class="welt-text"><b>Friseursalons</b><span>← mit Babs</span></span>
     </a>
+    <a class="welt" href="/barber">
+      <img src="/bilder/ba-held.jpg" width="1600" height="893" loading="lazy" alt="Moe lacht in seinem Barbershop mit einem Stammkunden im Stuhl, der ein Glas Tee hält">
+      <span class="welt-text"><b>Barbershops</b><span>← mit Moe</span></span>
+    </a>
     <div class="welt aktiv">
-      <img src="/bilder/ba-held.jpg" width="1600" height="893" alt="Moe lacht in seinem Barbershop mit einem Stammkunden im Stuhl, der ein Glas Tee hält">
-      <div class="sprache welt-oben" role="group" aria-label="Sprache">
-        <button type="button" data-sprache="de" aria-pressed="true">Deutsch</button>
-        <button type="button" data-sprache="tr" aria-pressed="false">Türkçe</button>
-      </div>
+      <img src="/bilder/ws-held.jpg" width="1600" height="893" alt="Mario lacht in seiner Werkstatt mit einem Stammkunden, beide mit einem Tässchen Kaffee, das Auto steht auf der Hebebühne">
       <div class="welt-inhalt">
-        <div class="lbl">babu · für deinen Barbershop</div>
+        <div class="lbl">babu · für deine Werkstatt</div>
         <h1>Dein Papierkram<br>macht sich von selbst.</h1>
-        <p class="sub">Beleg fotografieren — fertig. babu liest ihn, prüft ihn und legt ihn sicher ab. Am Monatsende ist deine Buchhaltung fertig — ganz ohne eigenes Steuerbüro. Du kümmerst dich um Fades und Bärte.</p>
+        <p class="sub">Beleg fotografieren — fertig. babu liest ihn, prüft ihn und legt ihn sicher ab. Am Monatsende ist deine Buchhaltung fertig — ganz ohne eigenes Steuerbüro. Du schraubst weiter.</p>
         <div class="cta">
           <a class="knopf voll" href="/app">App laden</a>
           <a class="knopf zart" href="/portal">Anmelden</a>
@@ -328,10 +323,6 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
         </div>
       </div>
     </div>
-    <a class="welt" href="/werkstatt">
-      <img src="/bilder/ws-held.jpg" width="1600" height="893" loading="lazy" alt="Mario lacht in seiner Werkstatt mit einem Stammkunden, beide mit einem Tässchen Kaffee, das Auto steht auf der Hebebühne">
-      <span class="welt-text"><b>Kfz-Werkstätten</b><span>mit Mario →</span></span>
-    </a>
   </div>
 </section>
 <!-- welten:ende -->
@@ -344,7 +335,7 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
     <div class="karte schritt"><div class="nr">1</div>
       <h3>Du fotografierst</h3>
       <p>Beleg in den Rahmen halten — das Foto macht die App von selbst.
-      Zwischen zwei Kunden, direkt an der Kasse, egal wo.</p></div>
+      Zwischen zwei Aufträgen, direkt an der Werkbank, egal wo.</p></div>
     <div class="karte schritt"><div class="nr">2</div>
       <h3>babu liest und prüft</h3>
       <p>Betrag, Datum, Laden — alles wird gelesen, richtig einsortiert und
@@ -366,23 +357,23 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
     <div class="strecke-bahn" tabindex="0" role="group"
          aria-label="So fängst du an. Zum Durchblättern wischen oder die Pfeiltasten benutzen.">
     <figure>
-      <img src="/bilder/ba-start-1-laden.jpg" loading="lazy" width="692" height="859"
-        alt="Moe sitzt morgens auf der Wartebank in seinem Shop und richtet auf dem Telefon etwas ein">
-      <figcaption><span class="strecke-nr">1</span><b>App laden.</b> Per Einladung aufs iPhone: Apple schickt dir eine Mail, du tippst auf „Testen“. Dauert so lange wie ein Tee.</figcaption>
+      <img src="/bilder/ws-start-1-laden.jpg" loading="lazy" width="692" height="859"
+        alt="Mario sitzt morgens auf einem Reifenstapel in seiner Werkstatt und richtet auf dem Telefon etwas ein">
+      <figcaption><span class="strecke-nr">1</span><b>App laden.</b> Per Einladung aufs iPhone: Apple schickt dir eine Mail, du tippst auf „Testen“. Dauert so lange wie ein Kaffee.</figcaption>
     </figure>
     <figure>
-      <img src="/bilder/ba-start-2-anmelden.jpg" loading="lazy" width="692" height="859"
-        alt="Moe steht am Tresen und tippt mit dem Daumen kurz etwas in sein Telefon">
+      <img src="/bilder/ws-start-2-anmelden.jpg" loading="lazy" width="692" height="859"
+        alt="Mario steht an der Theke und tippt mit dem Daumen kurz etwas in sein Telefon">
       <figcaption><span class="strecke-nr">2</span><b>Anmelden.</b> E-Mail und Passwort, mehr nicht. Dieselbe Anmeldung wie im Portal am Rechner.</figcaption>
     </figure>
     <figure>
-      <img src="/bilder/ba-start-3-foto.jpg" loading="lazy" width="692" height="859"
-        alt="Hände halten ein Telefon über einen Kassenbon auf dem Tresen und fotografieren ihn von oben">
+      <img src="/bilder/ws-start-3-foto.jpg" loading="lazy" width="692" height="859"
+        alt="Mario steht in seiner Werkstatt und fotografiert mit dem Telefon einen Beleg">
       <figcaption><span class="strecke-nr">3</span><b>Ersten Beleg fotografieren.</b> Drauf halten, fertig. Du musst nicht sagen, was es ist — babu erkennt es und legt es an die richtige Stelle.</figcaption>
     </figure>
     <figure>
-      <img src="/bilder/ba-start-4-fertig.jpg" loading="lazy" width="692" height="859"
-        alt="Moe lehnt nach Feierabend entspannt an der Backsteinwand seines leeren Shops, das Telefon liegt weggelegt im Regal">
+      <img src="/bilder/ws-start-4-fertig.jpg" loading="lazy" width="692" height="859"
+        alt="Mario steht nach Feierabend entspannt in seiner aufgeräumten Werkstatt, das Telefon liegt auf der Werkbank">
       <figcaption><span class="strecke-nr">4</span><b>Das war es schon.</b> Ab jetzt läuft es nebenher. Am Monatsende liegt der fertige Stapel da, ohne dass du etwas dafür getan hättest.</figcaption>
     </figure>
     </div>
@@ -397,40 +388,40 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
 <section>
   <div class="lbl">Ein Telefon, der ganze Laden</div>
   <h2>Und das kann babu dann alles.</h2>
-  <p class="sub">Nicht nur Belege. Alles, was zwischen dem ersten Kunden und dem Feierabend anfällt — das meiste davon, ohne dass du daran denken musst.</p>
+  <p class="sub">Nicht nur Belege. Alles, was zwischen dem ersten Auftrag und dem Feierabend anfällt — das meiste davon, ohne dass du daran denken musst.</p>
 
   <div class="strecke" data-strecke>
     <div class="strecke-bahn" tabindex="0" role="group"
          aria-label="Und das kann babu dann alles. Zum Durchblättern wischen oder die Pfeiltasten benutzen.">
     <figure>
-      <img src="/bilder/ba-kann-termine.jpg" loading="lazy" width="692" height="859"
-        alt="Moe schaut zwischen zwei Kunden kurz auf sein Telefon, in der anderen Hand eine Haarschneidemaschine">
-      <figcaption><b>Termine.</b> Schreib hin, wie du es sagen würdest: „Kerem Donnerstag Fade und Bart“. babu sucht die freie Lücke — und für Laufkundschaft bleibt Platz.</figcaption>
+      <img src="/bilder/ws-kann-termine.jpg" loading="lazy" width="692" height="859"
+        alt="Mario schaut zwischen zwei Aufträgen kurz auf sein Telefon, in der anderen Hand einen Drehmomentschlüssel">
+      <figcaption><b>Termine.</b> Schreib hin, wie du es sagen würdest: „Maier Donnerstag Inspektion und Bremsen“. babu sucht die freie Lücke.</figcaption>
     </figure>
     <figure>
-      <img src="/bilder/ba-kann-nachricht.jpg" loading="lazy" width="692" height="859"
-        alt="Moe sitzt auf der Lehne der Wartebank und liest schmunzelnd eine Nachricht auf dem Telefon">
+      <img src="/bilder/ws-kann-nachricht.jpg" loading="lazy" width="692" height="859"
+        alt="Mario sitzt auf der Kante der Werkbank und liest schmunzelnd eine Nachricht auf dem Telefon">
       <figcaption><b>Termine über WhatsApp.</b> Dein Kunde schreibt, babu antwortet mit freien Zeiten und trägt den Termin ein. Du bestätigst nur noch.</figcaption>
     </figure>
     <figure>
-      <img src="/bilder/ba-kann-belege.jpg" loading="lazy" width="692" height="859"
-        alt="Umgekippter Schuhkarton auf dem Tresen, aus dem ein Haufen Kassenbons quillt, Moe greift mit dem Telefon hinein">
-      <figcaption><b>Der Schuhkarton.</b> Bon, Vertrag, Brief vom Amt, Kontoauszug — ein Foto genügt. Jedes landet von selbst dort, wo es hingehört.</figcaption>
+      <img src="/bilder/ws-kann-belege.jpg" loading="lazy" width="692" height="859"
+        alt="Umgekippter Schuhkarton auf der Theke, aus dem ein Haufen Belege quillt, Mario greift mit dem Telefon hinein">
+      <figcaption><b>Der Schuhkarton.</b> Teilerechnung, Leasingvertrag, Brief vom Amt, Kontoauszug — ein Foto genügt. Jedes landet von selbst dort, wo es hingehört.</figcaption>
     </figure>
     <figure>
-      <img src="/bilder/ba-kann-kundin.jpg" loading="lazy" width="692" height="859"
-        alt="Moe bereitet ein heißes Tuch für die Rasur vor, das Telefon steht aufgestellt vor ihm">
-      <figcaption><b>Deine Stammkunden.</b> Welcher Schnitt beim letzten Mal saß, welche Aufsatzlänge, was die Haut nicht verträgt. Der Karteikasten hinterm Spiegel, nur auffindbar.</figcaption>
+      <img src="/bilder/ws-kann-kunde.jpg" loading="lazy" width="692" height="859"
+        alt="Mario zeigt einem Kunden unter dem Auto auf der Hebebühne eine abgefahrene Bremsscheibe, das Telefon steht auf dem Werkzeugwagen">
+      <figcaption><b>Deine Stammkunden.</b> Welches Auto, wann der letzte Ölwechsel war, was beim letzten Mal schon auffiel. Die Karteikarte an der Pinnwand, nur auffindbar.</figcaption>
     </figure>
     <figure>
-      <img src="/bilder/ba-kann-rechnung.jpg" loading="lazy" width="692" height="859"
-        alt="Moe lehnt am Tresen und tippt konzentriert etwas in sein Telefon, im Hintergrund zieht ein Kunde seine Jacke an">
-      <figcaption><b>Rechnungen.</b> Stuhlmiete, Bräutigam mit Trauzeugen, Firmenkunde. Mit deinem Briefkopf und allen Pflichtangaben, in einer Minute.</figcaption>
+      <img src="/bilder/ws-kann-rechnung.jpg" loading="lazy" width="692" height="859"
+        alt="Mario lehnt an der Theke und tippt konzentriert etwas in sein Telefon, im Hintergrund holt ein Kunde seinen Autoschlüssel">
+      <figcaption><b>Rechnungen.</b> Inspektion, Reifenwechsel, Firmenflotte — Teile und Arbeitszeit getrennt. Mit deinem Briefkopf und allen Pflichtangaben, in einer Minute.</figcaption>
     </figure>
     <figure>
-      <img src="/bilder/ba-kann-kasse.jpg" loading="lazy" width="692" height="859"
-        alt="Moe zählt abends unter der Messinglampe hinter dem Tresen Scheine und Münzen, das Telefon liegt daneben">
-      <figcaption><b>Abends kurz zählen.</b> Viel Bargeld? Genau dafür. Eine Zahl nach der anderen, wie auf deinem Papierzettel. Am Ende sagt babu: deine Kasse stimmt.</figcaption>
+      <img src="/bilder/ws-kann-kasse.jpg" loading="lazy" width="692" height="859"
+        alt="Mario zählt abends unter der Arbeitslampe an der Theke Scheine und Münzen, das Telefon liegt daneben">
+      <figcaption><b>Abends kurz zählen.</b> Barzahler am Abholtag? Eine Zahl nach der anderen, wie auf deinem Papierzettel. Am Ende sagt babu: deine Kasse stimmt.</figcaption>
     </figure>
     </div>
     <div class="strecke-knoepfe">
@@ -460,36 +451,36 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
 
 <!-- ── 3b · Salon-Check ─────────────────────────────────────────────── -->
 <section style="background:var(--gc-accent-subtle)">
-  <div class="lbl">Neu · Der Shop-Check</div>
+  <div class="lbl">Neu · Der Werkstatt-Check</div>
   <h2>Wirf uns deinen Papierstapel hin.<br>Wir lesen alles.</h2>
   <p class="sub">Leg die Unterlagen vom letzten Jahr einfach ab — Gewinnrechnung,
   Steuerbescheid, Anlagenliste. Als Foto oder PDF, egal in welcher Reihenfolge.
   Dann schau zu, wie sich alles von selbst ausfüllt — und am Ende weißt du,
-  wo dein Shop steht. Mit Ampeln statt Steuer-Deutsch.</p>
+  wo deine Werkstatt steht. Mit Ampeln statt Steuer-Deutsch.</p>
   <div class="sc-duo">
     <figure class="sc-foto">
-      <img src="/bilder/ba-papierstapel.jpg" loading="lazy" width="692" height="859" alt="Moe trägt lachend einen riesigen Stapel Ordner und Belege vom letzten Jahr im Arm">
+      <img src="/bilder/ws-papierstapel.jpg" loading="lazy" width="692" height="859" alt="Mario trägt lachend einen riesigen Stapel Ordner und Belege vom letzten Jahr im Arm">
       <figcaption><strong>Alles vom letzten Jahr?</strong> Genau so. Einfach mitbringen.</figcaption>
     </figure>
     <figure class="telefon" style="max-width:310px;width:100%">
       <div class="rahmen"><div class="sc-schirm" id="sc-demo">
-        <h4>Dein Shop-Check</h4>
+        <h4>Dein Werkstatt-Check</h4>
         <div class="klein">babu liest deine Unterlagen …</div>
         <div class="sc-feld"><span>Rechtsform</span><span><b>Einzelunternehmen</b> <span class="ok">✓</span></span></div>
         <div class="sc-feld"><span>Steuernummer</span><span><b>71/123/45678</b> <span class="ok">✓</span></span></div>
         <div class="sc-feld"><span>Finanzamt</span><span><b>Ludwigsburg</b> <span class="ok">✓</span></span></div>
         <div class="sc-feld"><span>Dein Umsatz</span><span><b>100.000 €</b> <span class="ok">✓</span></span></div>
-        <div class="sc-feld"><span>Material</span><span><b>11.000 €</b> <span class="ok">✓</span></span></div>
+        <div class="sc-feld"><span>Teile und Material</span><span><b>11.000 €</b> <span class="ok">✓</span></span></div>
         <div class="sc-feld"><span>Dein Team</span><span><b>48.000 €</b> <span class="ok">✓</span></span></div>
         <div class="sc-feld"><span>Dein Gewinn</span><span><b>20.000 €</b> <span class="ok">✓</span></span></div>
-        <div class="sc-fertig">✓ Fertig — dein Shop-Check steht.</div>
+        <div class="sc-fertig">✓ Fertig — dein Werkstatt-Check steht.</div>
       </div></div>
       <p><strong>Zuschauen statt Abtippen.</strong> Jede Zahl, die babu findet,
       trägt sich selbst ein — mit grünem Haken.</p>
     </figure>
   </div>
   <div class="cta" style="margin-top:34px">
-    <a class="knopf voll" href="/portal">Shop-Check starten</a>
+    <a class="knopf voll" href="/portal">Werkstatt-Check starten</a>
   </div>
 </section>
 
@@ -539,9 +530,9 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
 <!-- ── 4b · Preise & Paket-Fragebogen ───────────────────────────────── -->
 <section style="background:var(--gc-chrome)">
   <div class="lbl">Unsere Pakete</div>
-  <h2>Ein Preis, der zu deinem Shop passt.</h2>
+  <h2>Ein Preis, der zu deiner Werkstatt passt.</h2>
   <span class="beispiel">Beispielpreise — endgültige Preise folgen</span>
-  <p class="sub">Je nachdem, wie dein Shop aufgestellt ist, brauchst du mehr
+  <p class="sub">Je nachdem, wie deine Werkstatt aufgestellt ist, brauchst du mehr
   oder weniger. Deshalb gibt es drei Pakete — und wenn du unsicher bist,
   beantworte einfach die paar Fragen darunter.</p>
   <div class="dreier" style="margin-top:26px">
@@ -552,11 +543,11 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
         <li>Du arbeitest allein</li>
         <li>Kleinunternehmer (§ 19 UStG) — keine Umsatzsteuer</li>
         <li>Einfache Gewinnrechnung (EÜR)</li>
-        <li>Belege, Kassenbuch, Shop-Check — alles drin</li>
+        <li>Belege, Kassenbuch, Werkstatt-Check — alles drin</li>
       </ul>
     </div>
     <div class="karte spalte" style="border-color:var(--gc-ok)">
-      <h3 class="gruen">Shop</h3>
+      <h3 class="gruen">Werkstatt</h3>
       <div class="preis">79 €<small> / Monat*</small></div>
       <ul>
         <li>Du hast ein Team</li>
@@ -566,12 +557,12 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
       </ul>
     </div>
     <div class="karte spalte">
-      <h3>Shop Plus</h3>
+      <h3>Werkstatt Plus</h3>
       <div class="preis">149 €<small> / Monat*</small></div>
       <ul>
         <li>Mehrere Standorte oder mehrere Firmen</li>
         <li>Oder: Bilanz statt einfacher Gewinnrechnung</li>
-        <li>Alles aus Shop — plus getrennte Auswertungen</li>
+        <li>Alles aus Werkstatt — plus getrennte Auswertungen</li>
       </ul>
     </div>
   </div>
@@ -595,21 +586,21 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
   <div class="lbl">Scanner · Helfer · Berater</div>
   <h2>Dein Telefon kann das jetzt alles.</h2>
   <p class="sub">Kein Ordner, kein Extra-Gerät, kein Warten aufs Steuerbüro.
-  Dein Telefon verbindet dich mit allem, was zu deinem Shop gehört —
+  Dein Telefon verbindet dich mit allem, was zu deiner Werkstatt gehört —
   deinen Belegen, deinen Zahlen, deinen Antworten.</p>
   <div class="dreier" style="margin-top:32px">
     <figure class="telefon">
-      <img src="/bilder/ba-scanner.jpg" loading="lazy" width="692" height="859" alt="Moe fotografiert am Tresen einen Beleg mit dem Telefon, im Hintergrund warten zwei Kunden auf der Bank" style="width:100%;display:block;border-radius:22px;border:1px solid var(--gc-border)">
+      <img src="/bilder/ws-scanner.jpg" loading="lazy" width="692" height="859" alt="Mario fotografiert an der Theke einen Beleg mit dem Telefon, im Hintergrund warten zwei Kunden" style="width:100%;display:block;border-radius:22px;border:1px solid var(--gc-border)">
       <p><strong>Der Scanner.</strong> Beleg hinhalten — gelesen, geprüft,
-      sicher abgelegt. Mitten zwischen zwei Kunden.</p>
+      sicher abgelegt. Mitten zwischen zwei Aufträgen.</p>
     </figure>
     <figure class="telefon">
-      <img src="/bilder/ba-helfer.jpg" loading="lazy" width="692" height="859" alt="Moe lehnt nach Feierabend entspannt am Tresen und schaut zufrieden auf sein Telefon, daneben ein Glas Tee" style="width:100%;display:block;border-radius:22px;border:1px solid var(--gc-border)">
+      <img src="/bilder/ws-helfer.jpg" loading="lazy" width="692" height="859" alt="Mario lehnt nach Feierabend entspannt an der Werkbank und schaut zufrieden auf sein Telefon, daneben ein Tässchen Kaffee" style="width:100%;display:block;border-radius:22px;border:1px solid var(--gc-border)">
       <p><strong>Der Helfer.</strong> Feierabend: Kassenbuch in zwei Minuten,
-      grüner Haken, ein Glas Tee. Der Tag ist wirklich vorbei.</p>
+      grüner Haken, Kaffee. Der Tag ist wirklich vorbei.</p>
     </figure>
     <figure class="telefon">
-      <img src="/bilder/ba-berater.jpg" loading="lazy" width="692" height="859" alt="Moe fotografiert amüsiert einen Brief vom Amt, der vor ihm auf dem Tresen liegt" style="width:100%;display:block;border-radius:22px;border:1px solid var(--gc-border)">
+      <img src="/bilder/ws-berater.jpg" loading="lazy" width="692" height="859" alt="Mario fotografiert amüsiert einen Brief vom Amt, der vor ihm auf der Theke liegt" style="width:100%;display:block;border-radius:22px;border:1px solid var(--gc-border)">
       <p><strong>Der Berater.</strong> Brief vom Amt? Fotografieren — babu
       erklärt dir in deinen Worten, was drinsteht und bis wann.</p>
     </figure>
@@ -629,12 +620,12 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
     <figure>
       <div class="taschen-rahmen"><div class="schirm">
         <div class="kopf"><span>Termine</span><span class="klein">Sa, 22. Aug</span></div>
-        <div class="klein" style="margin-bottom:6px">3 Termine gebucht, dazwischen Laufkundschaft</div>
-        <div class="zeile"><b>11:00</b><span>Kerem Y.</span><span class="pille">Fade</span></div>
-        <div class="zeile"><b>13:30</b><span>Murat A.</span><span class="pille">Bart</span></div>
-        <div class="zeile"><b>16:00</b><span>Jonas B.</span><span class="pille">Fade + Bart</span></div>
+        <div class="klein" style="margin-bottom:6px">3 Aufträge, beide Bühnen belegt</div>
+        <div class="zeile"><b>08:00</b><span>Schmid</span><span class="pille">Inspektion</span></div>
+        <div class="zeile"><b>11:00</b><span>Yılmaz</span><span class="pille">Bremsen</span></div>
+        <div class="zeile"><b>15:30</b><span>Petrović</span><span class="pille">Reifen</span></div>
         <div class="klein" style="margin-top:8px;padding-top:7px;
-          border-top:1px solid var(--gc-border)">„Kerem Donnerstag Fade" — babu sucht die Lücke.</div>
+          border-top:1px solid var(--gc-border)">„Maier Donnerstag Ölwechsel" — babu sucht die Lücke.</div>
       </div></div>
       <figcaption><b>Wer heute kommt.</b> Termin einfach hinschreiben, wie du
       ihn sagen würdest. babu findet die freie Zeit.</figcaption>
@@ -657,12 +648,12 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
     <figure>
       <div class="taschen-rahmen"><div class="schirm">
         <div class="kopf"><span>Rechnungen</span><span class="klein">August</span></div>
-        <div class="stark">Offen · 450,00 €</div>
-        <div class="zeile"><span>Deniz K.</span><b>450,00 €</b></div>
-        <div class="klein">Nr. 2026-0001 · Stuhlmiete</div>
+        <div class="stark">Offen · 486,00 €</div>
+        <div class="zeile"><span>Kowalski GmbH</span><b>486,00 €</b></div>
+        <div class="klein">Nr. 2026-0001 · Inspektion Firmenwagen</div>
         <div class="klein" style="margin-top:9px;padding-top:7px;
           border-top:1px solid var(--gc-border)">Vom Konto:</div>
-        <div class="zeile"><span>Deniz hat am 02.09. bezahlt</span>
+        <div class="zeile"><span>Kowalski hat am 02.09. bezahlt</span>
           <span class="pille">Stimmt</span></div>
       </div></div>
       <figcaption><b>Was dir jemand schuldet.</b> Rechnung schreiben in einer
@@ -686,22 +677,22 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
 
   <div class="dreier" style="margin-top:38px">
     <figure class="telefon">
-      <img src="/bilder/ba-termine-morgens.jpg" loading="lazy" width="692" height="859"
-        alt="Moe steht morgens vor Ladenöffnung am Tresen, ein Glas Tee in der einen Hand, das Telefon in der anderen"
+      <img src="/bilder/ws-termine-morgens.jpg" loading="lazy" width="692" height="859"
+        alt="Mario steht morgens vor dem Aufmachen an der Theke, ein Tässchen Kaffee in der einen Hand, das Telefon in der anderen"
         style="width:100%;height:auto;display:block;border-radius:22px;border:1px solid var(--gc-border)">
       <p><strong>Morgens.</strong> Ein Blick aufs Telefon: Wer kommt heute,
       wie voll ist der Tag. Bevor der erste Kunde da ist.</p>
     </figure>
     <figure class="telefon">
-      <img src="/bilder/ba-rechnung-tresen.jpg" loading="lazy" width="692" height="859"
-        alt="Moe reicht einem lächelnden Kunden ein Blatt Papier über den Tresen"
+      <img src="/bilder/ws-rechnung-tresen.jpg" loading="lazy" width="692" height="859"
+        alt="Mario reicht einer lächelnden Kundin die Rechnung und den Autoschlüssel über die Theke"
         style="width:100%;height:auto;display:block;border-radius:22px;border:1px solid var(--gc-border)">
-      <p><strong>Zwischendurch.</strong> Rechnung schreiben, während er noch
+      <p><strong>Zwischendurch.</strong> Rechnung schreiben, während sie noch
       da ist. Nummer, Steuer und Ablage macht babu.</p>
     </figure>
     <figure class="telefon">
-      <img src="/bilder/ba-feierabend-zahlen.jpg" loading="lazy" width="692" height="859"
-        alt="Moe sitzt nach Feierabend entspannt im eigenen Barberstuhl im aufgeräumten Shop und schaut auf sein Telefon"
+      <img src="/bilder/ws-feierabend-zahlen.jpg" loading="lazy" width="692" height="859"
+        alt="Mario sitzt nach Feierabend entspannt auf dem Rollhocker in der aufgeräumten Werkstatt und schaut auf sein Telefon"
         style="width:100%;height:auto;display:block;border-radius:22px;border:1px solid var(--gc-border)">
       <p><strong>Abends.</strong> Zwei Minuten Kassenbuch, ein Blick auf die
       Zahlen — und der Tag ist wirklich vorbei.</p>
@@ -711,17 +702,18 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
   <p class="sub" style="margin-top:34px"><strong>Und das ist der ganze
   Unterschied:</strong> Du führst keinen Papierkram mehr. Du schaust ab und zu
   drauf und sagst Ja. Alles andere hat babu schon gemacht — zwischen zwei
-  Terminen, während du geschnitten hast.</p>
+  Aufträgen, während du geschraubt hast. Oder wie Mario sagt: <em>Schaffe, schaffe — aber net
+  am Schreibtisch.</em></p>
 </section>
 
 <section style="background:var(--gc-chrome)">
-  <div class="lbl">Für deinen Barbershop gebaut</div>
+  <div class="lbl">Für deine Werkstatt gebaut</div>
   <h2>babu kennt deinen Alltag.</h2>
   <ul class="hakenliste">
     <li><span class="hakenkreis"><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-7" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-      <span><strong>Klingen, Nackenpapier, Pomade</strong> — Einkäufe werden automatisch richtig einsortiert.</span></li>
+      <span><strong>Ersatzteile, Reifen, Öl, Werkzeug</strong> — Einkäufe werden automatisch richtig einsortiert.</span></li>
     <li><span class="hakenkreis"><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-7" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-      <span><strong>Essen mit dem Vertreter?</strong> babu fragt kurz nach, mit wem du warst — damit das Finanzamt es anerkennt.</span></li>
+      <span><strong>Essen mit dem Teilehändler?</strong> babu fragt kurz nach, mit wem du warst — damit das Finanzamt es anerkennt.</span></li>
     <li><span class="hakenkreis"><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-7" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
       <span><strong>Trinkgeld</strong> versteht babu — es landet nicht falsch in der Buchhaltung.</span></li>
     <li><span class="hakenkreis"><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-7" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
@@ -729,7 +721,7 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
     <li><span class="hakenkreis"><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-7" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
             <span><strong>Kontoauszug abgeben</strong> — babu prüft, ob zu jeder Abbuchung ein Beleg da ist. Fehlt einer, sagt es dir welcher.</span></li>
     <li><span class="hakenkreis"><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-7" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-      <span><strong>Meister, Stuhlmiete, Mindestlohn, Azubi?</strong> Frag babu — der Chat kennt die Gesetze im Wortlaut, von der Handwerksordnung bis zum Jugendarbeitsschutz, und nennt dir die Stelle.</span></li>
+      <span><strong>Werkstattpfandrecht, Gewährleistung, Altöl, Hebebühnen-Prüfung?</strong> Frag babu — der Chat kennt das ganze Bundesrecht im Wortlaut, vom BGB bis zur Betriebssicherheitsverordnung, und nennt dir die Stelle.</span></li>
     <li><span class="hakenkreis"><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5l3 3 6-7" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
       <span><strong>Kassen-Nachschau</strong> — das Finanzamt darf unangemeldet kommen (§ 146b AO). Dein Kassenbuch in babu ist lückenlos, jede Änderung bleibt sichtbar.</span></li>
   </ul>
@@ -746,10 +738,6 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
   <p class="sub" style="margin-top:14px">Wichtig: babu ist <strong>keine
   Registrierkasse</strong>. Deine Kasse im Laden bleibt genau wie sie ist —
   babu ersetzt nur den Zettel, auf dem du abends alles zusammenrechnest.</p>
-  <p class="sub" style="margin-top:14px">In Barbershops wird viel bar bezahlt —
-  darum schaut das Finanzamt hier besonders genau hin. Bei der Kontrollaktion der
-  Finanzverwaltung Baden-Württemberg im Frühjahr 2026 waren 65 Barbershops unter den
-  geprüften Betrieben. Ein sauberes Kassenbuch ist deine beste Antwort.</p>
 </section>
 
 <!-- ── 7 · Steuerberater-Wechsel ────────────────────────────────────── -->
@@ -784,7 +772,7 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
       <a class="knopf zart" style="margin-top:14px" href="/portal">Zum Portal-Login</a></div>
     <div class="karte"><h3 class="serif" style="font-size:18px">3 · Kurz einrichten</h3>
       <p style="margin-top:8px">Nach der ersten Anmeldung fragt dich babu einmal
-      die wichtigsten Angaben ab — Shop-Name, Steuernummer, Finanzamt. Eine
+      die wichtigsten Angaben ab — Werkstatt-Name, Steuernummer, Finanzamt. Eine
       Frage nach der anderen, dauert fünf Minuten.</p></div>
   </div>
 </section>
@@ -815,26 +803,40 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
   <div class="lbl">Häufige Fragen</div>
   <h2>Kurz beantwortet.</h2>
     <div style="margin-top:26px">
-    <details><summary>Brauche ich einen Meister für meinen Barbershop?</summary>
-      <div class="antwort">Ein Barbershop, der schneidet und rasiert, ist Friseurhandwerk — und
-      das ist zulassungspflichtig (Anlage A Nr. 38 der Handwerksordnung). Du brauchst die
-      Eintragung in die Handwerksrolle. Dafür gibt es mehrere Wege: den eigenen Meisterbrief,
-      einen Betriebsleiter mit Meisterbrief (§ 7 HwO), die Ausübungsberechtigung ohne Meister —
-      Gesellenprüfung und sechs Jahre im Beruf, davon vier in leitender Stellung (§ 7b HwO) —
-      oder eine Ausnahmebewilligung (§ 8 HwO). Welcher Weg für dich passt, entscheidet die
+    <details><summary>Brauche ich einen Meister für meine Werkstatt?</summary>
+      <div class="antwort">Kfz-Techniker ist ein zulassungspflichtiges Handwerk (Anlage A Nr. 20
+      der Handwerksordnung). Du brauchst die Eintragung in die Handwerksrolle: mit eigenem
+      Meisterbrief, mit einem Betriebsleiter, der ihn hat (§ 7 HwO), über die
+      Ausübungsberechtigung ohne Meister — Gesellenprüfung und sechs Jahre im Beruf, davon vier
+      in leitender Stellung (§ 7b HwO; die Kfz-Techniker sind davon nicht ausgenommen) — oder
+      mit einer Ausnahmebewilligung (§ 8 HwO). Welcher Weg passt, entscheidet die
       Handwerkskammer; deren Beratung ist kostenlos.
       <span class="faq-quelle">Quelle: Handwerksordnung §§ 1, 7, 7b, 8 und Anlage A, gesetze-im-internet.de</span></div></details>
-    <details><summary>Ist Stuhlmiete bei mir erlaubt?</summary>
-      <div class="antwort">Ja, wenn der Stuhlmieter wirklich selbständig ist: eigene Kunden,
-      eigene Preise, eigenes Material, eigene Kasse, keine Vorgaben zu Arbeitszeiten. Sonst
-      kann es eine Beschäftigung sein (§ 7 SGB IV) — mit Nachzahlung von Beiträgen. Wer
-      unsicher ist, lässt den Status bei der Deutschen Rentenversicherung feststellen
-      (§ 7a SGB IV). Die Stuhlmiete schreibst du mit babu als Rechnung.
-      <span class="faq-quelle">Quelle: SGB IV §§ 7, 7a, gesetze-im-internet.de</span></div></details>
-    <details><summary>Gibt es babu auf Türkisch?</summary>
-      <div class="antwort">Diese Seite schon — oben rechts umschalten. Die App und der Chat
-      bekommen Türkisch als Nächstes. Gebucht wird immer auf Deutsch und auf dem deutschen
-      Kontenrahmen: dein Steuerbüro und das Finanzamt lesen es so.</div></details>
+    <details><summary>Darf ich das Auto behalten, bis die Rechnung bezahlt ist?</summary>
+      <div class="antwort">Grundsätzlich ja: Wer eine Sache ausbessert, hat für seine Forderung ein
+      Pfandrecht an der Sache des Auftraggebers, wenn sie dafür in seinen Besitz gekommen ist
+      (§ 647 BGB — das Werkstattpfandrecht). Fällig ist dein Geld bei der Abnahme (§ 641 BGB).
+      Gehört das Auto nicht dem Auftraggeber — etwa ein Leasing- oder Firmenwagen —, kann es
+      anders aussehen; dann frag vorher nach.
+      <span class="faq-quelle">Quelle: BGB §§ 641, 647, gesetze-im-internet.de</span></div></details>
+    <details><summary>Wie lange hafte ich für eine Reparatur?</summary>
+      <div class="antwort">Mängelansprüche bei einem Werk, das in der Wartung oder Veränderung
+      einer Sache besteht — also jede Reparatur und jede Inspektion —, verjähren in zwei Jahren
+      (§ 634a Abs. 1 Nr. 1 BGB).
+      <span class="faq-quelle">Quelle: BGB § 634a, gesetze-im-internet.de</span></div></details>
+    <details><summary>Ich verkaufe auch Gebrauchtwagen. Was ist mit der Umsatzsteuer?</summary>
+      <div class="antwort">Kaufst du als Händler einen Wagen von privat (ohne Umsatzsteuer) und
+      verkaufst ihn weiter, kann die Differenzbesteuerung gelten (§ 25a UStG): versteuert wird
+      nur deine Marge, also der Verkaufspreis abzüglich Einkaufspreis. Auf der Rechnung steht
+      dann „Gebrauchtgegenstände/Sonderregelung“, und die Umsatzsteuer wird nicht gesondert
+      ausgewiesen (§ 14a Abs. 6 UStG).
+      <span class="faq-quelle">Quelle: UStG §§ 14a, 25a, gesetze-im-internet.de</span></div></details>
+    <details><summary>Muss ich Altöl zurücknehmen?</summary>
+      <div class="antwort">Wenn du Motor- oder Getriebeöl an Endverbraucher verkaufst, ja: Du
+      brauchst eine Annahmestelle, die gebrauchtes Öl bis zur verkauften Menge kostenlos
+      annimmt, und beim Verkauf an Privatleute ein gut lesbares Schild, das darauf hinweist
+      (§ 8 AltölV).
+      <span class="faq-quelle">Quelle: Altölverordnung § 8, gesetze-im-internet.de</span></div></details>
     <details><summary>Ich bin schon bei einem Steuerberater. Kann ich einfach wechseln?</summary>
       <div class="antwort">Ja. Du darfst jederzeit wechseln — das ist dein gutes
       Recht und kommt ständig vor. Kurze Kündigung (Vorlage bekommst du von uns),
@@ -891,7 +893,7 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
   
   
   <div style="font-size:12px;color:var(--gc-muted);margin-top:14px">
-    <a href="/impressum" style="color:var(--gc-desc)">Impressum</a> · <a href="/datenschutz" style="color:var(--gc-desc)">Datenschutz</a> · <a href="/agb" style="color:var(--gc-desc)">AGB</a> · <a href="/" style="color:var(--gc-desc)">babu für Friseursalons</a> · babu ersetzt keine individuelle Steuerberatung.
+    <a href="/impressum" style="color:var(--gc-desc)">Impressum</a> · <a href="/datenschutz" style="color:var(--gc-desc)">Datenschutz</a> · <a href="/agb" style="color:var(--gc-desc)">AGB</a> · babu ersetzt keine individuelle Steuerberatung.
   </div>
 </footer>
 </div>
@@ -924,7 +926,7 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
     {k:'klein', f:'Bist du Kleinunternehmer? Dann steht auf deiner Rechnung „ohne Umsatzsteuer" (§ 19 UStG).', a:['Ja','Nein','Weiß nicht']},
     
     {k:'steuerbuero', f:'Soll babu alles machen — oder hast du ein Steuerbüro, dem wir nur zuarbeiten?', a:['Alles über babu','Eigenes Steuerbüro']},
-    {k:'filialen', f:'Hat dein Shop mehr als einen Standort?', a:['Ja','Nein']},
+    {k:'filialen', f:'Hat deine Werkstatt mehr als einen Standort?', a:['Ja','Nein']},
     {k:'firmen', f:'Hast du mehrere Firmen?', a:['Ja','Nein']},
     {k:'abschluss', f:'Machst du eine Bilanz — oder die einfache Gewinnrechnung (EÜR)?', a:['Bilanz','Einfache Gewinnrechnung','Weiß nicht']}
   ];
@@ -946,13 +948,13 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
     frageEl.textContent=''; antwortenEl.innerHTML='';
     var plus=antworten.filialen==='Ja'||antworten.firmen==='Ja'||antworten.abschluss==='Bilanz';
     var solo=antworten.team==='Allein'&&antworten.klein==='Ja';
-    var paket=plus?['Shop Plus','149 €']:(solo?['Solo','39 €']:['Shop','79 €']);
+    var paket=plus?['Werkstatt Plus','149 €']:(solo?['Solo','39 €']:['Werkstatt','79 €']);
     var extra=[];
     if(antworten.steuerbuero==='Eigenes Steuerbüro')
       extra.push('Du behältst dein Steuerbüro und babu arbeitet nur zu — das wird günstiger. Sag uns kurz Bescheid.');
     
     if(antworten.klein==='Weiß nicht'||antworten.abschluss==='Weiß nicht')
-      extra.push('Nicht sicher? Kein Problem — der Shop-Check liest es einfach aus deinen Unterlagen heraus.');
+      extra.push('Nicht sicher? Kein Problem — der Werkstatt-Check liest es einfach aus deinen Unterlagen heraus.');
     try{ sessionStorage.setItem('babu-paket', JSON.stringify(antworten)); }catch(e){}
     zaehler.textContent='Unsere Empfehlung für dich';
     ergebnisEl.hidden=false;
@@ -1004,19 +1006,21 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
       chips=document.getElementById('babu-chips');
 
   var faq=[
-    ['absetzen|abschreib|steuer sparen','Typisch im Barbershop: Material und Werkzeug (Klingen, Trimmer, Scheren, Pomade), Miete, Fortbildungen, Arbeitskleidung, Fahrten, Telefon. babu sortiert deine Belege automatisch richtig ein — die genaue Einordnung macht am Ende das Steuer-Backend. Das ist eine erste Einordnung, keine Steuerberatung.'],
-    ['kleinunternehm|§ ?19','Kleinunternehmer (§ 19 UStG) heißt: Du weist keine Umsatzsteuer aus, solange dein Umsatz im Vorjahr unter 25.000 € lag. Ob das zu dir passt, findet babu im Shop-Check mit heraus.'],
+    ['absetzen|abschreib|steuer sparen','Typisch in der Werkstatt: Ersatzteile, Werkzeug, Diagnosegeräte, Hebebühne (über die Jahre abgeschrieben), Miete, Fortbildungen, Arbeitskleidung, Fahrten, Telefon. babu sortiert deine Belege automatisch richtig ein — die genaue Einordnung macht am Ende das Steuer-Backend. Das ist eine erste Einordnung, keine Steuerberatung.'],
+    ['kleinunternehm|§ ?19','Kleinunternehmer (§ 19 UStG) heißt: Du weist keine Umsatzsteuer aus, solange dein Umsatz im Vorjahr unter 25.000 € lag. Ob das zu dir passt, findet babu im Werkstatt-Check mit heraus.'],
     ['steuerberater|wechsel|kündig','Wechseln ist leicht: kurz beim alten Steuerberater Bescheid sagen (Vorlage bekommst du), eine Vollmacht unterschreiben — den Rest holen wir für dich. Mehr steht oben unter „Schon beim Steuerberater?".'],
-    ['kosten|preis|teuer|paket','Drei Pakete als Beispielpreise: Solo 39 €, Shop 79 €, Shop Plus 149 € im Monat — endgültige Preise folgen. Welches passt, sagt dir der kurze Fragebogen oben unter „Unsere Pakete". Sicher ist: deutlich günstiger als die klassische Komplett-Betreuung.'],
+    ['kosten|preis|teuer|paket','Drei Pakete als Beispielpreise: Solo 39 €, Werkstatt 79 €, Werkstatt Plus 149 € im Monat — endgültige Preise folgen. Welches passt, sagt dir der kurze Fragebogen oben unter „Unsere Pakete". Sicher ist: deutlich günstiger als die klassische Komplett-Betreuung.'],
     ['kasse|kassenbuch|tse|registrier','babu ist keine Registrierkasse — es ersetzt deinen Papier-Kassenbericht: abends die Tagessummen eintragen, eine Zahl nach der anderen, babu rechnet. Darum brauchst du auch keine TSE.'],
     ['app|laden|download|iphone','Geh auf mybabu.io/app — dort ist der Installieren-Button. In der Testphase kommt die App per TestFlight auf Einladung; deine Zugangsdaten bekommst du bei der Einrichtung.'],
     ['konto|bank|auszug|csv','Heute: Kontoauszug im Portal abgeben (Sparkassen-PDF geht schon), babu prüft, ob zu jeder Abbuchung ein Beleg da ist. Import für alle Banken und direkte Konto-Verbindung kommen als Nächstes.'],
     ['finanzamt|brief|bescheid|post','Bald kannst du Finanzamt-Briefe einfach fotografieren — babu erklärt dir in einfachen Worten, was drinsteht und bis wann du etwas tun musst. Die Frist landet in deinem Kalender.'],
     ['daten|sicher|dsgvo|server','Deine Daten liegen auf eigenen Servern in Deutschland und werden verschlüsselt übertragen. Jeder Beleg wird beim Ablegen versiegelt — unbemerkt ändern geht nicht.'],
         ['backend|wer macht','babu sammelt und ordnet, das Steuer-Backend macht den fachlichen Teil.'],
-    ['meister|handwerksrolle|7b','Barbershops sind Friseurhandwerk, Anlage A Nr. 38 der Handwerksordnung. Du brauchst die Eintragung in die Handwerksrolle: mit Meister, mit Betriebsleiter, über die Ausübungsberechtigung nach § 7b (Gesellenprüfung, sechs Jahre, davon vier leitend) oder eine Ausnahme nach § 8. Frag deine Handwerkskammer — die Beratung ist kostenlos.'],
-    ['stuhlmiete|scheinselbst','Stuhlmiete geht, wenn der Mieter wirklich selbständig ist: eigene Kunden, Preise, Material, Kasse, keine Arbeitszeit-Vorgaben. Sonst droht eine Beschäftigung nach § 7 SGB IV. Im Zweifel Statusfeststellung bei der Rentenversicherung (§ 7a SGB IV).'],
-    ['türk|turk','Diese Seite gibt es auf Türkisch (oben rechts). App und Chat folgen. Gebucht wird immer auf Deutsch.']
+    ['meister|handwerksrolle|7b','Kfz-Techniker ist Anlage A Nr. 20 der Handwerksordnung. Du brauchst die Eintragung in die Handwerksrolle: mit Meister, mit Betriebsleiter, über die Ausübungsberechtigung nach § 7b (Gesellenprüfung, sechs Jahre, davon vier leitend) oder eine Ausnahme nach § 8. Frag deine Handwerkskammer — die Beratung ist kostenlos.'],
+    ['behalten|pfand|nicht bezahlt','Werkstattpfandrecht: Für deine Forderung hast du ein Pfandrecht am Auto des Auftraggebers, das zur Reparatur in deinen Besitz kam (§ 647 BGB). Gehört es jemand anderem (Leasing, Firmenwagen), frag vorher nach.'],
+    ['gewährleist|haft|mangel','Mängelansprüche bei Reparatur und Wartung verjähren in zwei Jahren (§ 634a Abs. 1 Nr. 1 BGB).'],
+    ['gebraucht|differenz|25a','Gebrauchtwagen von privat angekauft: Differenzbesteuerung nach § 25a UStG — versteuert wird nur die Marge; auf die Rechnung gehört „Gebrauchtgegenstände/Sonderregelung“, ohne gesonderten Steuerausweis (§ 14a Abs. 6 UStG).'],
+    ['altöl|altoel|öl zurück','Wer Motor- oder Getriebeöl an Endverbraucher verkauft, braucht eine Annahmestelle für Altöl — kostenlos bis zur verkauften Menge — und ein Hinweisschild (§ 8 AltölV).']
   ];
 
   function blase(text,wer){
@@ -1066,7 +1070,7 @@ a.welt::after{background:linear-gradient(to top,rgba(18,16,12,.82),rgba(18,16,12
       antwort.textContent=fallback(frage);
     }
   }
-  ['Was kann ich im Barbershop absetzen?','Brauche ich einen Meister?',
+  ['Was kann ich in der Werkstatt absetzen?','Darf ich das Auto behalten?',
    'Brauche ich eine Kasse mit TSE?','Was kostet babu?'].forEach(function(t){
     var c=document.createElement('button');
     c.type='button'; c.textContent=t;
@@ -1185,57 +1189,6 @@ document.querySelectorAll("[data-strecke]").forEach(strecke => {
   },{passive:true});
 })();
 /* welten-js:ende */
-
-/* ── Sprache: Deutsch ist die Vorgabe, Türkisch der Umschalter. ─────────
-   Ausgetauscht wird nur, was angezeigt wird — Texte, Bildbeschreibungen,
-   Knöpfe, und was Fragebogen und Chat später einblenden. Gebucht wird in
-   babu immer deutsch; das hier ist nur die Seite. ?sprache=tr öffnet sie
-   türkisch (für Links, die man verschickt). */
-(function(){
-  var TR={"babu Barber — dein Papierkram macht sich von selbst": "babu Barber — evrak işlerin kendiliğinden hallolur", "Sprache": "Dil", "babu für Friseursalons, Barbershops und Kfz-Werkstätten": "Kuaför salonları, berber dükkânları ve oto tamirhaneleri için babu", "Kfz-Werkstätten": "Oto tamirhaneleri", "mit Mario →": "Mario ile →", "Mario lacht in seiner Werkstatt mit einem Stammkunden, beide mit einem Tässchen Kaffee, das Auto steht auf der Hebebühne": "Mario tamirhanesinde müdavim müşterisiyle gülüyor, ikisinin de elinde küçük bir fincan kahve, araba liftte duruyor", "babu gibt es für": "babu şunlar için var", "Friseursalons": "Kuaför salonları", "Barbershops": "Berber dükkânları", "← mit Babs": "← Babs ile", "mit Moe · hier bist du": "Moe ile · buradasın", "Babs lacht in ihrem hellen Salon mit einer Stammkundin, die einen Kaffee hält": "Babs aydınlık salonunda, elinde kahve tutan müdavim müşterisiyle gülüyor", "babu · für deinen Barbershop": "babu · berber dükkânın için", "Dein Papierkram": "Evrak işlerin", "macht sich von selbst.": "kendiliğinden hallolur.", "Beleg fotografieren — fertig. babu liest ihn, prüft ihn und legt ihn sicher ab. Am Monatsende ist deine Buchhaltung fertig — ganz ohne eigenes Steuerbüro. Du kümmerst dich um Fades und Bärte.": "Fişin fotoğrafını çek — bu kadar. babu onu okur, kontrol eder ve güvenle arşivler. Ay sonunda muhasebe hazır — kendi mali müşavir büron (Steuerbüro) olmadan bile. Sen fade ve sakallarla ilgilen.", "App laden": "Uygulamayı indir", "Anmelden": "Giriş yap", "Grüner Haken = alles erledigt. Mehr musst du nicht wissen.": "Yeşil tik = her şey tamam. Bilmen gereken bu kadar.", "Moe lacht in seinem Barbershop mit einem Stammkunden im Stuhl, der ein Glas Tee hält": "Moe berber dükkânında, elinde bir bardak çay tutan müdavim müşterisiyle gülüyor", "So geht's": "Nasıl çalışır", "Drei Schritte. Einer davon ist deiner.": "Üç adım. Bir tanesi senin.", "Du fotografierst": "Sen fotoğraf çekersin", "Beleg in den Rahmen halten — das Foto macht die App von selbst. Zwischen zwei Kunden, direkt an der Kasse, egal wo.": "Fişi çerçeveye tut — fotoğrafı uygulama kendisi çeker. İki müşteri arasında, kasanın başında, nerede olursan.", "babu liest und prüft": "babu okur ve kontrol eder", "Betrag, Datum, Laden — alles wird gelesen, richtig einsortiert und danach noch ein zweites Mal gegengeprüft. Dann kommt der grüne Haken.": "Tutar, tarih, mağaza — hepsi okunur, doğru yere konur ve sonra bir kez daha kontrol edilir. Ardından yeşil tik gelir.", "Alles ist fertig — direkt in babu": "Her şey hazır — doğrudan babu’da", "Am Monatsende liegt der fertige Stapel bereit, in genau dem Format, das das Finanzamt braucht. Du brauchst kein eigenes Steuerbüro mehr — und wenn du eins behalten willst, bekommt es alles fix und fertig.": "Ay sonunda hazır dosya, vergi dairesinin (Finanzamt) istediği formatta seni bekler. Artık kendi mali müşavir büron gerekmez — tutmak istersen de her şeyi hazır teslim alır.", "In zehn Minuten dabei": "On dakikada başla", "So fängst du an.": "Böyle başlarsın.", "Kein Termin, keine Schulung, kein Ordner. Vier Handgriffe — und danach machst du einfach weiter wie bisher.": "Randevu yok, eğitim yok, klasör yok. Dört adım — sonra her zamanki gibi devam edersin.", "So fängst du an. Zum Durchblättern wischen oder die Pfeiltasten benutzen.": "Böyle başlarsın. Gezinmek için kaydır veya ok tuşlarını kullan.", "Moe sitzt morgens auf der Wartebank in seinem Shop und richtet auf dem Telefon etwas ein": "Moe sabah dükkânındaki bekleme bankında oturmuş, telefonunda bir şey ayarlıyor", "App laden.": "Uygulamayı indir.", "Per Einladung aufs iPhone: Apple schickt dir eine Mail, du tippst auf „Testen“. Dauert so lange wie ein Tee.": "Davetle iPhone’una: Apple sana bir e-posta gönderir, „Test Et“e dokunursun. Bir çay içimi kadar sürer.", "Moe steht am Tresen und tippt mit dem Daumen kurz etwas in sein Telefon": "Moe tezgâhın başında, başparmağıyla telefonuna kısa bir şey yazıyor", "Anmelden.": "Giriş yap.", "E-Mail und Passwort, mehr nicht. Dieselbe Anmeldung wie im Portal am Rechner.": "E-posta ve şifre, o kadar. Bilgisayardaki portalla aynı giriş.", "Hände halten ein Telefon über einen Kassenbon auf dem Tresen und fotografieren ihn von oben": "Eller, tezgâhtaki bir fişin üzerinde telefonu tutuyor ve yukarıdan fotoğrafını çekiyor", "Ersten Beleg fotografieren.": "İlk fişin fotoğrafını çek.", "Drauf halten, fertig. Du musst nicht sagen, was es ist — babu erkennt es und legt es an die richtige Stelle.": "Tut, bitti. Ne olduğunu söylemene gerek yok — babu tanır ve doğru yere koyar.", "Moe lehnt nach Feierabend entspannt an der Backsteinwand seines leeren Shops, das Telefon liegt weggelegt im Regal": "Moe iş çıkışı boş dükkânının tuğla duvarına rahatça yaslanmış, telefonu rafta duruyor", "Das war es schon.": "Hepsi bu.", "Ab jetzt läuft es nebenher. Am Monatsende liegt der fertige Stapel da, ohne dass du etwas dafür getan hättest.": "Bundan sonra her şey kendi kendine yürür. Ay sonunda hazır dosya önündedir, sen hiçbir şey yapmadan.", "Ein Bild zurück": "Bir resim geri", "Ein Bild weiter": "Bir resim ileri", "Zum Weiterblättern wischen →": "Devam etmek için kaydır →", "Ein Telefon, der ganze Laden": "Bir telefon, bütün dükkân", "Und das kann babu dann alles.": "Ve babu bunların hepsini yapar.", "Nicht nur Belege. Alles, was zwischen dem ersten Kunden und dem Feierabend anfällt — das meiste davon, ohne dass du daran denken musst.": "Sadece fişler değil. İlk müşteriden iş çıkışına kadar ne varsa — çoğunu sen düşünmeden.", "Und das kann babu dann alles. Zum Durchblättern wischen oder die Pfeiltasten benutzen.": "Ve babu bunların hepsini yapar. Gezinmek için kaydır veya ok tuşlarını kullan.", "Moe schaut zwischen zwei Kunden kurz auf sein Telefon, in der anderen Hand eine Haarschneidemaschine": "Moe iki müşteri arasında telefonuna kısaca bakıyor, diğer elinde tıraş makinesi", "Termine.": "Randevular.", "Schreib hin, wie du es sagen würdest: „Kerem Donnerstag Fade und Bart“. babu sucht die freie Lücke — und für Laufkundschaft bleibt Platz.": "Konuştuğun gibi yaz: „Kerem perşembe fade ve sakal“. babu boş aralığı bulur — randevusuz gelenlere de yer kalır.", "Moe sitzt auf der Lehne der Wartebank und liest schmunzelnd eine Nachricht auf dem Telefon": "Moe bekleme bankının koltuğunda oturmuş, gülümseyerek telefondan bir mesaj okuyor", "Termine über WhatsApp.": "WhatsApp ile randevu.", "Dein Kunde schreibt, babu antwortet mit freien Zeiten und trägt den Termin ein. Du bestätigst nur noch.": "Müşterin yazar, babu boş saatlerle cevap verir ve randevuyu kaydeder. Sen sadece onaylarsın.", "Umgekippter Schuhkarton auf dem Tresen, aus dem ein Haufen Kassenbons quillt, Moe greift mit dem Telefon hinein": "Tezgâhta devrilmiş bir ayakkabı kutusu, içinden fişler taşıyor, Moe telefonla uzanıyor", "Der Schuhkarton.": "Ayakkabı kutusu.", "Bon, Vertrag, Brief vom Amt, Kontoauszug — ein Foto genügt. Jedes landet von selbst dort, wo es hingehört.": "Fiş, sözleşme, resmî mektup, banka dökümü — bir fotoğraf yeter. Her biri kendiliğinden ait olduğu yere gider.", "Moe bereitet ein heißes Tuch für die Rasur vor, das Telefon steht aufgestellt vor ihm": "Moe tıraş için sıcak havlu hazırlıyor, telefon önünde dik duruyor", "Deine Stammkunden.": "Müdavimlerin.", "Welcher Schnitt beim letzten Mal saß, welche Aufsatzlänge, was die Haut nicht verträgt. Der Karteikasten hinterm Spiegel, nur auffindbar.": "Geçen sefer hangi kesim oturdu, hangi tarak numarası, cildi neyi kaldırmıyor. Aynanın arkasındaki kart kutusu — ama aranınca bulunur.", "Moe lehnt am Tresen und tippt konzentriert etwas in sein Telefon, im Hintergrund zieht ein Kunde seine Jacke an": "Moe tezgâha yaslanmış, dikkatle telefonuna bir şey yazıyor, arkada bir müşteri ceketini giyiyor", "Rechnungen.": "Faturalar.", "Stuhlmiete, Bräutigam mit Trauzeugen, Firmenkunde. Mit deinem Briefkopf und allen Pflichtangaben, in einer Minute.": "Koltuk kirası, damat ve sağdıçları, firma müşterisi. Kendi antetinle ve tüm zorunlu bilgilerle, bir dakikada.", "Moe zählt abends unter der Messinglampe hinter dem Tresen Scheine und Münzen, das Telefon liegt daneben": "Moe akşam pirinç lambanın altında tezgâhın arkasında banknot ve bozuk para sayıyor, telefon yanında", "Abends kurz zählen.": "Akşam kısaca say.", "Viel Bargeld? Genau dafür. Eine Zahl nach der anderen, wie auf deinem Papierzettel. Am Ende sagt babu: deine Kasse stimmt.": "Çok nakit mi? Tam da bunun için. Kâğıttaki gibi, sayı sayı. Sonunda babu der ki: kasan tutuyor.", "Die App": "Uygulama", "So sieht das aus.": "İşte böyle görünüyor.", "Echte Bilder aus der App — nichts nachgestellt.": "Uygulamadan gerçek görüntüler — hiçbir şey sahne değil.", "Ein gelesener Beleg: die wichtigen Stellen sind grün markiert, daneben ein grüner Haken": "Okunmuş bir fiş: önemli yerler yeşille işaretli, yanında yeşil tik", "Beleg gelesen.": "Fiş okundu.", "Die wichtigen Stellen sind grün markiert — du siehst sofort: hat geklappt.": "Önemli yerler yeşille işaretli — hemen görürsün: oldu.", "Kalender des Kassenbuchs mit grünem Punkt an erledigten Tagen": "Kasa defterinin takvimi, tamamlanan günlerde yeşil nokta", "Dein Kassenbuch.": "Kasa defterin (Kassenbuch).", "Grüner Punkt = Tag erledigt. Ein Blick reicht.": "Yeşil nokta = gün tamam. Bir bakış yeter.", "Kassenbuch-Eingabe: eine große Frage, ein Eingabefeld": "Kasa defteri girişi: büyük bir soru, bir giriş alanı", "Eine Zahl nach der anderen.": "Sayı sayı.", "Die App fragt, du tippst. Rechnen macht sie selbst.": "Uygulama sorar, sen yazarsın. Hesabı kendisi yapar.", "Fragen-Bereich der App mit Beispielfragen zu den eigenen Belegen": "Uygulamanın soru bölümü, kendi fişlerine dair örnek sorularla", "Einfach fragen.": "Sadece sor.", "„Wie viel hab ich im Juli für Bewirtung ausgegeben?\" — babu antwortet aus deinen Belegen.": "„Temmuzda ağırlama için ne kadar harcadım?\" — babu senin fişlerinden cevap verir.", "Neu · Der Shop-Check": "Yeni · Dükkân Kontrolü", "Wirf uns deinen Papierstapel hin.": "Kâğıt yığınını bize bırak.", "Wir lesen alles.": "Hepsini okuruz.", "Leg die Unterlagen vom letzten Jahr einfach ab — Gewinnrechnung, Steuerbescheid, Anlagenliste. Als Foto oder PDF, egal in welcher Reihenfolge. Dann schau zu, wie sich alles von selbst ausfüllt — und am Ende weißt du, wo dein Shop steht. Mit Ampeln statt Steuer-Deutsch.": "Geçen yılın belgelerini bırakıver — kâr hesabı, vergi tebligatı, demirbaş listesi. Fotoğraf ya da PDF, sırası fark etmez. Sonra her şeyin kendiliğinden dolmasını izle — sonunda dükkânının nerede durduğunu bilirsin. Vergi dili yerine trafik ışıklarıyla.", "Moe trägt lachend einen riesigen Stapel Ordner und Belege vom letzten Jahr im Arm": "Moe gülerek kollarında geçen yılın koca klasör ve fiş yığınını taşıyor", "Alles vom letzten Jahr?": "Geçen yılın hepsi mi?", "Genau so. Einfach mitbringen.": "Aynen öyle. Getir yeter.", "Dein Shop-Check": "Dükkân Kontrolün", "babu liest deine Unterlagen …": "babu belgelerini okuyor …", "Rechtsform": "Şirket türü", "Einzelunternehmen": "Şahıs işletmesi", "Steuernummer": "Vergi numarası", "Finanzamt": "Vergi dairesi", "Dein Umsatz": "Ciron", "Material": "Malzeme", "Dein Team": "Ekibin", "Dein Gewinn": "Kârın", "✓ Fertig — dein Shop-Check steht.": "✓ Tamam — Dükkân Kontrolün hazır.", "Zuschauen statt Abtippen.": "Yazmak yerine izle.", "Jede Zahl, die babu findet, trägt sich selbst ein — mit grünem Haken.": "babu’nun bulduğu her sayı kendiliğinden yazılır — yeşil tikle.", "Shop-Check starten": "Dükkân Kontrolünü başlat", "Was es kostet": "Maliyeti", "Rechne selbst.": "Kendin hesapla.", "Beispielrechnung — endgültige Preise folgen": "Örnek hesap — kesin fiyatlar gelecek", "Bisher: alles beim Steuerberater": "Şimdiye kadar: her şey mali müşavirde", "/ Monat*": "/ ay*", "Belege sammeln, sortieren, hinbringen — machst du": "Fişleri toplamak, ayırmak, götürmek — sen yaparsın", "Kassenbuch auf Papier führen — machst du": "Kasa defterini kâğıtta tutmak — sen yaparsın", "Rückfragen beantworten — machst du": "Soruları cevaplamak — sen yaparsın", "Buchhaltung + Abschluss — macht die Kanzlei": "Muhasebe + yıl sonu kapanışı — büro yapar", "Mit babu": "babu ile", "ab 49 €": "49 €’dan itibaren", "Belege fotografieren — 10 Sekunden pro Beleg": "Fişlerin fotoğrafını çekmek — fiş başına 10 saniye", "Kassenbuch in der App — 2 Minuten am Abend": "Uygulamada kasa defteri — akşam 2 dakika", "Sortieren, prüfen, einordnen — macht babu": "Ayırmak, kontrol etmek, yerine koymak — babu yapar", "Steuer-Abschluss — macht das Steuer-Backend dahinter": "Vergi kapanışı — arkadaki vergi altyapısı yapar", "Steuerberater": "Mali müşavir", "Mit babu (79 €)": "babu ile (79 €)", "Du sparst": "Tasarrufun", "Im Monat": "Ayda", "Im Jahr": "Yılda", "In 5 Jahren": "5 yılda", "In fünf Jahren ist das ein Kleinwagen — oder ein sehr langer Urlaub.": "Beş yılda bu küçük bir araba — ya da çok uzun bir tatil eder.", "* Beispielwerte zur Einordnung. Was ein Steuerberater kostet, hängt von deinem Umsatz ab. Der babu-Preis steht noch nicht fest — trag dich ein, dann bekommst du ihn zuerst.": "* Fikir vermek için örnek değerler. Mali müşavirin ücreti cirona bağlıdır. babu’nun fiyatı henüz kesin değil — kaydol, ilk sen öğren.", "Unsere Pakete": "Paketlerimiz", "Ein Preis, der zu deinem Shop passt.": "Dükkânına uyan bir fiyat.", "Beispielpreise — endgültige Preise folgen": "Örnek fiyatlar — kesin fiyatlar gelecek", "Je nachdem, wie dein Shop aufgestellt ist, brauchst du mehr oder weniger. Deshalb gibt es drei Pakete — und wenn du unsicher bist, beantworte einfach die paar Fragen darunter.": "Dükkânının yapısına göre daha çok ya da daha az şeye ihtiyacın olur. Bu yüzden üç paket var — emin değilsen aşağıdaki birkaç soruyu cevapla.", "Solo": "Solo", "Du arbeitest allein": "Tek başına çalışıyorsun", "Kleinunternehmer (§ 19 UStG) — keine Umsatzsteuer": "Küçük işletme (Kleinunternehmer, § 19 UStG) — KDV yok", "Einfache Gewinnrechnung (EÜR)": "Basit kâr hesabı (EÜR)", "Belege, Kassenbuch, Shop-Check — alles drin": "Fişler, kasa defteri, Dükkân Kontrolü — hepsi dahil", "Shop": "Shop", "Du hast ein Team": "Bir ekibin var", "Mit Umsatzsteuer": "KDV’li", "Alles aus Solo — plus Lohn-Unterlagen ablegen": "Solo’daki her şey — artı maaş belgelerini arşivleme", "Shop Plus": "Shop Plus", "Mehrere Standorte oder mehrere Firmen": "Birden fazla şube ya da birden fazla şirket", "Oder: Bilanz statt einfacher Gewinnrechnung": "Ya da: basit kâr hesabı yerine bilanço", "Alles aus Shop — plus getrennte Auswertungen": "Shop’taki her şey — artı ayrı raporlar", "Du hast ein eigenes Steuerbüro und babu soll nur vorbereiten? Dann wird es günstiger — sag uns kurz Bescheid.": "Kendi mali müşavir büron var ve babu sadece hazırlasın mı? O zaman daha ucuz — bize kısaca haber ver.", "Welches Paket passt zu dir?": "Sana hangi paket uyar?", "Sechs kurze Fragen — dann weißt du es.": "Altı kısa soru — sonra bilirsin.", "Los geht's": "Başlayalım", "Scanner · Helfer · Berater": "Tarayıcı · Yardımcı · Danışman", "Dein Telefon kann das jetzt alles.": "Telefonun artık bunların hepsini yapabilir.", "Kein Ordner, kein Extra-Gerät, kein Warten aufs Steuerbüro. Dein Telefon verbindet dich mit allem, was zu deinem Shop gehört — deinen Belegen, deinen Zahlen, deinen Antworten.": "Klasör yok, ek cihaz yok, mali müşaviri beklemek yok. Telefonun seni dükkânına ait her şeye bağlar — fişlerine, rakamlarına, cevaplarına.", "Moe fotografiert am Tresen einen Beleg mit dem Telefon, im Hintergrund warten zwei Kunden auf der Bank": "Moe tezgâhta telefonla bir fişin fotoğrafını çekiyor, arkada iki müşteri bankta bekliyor", "Der Scanner.": "Tarayıcı.", "Beleg hinhalten — gelesen, geprüft, sicher abgelegt. Mitten zwischen zwei Kunden.": "Fişi tut — okundu, kontrol edildi, güvenle arşivlendi. İki müşteri arasında.", "Moe lehnt nach Feierabend entspannt am Tresen und schaut zufrieden auf sein Telefon, daneben ein Glas Tee": "Moe iş çıkışı tezgâha rahatça yaslanmış, memnun bir şekilde telefonuna bakıyor, yanında bir bardak çay", "Der Helfer.": "Yardımcı.", "Feierabend: Kassenbuch in zwei Minuten, grüner Haken, ein Glas Tee. Der Tag ist wirklich vorbei.": "İş çıkışı: iki dakikada kasa defteri, yeşil tik, bir bardak çay. Gün gerçekten bitti.", "Moe fotografiert amüsiert einen Brief vom Amt, der vor ihm auf dem Tresen liegt": "Moe tezgâhta önünde duran resmî mektubun keyifle fotoğrafını çekiyor", "Der Berater.": "Danışman.", "Brief vom Amt? Fotografieren — babu erklärt dir in deinen Worten, was drinsteht und bis wann.": "Resmî daireden mektup mu? Fotoğrafını çek — babu içinde ne yazdığını ve son tarihi sana senin dilinde anlatır.", "Ein Betrieb, ein Telefon": "Bir işletme, bir telefon", "Dein ganzer Laden passt in die Hosentasche.": "Bütün dükkânın cebine sığar.", "Nicht nur die Belege. Der ganze Betrieb: wer heute kommt, was reinkommt, was rausgeht, was du anderen berechnest, was das Amt will. Vier Bildschirme — mehr brauchst du nicht.": "Sadece fişler değil. Bütün işletme: bugün kim geliyor, ne giriyor, ne çıkıyor, kime ne fatura ediyorsun, resmî daire ne istiyor. Dört ekran — fazlasına gerek yok.", "Termine": "Randevular", "Sa, 22. Aug": "Cmt, 22 Ağu", "3 Termine gebucht, dazwischen Laufkundschaft": "3 randevu, arada randevusuz müşteriler", "„Kerem Donnerstag Fade\" — babu sucht die Lücke.": "„Kerem perşembe fade\" — babu boşluğu bulur.", "Wer heute kommt.": "Bugün kim geliyor.", "Termin einfach hinschreiben, wie du ihn sagen würdest. babu findet die freie Zeit.": "Randevuyu konuştuğun gibi yaz. babu boş zamanı bulur.", "Erfassen": "Kaydet", "Kamera": "Kamera", "Halt einfach drauf.": "Sadece tut.", "Kassenbon": "Fiş", "bei den Belegen ✓": "fişlerde ✓", "Mietvertrag": "Kira sözleşmesi", "bei den Verträgen ✓": "sözleşmelerde ✓", "Brief vom Amt": "Resmî mektup", "bei der Post ✓": "postada ✓", "Kontoauszug": "Banka dökümü", "bei den Auszügen ✓": "dökümlerde ✓", "Du musst nicht sagen, was es ist.": "Ne olduğunu söylemene gerek yok.", "Ein Foto, egal wovon.": "Bir fotoğraf, neyin olursa olsun.", "babu erkennt, was es ist, und legt es an die richtige Stelle. Ohne Nachfrage.": "babu ne olduğunu tanır ve doğru yere koyar. Sormadan.", "Rechnungen": "Faturalar", "August": "Ağustos", "Offen · 450,00 €": "Açık · 450,00 €", "Nr. 2026-0001 · Stuhlmiete": "No. 2026-0001 · Koltuk kirası", "Vom Konto:": "Hesaptan:", "Deniz hat am 02.09. bezahlt": "Deniz 02.09’da ödedi", "Stimmt": "Doğru", "Was dir jemand schuldet.": "Birinin sana borcu.", "Rechnung schreiben in einer Minute — und babu sieht im Kontoauszug, wenn bezahlt wurde.": "Bir dakikada fatura yaz — ödendiğinde babu bunu banka dökümünde görür.", "Dein Monat": "Ayın", "3. September": "3 Eylül", "August ist gerechnet und kann raus.": "Ağustos hesaplandı, gönderilebilir.", "Eingenommen": "Gelir", "Ausgegeben": "Gider", "Bleibt dir": "Sana kalan", "Umsatzsteuer fällig in 7 Tagen": "KDV 7 gün içinde ödenecek", "Was am Ende bleibt.": "Sonunda ne kalıyor.", "Am 3. liegt der Monat fertig da. Du schaust drüber — das war's.": "Ayın 3’ünde ay hazırdır. Bir göz atarsın — bu kadar.", "Moe steht morgens vor Ladenöffnung am Tresen, ein Glas Tee in der einen Hand, das Telefon in der anderen": "Moe sabah dükkânı açmadan tezgâhın başında, bir elinde çay bardağı, diğerinde telefon", "Morgens.": "Sabah.", "Ein Blick aufs Telefon: Wer kommt heute, wie voll ist der Tag. Bevor der erste Kunde da ist.": "Telefona bir bakış: bugün kim geliyor, gün ne kadar dolu. İlk müşteri gelmeden.", "Moe reicht einem lächelnden Kunden ein Blatt Papier über den Tresen": "Moe gülümseyen bir müşteriye tezgâhın üzerinden bir kâğıt uzatıyor", "Zwischendurch.": "Arada.", "Rechnung schreiben, während er noch da ist. Nummer, Steuer und Ablage macht babu.": "O daha buradayken faturayı yaz. Numara, vergi ve arşivi babu halleder.", "Moe sitzt nach Feierabend entspannt im eigenen Barberstuhl im aufgeräumten Shop und schaut auf sein Telefon": "Moe iş çıkışı toplanmış dükkânında kendi berber koltuğunda rahatça oturmuş, telefonuna bakıyor", "Abends.": "Akşam.", "Zwei Minuten Kassenbuch, ein Blick auf die Zahlen — und der Tag ist wirklich vorbei.": "İki dakika kasa defteri, rakamlara bir bakış — ve gün gerçekten biter.", "Und das ist der ganze Unterschied:": "Bütün fark da bu:", "Du führst keinen Papierkram mehr. Du schaust ab und zu drauf und sagst Ja. Alles andere hat babu schon gemacht — zwischen zwei Terminen, während du geschnitten hast.": "Artık evrak işi yapmıyorsun. Arada bir bakıp „evet“ diyorsun. Geri kalanını babu çoktan yaptı — iki randevu arasında, sen saç keserken.", "Für deinen Barbershop gebaut": "Berber dükkânın için yapıldı", "babu kennt deinen Alltag.": "babu senin gününü bilir.", "Klingen, Nackenpapier, Pomade": "Jilet, ense kâğıdı, pomat", "— Einkäufe werden automatisch richtig einsortiert.": "— alışverişler otomatik olarak doğru yere konur.", "Essen mit dem Vertreter?": "Temsilciyle yemek mi?", "babu fragt kurz nach, mit wem du warst — damit das Finanzamt es anerkennt.": "babu kimle olduğunu kısaca sorar — vergi dairesi kabul etsin diye.", "Trinkgeld": "Bahşişi", "versteht babu — es landet nicht falsch in der Buchhaltung.": "babu anlar — muhasebede yanlış yere gitmez.", "Das Kassenbuch": "Kasa defteri", "sieht aus wie dein Papier-Formular — nur dass babu rechnet und nichts verloren geht.": "kâğıt formun gibi görünür — tek farkla: hesabı babu yapar ve hiçbir şey kaybolmaz.", "Kontoauszug abgeben": "Banka dökümünü ver", "— babu prüft, ob zu jeder Abbuchung ein Beleg da ist. Fehlt einer, sagt es dir welcher.": "— babu her ödemenin fişi var mı diye kontrol eder. Eksik varsa hangisi olduğunu söyler.", "Meister, Stuhlmiete, Mindestlohn, Azubi?": "Ustalık belgesi, koltuk kirası, asgari ücret, çırak?", "Frag babu — der Chat kennt die Gesetze im Wortlaut, von der Handwerksordnung bis zum Jugendarbeitsschutz, und nennt dir die Stelle.": "babu’ya sor — sohbet, zanaat kanunundan (Handwerksordnung) genç işçi korumasına kadar yasaları kelimesi kelimesine bilir ve sana maddesini söyler.", "Kassen-Nachschau": "Kasa denetimi (Kassen-Nachschau)", "— das Finanzamt darf unangemeldet kommen (§ 146b AO). Dein Kassenbuch in babu ist lückenlos, jede Änderung bleibt sichtbar.": "— vergi dairesi habersiz gelebilir (§ 146b AO). babu’daki kasa defterin eksiksizdir, her değişiklik görünür kalır.", "Abends kurz zählen. Den Rest rechnet babu.": "Akşam kısaca say. Gerisini babu hesaplar.", "Im Kalender siehst du sofort, welche Tage erledigt sind (grüner Punkt). Zum Eintragen fragt dich die App eine Zahl nach der anderen — genau die Felder von deinem Papier-Kassenbericht. Am Ende sagt sie dir in einem Satz:": "Takvimde hangi günlerin tamam olduğunu hemen görürsün (yeşil nokta). Giriş için uygulama sana sayıları tek tek sorar — tam da kâğıt kasa raporundaki alanlar. Sonunda tek cümleyle söyler:", "„Deine Kasse stimmt.\"": "„Kasan tutuyor.\"", "Wichtig: babu ist": "Önemli: babu bir", "keine Registrierkasse": "yazar kasa değildir", ". Deine Kasse im Laden bleibt genau wie sie ist — babu ersetzt nur den Zettel, auf dem du abends alles zusammenrechnest.": ". Dükkândaki kasan olduğu gibi kalır — babu sadece akşam her şeyi topladığın kâğıdın yerini alır.", "In Barbershops wird viel bar bezahlt — darum schaut das Finanzamt hier besonders genau hin. Bei der Kontrollaktion der Finanzverwaltung Baden-Württemberg im Frühjahr 2026 waren 65 Barbershops unter den geprüften Betrieben. Ein sauberes Kassenbuch ist deine beste Antwort.": "Berber dükkânlarında çok nakit ödenir — bu yüzden vergi dairesi burada özellikle dikkatli bakar. Baden-Württemberg maliyesinin 2026 baharındaki denetiminde, denetlenen işletmeler arasında 65 berber dükkânı vardı. Temiz bir kasa defteri en iyi cevabındır.", "Schon beim Steuerberater?": "Zaten bir mali müşavirin mi var?", "Der Wechsel ist leichter, als du denkst.": "Değiştirmek sandığından kolay.", "Du sagst kurz Bescheid.": "Kısaca haber verirsin.", "Deinem bisherigen Steuerberater zu kündigen ist normal und passiert ständig — eine kurze Nachricht reicht, wir geben dir eine Vorlage.": "Mevcut mali müşavirinle sözleşmeyi bitirmek normaldir ve sık olur — kısa bir mesaj yeter, sana bir şablon veririz.", "Eine Unterschrift.": "Bir imza.", "Mit einer Vollmacht dürfen wir deine Unterlagen anfordern. Du musst nichts zusammensuchen.": "Bir vekâletnameyle belgelerini biz isteyebiliriz. Hiçbir şey aramana gerek yok.", "babu übernimmt.": "babu devralır.", "Ab dann laufen Belege, Kassenbuch und Abschluss über babu. Dahinter arbeitet ein Steuer-Backend. Dein Kram ist in Profi-Händen.": "Bundan sonra fişler, kasa defteri ve kapanış babu üzerinden yürür. Arkada bir vergi altyapısı çalışır. İşlerin profesyonel ellerde.", "Loslegen": "Başla", "App laden, anmelden, ersten Beleg fotografieren.": "Uygulamayı indir, giriş yap, ilk fişin fotoğrafını çek.", "1 · App laden": "1 · Uygulamayı indir", "Direkt aufs iPhone — ein Button, kurz warten, fertig. In der Testphase kommt die App per TestFlight auf Einladung — Apples offizieller Weg für Test-Apps.": "Doğrudan iPhone’a — bir düğme, biraz bekle, bitti. Test döneminde uygulama davetle TestFlight üzerinden gelir — Apple’ın test uygulamaları için resmî yolu.", "App installieren": "Uygulamayı yükle", "2 · Anmelden": "2 · Giriş yap", "Bei der Einrichtung bekommst du deine Zugangsdaten. Damit meldest du dich in der App": "Kurulumda giriş bilgilerini alırsın. Bunlarla uygulamaya", "und": "ve", "hier im Portal an — beides ist immer verbunden, alles ist an beiden Orten da.": "buradaki portala giriş yaparsın — ikisi hep bağlıdır, her şey iki yerde de vardır.", "Zum Portal-Login": "Portal girişine", "3 · Kurz einrichten": "3 · Kısaca kur", "Nach der ersten Anmeldung fragt dich babu einmal die wichtigsten Angaben ab — Shop-Name, Steuernummer, Finanzamt. Eine Frage nach der anderen, dauert fünf Minuten.": "İlk girişten sonra babu en önemli bilgileri bir kez sorar — dükkân adı, vergi numarası, vergi dairesi. Soru soru, beş dakika sürer.", "Und bald noch mehr": "Ve yakında daha fazlası", "Konto und Finanzamt-Post — auch erledigt.": "Banka hesabı ve vergi dairesi postası — o da tamam.", "Dein Konto": "Hesabın", "✓ schon da": "✓ hazır", "Kontoauszug im Portal abgeben — babu vergleicht: Zu jeder Abbuchung ein Beleg? Fehlt einer, steht da genau welcher. Bald auch als Datei-Import von jeder Bank und als direkte Verbindung.": "Banka dökümünü portala ver — babu karşılaştırır: her ödemenin fişi var mı? Eksik varsa tam olarak hangisi yazar. Yakında her bankadan dosya aktarımı ve doğrudan bağlantı da gelecek.", "Post vom Finanzamt": "Vergi dairesinden posta", "kommt als Nächstes": "sırada", "Brief vom Finanzamt, den keiner versteht? Fotografieren — babu erklärt dir in einfachen Worten, was drinsteht, was du tun musst und bis wann. Die Frist landet automatisch in deinem Kalender, dem gleichen wie beim Kassenbuch.": "Kimsenin anlamadığı bir vergi dairesi mektubu mu? Fotoğrafını çek — babu içinde ne yazdığını, ne yapman gerektiğini ve son tarihi basit kelimelerle anlatır. Süre otomatik olarak takvimine düşer, kasa defterindekiyle aynı takvime.", "Häufige Fragen": "Sık sorulan sorular", "Kurz beantwortet.": "Kısaca cevaplar.", "Brauche ich einen Meister für meinen Barbershop?": "Berber dükkânım için ustalık belgesi (Meister) gerekli mi?", "Ein Barbershop, der schneidet und rasiert, ist Friseurhandwerk — und das ist zulassungspflichtig (Anlage A Nr. 38 der Handwerksordnung). Du brauchst die Eintragung in die Handwerksrolle. Dafür gibt es mehrere Wege: den eigenen Meisterbrief, einen Betriebsleiter mit Meisterbrief (§ 7 HwO), die Ausübungsberechtigung ohne Meister — Gesellenprüfung und sechs Jahre im Beruf, davon vier in leitender Stellung (§ 7b HwO) — oder eine Ausnahmebewilligung (§ 8 HwO). Welcher Weg für dich passt, entscheidet die Handwerkskammer; deren Beratung ist kostenlos.": "Saç kesen ve tıraş eden bir berber dükkânı kuaförlük zanaatıdır — ve bu izne tabidir (Zanaat Kanunu Ek A, No. 38). Zanaat siciline (Handwerksrolle) kaydolman gerekir. Bunun birkaç yolu var: kendi ustalık belgen, ustalık belgeli bir işletme sorumlusu (§ 7 HwO), ustalık belgesi olmadan icra yetkisi — kalfalık sınavı ve mesleğinde altı yıl, bunun dördü yönetici konumunda (§ 7b HwO) — ya da istisnai izin (§ 8 HwO). Hangi yolun sana uyduğuna Zanaat Odası (Handwerkskammer) karar verir; danışmanlığı ücretsizdir.", "Quelle: Handwerksordnung §§ 1, 7, 7b, 8 und Anlage A, gesetze-im-internet.de": "Kaynak: Handwerksordnung §§ 1, 7, 7b, 8 ve Ek A, gesetze-im-internet.de", "Ist Stuhlmiete bei mir erlaubt?": "Bende koltuk kirası yasal mı?", "Ja, wenn der Stuhlmieter wirklich selbständig ist: eigene Kunden, eigene Preise, eigenes Material, eigene Kasse, keine Vorgaben zu Arbeitszeiten. Sonst kann es eine Beschäftigung sein (§ 7 SGB IV) — mit Nachzahlung von Beiträgen. Wer unsicher ist, lässt den Status bei der Deutschen Rentenversicherung feststellen (§ 7a SGB IV). Die Stuhlmiete schreibst du mit babu als Rechnung.": "Evet, koltuk kiracısı gerçekten bağımsızsa: kendi müşterileri, kendi fiyatları, kendi malzemesi, kendi kasası, çalışma saati talimatı yok. Aksi hâlde bu bir istihdam sayılabilir (§ 7 SGB IV) — prim farkı ödemesiyle birlikte. Emin olmayan, durumunu Alman Emeklilik Sigortası’na (Deutsche Rentenversicherung) tespit ettirir (§ 7a SGB IV). Koltuk kirasının faturasını babu ile yazarsın.", "Quelle: SGB IV §§ 7, 7a, gesetze-im-internet.de": "Kaynak: SGB IV §§ 7, 7a, gesetze-im-internet.de", "Gibt es babu auf Türkisch?": "babu Türkçe var mı?", "Diese Seite schon — oben rechts umschalten. Die App und der Chat bekommen Türkisch als Nächstes. Gebucht wird immer auf Deutsch und auf dem deutschen Kontenrahmen: dein Steuerbüro und das Finanzamt lesen es so.": "Bu sayfa evet — sağ üstten değiştir. Uygulama ve sohbet sırada. Muhasebe kaydı her zaman Almanca ve Alman hesap planıyla yapılır: mali müşavirin ve vergi dairesi böyle okur.", "Ich bin schon bei einem Steuerberater. Kann ich einfach wechseln?": "Zaten bir mali müşavirim var. Kolayca değiştirebilir miyim?", "Ja. Du darfst jederzeit wechseln — das ist dein gutes Recht und kommt ständig vor. Kurze Kündigung (Vorlage bekommst du von uns), eine Vollmacht, fertig. Deine Unterlagen fordern wir für dich an.": "Evet. İstediğin zaman değiştirebilirsin — bu senin hakkın ve sık olur. Kısa bir fesih (şablonunu bizden alırsın), bir vekâletname, bitti. Belgelerini senin için biz isteriz.", "Wer macht denn dann meine Steuer?": "O zaman vergimi kim yapacak?", "babu sammelt und ordnet, das Steuer-Backend übernimmt den fachlichen Teil. Du hast einen Ansprechpartner: babu.": "babu toplar ve düzenler, vergi altyapısı teknik kısmı üstlenir. Tek bir muhatabın var: babu.", "Brauche ich eine elektronische Kasse (TSE)?": "Elektronik kasa (TSE) gerekli mi?", "Nein, deswegen nicht. Es gibt in Deutschland keine Pflicht, eine elektronische Kasse zu benutzen — deine Bargeldkasse mit Kassenbericht ist erlaubt. babu ersetzt genau diesen Papier-Kassenbericht: Es fragt abends die Tagessummen ab, wie auf deinem Formular. Es kassiert nicht und speichert keine einzelnen Verkäufe — darum entsteht auch keine TSE-Pflicht. Hast du eine elektronische Kasse, braucht sie eine TSE und muss beim Finanzamt gemeldet sein (§ 146a AO).": "Hayır, bu yüzden değil. Almanya’da elektronik kasa kullanma zorunluluğu yok — kasa raporlu nakit kasan yasaldır. babu tam da bu kâğıt kasa raporunun yerini alır: akşam günlük toplamları formundaki gibi sorar. Tahsilat yapmaz ve tek tek satışları kaydetmez — bu yüzden TSE zorunluluğu da doğmaz. Elektronik kasan varsa, TSE’si olmalı ve vergi dairesine bildirilmiş olmalı (§ 146a AO).", "Wo liegen meine Daten?": "Verilerim nerede duruyor?", "Auf eigenen Servern in Deutschland, verschlüsselt übertragen. Jeder Beleg wird beim Ablegen versiegelt — nachträglich unbemerkt ändern geht nicht. Du meldest dich mit deinem persönlichen Zugang an; ohne den sieht niemand deine Belege.": "Almanya’daki kendi sunucularımızda, şifreli aktarılarak. Her fiş arşivlenirken mühürlenir — sonradan fark edilmeden değiştirilemez. Kişisel girişinle girersin; o olmadan kimse fişlerini göremez.", "Was kostet babu?": "babu ne kadar?", "Der endgültige Preis steht noch nicht fest — die Zahlen oben sind eine Beispielrechnung zur Einordnung. Sicher ist: deutlich weniger als die klassische Komplett-Betreuung, weil babu dir die Handarbeit abnimmt. Trag dich ein, dann erfährst du den Preis zuerst.": "Kesin fiyat henüz belli değil — yukarıdaki rakamlar fikir vermek için örnek bir hesap. Kesin olan: klasik tam hizmetten çok daha ucuz, çünkü el işini babu senden alır. Kaydol, fiyatı ilk sen öğren.", "Kann ich mein Bankkonto anbinden?": "Banka hesabımı bağlayabilir miyim?", "Heute gibst du deinen Kontoauszug im Portal ab (PDF von der Sparkasse geht schon). Der Datei-Import für alle Banken und die direkte Konto-Verbindung kommen als Nächstes. babu gleicht dann automatisch ab, ob zu jeder Zahlung ein Beleg da ist.": "Bugün banka dökümünü portala verirsin (Sparkasse PDF’i zaten çalışıyor). Tüm bankalar için dosya aktarımı ve doğrudan hesap bağlantısı sırada. babu sonra her ödemenin fişi var mı otomatik karşılaştırır.", "Was, wenn meine Kasse mal nicht stimmt?": "Kasam bir gün tutmazsa ne olur?", "Das passiert jedem. babu rechnet nach, zeigt dir den Unterschied und schreibt ihn ordentlich auf — genau das will das Finanzamt sehen. Kein Drama, kein Schimpfen.": "Herkesin başına gelir. babu yeniden hesaplar, farkı gösterir ve düzgünce kaydeder — vergi dairesinin görmek istediği de tam budur. Drama yok, azar yok.", "Was passiert mit einem Beleg, den babu nicht lesen kann?": "babu’nun okuyamadığı bir fişe ne olur?", "Dann sagt dir die App ehrlich: „Der war schwer zu lesen — bitte nochmal fotografieren.\" Es geht nichts verloren und nichts wird geraten.": "O zaman uygulama sana dürüstçe söyler: „Bunu okumak zordu — lütfen tekrar fotoğrafını çek.\" Hiçbir şey kaybolmaz ve hiçbir şey tahmin edilmez.", "babu": "babu", "0711 Intelligence · Stuttgart": "0711 Intelligence · Stuttgart", "Impressum": "Künye (Impressum)", "Datenschutz": "Gizlilik", "AGB": "Genel Şartlar", "babu für Friseursalons": "Kuaför salonları için babu", "· babu ersetzt keine individuelle Steuerberatung.": "· babu kişisel vergi danışmanlığının yerini tutmaz.", "Babu fragen": "Babu’ya sor", "Babu-Chat": "Babu sohbeti", "Babu — frag mich was": "Babu — bana bir şey sor", "Schließen": "Kapat", "Deine Frage …": "Sorun …", "Senden": "Gönder", "Arbeitest du allein oder mit Team?": "Tek başına mı yoksa ekiple mi çalışıyorsun?", "Allein": "Tek başıma", "Mit Team": "Ekiple", "Bist du Kleinunternehmer? Dann steht auf deiner Rechnung „ohne Umsatzsteuer\" (§ 19 UStG).": "Küçük işletme (Kleinunternehmer) misin? O zaman faturanda „KDV’siz\" yazar (§ 19 UStG).", "Weiß nicht": "Bilmiyorum", "Soll babu alles machen — oder hast du ein Steuerbüro, dem wir nur zuarbeiten?": "Her şeyi babu mu yapsın — yoksa bizim sadece hazırlık yaptığımız bir mali müşavirin mi var?", "Alles über babu": "Her şey babu ile", "Eigenes Steuerbüro": "Kendi mali müşavirim", "Hat dein Shop mehr als einen Standort?": "Dükkânının birden fazla şubesi var mı?", "Hast du mehrere Firmen?": "Birden fazla şirketin var mı?", "Machst du eine Bilanz — oder die einfache Gewinnrechnung (EÜR)?": "Bilanço mu yapıyorsun — yoksa basit kâr hesabı mı (EÜR)?", "Bilanz": "Bilanço", "Einfache Gewinnrechnung": "Basit kâr hesabı", "Ja": "Evet", "Nein": "Hayır", "Letzte Frage": "Son soru", "Noch 2 Fragen": "2 soru kaldı", "Noch 3 Fragen": "3 soru kaldı", "Noch 4 Fragen": "4 soru kaldı", "Noch 5 Fragen": "5 soru kaldı", "Noch 6 Fragen": "6 soru kaldı", "Unsere Empfehlung für dich": "Sana önerimiz", "Nochmal von vorn": "Baştan başla", "Konto anlegen": "Hesap oluştur", "Solo — 39 € im Monat*": "Solo — ayda 39 €*", "Shop — 79 € im Monat*": "Shop — ayda 79 €*", "Shop Plus — 149 € im Monat*": "Shop Plus — ayda 149 €*", "Du behältst dein Steuerbüro und babu arbeitet nur zu — das wird günstiger. Sag uns kurz Bescheid.": "Mali müşavirini tutuyorsun ve babu sadece hazırlık yapıyor — bu daha ucuz. Bize kısaca haber ver.", "Nicht sicher? Kein Problem — der Shop-Check liest es einfach aus deinen Unterlagen heraus.": "Emin değil misin? Sorun değil — Dükkân Kontrolü bunu belgelerinden okur.", "Was kann ich im Barbershop absetzen?": "Berber dükkânında neleri vergiden düşebilirim?", "Brauche ich einen Meister?": "Ustalık belgesi gerekli mi?", "Brauche ich eine Kasse mit TSE?": "TSE’li kasa gerekli mi?", "Hallo, ich bin Babu. Frag mich alles zur App und zu Steuer-Grundfragen — Kassenbuch, Kleinunternehmer-Regel, Absetzen, Steuerberater-Wechsel. Was ich sage, ist eine erste Einordnung, keine Steuerberatung.": "Merhaba, ben Babu. Uygulama ve temel vergi soruları hakkında bana her şeyi sorabilirsin — kasa defteri, küçük işletme kuralı, vergiden düşme, mali müşavir değiştirme. Söylediklerim ilk bir değerlendirmedir, vergi danışmanlığı değildir.", "Gute Frage! Meine Live-Antworten werden gerade angeschlossen. Bis dahin: Schau in die häufigen Fragen weiter oben — oder melde dich im Portal an und frag mich dort zu deinen eigenen Belegen.": "Güzel soru! Canlı cevaplarım şu an bağlanıyor. O zamana kadar: yukarıdaki sık sorulan sorulara bak — ya da portala giriş yap ve bana orada kendi fişlerini sor.", "Typisch im Barbershop: Material und Werkzeug (Klingen, Trimmer, Scheren, Pomade), Miete, Fortbildungen, Arbeitskleidung, Fahrten, Telefon. babu sortiert deine Belege automatisch richtig ein — die genaue Einordnung macht am Ende das Steuer-Backend. Das ist eine erste Einordnung, keine Steuerberatung.": "Berber dükkânında tipik olanlar: malzeme ve alet (jilet, düzeltme makinesi, makas, pomat), kira, eğitimler, iş kıyafeti, yol masrafları, telefon. babu fişlerini otomatik olarak doğru yere koyar — kesin sınıflandırmayı sonunda vergi altyapısı yapar. Bu ilk bir değerlendirmedir, vergi danışmanlığı değildir.", "Kleinunternehmer (§ 19 UStG) heißt: Du weist keine Umsatzsteuer aus, solange dein Umsatz im Vorjahr unter 25.000 € lag. Ob das zu dir passt, findet babu im Shop-Check mit heraus.": "Küçük işletme (§ 19 UStG) demek: önceki yıl ciron 25.000 €’nun altındaysa faturada KDV göstermezsin. Sana uyup uymadığını babu Dükkân Kontrolü’nde bulur.", "Wechseln ist leicht: kurz beim alten Steuerberater Bescheid sagen (Vorlage bekommst du), eine Vollmacht unterschreiben — den Rest holen wir für dich. Mehr steht oben unter „Schon beim Steuerberater?\".": "Değiştirmek kolay: eski mali müşavirine kısaca haber ver (şablonu alırsın), bir vekâletname imzala — gerisini senin için biz hallederiz. Daha fazlası yukarıda „Zaten bir mali müşavirin mi var?\" bölümünde.", "Drei Pakete als Beispielpreise: Solo 39 €, Shop 79 €, Shop Plus 149 € im Monat — endgültige Preise folgen. Welches passt, sagt dir der kurze Fragebogen oben unter „Unsere Pakete\". Sicher ist: deutlich günstiger als die klassische Komplett-Betreuung.": "Örnek fiyatlarla üç paket: ayda Solo 39 €, Shop 79 €, Shop Plus 149 € — kesin fiyatlar gelecek. Hangisinin uyduğunu yukarıda „Paketlerimiz\" altındaki kısa anket söyler. Kesin olan: klasik tam hizmetten çok daha ucuz.", "babu ist keine Registrierkasse — es ersetzt deinen Papier-Kassenbericht: abends die Tagessummen eintragen, eine Zahl nach der anderen, babu rechnet. Darum brauchst du auch keine TSE.": "babu yazar kasa değildir — kâğıt kasa raporunun yerini alır: akşam günlük toplamları gir, sayı sayı, hesabı babu yapar. Bu yüzden TSE’ye de ihtiyacın olmaz.", "Geh auf mybabu.io/app — dort ist der Installieren-Button. In der Testphase kommt die App per TestFlight auf Einladung; deine Zugangsdaten bekommst du bei der Einrichtung.": "mybabu.io/app adresine git — yükleme düğmesi orada. Test döneminde uygulama davetle TestFlight üzerinden gelir; giriş bilgilerini kurulumda alırsın.", "Heute: Kontoauszug im Portal abgeben (Sparkassen-PDF geht schon), babu prüft, ob zu jeder Abbuchung ein Beleg da ist. Import für alle Banken und direkte Konto-Verbindung kommen als Nächstes.": "Bugün: banka dökümünü portala ver (Sparkasse PDF’i zaten çalışıyor), babu her ödemenin fişi var mı kontrol eder. Tüm bankalar için aktarım ve doğrudan hesap bağlantısı sırada.", "Bald kannst du Finanzamt-Briefe einfach fotografieren — babu erklärt dir in einfachen Worten, was drinsteht und bis wann du etwas tun musst. Die Frist landet in deinem Kalender.": "Yakında vergi dairesi mektuplarının sadece fotoğrafını çekeceksin — babu içinde ne yazdığını ve ne zamana kadar bir şey yapman gerektiğini basit kelimelerle anlatır. Süre takvimine düşer.", "Deine Daten liegen auf eigenen Servern in Deutschland und werden verschlüsselt übertragen. Jeder Beleg wird beim Ablegen versiegelt — unbemerkt ändern geht nicht.": "Verilerin Almanya’daki kendi sunucularımızda durur ve şifreli aktarılır. Her fiş arşivlenirken mühürlenir — fark edilmeden değiştirilemez.", "babu sammelt und ordnet, das Steuer-Backend macht den fachlichen Teil.": "babu toplar ve düzenler, teknik kısmı vergi altyapısı yapar.", "Barbershops sind Friseurhandwerk, Anlage A Nr. 38 der Handwerksordnung. Du brauchst die Eintragung in die Handwerksrolle: mit Meister, mit Betriebsleiter, über die Ausübungsberechtigung nach § 7b (Gesellenprüfung, sechs Jahre, davon vier leitend) oder eine Ausnahme nach § 8. Frag deine Handwerkskammer — die Beratung ist kostenlos.": "Berber dükkânları kuaförlük zanaatıdır, Zanaat Kanunu Ek A No. 38. Zanaat siciline kaydolman gerekir: ustalık belgesiyle, işletme sorumlusuyla, § 7b’ye göre icra yetkisiyle (kalfalık sınavı, altı yıl, dördü yönetici konumunda) ya da § 8’e göre istisnayla. Zanaat Odana sor — danışmanlık ücretsiz.", "Stuhlmiete geht, wenn der Mieter wirklich selbständig ist: eigene Kunden, Preise, Material, Kasse, keine Arbeitszeit-Vorgaben. Sonst droht eine Beschäftigung nach § 7 SGB IV. Im Zweifel Statusfeststellung bei der Rentenversicherung (§ 7a SGB IV).": "Koltuk kirası, kiracı gerçekten bağımsızsa olur: kendi müşterileri, fiyatları, malzemesi, kasası, çalışma saati talimatı yok. Aksi hâlde § 7 SGB IV’e göre istihdam sayılabilir. Şüphede Emeklilik Sigortası’nda durum tespiti (§ 7a SGB IV).", "Diese Seite gibt es auf Türkisch (oben rechts). App und Chat folgen. Gebucht wird immer auf Deutsch.": "Bu sayfanın Türkçesi var (sağ üstte). Uygulama ve sohbet sırada. Muhasebe kaydı her zaman Almanca yapılır."}, sprache='de',
-      norm=function(s){return String(s).replace(/\s+/g,' ').trim();},
-      urText=new WeakMap(), urAttr=new WeakMap(), ATTR=['alt','aria-label','placeholder'],
-      titelDe=document.title;
-  function text(n){
-    if(!urText.has(n)) urText.set(n,n.nodeValue);
-    var o=urText.get(n), k=norm(o);
-    if(!k) return;
-    var neu=(sprache==='tr'&&TR[k])?(o.match(/^\s*/)[0]+TR[k]+o.match(/\s*$/)[0]):o;
-    if(n.nodeValue!==neu) n.nodeValue=neu;
-  }
-  function element(el){
-    var m=urAttr.get(el)||{};
-    ATTR.forEach(function(a){
-      if(!el.hasAttribute(a)) return;
-      if(!(a in m)) m[a]=el.getAttribute(a);
-      var k=norm(m[a]); el.setAttribute(a,(sprache==='tr'&&TR[k])?TR[k]:m[a]);
-    });
-    urAttr.set(el,m);
-  }
-  function lauf(wurzel){
-    if(wurzel.nodeType===3){ text(wurzel); return; }
-    if(wurzel.nodeType!==1||/^(SCRIPT|STYLE)$/.test(wurzel.nodeName)) return;
-    element(wurzel);
-    var w=document.createTreeWalker(wurzel,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT,
-      {acceptNode:function(n){return n.parentNode&&/^(SCRIPT|STYLE)$/.test(n.parentNode.nodeName)?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_ACCEPT;}});
-    while(w.nextNode()){ var n=w.currentNode; if(n.nodeType===3) text(n); else element(n); }
-  }
-  function setze(s){
-    sprache=s; document.documentElement.lang=s;
-    document.title=(s==='tr'&&TR[norm(titelDe)])?TR[norm(titelDe)]:titelDe;
-    document.querySelectorAll('[data-sprache]').forEach(function(b){
-      b.setAttribute('aria-pressed',b.getAttribute('data-sprache')===s?'true':'false');});
-    lauf(document.body);
-  }
-  new MutationObserver(function(liste){
-    if(sprache!=='tr') return;
-    liste.forEach(function(m){ m.addedNodes.forEach(lauf); });
-  }).observe(document.body,{childList:true,subtree:true});
-  document.querySelectorAll('[data-sprache]').forEach(function(b){
-    b.addEventListener('click',function(){ setze(b.getAttribute('data-sprache')); });
-  });
-  if(/[?&]sprache=tr\b/.test(location.search)) setze('tr');
-})();
 </script>
 </body>
 </html>

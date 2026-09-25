@@ -73,3 +73,20 @@ def test_fehlt_der_eigene_container_schweigt_das_portal(tmp_path, monkeypatch):
     monkeypatch.setattr(kompendium, "_WEITERE_TEXTE", {})
     assert kompendium.suchen_in([1.0, 0.0], ("kompendium-barber",), k=3) == []
     assert kompendium.grundwissen_von(("kompendium", "kompendium-barber")) == ""
+
+
+def test_der_grundstock_ist_eine_kopie_ohne_die_genannten_quellen(tmp_path):
+    q = _quellen(tmp_path / "quellen")
+    cb.bauen(q, tmp_path / "friseur", embed=_embed)
+    (tmp_path / "friseur" / "hwo.md").write_text("x")
+    # Ein zweites Atom mit anderer Quelle dazu, damit etwas übrig bleibt.
+    zeilen = [json.loads(z) for z in open(tmp_path / "friseur" / "atome.jsonl")]
+    r = cb.grundstock(tmp_path / "friseur", tmp_path / "werkstatt", ohne=("hwo",))
+    assert r == {"quelle_atome": len(zeilen), "behalten": 0, "ohne": len(zeilen)}
+    r = cb.grundstock(tmp_path / "friseur", tmp_path / "werkstatt2", ohne=("anderes",))
+    assert r["behalten"] == len(zeilen)
+    v_alt = np.load(tmp_path / "friseur" / "vektoren.npy")
+    v_neu = np.load(tmp_path / "werkstatt2" / "vektoren.npy")
+    assert np.array_equal(v_alt, v_neu)                     # Zeile für Zeile, kein Neu-Einbetten
+    with pytest.raises(RuntimeError):
+        cb.grundstock(tmp_path / "friseur", tmp_path / "werkstatt2", ohne=())   # nur einmal

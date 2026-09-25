@@ -303,7 +303,7 @@ def test_der_chat_liest_aus_der_box_des_fragenden(welt, monkeypatch):
     # zusammenträgt — dort muss die richtige Box aktiv sein.
     monkeypatch.setattr(wissen, "weltblock",
                         lambda *a, **k: aktive.append(bw._box().ref) or "")  # noqa: SLF001
-    monkeypatch.setattr(bw, "_recherche", lambda frage: "")
+    monkeypatch.setattr(bw, "_recherche", lambda frage, **kw: "")
 
     _login(bw, welt["anna"]).post("/chat", json={"frage": "Was gab ich aus?"})
     _login(bw, welt["bea"]).post("/chat", json={"frage": "Was gab ich aus?"})

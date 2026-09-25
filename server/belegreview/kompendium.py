@@ -208,7 +208,15 @@ def suchen_in(frage_vektor: list[float], bestaende: tuple[str, ...],
         return []
     q = q / norm
     alle = [t for name in bestaende for t in _suchen_in(name, q, k, ohne)]
-    return sorted(alle, key=lambda t: -t["score"])[:k]
+    # Dieselbe Norm kann in zwei Beständen liegen (Branchen-Container und
+    # Bundesrecht) — gleicher Text zählt einmal.
+    aus, gesehen = [], set()
+    for t in sorted(alle, key=lambda t: -t["score"]):
+        schluessel = " ".join((t["text"] or "").split())
+        if schluessel not in gesehen:
+            gesehen.add(schluessel)
+            aus.append(t)
+    return aus[:k]
 
 
 def _eigene_datei(bestaende: tuple[str, ...], datei: str, grenze: int) -> str:

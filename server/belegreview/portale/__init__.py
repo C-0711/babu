@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from types import ModuleType
 
-from . import barber, friseur
+from . import barber, friseur, werkstatt
 
 VORGABE = "friseur"
 
@@ -43,7 +43,7 @@ NAMEN = (
     "KOMPENDIUM", "SUCH_OHNE",
 )
 
-PORTALE: dict[str, ModuleType] = {m.SCHLUESSEL: m for m in (friseur, barber)}
+PORTALE: dict[str, ModuleType] = {m.SCHLUESSEL: m for m in (friseur, barber, werkstatt)}
 
 
 def hole(schluessel: str | None) -> ModuleType:
@@ -83,6 +83,21 @@ def pruefen() -> list[str]:
                 fehler.append(f"{s}/{code}: Hinweis nennt eine Kontonummer "
                               "(Konten vergibt nur der Katalog)")
     return fehler
+
+
+# Das ganze Bundesrecht (6.137 Gesetze und Verordnungen, jede Norm im Wortlaut,
+# gesetze-im-internet.de, `werkzeuge/kompendium/bundesrecht_holen.py`) liegt in
+# EINEM Container, den jedes Portal im Chat zusätzlich zu seinem eigenen
+# durchsucht. Gebucht wird damit nicht — der Buchungs-Nachschlag bleibt beim
+# Branchen-Container und lässt Gesetzestexte aus (gemma_buchung.GESETZES_QUELLEN).
+BUNDESRECHT = "kompendium-bundesrecht"
+MIT_BUNDESRECHT = True
+
+
+def chat_bestaende(p: ModuleType) -> tuple[str, ...]:
+    """Wo der Expertenchat dieses Portals sucht: sein Container, dann das
+    Bundesrecht."""
+    return tuple(p.KOMPENDIUM) + ((BUNDESRECHT,) if MIT_BUNDESRECHT else ())
 
 
 def suchfrage(p: ModuleType, frage: str) -> str:

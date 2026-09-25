@@ -105,6 +105,7 @@ GET /portal/sw.js
 GET /review/{stamm}
 GET /review/{stamm}/protokoll
 GET /start/{marke}
+GET /werkstatt
 GET /workbench
 HEAD /openapi.json
 POST /ablage

@@ -118,6 +118,8 @@ services:
       # Seit 25.09.2026: die Kopie mit den 39 Gesetzen (portale/friseur.py). Rückweg: ~/kompendium
       - ~/kompendium-friseur:/data/kompendium:ro                     # Branchen-Kompendium: Vektoren + Atome + Grundwissen
       - ~/kompendium-barber:/data/kompendium-barber:ro  # Wissenscontainer des Portals babu Barber (portale/barber.py)
+      - ~/kompendium-werkstatt:/data/kompendium-werkstatt:ro  # Wissenscontainer des Portals babu Werkstatt (portale/werkstatt.py)
+      - ~/kompendium-bundesrecht:/data/kompendium-bundesrecht:ro  # das ganze Bundesrecht, gemeinsam für alle Portale
     restart: unless-stopped
     # Lebenszeichen (seit 14.09.2026): `GET /healthz` prüft Datenbank, Box-Klon
     # und Gemma. Direkt auf 127.0.0.1:7844, am Tunnel vorbei; kein curl im

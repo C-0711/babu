@@ -1,0 +1,14 @@
+AfA-Tabelle_Friseurgewerbe
+README.md
+beauty-salon/Kontenplan
+beauty-salon/README
+beauty-salon/erzeuge
+branche/Branchenstatistik
+branche/Foerderung-Beratung
+branche/QUELLEN
+branche/Steuerliche-Sonderthemen
+branche/_dateiliste
+branche/afa/AfA-Tabelle_94
+branche/gesetze/PodG
+branche/rechtsprechung/FG-Duesseldorf
+branche/statistik/Destatis_Kostenstruktur_Frisoer

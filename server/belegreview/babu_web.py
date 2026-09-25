@@ -1631,6 +1631,16 @@ def barber_seite() -> Response:
     return FileResponse(pfad, media_type="text/html", headers=HTML_FRISCH)
 
 
+@app.get("/werkstatt")
+def werkstatt_seite() -> Response:
+    """Die Startseite des Portals babu Werkstatt (seit 25.09.2026) — eine Kopie
+    der Friseur-Startseite, gebaut von `werbung/werkstatt/seite_bauen.py`."""
+    pfad = SEITE.parent / "werkstatt.html"
+    if not pfad.is_file():
+        return JSONResponse({"fehler": "kommt bald"}, status_code=404)
+    return FileResponse(pfad, media_type="text/html", headers=HTML_FRISCH)
+
+
 @app.get("/einkauf")
 def einkauf_seite() -> Response:
     """Was babu aus den Einkaufsrechnungen macht — vom Fuß der Startseite aus."""
@@ -6408,8 +6418,9 @@ def chat(body: dict, request: Request) -> Response:
     eigen = portale.eigener_container(p)
     grund = (kompendium.grundwissen_von(p.KOMPENDIUM) if eigen
              else kompendium.grundwissen())
-    recherche = (_recherche(portale.suchfrage(p, frage), bestaende=p.KOMPENDIUM)
-                 if eigen else _recherche(frage))
+    # Gesucht wird im Container des Portals UND im ganzen Bundesrecht.
+    recherche = _recherche(portale.suchfrage(p, frage),
+                           bestaende=portale.chat_bestaende(p))
     glossar = begriffe_erklaeren(frage)
     auftrag = (
         p.CHAT_AUFTRAG_ALLGEMEIN

@@ -89,8 +89,32 @@ def quellen_lesen(ordner: Path) -> list[dict]:
     return atome
 
 
+def _stapel_einbetten(texte: list[str], *, api: str | None = None,
+                     modell: str | None = None) -> list[list[float] | None]:
+    """Viele Texte in EINER Anfrage an den Embedding-Dienst — dieselbe
+    Konvention wie `babu_web.embedding_rechnen(als_dokument=True)`
+    (Präfix „title: none | text: …“, 6.000 Zeichen, truncate 2040). Für das
+    ganze Bundesrecht (> 100.000 Normen) wäre Text für Text zu langsam."""
+    import requests  # noqa: PLC0415
+    api = api or os.environ.get("EMBED_API", "http://127.0.0.1:11436/v1/embeddings")
+    modell = modell or os.environ.get("EMBED_MODELL", "embeddinggemma")
+    for versuch in range(4):
+        try:
+            r = requests.post(api, json={"model": modell,
+                                         "input": [f"title: none | text: {x[:6000]}" for x in texte],
+                                         "truncate_prompt_tokens": 2040}, timeout=300)
+            r.raise_for_status()
+            daten = sorted(r.json()["data"], key=lambda d: d["index"])
+            return [d["embedding"] for d in daten]
+        except Exception:  # noqa: BLE001
+            import time  # noqa: PLC0415
+            time.sleep(5 * (versuch + 1))
+    return [None] * len(texte)
+
+
 def bauen(quellordner: Path | str, ziel: Path | str, *, probe: bool = False,
-          embed=None) -> dict:
+          embed=None, stapel: int = 0) -> dict:
+    """`stapel` > 0: in Stapeln dieser Größe einbetten (ohne `embed`)."""
     quellordner, ziel = Path(quellordner).expanduser(), Path(ziel).expanduser()
     if ziel.resolve() == (Path.home() / "kompendium").resolve():
         raise RuntimeError("Der Hauptbestand ~/kompendium wird hier nie beschrieben.")
@@ -113,19 +137,31 @@ def bauen(quellordner: Path | str, ziel: Path | str, *, probe: bool = False,
     if not neu:
         return ergebnis
 
-    embed = embed or sab._standard_embedder()
     fertig = []
-    for a in neu:
-        v = embed(a["text"])
-        if not v or not v.get("vektor"):
-            ergebnis["fehler"] += 1
-            print(f"  ohne Vektor (Dienst?): {a['quelle']} · {a['loc']}")
-            continue
-        fertig.append({**a, "_vektor": sab._l2_normalisieren(v["vektor"])})
+    import numpy as np  # noqa: PLC0415
+    if stapel and embed is None:
+        for s in range(0, len(neu), stapel):
+            teil = neu[s:s + stapel]
+            for a, v in zip(teil, _stapel_einbetten([a["text"] for a in teil])):
+                if v is None:
+                    ergebnis["fehler"] += 1
+                    continue
+                vek = np.asarray(v, dtype=np.float32)
+                fertig.append({**a, "_vektor": vek / (np.linalg.norm(vek) or 1.0)})
+            if (s // stapel) % 200 == 0:
+                print(f"  {s + len(teil)}/{len(neu)} eingebettet", flush=True)
+    else:
+        embed = embed or sab._standard_embedder()
+        for a in neu:
+            v = embed(a["text"])
+            if not v or not v.get("vektor"):
+                ergebnis["fehler"] += 1
+                print(f"  ohne Vektor (Dienst?): {a['quelle']} · {a['loc']}")
+                continue
+            fertig.append({**a, "_vektor": sab._l2_normalisieren(v["vektor"])})
     if not fertig:
         return ergebnis
 
-    import numpy as np  # noqa: PLC0415
     neue = np.asarray([a["_vektor"] for a in fertig], dtype=np.float32)
     if npy.exists():
         alte = np.asarray(np.load(npy), dtype=np.float32)
@@ -159,13 +195,55 @@ def bauen(quellordner: Path | str, ziel: Path | str, *, probe: bool = False,
     return ergebnis
 
 
+def grundstock(quelle: Path | str, ziel: Path | str, ohne: tuple[str, ...]) -> dict:
+    """Einen neuen Container als KOPIE eines vorhandenen anlegen — ohne die Atome,
+    deren Quelle mit einem der Präfixe in `ohne` beginnt. Vektoren und Atome
+    werden Zeile für Zeile übernommen (kein neues Einbetten), die IDs neu
+    gezählt. Grundwissen- und Kontierungsdateien werden NICHT kopiert — die
+    bringt der Quellordner des neuen Portals mit.
+
+    Beispiel Werkstatt: der Friseur-Container ohne Friseur-AfA-Tabelle,
+    Salon-Statistik und Beauty-Kontenplan; GoBD, Kassenrecht, Richtsätze,
+    AfA-Tabelle AV und SKR04 bleiben."""
+    quelle, ziel = Path(quelle).expanduser(), Path(ziel).expanduser()
+    if ziel.resolve() == (Path.home() / "kompendium").resolve():
+        raise RuntimeError("Der Hauptbestand ~/kompendium wird hier nie beschrieben.")
+    if (ziel / "atome.jsonl").exists():
+        raise RuntimeError(f"{ziel} hat schon einen Bestand — der Grundstock wird nur einmal gelegt.")
+    import numpy as np  # noqa: PLC0415
+    atome = sab._atome_lesen(quelle / "atome.jsonl")
+    matrix = np.load(quelle / "vektoren.npy", mmap_mode="r")
+    if len(atome) != matrix.shape[0]:
+        raise RuntimeError("Quelle kaputt: Atome und Vektoren passen nicht zusammen.")
+    behalten = [i for i, a in enumerate(atome) if not (a.get("quelle") or "").startswith(tuple(ohne))]
+    ziel.mkdir(parents=True, exist_ok=True)
+    tmp_j, tmp_n = ziel / "atome.jsonl.tmp", ziel / "vektoren.npy.tmp"
+    with open(tmp_j, "w", encoding="utf-8") as f:
+        for neu_id, i in enumerate(behalten):
+            f.write(json.dumps({**atome[i], "id": neu_id}, ensure_ascii=False) + "\n")
+    with open(tmp_n, "wb") as f:
+        np.save(f, np.asarray(matrix[behalten], dtype=np.float32))
+    if sum(1 for _ in open(tmp_j, "rb")) != np.load(tmp_n, mmap_mode="r").shape[0]:
+        tmp_j.unlink(missing_ok=True)
+        tmp_n.unlink(missing_ok=True)
+        raise RuntimeError("Nachprüfung fehlgeschlagen — nichts geschrieben.")
+    os.replace(tmp_j, ziel / "atome.jsonl")
+    os.replace(tmp_n, ziel / "vektoren.npy")
+    return {"quelle_atome": len(atome), "behalten": len(behalten), "ohne": len(atome) - len(behalten)}
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("quellordner")
     p.add_argument("ziel")
     p.add_argument("--probe", action="store_true", help="nur zählen, nichts schreiben")
+    p.add_argument("--grundstock", help="vorher als Kopie dieses Containers anlegen")
+    p.add_argument("--ohne", nargs="*", default=[], help="Quellen-Präfixe, die der Grundstock weglässt")
+    p.add_argument("--stapel", type=int, default=0, help="in Stapeln dieser Größe einbetten (z. B. 64)")
     a = p.parse_args(argv)
-    print(json.dumps(bauen(a.quellordner, a.ziel, probe=a.probe), ensure_ascii=False))
+    if a.grundstock:
+        print(json.dumps(grundstock(a.grundstock, a.ziel, tuple(a.ohne)), ensure_ascii=False))
+    print(json.dumps(bauen(a.quellordner, a.ziel, probe=a.probe, stapel=a.stapel), ensure_ascii=False))
     return 0
 
 

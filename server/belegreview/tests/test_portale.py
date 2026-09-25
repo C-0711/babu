@@ -98,7 +98,7 @@ def test_der_chat_vorspann_ist_byte_gleich_mit_dem_von_vor_dem_umzug(festes_wiss
         "einstellungen": {"betrieb_name": "Salon Nina"}, "belege": [],
         "kassenblaetter": [], "vertraege": [], "rechnungen": [], "team": [],
         "fristen": [], "zahlen": {}, "dokumente": []})
-    monkeypatch.setattr(babu_web, "_recherche", lambda frage: "")
+    monkeypatch.setattr(babu_web, "_recherche", lambda frage, **kw: "")
     babu_web._LOGIN_VERSUCHE.clear()
     from fastapi.testclient import TestClient
     c = TestClient(babu_web.app, base_url="https://testserver")
@@ -299,15 +299,64 @@ def test_die_gebaute_barber_seite_ist_vollstaendig():
     assert "/ablage" not in seite                               # kein öffentlicher Upload
 
 
-def test_beide_seiten_wechseln_ueber_die_welten_oben():
-    """Ganz oben auf beiden Startseiten: Babs und Moe. Die eigene Welt ist
-    aktiv, die andere ist der Link hinüber — und von dort wieder zurück."""
+def test_alle_seiten_wechseln_ueber_den_welten_hero():
+    """Ganz oben auf jeder Startseite EIN Hero: die eigene Welt breit mit der
+    Überschrift, die anderen Welten als Weg hinüber — und von dort zurück."""
     import re
     ordner = HIER.parents[1] / "babu-web"
-    for datei, hier, drueben in (("index.html", "/", "/barber"), ("barber.html", "/barber", "/")):
+    welten = {"/": "fr-held.jpg", "/barber": "ba-held.jpg", "/werkstatt": "ws-held.jpg"}
+    for datei, hier in (("index.html", "/"), ("barber.html", "/barber"), ("werkstatt.html", "/werkstatt")):
         seite = (ordner / datei).read_text(encoding="utf-8")
-        nav = seite[seite.index('<nav class="welten"'):seite.index("</nav>")]
-        assert seite.index('<nav class="welten"') < seite.index('<section class="hero">')
-        assert re.search(rf'class="welt aktiv" href="{re.escape(hier)}" aria-current="page"', nav), datei
-        assert re.search(rf'class="welt" href="{re.escape(drueben)}"', nav), datei
-        assert "/bilder/fr-held.jpg" in nav and "/bilder/ba-held.jpg" in nav
+        hero = seite[seite.index("<!-- welten:start"):seite.index("<!-- welten:ende -->")]
+        assert seite.index("<!-- welten:start") < seite.index("So geht's")
+        aktiv = hero[hero.index('<div class="welt aktiv">'):hero.index("</h1>")]
+        assert welten[hier] in aktiv and "Dein Papierkram" in aktiv, datei
+        for pfad, bild in welten.items():
+            if pfad != hier:
+                assert re.search(rf'<a class="welt" href="{re.escape(pfad)}">\s*<img src="/bilder/{bild}"', hero), (datei, pfad)
+        assert hero.count("<h1>") == 1 and seite.count("<h1>") == 1, datei
+
+
+# ————— Werkstatt: die zweite Kopie —————
+
+def test_werkstatt_ist_eine_vollstaendige_kopie(festes_wissen):
+    w = portale.hole("werkstatt")
+    assert w.SCHLUESSEL == "werkstatt" and w.KOMPENDIUM == ("kompendium-werkstatt",)
+    import kontierung
+    assert set(w.KATEGORIE_HINWEISE) <= set(kontierung.KATEGORIEN)
+    e = {"betrieb_name": "Kfz-Service Mario", "kleinunternehmer": "Nein", "portal": "werkstatt"}
+    v = gemma_buchung.system_text(gemma_buchung.profil_text(e), "SKR04", portal="werkstatt")
+    assert v.startswith("Du bist die Buchhaltung einer Kfz-Werkstatt")
+    assert "Achsvermessung" in v and "Extensions" not in v and "Rasiermesser" not in v
+    assert portale.suchfrage(w, "Muss ich als Kfz-Werkstatt Altöl zurücknehmen?") \
+        == "Muss ich Altöl zurücknehmen?"
+
+
+def test_die_werkstatt_seite_wird_ausgeliefert(tmp_path, monkeypatch):
+    import babu_web
+    monkeypatch.setattr(babu_web, "SEITE", tmp_path / "index.html")
+    from fastapi.testclient import TestClient
+    c = TestClient(babu_web.app, base_url="https://testserver")
+    assert c.get("/werkstatt").status_code == 404
+    (tmp_path / "werkstatt.html").write_text("<html>babu Werkstatt</html>", encoding="utf-8")
+    assert c.get("/werkstatt").status_code == 200
+
+
+def test_der_chat_sucht_im_eigenen_container_und_im_bundesrecht():
+    assert portale.chat_bestaende(portale.hole("friseur")) == ("kompendium", "kompendium-bundesrecht")
+    assert portale.chat_bestaende(portale.hole("werkstatt")) == ("kompendium-werkstatt", "kompendium-bundesrecht")
+
+
+def test_dieselbe_norm_aus_zwei_bestaenden_zaehlt_einmal(tmp_path, monkeypatch):
+    import numpy as np
+    for name in ("kompendium-werkstatt", "kompendium-bundesrecht"):
+        d = tmp_path / name
+        d.mkdir()
+        (d / "atome.jsonl").write_text(json.dumps(
+            {"id": 0, "quelle": "gesetze/bgb.md", "loc": "txt#1", "text": "BGB § 647 Pfandrecht"}) + "\n"
+            + json.dumps({"id": 1, "quelle": f"{name}.md", "loc": "txt#2", "text": f"anders {name}"}) + "\n")
+        np.save(d / "vektoren.npy", np.asarray([[1, 0, 0, 0], [0.6, 0.8, 0, 0]], dtype=np.float32))
+    monkeypatch.setattr(kompendium, "VERZEICHNIS", tmp_path / "kompendium")
+    monkeypatch.setattr(kompendium, "_WEITERE", {})
+    t = kompendium.suchen_in([1, 0, 0, 0], ("kompendium-werkstatt", "kompendium-bundesrecht"), k=3)
+    assert [x["text"] for x in t].count("BGB § 647 Pfandrecht") == 1 and len(t) == 3

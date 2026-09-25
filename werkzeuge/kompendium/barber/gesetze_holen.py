@@ -75,7 +75,8 @@ def _text(el) -> str:
     return "\n\n".join(aus)
 
 
-def holen(abk: str, name: str, ziel: Path, heute: str) -> tuple[int, int]:
+def holen(abk: str, name: str, ziel: Path, heute: str, nur: tuple[int, int] | None = None) -> tuple[int, int]:
+    """`nur` = (von, bis): nur diese Paragrafen (z. B. BGB-Werkvertrag 631–651)."""
     url = f"https://www.gesetze-im-internet.de/{abk}/xml.zip"
     with urllib.request.urlopen(url, timeout=120) as r:
         daten = r.read()
@@ -86,6 +87,8 @@ def holen(abk: str, name: str, ziel: Path, heute: str) -> tuple[int, int]:
     kopf = normen[0].find("metadaten") if normen else None
     jurabk = (kopf.findtext("jurabk") or abk).strip() if kopf is not None else abk
     lang = " ".join((kopf.findtext("langue") or name).split()) if kopf is not None else name
+    if nur:
+        name = f"{name} (§§ {nur[0]}–{nur[1]})"
     stand = "; ".join(" ".join(s.itertext()).strip()
                       for s in (kopf.findall("standangabe") if kopf is not None else []))
     zeilen = [f"# {name} ({jurabk})", "",
@@ -102,6 +105,10 @@ def holen(abk: str, name: str, ziel: Path, heute: str) -> tuple[int, int]:
             continue
         if re.fullmatch(r"\(?weggefallen\)?", inhalt.strip(), flags=re.I):
             continue
+        if nur:
+            m = re.match(r"§\s*(\d+)", enbez)
+            if not m or not nur[0] <= int(m.group(1)) <= nur[1]:
+                continue
         zeilen += [f"## {jurabk} {enbez} {titel}".rstrip(), "", inhalt, ""]
         abschnitte += 1
     datei = ziel / f"{abk}.md"
