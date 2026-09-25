@@ -11,6 +11,13 @@ so wie ein Barber in Deutschland sie hört (Finanzamt, Kassenbuch …).
 TR = {
 "babu Barber — dein Papierkram macht sich von selbst": "babu Barber — evrak işlerin kendiliğinden hallolur",
 "Sprache": "Dil",
+"babu für Friseursalons und für Barbershops": "Kuaför salonları ve berber dükkânları için babu",
+"babu gibt es für": "babu şunlar için var",
+"Friseursalons": "Kuaför salonları",
+"Barbershops": "Berber dükkânları",
+"← mit Babs": "← Babs ile",
+"mit Moe · hier bist du": "Moe ile · buradasın",
+"Babs lacht in ihrem hellen Salon mit einer Stammkundin, die einen Kaffee hält": "Babs aydınlık salonunda, elinde kahve tutan müdavim müşterisiyle gülüyor",
 "babu · für deinen Barbershop": "babu · berber dükkânın için",
 "Dein Papierkram": "Evrak işlerin",
 "macht sich von selbst.": "kendiliğinden hallolur.",

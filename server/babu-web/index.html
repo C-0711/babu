@@ -249,10 +249,58 @@ footer .zeile{display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-co
   padding:9px 18px;font:600 13px var(--gc-sans);color:var(--gc-fg);cursor:pointer}
 .knopf-leise:hover{border-color:var(--gc-accent);color:var(--gc-accent)}
 .spots-stand{font-size:12.5px;color:var(--gc-muted)}
+
+/* ── Welten: babu für Friseursalons und für Barbershops ─────────────────
+   Ganz oben, auf beiden Seiten gleich gebaut: links Babs, rechts Moe. Die
+   eigene Welt ist breit, die andere schaut daneben herein — ein Klick (oder
+   Wischen) wechselt die Seite, und von dort geht es genauso zurück. */
+.welten{padding:18px 24px 0}
+@media(min-width:720px){.welten{padding:22px 56px 0}}
+.welten-kopf{display:flex;justify-content:space-between;align-items:center;gap:12px;
+  margin-bottom:12px;font:600 9.5px ui-monospace,"SF Mono",Menlo,monospace;
+  letter-spacing:.11em;text-transform:uppercase;color:var(--gc-accent)}
+.welten-bahn{display:flex;gap:12px;height:250px}
+@media(min-width:720px){.welten-bahn{height:360px}}
+.welt{position:relative;flex:1 1 0;min-width:0;border-radius:20px;overflow:hidden;
+  display:block;text-decoration:none;color:#fff;border:1px solid var(--gc-border);
+  transition:flex-grow .45s ease,box-shadow .3s ease}
+.welt.aktiv{flex-grow:3;box-shadow:0 0 0 2px var(--gc-ok)}
+.welt:not(.aktiv):hover,.welt:not(.aktiv):focus-visible{flex-grow:1.4}
+.welt img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  object-position:48% 30%;transition:transform .6s ease}
+.welt:not(.aktiv):hover img{transform:scale(1.05)}
+.welt::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(to top,rgba(20,18,14,.72),rgba(20,18,14,0) 55%)}
+.welt:not(.aktiv)::after{background:linear-gradient(to top,rgba(20,18,14,.8),rgba(20,18,14,.2))}
+.welt-text{position:absolute;left:16px;right:12px;bottom:14px;z-index:1;
+  display:flex;flex-direction:column;gap:3px}
+.welt-text b{font:600 clamp(14px,2.2vw,22px) "Playfair Display",Georgia,serif;letter-spacing:-.01em}
+.welt-text span{font-size:12.5px;opacity:.92}
+@media(max-width:719px){.welt:not(.aktiv) .welt-text span{display:none}
+  .welt:not(.aktiv) .welt-text{left:10px;right:8px}}
+.welten + .hero{padding-top:56px}
+@media (prefers-reduced-motion:reduce){.welt,.welt img{transition:none}}
 </style>
 </head>
 <body>
 <div class="blatt">
+
+<!-- ── 0 · Welten: babu für Friseursalons und für Barbershops ─────────── -->
+<nav class="welten" aria-label="babu für Friseursalons und für Barbershops">
+  <div class="welten-kopf"><span>babu gibt es für</span></div>
+  <div class="welten-bahn">
+    <a class="welt aktiv" href="/" aria-current="page">
+      <img src="/bilder/fr-held.jpg" width="1600" height="893"
+        alt="Babs lacht in ihrem hellen Salon mit einer Stammkundin, die einen Kaffee hält">
+      <span class="welt-text"><b>Friseursalons</b><span>mit Babs · hier bist du</span></span>
+    </a>
+    <a class="welt" href="/barber">
+      <img src="/bilder/ba-held.jpg" width="1600" height="893" loading="lazy"
+        alt="Moe lacht in seinem Barbershop mit einem Stammkunden im Stuhl, der ein Glas Tee hält">
+      <span class="welt-text"><b>Barbershops</b><span>mit Moe →</span></span>
+    </a>
+  </div>
+</nav>
 
 <!-- ── 1 · Hero ─────────────────────────────────────────────────────── -->
 <section class="hero">
@@ -1199,6 +1247,20 @@ document.querySelectorAll("[data-strecke]").forEach(strecke => {
   }
   knoepfePruefen();
 });
+
+/* ── Welten: Wischen wechselt wie ein Klick auf die andere Welt. ─────── */
+(function(){
+  var bahn=document.querySelector('.welten-bahn'); if(!bahn) return;
+  var welten=[].slice.call(bahn.querySelectorAll('.welt')), x0=null;
+  var hier=welten.findIndex(function(w){return w.classList.contains('aktiv');});
+  bahn.addEventListener('touchstart',function(e){x0=e.touches[0].clientX;},{passive:true});
+  bahn.addEventListener('touchend',function(e){
+    if(x0===null) return; var dx=e.changedTouches[0].clientX-x0; x0=null;
+    if(Math.abs(dx)<60) return;
+    var ziel=welten[hier+(dx<0?1:-1)];
+    if(ziel) location.href=ziel.getAttribute('href');
+  },{passive:true});
+})();
 </script>
 </body>
 </html>

@@ -7,6 +7,7 @@ beschreibt, was auf der Barber-Seite ANDERS ist, und schreibt daraus
 Friseur-Seite, bricht der Bau laut ab, statt still eine halbe Seite zu bauen.
 
 Anders als bei Friseur, mit Absicht:
+- Ganz oben der Welten-Wechsler gespiegelt: Moe breit, Babs führt zurück zu /.
 - Moe und sein Shop in allen Szenenbildern (/bilder/ba-*.jpg, 17 Gegenstücke
   der Friseur-Motive, dazu ein Kopfbild); die App-Bildschirme bleiben die
   echten Aufnahmen.
@@ -68,31 +69,34 @@ ers("--gc-accent:#857b61; --gc-accent-hover:#736950; --gc-accent-subtle:#f0ebe3;
     "--gc-accent:#8a6c3a; --gc-accent-hover:#6f5630; --gc-accent-subtle:#f3ecdf;")
 ers("--gc-gold:#c9b98d;", "--gc-gold:#c7a15a;")
 ers("</style>", """/* ── Barber: Kopfbild, Sprachumschalter ─────────────────────────────── */
-.blatt{position:relative}
-.held{margin:36px auto 0;max-width:980px}
-.held img{width:100%;height:auto;display:block;border-radius:22px;border:1px solid var(--gc-border)}
-.sprache{position:absolute;top:16px;right:18px;display:flex;gap:4px;z-index:5}
+.sprache{display:flex;gap:4px;letter-spacing:0;text-transform:none}
 .sprache button{border:1px solid var(--gc-border);background:var(--gc-bg);border-radius:99px;
   padding:6px 12px;font:600 12px Inter,-apple-system,sans-serif;cursor:pointer;color:var(--gc-desc)}
 .sprache button[aria-pressed="true"]{background:var(--gc-fg);border-color:var(--gc-fg);color:#fff}
 .faq-quelle{display:block;font-size:12.5px;color:var(--gc-muted);margin-top:8px}
 </style>""")
-ers('<div class="blatt">', '''<div class="blatt">
-<div class="sprache" role="group" aria-label="Sprache">
-  <button type="button" data-sprache="de" aria-pressed="true">Deutsch</button>
-  <button type="button" data-sprache="tr" aria-pressed="false">Türkçe</button>
-</div>''')
+# ── 0 · Welten: gespiegelt — Moe ist hier, Babs ist der Weg zurück ─────────
+ers('<div class="welten-kopf"><span>babu gibt es für</span></div>', '''<div class="welten-kopf"><span>babu gibt es für</span>
+    <div class="sprache" role="group" aria-label="Sprache">
+      <button type="button" data-sprache="de" aria-pressed="true">Deutsch</button>
+      <button type="button" data-sprache="tr" aria-pressed="false">Türkçe</button>
+    </div></div>''')
+ers('<a class="welt aktiv" href="/" aria-current="page">', '<a class="welt" href="/">')
+ers('<span class="welt-text"><b>Friseursalons</b><span>mit Babs · hier bist du</span></span>',
+    '<span class="welt-text"><b>Friseursalons</b><span>← mit Babs</span></span>')
+ers('''<a class="welt" href="/barber">
+      <img src="/bilder/ba-held.jpg" width="1600" height="893" loading="lazy"''',
+    '''<a class="welt aktiv" href="/barber" aria-current="page">
+      <img src="/bilder/ba-held.jpg" width="1600" height="893"''')
+ers('<img src="/bilder/fr-held.jpg" width="1600" height="893"',
+    '<img src="/bilder/fr-held.jpg" width="1600" height="893" loading="lazy"')
+ers('<span class="welt-text"><b>Barbershops</b><span>mit Moe →</span></span>',
+    '<span class="welt-text"><b>Barbershops</b><span>mit Moe · hier bist du</span></span>')
 
 # ── 1 · Hero ────────────────────────────────────────────────────────────────
 ers('<div class="lbl">babu · für deinen Salon</div>', '<div class="lbl">babu · für deinen Barbershop</div>')
 ers("eigenes Steuerbüro. Du schneidest weiter Haare.</p>",
     "eigenes Steuerbüro. Du kümmerst dich um Fades und Bärte.</p>")
-ers("""    Grüner Haken = alles erledigt. Mehr musst du nicht wissen.
-  </div>
-</section>""", """    Grüner Haken = alles erledigt. Mehr musst du nicht wissen.
-  </div>
-  <figure class="held"><img src="/bilder/ba-held.jpg" width="1600" height="893" alt="Moe lacht in seinem Barbershop mit einem Stammkunden im Stuhl, der ein Glas Tee hält"></figure>
-</section>""")
 
 # ── 2 · Drei Schritte ───────────────────────────────────────────────────────
 ers("Zwischen zwei Terminen, direkt an der Kasse, egal wo.",

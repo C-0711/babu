@@ -297,3 +297,17 @@ def test_die_gebaute_barber_seite_ist_vollstaendig():
     assert "Buhl" not in seite and "Steuer-Backend" in seite
     assert 'data-sprache="tr"' in seite and '"Dein Papierkram": "Evrak işlerin"' in seite
     assert "/ablage" not in seite                               # kein öffentlicher Upload
+
+
+def test_beide_seiten_wechseln_ueber_die_welten_oben():
+    """Ganz oben auf beiden Startseiten: Babs und Moe. Die eigene Welt ist
+    aktiv, die andere ist der Link hinüber — und von dort wieder zurück."""
+    import re
+    ordner = HIER.parents[1] / "babu-web"
+    for datei, hier, drueben in (("index.html", "/", "/barber"), ("barber.html", "/barber", "/")):
+        seite = (ordner / datei).read_text(encoding="utf-8")
+        nav = seite[seite.index('<nav class="welten"'):seite.index("</nav>")]
+        assert seite.index('<nav class="welten"') < seite.index('<section class="hero">')
+        assert re.search(rf'class="welt aktiv" href="{re.escape(hier)}" aria-current="page"', nav), datei
+        assert re.search(rf'class="welt" href="{re.escape(drueben)}"', nav), datei
+        assert "/bilder/fr-held.jpg" in nav and "/bilder/ba-held.jpg" in nav
