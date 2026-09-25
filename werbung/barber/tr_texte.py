@@ -124,7 +124,7 @@ TR = {
 "Rückfragen beantworten — machst du": "Soruları cevaplamak — sen yaparsın",
 "Buchhaltung + Abschluss — macht die Kanzlei": "Muhasebe + yıl sonu kapanışı — büro yapar",
 "Mit babu": "babu ile",
-"ab 49 €": "49 €’dan itibaren",
+"ab 39 €": "39 €’dan itibaren",
 "Belege fotografieren — 10 Sekunden pro Beleg": "Fişlerin fotoğrafını çekmek — fiş başına 10 saniye",
 "Kassenbuch in der App — 2 Minuten am Abend": "Uygulamada kasa defteri — akşam 2 dakika",
 "Sortieren, prüfen, einordnen — macht babu": "Ayırmak, kontrol etmek, yerine koymak — babu yapar",
