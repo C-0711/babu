@@ -3844,11 +3844,20 @@ def _recherche(frage: str, bestaende: tuple[str, ...] | None = None) -> str:
 
     `bestaende` (seit 24.09.2026): die Wissenscontainer eines Portals mit
     eigenem Container (portale/). Ohne Angabe der Hauptbestand wie bisher."""
-    emb = embedding_rechnen(frage, als_dokument=False)
-    if not emb:
-        return ""
     import kompendium  # noqa: PLC0415
     bloecke: list[str] = []
+    # Nennt die Frage eine Vorschrift („§ 647 BGB"), kommt ihr amtlicher
+    # Wortlaut aus dem ganzen Bundesrecht dazu — auch ohne Embedding-Dienst.
+    try:
+        wort = kompendium.wortlaut(frage)
+    except Exception:  # noqa: BLE001
+        wort = []
+    if wort:
+        bloecke.append("WORTLAUT DER GENANNTEN VORSCHRIFT (amtlich, gesetze-im-internet.de):\n"
+                       + "\n\n".join(f"[{w['quelle']}] {w['text']}" for w in wort))
+    emb = embedding_rechnen(frage, als_dokument=False)
+    if not emb:
+        return "\n\n".join(bloecke)
     treffer = sorted(
         (t for t in (kompendium.suchen_in(emb["vektor"], bestaende, k=5)
                       if bestaende else kompendium.suchen(emb["vektor"], k=5))

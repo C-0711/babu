@@ -87,11 +87,14 @@ def pruefen() -> list[str]:
 
 # Das ganze Bundesrecht (6.137 Gesetze und Verordnungen, jede Norm im Wortlaut,
 # gesetze-im-internet.de, `werkzeuge/kompendium/bundesrecht_holen.py`) liegt in
-# EINEM Container, den jedes Portal im Chat zusätzlich zu seinem eigenen
-# durchsucht. Gebucht wird damit nicht — der Buchungs-Nachschlag bleibt beim
-# Branchen-Container und lässt Gesetzestexte aus (gemma_buchung.GESETZES_QUELLEN).
+# EINEM Container für alle Portale. In der VEKTORSUCHE des Chats macht es die
+# Antworten schlechter — gemessen am 25.09.2026 an 34 Fachfragen: Friseur
+# 10/10 → 9/10, Barber 11/12 → 9/12, Werkstatt 8/12 → 8/12, mit Reranker nicht
+# besser (~/.beleglex/messungen/20260925-bundesrecht/). Darum AUS; stattdessen
+# holt der Chat den Wortlaut jeder Vorschrift, die eine Frage nennt, direkt aus
+# dem Bundesrecht (kompendium.wortlaut). Gebucht wird damit nie.
 BUNDESRECHT = "kompendium-bundesrecht"
-MIT_BUNDESRECHT = True
+MIT_BUNDESRECHT = False
 
 
 def chat_bestaende(p: ModuleType) -> tuple[str, ...]:

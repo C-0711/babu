@@ -342,9 +342,30 @@ def test_die_werkstatt_seite_wird_ausgeliefert(tmp_path, monkeypatch):
     assert c.get("/werkstatt").status_code == 200
 
 
-def test_der_chat_sucht_im_eigenen_container_und_im_bundesrecht():
-    assert portale.chat_bestaende(portale.hole("friseur")) == ("kompendium", "kompendium-bundesrecht")
-    assert portale.chat_bestaende(portale.hole("werkstatt")) == ("kompendium-werkstatt", "kompendium-bundesrecht")
+def test_der_chat_sucht_im_eigenen_container_das_bundesrecht_nur_bei_genannter_vorschrift():
+    """Gemessen: das ganze Bundesrecht in der Vektorsuche verschlechtert die
+    Antworten. Es kommt nur über den Wortlaut einer genannten Vorschrift."""
+    assert portale.chat_bestaende(portale.hole("friseur")) == ("kompendium",)
+    assert portale.chat_bestaende(portale.hole("werkstatt")) == ("kompendium-werkstatt",)
+
+
+def test_eine_genannte_vorschrift_kommt_im_wortlaut(tmp_path, monkeypatch):
+    d = tmp_path / "kompendium-bundesrecht"
+    d.mkdir()
+    atome = [
+        {"id": 0, "quelle": "gesetze/bgb.md", "loc": "txt#1", "text": "BGB § 647 Unternehmerpfandrecht\nDer Unternehmer hat ein Pfandrecht."},
+        {"id": 1, "quelle": "gesetze/sgb_4.md", "loc": "txt#2", "text": "SGB 4 § 7 Beschäftigung\n(1) Beschäftigung ist nichtselbständige Arbeit."},
+        {"id": 2, "quelle": "gesetze/sgb_6.md", "loc": "txt#3", "text": "SGB 6 § 7 Freiwillige Versicherung\n(1) Freiwillig versichern können sich …"},
+        {"id": 3, "quelle": "gesetze/ao_1977.md", "loc": "txt#4", "text": "AO 1977 § 146b Kassen-Nachschau\n(1) Zur Prüfung …"},
+    ]
+    (d / "atome.jsonl").write_text("".join(json.dumps(a, ensure_ascii=False) + "\n" for a in atome), encoding="utf-8")
+    monkeypatch.setattr(kompendium, "VERZEICHNIS", tmp_path / "kompendium")
+    monkeypatch.setattr(kompendium, "_NORMEN", {})
+    assert [w["kopf"] for w in kompendium.wortlaut("Was sagt § 647 BGB?")] == ["BGB § 647 Unternehmerpfandrecht"]
+    assert [w["quelle"] for w in kompendium.wortlaut("Gilt § 7 SGB IV für Stuhlmieter?")] == ["gesetze/sgb_4.md"]
+    assert kompendium.wortlaut("Gilt § 7 SGB für mich?") == []            # mehrdeutig: nicht raten
+    assert [w["kopf"] for w in kompendium.wortlaut("AO § 146b")] == ["AO 1977 § 146b Kassen-Nachschau"]
+    assert kompendium.wortlaut("Wie viel Urlaub steht mir zu?") == []
 
 
 def test_dieselbe_norm_aus_zwei_bestaenden_zaehlt_einmal(tmp_path, monkeypatch):
@@ -360,3 +381,15 @@ def test_dieselbe_norm_aus_zwei_bestaenden_zaehlt_einmal(tmp_path, monkeypatch):
     monkeypatch.setattr(kompendium, "_WEITERE", {})
     t = kompendium.suchen_in([1, 0, 0, 0], ("kompendium-werkstatt", "kompendium-bundesrecht"), k=3)
     assert [x["text"] for x in t].count("BGB § 647 Pfandrecht") == 1 and len(t) == 3
+
+
+def test_nennt_die_frage_eine_nummer_beginnt_der_wortlaut_dort(tmp_path, monkeypatch):
+    d = tmp_path / "kompendium-bundesrecht"
+    d.mkdir()
+    lang = "\n".join(f"{i}.\nText der Nummer {i}." for i in range(1, 60))
+    (d / "atome.jsonl").write_text(json.dumps({"id": 0, "quelle": "gesetze/estg.md", "loc": "txt#1",
+                                               "text": "EStG § 3\n" + lang}) + "\n", encoding="utf-8")
+    monkeypatch.setattr(kompendium, "VERZEICHNIS", tmp_path / "kompendium")
+    monkeypatch.setattr(kompendium, "_NORMEN", {})
+    w = kompendium.wortlaut("Was steht in § 3 Nr. 51 EStG?", grenze=200)
+    assert "Text der Nummer 51." in w[0]["text"] and "Text der Nummer 2." not in w[0]["text"]

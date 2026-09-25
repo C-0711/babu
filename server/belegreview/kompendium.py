@@ -241,3 +241,117 @@ def grundwissen_von(bestaende: tuple[str, ...]) -> str:
 def kontierungswissen_von(bestaende: tuple[str, ...]) -> str:
     """Wie `kontierungswissen()`, aber aus dem eigenen Bestand eines Portals."""
     return _eigene_datei(bestaende, "kontierung-grundwissen.md", 30000)
+
+
+# ── Wortlaut einer genannten Vorschrift (seit 25.09.2026) ────────────────────
+#
+# Das ganze Bundesrecht liegt in `kompendium-bundesrecht` (6.137 Gesetze und
+# Verordnungen, 105.204 Normen). In die Vektorsuche des Chats gehört es NICHT:
+# gemessen am 25.09.2026 verdrängen dort Seearbeitsgesetz, Waffengesetz und
+# Tarifverträge für Pädagogen die richtige Vorschrift — auch mit Reranker
+# (~/.beleglex/messungen/20260925-bundesrecht/). Nennt die Frage aber eine
+# Vorschrift („§ 647 BGB", „§ 7 SGB IV", „AO § 146b"), wird ihr Wortlaut
+# direkt nachgeschlagen — so ist jede Norm erreichbar, ohne Rauschen.
+
+import re as _re  # noqa: E402
+
+BUNDESRECHT = "kompendium-bundesrecht"
+_KOPF = _re.compile(r"^(.+?)\s+§\s*(\d+[a-z]?)\b")
+_ROEMISCH = {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6, "VII": 7, "VIII": 8,
+             "IX": 9, "X": 10, "XI": 11, "XII": 12, "XIV": 14}
+_ABK = r"([A-ZÄÖÜ][A-Za-zÄÖÜäöüß-]{1,20})(?:\s+([IVX]{1,4}|\d{1,2})\b)?"
+_FRAGE = [
+    _re.compile(r"§\s*(?P<nr>\d+[a-z]?)(?:\s+(?:Abs\.?|Absatz)\s*(?P<abs>\d+[a-z]?))?"
+                r"(?:\s+(?:S\.|Satz)\s*\d+)?(?:\s+Nr\.?\s*(?P<num>\d+[a-z]?))?\s+"
+                + _ABK.replace("(", "(?P<abk>", 1).replace("(?:\\s+([IVX]", "(?:\\s+(?P<buch>[IVX]", 1)),
+    _re.compile(_ABK.replace("(", "(?P<abk>", 1).replace("(?:\\s+([IVX]", "(?:\\s+(?P<buch>[IVX]", 1)
+                + r"\s+§\s*(?P<nr>\d+[a-z]?)"),
+]
+_NORMEN: dict[str, dict] = {}
+
+
+def _schluessel(abk: str) -> tuple[str, str]:
+    """(voll, ohne Zahlen): „AO 1977" → („ao 1977", „ao"), „SGB 4" → („sgb 4", „sgb")."""
+    voll = " ".join(abk.lower().split())
+    return voll, " ".join(w for w in voll.split() if not w.isdigit())
+
+
+def _normen_index(name: str) -> dict:
+    """(Schlüssel, Nummer) → Zeilen im Bestand; einmal je Prozess."""
+    if name in _NORMEN:
+        return _NORMEN[name]
+    index: dict = {}
+    pfad = verzeichnis(name) / "atome.jsonl"
+    if pfad.exists():
+        with open(pfad, "rb") as f:
+            for nr, zeile in enumerate(f):
+                try:
+                    a = json.loads(zeile)
+                except ValueError:
+                    continue
+                m = _KOPF.match((a.get("text") or "").split("\n", 1)[0])
+                if not m:
+                    continue
+                voll, kurz = _schluessel(m.group(1))
+                for k in {voll, kurz}:
+                    index.setdefault((k, m.group(2).lower()), []).append((nr, a.get("quelle") or ""))
+    _NORMEN[name] = index
+    return index
+
+
+def genannte_normen(frage: str) -> list[tuple[str, str, str | None, str | None]]:
+    """Die Vorschriften, die eine Frage nennt: [(Gesetz, Paragraf, Absatz, Nummer)]."""
+    aus = []
+    for muster in _FRAGE:
+        for m in muster.finditer(frage or ""):
+            abk, buch = m.group("abk"), m.group("buch")
+            if sum(c.isupper() for c in abk) < 2:      # „Gilt § 7“ ist kein Gesetz
+                continue
+            if buch:
+                abk = f"{abk} {_ROEMISCH.get(buch, buch)}"
+            gd = m.groupdict()
+            eintrag = (abk, m.group("nr"), gd.get("abs"), gd.get("num"))
+            if all(e[:2] != eintrag[:2] for e in aus):
+                aus.append(eintrag)
+    return aus[:3]
+
+
+def wortlaut(frage: str, bestand: str = BUNDESRECHT, grenze: int = 3000) -> list[dict]:
+    """Der amtliche Wortlaut der Vorschriften, die die Frage nennt. Mehrdeutige
+    Kürzel (zwei verschiedene Gesetze) werden nicht geraten."""
+    normen = genannte_normen(frage)
+    if not normen:
+        return []
+    index = _normen_index(bestand)
+    if not index:
+        return []
+    aus = []
+    for abk, nr, absatz, nummer in normen:
+        voll, kurz = _schluessel(abk)
+        treffer = index.get((voll, nr.lower())) or index.get((kurz, nr.lower())) or []
+        quellen = {q for _, q in treffer}
+        if len(quellen) != 1:
+            continue
+        zeilen = sorted(z for z, _ in treffer)
+        texte = []
+        with open(verzeichnis(bestand) / "atome.jsonl", "rb") as f:
+            for z, zeile in enumerate(f):
+                if z in zeilen:
+                    texte.append(json.loads(zeile))
+                if z > zeilen[-1]:
+                    break
+        kopf = texte[0]["text"].split("\n", 1)[0]
+        rumpf = "\n".join(t["text"].split("\n", 1)[1] if "\n" in t["text"] else "" for t in texte)
+        # Nennt die Frage Absatz oder Nummer, beginnt der Ausschnitt dort —
+        # sonst fiele „§ 3 Nr. 51 EStG“ hinter die Grenze.
+        start = 0
+        for muster in ([rf"(?m)^\s*{_re.escape(nummer)}\.\s"] if nummer else []) + \
+                      ([rf"\({_re.escape(absatz)}\)"] if absatz else []):
+            m = _re.search(muster, rumpf)
+            if m:
+                start = m.start()
+                break
+        ausschnitt = ("… " if start else "") + rumpf[start:]
+        aus.append({"quelle": texte[0]["quelle"], "loc": texte[0]["loc"], "kopf": kopf,
+                    "text": (kopf + "\n" + ausschnitt)[:grenze]})
+    return aus
