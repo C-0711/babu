@@ -24,7 +24,9 @@
 # paare.tsv: je Zeile  <ref beim Dienst><TAB><Pfad der alten Box im Tresor>
 #
 # Optionen: --dienst (http://127.0.0.1:3361), --konto (svc-babu),
-#           --token-datei (~/gitchain-eingang/.pat_babu.svc)
+#           --token-datei (~/gitchain-eingang/.pat_babu.svc),
+#           --anlegen  fehlende Zielbox (Betrieb erst nach dem Go-live angelegt)
+#                      leer per git init --bare anlegen, dann zurückholen
 # Rückgabe: 0 = alles geprüft bzw. zurückgeholt, 1 = Fehler, 2 = Aufruf,
 #           3 = mindestens eine Box nicht per Fast-Forward holbar.
 set -euo pipefail
@@ -32,7 +34,7 @@ set -euo pipefail
 DIENST="http://127.0.0.1:3361"
 KONTO="svc-babu"
 TOKEN_DATEI="${BABU_RUECK_TOKEN_DATEI:-$HOME/gitchain-eingang/.pat_babu.svc}"
-LISTE=""; REF=""; ZIEL=""; SCHARF=0
+LISTE=""; REF=""; ZIEL=""; SCHARF=0; ANLEGEN=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -43,6 +45,7 @@ while [ $# -gt 0 ]; do
     --konto) KONTO="$2"; shift 2 ;;
     --token-datei) TOKEN_DATEI="$2"; shift 2 ;;
     --scharf) SCHARF=1; shift ;;
+    --anlegen) ANLEGEN=1; shift ;;
     -h|--help) sed -n '2,31p' "$0"; exit 0 ;;
     *) echo "unbekannte Option: $1" >&2; exit 2 ;;
   esac
@@ -75,8 +78,21 @@ sage "Rückholen $([ "$SCHARF" = 1 ] && echo SCHARF || echo TROCKENLAUF) von $DI
 fehler=0; kein_ff=0
 while IFS=$'\t' read -r ref ziel; do
   [[ "$ref" =~ ^babu/[a-z0-9][a-z0-9._-]{0,79}/belege$ ]] || { sage "FEHLER: $ref ist kein babu-Verweis"; fehler=1; continue; }
+  if [ ! -e "$ziel" ] && [ "$ANLEGEN" = 1 ]; then
+    # Betrieb, der erst nach dem Go-live entstand: im alten Tresor gibt es
+    # seine Box nicht. Mit --anlegen entsteht sie leer (git init --bare) —
+    # nur als <name>.git in einem schon vorhandenen Ordner, im Trockenlauf gar nicht.
+    case "$ziel" in *.git) ;; *) sage "FEHLER: $ziel endet nicht auf .git"; fehler=1; continue ;; esac
+    [ -d "$(dirname "$ziel")" ] || { sage "FEHLER: Ordner $(dirname "$ziel") fehlt"; fehler=1; continue; }
+    if [ "$SCHARF" = 1 ]; then
+      git init -q --bare -b main "$ziel" && sage "$ref: leere Box $ziel angelegt"
+    else
+      sage "TROCKEN $ref: würde leere Box $ziel anlegen und dann alle Commits des Dienstes holen"
+      continue
+    fi
+  fi
   [ -d "$ziel" ] && git -C "$ziel" rev-parse --is-bare-repository >/dev/null 2>&1 \
-    || { sage "FEHLER: $ziel ist keine Git-Box"; fehler=1; continue; }
+    || { sage "FEHLER: $ziel ist keine Git-Box (fehlt sie? dann --anlegen)"; fehler=1; continue; }
   url="$DIENST/git/$ref.git"
   set +e
   d_head=$(git ls-remote "$url" refs/heads/main 2>/dev/null | awk '{print $1}'); rc=$?
