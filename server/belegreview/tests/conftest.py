@@ -32,6 +32,14 @@ import pytest
 HIER = Path(__file__).resolve().parent
 sys.path.insert(0, str(HIER.parent))
 
+# Lesepfad (GitChain-Standard 27.09.2026): im Betrieb liest babu aus einem
+# eigenen Lesespiegel (`BABU_LESEN=klon`, Vorgabe). Die Suite prüft den
+# Lesecode aber seit jeher direkt gegen einen Bare-Store, den sie selbst
+# anlegt (`babu_web.STORE`, `box.STORE_WURZEL`) — für sie gilt deshalb
+# `store`. Den Spiegel-Weg prüft `test_gitchain_standard.py` eigens, mit
+# `monkeypatch.setenv("BABU_LESEN", "klon")`.
+os.environ.setdefault("BABU_LESEN", "store")
+
 #: Homebrew legt Postgres 16 hierhin; im Container/CI steht es im PATH.
 PG_BIN_KANDIDATEN = (
     Path("/opt/homebrew/opt/postgresql@16/bin"),

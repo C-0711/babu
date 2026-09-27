@@ -19,10 +19,12 @@ Der zweite Teil ist der wichtigere. Ein Anlegewerkzeug, das nur schreibt,
 verlagert das Problem nur: dann glaubt man ihm. Erst die Nachprüfung macht
 aus „ich habe es getan“ ein „ich habe nachgesehen“.
 
-**Was dieses Werkzeug ausdrücklich NICHT tut: die Belegbox erzeugen.** Das
-Gateway `insp-app` ist ein fremdes Projekt und wird nicht ferngesteuert
-(CLAUDE.md, „Betrieb H200V — Finger weg“). Das Werkzeug prüft, ob die Box
-da und lesbar ist, und nennt sonst den genauen Pfad, den es erwartet.
+**Die Belegbox erzeugt das Werkzeug nur auf ausdrücklichen Wunsch**
+(`--box-anlegen`, seit dem GitChain-Standard 27.09.2026): per Push-to-create
+als Dienstkonto `svc-babu` in `babu/<betrieb>/belege` beim GitChain-Dienst —
+nie mehr per `git init` im Speicher von GitChain. Ohne den Schalter prüft
+es nur, ob die Box beim Dienst da und lesbar ist (`git ls-remote` mit dem
+Token des Schreibwegs).
 
 **Das Startpasswort erscheint genau einmal, auf der Konsole des
 Aufrufers.** Es steht in keiner Datei, in keinem Log und in keinem Feld des
@@ -111,6 +113,7 @@ class Plan:
     mandant_nr: str = ""
     box_ref: str = ""
     trocken: bool = False
+    box_anlegen: bool = False
 
 
 @dataclass
@@ -193,9 +196,18 @@ def box_befund(box_ref: str) -> Pruefung:
     if not ref:
         return Pruefung(
             "belegbox", False, handarbeit=True,
-            grund="kein Verweis angegeben. Sobald die Box am Gateway "
-                  "eingerichtet ist, mit --nur-box --box-ref <verweis> "
-                  "nachtragen (z. B. inspektor/ws-nina.de/babu).")
+            grund="kein Verweis angegeben. Mit --nur-box --box-anlegen "
+                  "--box-ref babu/<betrieb>/belege anlegen und nachtragen.")
+    if bx.lesen_modus() == "klon":
+        # GitChain-Standard: babu fragt den Dienst, nicht dessen Platte.
+        import boxschreiber  # noqa: PLC0415
+        da, stand = boxschreiber.box_da(ref)
+        if not da:
+            return Pruefung(
+                "belegbox", False, handarbeit=True,
+                grund=f"beim GitChain-Dienst nicht erreichbar: {stand} "
+                      f"({bx.remote_aus_ref(ref)}). Anlegen mit --box-anlegen.")
+        return Pruefung("belegbox", True, grund=f"{bx.remote_aus_ref(ref)} ({stand})")
     store = bx.store_aus_ref(ref)
     if not store.is_dir():
         return Pruefung(
@@ -244,6 +256,7 @@ def _geputzt(plan: Plan) -> Plan:
         mandant_nr=plan.mandant_nr.strip()[:20],
         box_ref=plan.box_ref.strip().strip("/")[:200],
         trocken=plan.trocken,
+        box_anlegen=plan.box_anlegen,
     )
 
 
@@ -423,6 +436,15 @@ def box_nachtragen(plan: Plan) -> Bericht:
     b.kanzlei_id = int(m["kanzlei_id"])
     b.schritte.append(Schritt("box", f"Belegbox {p.box_ref} an Mandant "
                                      f"{b.mandant_id} („{m['name']}“)"))
+    if p.box_anlegen and not p.trocken:
+        # Push-to-create beim Dienst. Idempotent: gibt es die Box schon,
+        # passiert nichts. Scheitert es, bleibt der Mandant ehrlich auf
+        # `box_ausstehend` — die Prüfung unten sagt, warum.
+        import boxschreiber  # noqa: PLC0415
+        try:
+            boxschreiber.box_anlegen(p.box_ref, anzeige=str(m["name"] or ""))
+        except boxschreiber.SchreibFehler as ex:
+            print(f"Box anlegen: {ex}", file=sys.stderr)
     befund = box_befund(p.box_ref)
     if p.trocken:
         b.pruefungen.append(befund)
@@ -629,6 +651,9 @@ def _argumente(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--nur-box", action="store_true",
                     help="nichts anlegen, nur die Belegbox an einen "
                          "vorhandenen Betrieb hängen")
+    ap.add_argument("--box-anlegen", action="store_true",
+                    help="mit --nur-box: die Box per Push-to-create beim "
+                         "GitChain-Dienst anlegen (babu/<betrieb>/belege)")
     ap.add_argument("--trocken", action="store_true",
                     help="nur zeigen, was passieren würde")
     return ap.parse_args(argv)
@@ -640,7 +665,8 @@ def main(argv: list[str] | None = None) -> int:
                 kanzlei_id=a.kanzlei_id, kanzlei_neu=a.kanzlei_neu,
                 kanzlei_inhaber=a.kanzlei_inhaber,
                 kontenrahmen=a.kontenrahmen, berater_nr=a.berater_nr,
-                mandant_nr=a.mandant_nr, box_ref=a.box_ref, trocken=a.trocken)
+                mandant_nr=a.mandant_nr, box_ref=a.box_ref, trocken=a.trocken,
+                box_anlegen=a.box_anlegen)
     passwort = None
     try:
         if a.nur_box:

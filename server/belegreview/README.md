@@ -13,7 +13,8 @@ davor und danach.
 | `babu-web` | **Docker** | der ganze Dienst: Upload-Seite, **Salon-Portal** (`/portal` + `/api/*`, Session-Cookie), App-API (`/api/aufnahme`, `/api/buchung/einschaetzung`, `GET /review/<stamm>`, `/chat`) |
 | `babu-eingang` | pm2 | GitChain-Gateway (Push in den Bare-Store) |
 | `babu-tunnel` | pm2 | Cloudflare-Tunnel `babu-0711` → babu.0711.io (`~/.cloudflared/babu-0711.yml`) |
-| `insp-app` | pm2 | Belegbox-Gateway :7808 — **nie anfassen**, ohne ihn kommt nichts in die Box |
+| `insp-app` | pm2 | altes Belegbox-Gateway :7808 — **nie anfassen**; bis zur Umstellung auf den GitChain-Standard kommt ohne ihn nichts in die Box |
+| GitChain-Dienst | k8s, hostPort :3361 | Ziel nach dem GitChain-Standard (Branch `claude/gitchain-standard`): Integration `babu`, Dienstkonto `svc-babu`, Boxen `babu/<betrieb>/belege`, Push-to-create; babu liest aus eigenen Lesespiegeln (`~/babu-web/lesen/`) |
 
 Der gestoppte pm2-Eintrag `babu-web` ist der Rückweg: `docker compose down`
 (in `~/babu-docker/docker`) + `pm2 start babu-web`. Das alte `~/belegreview/`

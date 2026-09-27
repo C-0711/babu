@@ -29,10 +29,23 @@ Woher die Default-Box ihre Werte nimmt: `boxschreiber.REF/KLON/REMOTE`
 liest sie selbst (später Import, damit diese Datei ein Blattmodul bleibt),
 den Store meldet `babu_web` per `store_quelle()` an. Ohne Anmeldung greift
 `STORE_STANDARD` — dieselbe Umgebungsvariable, derselbe Vorgabewert.
+
+**Lesen seit dem GitChain-Standard (27.09.2026): aus dem eigenen Klon.**
+babu liest nicht mehr im Speicher von GitChain (`~/gitchain/tresor`,
+`/opt/gitchain-repos`), sondern aus einem eigenen Lesespiegel je Box
+(`git clone --mirror` vom Remote, mit dem Token des Schreibwegs). Der Spiegel
+liegt unter `BABU_LESE_WURZEL/<ref>.git` und ist für den Lesecode ein ganz
+gewöhnlicher Bare-Store — `git -C <store> show HEAD:…` bleibt, wie es war.
+Nachgezogen wird er per `lesestand_holen()`: vor jedem Index-Neubau (höchstens
+alle `BABU_LESE_TTL` Sekunden) und sofort nach jedem eigenen Push.
+`BABU_LESEN=store` schaltet auf den alten Direktzugriff zurück — nur als
+Rückweg und für die Tests, die den Lesecode gegen einen Bare-Store prüfen.
 """
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import threading
 import time
 from collections import OrderedDict
@@ -52,6 +65,23 @@ STORE_WURZEL = Path(os.environ.get("BABU_STORE_WURZEL",
                                    str(Path.home() / "inspektor-store")))
 KLON_WURZEL = Path(os.environ.get("BABU_BOX_KLON_WURZEL",
                                   str(Path.home() / "babu-web" / "boxen")))
+# Wo die Lesespiegel liegen (Modus `klon`, siehe Modul-Kopf).
+LESE_WURZEL = Path(os.environ.get("BABU_LESE_WURZEL",
+                                  str(Path.home() / "babu-web" / "lesen")))
+# Wie oft der Lesespiegel höchstens beim Remote nachfragt. Ein eigener Push
+# zieht ihn ohnehin sofort nach; die Frist gilt nur für fremde Commits
+# (Hintergrundjobs, zweiter Server).
+LESE_TTL = float(os.environ.get("BABU_LESE_TTL", os.environ.get("BABU_INDEX_TTL", "5")))
+
+
+def lesen_modus() -> str:
+    """`klon` (Standard: eigener Lesespiegel) oder `store` (alter Direktzugriff).
+
+    Bei jedem Aufruf frisch gelesen, damit Tests und Rückweg ohne Neuimport
+    umschalten können. Alles außer `store` heißt `klon`.
+    """
+    return "store" if os.environ.get("BABU_LESEN", "klon").strip().lower() == "store" \
+        else "klon"
 
 # Wie viele Boxen gleichzeitig im Speicher stehen dürfen und wie lange eine
 # unbenutzte überlebt. Bei hunderten Mandanten arbeiten nur wenige
@@ -107,6 +137,11 @@ class Box:
     blob_stand: dict = field(default_factory=lambda: {"kopf": None, "pfade": {}},
                              repr=False)
     seiten_cache: dict = field(default_factory=dict, repr=False)
+    # Lesespiegel (Modus `klon`): wann zuletzt nachgezogen, und ein Schloss,
+    # damit nie zwei `fetch` gleichzeitig in denselben Spiegel schreiben.
+    lese_stand: dict = field(default_factory=lambda: {"geholt": 0.0, "fehler": ""},
+                             repr=False)
+    lese_schloss: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def invalidieren(self) -> None:
         """Der nächste Lesezugriff baut den Index neu.
@@ -188,7 +223,10 @@ def _default_werte() -> tuple[Path, str, Path, str]:
     bleiben, damit `boxschreiber` sie seinerseits importieren darf.
     """
     import boxschreiber  # noqa: PLC0415
-    store = _STORE_QUELLE() if _STORE_QUELLE is not None else STORE_STANDARD
+    if lesen_modus() == "klon":
+        store = lese_aus_ref(boxschreiber.REF)
+    else:
+        store = _STORE_QUELLE() if _STORE_QUELLE is not None else STORE_STANDARD
     return Path(store), boxschreiber.REF, Path(boxschreiber.KLON), boxschreiber.REMOTE
 
 
@@ -215,6 +253,87 @@ def store_aus_ref(ref: str) -> Path:
     dessen, was insp-app ohnehin anlegt.
     """
     return STORE_WURZEL / (ref.strip("/") + ".git")
+
+
+def lese_aus_ref(ref: str) -> Path:
+    """Konvention (Modus `klon`): der Lesespiegel einer Box.
+
+    `babu/salon-2/belege` → `~/babu-web/lesen/babu/salon-2/belege.git`. Der
+    volle Ref als Pfad, damit zwei Boxen nie denselben Spiegel teilen.
+    """
+    return LESE_WURZEL / (ref.strip("/") + ".git")
+
+
+def _lese_git(args: list[str], timeout: int) -> subprocess.CompletedProcess:
+    import boxschreiber  # noqa: PLC0415 — Token und Auth-Kopf wie beim Schreiben
+    return subprocess.run(["git", *args], capture_output=True, text=True,
+                          timeout=timeout, env=boxschreiber._pat_umgebung())  # noqa: SLF001
+
+
+def lesestand_holen(box: "Box", sofort: bool = False, warten: bool = True) -> bool:
+    """Den Lesespiegel der Box beim Remote nachziehen (Modus `klon`).
+
+    Gibt es ihn noch nicht, entsteht er per `git clone --mirror` — erst in
+    einen Nachbarordner, dann umbenannt, damit ein abgebrochener Klon nie
+    als halber Spiegel stehen bleibt. Sonst `fetch --prune`. Ohne `sofort`
+    höchstens alle `LESE_TTL` Sekunden. Ein Fehler (Netz, Token) wird
+    gemeldet, bricht aber nichts: gelesen wird dann der letzte Stand.
+    Im Modus `store` gibt es nichts nachzuziehen.
+
+    `warten=False` für den Lesepfad: zieht gerade ein anderer Faden nach (der
+    erste Klon kann Minuten dauern), wird nicht gewartet, sondern der
+    vorhandene Stand gelesen.
+    """
+    if lesen_modus() != "klon" or not box.remote:
+        return True
+    if not box.lese_schloss.acquire(blocking=warten):
+        return not box.lese_stand["fehler"]
+    try:
+        return _lesestand_holen_gesperrt(box, sofort)
+    finally:
+        box.lese_schloss.release()
+
+
+def _lesestand_holen_gesperrt(box: "Box", sofort: bool) -> bool:
+    """Der eigentliche Klon/Fetch — nur unter `box.lese_schloss` aufrufen."""
+    jetzt = time.monotonic()
+    if not sofort and jetzt - box.lese_stand["geholt"] < LESE_TTL:
+        return not box.lese_stand["fehler"]
+    box.lese_stand["geholt"] = jetzt
+    spiegel = Path(box.store)
+    try:
+        if not (spiegel / "HEAD").is_file():
+            spiegel.parent.mkdir(parents=True, exist_ok=True)
+            neu = spiegel.with_name(spiegel.name + ".neu")
+            if neu.exists():
+                shutil.rmtree(neu)
+            r = _lese_git(["clone", "--mirror", "-q", box.remote, str(neu)],
+                          timeout=int(os.environ.get("BABU_LESE_KLON_FRIST", "900")))
+            if r.returncode == 0:
+                neu.rename(spiegel)
+        else:
+            url = _lese_git(["-C", str(spiegel), "remote", "get-url", "origin"],
+                            timeout=10)
+            if url.stdout.strip() != box.remote:
+                # Umzug des Remotes (z. B. :7808 → neuer Dienst): der Spiegel
+                # folgt der Konfiguration, nicht seiner Erinnerung.
+                _lese_git(["-C", str(spiegel), "remote", "set-url", "origin",
+                           box.remote], timeout=10)
+            r = _lese_git(["-C", str(spiegel), "fetch", "-q", "--prune", "origin"],
+                          timeout=120)
+    except (OSError, subprocess.SubprocessError) as ex:
+        box.lese_stand["fehler"] = f"{type(ex).__name__}"
+        print(f"[lesespiegel] {box.ref}: Lesespiegel nicht nachgezogen ({ex.__class__.__name__})",
+              flush=True)
+        return False
+    if r.returncode != 0:
+        import boxschreiber  # noqa: PLC0415
+        box.lese_stand["fehler"] = boxschreiber.git_fehler_text(r.stderr)
+        print(f"[lesespiegel] {box.ref}: Lesespiegel nicht nachgezogen: "
+              f"{box.lese_stand['fehler']}", flush=True)
+        return False
+    box.lese_stand["fehler"] = ""
+    return True
 
 
 def klon_aus_ref(ref: str) -> Path:
@@ -252,7 +371,7 @@ def box_aus_ref(mandant_id: int | None, ref: str) -> Box:
     import boxschreiber  # noqa: PLC0415 — nur für den Vergleich mit dem Produktiv-Ref
     if ref.strip("/") == boxschreiber.REF.strip("/"):
         return default_box()
-    store = store_aus_ref(ref)
+    store = lese_aus_ref(ref) if lesen_modus() == "klon" else store_aus_ref(ref)
     klon = klon_aus_ref(ref)
     remote = remote_aus_ref(ref)
     schluessel = (mandant_id, str(store), ref, str(klon), remote)
