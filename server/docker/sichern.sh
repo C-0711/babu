@@ -25,7 +25,11 @@ set -u
 TROCKEN=0; [ "${1:-}" = "--trocken" ] && TROCKEN=1
 
 ZIEL="${BABU_SICHERUNG:-$HOME/backups/babu}"
-STORE_WURZEL="$HOME/inspektor-store/inspektor/ws-christoph0711.io"
+# Seit dem GitChain-Standard (27.09.2026) liest babu aus eigenen Lesespiegeln
+# (`~/babu-web/lesen/<ref>.git`, je Box ein `git clone --mirror` vom Dienst).
+# Gesichert wird von dort — nie aus dem Speicher von GitChain.
+LESE_WURZEL="${BABU_LESE_WURZEL_HOST:-$HOME/babu-web/lesen}"
+DEFAULT_REF="${BABU_REF:-babu/babu/belege}"
 LOG="$ZIEL/sichern.log"
 STEMPEL=$(date +%Y%m%d)
 # Öffentlicher age-Schlüssel des Mac (~/.config/babu/sicherung.key dort).
@@ -44,27 +48,34 @@ tue() { if [ "$TROCKEN" = 1 ]; then echo "  (trocken) $*"; else "$@"; fi; }
 sage "start$([ "$TROCKEN" = 1 ] && echo " (trocken)")"
 
 # ── 1. Belegboxen ───────────────────────────────────────────────────────────
-# Welche Boxen gehören babu? Die Default-Box (babu.git) und alles, was in der
-# Mandantentabelle als box_ref steht. Fremde Repos im selben Store (andere
-# Projekte am Gateway) werden bewusst NICHT mitgesichert.
-boxen="babu"
+# Welche Boxen gehören babu? Die Default-Box und alles, was in der
+# Mandantentabelle als box_ref steht (volle Verweise babu/<betrieb>/belege).
+# Name der Sicherung: `babu-box` für die Default-Box (wie bisher), sonst
+# `box-<betrieb>`.
+refs="$DEFAULT_REF"
 if docker ps --format "{{.Names}}" | grep -qx babu-postgres; then
   weitere=$(docker exec babu-postgres psql -U babu -d babu -tAc \
     "select box_ref from mandant where box_ref is not null and box_ref <> ''" 2>/dev/null \
-    | sed -E 's#^inspektor/ws-christoph0711.io/##; s#\.git$##' | grep -vE '^$|/' | sort -u)
-  boxen=$(printf "%s\n%s\n" "$boxen" "$weitere" | sort -u)
+    | sed -E 's#\.git$##; s#^/+##; s#/+$##' | grep -E '^[a-z0-9._/-]+$' | sort -u)
+  refs=$(printf "%s\n%s\n" "$refs" "$weitere" | grep -v '^$' | sort -u)
 fi
-for box in $boxen; do
-  quelle="$STORE_WURZEL/$box.git"
-  [ -d "$quelle" ] || { sage "HINWEIS: Box $box nicht gefunden ($quelle)"; continue; }
+boxen=""
+for ref in $refs; do
+  if [ "$ref" = "$DEFAULT_REF" ]; then box="babu"
+  else box=$(printf '%s' "$ref" | awk -F/ '{print (NF>=3 ? $(NF-1) : $NF)}'); fi
+  boxen="$boxen $box"
+  quelle="$LESE_WURZEL/$ref.git"
+  [ -d "$quelle" ] || { sage "HINWEIS: Box $ref hat noch keinen Lesespiegel ($quelle)"; continue; }
   spiegel="$ZIEL/$([ "$box" = babu ] && echo babu-box || echo "box-$box").git"
   if [ -d "$spiegel" ]; then
+    # Bestehende Sicherung auf die neue Quelle umhängen (vorher: alter Tresor).
+    tue git -C "$spiegel" remote set-url origin "$quelle"
     tue git -C "$spiegel" remote update --prune >/dev/null 2>&1 \
-      && sage "Box $box nachgezogen ($(git -C "$spiegel" rev-list --count --all 2>/dev/null) Commits)" \
-      || sage "FEHLER: Box $box liess sich nicht nachziehen"
+      && sage "Box $ref nachgezogen ($(git -C "$spiegel" rev-list --count --all 2>/dev/null) Commits)" \
+      || sage "FEHLER: Box $ref liess sich nicht nachziehen"
   else
     tue git clone --mirror "$quelle" "$spiegel" >/dev/null 2>&1 \
-      && sage "Box $box erstmals gespiegelt" || sage "FEHLER: Box $box spiegeln gescheitert"
+      && sage "Box $ref erstmals gespiegelt" || sage "FEHLER: Box $ref spiegeln gescheitert"
   fi
   # Das Bundle ist die Datei, die außer Haus geht: eine Datei je Box und Tag.
   if [ -d "$spiegel" ]; then

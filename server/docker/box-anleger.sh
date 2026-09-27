@@ -6,19 +6,23 @@
 # Läuft auf dem HOST (nicht im Container) im Cron jede Minute:
 #   * * * * *  ~/babu-docker/docker/box-anleger.sh >> ~/logs/box-anleger.log 2>&1
 #
-# Warum auf dem Host: der Tresor ist im babu-web-Container bewusst nur lesbar
-# gemountet, und das Gateway insp-app wird nicht ferngesteuert. Ein leeres
-# Repo im Workspace ist alles, was das Gateway braucht — genau das legt
-# dieses Skript an, mit den Rechten des Betreibers, und meldet danach die Box
-# über `betrieb_anlegen.py --nur-box` im Container, das den Mandanten prüft
-# und auf `aktiv` setzt. Jeder Schritt steht im Log; nichts wird gelöscht.
+# Seit dem GitChain-Standard (27.09.2026): KEIN `git init --bare` mehr im
+# Speicher von GitChain. Die Box entsteht per Push-to-create beim Dienst —
+# als Dienstkonto `svc-babu` in `babu/<kurzname>/belege`. Das erledigt
+# `betrieb_anlegen.py --nur-box --box-anlegen` IM Container: nur dort liegt
+# das Token (.pat_babu, read-only gemountet), dieses Skript fasst es nie an.
+# Der Container legt die Box an, prüft sie per `git ls-remote`, verknüpft
+# sie und setzt den Mandanten auf aktiv. Jeder Schritt steht im Log; nichts
+# wird gelöscht. Scheitert das Anlegen (Dienst weg, Token falsch), bleibt der
+# Mandant auf box_ausstehend und der nächste Lauf versucht es wieder.
 #
 #   box-anleger.sh          # anlegen, was ansteht
 #   box-anleger.sh --probe  # nur zeigen, was es täte
 set -euo pipefail
 
-WORKSPACE="${BABU_WORKSPACE:-$HOME/gitchain/tresor/inspektor/ws-christoph0711.io}"
-BOX_PRAEFIX="${BABU_BOX_PRAEFIX:-inspektor/ws-christoph0711.io}"
+# babu/<kurzname>/belege — Typ und Kennung nach dem Standard.
+BOX_PRAEFIX="${BABU_BOX_PRAEFIX:-babu}"
+BOX_KENNUNG="${BABU_BOX_KENNUNG:-belege}"
 CONTAINER="${BABU_CONTAINER:-babu-web}"
 PG="${BABU_PG:-babu-postgres}"
 PROBE=0
@@ -53,26 +57,19 @@ offen=$(docker exec "$PG" psql -U babu -d babu -tA -F $'\t' -c \
 while IFS=$'\t' read -r id name besitzer; do
   [ -z "$id" ] && continue
   kurz=$(kurzname "$name" "$id")
-  repo="$WORKSPACE/$kurz.git"
-  ref="$BOX_PRAEFIX/$kurz"
+  ref="$BOX_PRAEFIX/$kurz/$BOX_KENNUNG"
   if [ "$PROBE" = 1 ]; then
-    echo "$(stempel) PROBE Mandant $id „$name“ ($besitzer) → $repo"
+    echo "$(stempel) PROBE Mandant $id „$name“ ($besitzer) → $ref (Push-to-create)"
     continue
   fi
-  if [ ! -d "$repo" ]; then
-    if git init --bare --initial-branch=main -q "$repo"; then
-      echo "$(stempel) Box angelegt: $repo (Mandant $id „$name“)"
-    else
-      echo "$(stempel) FEHLER: git init für $repo schlug fehl (Mandant $id)"
-      continue
-    fi
-  fi
-  # Der Container prüft, ob die Box am erwarteten Pfad liegt, verknüpft sie
-  # und setzt den Mandanten auf aktiv. Rückgabe 0 = alles da, 1 = verknüpft, aber eine Prüfung mahnt (meist
-  # fehlende DATEV-Nummern — die trägt die Kanzlei nach), 3 = Box nicht am
-  # erwarteten Pfad. Entscheidend ist der Stand des Mandanten danach.
-  docker exec "$CONTAINER" python werkzeuge/betrieb_anlegen.py --nur-box \
-       --email "$besitzer" --box-ref "$ref" >/dev/null 2>&1 || true
+  # Rückgabe 0 = alles da, 1 = verknüpft, aber eine Prüfung mahnt (meist
+  # fehlende DATEV-Nummern — die trägt die Kanzlei nach), 3 = Box beim Dienst
+  # nicht erreichbar. Entscheidend ist der Stand des Mandanten danach; der
+  # Grund eines Fehlschlags steht auf stderr und landet hier im Log (ohne
+  # Token — der wird nirgends ausgegeben).
+  docker exec "$CONTAINER" python werkzeuge/betrieb_anlegen.py --nur-box --box-anlegen \
+       --email "$besitzer" --box-ref "$ref" >/dev/null 2>"${TMPDIR:-/tmp}/box-anleger.err" || true
+  sed "s/^/$(stempel) container: /" "${TMPDIR:-/tmp}/box-anleger.err" 2>/dev/null || true
   stand=$(docker exec "$PG" psql -U babu -d babu -tA -c \
     "SELECT status || ' ' || COALESCE(box_ref,'') FROM mandant WHERE id=$id")
   case "$stand" in

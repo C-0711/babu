@@ -1,10 +1,11 @@
 # babu-web als Container auf der H200V.
 #
 # network_mode: host — bewusst: babu-web bindet wie bisher 127.0.0.1:7844
-# (der Cloudflare-Tunnel zeigt dorthin) und erreicht seine Host-Dienste
-# unverändert: Belegbox-Gateway :7808 (insp-app) und vLLM/Gemma :11435.
-# Die Isolation liegt im Dateisystem: der Container sieht NUR die vier
-# gemounteten Pfade, nichts sonst vom Home.
+# (der Cloudflare-Tunnel zeigt dorthin) und erreicht seine Host-Dienste:
+# den GitChain-Dienst (hostPort :3361, seit dem Standard vom 27.09.2026 statt
+# des alten Gateways insp-app :7808) und vLLM/Gemma :11435.
+# Die Isolation liegt im Dateisystem: der Container sieht NUR die gemounteten
+# Pfade, nichts sonst vom Home — insbesondere NICHT den Speicher von GitChain.
 #
 # Betrieb: docker compose build && docker compose up -d
 # Rückweg: docker compose down && pm2 start babu-web
@@ -102,6 +103,22 @@ services:
       # Mailserver läuft.
       BABU_POSTEINGANG_TOKEN: "${BABU_POSTEINGANG_TOKEN:-}"
       BABU_POST_DOMAENE: "post.mybabu.io"
+      # --- GitChain-Standard (27.09.2026) -----------------------------------
+      # babu ist die Integration `babu` mit dem Dienstkonto `svc-babu`; das
+      # Token liegt in .pat_babu (Mount unten, 0600, je Push frisch gelesen).
+      # Schreiben: Git Smart HTTP beim Dienst, Basic svc-babu:<token> (Bearer,
+      # sobald der Dienst ihn für git annimmt: BABU_GIT_AUTH=bearer).
+      # Lesen: eigener Lesespiegel je Box unter ~/babu-web/lesen (BABU_LESEN).
+      # Token-Anmeldung von Menschen: GET /v1/user beim selben Dienst.
+      # Rückweg auf das alte Gateway: BABU_GATEWAY=http://127.0.0.1:7808,
+      # BABU_REF=inspektor/ws-christoph0711.io/babu, alte .pat_babu, BABU_LESEN=store
+      # samt Mount ~/inspektor-store:/data/inspektor-store:ro.
+      BABU_GATEWAY: "http://127.0.0.1:3361"
+      GITCHAIN_ID_HOST: "http://127.0.0.1:3361"
+      BABU_REF: "babu/babu/belege"
+      BABU_GIT_NUTZER: "svc-babu"
+      BABU_GIT_AUTH: "basic"
+      BABU_LESEN: "klon"
       # Gürtel und Hosenträger: falls ein gemountetes Repo einem anderen
       # Besitzer gehört, soll git lesen statt verweigern.
       GIT_CONFIG_COUNT: "1"
@@ -110,8 +127,7 @@ services:
     secrets:
       - babu_pg_passwort
     volumes:
-      - ~/babu-web:/data/babu-web                                   # portal.db, Box-Klon, Session-Geheimnis, Logos, index.html
-      - ~/inspektor-store:/data/inspektor-store:ro                  # Bare-Store, nur lesen (Schreiben geht über :7808)
+      - ~/babu-web:/data/babu-web                                   # portal.db, Box-Klon, Lesespiegel (lesen/), Session-Geheimnis, Logos, index.html
       - ~/gitchain-eingang/.pat_babu:/data/gitchain-eingang/.pat_babu:ro
       - ~/babu-docker/werkzeuge:/app/werkzeuge:ro                   # betrieb_anlegen.py für den Box-Anleger (rsync werkzeuge/ mit)
       - ~/Youtube/.env:/data/Youtube/.env:ro                        # Gemini-Schlüssel für die Bild-Generierung
