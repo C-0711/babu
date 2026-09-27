@@ -62,8 +62,8 @@ services:
         condition: service_healthy
     environment:
       HOME: /data
-      BABU_ERLAUBT: "christoph0711.io,nina0711.io"
-      BABU_ROLLEN: "christoph0711.io:admin"
+      BABU_ERLAUBT: "christoph,nina"
+      BABU_ROLLEN: "christoph:admin"
       # Pilot ab 14.09.2026: kein Selbstbedienungs-Konto. Betriebe kommen auf
       # Einladung, Konten legt die Kanzlei im Portal an. `POST /api/signup`
       # antwortet 404, die Anmeldeseite zeigt „Konto anlegen" nicht.
@@ -117,7 +117,7 @@ services:
       GITCHAIN_ID_HOST: "http://127.0.0.1:3361"
       BABU_REF: "babu/babu/belege"
       BABU_GIT_NUTZER: "svc-babu"
-      BABU_GIT_AUTH: "basic"
+      BABU_GIT_AUTH: "bearer"
       BABU_LESEN: "klon"
       # Gürtel und Hosenträger: falls ein gemountetes Repo einem anderen
       # Besitzer gehört, soll git lesen statt verweigern.
