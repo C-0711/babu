@@ -1522,14 +1522,18 @@ def _index_bauen(head: str) -> None:
 
 def index_aktuell() -> dict:
     b = _box()
+    # Modus `klon`: erst den eigenen Lesespiegel beim Dienst nachziehen —
+    # AUSSERHALB des Index-Schlosses, gedrosselt (LESE_TTL), mit kurzer Frist
+    # und ohne auf einen laufenden Fetch/Erstklon zu warten. Hängt der Dienst,
+    # lesen alle anderen Anfragen derweil den vorhandenen Stand.
+    if not (b.index["head"] is not None
+            and time.time() - b.index["geprueft"] < INDEX_TTL):
+        bx.lesestand_holen(b, warten=False, erstklon=False)
     with b.index_schloss:
         idx = b.index
         jetzt = time.time()
         if idx["head"] is not None and jetzt - idx["geprueft"] < INDEX_TTL:
             return idx
-        # Modus `klon`: erst den eigenen Lesespiegel beim Dienst nachziehen
-        # (gedrosselt, ohne auf einen laufenden Klon zu warten).
-        bx.lesestand_holen(b, warten=False)
         kopf = (_git(["rev-parse", "HEAD"], 10) or "").strip()
         if kopf and kopf != idx["head"]:
             _index_bauen(kopf)
@@ -5873,12 +5877,20 @@ def healthz() -> Response:
         print(f"[healthz] box: {ex!r}", flush=True)
         befund["box"] = "weg"
         status = 503
+    # Lesespiegel (GitChain-Standard): ohne Netz, nur der zuletzt gemeldete
+    # Stand. Ein Fehler hier heißt: babu liest einen alten Stand, und
+    # vermutlich scheitert auch das Schreiben — sichtbar als `degraded`.
+    try:
+        befund["spiegel"] = bx.spiegel_befund(bx.default_box())
+    except Exception as ex:  # noqa: BLE001
+        befund["spiegel"] = type(ex).__name__
     try:
         requests.get(GEMMA_API.rsplit("/chat/completions", 1)[0] + "/models", timeout=2)
     except Exception:  # noqa: BLE001
         befund["gemma"] = "weg"
     befund["stand"] = ("gestoert" if status != 200
-                       else "degraded" if befund["gemma"] != "ok" else "ok")
+                       else "degraded" if befund["gemma"] != "ok"
+                       or befund["spiegel"] not in ("ok", "store") else "ok")
     return JSONResponse(befund, status_code=status)
 
 

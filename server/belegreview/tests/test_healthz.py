@@ -38,7 +38,10 @@ def test_alles_da_ist_ok(welt):
     assert d["db"] == "ok" and d["box"] == "ok" and d["gemma"] == "ok"
     assert d["arbeit_offen"] == 0 and d["seit_s"] >= 0
     # Keine Anmeldung, keine Geheimnisse — nur die fünf Felder plus stand.
-    assert set(d) == {"db", "box", "gemma", "seit_s", "arbeit_offen", "stand"}
+    # `spiegel` seit dem GitChain-Standard (27.09.2026): Lesespiegel-Befund
+    # ohne Netz; die Suite liest im Modus `store`.
+    assert set(d) == {"db", "box", "gemma", "seit_s", "arbeit_offen", "spiegel", "stand"}
+    assert d["spiegel"] == "store"
 
 
 def test_ohne_gemma_nur_degraded(welt, monkeypatch):

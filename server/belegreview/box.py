@@ -137,11 +137,10 @@ class Box:
     blob_stand: dict = field(default_factory=lambda: {"kopf": None, "pfade": {}},
                              repr=False)
     seiten_cache: dict = field(default_factory=dict, repr=False)
-    # Lesespiegel (Modus `klon`): wann zuletzt nachgezogen, und ein Schloss,
-    # damit nie zwei `fetch` gleichzeitig in denselben Spiegel schreiben.
+    # Lesespiegel (Modus `klon`): wann zuletzt nachgezogen, letzter Fehler.
+    # Das Schloss dazu liegt je Pfad in `_SPIEGEL_SCHLOESSER`.
     lese_stand: dict = field(default_factory=lambda: {"geholt": 0.0, "fehler": ""},
                              repr=False)
-    lese_schloss: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def invalidieren(self) -> None:
         """Der nächste Lesezugriff baut den Index neu.
@@ -264,38 +263,77 @@ def lese_aus_ref(ref: str) -> Path:
     return LESE_WURZEL / (ref.strip("/") + ".git")
 
 
+# Ein hängender Dienst (TCP-Blackhole, Pod im Stau) darf den Lesepfad nicht
+# minutenlang festhalten: Fetch mit Low-Speed-Grenze und kurzer Gesamtfrist.
+# Der erste Klon (hunderte MiB) läuft nur im Hintergrund und darf länger.
+FETCH_FRIST = int(os.environ.get("BABU_LESE_FETCH_FRIST", "15"))
+_LANGSAM = ["-c", "http.lowSpeedLimit=1000", "-c", "http.lowSpeedTime=10"]
+
+# Ein Schloss je Spiegel-PFAD, nicht je Box-Objekt: nach einer LRU-Verdrängung
+# kann es für dieselbe Box kurz zwei Objekte geben — beide dürfen dann nicht
+# gleichzeitig in denselben Spiegel holen.
+_SPIEGEL_SCHLOESSER: dict[str, threading.Lock] = {}
+_SPIEGEL_SCHLOESSER_LOCK = threading.Lock()
+
+
+def _spiegel_schloss(pfad: Path) -> threading.Lock:
+    with _SPIEGEL_SCHLOESSER_LOCK:
+        return _SPIEGEL_SCHLOESSER.setdefault(str(pfad), threading.Lock())
+
+
 def _lese_git(args: list[str], timeout: int) -> subprocess.CompletedProcess:
     import boxschreiber  # noqa: PLC0415 — Token und Auth-Kopf wie beim Schreiben
-    return subprocess.run(["git", *args], capture_output=True, text=True,
+    return subprocess.run(["git", *_LANGSAM, *args], capture_output=True, text=True,
                           timeout=timeout, env=boxschreiber._pat_umgebung())  # noqa: SLF001
 
 
-def lesestand_holen(box: "Box", sofort: bool = False, warten: bool = True) -> bool:
+def spiegel_befund(box: "Box") -> str:
+    """Für /healthz: `ok`, `fehlt` (noch kein Spiegel) oder der letzte Fehler."""
+    if lesen_modus() != "klon":
+        return "store"
+    if box.lese_stand["fehler"]:
+        return box.lese_stand["fehler"]
+    return "ok" if (Path(box.store) / "HEAD").is_file() else "fehlt"
+
+
+def lesestand_holen(box: "Box", sofort: bool = False, warten: bool = True,
+                    erstklon: bool = True) -> bool:
     """Den Lesespiegel der Box beim Remote nachziehen (Modus `klon`).
 
     Gibt es ihn noch nicht, entsteht er per `git clone --mirror` — erst in
     einen Nachbarordner, dann umbenannt, damit ein abgebrochener Klon nie
-    als halber Spiegel stehen bleibt. Sonst `fetch --prune`. Ohne `sofort`
-    höchstens alle `LESE_TTL` Sekunden. Ein Fehler (Netz, Token) wird
+    als halber Spiegel stehen bleibt. Sonst `fetch --prune` mit
+    Low-Speed-Grenze und `FETCH_FRIST`. Ohne `sofort` höchstens alle
+    `LESE_TTL` Sekunden. Ein Fehler (Netz, Token, hängender Dienst) wird
     gemeldet, bricht aber nichts: gelesen wird dann der letzte Stand.
     Im Modus `store` gibt es nichts nachzuziehen.
 
-    `warten=False` für den Lesepfad: zieht gerade ein anderer Faden nach (der
-    erste Klon kann Minuten dauern), wird nicht gewartet, sondern der
-    vorhandene Stand gelesen.
+    `warten=False`: zieht gerade ein anderer Faden nach, wird nicht gewartet.
+    Mit `sofort` wird dann nur vermerkt, dass der nächste Leser nachziehen
+    soll (`geholt = 0`) — so wartet ein Upload nach seinem Push nie auf einen
+    laufenden Fetch oder Erstklon.
+    `erstklon=False` (Lesepfad): fehlt der Spiegel, startet der Erstklon im
+    Hintergrund statt im Request.
     """
     if lesen_modus() != "klon" or not box.remote:
         return True
-    if not box.lese_schloss.acquire(blocking=warten):
+    schloss = _spiegel_schloss(Path(box.store))
+    if not schloss.acquire(blocking=warten):
+        if sofort:
+            box.lese_stand["geholt"] = 0.0
         return not box.lese_stand["fehler"]
     try:
+        if not erstklon and not (Path(box.store) / "HEAD").is_file():
+            threading.Thread(target=lesestand_holen, args=(box, True),
+                             name="lesespiegel-erstklon", daemon=True).start()
+            return False
         return _lesestand_holen_gesperrt(box, sofort)
     finally:
-        box.lese_schloss.release()
+        schloss.release()
 
 
 def _lesestand_holen_gesperrt(box: "Box", sofort: bool) -> bool:
-    """Der eigentliche Klon/Fetch — nur unter `box.lese_schloss` aufrufen."""
+    """Der eigentliche Klon/Fetch — nur unter dem Spiegel-Schloss aufrufen."""
     jetzt = time.monotonic()
     if not sofort and jetzt - box.lese_stand["geholt"] < LESE_TTL:
         return not box.lese_stand["fehler"]
@@ -320,11 +358,13 @@ def _lesestand_holen_gesperrt(box: "Box", sofort: bool) -> bool:
                 _lese_git(["-C", str(spiegel), "remote", "set-url", "origin",
                            box.remote], timeout=10)
             r = _lese_git(["-C", str(spiegel), "fetch", "-q", "--prune", "origin"],
-                          timeout=120)
+                          timeout=FETCH_FRIST)
     except (OSError, subprocess.SubprocessError) as ex:
-        box.lese_stand["fehler"] = f"{type(ex).__name__}"
-        print(f"[lesespiegel] {box.ref}: Lesespiegel nicht nachgezogen ({ex.__class__.__name__})",
-              flush=True)
+        box.lese_stand["fehler"] = ("Dienst antwortet nicht (Frist)"
+                                    if isinstance(ex, subprocess.TimeoutExpired)
+                                    else type(ex).__name__)
+        print(f"[lesespiegel] {box.ref}: Lesespiegel nicht nachgezogen "
+              f"({box.lese_stand['fehler']})", flush=True)
         return False
     if r.returncode != 0:
         import boxschreiber  # noqa: PLC0415

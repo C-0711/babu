@@ -212,7 +212,9 @@ def _commit_und_push(box: "bx.Box", vormerken, nachricht: str, autor_un: str) ->
     # Der eigene Commit soll beim nächsten Lesen schon da sein — der
     # Lesespiegel zieht sofort nach (im Modus `store` ein No-op). Scheitert
     # das, ist der Beleg trotzdem gespeichert; der Spiegel holt ihn später.
-    bx.lesestand_holen(box, sofort=True)
+    # Ohne zu warten: zieht gerade jemand nach (oder läuft der Erstklon),
+    # vermerkt `lesestand_holen` nur, dass der nächste Leser holen soll.
+    bx.lesestand_holen(box, sofort=True, warten=False)
     return kurz
 
 

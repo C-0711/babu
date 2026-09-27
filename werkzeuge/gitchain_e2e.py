@@ -19,8 +19,11 @@ Geprüft wird:
      fremder Commit erscheint nach dem Nachziehen
   6. Negativkontrollen: falsches Schreib-Token → 502 mit klarer Meldung im
      Log, kein Absturz, /healthz bleibt 200; Box in fremdem Namensraum und in
-     unbekanntem Namensraum → abgewiesen; das Token eines Menschen (Leser)
-     kann nicht pushen
+     Pushes außerhalb babu/ (belegwerk/…, babux/…) und in einen fremden Tenant
+     werden VOM DIENST abgewiesen; das Token eines Menschen (Leser) kann nicht
+     in die Box pushen (Antwort des Dienstes geprüft). Mit --d1: ein neuer
+     Betrieb unter babu/* ist ohne vorher angelegten Tenant anlegbar; ohne
+     --d1 steht diese Erwartung als „offen bis D1“ im Ergebnis
   7. Kein Token-Wert in Ausgaben und Logs
 
 Aufruf (Tokens nur als Dateien, 0600):
@@ -51,6 +54,7 @@ import requests
 WURZEL = Path(__file__).resolve().parent.parent
 BELEGREVIEW = WURZEL / "server" / "belegreview"
 PRUEFUNGEN: list[dict] = []
+OFFEN: list[dict] = []   # Erwartungen, die erst gegen einen D1-Dienst prüfbar sind
 
 
 def pruefe(name: str, ok: bool, beleg: str = "") -> bool:
@@ -92,6 +96,9 @@ def main() -> int:
     ap.add_argument("--fremde-box", required=True)
     ap.add_argument("--ergebnis", type=Path)
     ap.add_argument("--python", default=sys.executable)
+    ap.add_argument("--d1", action="store_true",
+                    help="Dienst mit D1 (Dienstkonten, Namensraum babu/*): auch Push-to-create "
+                         "für einen neuen Betrieb ohne Tenant muss gelingen")
     a = ap.parse_args()
 
     dienst = a.dienst.rstrip("/")
@@ -256,31 +263,62 @@ def main() -> int:
                           files={"file": ("e2e-drei.jpg", bild + b"3", "image/jpeg")})
         pruefe("Token-Rotation ohne Neustart (Datei je Push frisch gelesen)",
                r.status_code == 200 and r.json().get("ok"), f"{r.status_code}")
+        neu_kopf_vorher = git(["ls-remote", f"{dienst}/git/{a.box}.git", "refs/heads/main"],
+                              svc_git).stdout.split()[0]
 
-        r = py(f"import boxschreiber\ntry:\n  boxschreiber.box_anlegen({a.fremde_box!r})\n"
-               f"  print('ANGELEGT')\nexcept boxschreiber.SchreibFehler as ex:\n  print('ABGEWIESEN', ex)")
-        pruefe("Box im fremden Namensraum → abgewiesen", "ABGEWIESEN" in r.stdout, r.stdout.strip()[:120])
-        unbekannt = "babu/gibt-es-nicht-e2e/belege"
-        r = py(f"import boxschreiber\ntry:\n  boxschreiber.box_anlegen({unbekannt!r})\n"
-               f"  print('ANGELEGT')\nexcept boxschreiber.SchreibFehler as ex:\n  print('ABGEWIESEN', ex)")
-        pruefe("Box im unbekannten Namensraum → abgewiesen", "ABGEWIESEN" in r.stdout, r.stdout.strip()[:120])
-        # Das Token eines Menschen: weder lesen (privat, Eigentümer Dienstkonto)
-        # noch schreiben. Geschrieben wird aus einem frischen Repo, damit der
-        # Push auch dann versucht wird, wenn schon das Klonen scheitert.
-        mk = tmp / "mensch"
-        kl = git(["clone", "-q", f"{dienst}/git/{a.box}.git", str(mk)], mensch_git)
-        pruefe("Token eines Menschen: Klonen der Box", True,
-               "erlaubt" if kl.returncode == 0 else
-               f"verweigert: {kl.stderr.strip().splitlines()[-1][:90] if kl.stderr.strip() else ''}")
-        if kl.returncode != 0:
-            git(["init", "-q", "-b", "main", str(mk)], mensch_git)
-        (mk / "x.txt").write_text("darf nicht")
-        git(["-C", str(mk), "add", "-A"], mensch_git)
-        git(["-C", str(mk), "-c", "user.name=m", "-c", "user.email=m@e2e", "commit", "-q", "-m", "x"],
-            mensch_git)
-        p = git(["-C", str(mk), "push", "-q", "origin", "HEAD:main"], mensch_git)
-        pruefe("Token eines Menschen (Leser) kann nicht in die Box schreiben", p.returncode != 0,
-               p.stderr.strip().splitlines()[-1][:100] if p.stderr.strip() else "")
+        # --- Namensraum-Grenze (Modell D1: svc-babu darf in babu/<neuer-betrieb>
+        # anlegen, sonst nirgends). Geprüft wird der DIENST: direkte Pushes an
+        # die URL, an der Client-Prüfung von box_anlegen vorbei.
+        def roh_push(ref: str, git_umg: dict, name: str) -> subprocess.CompletedProcess:
+            d = tmp / f"roh-{name}"
+            git(["init", "-q", "-b", "main", str(d)], git_umg)
+            (d / ".0711").mkdir(exist_ok=True)
+            (d / ".0711" / "container.json").write_text(json.dumps({"name": name}))
+            git(["-C", str(d), "add", "-A"], git_umg)
+            git(["-C", str(d), "-c", "user.name=e2e", "-c", "user.email=e@e2e",
+                 "commit", "-q", "-m", name], git_umg)
+            return git(["-C", str(d), "push", "-q", f"{dienst}/git/{ref}.git",
+                        "HEAD:refs/heads/main"], git_umg)
+
+        def server_abweisung(p: subprocess.CompletedProcess) -> tuple[bool, str]:
+            """Hat der DIENST abgelehnt (401/403/404), nicht git lokal?"""
+            err = p.stderr.strip()
+            lokal = "does not appear to be a git repository" in err
+            vom_dienst = any(m in err for m in ("401", "403", "404", "not found",
+                                                "Authentication failed"))
+            return (p.returncode != 0 and vom_dienst and not lokal,
+                    (err.splitlines()[-1][:110] if err else f"rc={p.returncode}"))
+
+        stempel = time.strftime("%H%M%S")
+        for ref in (f"belegwerk/e2e-{stempel}/y", f"babux/e2e-{stempel}/belege", a.fremde_box):
+            ok, beleg = server_abweisung(roh_push(ref, svc_git, ref.replace("/", "_")))
+            pruefe(f"Dienst weist svc-Push außerhalb der Freigabe ab: {ref}", ok, beleg)
+        # Client-Grenze: box_anlegen verweigert fremde Typen schon vor dem Netz.
+        r = py("import boxschreiber\ntry:\n  boxschreiber.box_anlegen('belegwerk/x/y')\n"
+               "  print('ANGELEGT')\nexcept boxschreiber.SchreibFehler as ex:\n  print('ABGEWIESEN', ex)")
+        pruefe("box_anlegen verweigert fremden Typ (belegwerk/x/y) vor dem Netz",
+               "ABGEWIESEN" in r.stdout and "Form babu/" in r.stdout, r.stdout.strip()[:100])
+        # Neuer Betrieb unter babu/* OHNE vorher angelegten Tenant: unter D1 erlaubt.
+        neu = f"babu/neu-e2e-{stempel}/belege"
+        r = py(f"import boxschreiber\ntry:\n  print('ANGELEGT', boxschreiber.box_anlegen({neu!r}))\n"
+               f"except boxschreiber.SchreibFehler as ex:\n  print('ABGEWIESEN', ex)")
+        if a.d1:
+            pruefe(f"neuer Betrieb ohne Tenant anlegbar (D1): {neu}", "ANGELEGT" in r.stdout,
+                   r.stdout.strip()[:110])
+        else:
+            OFFEN.append({"name": f"neuer Betrieb ohne Tenant anlegbar (D1): {neu}",
+                          "ergebnis": r.stdout.strip()[:110],
+                          "grund": "Dienst ohne D1 — Erwartung erst mit dialog-s-20260927d prüfbar"})
+            print(f"OFFEN neuer Betrieb ohne Tenant (erst mit D1): {r.stdout.strip()[:90]}", flush=True)
+
+        # --- Das Token eines Menschen (Leser am Tenant) schreibt nicht in die Box.
+        # Direkt an die Box-URL, Ablehnung muss vom Dienst kommen.
+        ok, beleg = server_abweisung(roh_push(a.box, mensch_git, "mensch"))
+        pruefe("Dienst weist Push mit dem Token eines Menschen in die Box ab", ok, beleg)
+        kopf_nach = git(["ls-remote", f"{dienst}/git/{a.box}.git", "refs/heads/main"],
+                        svc_git).stdout.split()[0]
+        pruefe("Box-HEAD nach den abgewiesenen Pushes unverändert", kopf_nach == neu_kopf_vorher,
+               kopf_nach[:12])
     finally:
         proz.terminate()
         try:
@@ -294,12 +332,14 @@ def main() -> int:
     ok = all(p["ok"] for p in PRUEFUNGEN)
     if a.ergebnis:
         a.ergebnis.write_text(json.dumps({"dienst": dienst, "box": a.box, "zweite_box": a.zweite_box,
-                                          "ok": ok, "pruefungen": PRUEFUNGEN,
+                                          "ok": ok, "pruefungen": PRUEFUNGEN, "offen_bis_d1": OFFEN,
+                                          "d1": a.d1,
                                           "zeit": time.strftime("%Y-%m-%dT%H:%M:%S")},
                                          ensure_ascii=False, indent=2))
         shutil.copyfile(tmp / "babu-web.log", a.ergebnis.with_suffix(".babu-web.log"))
     shutil.rmtree(tmp, ignore_errors=True)
-    print(f"{sum(p['ok'] for p in PRUEFUNGEN)}/{len(PRUEFUNGEN)} bestanden")
+    print(f"{sum(p['ok'] for p in PRUEFUNGEN)}/{len(PRUEFUNGEN)} bestanden"
+          + (f", {len(OFFEN)} offen bis D1" if OFFEN else ""))
     return 0 if ok else 1
 
 

@@ -53,6 +53,9 @@ kurzname() {
 offen=$(docker exec "$PG" psql -U babu -d babu -tA -F $'\t' -c \
   "SELECT id, name, besitzer_un FROM mandant WHERE status='box_ausstehend' AND COALESCE(box_ref,'')='' ORDER BY id")
 [ -z "$offen" ] && exit 0
+# Eigene Datei per mktemp statt eines festen Namens im welt-schreibbaren /tmp.
+FEHLERDATEI=$(mktemp "${TMPDIR:-/tmp}/box-anleger.XXXXXX")
+trap 'rm -f -- "$FEHLERDATEI"' EXIT
 
 while IFS=$'\t' read -r id name besitzer; do
   [ -z "$id" ] && continue
@@ -68,8 +71,8 @@ while IFS=$'\t' read -r id name besitzer; do
   # Grund eines Fehlschlags steht auf stderr und landet hier im Log (ohne
   # Token — der wird nirgends ausgegeben).
   docker exec "$CONTAINER" python werkzeuge/betrieb_anlegen.py --nur-box --box-anlegen \
-       --email "$besitzer" --box-ref "$ref" >/dev/null 2>"${TMPDIR:-/tmp}/box-anleger.err" || true
-  sed "s/^/$(stempel) container: /" "${TMPDIR:-/tmp}/box-anleger.err" 2>/dev/null || true
+       --email "$besitzer" --box-ref "$ref" >/dev/null 2>"$FEHLERDATEI" || true
+  sed "s/^/$(stempel) container: /" "$FEHLERDATEI" 2>/dev/null || true
   stand=$(docker exec "$PG" psql -U babu -d babu -tA -c \
     "SELECT status || ' ' || COALESCE(box_ref,'') FROM mandant WHERE id=$id")
   case "$stand" in

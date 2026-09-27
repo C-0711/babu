@@ -17,6 +17,7 @@ Der Lauf gegen den echten Dienst steht in `werkzeuge/gitchain_e2e.py`.
 import base64
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -243,13 +244,90 @@ def test_spiegel_fehler_bricht_nichts(klonwelt, monkeypatch, capsys):
 
 def test_lesepfad_wartet_nicht_auf_laufenden_klon(klonwelt):
     b = bx.default_box()
-    b.lese_schloss.acquire()
+    schloss = bx._spiegel_schloss(b.store)  # noqa: SLF001
+    schloss.acquire()
     try:
         # Ein anderer Faden klont gerade — der Lesepfad liest, statt zu warten.
+        b.lese_stand["geholt"] = 123.0
         assert bx.lesestand_holen(b, sofort=True, warten=False) is True
         assert not b.store.exists()
+        # … und vermerkt, dass der nächste Leser nachziehen soll.
+        assert b.lese_stand["geholt"] == 0.0
     finally:
-        b.lese_schloss.release()
+        schloss.release()
+
+
+def test_upload_wartet_nicht_auf_spiegel(klonwelt):
+    """Nach dem Push wartet der Upload nicht auf einen laufenden Fetch."""
+    b = bx.default_box()
+    bx.lesestand_holen(b, sofort=True)
+    schloss = bx._spiegel_schloss(b.store)  # noqa: SLF001
+    schloss.acquire()
+    try:
+        t0 = time.monotonic()
+        boxschreiber.schreiben(b, "z.txt", b"z", "zett", "nina")
+        assert time.monotonic() - t0 < 5
+    finally:
+        schloss.release()
+    # Der nächste Leser holt den eigenen Commit.
+    babu_web.index_aktuell()
+    assert babu_web.git_show("z.txt") == b"z"
+
+
+def test_lesepfad_klont_nicht_im_request(klonwelt):
+    b = bx.default_box()
+    assert bx.lesestand_holen(b, warten=False, erstklon=False) is False
+    for _ in range(100):             # der Erstklon läuft im Hintergrund
+        if (b.store / "HEAD").is_file():
+            break
+        time.sleep(0.05)
+    assert (b.store / "HEAD").is_file()
+
+
+def test_haengender_dienst_haelt_lesen_nicht_auf(klonwelt, monkeypatch):
+    """TCP-Blackhole: der Dienst nimmt an und antwortet nie."""
+    import socket
+    import threading
+    b = bx.default_box()
+    bx.lesestand_holen(b, sofort=True)
+    babu_web.index_aktuell()
+    loch = socket.socket()
+    loch.bind(("127.0.0.1", 0))
+    loch.listen(8)
+    offen = []
+    stop = threading.Event()
+
+    def annehmen():
+        loch.settimeout(0.2)
+        while not stop.is_set():
+            try:
+                offen.append(loch.accept()[0])
+            except OSError:
+                pass
+    threading.Thread(target=annehmen, daemon=True).start()
+    try:
+        monkeypatch.setattr(bx, "FETCH_FRIST", 2)
+        monkeypatch.setattr(bx, "LESE_TTL", 0.0)
+        monkeypatch.setattr(boxschreiber, "REMOTE",
+                            f"http://127.0.0.1:{loch.getsockname()[1]}/git/babu/test-1/belege.git")
+        bx.registry_leeren()
+        b2 = bx.default_box()
+        t0 = time.monotonic()
+        idx = babu_web.index_aktuell()
+        assert time.monotonic() - t0 < 6
+        assert idx["head"]                      # alter Stand wird weiter gelesen
+        assert babu_web.git_show("review/a.json") == b'{"x": 1}'
+        assert "Frist" in b2.lese_stand["fehler"]
+        # /healthz meldet den Spiegel mit (ohne Netz). Box-Klon gibt es hier
+        # keinen (nie geschrieben) — der Status selbst ist hier nicht Thema.
+        hz = babu_web.healthz()
+        assert b'"spiegel":"Dienst antwortet nicht (Frist)"' in hz.body
+        assert b'"stand":"ok"' not in hz.body
+    finally:
+        stop.set()
+        for k in offen:
+            k.close()
+        loch.close()
 
 
 def test_store_modus_bleibt_rueckweg(tmp_path, monkeypatch):

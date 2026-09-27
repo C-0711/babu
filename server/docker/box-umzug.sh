@@ -23,7 +23,8 @@
 #   --dienst <url>        (http://127.0.0.1:3361 — der neue Dienst, intern)
 #   --konto <name>        (svc-babu)
 #   --token-datei <pfad>  (~/gitchain-eingang/.pat_babu; Umgebung BABU_UMZUG_TOKEN_DATEI)
-#   --arbeit <ordner>     (mktemp -d; wird am Ende gelöscht, außer --behalten)
+#   --arbeit <ordner>     Elternordner für den Arbeitsordner (mktemp darin; nur der
+#                         eigene mktemp-Ordner wird am Ende gelöscht, außer --behalten)
 #   --scharf              wirklich pushen
 #   --behalten            Arbeitsordner stehen lassen
 #
@@ -79,9 +80,19 @@ unset TOKEN
 # Große Packs (Belegfotos): nicht in 1-MB-Häppchen, keine Zeitgrenze durch Trägheit.
 export GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=120
 
-if [ -z "$ARBEIT" ]; then ARBEIT=$(mktemp -d "${TMPDIR:-/tmp}/babu-umzug.XXXXXX"); fi
-mkdir -p "$ARBEIT"
-aufraeumen() { [ "$BEHALTEN" = 1 ] || rm -rf "$ARBEIT"; }
+# Gelöscht wird am Ende NUR ein Ordner, den dieses Skript selbst per mktemp
+# angelegt hat. Ein per --arbeit übergebener Ordner bekommt einen eigenen
+# mktemp-Unterordner; nur der wird aufgeräumt, der Ordner selbst nie.
+if [ -z "$ARBEIT" ]; then
+  ARBEIT=$(mktemp -d "${TMPDIR:-/tmp}/babu-umzug.XXXXXX")
+else
+  mkdir -p "$ARBEIT"
+  ARBEIT=$(mktemp -d "$ARBEIT/babu-umzug.XXXXXX")
+fi
+aufraeumen() {
+  [ "$BEHALTEN" = 1 ] && return
+  case "$(basename "$ARBEIT")" in babu-umzug.??????) rm -rf -- "$ARBEIT" ;; esac
+}
 trap aufraeumen EXIT
 
 sage "Umzug $([ "$SCHARF" = 1 ] && echo SCHARF || echo TROCKENLAUF): $QUELLE → $ZIEL_URL (Konto $KONTO)"

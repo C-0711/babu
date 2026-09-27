@@ -66,6 +66,16 @@ for ref in $refs; do
   boxen="$boxen $box"
   quelle="$LESE_WURZEL/$ref.git"
   [ -d "$quelle" ] || { sage "HINWEIS: Box $ref hat noch keinen Lesespiegel ($quelle)"; continue; }
+  # Alarm bei eingefrorenem Spiegel: babu-web zieht ihn bei jedem Lesen nach
+  # (FETCH_HEAD). Ist er älter als SPIEGEL_MAX_STUNDEN, sichert diese Datei
+  # einen alten Stand — dann FEHLER, damit stand.txt es dem Mac meldet.
+  # (Box ohne Leser über Nacht ist bei der Default-Box nicht zu erwarten.)
+  if [ "$ref" = "$DEFAULT_REF" ]; then
+    geholt=$(stat -c %Y "$quelle/FETCH_HEAD" 2>/dev/null || stat -c %Y "$quelle/HEAD")
+    alter_h=$(( ( $(date +%s) - geholt ) / 3600 ))
+    [ "$alter_h" -le "${SPIEGEL_MAX_STUNDEN:-26}" ] \
+      || sage "FEHLER: Lesespiegel $ref seit ${alter_h} h nicht nachgezogen — Sicherung wäre veraltet (babu-web gestoppt oder Rückweg aktiv?)"
+  fi
   spiegel="$ZIEL/$([ "$box" = babu ] && echo babu-box || echo "box-$box").git"
   if [ -d "$spiegel" ]; then
     # Bestehende Sicherung auf die neue Quelle umhängen (vorher: alter Tresor).
