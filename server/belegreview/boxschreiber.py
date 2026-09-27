@@ -165,6 +165,15 @@ def _bereit(box: "bx.Box") -> None:
     r = _git("fetch", "origin", box=box, timeout=30)
     if r.returncode != 0:
         raise SchreibFehler(f"Fetch fehlgeschlagen: {git_fehler_text(r.stderr)}")
+    if _git("rev-parse", "--verify", "-q", "refs/remotes/origin/main",
+            box=box).returncode != 0:
+        # Box ohne jeden Commit (leer angelegt): es gibt nichts, worauf man
+        # zurücksetzen könnte. Arbeitskopie leeren, der erste Commit entsteht
+        # auf main, der Push legt origin/main an.
+        _git("symbolic-ref", "HEAD", "refs/heads/main", box=box)
+        _git("rm", "-r", "-q", "--cached", "--ignore-unmatch", ".", box=box)
+        _git("clean", "-f", "-d", "-q", box=box)
+        return
     r = _git("reset", "--hard", "origin/main", box=box)
     if r.returncode != 0:
         raise SchreibFehler(f"Reset fehlgeschlagen: {r.stderr.strip()[:200]}")

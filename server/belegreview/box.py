@@ -379,13 +379,16 @@ def _lesestand_holen_gesperrt(box: "Box", sofort: bool) -> bool:
 def klon_aus_ref(ref: str) -> Path:
     """Konvention: je Box eine eigene Arbeitskopie unter der Klon-Wurzel.
 
-    Der Name ist der letzte Ordner vor dem Repo-Namen (`ws-nina.de`), weil
-    der die Box eindeutig macht. Die Default-Box liegt weiter unter
-    `~/babu-web/box` und geht diesen Weg nie.
+    Der volle Verweis als Pfad (`babu/salon-2/belege` →
+    `<wurzel>/babu/salon-2/belege`), wie beim Lesespiegel. Bis 27.09.2026
+    zählte nur der vorletzte Ordner — der Box-Anleger legte aber alle Boxen
+    als `inspektor/ws-christoph0711.io/<betrieb>` an. So teilten sich alle
+    Betriebe EINE Arbeitskopie mit dem Remote der ersten Box, und Belege der
+    Kanzlei-Mandanten landeten in Ninas Box. Die Default-Box liegt weiter
+    unter `~/babu-web/box` und geht diesen Weg nie.
     """
-    teile = [t for t in ref.strip("/").split("/") if t]
-    name = teile[-2] if len(teile) >= 2 else (teile[-1] if teile else "box")
-    return KLON_WURZEL / name
+    teile = [t for t in ref.strip("/").split("/") if t and t not in (".", "..")]
+    return KLON_WURZEL.joinpath(*teile) if teile else KLON_WURZEL / "box"
 
 
 def remote_aus_ref(ref: str) -> str:
@@ -399,7 +402,7 @@ def box_aus_ref(mandant_id: int | None, ref: str) -> Box:
 
     Trägt die Mandantenzeile den Produktiv-Ref, ist das die Default-Box und
     keine zweite: sonst entstünde für denselben Store eine ZWEITE
-    Arbeitskopie (`~/babu-web/boxen/ws-…` statt `~/babu-web/box`) mit
+    Arbeitskopie (`~/babu-web/boxen/<verweis>` statt `~/babu-web/box`) mit
     eigenem Schreibschloss — zwei Schreiber auf einem Remote, genau der
     Fehler, gegen den die Registry oben gebaut ist.
 

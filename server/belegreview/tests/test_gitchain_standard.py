@@ -349,7 +349,7 @@ def test_mandanten_box_liest_aus_eigenem_spiegel(klonwelt, monkeypatch):
     b = bx.box_aus_ref(3, ref)
     assert b.store == tmp / "lesen" / "babu" / "salon-anna-3" / "belege.git"
     assert b.remote == f"{tmp / 'dienst'}/git/{ref}.git"
-    assert b.klon.name == "salon-anna-3"
+    assert b.klon.parts[-3:] == ("babu", "salon-anna-3", "belege")
     assert bx.lesestand_holen(b, sofort=True)
     assert _git(b.store, "show", "HEAD:README.md") == "anna"
 
