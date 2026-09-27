@@ -242,7 +242,7 @@ def test_box_von_loest_ueber_die_mandantentabelle_auf(tmp_path, monkeypatch):
     b = bx.box_von("kanzlei@0711.io", mid)
     assert b.mandant_id == mid
     assert b.store == tmp_path / "stores/inspektor/ws-nina.de/babu.git"
-    assert b.klon == tmp_path / "klone/ws-nina.de"
+    assert b.klon == tmp_path / "klone/inspektor/ws-nina.de/babu"
     # …und sie ist NICHT die Box des Einzelbetriebs.
     assert b is not bx.default_box()
     bx.registry_leeren()

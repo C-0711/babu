@@ -206,7 +206,9 @@ def test_ablage_vertragsgleich(welt):
                     headers={"Authorization": "Bearer test-pat"})
     assert r.status_code == 200
     d = r.json()
-    assert d["ok"] is True and d["ref"].endswith("/babu")
+    # Der Ref der Box — seit dem GitChain-Standard (27.09.2026) babu/<betrieb>/belege.
+    import boxschreiber  # noqa: PLC0415
+    assert d["ok"] is True and d["ref"] == boxschreiber.REF
     assert d["datei"].endswith("-beleg_neu.jpg")
     log = subprocess.run(["git", "-C", str(bare), "log", "-1", "--format=%s|%b|%an"],
                          capture_output=True, text=True).stdout.strip()

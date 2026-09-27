@@ -20,21 +20,43 @@ Schloss; ein gemeinsames wäre nur langsamer, ein gemeinsamer Klon falsch.
 `KLON`/`REF`/`REMOTE` bleiben als Quelle der Default-Box stehen (box.py
 liest sie bei jedem Aufruf frisch), `PAT_PFAD` bleibt EIN Service-PAT: wer
 auf welchen Ref schreiben darf, entscheidet das Gateway, nicht dieser Code.
+
+GitChain-Standard (27.09.2026): Ziel ist der neue Dienst (hostPort :3361 auf
+der H200v, intern, am Tunnel vorbei), angemeldet als Dienstkonto `svc-babu`
+mit dessen gcpat-Token aus `.pat_babu` (je Aufruf frisch gelesen — Rotation
+ohne Neustart). Git Smart HTTP nimmt dort heute Basic an (Benutzer =
+Dienstkonto, Passwort = Token); `BABU_GIT_AUTH=bearer` schaltet um, sobald der
+Dienst Bearer auch für git annimmt. Neue Boxen entstehen per Push-to-create
+(`box_anlegen`) in `babu/<betrieb>/belege`. Der Token-Wert erscheint nie in
+einer Meldung, einem Log oder einer URL.
 """
+import base64
+import json
 import os
 import re
 import secrets
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
 import box as bx
 
 KLON = Path(os.environ.get("BABU_BOX_KLON", str(Path.home() / "babu-web" / "box")))
-GATEWAY = os.environ.get("BABU_GATEWAY", "http://127.0.0.1:7808")
-REF = os.environ.get("BABU_REF", "inspektor/ws-christoph0711.io/babu")
+# Der neue GitChain-Dienst (hostPort auf der H200v). Bis 27.09.2026 stand hier
+# das alte Gateway insp-app :7808 — Rückweg per Umgebung, nicht per Code.
+GATEWAY = os.environ.get("BABU_GATEWAY", "http://127.0.0.1:3361").rstrip("/")
+# Box des Einzelbetriebs (Mandant 2). Namensraum nach dem Standard:
+# babu/<betrieb>/belege — <betrieb> ist der bisherige Box-Kurzname.
+REF = os.environ.get("BABU_REF", "babu/babu/belege")
 PAT_PFAD = Path(os.environ.get("BABU_PUSH_PAT", str(Path.home() / "gitchain-eingang" / ".pat_babu")))
 REMOTE = os.environ.get("BABU_BOX_REMOTE", f"{GATEWAY}/git/{REF}.git")
+# Wer sich bei git anmeldet: das Dienstkonto der Integration.
+GIT_NUTZER = os.environ.get("BABU_GIT_NUTZER", "svc-babu")
+# basic (heute) | bearer (sobald der Dienst Bearer für git annimmt, D1).
+GIT_AUTH = os.environ.get("BABU_GIT_AUTH", "basic").strip().lower()
+# Die Form eines Box-Verweises nach dem Standard.
+BOX_REF_RE = re.compile(r"^babu/[a-z0-9][a-z0-9._-]{0,79}/belege$")
 
 
 class SchreibFehler(RuntimeError):
@@ -63,18 +85,53 @@ def _mit_box(erstes, rest: tuple) -> tuple:
     return bx.default_box(), [erstes, *werte]
 
 
+def _auth_kopf(pat: str) -> str:
+    """Der Authorization-Kopf für git — Basic (Dienstkonto:Token) oder Bearer."""
+    if GIT_AUTH == "bearer":
+        return f"Authorization: Bearer {pat}"
+    paar = base64.b64encode(f"{GIT_NUTZER}:{pat}".encode()).decode()
+    return f"Authorization: Basic {paar}"
+
+
 def _pat_umgebung() -> dict[str, str]:
     env = dict(os.environ)
+    # Nie nachfragen, nie einen Schlüsselbund befragen: fehlt die Anmeldung,
+    # soll git sofort mit einer klaren Meldung scheitern statt zu warten.
+    env["GIT_TERMINAL_PROMPT"] = "0"
     try:
         pat = PAT_PFAD.read_text().strip()
     except FileNotFoundError:
         return env  # Tests: Remote ohne Auth (file://)
+    # Eine vorhandene GIT_CONFIG_*-Liste (z. B. safe.directory aus compose)
+    # bleibt erhalten; der Auth-Kopf kommt dahinter.
+    n = int(env.get("GIT_CONFIG_COUNT", "0") or "0")
     env.update({
-        "GIT_CONFIG_COUNT": "1",
-        "GIT_CONFIG_KEY_0": "http.extraHeader",
-        "GIT_CONFIG_VALUE_0": f"Authorization: Bearer {pat}",
+        f"GIT_CONFIG_KEY_{n}": "http.extraHeader",
+        f"GIT_CONFIG_VALUE_{n}": _auth_kopf(pat),
+        f"GIT_CONFIG_KEY_{n + 1}": "credential.helper",
+        f"GIT_CONFIG_VALUE_{n + 1}": "",
+        "GIT_CONFIG_COUNT": str(n + 2),
     })
     return env
+
+
+def git_fehler_text(stderr: str | None) -> str:
+    """Eine git-Fehlermeldung, die ein Mensch versteht — ohne Geheimnisse.
+
+    git gibt den Auth-Kopf nie aus; trotzdem wird alles, was wie ein Token
+    aussieht, geschwärzt, bevor es in ein Log oder eine Ausnahme geht.
+    """
+    roh = re.sub(r"gcpat-[A-Za-z0-9_-]+", "gcpat-***", (stderr or "").strip())
+    if re.search(r"\b401\b|Authentication|could not read Username|terminal prompts disabled",
+                 roh):
+        return ("GitChain hat die Anmeldung abgelehnt (401) — Token in "
+                f"{PAT_PFAD.name} ungültig, abgelaufen oder widerrufen?")
+    if re.search(r"\b403\b", roh):
+        return "GitChain verweigert den Zugriff (403) — Namensraum nicht freigegeben?"
+    if re.search(r"\b404\b|not found", roh, re.I):
+        return ("Box bei GitChain nicht gefunden oder kein Zugriff (404) — Verweis, "
+                "Namensraum-Freigabe und Token prüfen.")
+    return roh[:200]
 
 
 def _git(*args: str, box: "bx.Box", timeout: int = 30) -> subprocess.CompletedProcess:
@@ -92,15 +149,31 @@ def _bereit(box: "bx.Box") -> None:
     if not (box.klon / ".git").exists():
         box.klon.parent.mkdir(parents=True, exist_ok=True)
         r = subprocess.run(["git", "clone", box.remote, str(box.klon)],
-                           capture_output=True, text=True, timeout=60,
+                           capture_output=True, text=True,
+                           timeout=int(os.environ.get("BABU_LESE_KLON_FRIST", "900")),
                            env=_pat_umgebung())
         if r.returncode != 0:
-            raise SchreibFehler(f"Clone fehlgeschlagen: {r.stderr.strip()[:200]}")
+            raise SchreibFehler(f"Clone fehlgeschlagen: {git_fehler_text(r.stderr)}")
         _git("config", "user.name", "babu-portal", box=box)
         _git("config", "user.email", "portal@gitchain.local", box=box)
+    else:
+        # Umzug des Remotes (z. B. altes Gateway :7808 → neuer Dienst): die
+        # Arbeitskopie folgt der Konfiguration, nicht ihrer Erinnerung.
+        url = _git("remote", "get-url", "origin", box=box)
+        if url.stdout.strip() != box.remote:
+            _git("remote", "set-url", "origin", box.remote, box=box)
     r = _git("fetch", "origin", box=box, timeout=30)
     if r.returncode != 0:
-        raise SchreibFehler(f"Fetch fehlgeschlagen: {r.stderr.strip()[:200]}")
+        raise SchreibFehler(f"Fetch fehlgeschlagen: {git_fehler_text(r.stderr)}")
+    if _git("rev-parse", "--verify", "-q", "refs/remotes/origin/main",
+            box=box).returncode != 0:
+        # Box ohne jeden Commit (leer angelegt): es gibt nichts, worauf man
+        # zurücksetzen könnte. Arbeitskopie leeren, der erste Commit entsteht
+        # auf main, der Push legt origin/main an.
+        _git("symbolic-ref", "HEAD", "refs/heads/main", box=box)
+        _git("rm", "-r", "-q", "--cached", "--ignore-unmatch", ".", box=box)
+        _git("clean", "-f", "-d", "-q", box=box)
+        return
     r = _git("reset", "--hard", "origin/main", box=box)
     if r.returncode != 0:
         raise SchreibFehler(f"Reset fehlgeschlagen: {r.stderr.strip()[:200]}")
@@ -123,20 +196,35 @@ def _commit_und_push(box: "bx.Box", vormerken, nachricht: str, autor_un: str) ->
     """
     autor = f"{autor_un} <portal@gitchain.local>"
     letzter_fehler = ""
-    with box.schloss:
-        for versuch in (1, 2):
-            _bereit(box)
-            vormerken()
-            r = _git("commit", "-m", nachricht, "--author", autor, box=box)
-            if r.returncode != 0:
-                raise SchreibFehler(f"Commit fehlgeschlagen: {r.stderr.strip()[:200]}")
-            p = _git("push", "origin", "main", box=box, timeout=30)
-            if p.returncode == 0:
-                h = _git("rev-parse", "--short", "HEAD", box=box)
-                return h.stdout.strip()
-            letzter_fehler = p.stderr.strip()[:200]
-            time.sleep(0.7)  # Watcher-Push abklingen lassen, dann frisch aufsetzen
-    raise SchreibFehler(f"Push fehlgeschlagen (auch nach Retry): {letzter_fehler}")
+    kurz = None
+    try:
+        with box.schloss:
+            for versuch in (1, 2):
+                _bereit(box)
+                vormerken()
+                r = _git("commit", "-m", nachricht, "--author", autor, box=box)
+                if r.returncode != 0:
+                    raise SchreibFehler(f"Commit fehlgeschlagen: {r.stderr.strip()[:200]}")
+                p = _git("push", "origin", "main", box=box, timeout=30)
+                if p.returncode == 0:
+                    kurz = _git("rev-parse", "--short", "HEAD", box=box).stdout.strip()
+                    break
+                letzter_fehler = git_fehler_text(p.stderr)
+                time.sleep(0.7)  # Watcher-Push abklingen lassen, dann frisch aufsetzen
+    except SchreibFehler as ex:
+        print(f"[box] {box.ref}: {ex}", flush=True)
+        raise
+    if kurz is None:
+        fehler = SchreibFehler(f"Push fehlgeschlagen (auch nach Retry): {letzter_fehler}")
+        print(f"[box] {box.ref}: {fehler}", flush=True)
+        raise fehler
+    # Der eigene Commit soll beim nächsten Lesen schon da sein — der
+    # Lesespiegel zieht sofort nach (im Modus `store` ein No-op). Scheitert
+    # das, ist der Beleg trotzdem gespeichert; der Spiegel holt ihn später.
+    # Ohne zu warten: zieht gerade jemand nach (oder läuft der Erstklon),
+    # vermerkt `lesestand_holen` nur, dass der nächste Leser holen soll.
+    bx.lesestand_holen(box, sofort=True, warten=False)
+    return kurz
 
 
 def schreiben(box: "bx.Box", rel_pfad: str | dict[str, bytes] = _FEHLT,
@@ -193,6 +281,76 @@ def loeschen(box: "bx.Box", pfade: list[str] = _FEHLT, nachricht: str = _FEHLT,
             raise NichtsZuLoeschen("nichts zu löschen")
 
     return _commit_und_push(box, entfernen, nachricht, autor_un)
+
+
+def box_da(ref: str) -> tuple[bool, str]:
+    """Gibt es die Box beim Dienst, und welchen Stand hat sie?
+
+    `(True, "<sha12>")`, `(True, "noch ohne Belege")` für ein Repo ohne
+    Commits, `(False, "<Grund>")` sonst. Fragt per `git ls-remote` mit dem
+    Token des Schreibwegs — also genau so, wie babu die Box später benutzt.
+    """
+    import box as _bx  # noqa: PLC0415
+    remote = _bx.remote_aus_ref(ref)
+    try:
+        r = subprocess.run(["git", "ls-remote", remote, "HEAD", "refs/heads/main"],
+                           capture_output=True, text=True, timeout=30,
+                           env=_pat_umgebung())
+    except (OSError, subprocess.SubprocessError) as ex:
+        return False, f"nicht erreichbar ({ex.__class__.__name__})"
+    if r.returncode != 0:
+        return False, git_fehler_text(r.stderr)
+    zeilen = [z.split() for z in r.stdout.splitlines() if z.strip()]
+    main = next((z[0] for z in zeilen if len(z) == 2 and z[1] == "refs/heads/main"), None)
+    return True, (main[:12] if main else "noch ohne Belege")
+
+
+def box_anlegen(ref: str, anzeige: str = "") -> str:
+    """Neue Belegbox per Push-to-create im Namensraum der Integration.
+
+    Legt einen ersten Commit mit `.0711/container.json` an und pusht ihn als
+    `main` nach `<GATEWAY>/git/<ref>.git`; der Dienst erzeugt das Repo dabei
+    selbst (privat, Eigentümer = Dienstkonto). Idempotent: hat die Box schon
+    einen Stand, passiert nichts. Gibt den Kurz-Hash des Stands zurück.
+    """
+    ref = (ref or "").strip().strip("/")
+    if not BOX_REF_RE.match(ref) or ".." in ref:
+        raise SchreibFehler(f"„{ref}“ ist kein Box-Verweis der Form babu/<betrieb>/belege")
+    da, stand = box_da(ref)
+    if da and stand != "noch ohne Belege":
+        return stand[:7]
+    typ, namensraum, kennung = ref.split("/")
+    manifest = {"type": typ, "namespace": namensraum, "identifier": kennung,
+                "name": anzeige or f"Belegbox {namensraum}",
+                "visibility": "private"}
+    import box as _bx  # noqa: PLC0415
+    remote = _bx.remote_aus_ref(ref)
+    with tempfile.TemporaryDirectory(prefix="babu-box-") as tmp:
+        def g(*args: str, timeout: int = 30) -> subprocess.CompletedProcess:
+            return subprocess.run(["git", "-C", tmp, *args], capture_output=True,
+                                  text=True, timeout=timeout, env=_pat_umgebung())
+        g("init", "-q", "-b", "main")
+        (Path(tmp) / ".0711").mkdir()
+        (Path(tmp) / ".0711" / "container.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        g("add", ".0711/container.json")
+        r = g("-c", "user.name=babu-portal", "-c", "user.email=portal@gitchain.local",
+              "commit", "-q", "-m", f"box: angelegt ({ref})")
+        if r.returncode != 0:
+            raise SchreibFehler(f"Commit fehlgeschlagen: {r.stderr.strip()[:200]}")
+        p = g("push", "-q", remote, "HEAD:refs/heads/main", timeout=60)
+        if p.returncode != 0:
+            raise SchreibFehler(f"Box anlegen fehlgeschlagen: {git_fehler_text(p.stderr)}")
+        kurz = g("rev-parse", "--short", "HEAD").stdout.strip()
+    # Der Dienst registriert den neuen Container im Hintergrund (Eigentümer,
+    # Rechte); bis dahin meldet er ihn Lesenden als „not found". Erst zurück,
+    # wenn babu die Box auch lesen kann — sonst scheitert die Prüfung direkt
+    # danach an einem Rennen, nicht an einem Fehler.
+    for _ in range(int(os.environ.get("BABU_BOX_ANLEGEN_WARTEN", "30"))):
+        if box_da(ref)[0]:
+            break
+        time.sleep(0.5)
+    return kurz
 
 
 NAME_MAX = 80

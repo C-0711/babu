@@ -268,13 +268,14 @@ def test_der_pat_zwischenspeicher_schluesselt_auf_sha256(welt, monkeypatch):
 
         @staticmethod
         def json():
-            return {"un": "christoph0711.io"}
+            # GET /v1/user (GitChain-Standard 27.09.2026) meldet `username`.
+            return {"username": "christoph0711.io"}
 
     monkeypatch.setattr(bw.requests, "get", lambda *a, **k: Antwort())
     bw._CACHE.clear()
     try:
-        assert ECHTES_WER_TOKEN("ein-geheimes-token") == "christoph0711.io"
-        assert list(bw._CACHE) == [hashlib.sha256(b"ein-geheimes-token").hexdigest()]
+        assert ECHTES_WER_TOKEN("gcpat-ein-geheimes-token") == "christoph0711.io"
+        assert list(bw._CACHE) == [hashlib.sha256(b"gcpat-ein-geheimes-token").hexdigest()]
     finally:
         bw._CACHE.clear()
 

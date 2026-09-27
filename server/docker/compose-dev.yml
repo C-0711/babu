@@ -46,6 +46,10 @@ services:
       BABU_STORE_WURZEL: /data/dev-store
       BABU_BOX_REMOTE: /data/dev-store/ws-dev/babu.git
       BABU_REF: "inspektor/ws-dev/babu"
+      # Lesen wie im Betrieb über einen eigenen Lesespiegel (GitChain-Standard
+      # 27.09.2026) — hier geklont vom lokalen Dev-Remote, nie vom Dienst.
+      BABU_LESEN: "klon"
+      BABU_LESE_WURZEL: /data/babu-web/lesen
       # Dev sichtbar machen: Selbstbedienung AN (anders als im Pilot), damit
       # die Lane ohne Kanzlei-Konto benutzbar ist.
       BABU_SIGNUP: "1"

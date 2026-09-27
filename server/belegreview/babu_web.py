@@ -586,7 +586,12 @@ def db_einstellung_setzen(un: str, schluessel: str, wert: str) -> None:
         c.execute(db.upsert("einstellungen", ("un", "schluessel", "wert"),
                             ("un", "schluessel")),
                   (un, schluessel, wert))
-GITCHAIN_ID = os.environ.get("GITCHAIN_ID_HOST", "https://gitchain.de").rstrip("/")
+# Wo ein GitChain-Token eines Menschen geprüft wird (`GET /v1/user`): der neue
+# Dienst, intern wie der Schreibweg. Bis 27.09.2026 war das
+# https://gitchain.de/auth/whoami (Alias, der nur bis zum Umstellen aller
+# Clients bleibt).
+GITCHAIN_ID = (os.environ.get("GITCHAIN_ID_HOST")
+               or os.environ.get("BABU_GATEWAY", "http://127.0.0.1:3361")).rstrip("/")
 GEMMA_API = os.environ.get("GEMMA_API", "http://127.0.0.1:11435/v1/chat/completions")
 # Das Support-Postfach: bekommt eine Kopie jeder Rückmeldung (seit 14.09.2026).
 # Leer = keine Kopie; der Issue-Weg läuft unabhängig davon.
@@ -646,8 +651,15 @@ _CACHE: dict[str, tuple[str, float]] = {}
 
 
 def wer_token(token: str) -> str | None:
-    """PAT → Benutzername via whoami (mit 5-min-Cache). Kein Format-Vorurteil."""
-    if not token:
+    """GitChain-Token eines Menschen → Benutzername via `GET /v1/user`.
+
+    Mit 5-min-Cache. Nur gcpat-Tokens gehen überhaupt ans Netz; ein
+    Dienstkonto (`art = dienst` bzw. Name `svc-…`) ist kein Mensch und wird
+    abgewiesen — sonst könnte sich mit dem Schreib-Token von babu selbst
+    jemand als Nutzer anmelden. Jeder Fehler (falsches Token, Dienst weg,
+    kaputte Antwort) heißt schlicht „nicht angemeldet“, nie ein Absturz.
+    """
+    if not token or not token.startswith("gcpat-"):
         return None
     schluessel = hashlib.sha256(token.encode()).hexdigest()
     jetzt = time.time()
@@ -655,17 +667,22 @@ def wer_token(token: str) -> str | None:
     if eintrag and eintrag[1] > jetzt:
         return eintrag[0]
     try:
-        r = requests.get(GITCHAIN_ID + "/auth/whoami",
+        r = requests.get(GITCHAIN_ID + "/v1/user",
                          headers={"Authorization": "Bearer " + token,
-                                  "User-Agent": "gitchain-babu-web/1"},
+                                  "User-Agent": "gitchain-babu-web/2"},
                          timeout=8)
         if r.status_code != 200:
+            if r.status_code != 401:
+                print(f"[anmeldung] /v1/user antwortet {r.status_code}", flush=True)
             return None
         ident = r.json()
-        un = str(ident.get("un") or ident.get("username") or "").lower()
-    except Exception:  # noqa: BLE001
+        un = str(ident.get("username") or "").lower()
+        dienst = (str(ident.get("art") or "").lower() == "dienst"
+                  or un.startswith("svc-"))
+    except Exception as ex:  # noqa: BLE001
+        print(f"[anmeldung] /v1/user nicht erreichbar ({ex.__class__.__name__})", flush=True)
         return None
-    if not un:
+    if not un or dienst:
         return None
     _CACHE[schluessel] = (un, jetzt + 300)
     return un
@@ -1505,6 +1522,13 @@ def _index_bauen(head: str) -> None:
 
 def index_aktuell() -> dict:
     b = _box()
+    # Modus `klon`: erst den eigenen Lesespiegel beim Dienst nachziehen —
+    # AUSSERHALB des Index-Schlosses, gedrosselt (LESE_TTL), mit kurzer Frist
+    # und ohne auf einen laufenden Fetch/Erstklon zu warten. Hängt der Dienst,
+    # lesen alle anderen Anfragen derweil den vorhandenen Stand.
+    if not (b.index["head"] is not None
+            and time.time() - b.index["geprueft"] < INDEX_TTL):
+        bx.lesestand_holen(b, warten=False, erstklon=False)
     with b.index_schloss:
         idx = b.index
         jetzt = time.time()
@@ -2867,6 +2891,17 @@ async def _beim_start_nachlesen() -> None:
             task.add_done_callback(_HINTERGRUND_TASKS.discard)
             await task
     print(f"[nachlese] fertig: {gesamt} nachgelesen", flush=True)
+
+
+@app.on_event("startup")
+async def _start_lesespiegel() -> None:
+    """Modus `klon`: den Lesespiegel der Default-Box im Hintergrund anlegen
+    bzw. nachziehen — der erste Klon kann Minuten dauern und darf den Start
+    nicht aufhalten. Bis er steht, liest der Index den vorhandenen Stand."""
+    if bx.lesen_modus() != "klon":
+        return
+    threading.Thread(target=bx.lesestand_holen, args=(bx.default_box(), True),
+                     name="lesespiegel-start", daemon=True).start()
 
 
 @app.on_event("startup")
@@ -5842,12 +5877,20 @@ def healthz() -> Response:
         print(f"[healthz] box: {ex!r}", flush=True)
         befund["box"] = "weg"
         status = 503
+    # Lesespiegel (GitChain-Standard): ohne Netz, nur der zuletzt gemeldete
+    # Stand. Ein Fehler hier heißt: babu liest einen alten Stand, und
+    # vermutlich scheitert auch das Schreiben — sichtbar als `degraded`.
+    try:
+        befund["spiegel"] = bx.spiegel_befund(bx.default_box())
+    except Exception as ex:  # noqa: BLE001
+        befund["spiegel"] = type(ex).__name__
     try:
         requests.get(GEMMA_API.rsplit("/chat/completions", 1)[0] + "/models", timeout=2)
     except Exception:  # noqa: BLE001
         befund["gemma"] = "weg"
     befund["stand"] = ("gestoert" if status != 200
-                       else "degraded" if befund["gemma"] != "ok" else "ok")
+                       else "degraded" if befund["gemma"] != "ok"
+                       or befund["spiegel"] not in ("ok", "store") else "ok")
     return JSONResponse(befund, status_code=status)
 
 
