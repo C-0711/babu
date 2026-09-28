@@ -247,6 +247,28 @@ def test_das_auffangkonto_bekommt_konkurrenz():
         assert f"  {code}:" in gb.katalog_text("SKR04")
 
 
+def test_vertragskategorien_buchen_auf_die_richtigen_konten():
+    """Issue #86: Software-Lizenzen und Wartungsverträge müssen auf
+    verschiedene Konten gebucht werden.
+
+    - Software/Lizenzen (6837): zeitlich befristete Rechteüberlassung
+      (SaaS-Abos, Software-Lizenzen, Hosting)
+    - Wartung (6495): Wartungsverträge für Hard- und Software
+
+    Die beiden dürfen nicht verwechselt werden."""
+    import babu_web as bw
+
+    # Software-Lizenzen auf 6837
+    assert bw.VERTRAG_ARTEN["it"] == ("Software und Lizenzen", "6837")
+
+    # Wartung auf 6495
+    assert bw.VERTRAG_ARTEN["wartung"] == ("Wartung Hard- und Software", "6495")
+
+    # Prüfung: beide Konten entsprechen den Kategorien
+    assert kt.KATEGORIEN["it"].konto("SKR04") == "6837"
+    assert kt.KATEGORIEN["wartung"].konto("SKR04") == "6495"
+
+
 def test_der_reisezweck_wird_erfragt():
     prompt = " ".join(gb.voller_prompt(gb.profil_text({}), ["Lufthansa"],
                                        []).split())

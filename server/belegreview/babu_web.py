@@ -8143,7 +8143,8 @@ VERTRAG_ARTEN = {
     "leasing": ("Leasing", "6530"),
     "strom": ("Strom, Gas, Wasser", "6325"),
     "telefon": ("Telefon und Internet", "6805"),
-    "wartung": ("Wartung und Technik", "6837"),
+    "it": ("Software und Lizenzen", "6837"),
+    "wartung": ("Wartung Hard- und Software", "6495"),
     "arbeitsvertrag": ("Arbeitsvertrag", "6020"),
     "sonstiges": ("Sonstiger Vertrag", "6850"),
 }
