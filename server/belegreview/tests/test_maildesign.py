@@ -126,3 +126,16 @@ def test_startguide_steht_in_der_einladung():
         "j@kanzlei.de", "Zugang", "Hallo,\n\n    " + k.strip() + "\n",
         von="babu <post@babu.0711.io>"))
     assert "Betriebe deiner Kanzlei" in hk
+
+
+def test_antworten_gehen_ans_support_postfach(monkeypatch):
+    """Die Einladung bittet um eine Antwort mit der Apple-ID — die darf nicht
+    an der reinen Versandadresse verschwinden (Befund 02.10.2026)."""
+    import postfach
+    monkeypatch.setattr(postfach, "ANTWORT_AN", "support@example.org")
+    m = postfach._nachricht("salon@example.org", "Hallo", "Text")  # noqa: SLF001
+    assert m["Reply-To"] == "support@example.org"
+    an_support = postfach._nachricht("support@example.org", "Kopie", "Text")  # noqa: SLF001
+    assert an_support["Reply-To"] is None
+    monkeypatch.setattr(postfach, "ANTWORT_AN", "")
+    assert postfach._nachricht("salon@example.org", "Hallo", "Text")["Reply-To"] is None  # noqa: SLF001

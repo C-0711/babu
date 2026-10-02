@@ -85,7 +85,20 @@ services:
       BABU_SMTP_PASSWORT: "${BABU_SMTP_PASSWORT:-}"
       BABU_ABSENDER: "${BABU_ABSENDER:-babu <post@mybabu.io>}"
       # Das Support-Postfach bekommt eine Kopie jeder Rückmeldung; leer = keine.
+      # Seit 02.10.2026 auch die Antwortadresse (Reply-To) jeder Mail.
       BABU_SUPPORT_MAIL: "${BABU_SUPPORT_MAIL:-}"
+      # Testmonat per Ambassador-Code (seit 02.10.2026, testmonat.py): der Code
+      # öffnet sofort einen Zugang mit eigener Ablage, 30 Tage, danach nur
+      # ansehen. "0" = zurück zum Wartelisten-Weg. Grenzen je Tag gegen
+      # Missbrauch; der öffentliche TestFlight-Link kommt in die Willkommens-
+      # mail, sobald es ihn gibt (leer = Bitte um die Apple-ID wie bisher).
+      BABU_TESTMONAT: "${BABU_TESTMONAT:-1}"
+      BABU_TEST_JE_CODE_TAG: "${BABU_TEST_JE_CODE_TAG:-5}"
+      BABU_TEST_JE_TAG: "${BABU_TEST_JE_TAG:-20}"
+      BABU_TESTFLIGHT_LINK: "${BABU_TESTFLIGHT_LINK:-}"
+      # Wer die Direktkunden der Hauskanzlei „babu direkt" im Kanzlei-Cockpit
+      # betreut (Konto mit Rolle kanzlei). Leer = nur die Verwaltung.
+      BABU_DIREKT_INHABER: "${BABU_DIREKT_INHABER:-}"
       # --- Postgres scharf schalten (Plan 21, Phase 1) -------------------
       # Erst hochfahren, dann EINMAL von Hand umziehen
       #   docker compose up -d postgres

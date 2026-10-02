@@ -43,6 +43,7 @@ import skr04_konten as skr  # noqa: E402
 import kontierung as kt  # noqa: E402
 import mandanten  # noqa: E402
 import postadresse  # noqa: E402
+import testmonat  # noqa: E402
 
 SEITE = Path(os.environ.get("BABU_SEITE", str(Path.home() / "babu-web" / "index.html")))
 # BABU_STORE — derselbe Wert wie `box.STORE_STANDARD`, nur unter dem Namen,
@@ -1934,6 +1935,15 @@ def _box_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]
         # (`status = box_ausstehend`). Kein Fehler des Aufrufers und kein
         # Rechteproblem — deshalb 409 und nicht 403 oder 404.
         return None, JSONResponse({"fehler": str(ex)}, status_code=409)
+    # Testmonat (seit 02.10.2026): nach Ablauf nur noch ansehen. Fragt erst
+    # nach der Datenbank, wenn überhaupt geschrieben werden soll — lesende
+    # Anfragen kosten nichts. Der Betreiber (admin) darf weiter helfen.
+    if (mandant_id is not None and request.method not in testmonat.LESEND
+            and rolle(un) != "admin"):
+        st = testmonat.stand(testmonat.test_bis(mandant_id), testmonat.heute())
+        if testmonat.sperrt(request.method, request.url.path, st):
+            return None, JSONResponse({"fehler": testmonat.VORBEI_TEXT,
+                                       "testmonat_vorbei": True}, status_code=403)
     return un, None
 
 
@@ -2205,9 +2215,16 @@ def api_ich(request: Request) -> Response:
     # `box` über `_hat_ablage`, nicht `box_mitglied`: dieselbe Antwort wie
     # beim Hochladen. Für Kanzlei- und PAT-Konten ohne eigenes Mandat fällt
     # es auf die Mitgliedschaft zurück — für sie ändert sich nichts.
-    antwort = JSONResponse({"un": un, "rolle": meine_rolle, "box": _hat_ablage(un),
-                            "hat_passwort": bool(nutzer_holen(un)),
-                            "mandanten": betreute})
+    daten = {"un": un, "rolle": meine_rolle, "box": _hat_ablage(un),
+             "hat_passwort": bool(nutzer_holen(un)), "mandanten": betreute}
+    # Testmonat (seit 02.10.2026) — nur, wenn der Betrieb gerade einen hat;
+    # für alle anderen bleibt die Antwort Byte für Byte, wie sie war.
+    aktiver = _AKTIVER_MANDANT.get(None)
+    if aktiver is not None:
+        st = testmonat.stand(testmonat.test_bis(aktiver), testmonat.heute())
+        if st:
+            daten["testmonat"] = st
+    antwort = JSONResponse(daten)
     if request.cookies.get(SESSION_COOKIE):
         antwort.set_cookie(SESSION_COOKIE, _signieren(un, exp), max_age=SESSION_DAUER,
                            httponly=True, secure=SESSION_SECURE, samesite="lax", path="/")

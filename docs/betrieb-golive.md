@@ -37,6 +37,29 @@ Konten ohne Kanzlei (Testbetrieb): `werkzeuge/betrieb_anlegen.py` ohne `--nur-bo
 Konto, Mandant und Verknüpfung in einem Lauf an; das Startpasswort erscheint genau einmal
 auf der Konsole und wird persönlich weitergegeben.
 
+### 1a. Testmonat per Ambassador-Code (seit 02.10.2026)
+
+Der Link einer Ambassadorin (`/ambassador/<code>/<salon>`) öffnet **sofort** einen Zugang —
+ohne Handgriff (`BABU_TESTMONAT=1` in Compose; `0` = zurück zum Wartelisten-Weg).
+Entwurf: `docs/superpowers/specs/2026-10-02-testmonat-code-design.md`.
+
+- **Was entsteht:** Konto (Passwort setzt die Inhaberin über den Link der Willkommensmail),
+  Mandant in der Hauskanzlei **„babu direkt"** (SKR04), `mandant.test_bis` = letzter Testtag
+  (30 Tage inkl. Einlösetag), Zuordnung zur Ambassadorin (`ambassador_salon`, `testet`).
+  Die Belegbox legt der Box-Anleger an wie bei jedem Mandanten. Kopie an `BABU_SUPPORT_MAIL`.
+- **Tag 31:** nur ansehen. Schreibende Anfragen auf Belegbox-Routen bekommen 403
+  `testmonat_vorbei`; Rückmeldungen gehen weiter. Kanzlei-Mandanten haben kein `test_bis`
+  und merken nichts.
+- **Verwaltung:** Portal → Zugänge → Ambassadorinnen. „Gezeichnet +25 %" beendet den
+  Testmonat (voller Kunde), „+14 Tage" verlängert.
+- **Grenzen:** `BABU_TEST_JE_CODE_TAG` (5) und `BABU_TEST_JE_TAG` (20) → 429.
+- **App:** `BABU_TESTFLIGHT_LINK` (öffentlicher TestFlight-Link, braucht einmal Apples
+  Beta-Prüfung) steht dann in der Willkommensmail; leer = Bitte um die Apple-ID wie bisher.
+- **Warteliste „Zugang einladen":** legt Salons seit 02.10.2026 ebenfalls als Mandanten von
+  „babu direkt" an (ohne Testmonat). Vorher hingen sie an der Default-Box.
+- **Abschalten:** `BABU_TESTMONAT=0`, `docker compose up -d`. Laufende Testmonate bleiben
+  bestehen; ohne Schalter führt der Code-Link wieder auf die Warteliste.
+
 ## 2. Wenn etwas nicht geht
 
 | Meldung | Bedeutung | Handgriff |

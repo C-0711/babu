@@ -1334,19 +1334,19 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   <!-- NOCH KEINE BELEGBOX: ehrlich sagen, statt leere Kacheln zeigen -->
   <section class="ansicht" id="a-gesperrt">
     <div class="lbl">DEIN ZUGANG</div>
-    <div class="gruss">Fast fertig <svg class="ik klein funke" viewBox="0 0 24 24"><use href="#ik-funke"/></svg></div>
-    <div class="karte" style="margin-top:18px">
+    <div class="gruss" id="gesperrt-gruss">Fast fertig <svg class="ik klein funke" viewBox="0 0 24 24"><use href="#ik-funke"/></svg></div>
+    <div class="karte" style="margin-top:18px" id="gesperrt-box-karte">
       <h3>Deine Belegbox richten wir noch ein</h3>
       <p>Dein Konto steht. Damit deine Belege, dein Kassenbuch und deine Zahlen
-         an einem sicheren Ort landen, legen wir für deinen Salon noch eine
-         eigene Belegbox an — das machen wir von Hand, damit nichts vermischt
-         wird.</p>
-      <p>Schreib uns kurz an <a href="mailto:hallo@0711.io">hallo@0711.io</a>,
-         dann ist sie meist am selben Tag da.</p>
+         an einem sicheren Ort landen, bekommt dein Salon eine eigene Belegbox —
+         meist ist sie nach einer Minute da. Lade die Seite dann einfach neu.</p>
+      <p>Dauert es länger? Schreib uns kurz an
+         <a href="mailto:hallo@0711.io">hallo@0711.io</a>.</p>
       <p style="margin-top:14px">
         <button class="chip" onclick="location.hash='#einrichtung'">Solange schon einrichten ›</button>
       </p>
     </div>
+    <div id="gesperrt-ambassador" hidden></div>
   </section>
 
   <!-- HEUTE -->
@@ -1360,6 +1360,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       <div class="hero-detail" id="heute-bleibt-satz"></div>
     </div>
     <div id="heute-monatslauf"></div>
+    <div id="heute-testmonat" hidden></div>
     <div id="heute-meldungen"></div>
     <div id="heute-ambassador" hidden></div>
     <div id="heute-inhalt" class="spalten"><div class="skelett"></div><div class="skelett"></div></div>
@@ -2219,7 +2220,7 @@ $("#reset-zur-anmeldung").addEventListener("click", () => {
 });
 
 /* ————— Router ————— */
-const ansichten = { gesperrt: () => {}, heute: ladeHeute, belege: ladeBelege, fragen: () => {},
+const ansichten = { gesperrt: gesperrtLaden, heute: ladeHeute, belege: ladeBelege, fragen: () => {},
                     aufraeumen: ladeAufraeumen, post: ladePost, ablage: ladeAblage, export: ladeExport, team: ladeTeam,
                     abschluss: ladeAbschluss,
                     zahlen: ladeZahlen, bank: ladeBank, saloncheck: ladeSalonCheck,
@@ -2325,6 +2326,7 @@ async function ladeBleibtDir(monat){
 async function ladeHeute(){
   ladeAnstehendes();
   ladeAmbassador();
+  ladeTestmonat();
   const monat = jetztMonat();
   ladeBleibtDir(monat);
   $("#heute-eyebrow").textContent = "DEIN " + monatName(monat).split(" ")[0].toUpperCase();
@@ -6448,6 +6450,7 @@ async function ladeVerwaltung(){
      Meilensteine anerkennen in den Wartelisten-Karten passiert über den
      eigenen Block unten — Auszahlung quartalsweise. */
   let amb = null;
+  AMB_TESTSALONS = [];
   try{ const ra = await api("/api/ambassador/liste"); if (ra.ok) amb = (await ra.json()).ambassadorinnen || []; }catch{}
   html += `<div class="sektion lbl">Ambassadorinnen (${(amb || []).length})</div>`;
   html += `<div class="karte" style="margin-bottom:12px">
@@ -6458,20 +6461,21 @@ async function ladeVerwaltung(){
         style="flex:1;min-width:180px;padding:9px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
       <button class="hin" style="margin-top:0" onclick="ambassadorAnlegen()">Anlegen ›</button>
     </div>
-    <p style="margin-top:6px;font-size:12px;color:var(--gc-desc)">Bekommt Code + Startpasswort per Mail — sie erzeugt damit Einladungslinks für Salons (30 Tage Light) und verdient 25 % bei Zeichnung, +25 % nach 3 Monaten.</p>
+    <p style="margin-top:6px;font-size:12px;color:var(--gc-desc)">Bekommt Code + Startpasswort per Mail — sie erzeugt damit Einladungslinks für Salons (30 Tage babu, sofort und kostenlos) und verdient 25 % bei Zeichnung, +25 % nach 3 Monaten.</p>
   </div>`;
   for (const a of (amb || [])){
     html += `<div class="karte" style="margin-bottom:10px">
       <h3>${esc(a.name)} <span style="font-family:ui-monospace,monospace;font-size:13px;background:var(--gc-muted);color:var(--gc-bg);padding:2px 8px;border-radius:6px">${esc(a.code)}</span></h3>
       <p style="font-size:13px">${esc(a.email)}</p>
       <p style="font-size:13px;margin-top:4px">Verdient: <b>${a.verdient} €</b> · Ausgezahlt: ${a.gezahlt} € · Offen: <b>${a.verdient - a.gezahlt} €</b></p>
+      ${a.zahlen ? `<p style="font-size:12px;margin-top:2px;color:var(--gc-desc)">${ambZahlenSatz(a.zahlen)}</p>` : ""}
       ${(a.salons || []).length ? `<table style="width:100%;font-size:13px;margin-top:8px;border-collapse:collapse">
         <thead><tr><th style="text-align:left;padding:4px">Salon</th><th style="text-align:left;padding:4px">Stand</th><th style="text-align:right;padding:4px">Anerkennen</th></tr></thead><tbody>
         ${a.salons.map(s => `<tr>
           <td style="padding:4px">${esc(s.salon || s.email)}</td>
-          <td style="padding:4px">${esc(s.meilenstein)}${s.verdienst ? ` · ${s.verdienst} €` : ""}</td>
+          <td style="padding:4px">${esc(ambStand(s))}${s.verdienst ? ` · ${s.verdienst} €` : ""}</td>
           <td style="padding:4px;text-align:right">${s.meilenstein === "testet"
-            ? `<button class="hin" style="margin-top:0;padding:5px 10px;font-size:12px" onclick="ambassadorMeilenstein('${esc(a.code)}','${esc(s.email)}','gezeichnet')">Gezeichnet +25 %</button>`
+            ? `${s.testmonat ? `<button class="hin" style="margin-top:0;padding:5px 10px;font-size:12px;background:transparent;color:var(--gc-accent);border:1px solid var(--gc-accent)" onclick="ambassadorVerlaengern(${AMB_TESTSALONS.push(s.email) - 1})">+14 Tage</button> ` : ""}<button class="hin" style="margin-top:0;padding:5px 10px;font-size:12px" onclick="ambassadorMeilenstein('${esc(a.code)}','${esc(s.email)}','gezeichnet')">Gezeichnet +25 %</button>`
             : s.meilenstein === "gezeichnet"
             ? `<button class="hin" style="margin-top:0;padding:5px 10px;font-size:12px" onclick="ambassadorMeilenstein('${esc(a.code)}','${esc(s.email)}','gehalten')">3 Monate +25 %</button>`
             : `✓ ${s.verdienst} €`}</td>
@@ -7538,11 +7542,11 @@ async function ambassadorMeilenstein(code, email, meilenstein){
 /* Ambassadorin-eigene Ansicht (nur sichtbar, wenn das Konto eine ist):
    Code, Salons, Saldo — und der Einladungs-Generator nach dem
    Design-Entwurf design/ambassador-bereich.html. */
-async function ladeAmbassador(){
-  const ziel = $("#heute-ambassador");
+async function ladeAmbassador(zielSel){
+  const ziel = $(zielSel || "#heute-ambassador");
   try{
     const r = await api("/api/ambassador/me");
-    if (!r.ok){ ziel.hidden = true; return; }
+    if (!r.ok){ ziel.hidden = true; return false; }
     const d = await r.json();
     ziel.innerHTML = `
       <div class="lbl" style="margin-top:24px">Dein Ambassador-Bereich</div>
@@ -7552,7 +7556,8 @@ async function ladeAmbassador(){
           <span style="font-size:13px;color:var(--gc-desc)">offen · ${d.verdient} € verdient · ${d.gezahlt} € ausgezahlt</span>
           <span style="font-family:ui-monospace,monospace;font-size:14px;background:var(--gc-muted);color:var(--gc-bg);padding:3px 10px;border-radius:6px">${esc(d.code)}</span>
         </div>
-        <p style="margin-top:8px;font-size:13px;color:var(--gc-desc)">Ein Salon löst deinen Code ein → 30 Tage babu Light, kostenlos. Zeichnet er ab: <b>25 %</b> für dich. Bleibt er 3 Monate: nochmal <b>25 %</b> — gesamt 50 % der Jahreszahlung, für immer dir zugeordnet.</p>
+        <p style="margin-top:8px;font-size:13px;color:var(--gc-desc)">Ein Salon löst deinen Code ein → sofort 30 Tage babu, kostenlos. Zeichnet er ab: <b>25 %</b> für dich. Bleibt er 3 Monate: nochmal <b>25 %</b> — gesamt 50 % der Jahreszahlung, für immer dir zugeordnet.</p>
+        ${d.zahlen && d.zahlen.eingeladen ? `<p style="margin-top:6px;font-size:13px">${ambZahlenSatz(d.zahlen)}</p>` : ""}
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
           <input id="amb-neu-salon" type="text" placeholder="Name des Salons (optional)"
             style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
@@ -7572,11 +7577,72 @@ async function ladeAmbassador(){
           <thead><tr><th style="text-align:left;padding:4px;color:var(--gc-desc)">Salon</th><th style="text-align:left;padding:4px;color:var(--gc-desc)">Stand</th><th style="text-align:right;padding:4px;color:var(--gc-desc)">Dein Verdienst</th></tr></thead>
           <tbody>${d.salons.map(s => `<tr>
             <td style="padding:5px 4px">${esc(s.salon || s.email)}</td>
-            <td style="padding:5px 4px">${s.meilenstein === "testet" ? "testet noch" : s.meilenstein === "gezeichnet" ? "gezeichnet ✓" : "3 Monate dabei ✓"}</td>
+            <td style="padding:5px 4px">${esc(ambStand(s))}</td>
             <td style="padding:5px 4px;text-align:right">${s.verdienst ? `<b>${s.verdienst} €</b>` : "—"}</td>
           </tr>`).join("")}</tbody></table>`
           : `<p style="font-size:12px;color:var(--gc-muted);margin-top:10px">Noch keine Einlösungen — verschicke deinen ersten Link.</p>`}
       </div>`;
+    ziel.hidden = false;
+    return true;
+  }catch{ ziel.hidden = true; return false; }
+}
+/* Die Sperrseite: wer (noch) keine eigene Belegbox hat. Eine Ambassadorin
+   ohne eigenen Salon braucht keine — sie sieht hier ihren Bereich statt des
+   Hinweises auf die Belegbox (seit 02.10.2026). */
+async function gesperrtLaden(){
+  const ist = await ladeAmbassador("#gesperrt-ambassador");
+  $("#gesperrt-box-karte").hidden = ist;
+  if (ist) $("#gesperrt-gruss").textContent = "Schön, dass du da bist";
+}
+/* Der Stand eines geworbenen Salons in einem Satz (Testmonat seit 02.10.2026). */
+function ambStand(s){
+  if (s.meilenstein === "gehalten") return "3 Monate dabei ✓";
+  if (s.meilenstein === "gezeichnet") return "gezeichnet ✓";
+  const t = s.testmonat;
+  if (!t) return "wartet auf Zugang";
+  if (t.vorbei) return "Test abgelaufen, nicht gezeichnet";
+  return "testet (" + t.tage_uebrig + (t.tage_uebrig === 1 ? " Tag" : " Tage") + " übrig)";
+}
+function ambZahlenSatz(z){
+  const teile = [z.eingeladen + " eingeladen"];
+  if (z.testet) teile.push(z.testet + " im Test");
+  if (z.abgelaufen) teile.push(z.abgelaufen + " Test vorbei");
+  if (z.gezeichnet + z.gehalten) teile.push((z.gezeichnet + z.gehalten) + " gezeichnet");
+  if (z.gehalten) teile.push(z.gehalten + " schon 3 Monate dabei");
+  if (z.wartet) teile.push(z.wartet + " warten auf Zugang");
+  return teile.join(" · ");
+}
+/* Verwaltung: Testmonat um 14 Tage verlängern. Nur eine Nummer im onclick,
+   die Adresse steht in AMB_TESTSALONS (Portal-Regel: keine Namen in Attributen). */
+let AMB_TESTSALONS = [];
+async function ambassadorVerlaengern(nr){
+  const email = AMB_TESTSALONS[nr];
+  if (!email || !confirm("Testmonat für " + email + " um 14 Tage verlängern?")) return;
+  try{
+    const r = await api("/api/ambassador/verlaengern", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({email, tage: 14})});
+    const d = await r.json();
+    if (r.ok) ladeVerwaltung();
+    else alert(d.fehler || "Ging gerade nicht.");
+  }catch{ alert("Gerade keine Verbindung — später nochmal."); }
+}
+/* Der Testmonat des eigenen Betriebs auf „Heute" (seit 02.10.2026). */
+async function ladeTestmonat(){
+  const ziel = $("#heute-testmonat");
+  try{
+    const d = await (await api("/api/ich")).json();
+    const t = d.testmonat;
+    if (!t){ ziel.hidden = true; return; }
+    const bis = t.bis.split("-").reverse().join(".");
+    ziel.innerHTML = t.vorbei
+      ? `<div class="karte" style="margin-top:14px"><h3>Dein Testmonat ist vorbei</h3>
+           <p>Alles bleibt da — ansehen und herunterladen geht weiter. Damit du wieder
+           Belege erfassen kannst, schreib uns kurz an
+           <a href="mailto:hallo@0711.io">hallo@0711.io</a>, dann schalten wir dich frei.</p></div>`
+      : `<div class="karte" style="margin-top:14px"><h3>Dein Testmonat: noch ${t.tage_uebrig}
+           ${t.tage_uebrig === 1 ? "Tag" : "Tage"}</h3>
+           <p>babu komplett und kostenlos, bis einschließlich ${esc(bis)}.</p></div>`;
     ziel.hidden = false;
   }catch{ ziel.hidden = true; }
 }

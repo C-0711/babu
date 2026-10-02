@@ -1,0 +1,12 @@
+-- 0010_testmonat — 30 Tage babu für Salons, die über einen Ambassador-Code kommen.
+--
+-- Abbild der Inline-Nachrüstung in `mandanten.schema()` (ALTER TABLE mit
+-- OperationalError-Fang, wie `sitzung_ab`). Dieselbe Regel wie in 0001–0009:
+-- Postgres-Dialekt hier, `db._fuer_sqlite()` übersetzt zurück,
+-- `tests/test_db_dialekt.py` legt beide Schemata nebeneinander.
+--
+-- `test_bis` ist der letzte Testtag als ISO-Datum. NULL heißt „kein Test" —
+-- so steht es für jeden Bestands- und Kanzlei-Mandanten, für sie ändert sich
+-- also nichts. Ab dem Tag danach sperrt `babu_web._box_wache` schreibende
+-- Anfragen (siehe testmonat.py), lesen bleibt.
+ALTER TABLE mandant ADD COLUMN test_bis TEXT;

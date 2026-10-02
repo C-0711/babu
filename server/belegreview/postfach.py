@@ -30,6 +30,10 @@ PORT = int(os.environ.get("BABU_SMTP_PORT", "587") or 587)
 NUTZER = os.environ.get("BABU_SMTP_NUTZER", "").strip()
 PASSWORT = os.environ.get("BABU_SMTP_PASSWORT", "")
 ABSENDER = os.environ.get("BABU_ABSENDER", "babu <post@mybabu.io>").strip()
+# Wohin eine Antwort geht. Der Absender ist eine Versandadresse ohne
+# eingerichteten Posteingang — die Einladungen bitten aber ausdrücklich um eine
+# Antwort mit der Apple-ID. Ohne Reply-To lief sie ins Leere (Befund 02.10.2026).
+ANTWORT_AN = os.environ.get("BABU_SUPPORT_MAIL", "").strip()
 POSTAUSGANG = Path(os.environ.get(
     "BABU_POSTAUSGANG", str(Path.home() / "babu-web" / "postausgang")))
 TIMEOUT = 20
@@ -49,6 +53,8 @@ def _nachricht(an: str, betreff: str, text: str) -> EmailMessage:
     m = maildesign.mail(an, betreff, text, von=ABSENDER)
     m["Date"] = formatdate(localtime=True)
     m["Message-ID"] = make_msgid(domain="mybabu.io")
+    if ANTWORT_AN and ANTWORT_AN.lower() != an.strip().lower():
+        m["Reply-To"] = ANTWORT_AN
     # Zwei Fassungen derselben Wörter: schlichter Text (Bildschirmleser,
     # schlichte Clients, Spam-Filter) und das Design der Startseite als
     # HTML-Alternative. Kein Bild, kein Webfont, kein Nachladen — eine Mail,

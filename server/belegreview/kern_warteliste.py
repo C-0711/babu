@@ -294,10 +294,24 @@ async def api_warteliste_einrichten(request: Request) -> Response:
                                        "Warteliste."}, status_code=404)
     art, name, salon, telefon = z
     betrieb = salon or name or (email.split("@")[0])
-    passwort = bw.nutzer_anlegen(email, name or "", betrieb, rolle_neu)
+    # Ein Salon bekommt seine EIGENE Ablage: Konto ohne Default-Box-Flag und
+    # ein Mandant in der Hauskanzlei „babu direkt" — der Box-Anleger legt die
+    # Ablage dann an wie bei jedem Mandanten. Bis 02.10.2026 entstand hier ein
+    # Konto mit `box=1` ohne Mandant, und das löst auf die Default-Box auf:
+    # die Ablage eines ANDEREN Betriebs (dieselbe Fehlerart wie im Vorfall
+    # 16.–27.09.). Kein Testmonat: wen die Verwaltung einlädt, ist Pilot.
+    ist_salon = rolle_neu == "salon"
+    passwort = bw.nutzer_anlegen(email, name or "", betrieb, rolle_neu,
+                                 box=not ist_salon)
     if passwort is None:
         return JSONResponse({"fehler": "Für diese E-Mail gibt es schon einen "
                                        "Zugang."}, status_code=409)
+    if ist_salon:
+        import mandanten  # noqa: PLC0415
+        import testmonat  # noqa: PLC0415
+        with bw._DB_LOCK, bw._db() as c:
+            mandanten.mandant_anlegen(testmonat.direkt_kanzlei(c), betrieb,
+                                      email, "SKR04", c=c)
     for schluessel, wert in (("betrieb_name", betrieb), ("telefon", telefon),
                              ("email", email)):
         if wert:

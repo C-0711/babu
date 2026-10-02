@@ -32,6 +32,7 @@ und Postgres verlangt die Zieltabelle zum Anlegezeitpunkt.
 from __future__ import annotations
 
 import contextlib
+import sqlite3
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -92,6 +93,13 @@ def schema(c) -> None:
     c.execute(_MANDANT)
     c.execute(_MANDANT_INDEX)
     c.execute(_MITGLIED)
+    # Testmonat (seit 02.10.2026, siehe testmonat.py): letzter Testtag,
+    # NULL = kein Test. Nachgerüstet wie `nutzer.sitzung_ab`; das Abbild
+    # für Postgres ist migrations/0010_testmonat.sql.
+    try:
+        c.execute("ALTER TABLE mandant ADD COLUMN test_bis TEXT")
+    except sqlite3.OperationalError:
+        pass  # Spalte existiert schon (jede Verbindung läuft durchs Schema)
 
 
 # ---------------------------------------------------------------------------
