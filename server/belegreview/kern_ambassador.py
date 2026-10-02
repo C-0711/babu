@@ -14,7 +14,9 @@ Konto + Code + Mail mit dem Zug zu ihrer Seite. Die Ambassadorin selbst
 sieht ihre Salons unter `GET /api/ambassador/me`.
 """
 import calendar
+import contextvars
 import datetime as dt
+import html as html_text
 import json
 import os
 import re
@@ -25,6 +27,7 @@ from fastapi import Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 import audit
+import begleiter
 import mandanten
 import testmonat
 
@@ -177,10 +180,13 @@ async def api_ambassador_me(request: Request) -> Response:
         _pipeline_dazu(salons, a[0], c)
         einladungen = _offene_einladungen(a[0], c)
         geld = _geld(a[0], c)
+        roh = _kontakt_zeilen(a[0], c)
+    kontakte, heute = _begleiter(a[0], a[1], roh)
     return JSONResponse({"code": a[0], "name": a[1],
                          "verdient": a[2], "gezahlt": a[3], "offen": a[2] - a[3],
                          "salons": salons, "zahlen": _zahlen(salons),
-                         "einladungen": einladungen, "geld": geld})
+                         "einladungen": einladungen, "geld": geld,
+                         "kontakte": kontakte, "heute": heute})
 
 
 async def api_ambassador_link(request: Request) -> Response:
@@ -201,15 +207,35 @@ async def api_ambassador_link(request: Request) -> Response:
         koerper = {}
     salon = str(koerper.get("salon", "") or "").strip()[:120]
     email = str(koerper.get("email", "") or "").strip().lower()[:200] or None
-    slug = re.sub(r"[^a-z0-9]+", "-", salon.lower()).strip("-")[:24] or "salon"
+    person = str(koerper.get("person", "") or "").strip()[:60]
+    telefon_roh = str(koerper.get("telefon", "") or "").strip()[:40]
+    telefon = begleiter.nummer(telefon_roh) if telefon_roh else None
+    if telefon_roh and telefon is None:
+        return JSONResponse({"fehler": "Diese Handynummer sieht nicht richtig aus."},
+                            status_code=400)
+    slug = re.sub(r"[^a-z0-9]+", "-", (salon or person).lower()).strip("-")[:20] or "salon"
+    if telefon:
+        # Ein eigener Link je Einladung (seit 03.10.2026): zwei „Sabine"
+        # dürfen sich beim Einlösen nicht verwechseln.
+        slug = f"{slug}-{secrets.token_hex(2)}"
+    jetzt = bw._jetzt_iso()
     # Jeder Link ist eine Einladung (seit 02.10.2026): wer ihn noch nicht
     # eingelöst hat, steht als potenzieller Kunde in ihrem Bereich.
     with bw._DB_LOCK, bw._db() as c:
+        name = c.execute("SELECT name FROM ambassador WHERE code=?", (a[0],)).fetchone()
         cur = c.execute("""INSERT INTO ambassador_einladung
-                           (code, salon, email, slug, erstellt) VALUES (?,?,?,?,?)""",
-                        (a[0], salon or None, email, slug, bw._jetzt_iso()))
+                           (code, salon, email, slug, erstellt, person, telefon, gesendet)
+                           VALUES (?,?,?,?,?,?,?,?)""",
+                        (a[0], salon or None, email, slug, jetzt, person or None,
+                         telefon, jetzt if telefon else None))
         nr = cur.lastrowid
-    return JSONResponse({"link": _link(a[0], slug), "id": nr})
+    link = _link(a[0], slug)
+    antwort = {"link": link, "id": nr}
+    if telefon:
+        text = begleiter.nachricht("einladung", person=person or salon,
+                                   ambassadorin=name[0] if name else "", link=link)
+        antwort.update(text=text, whatsapp=begleiter.whatsapp(telefon, text))
+    return JSONResponse(antwort)
 
 
 async def ambassador_landing(code: str, slug: str) -> Response:
@@ -244,13 +270,14 @@ padding:12px 20px;border-radius:10px;font-size:15px;font-weight:600;cursor:point
 input{{width:100%;padding:10px;margin:6px 0 14px;border:1px solid #d8d3c8;
 border-radius:8px;font-size:14px}}</style></head><body>
 <div class="karte"><h1>babu 30 Tage testen — kostenlos</h1>
-<p>Foto machen statt Belege sortieren. Empfohlen von <b>{a[0]}</b> —
+<p>Foto machen statt Belege sortieren. Empfohlen von <b>{html_text.escape(a[0])}</b> —
 30 Tage babu komplett, ohne Vertrag, ohne Kündigung.</p>
 <form onsubmit="return einlosen(this)">
 <input name="salon" placeholder="Name deines Salons" required>
 <input name="email" type="email" placeholder="Deine E-Mail" required>
 <button class="knopf">Platz sichern</button></form>
-<p id="ok" style="display:none;color:#55705a;font-weight:600"></p></div>
+<p id="ok" style="display:none;color:#55705a;font-weight:600"></p>
+<p style="font-size:12.5px;color:#6b6151;margin-top:14px">Wenn du einlöst, sieht {html_text.escape(a[0])}, ob du babu nutzt: wie viele Belege du hochlädst, nicht die Belege selbst.</p></div>
 <script>
 function einlosen(f){{
   fetch({json.dumps(ziel)}, {{method:"POST",
@@ -879,6 +906,205 @@ def _geld(code: str, c) -> dict:
     }
 
 
+
+# ---------------------------------------------------------------------------
+# Begleiter (seit 03.10.2026): babu sagt der Ambassadorin, was heute zu tun
+# ist, und schreibt die WhatsApp vor. Regeln in begleiter.py.
+# ---------------------------------------------------------------------------
+
+_KONTAKT_SPALTEN = ("id", "salon", "email", "slug", "erstellt", "eingeloest",
+                    "person", "telefon", "erinnert_am", "erinnerungen",
+                    "erinnert_art", "weiter_am")
+
+
+def aktivitaet_aus_index(idx: dict) -> tuple[int, dt.date | None]:
+    """Wie viele Belege, und an welchem Tag kam der letzte?"""
+    zeiten = [str(z.get("hochgeladen"))[:10] for z in (idx.get("belege") or {}).values()
+              if z.get("hochgeladen")]
+    letzter = dt.date.fromisoformat(max(zeiten)) if zeiten else None
+    return len(idx.get("belege") or {}), letzter
+
+
+def _aktivitaet(email: str) -> tuple[int, dt.date | None]:
+    """Belege in der Ablage dieses Salons — gelesen in einem eigenen Kontext,
+    damit die aktive Ablage dieser Anfrage unberührt bleibt. Ohne Ablage
+    (noch nicht angelegt) oder bei einem Fehler: nichts."""
+    import box as bx  # noqa: PLC0415
+    try:
+        with bw._DB_LOCK, bw._db() as c:
+            direkt = testmonat.direkt_mandant_von(email, c)
+        if direkt is None:
+            return 0, None
+        ablage = bx.box_von(email, direkt[0])
+        idx = contextvars.copy_context().run(bw._im_box_kontext, ablage,  # noqa: SLF001
+                                             bw.index_aktuell)
+        return aktivitaet_aus_index(idx)
+    except Exception as ex:  # noqa: BLE001
+        print(f"[begleiter] Aktivität {email}: {ex!r}", flush=True)
+        return 0, None
+
+
+def _kontakt_zeilen(code: str, c) -> dict:
+    """Alles aus der Datenbank, was der Begleiter braucht — in EINER Sitzung."""
+    einl = [dict(zip(_KONTAKT_SPALTEN, z)) for z in c.execute(
+        f"SELECT {', '.join(_KONTAKT_SPALTEN)} FROM ambassador_einladung "
+        "WHERE code=? ORDER BY erstellt DESC, id DESC", (code,))]
+    salons = {z[0]: dict(zip(("email", "salon", "eingelöst", "meilenstein",
+                              "gezeichnet_am"), z))
+              for z in c.execute("SELECT email, salon, eingelöst, meilenstein, "
+                                 "gezeichnet_am FROM ambassador_salon WHERE code=?",
+                                 (code,))}
+    tests = {}
+    for email in salons:
+        direkt = testmonat.direkt_mandant_von(email, c)
+        tests[email] = direkt[1] if direkt else None
+    return {"einladungen": einl, "salons": salons, "tests": tests}
+
+
+def _begleiter(code: str, ambassadorin: str, roh: dict) -> tuple[list, list]:
+    """Die Kontaktliste und „Heute für dich" — eine Zeile je Einladung, dazu
+    eingelöste Salons ohne gespeicherte Einladung (ohne Nummer, ohne Knopf)."""
+    heute = _heute()
+    salons = roh["salons"]
+    gesehen: set[str] = set()
+    zeilen = []
+    for e in roh["einladungen"]:
+        email = e["email"] if e["email"] in salons else None
+        if email:
+            gesehen.add(email)
+        elif e["eingeloest"]:
+            continue                      # eingelöst, aber nicht über diesen Code
+        if not e["telefon"] and not email:
+            continue                      # alter Link ohne Nummer: Cockpit zeigt ihn
+        zeilen.append((e, salons.get(email) if email else None))
+    for email, s in salons.items():
+        if email not in gesehen:
+            zeilen.append((None, s))
+
+    kontakte, auftraege = [], []
+    for e, s in zeilen:
+        email = s["email"] if s else None
+        test_bis = roh["tests"].get(email) if email else None
+        st = testmonat.stand(test_bis, heute) if test_bis else None
+        belege, letzter = _aktivitaet(email) if email else (0, None)
+        k = {"telefon": e["telefon"] if e else None,
+             "eingeladen_am": _datum(e["erstellt"]) if e else _datum(s["eingelöst"]),
+             "eingeloest_am": _datum(s["eingelöst"]) if s else None,
+             "test": st, "meilenstein": s["meilenstein"] if s else None,
+             "gezeichnet_am": _datum(s.get("gezeichnet_am")) if s else None,
+             "belege": belege, "letzter_beleg": letzter,
+             "erinnert_am": _datum(e["erinnert_am"]) if e else None,
+             "erinnerungen": (e["erinnerungen"] or 0) if e else 0,
+             "erinnert_art": e["erinnert_art"] if e else None,
+             "weiter_am": _datum(e["weiter_am"]) if e else None}
+        person = (e["person"] if e else None) or (s["salon"] if s else None) or "Salon"
+        satz, ton = begleiter.aktiv_satz(s is not None, belege, letzter, heute)
+        zeile = {"nr": e["id"] if e else None, "name": person,
+                 "salon": (s["salon"] if s else None) or (e["salon"] if e else None),
+                 "telefon": begleiter.anzeige(e["telefon"]) if e and e["telefon"] else None,
+                 "stand": _stand_wort(k, st), "aktiv": satz, "ton": ton,
+                 "gesendet_am": e["erinnert_am"][:10] if e and e["erinnert_am"]
+                 and (heute - _datum(e["erinnert_am"])).days < begleiter.ABSTAND_TAGE
+                 else None,
+                 "aufgabe": None}
+        a = begleiter.aufgabe(k, heute)
+        if a and e:
+            text = begleiter.nachricht(
+                a["art"], person=person, ambassadorin=ambassadorin,
+                link=_link(code, e["slug"]),
+                tage=st["tage_uebrig"] if st else None)
+            a.update(nr=e["id"], person=person, salon=zeile["salon"],
+                     telefon=zeile["telefon"], nachricht=text,
+                     whatsapp=begleiter.whatsapp(e["telefon"], text))
+            zeile["aufgabe"] = a
+            auftraege.append(a)
+        kontakte.append(zeile)
+    rang = {art: i for i, art in enumerate(begleiter.ARTEN)}
+    auftraege.sort(key=lambda a: rang[a["art"]])
+    return kontakte, auftraege
+
+
+def _stand_wort(k: dict, st: dict | None) -> str:
+    m = k["meilenstein"]
+    if m in ("gezeichnet", "gehalten"):
+        return "macht mit"
+    if k.get("weiter_am"):
+        return "will weitermachen"
+    if k["eingeloest_am"] is None:
+        return "noch nicht gestartet"
+    if st is None:
+        return "wartet auf Zugang"   # alter Wartelisten-Weg, noch kein Zugang
+    if st["vorbei"]:
+        return "Test vorbei"
+    return "probiert aus"
+
+
+async def _eigene_einladung(request: Request):
+    """Gemeinsamer Anfang der Begleiter-Routen: angemeldet, Ambassadorin,
+    und die genannte Einladung gehört ihr. Gibt (un, code, name, zeile, koerper)."""
+    un, fehler = bw._api_wache(request)
+    if fehler:
+        return None, fehler
+    try:
+        koerper = json.loads(await bw.koerper_lesen(request, 4 * 1024))
+    except Exception:  # noqa: BLE001
+        return None, JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    nr = koerper.get("nr")
+    if not isinstance(nr, int) or isinstance(nr, bool):
+        return None, JSONResponse({"fehler": "nr fehlt"}, status_code=400)
+    with bw._DB_LOCK, bw._db() as c:
+        a = c.execute("SELECT code, name FROM ambassador WHERE email=? AND aktiv=1",
+                      (un,)).fetchone()
+        z = c.execute(f"SELECT {', '.join(_KONTAKT_SPALTEN)} FROM ambassador_einladung "
+                      "WHERE id=? AND code=?", (nr, a[0] if a else "")).fetchone()
+    if not a or not z:
+        return None, JSONResponse({"fehler": "Diese Einladung gibt es hier nicht."},
+                                  status_code=404)
+    return (un, a[0], a[1], dict(zip(_KONTAKT_SPALTEN, z)), koerper), None
+
+
+async def api_ambassador_erinnert(request: Request) -> Response:
+    """Sie hat die vorgeschlagene Nachricht verschickt — merken (für die
+    Grenze „alle drei Tage" und „höchstens drei je Lage")."""
+    werte, fehler = await _eigene_einladung(request)
+    if fehler:
+        return fehler
+    un, code, _name, z, koerper = werte
+    art = str(koerper.get("art", "") or "")
+    if art not in begleiter.ARTEN:
+        return JSONResponse({"fehler": "unbekannte Art"}, status_code=400)
+    anzahl = begleiter.zaehlen(z["erinnert_art"], z["erinnerungen"] or 0, art)
+    with bw._DB_LOCK, bw._db() as c:
+        c.execute("UPDATE ambassador_einladung SET erinnert_am=?, erinnerungen=?, "
+                  "erinnert_art=? WHERE id=?",
+                  (_heute().isoformat(), anzahl, art, z["id"]))
+    audit.audit(un, "begleiter_erinnert", code=code, nr=str(z["id"]), art=art)
+    return JSONResponse({"ok": True, "erinnerungen": anzahl})
+
+
+async def api_ambassador_weitermachen(request: Request) -> Response:
+    """Der Salon will weitermachen — Nina bekommt Bescheid und bucht ihn als
+    gezeichnet; bis dahin schlägt babu für ihn nichts mehr vor."""
+    werte, fehler = await _eigene_einladung(request)
+    if fehler:
+        return fehler
+    un, code, name, z, _koerper = werte
+    with bw._DB_LOCK, bw._db() as c:
+        c.execute("UPDATE ambassador_einladung SET weiter_am=? WHERE id=?",
+                  (_heute().isoformat(), z["id"]))
+    wer = z["person"] or z["salon"] or "Ein Salon"
+    if bw.SUPPORT_MAIL:
+        await bw.run_in_threadpool(
+            _senden, bw.SUPPORT_MAIL, f"Will weitermachen: {wer}",
+            f"Hallo,\n\n{wer}"
+            + (f" ({z['salon']})" if z["salon"] and z["salon"] != wer else "")
+            + f" will bei babu weitermachen. Gemeldet von {name} (Code {code})"
+            + (f", Telefon {begleiter.anzeige(z['telefon'])}" if z["telefon"] else "")
+            + ".\n\nBitte in der Verwaltung als gezeichnet buchen.\n")
+    audit.audit(un, "begleiter_weitermachen", code=code, nr=str(z["id"]))
+    return JSONResponse({"ok": True})
+
+
 _ROUTEN = [
     ("POST", "/api/ambassador", api_ambassador_anlegen),
     ("GET", "/api/ambassador/liste", api_ambassador_liste),
@@ -889,5 +1115,7 @@ _ROUTEN = [
     ("POST", "/api/ambassador/meilenstein", api_ambassador_meilenstein),
     ("POST", "/api/ambassador/einloesen", api_ambassador_einloesen),
     ("POST", "/api/ambassador/verlaengern", api_ambassador_verlaengern),
+    ("POST", "/api/ambassador/erinnert", api_ambassador_erinnert),
+    ("POST", "/api/ambassador/weitermachen", api_ambassador_weitermachen),
     ("POST", "/api/ambassador/gezahlt", api_ambassador_gezahlt),
 ]

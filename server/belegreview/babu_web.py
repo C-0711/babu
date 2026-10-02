@@ -373,6 +373,17 @@ def _sqlite_schema(conn) -> None:
             conn.execute(f"ALTER TABLE ambassador_salon ADD COLUMN {spalte} TEXT")
         except sqlite3.OperationalError:
             pass  # Spalte existiert schon
+    # Begleiter (seit 03.10.2026): wen sie eingeladen hat, unter welcher
+    # Handynummer, und wann babu zuletzt eine Nachricht vorgeschlagen hat, die
+    # sie verschickt hat. migrations/0012_begleiter.sql, dieselben Spalten.
+    for spalte, typ in (("person", "TEXT"), ("telefon", "TEXT"),
+                        ("erinnert_am", "TEXT"),
+                        ("erinnerungen", "INTEGER NOT NULL DEFAULT 0"),
+                        ("erinnert_art", "TEXT"), ("weiter_am", "TEXT")):
+        try:
+            conn.execute(f"ALTER TABLE ambassador_einladung ADD COLUMN {spalte} {typ}")
+        except sqlite3.OperationalError:
+            pass  # Spalte existiert schon
     conn.execute("""CREATE TABLE IF NOT EXISTS nutzer
         (email TEXT PRIMARY KEY, name TEXT, salon TEXT,
          rolle TEXT NOT NULL DEFAULT 'salon', pw TEXT NOT NULL,

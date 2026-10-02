@@ -119,10 +119,12 @@ POST /api/abschluss/uebernehmen
 POST /api/ambassador
 POST /api/ambassador/einladen
 POST /api/ambassador/einloesen
+POST /api/ambassador/erinnert
 POST /api/ambassador/gezahlt
 POST /api/ambassador/link
 POST /api/ambassador/meilenstein
 POST /api/ambassador/verlaengern
+POST /api/ambassador/weitermachen
 POST /api/angaben/{stamm}
 POST /api/anlagen
 POST /api/anlagen/{kennung}
