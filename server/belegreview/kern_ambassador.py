@@ -542,8 +542,10 @@ async def api_ambassador_einloesen(request: Request) -> Response:
     with bw._DB_LOCK, bw._db() as c:
         mandant_id = mandanten.mandant_anlegen(kid, salon, email, "SKR04", c=c)
         testmonat.setzen(mandant_id, bis, c)
-        c.execute("""INSERT OR IGNORE INTO ambassador_salon
-                     (code, email, salon, eingelöst) VALUES (?,?,?,?)""",
+        # ON CONFLICT statt INSERT OR IGNORE — das versteht Postgres nicht.
+        c.execute("""INSERT INTO ambassador_salon
+                     (code, email, salon, eingelöst) VALUES (?,?,?,?)
+                     ON CONFLICT (code, email) DO NOTHING""",
                   (code, email, salon, bw._jetzt_iso()))
     link = _passwort_link(email)
     text = (f"Hallo,\n\n"

@@ -469,3 +469,33 @@ def test_kennzahlen_der_ambassadorin(welt):
 def test_neue_ambassadorin_haengt_nicht_an_der_default_box(welt):
     assert babu_web.nutzer_holen("babs@example.org")["box"] is False
     assert babu_web.box_mitglied("babs@example.org") is False
+
+
+# ————— Postgres-Fallen (Befund 02.10.2026) —————
+
+def test_kein_sqlite_eigenes_insert_im_servercode():
+    """`INSERT OR IGNORE`/`OR REPLACE` kennt Postgres nicht — die DB-Schicht
+    übersetzt nur Platzhalter. Daran scheiterte live jede Code-Einlösung
+    über die Warteliste (24.09.–02.10.2026). Für Upserts gibt es db.upsert()."""
+    import re
+    # Eine SQL-Zeichenkette, die mit INSERT OR … beginnt — nicht ein Satz in
+    # einem Kommentar, der die Regel erwähnt (audit.py tut das).
+    muster = re.compile(r"[\"']{1,3}\s*INSERT\s+OR\s+(IGNORE|REPLACE)")
+    for datei in sorted(HIER.parent.glob("*.py")):
+        if datei.name == "db.py":
+            continue
+        treffer = muster.search(datei.read_text(encoding="utf-8"))
+        assert treffer is None, f"{datei.name}: {treffer.group(0)!r}"
+
+
+def test_unbekannter_code_auf_der_warteliste_ordnet_nichts_zu(welt):
+    """In Postgres zeigt ambassador_salon.code auf ambassador(code) — ein frei
+    getippter Code darf keine Zeile versuchen (dort wäre es ein 500)."""
+    babu_web._REG_ZULETZT.clear()  # noqa: SLF001
+    r = TestClient(babu_web.app, base_url="https://testserver").post(
+        "/api/warteliste", json={"email": "frei@example.org", "art": "salon",
+                                 "salon": "Salon Frei", "bemerkung": "Code ERFUNDEN-1234"})
+    assert r.status_code == 200, r.text
+    with babu_web._DB_LOCK, babu_web._db() as c:
+        assert c.execute("SELECT COUNT(*) FROM ambassador_salon WHERE email=?",
+                         ("frei@example.org",)).fetchone()[0] == 0

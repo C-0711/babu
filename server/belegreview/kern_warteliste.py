@@ -211,12 +211,19 @@ async def api_warteliste_anmelden(request: Request) -> Response:
                        code_fund.group(1) if code_fund else None))
         if code_fund and not vorhanden:
             # Ambassador-Zuordnung: nur beim ERSTEN Eintrag (ein Salon
-            # gehört einem Code, Zähler-Hochsetzen ändert sie nicht).
-            c.execute("""INSERT OR IGNORE INTO ambassador_salon
+            # gehört einem Code, Zähler-Hochsetzen ändert sie nicht) — und
+            # nur für einen Code, den es gibt: in Postgres zeigt
+            # `ambassador_salon.code` per Fremdschlüssel auf `ambassador`,
+            # ein frei getippter „Code XYZ" war dort ein 500. `ON CONFLICT
+            # DO NOTHING` statt `INSERT OR IGNORE`, das nur SQLite kennt
+            # (bis 02.10.2026 scheiterte daran in Postgres JEDE Einlösung).
+            c.execute("""INSERT INTO ambassador_salon
                          (code, email, salon, eingelöst)
-                         VALUES (?,?,?,?)""",
+                         SELECT ?, ?, ?, ? WHERE EXISTS
+                           (SELECT 1 FROM ambassador WHERE code=? AND aktiv=1)
+                         ON CONFLICT (code, email) DO NOTHING""",
                       (code_fund.group(1), email, sauber["salon"] or "",
-                       bw._jetzt_iso()))
+                       bw._jetzt_iso(), code_fund.group(1)))
     bw._REG_ZULETZT[ip] = jetzt
     bw._zaehler_aufraeumen(bw._REG_ZULETZT, jetzt, 3600)
     print(f"[warteliste] {art} <{email}>", flush=True)
