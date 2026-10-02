@@ -338,6 +338,41 @@ def _sqlite_schema(conn) -> None:
          verdienst INTEGER NOT NULL DEFAULT 0,
          PRIMARY KEY (code, email),
          FOREIGN KEY (code) REFERENCES ambassador(code))""")
+    # Ambassador-Cockpit (seit 02.10.2026): Einladungen (wer noch nicht
+    # eingelöst hat), Provisionsbuchungen je Meilenstein und Auszahlungsläufe.
+    # Schema in migrations/0011_ambassador_cockpit.sql, dieselben Tabellen.
+    conn.execute("""CREATE TABLE IF NOT EXISTS ambassador_einladung
+        (id INTEGER PRIMARY KEY AUTOINCREMENT,
+         code TEXT NOT NULL,
+         salon TEXT,
+         email TEXT,
+         slug TEXT NOT NULL,
+         erstellt TEXT NOT NULL,
+         gesendet TEXT,
+         eingeloest TEXT)""")
+    conn.execute("""CREATE INDEX IF NOT EXISTS ambassador_einladung_code
+        ON ambassador_einladung (code, eingeloest)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS ambassador_buchung
+        (id INTEGER PRIMARY KEY AUTOINCREMENT,
+         code TEXT NOT NULL,
+         email TEXT NOT NULL,
+         salon TEXT,
+         meilenstein TEXT NOT NULL,
+         betrag INTEGER NOT NULL,
+         datum TEXT NOT NULL,
+         auszahlung_id INTEGER)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS ambassador_auszahlung
+        (id INTEGER PRIMARY KEY AUTOINCREMENT,
+         code TEXT NOT NULL,
+         betrag INTEGER NOT NULL,
+         datum TEXT NOT NULL,
+         stichtag TEXT NOT NULL,
+         von TEXT NOT NULL)""")
+    for spalte in ("gezeichnet_am", "gehalten_am"):
+        try:
+            conn.execute(f"ALTER TABLE ambassador_salon ADD COLUMN {spalte} TEXT")
+        except sqlite3.OperationalError:
+            pass  # Spalte existiert schon
     conn.execute("""CREATE TABLE IF NOT EXISTS nutzer
         (email TEXT PRIMARY KEY, name TEXT, salon TEXT,
          rolle TEXT NOT NULL DEFAULT 'salon', pw TEXT NOT NULL,

@@ -6473,7 +6473,7 @@ async function ladeVerwaltung(){
         <thead><tr><th style="text-align:left;padding:4px">Salon</th><th style="text-align:left;padding:4px">Stand</th><th style="text-align:right;padding:4px">Anerkennen</th></tr></thead><tbody>
         ${a.salons.map(s => `<tr>
           <td style="padding:4px">${esc(s.salon || s.email)}</td>
-          <td style="padding:4px">${esc(ambStand(s))}${s.verdienst ? ` · ${s.verdienst} €` : ""}</td>
+          <td style="padding:4px">${esc(ambStand(s))}${s.verdienst ? ` · ${s.verdienst} €` : ""}${s.naechster_schritt ? `<div style="font-size:11px;color:var(--gc-desc)">${esc(s.naechster_schritt)}</div>` : ""}</td>
           <td style="padding:4px;text-align:right">${s.meilenstein === "testet"
             ? `${s.testmonat ? `<button class="hin" style="margin-top:0;padding:5px 10px;font-size:12px;background:transparent;color:var(--gc-accent);border:1px solid var(--gc-accent)" onclick="ambassadorVerlaengern(${AMB_TESTSALONS.push(s.email) - 1})">+14 Tage</button> ` : ""}<button class="hin" style="margin-top:0;padding:5px 10px;font-size:12px" onclick="ambassadorMeilenstein('${esc(a.code)}','${esc(s.email)}','gezeichnet')">Gezeichnet +25 %</button>`
             : s.meilenstein === "gezeichnet"
@@ -6481,7 +6481,8 @@ async function ladeVerwaltung(){
             : `✓ ${s.verdienst} €`}</td>
         </tr>`).join("")}</tbody></table>`
         : `<p style="font-size:12px;color:var(--gc-muted);margin-top:6px">noch keine Salons über ihren Code</p>`}
-      ${(a.verdient - a.gezahlt) > 0 ? `<button class="hin" style="margin-top:10px" onclick="ambassadorGezahlt('${esc(a.code)}')">Ausgezahlt (${a.verdient - a.gezahlt} €) ›</button>` : ""}
+      ${a.geld ? `<p style="font-size:12px;margin-top:6px;color:var(--gc-desc)">Nächster Lauf ${ambDatum(a.geld.naechster_lauf.datum)}: ${a.geld.naechster_lauf.betrag} € (verdient bis ${ambDatum(a.geld.naechster_lauf.stichtag)})${a.geld.danach ? " · danach " + a.geld.danach + " €" : ""}${(a.geld.auszahlungen || []).length ? " · bisher ausgezahlt: " + a.geld.auszahlungen.map(x => ambDatum(x.datum) + " " + x.betrag + " €").join(", ") : ""}</p>` : ""}
+      ${a.geld && a.geld.faelliger_lauf.auszahlbar ? `<button class="hin" style="margin-top:10px" onclick="ambassadorGezahlt('${esc(a.code)}')">Auszahlungslauf ${ambDatum(a.geld.faelliger_lauf.datum)}: ${a.geld.faelliger_lauf.betrag} € ausführen ›</button>` : ""}
     </div>`;
   }
 
@@ -7542,21 +7543,26 @@ async function ambassadorMeilenstein(code, email, meilenstein){
 /* Ambassadorin-eigene Ansicht (nur sichtbar, wenn das Konto eine ist):
    Code, Salons, Saldo — und der Einladungs-Generator nach dem
    Design-Entwurf design/ambassador-bereich.html. */
+let _ambZiel = "#heute-ambassador";
 async function ladeAmbassador(zielSel){
-  const ziel = $(zielSel || "#heute-ambassador");
+  _ambZiel = zielSel || "#heute-ambassador";
+  const ziel = $(_ambZiel);
   try{
     const r = await api("/api/ambassador/me");
     if (!r.ok){ ziel.hidden = true; return false; }
     const d = await r.json();
+    const g = d.geld || {verdient: d.verdient, ausgezahlt: d.gezahlt, offen: d.offen};
+    const eing = d.einladungen || [];
     ziel.innerHTML = `
       <div class="lbl" style="margin-top:24px">Dein Ambassador-Bereich</div>
       <div class="karte" style="margin-top:10px">
         <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">
-          <span style="font-size:28px;font-weight:700;color:var(--gc-accent)">${d.offen} €</span>
-          <span style="font-size:13px;color:var(--gc-desc)">offen · ${d.verdient} € verdient · ${d.gezahlt} € ausgezahlt</span>
+          <span style="font-size:28px;font-weight:700;color:var(--gc-accent)">${g.offen} €</span>
+          <span style="font-size:13px;color:var(--gc-desc)">offen · ${g.verdient} € verdient · ${g.ausgezahlt} € ausgezahlt</span>
           <span style="font-family:ui-monospace,monospace;font-size:14px;background:var(--gc-muted);color:var(--gc-bg);padding:3px 10px;border-radius:6px">${esc(d.code)}</span>
         </div>
-        <p style="margin-top:8px;font-size:13px;color:var(--gc-desc)">Ein Salon löst deinen Code ein → sofort 30 Tage babu, kostenlos. Zeichnet er ab: <b>25 %</b> für dich. Bleibt er 3 Monate: nochmal <b>25 %</b> — gesamt 50 % der Jahreszahlung, für immer dir zugeordnet.</p>
+        ${ambLaufSatz(g)}
+        <p style="margin-top:8px;font-size:13px;color:var(--gc-desc)">Ein Salon löst deinen Code ein → sofort 30 Tage babu, kostenlos. Zeichnet er ab: <b>25 %</b> für dich. Bleibt er 3 Monate: nochmal <b>25 %</b> — gesamt 50 % der Jahreszahlung, für immer dir zugeordnet. Ausgezahlt wird vierteljährlich zum 15. (Januar, April, Juli, Oktober), ab 100 €.</p>
         ${d.zahlen && d.zahlen.eingeladen ? `<p style="margin-top:6px;font-size:13px">${ambZahlenSatz(d.zahlen)}</p>` : ""}
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
           <input id="amb-neu-salon" type="text" placeholder="Name des Salons (optional)"
@@ -7573,18 +7579,72 @@ async function ladeAmbassador(zielSel){
             <span id="amb-mail-status" style="font-size:12px;color:var(--gc-desc);align-self:center"></span>
           </div>
         </div>
-        ${(d.salons || []).length ? `<table style="width:100%;font-size:13px;margin-top:14px;border-collapse:collapse">
-          <thead><tr><th style="text-align:left;padding:4px;color:var(--gc-desc)">Salon</th><th style="text-align:left;padding:4px;color:var(--gc-desc)">Stand</th><th style="text-align:right;padding:4px;color:var(--gc-desc)">Dein Verdienst</th></tr></thead>
-          <tbody>${d.salons.map(s => `<tr>
-            <td style="padding:5px 4px">${esc(s.salon || s.email)}</td>
-            <td style="padding:5px 4px">${esc(ambStand(s))}</td>
-            <td style="padding:5px 4px;text-align:right">${s.verdienst ? `<b>${s.verdienst} €</b>` : "—"}</td>
+        ${eing.length ? `<div class="lbl" style="margin-top:18px">Eingeladen, noch nicht eingelöst (${eing.length})</div>
+          <table style="width:100%;font-size:13px;margin-top:6px;border-collapse:collapse"><tbody>
+          ${eing.map(e => `<tr>
+            <td style="padding:5px 4px">${esc(e.salon || "ohne Namen")}${e.email ? `<div style="font-size:12px;color:var(--gc-desc)">${esc(e.email)}</div>` : ""}</td>
+            <td style="padding:5px 4px;color:var(--gc-desc)">${e.gesendet ? "Mail am " + ambDatum(e.gesendet) : "Link vom " + ambDatum(e.erstellt)}</td>
+            <td style="padding:5px 4px;text-align:right">${e.email ? `<button class="hin" style="margin-top:0;padding:5px 10px;font-size:12px;background:transparent;color:var(--gc-accent);border:1px solid var(--gc-accent)" onclick="ambassadorNochmal(${Number(e.id)})">Nochmal schicken</button>` : ""}</td>
+          </tr>`).join("")}</tbody></table>` : ""}
+        ${(d.salons || []).length ? `<div class="lbl" style="margin-top:18px">Deine Salons</div>
+          <table style="width:100%;font-size:13px;margin-top:6px;border-collapse:collapse">
+          <thead><tr><th style="text-align:left;padding:4px;color:var(--gc-desc)">Salon</th><th style="text-align:left;padding:4px;color:var(--gc-desc)">Stand</th><th style="text-align:left;padding:4px;color:var(--gc-desc)">Nächster Schritt</th><th style="text-align:right;padding:4px;color:var(--gc-desc)">Dein Verdienst</th></tr></thead>
+          <tbody>${d.salons.map(s => `<tr style="vertical-align:top">
+            <td style="padding:6px 4px">${esc(s.salon || s.email)}<div style="font-size:11px;color:var(--gc-desc);margin-top:2px">${ambZeitleiste(s.stufen)}</div></td>
+            <td style="padding:6px 4px">${esc(ambStand(s))}</td>
+            <td style="padding:6px 4px;font-size:12px">${esc(s.naechster_schritt || "")}</td>
+            <td style="padding:6px 4px;text-align:right">${s.verdienst ? `<b>${s.verdienst} €</b>` : "—"}</td>
           </tr>`).join("")}</tbody></table>`
           : `<p style="font-size:12px;color:var(--gc-muted);margin-top:10px">Noch keine Einlösungen — verschicke deinen ersten Link.</p>`}
+        ${(g.auszahlungen || []).length ? `<div class="lbl" style="margin-top:18px">Deine Auszahlungen</div>
+          <p style="font-size:13px;margin-top:6px">${g.auszahlungen.map(a => ambDatum(a.datum) + ": <b>" + a.betrag + " €</b>").join(" · ")}</p>` : ""}
       </div>`;
     ziel.hidden = false;
     return true;
   }catch{ ziel.hidden = true; return false; }
+}
+/* Datum aus ISO (auch mit Uhrzeit) als TT.MM.JJJJ. */
+function ambDatum(iso){
+  if (!iso) return "–";
+  const t = String(iso).slice(0, 10).split("-");
+  return t.length === 3 ? t[2] + "." + t[1] + "." + t[0] : esc(String(iso));
+}
+/* Was der nächste Auszahlungslauf bringt — in einem Satz (seit 02.10.2026). */
+function ambLaufSatz(g){
+  const n = g.naechster_lauf;
+  if (!n) return "";
+  const heute = new Date().toISOString().slice(0, 10);
+  const f = g.faelliger_lauf;
+  let satz = "";
+  if (f && f.auszahlbar && f.datum < heute)
+    satz = `Aus dem Lauf vom ${ambDatum(f.datum)}: <b>${f.betrag} €</b> — kommt in den nächsten Tagen.`;
+  else if (n.wird_ausgezahlt)
+    satz = `Nächste Auszahlung am ${ambDatum(n.datum)}: <b>${n.betrag} €</b> (verdient bis ${ambDatum(n.stichtag)}).`;
+  else
+    satz = `Nächste Auszahlung am ${ambDatum(n.datum)} — ${esc(n.hinweis)}`;
+  if (g.danach) satz += ` Danach schon verdient: <b>${g.danach} €</b> — kommt mit dem Lauf darauf.`;
+  return `<p style="margin-top:8px;font-size:13px">${satz}</p>`;
+}
+/* Die Stufen eines Salons als kurze Zeile. */
+function ambZeitleiste(stufen){
+  if (!stufen) return "";
+  const s = Object.fromEntries(stufen.map(x => [x.stufe, x]));
+  const teile = ["eingeladen " + ambDatum(s.eingeladen && s.eingeladen.datum)];
+  if (s.test_endet && s.test_endet.datum) teile.push("Test bis " + ambDatum(s.test_endet.datum));
+  if (s.gezeichnet && s.gezeichnet.datum) teile.push("gezeichnet " + ambDatum(s.gezeichnet.datum));
+  if (s.gehalten && s.gehalten.datum) teile.push("3 Monate ✓ " + ambDatum(s.gehalten.datum));
+  else if (s.gehalten && s.gehalten.faellig) teile.push("3 Monate am " + ambDatum(s.gehalten.faellig));
+  return teile.join(" · ");
+}
+async function ambassadorNochmal(nr){
+  try{
+    const r = await api("/api/ambassador/einladen", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({id: nr})});
+    const d = await r.json();
+    if (r.ok) alert("Einladung ist nochmal raus ✓");
+    else alert(d.fehler || "Ging gerade nicht.");
+    ladeAmbassador(_ambZiel);
+  }catch{ alert("Gerade keine Verbindung — später nochmal."); }
 }
 /* Die Sperrseite: wer (noch) keine eigene Belegbox hat. Eine Ambassadorin
    ohne eigenen Salon braucht keine — sie sieht hier ihren Bereich statt des
@@ -7652,12 +7712,15 @@ async function ambassadorLinkErzeugen(){
   const mail = ($("#amb-neu-mail") || {}).value || "";
   try{
     const r = await api("/api/ambassador/link", {method:"POST",
-      headers:{"Content-Type":"application/json"}, body: JSON.stringify({salon: salon.trim()})});
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({salon: salon.trim(), email: mail.trim()})});
     if (!r.ok){ alert((await r.json()).fehler || "Ging gerade nicht."); return; }
     _ambLink = (await r.json()).link;
+    _ambMailAn = mail.trim();
+    const salonWert = salon;
+    await ladeAmbassador(_ambZiel);
+    $("#amb-neu-salon").value = salonWert; $("#amb-neu-mail").value = _ambMailAn;
     $("#amb-link").textContent = _ambLink;
     $("#amb-link-box").style.display = "block";
-    _ambMailAn = mail.trim();
   }catch{ alert("Gerade keine Verbindung — später nochmal."); }
 }
 let _ambMailAn = "";
@@ -7673,11 +7736,12 @@ async function ambassadorMailSenden(){
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({email: _ambMailAn, salon: ($("#amb-neu-salon") || {}).value || "", link: _ambLink})});
     const d = await r.json();
-    $("#amb-mail-status").textContent = r.ok ? "Einladung ist raus ✓" : (d.fehler || "Ging gerade nicht.");
+    if (r.ok){ await ladeAmbassador(_ambZiel); return; }
+    $("#amb-mail-status").textContent = d.fehler || "Ging gerade nicht.";
   }catch{ $("#amb-mail-status").textContent = "Gerade keine Verbindung."; }
 }
 async function ambassadorGezahlt(code){
-  if (!confirm("Auszahlung als verbucht markieren? Der Saldo geht auf null.")) return;
+  if (!confirm("Auszahlungslauf ausführen? Gebucht wird, was bis zum Stichtag verdient ist — die Überweisung machst du selbst.")) return;
   try{
     const r = await api("/api/ambassador/gezahlt", {method:"POST",
       headers:{"Content-Type":"application/json"}, body: JSON.stringify({code})});

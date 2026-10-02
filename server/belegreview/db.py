@@ -77,6 +77,8 @@ ID_TABELLEN = frozenset({
     "anlagegut", "einladung", "meldung_puffer",
     # 0002: Plan 21, Phase 2 und §7
     "audit_log", "passwort_reset", "kanzlei", "mandant",
+    # 0011: Ambassador-Cockpit
+    "ambassador_einladung", "ambassador_buchung", "ambassador_auszahlung",
 })
 
 

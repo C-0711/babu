@@ -99,6 +99,13 @@ def test_ambassador_voller_weg(kunde):
     tc.post("/api/abmelden")
     r = tc.post("/api/login", json={"email": "chef@example.org", "passwort": "test-test"})
     assert r.status_code == 200, r.text
+    # Seit 02.10.2026 zahlt der Lauf quartalsweise, was bis zum Stichtag
+    # verdient ist: heute Verdientes kommt erst mit dem nächsten Lauf.
+    r = tc.post("/api/ambassador/gezahlt", json={"code": code})
+    assert r.status_code == 409
+    with bw._DB_LOCK, bw._db() as c:
+        c.execute("UPDATE ambassador_buchung SET datum='2026-01-10' WHERE code=?",
+                  (code,))
     r = tc.post("/api/ambassador/gezahlt", json={"code": code})
     assert r.status_code == 200 and r.json()["gezahlt"] == 474
     tc.post("/api/abmelden")

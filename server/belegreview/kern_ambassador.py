@@ -13,6 +13,8 @@ Nina (Verwaltung) legt Ambassadorinnen an: `POST /api/ambassador` —
 Konto + Code + Mail mit dem Zug zu ihrer Seite. Die Ambassadorin selbst
 sieht ihre Salons unter `GET /api/ambassador/me`.
 """
+import calendar
+import datetime as dt
 import json
 import os
 import re
@@ -143,13 +145,15 @@ async def api_ambassador_liste(request: Request) -> Response:
                       "SELECT code, email, name, erstellt, aktiv, verdient, "
                       "gezahlt FROM ambassador ORDER BY erstellt DESC")]
         for z in zeilen:
-            z["salons"] = [dict(zip(("email", "salon", "eingelöst", "meilenstein",
-                                     "verdienst"), s))
+            z["salons"] = [dict(zip(_SALON_SPALTEN, s))
                            for s in c.execute(
-                               "SELECT email, salon, eingelöst, meilenstein, "
-                               "verdienst FROM ambassador_salon WHERE code=? "
-                               "ORDER BY eingelöst DESC", (z["code"],))]
+                               f"SELECT {', '.join(_SALON_SPALTEN)} FROM "
+                               "ambassador_salon WHERE code=? ORDER BY eingelöst DESC",
+                               (z["code"],))]
             _testmonate_dazu(z["salons"], c)
+            _pipeline_dazu(z["salons"], z["code"], c)
+            z["einladungen"] = _offene_einladungen(z["code"], c)
+            z["geld"] = _geld(z["code"], c)
             z["zahlen"] = _zahlen(z["salons"])
     return JSONResponse({"ambassadorinnen": zeilen})
 
@@ -165,16 +169,18 @@ async def api_ambassador_me(request: Request) -> Response:
         if not a:
             return JSONResponse({"fehler": "Du bist (noch) keine Ambassadorin."},
                                 status_code=404)
-        salons = [dict(zip(("email", "salon", "eingelöst", "meilenstein",
-                            "verdienst"), z))
+        salons = [dict(zip(_SALON_SPALTEN, z))
                   for z in c.execute(
-                      "SELECT email, salon, eingelöst, meilenstein, verdienst "
-                      "FROM ambassador_salon WHERE code=? ORDER BY eingelöst DESC",
-                      (a[0],))]
+                      f"SELECT {', '.join(_SALON_SPALTEN)} FROM ambassador_salon "
+                      "WHERE code=? ORDER BY eingelöst DESC", (a[0],))]
         _testmonate_dazu(salons, c)
+        _pipeline_dazu(salons, a[0], c)
+        einladungen = _offene_einladungen(a[0], c)
+        geld = _geld(a[0], c)
     return JSONResponse({"code": a[0], "name": a[1],
                          "verdient": a[2], "gezahlt": a[3], "offen": a[2] - a[3],
-                         "salons": salons, "zahlen": _zahlen(salons)})
+                         "salons": salons, "zahlen": _zahlen(salons),
+                         "einladungen": einladungen, "geld": geld})
 
 
 async def api_ambassador_link(request: Request) -> Response:
@@ -193,9 +199,17 @@ async def api_ambassador_link(request: Request) -> Response:
         koerper = json.loads(await bw.koerper_lesen(request, 4 * 1024))
     except Exception:  # noqa: BLE001
         koerper = {}
-    slug = re.sub(r"[^a-z0-9]+", "-",
-                  str(koerper.get("salon", "")).lower()).strip("-")[:24] or "salon"
-    return JSONResponse({"link": f"{bw.PORTAL_ORIGIN}/ambassador/{a[0]}/{slug}"})
+    salon = str(koerper.get("salon", "") or "").strip()[:120]
+    email = str(koerper.get("email", "") or "").strip().lower()[:200] or None
+    slug = re.sub(r"[^a-z0-9]+", "-", salon.lower()).strip("-")[:24] or "salon"
+    # Jeder Link ist eine Einladung (seit 02.10.2026): wer ihn noch nicht
+    # eingelöst hat, steht als potenzieller Kunde in ihrem Bereich.
+    with bw._DB_LOCK, bw._db() as c:
+        cur = c.execute("""INSERT INTO ambassador_einladung
+                           (code, salon, email, slug, erstellt) VALUES (?,?,?,?,?)""",
+                        (a[0], salon or None, email, slug, bw._jetzt_iso()))
+        nr = cur.lastrowid
+    return JSONResponse({"link": _link(a[0], slug), "id": nr})
 
 
 async def ambassador_landing(code: str, slug: str) -> Response:
@@ -241,7 +255,7 @@ border-radius:8px;font-size:14px}}</style></head><body>
 function einlosen(f){{
   fetch({json.dumps(ziel)}, {{method:"POST",
     headers:{{"Content-Type":"application/json"}},
-    body: JSON.stringify({{email:f.email.value, art:"salon", code:{json.dumps(code)},
+    body: JSON.stringify({{email:f.email.value, art:"salon", code:{json.dumps(code)}, slug:{json.dumps(slug)},
       salon:f.salon.value, bemerkung:"Code " + {json.dumps(code)}}})}})
   .then(r => r.json()).then(d => {{
     if(d.ok){{ document.getElementById("ok").textContent = {json.dumps(danke)};
@@ -266,15 +280,27 @@ async def api_ambassador_einladen(request: Request) -> Response:
     email = str(koerper.get("email", "") or "").strip().lower()[:200]
     salon = str(koerper.get("salon", "") or "").strip()[:120]
     link = str(koerper.get("link", "") or "").strip()[:400]
+    nr = koerper.get("id")
+    with bw._DB_LOCK, bw._db() as c:
+        a = c.execute("SELECT name, code FROM ambassador WHERE email=? AND aktiv=1",
+                      (un,)).fetchone()
+        gemerkt = None
+        if a and isinstance(nr, int) and not isinstance(nr, bool):
+            # „Nochmal schicken": nur eine eigene, noch offene Einladung.
+            gemerkt = c.execute(
+                "SELECT id, salon, email, slug FROM ambassador_einladung "
+                "WHERE id=? AND code=? AND eingeloest IS NULL", (nr, a[1])).fetchone()
+            if not gemerkt:
+                return JSONResponse({"fehler": "Diese Einladung gibt es nicht (mehr)."},
+                                    status_code=404)
+    if gemerkt:
+        salon, email, link = gemerkt[1] or "", gemerkt[2] or "", _link(a[1], gemerkt[3])
     if "@" not in email or not link:
         return JSONResponse({"fehler": "email und link brauchen wir."}, status_code=400)
     import einladung as ei  # noqa: PLC0415
     if not ei.mail_gueltig(email):
         return JSONResponse({"fehler": "Das sieht nicht nach einer E-Mail-Adresse aus."},
                             status_code=400)
-    with bw._DB_LOCK, bw._db() as c:
-        a = c.execute("SELECT name FROM ambassador WHERE email=? AND aktiv=1",
-                      (un,)).fetchone()
     if not a:
         return JSONResponse({"fehler": "Du bist (noch) keine Ambassadorin."},
                             status_code=404)
@@ -297,6 +323,7 @@ async def api_ambassador_einladen(request: Request) -> Response:
         print(f"[ambassador] Einladung an {email} fehlgeschlagen: {ex!r}", flush=True)
         return JSONResponse({"fehler": "Die Mail ging nicht raus — später nochmal."},
                             status_code=503)
+    _einladung_gesendet(a[1], gemerkt[0] if gemerkt else None, link, salon, email)
     audit.audit(un, "ambassador_einladen", ziel_un=email)
     return JSONResponse({"ok": True})
 
@@ -341,6 +368,18 @@ async def api_ambassador_meilenstein(request: Request) -> Response:
                      WHERE code=? AND email=?""", (bis, betrag, code, email))
         c.execute("UPDATE ambassador SET verdient = verdient + ? WHERE code=?",
                   (betrag, code))
+        # Mit Datum gebucht (seit 02.10.2026): daran hängt, in welchem
+        # Auszahlungslauf die Provision kommt.
+        heute = _heute().isoformat()
+        c.execute(f"UPDATE ambassador_salon SET {bis}_am=? WHERE code=? AND email=?",
+                  (heute, code, email))
+        salon_name = c.execute("SELECT salon FROM ambassador_salon WHERE code=? "
+                               "AND email=?", (code, email)).fetchone()
+        c.execute("""INSERT INTO ambassador_buchung
+                     (code, email, salon, meilenstein, betrag, datum)
+                     VALUES (?,?,?,?,?,?)""",
+                  (code, email, salon_name[0] if salon_name else None, bis,
+                   betrag, heute))
         if bis == "gezeichnet":
             # Wer abzeichnet, ist Kunde: der Testmonat endet, alles ist offen.
             direkt = testmonat.direkt_mandant_von(email, c)
@@ -352,7 +391,11 @@ async def api_ambassador_meilenstein(request: Request) -> Response:
 
 
 async def api_ambassador_gezahlt(request: Request) -> Response:
-    """Verwaltung: Quartalsauszahlung verbucht — Saldo auf 0 setzen."""
+    """Verwaltung: der Auszahlungslauf (seit 02.10.2026).
+
+    Zahlt aus, was bis zum Stichtag des letzten fälligen Laufs verdient und
+    noch offen ist — quartalsweise zum 15. nach Quartalsende, ab 100 €.
+    Was danach verdient wurde, kommt mit dem nächsten Lauf."""
     un, fehler = bw._verwalter_wache(request)
     if fehler or not un:
         return fehler or JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
@@ -361,17 +404,39 @@ async def api_ambassador_gezahlt(request: Request) -> Response:
     except Exception:  # noqa: BLE001
         return JSONResponse({"fehler": "JSON mit code erwartet"}, status_code=400)
     code = str(koerper.get("code", "") or "").strip()[:60]
+    heute = _heute()
+    lauf = letzter_lauf(heute)
+    bis = stichtag(lauf)
     with bw._DB_LOCK, bw._db() as c:
         z = c.execute("SELECT verdient, gezahlt FROM ambassador WHERE code=?",
                       (code,)).fetchone()
         if not z:
             return JSONResponse({"fehler": "Code unbekannt."}, status_code=404)
-        offen = z[0] - z[1]
-        if offen <= 0:
-            return JSONResponse({"fehler": "Nichts offen."}, status_code=409)
-        c.execute("UPDATE ambassador SET gezahlt = verdient WHERE code=?", (code,))
-    audit.audit(un, "ambassador_gezahlt", code=code, betrag=offen)
-    return JSONResponse({"ok": True, "gezahlt": offen})
+        faellig = c.execute(
+            "SELECT id, betrag FROM ambassador_buchung WHERE code=? AND "
+            "auszahlung_id IS NULL AND datum <= ?", (code, bis.isoformat())).fetchall()
+        summe = sum(b for _, b in faellig)
+        if summe <= 0:
+            return JSONResponse({"fehler": f"Für den Lauf vom {_de(lauf)} ist nichts "
+                                           f"fällig (Stichtag {_de(bis)})."},
+                                status_code=409)
+        if summe < MINDEST_AUSZAHLUNG:
+            return JSONResponse({"fehler": f"{summe} € liegt unter "
+                                           f"{MINDEST_AUSZAHLUNG} € — das wandert ins "
+                                           f"nächste Quartal."}, status_code=409)
+        cur = c.execute("""INSERT INTO ambassador_auszahlung
+                           (code, betrag, datum, stichtag, von) VALUES (?,?,?,?,?)""",
+                        (code, summe, heute.isoformat(), bis.isoformat(), un))
+        nr = cur.lastrowid
+        for bid, _ in faellig:
+            c.execute("UPDATE ambassador_buchung SET auszahlung_id=? WHERE id=?",
+                      (nr, bid))
+        c.execute("UPDATE ambassador SET gezahlt = gezahlt + ? WHERE code=?",
+                  (summe, code))
+    audit.audit(un, "ambassador_gezahlt", code=code, betrag=summe,
+                stichtag=bis.isoformat())
+    return JSONResponse({"ok": True, "gezahlt": summe, "stichtag": bis.isoformat(),
+                         "lauf": lauf.isoformat()})
 
 
 
@@ -547,6 +612,7 @@ async def api_ambassador_einloesen(request: Request) -> Response:
                      (code, email, salon, eingelöst) VALUES (?,?,?,?)
                      ON CONFLICT (code, email) DO NOTHING""",
                   (code, email, salon, bw._jetzt_iso()))
+        _einladung_eingeloest(code, email, str(koerper.get("slug", "") or ""), c)
     link = _passwort_link(email)
     text = (f"Hallo,\n\n"
             f"schön, dass du babu ausprobierst — empfohlen von {ambassadorin}. "
@@ -601,6 +667,193 @@ async def api_ambassador_verlaengern(request: Request) -> Response:
                 bis=neu.isoformat(), tage=tage)
     return JSONResponse({"ok": True,
                          "testmonat": testmonat.stand(neu.isoformat(), heute)})
+
+
+
+# ---------------------------------------------------------------------------
+# Ambassador-Cockpit (seit 02.10.2026): Pipeline je Kunde, Einladungen, Geld.
+# Auszahlung quartalsweise zum 15. nach Quartalsende, ab 100 € (Entscheidung
+# Auftraggeber). Keine Beträge „in Aussicht", solange die Preise
+# Beispielpreise sind.
+# ---------------------------------------------------------------------------
+
+MINDEST_AUSZAHLUNG = 100
+LAUF_MONATE = (1, 4, 7, 10)
+LAUF_TAG = 15
+_SALON_SPALTEN = ("email", "salon", "eingelöst", "meilenstein", "verdienst",
+                  "gezeichnet_am", "gehalten_am")
+
+
+def _heute() -> dt.date:
+    return testmonat.heute()
+
+
+def _de(tag: dt.date) -> str:
+    return tag.strftime("%d.%m.%Y")
+
+
+def _link(code: str, slug: str) -> str:
+    return f"{bw.PORTAL_ORIGIN}/ambassador/{code}/{slug}"
+
+
+def naechster_lauf(heute: dt.date) -> dt.date:
+    """Der nächste Auszahlungstag (15.01./15.04./15.07./15.10.), heute eingeschlossen."""
+    for jahr in (heute.year, heute.year + 1):
+        for monat in LAUF_MONATE:
+            tag = dt.date(jahr, monat, LAUF_TAG)
+            if tag >= heute:
+                return tag
+    raise AssertionError("unerreichbar")
+
+
+def letzter_lauf(heute: dt.date) -> dt.date:
+    """Der letzte Auszahlungstag, der schon da ist — den führt die Verwaltung aus."""
+    return max(dt.date(jahr, monat, LAUF_TAG)
+               for jahr in (heute.year - 1, heute.year) for monat in LAUF_MONATE
+               if dt.date(jahr, monat, LAUF_TAG) <= heute)
+
+
+def stichtag(lauf: dt.date) -> dt.date:
+    """Was bis zum Ende des Quartals vor dem Lauf verdient ist, kommt mit."""
+    return dt.date(lauf.year, lauf.month, 1) - dt.timedelta(days=1)
+
+
+def monate_spaeter(tag: dt.date, monate: int) -> dt.date:
+    jahre, rest = divmod(tag.month - 1 + monate, 12)
+    jahr, monat = tag.year + jahre, rest + 1
+    return dt.date(jahr, monat, min(tag.day, calendar.monthrange(jahr, monat)[1]))
+
+
+def _datum(text: str | None) -> dt.date | None:
+    return dt.date.fromisoformat(str(text)[:10]) if text else None
+
+
+def _pipeline_dazu(salons: list[dict], code: str, c) -> None:
+    """Je Salon die Zeitleiste (`stufen`) und den nächsten Schritt."""
+    heute = _heute()
+    for s in salons:
+        eingeladen = c.execute(
+            "SELECT MIN(erstellt) FROM ambassador_einladung WHERE code=? AND email=?",
+            (code, s["email"])).fetchone()[0] or s["eingelöst"]
+        gezeichnet = _datum(s.get("gezeichnet_am"))
+        tm = s.get("testmonat")
+        s["stufen"] = [
+            {"stufe": "eingeladen", "datum": str(eingeladen)[:10]},
+            {"stufe": "eingeloest", "datum": str(s["eingelöst"])[:10]},
+            {"stufe": "test_endet", "datum": tm["bis"] if tm else None},
+            {"stufe": "gezeichnet", "datum": s.get("gezeichnet_am")},
+            {"stufe": "gehalten", "datum": s.get("gehalten_am"),
+             "faellig": monate_spaeter(gezeichnet, 3).isoformat() if gezeichnet else None},
+        ]
+        s["naechster_schritt"] = _naechster_schritt(s, tm, gezeichnet, heute)
+
+
+def _naechster_schritt(s: dict, tm: dict | None, gezeichnet: dt.date | None,
+                       heute: dt.date) -> str:
+    name = s.get("salon") or "der Salon"
+    if s["meilenstein"] == "gehalten":
+        return "Fertig — beide Boni verdient."
+    if s["meilenstein"] == "gezeichnet":
+        faellig = monate_spaeter(gezeichnet, 3) if gezeichnet else None
+        return (f"3-Monats-Bonus fällig am {_de(faellig)}, wenn {name} dann noch "
+                f"dabei ist." if faellig else "3-Monats-Bonus folgt nach drei Monaten.")
+    if not tm:
+        return "Wartet auf den Zugang von babu."
+    bis = _de(dt.date.fromisoformat(tm["bis"]))
+    if tm["vorbei"]:
+        return f"Test ist am {bis} abgelaufen — frag nach, ob {name} bleiben will."
+    if tm["tage_uebrig"] <= 7:
+        return f"Test endet am {bis} — jetzt nachfragen, wie es läuft."
+    return f"Testet noch bis {bis} — in der letzten Woche nachfragen."
+
+
+def _offene_einladungen(code: str, c) -> list[dict]:
+    """Wer eingeladen ist, aber noch nicht eingelöst hat."""
+    return [dict(zip(("id", "salon", "email", "erstellt", "gesendet"), z))
+            for z in c.execute(
+                "SELECT e.id, e.salon, e.email, e.erstellt, e.gesendet "
+                "FROM ambassador_einladung e WHERE e.code=? AND e.eingeloest IS NULL "
+                "AND NOT EXISTS (SELECT 1 FROM ambassador_salon s WHERE s.code=e.code "
+                "AND s.email=e.email) ORDER BY e.erstellt DESC, e.id DESC", (code,))]
+
+
+def _einladung_gesendet(code: str, nr: int | None, link: str, salon: str,
+                        email: str) -> None:
+    """Eine verschickte Einladung merken: die genannte, sonst die offene zum
+    selben Link, sonst eine neue."""
+    slug = link.rstrip("/").rsplit("/", 1)[-1][:24] or "salon"
+    jetzt = bw._jetzt_iso()
+    with bw._DB_LOCK, bw._db() as c:
+        if nr is None:
+            z = c.execute("SELECT id FROM ambassador_einladung WHERE code=? AND slug=? "
+                          "AND eingeloest IS NULL AND (email IS NULL OR email=?) "
+                          "ORDER BY id DESC", (code, slug, email)).fetchone()
+            nr = z[0] if z else None
+        if nr is None:
+            c.execute("""INSERT INTO ambassador_einladung
+                         (code, salon, email, slug, erstellt, gesendet)
+                         VALUES (?,?,?,?,?,?)""",
+                      (code, salon or None, email, slug, jetzt, jetzt))
+        else:
+            c.execute("UPDATE ambassador_einladung SET email=?, "
+                      "salon=COALESCE(?, salon), gesendet=? WHERE id=?",
+                      (email, salon or None, jetzt, nr))
+
+
+def _einladung_eingeloest(code: str, email: str, slug: str, c) -> None:
+    """Beim Einlösen die passende Einladung schließen — über die Adresse, oder
+    über den Link, wenn er einen Salonnamen trug und an keine Adresse ging."""
+    slug = re.sub(r"[^a-z0-9-]+", "", slug.lower())[:24]
+    c.execute("UPDATE ambassador_einladung SET eingeloest=?, email=COALESCE(email, ?) "
+              "WHERE code=? AND eingeloest IS NULL AND (email=? OR "
+              "(email IS NULL AND slug=? AND slug <> 'salon'))",
+              (bw._jetzt_iso(), email, code, email, slug))
+
+
+def _faellig(offen: list[dict], heute: dt.date) -> dict:
+    lauf = letzter_lauf(heute)
+    bis = stichtag(lauf).isoformat()
+    betrag = sum(b["betrag"] for b in offen if str(b["datum"])[:10] <= bis)
+    return {"datum": lauf.isoformat(), "stichtag": bis, "betrag": betrag,
+            "auszahlbar": betrag >= MINDEST_AUSZAHLUNG}
+
+
+def _geld(code: str, c) -> dict:
+    """Verdient, ausgezahlt, offen — und was der nächste Lauf bringt."""
+    heute = _heute()
+    z = c.execute("SELECT verdient, gezahlt FROM ambassador WHERE code=?",
+                  (code,)).fetchone()
+    verdient, gezahlt = (z[0], z[1]) if z else (0, 0)
+    offen = [dict(zip(("salon", "meilenstein", "betrag", "datum"), b))
+             for b in c.execute(
+                 "SELECT salon, meilenstein, betrag, datum FROM ambassador_buchung "
+                 "WHERE code=? AND auszahlung_id IS NULL ORDER BY datum", (code,))]
+    lauf = naechster_lauf(heute)
+    bis = stichtag(lauf).isoformat()
+    posten = [b for b in offen if str(b["datum"])[:10] <= bis]
+    betrag = sum(b["betrag"] for b in posten)
+    if betrag >= MINDEST_AUSZAHLUNG:
+        hinweis = f"Kommt am {_de(lauf)}."
+    elif betrag > 0:
+        hinweis = (f"{betrag} € liegt unter {MINDEST_AUSZAHLUNG} € — das wandert ins "
+                   f"nächste Quartal.")
+    else:
+        hinweis = f"Bis zum {_de(stichtag(lauf))} ist noch nichts verdient."
+    return {
+        "verdient": verdient, "ausgezahlt": gezahlt, "offen": verdient - gezahlt,
+        "naechster_lauf": {"datum": lauf.isoformat(), "stichtag": bis,
+                           "betrag": betrag,
+                           "wird_ausgezahlt": betrag >= MINDEST_AUSZAHLUNG,
+                           "hinweis": hinweis, "posten": posten},
+        "danach": sum(b["betrag"] for b in offen) - betrag,
+        # Für die Verwaltung: was der Lauf, der schon da ist, auszahlen würde
+        # (derselbe Stichtag wie in api_ambassador_gezahlt).
+        "faelliger_lauf": _faellig(offen, heute),
+        "auszahlungen": [dict(zip(("datum", "betrag", "stichtag"), a))
+                         for a in c.execute(
+                             "SELECT datum, betrag, stichtag FROM ambassador_auszahlung "
+                             "WHERE code=? ORDER BY datum DESC, id DESC", (code,))],
+    }
 
 
 _ROUTEN = [
