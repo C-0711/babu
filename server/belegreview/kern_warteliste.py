@@ -134,11 +134,11 @@ def api_signup(daten: dict, request: Request) -> Response:
 
 
 def api_registrierungen(request: Request) -> Response:
-    un, fehler = bw._api_wache(request)
+    # Nur der Betreiber: die Anfragen tragen IBAN und Steuernummer. Bis
+    # 03.10.2026 reichte `darf_verwalten` — also jede Kanzlei.
+    un, fehler = bw._betreiber_wache(request)
     if fehler:
         return fehler
-    if not bw.darf_verwalten(un):
-        return JSONResponse({"fehler": "nur für die Kanzlei"}, status_code=403)
     with bw._DB_LOCK, bw._db() as c:
         zeilen = [{"id": z[0], "zeit": z[1], "status": z[3], **json.loads(z[2])}
                   for z in c.execute(
@@ -260,7 +260,7 @@ async def api_warteliste_anmelden(request: Request) -> Response:
 
 
 def api_warteliste_lesen(request: Request) -> Response:
-    un, fehler = bw._verwalter_wache(request)
+    un, fehler = bw._betreiber_wache(request)
     if fehler:
         return fehler
     with bw._DB_LOCK, bw._db() as c:
@@ -284,7 +284,7 @@ async def api_warteliste_einrichten(request: Request) -> Response:
     wie bei jedem Mandanten). Kanzlei → Konto mit Rolle „kanzlei"; Kanzlei
     und Mandanten legt die Inhaberin danach im Portal an.
     """
-    un, fehler = bw._verwalter_wache(request)
+    un, fehler = bw._betreiber_wache(request)
     if fehler or not un:
         return fehler or JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
     try:
@@ -342,7 +342,7 @@ async def api_warteliste_apple_id(request: Request) -> Response:
     (eingetragen → eingeladen → drin).
     """
     import einladung as ei  # noqa: PLC0415
-    un, fehler = bw._verwalter_wache(request)
+    un, fehler = bw._betreiber_wache(request)
     if fehler or not un:
         return fehler or JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
     try:
@@ -367,7 +367,7 @@ async def api_warteliste_apple_id(request: Request) -> Response:
 
 async def api_warteliste_ablehnen(request: Request) -> Response:
     """Verwaltung: höflich Nein — der Eintrag bleibt mit Stand „abgelehnt“."""
-    un, fehler = bw._verwalter_wache(request)
+    un, fehler = bw._betreiber_wache(request)
     if fehler or not un:
         return fehler or JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
     try:

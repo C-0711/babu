@@ -982,13 +982,16 @@ def box_mitglied(un: str, mandant_id: int | None = None) -> bool:
 
     Zwei Fragen in einer Funktion, weil es zwei Arten von Box gibt:
 
-    **Ohne `mandant_id` — die eigene Box, Regel unverändert seit jeher.**
-    Es gibt genau EINE Box je Betrieb. Ein Konto ist deshalb noch kein
-    Zugang zu ihren Belegen: darin arbeiten der Betrieb selbst, sein Team —
-    und die Kanzlei, die ihn betreut. Wer sich selbst registriert hat,
-    behält sein Konto, sieht aber keine fremden Belege. Das ist der Weg
-    JEDES Requests ohne `X-Mandant`-Kopf, also im heutigen Ein-Betrieb
-    ausnahmslos jeder — die Regel darf sich hier um kein Byte ändern.
+    **Ohne `mandant_id` — die Standard-Ablage.** Darin arbeiten der Betrieb
+    selbst, sein Team und der Betreiber (`admin`). Wer sich selbst
+    registriert hat, behält sein Konto, sieht aber keine fremden Belege.
+
+    Bis 03.10.2026 kam hier auch JEDE Kanzlei durch („die Kanzlei, die ihn
+    betreut" — aus der Zeit mit einem Betrieb je Server). Mit mehreren
+    Kanzleien hieß das: jedes neue Kanzlei-Konto las ohne `X-Mandant` die
+    Standard-Ablage, also SupremeStudio im Archiv. Kanzleien arbeiten seitdem
+    nur noch über den Kopf in den Betrieben, die sie betreuen
+    (Auftraggeber-Entscheid 03.10.2026, Go-live-Plan Phase 1.4).
 
     **Mit `mandant_id` — die Box eines Mandanten (Plan 21, Abschnitt 4.1).**
     Dann zählt allein die Mitgliedschaft in DER Kanzlei, die DIESEN
@@ -1005,8 +1008,10 @@ def box_mitglied(un: str, mandant_id: int | None = None) -> bool:
     if inhaber in ERLAUBT:
         return True
     n = nutzer_holen(un)
-    if n and n["rolle"] in ("admin", "kanzlei"):
+    if n and n["rolle"] == "admin":
         return True
+    if n and n["rolle"] == "kanzlei":
+        return False
     besitzer = nutzer_holen(inhaber)
     return bool(besitzer and besitzer["box"])
 
@@ -1639,6 +1644,36 @@ def recht_seite(request: Request) -> Response:
                     headers=HTML_FRISCH)
 
 
+@app.get("/avv/mein")
+def avv_mein(request: Request) -> Response:
+    """Der AVV mit den Angaben DIESES Betriebs — nur angemeldet (seit 03.10.2026).
+
+    Die öffentliche Seite `/avv` ist die Vorlage ohne Betrieb. Hier steht der
+    eigene (oder beim Acting-as per `?mandant=` der betreute) Betrieb im
+    Parteienblock, aus seinen Betriebsangaben. Wer gar nicht angemeldet ist,
+    landet auf der Anmeldung."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        if fehler.status_code == 401:
+            from fastapi.responses import RedirectResponse  # noqa: PLC0415
+            return RedirectResponse("/portal", status_code=303)
+        return fehler
+    import avv  # noqa: PLC0415
+    import recht  # noqa: PLC0415
+    besitzer = salon_von_aktiv(un)
+    inhaber = nutzer_holen(besitzer) or {}
+    partei = avv.partei_aus(db_einstellungen(besitzer),
+                            {"name": inhaber.get("name"),
+                             "salon": inhaber.get("salon"),
+                             "email": inhaber.get("email")},
+                            inhaber.get("angelegt"))
+    titel = avv.TEXTE["avv"][0]
+    nav = [(a, recht.TEXTE[a][0]) for a in recht.ARTEN]
+    return Response(content=recht.seite_aus(titel, avv.text(partei), nav),
+                    media_type="text/html; charset=utf-8",
+                    headers=HTML_FRISCH)
+
+
 @app.get("/api/recht")
 def api_recht() -> Response:
     import recht  # noqa: PLC0415
@@ -1961,9 +1996,9 @@ def _box_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]
     `_git(...)` ohne Argument, und die holen sich die Box aus dem Kontext.
 
     Seit Phase 3 entscheidet der `X-Mandant`-Kopf mit, WELCHE Box das ist.
-    Die beiden Fälle bleiben streng getrennt: ohne Kopf läuft alles wie an
-    dem Tag, an dem es diese Zeilen noch nicht gab (das ist der Golden-Diff
-    des Deploy-Rituals), mit Kopf entscheidet allein die Mitgliedschaft.
+    Die beiden Fälle bleiben streng getrennt: ohne Kopf entscheidet
+    `box_mitglied(un)` über die Standard-Ablage (seit 03.10.2026 ohne
+    Kanzleien), mit Kopf allein die Mitgliedschaft.
     """
     un, fehler = _api_wache(request)
     if fehler:
@@ -5033,6 +5068,23 @@ def _verwalter_wache(request: Request):
     return un, None
 
 
+def _betreiber_wache(request: Request):
+    """Nur der Betreiber (`admin`) — für das, was die Plattform betrifft.
+
+    Warteliste, Registrierungen (mit IBAN und Steuernummer), Ambassador-
+    Programm, Abos und Auszahlungen gehören keiner Kanzlei. Bis 03.10.2026
+    hingen sie an `_verwalter_wache` und waren damit für JEDE Kanzlei offen
+    (Go-live-Plan Phase 1). Die Kanzlei-Arbeit an ihren Mandanten bleibt bei
+    `_verwalter_wache`/`_kanzlei_wache`.
+    """
+    un, fehler = _api_wache(request)
+    if fehler:
+        return None, fehler
+    if rolle(un) != "admin":
+        return None, JSONResponse({"fehler": "nur für den Betreiber"}, status_code=403)
+    return un, None
+
+
 def _verwalter_box_wache(request: Request):
     """Verwaltung — und beim Acting-as auch die Belegbox des Mandanten.
 
@@ -5421,6 +5473,19 @@ def api_nutzer_liste(request: Request) -> Response:
     return JSONResponse({"nutzer": zeilen})
 
 
+def _darf_rolle_vergeben(un: str, neue_rolle: str) -> bool:
+    """Darf `un` diese Rolle vergeben (oder entziehen)?
+
+    `admin` und `kanzlei` vergibt nur der Betreiber. Bis 03.10.2026 konnte
+    jede Kanzlei über `/api/nutzer` ein admin-Konto anlegen und damit die
+    ganze Plattform sehen (Go-live-Plan Phase 1.3). Kolleginnen der eigenen
+    Kanzlei legt sie über `kanzlei_routen` an, nicht hier.
+    """
+    if neue_rolle in ("salon", "mitarbeit"):
+        return True
+    return rolle(un) == "admin"
+
+
 @app.post("/api/nutzer")
 async def api_nutzer_anlegen(request: Request) -> Response:
     un, fehler = _verwalter_wache(request)
@@ -5433,8 +5498,15 @@ async def api_nutzer_anlegen(request: Request) -> Response:
     email = str(body.get("email", "")).strip().lower()
     if "@" not in email:
         return JSONResponse({"fehler": "Das sieht nicht nach einer E-Mail aus."}, status_code=400)
+    neue_rolle = str(body.get("rolle", "salon"))
+    if neue_rolle not in NUTZER_ROLLEN:
+        return JSONResponse({"fehler": "unbekannte Rolle"}, status_code=400)
+    if not _darf_rolle_vergeben(un, neue_rolle):
+        audit.audit(un, "rolle_verweigert", ziel_un=email, rolle=neue_rolle)
+        return JSONResponse({"fehler": "Diese Rolle vergibt nur der Betreiber."},
+                            status_code=403)
     passwort = nutzer_anlegen(email, str(body.get("name", "")),
-                              str(body.get("salon", "")), str(body.get("rolle", "salon")))
+                              str(body.get("salon", "")), neue_rolle)
     if passwort is None:
         return JSONResponse({"fehler": "Für diese E-Mail gibt es schon einen Zugang."},
                             status_code=409)
@@ -5478,6 +5550,14 @@ async def api_nutzer_aktion(request: Request) -> Response:
         neu = str(body.get("rolle", ""))
         if neu not in NUTZER_ROLLEN:
             return JSONResponse({"fehler": "unbekannte Rolle"}, status_code=400)
+        # Hoch- UND herabstufen von Betreiber/Kanzlei ist Betreiber-Sache:
+        # sonst machte eine Kanzlei ihren Mandanten zum admin — oder einen
+        # admin in ihrer Reichweite zum salon.
+        alt = (nutzer_holen(email) or {}).get("rolle", "salon")
+        if not (_darf_rolle_vergeben(un, neu) and _darf_rolle_vergeben(un, alt)):
+            audit.audit(un, "rolle_verweigert", ziel_un=email, rolle=neu)
+            return JSONResponse({"fehler": "Diese Rolle vergibt nur der Betreiber."},
+                                status_code=403)
         with _DB_LOCK, _db() as c:
             c.execute("UPDATE nutzer SET rolle=? WHERE email=?", (neu, email))
         zusatz["rolle_neu"] = neu
@@ -5499,7 +5579,7 @@ async def api_nutzer_aktion(request: Request) -> Response:
 
 @app.post("/api/registrierung-einrichten")
 async def api_registrierung_einrichten(request: Request) -> Response:
-    un, fehler = _verwalter_wache(request)
+    un, fehler = _betreiber_wache(request)
     if fehler:
         return fehler
     try:

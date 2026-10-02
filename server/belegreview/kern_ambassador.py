@@ -59,7 +59,7 @@ def _code_neu(name: str) -> str:
 
 async def api_ambassador_anlegen(request: Request) -> Response:
     """Verwaltung: eine Ambassadorin anlegen — Konto, Code, Mail mit dem Zug."""
-    un, fehler = bw._verwalter_wache(request)
+    un, fehler = bw._betreiber_wache(request)
     if fehler or not un:
         return fehler or JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
     try:
@@ -138,7 +138,7 @@ async def api_ambassador_anlegen(request: Request) -> Response:
 
 async def api_ambassador_liste(request: Request) -> Response:
     """Verwaltung: alle Ambassadorinnen mit ihrem Stand."""
-    un, fehler = bw._verwalter_wache(request)
+    un, fehler = bw._betreiber_wache(request)
     if fehler:
         return fehler
     with bw._DB_LOCK, bw._db() as c:
@@ -362,7 +362,7 @@ async def api_ambassador_meilenstein(request: Request) -> Response:
     betrag (EUR, aus dem Paket des Salons). Setzt den Stand, addiert das
     Guthaben der Ambassadorin — ein Rückschritt ('testet') ist nicht möglich,
     doppeltes Anerkennen desselben Meilensteins wird abgewiesen."""
-    un, fehler = bw._verwalter_wache(request)
+    un, fehler = bw._betreiber_wache(request)
     if fehler or not un:
         return fehler or JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
     try:
@@ -423,7 +423,7 @@ async def api_ambassador_gezahlt(request: Request) -> Response:
     Zahlt aus, was bis zum Stichtag des letzten fälligen Laufs verdient und
     noch offen ist — quartalsweise zum 15. nach Quartalsende, ab 100 €.
     Was danach verdient wurde, kommt mit dem nächsten Lauf."""
-    un, fehler = bw._verwalter_wache(request)
+    un, fehler = bw._betreiber_wache(request)
     if fehler or not un:
         return fehler or JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
     try:
@@ -609,7 +609,11 @@ async def api_ambassador_einloesen(request: Request) -> Response:
         return JSONResponse({"ok": True, "hinweis": _EINGELOEST})
 
     heute = testmonat.heute()
-    tag = heute.isoformat()
+    # Gezählt wird gegen die Stempel `eingelöst`/`angelegt` — die schreibt
+    # `_jetzt_iso()` in UTC. Mit dem Ortsdatum verglichen griff die Grenze
+    # zwischen Mitternacht und 1 bzw. 2 Uhr nicht (die Suite fiel um 0:26
+    # Ortszeit, 03.10.2026).
+    tag = time.strftime("%Y-%m-%d", time.gmtime())
     with bw._DB_LOCK, bw._db() as c:
         je_code = c.execute("SELECT COUNT(*) FROM ambassador_salon "
                             "WHERE code=? AND eingelöst LIKE ?",
@@ -671,7 +675,7 @@ async def api_ambassador_einloesen(request: Request) -> Response:
 
 async def api_ambassador_verlaengern(request: Request) -> Response:
     """Verwaltung: den Testmonat eines Direkt-Salons verlängern (1–60 Tage)."""
-    un, fehler = bw._verwalter_wache(request)
+    un, fehler = bw._betreiber_wache(request)
     if fehler or not un:
         return fehler or JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
     try:

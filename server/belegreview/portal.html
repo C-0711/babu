@@ -2125,6 +2125,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <span>babu · 0711 Intelligence · Stuttgart</span>
     <button type="button" onclick="rechtZeigen('impressum')">Impressum</button>
     <button type="button" onclick="rechtZeigen('datenschutz')">Datenschutz</button>
+    <button type="button" onclick="avvOeffnen()">Auftragsverarbeitung</button>
   </footer>
 </main>
 </div>
@@ -3205,6 +3206,13 @@ const RECHT_TEXTE = {
     + "wie lange sie bleiben, wer sie sonst noch sieht und welche Rechte du "
     + "hast. Den verbindlichen Wortlaut setzen Nina und ihre Kanzlei ein."]
 };
+/* Der Vertrag zur Auftragsverarbeitung mit den Angaben des Betriebs (seit
+   03.10.2026; die öffentliche Seite /avv ist nur die Vorlage). Beim Arbeiten
+   für einen Mandanten geht seine Nummer als Adressparameter mit. */
+function avvOeffnen(){
+  const m = aktiverMandant && aktiverMandant.id ? "?mandant=" + aktiverMandant.id : "";
+  window.open("/avv/mein" + m, "_blank", "noopener");
+}
 /* Seit 14.09.2026 kommen die Texte aus einer Quelle (/api/recht, dieselbe wie
    die Seiten /impressum und /datenschutz). RECHT_TEXTE oben bleibt der
    Rückfall, wenn die Antwort ausbleibt. */
@@ -6585,6 +6593,12 @@ async function terminAbsagen(id){
 /* Rollen-Namen an einer Stelle — auch fürs neue "Mitarbeit" (server-seitig
    NUTZER_ROLLEN, siehe babu_web.py). */
 const VERW_ROLLEN = {salon:"Salon", mitarbeit:"Mitarbeit", kanzlei:"Kanzlei", admin:"Admin"};
+/* Betreiber/Kanzlei vergibt nur der Betreiber (seit 03.10.2026, Server:
+   _darf_rolle_vergeben). Eine Kanzlei bekommt nur die beiden anderen. */
+function verwRollen(){
+  if (meineRolle === "admin") return VERW_ROLLEN;
+  return {salon: VERW_ROLLEN.salon, mitarbeit: VERW_ROLLEN.mitarbeit};
+}
 const VERW_SEITENGROESSE = 25;
 let _verwNutzer = [];
 let _verwSuche = "";
@@ -6592,18 +6606,27 @@ let _verwSeite = 1;
 
 async function ladeVerwaltung(){
   const ziel = $("#verwaltung-inhalt");
+  /* Warteliste, Anfragen und Ambassadorinnen sind Betreiber-Sache (seit
+     03.10.2026). Ob sie erscheinen, sagt die Rolle aus /api/ich — nicht
+     mehr ein 403 auf /api/registrierungen. Eine Kanzlei sieht nur die
+     Zugänge ihrer Betriebe. */
+  const betreiber = meineRolle === "admin";
   let regs = [], warte = [];
   try{
-    const r1 = await api("/api/registrierungen");
-    if (r1.status === 403){ ziel.innerHTML = `<div class="leer"><b>Nur für die Verwaltung.</b></div>`; return; }
-    regs = (await r1.json()).registrierungen || [];
-    const rw = await api("/api/warteliste");
-    if (rw.ok) warte = (await rw.json()).warteliste || [];
-    _verwNutzer = (await (await api("/api/nutzer")).json()).nutzer || [];
+    const rn = await api("/api/nutzer");
+    if (rn.status === 403){ ziel.innerHTML = `<div class="leer"><b>Nur für die Verwaltung.</b></div>`; return; }
+    _verwNutzer = (await rn.json()).nutzer || [];
+    if (betreiber){
+      const r1 = await api("/api/registrierungen");
+      if (r1.ok) regs = (await r1.json()).registrierungen || [];
+      const rw = await api("/api/warteliste");
+      if (rw.ok) warte = (await rw.json()).warteliste || [];
+    }
   }catch{ return; }
   _verwSeite = 1;
 
   let html = "";
+  if (betreiber){
   /* Warteliste (seit 16.09.2026): Anmeldung nur auf Einladung. Salon oder
      Kanzlei hinterlässt E-Mail — hier entsteht daraus der Zugang. */
   const warteOffen = warte.filter(w => w.status === "wartet");
@@ -6689,6 +6712,7 @@ async function ladeVerwaltung(){
       <button class="hin" style="margin-top:10px" onclick="anfrageEinrichten(${r.id})">Zugang einrichten ›</button>
     </div>`;
   }
+  }  /* Ende Betreiber-Teil */
 
   html += `<div class="sektion lbl">Zugänge (${_verwNutzer.length})</div>`;
   // Wird mit der Zeit hundert Zeilen — Suchfeld bleibt ein eigenes Element
@@ -6711,7 +6735,7 @@ async function ladeVerwaltung(){
       <input id="nv-salon" placeholder="Salon" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit">
       <label class="nurvorlesen" for="nv-rolle">Rolle</label>
       <select id="nv-rolle" style="padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
-        ${Object.entries(VERW_ROLLEN).map(([x,l]) => `<option value="${x}">${l}</option>`).join("")}
+        ${Object.entries(verwRollen()).map(([x,l]) => `<option value="${x}">${l}</option>`).join("")}
       </select>
     </div>
     <button class="hin" style="margin-top:10px" onclick="nutzerAnlegen()">Anlegen</button>
@@ -6733,12 +6757,19 @@ function zugangKarteHtml(n){
           ${n.letzter_login ? "zuletzt " + zeitKurz(n.letzter_login) : "noch nie angemeldet"}</span>
       </div>
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
-        <select aria-label="Rolle von ${esc(n.name || n.email)}"
+        ${(() => {
+          /* Eine Rolle, die dieser Zugang nicht vergeben darf, steht nur
+             da — wählbar wäre sie nicht (der Server lehnt ab). */
+          const erlaubt = verwRollen();
+          const fest = !(n.rolle in erlaubt);
+          const wahl = fest ? {[n.rolle]: VERW_ROLLEN[n.rolle] || n.rolle} : erlaubt;
+          return `<select aria-label="Rolle von ${esc(n.name || n.email)}" ${fest ? "disabled" : ""}
           onchange="nutzerAktion('${n.email}','rolle',this.value)"
           style="padding:6px 10px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
-          ${Object.entries(VERW_ROLLEN).map(([x,l]) =>
+          ${Object.entries(wahl).map(([x,l]) =>
             `<option value="${x}" ${n.rolle===x?"selected":""}>${l}</option>`).join("")}
-        </select>
+        </select>`;
+        })()}
         <button class="chip" onclick="nutzerAktion('${n.email}','${n.aktiv ? "deaktivieren" : "aktivieren"}')">
           ${n.aktiv ? "Abschalten" : "Wieder anschalten"}</button>
         <button class="chip" onclick="nutzerAktion('${n.email}','${n.box ? "box_sperren" : "box_freigeben"}')">

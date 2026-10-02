@@ -17,31 +17,65 @@ from __future__ import annotations
 ANBIETER = ("0711 Intelligence, Christoph Bertsch, Stuttgart — "
             "Kontakt: nina@0711.io")
 
-PARTEI_BETRIEB = {
-    "name": "SupremeStudio (Nina Baic, Einzelunternehmen)",
-    "anschrift": "Lindenstraße 2, 71634 Ludwigsburg",
-    "vertretung": "Nina Baic (Inhaberin)",
-    "kontakt": "nina@0711.io",
-    "steuernummer": "71015/73457 (Finanzamt Ludwigsburg)",
-    "beginn": "mit der Einladung des Betriebs zu babu (Pilotbetrieb seit August 2026)",
+#: Der öffentliche Vertrag nennt KEINEN Betrieb (seit 03.10.2026). Bis
+#: dahin stand hier SupremeStudio mit Anschrift und Steuernummer — auf einer
+#: Seite ohne Anmeldung und im PDF unter /app/avv.pdf. Die ausgefüllte
+#: Fassung bekommt jeder Betrieb hinter seiner Anmeldung (`/avv/mein`).
+PARTEI_VORLAGE = {
+    "name": "(Name des Betriebs, wie im babu-Konto angegeben)",
+    "anschrift": "(Anschrift des Betriebs)",
+    "vertretung": "(Inhaberin oder Inhaber)",
+    "kontakt": "(E-Mail des Betriebs)",
+    "steuernummer": "(Steuernummer des Betriebs)",
+    "beginn": "mit der Einladung des Betriebs zu babu",
 }
 
-TEXTE: dict[str, tuple[str, str]] = {
-    "avv": ("Auftragsverarbeitungsvertrag",
+_FEHLT = "(noch nicht in den Betriebsangaben)"
+
+
+def partei_aus(einstellungen: dict, inhaber: dict | None,
+               angelegt: str | None = None) -> dict:
+    """Der Parteienblock aus den Betriebsangaben eines Betriebs.
+
+    Was fehlt, steht als Lücke da — erfunden wird nichts."""
+    e = {k: str(v).strip() for k, v in (einstellungen or {}).items() if v}
+    name = e.get("betrieb_name") or (inhaber or {}).get("salon") or _FEHLT
+    if e.get("rechtsform"):
+        name = f"{name} ({e['rechtsform']})"
+    beginn = PARTEI_VORLAGE["beginn"]
+    if angelegt:
+        beginn += f" (Konto seit {angelegt[8:10]}.{angelegt[5:7]}.{angelegt[:4]})"
+    return {
+        "name": name,
+        "anschrift": e.get("anschrift") or _FEHLT,
+        "vertretung": (inhaber or {}).get("name") or _FEHLT,
+        "kontakt": e.get("email") or (inhaber or {}).get("email") or _FEHLT,
+        "steuernummer": " ".join(x for x in (
+            e.get("steuernummer"),
+            f"(Finanzamt {e['finanzamt']})" if e.get("finanzamt") else "") if x)
+            or _FEHLT,
+        "beginn": beginn,
+    }
+
+
+def text(partei: dict | None = None) -> str:
+    """Der Vertragstext — mit dem Parteienblock eines Betriebs oder der Vorlage."""
+    p = partei or PARTEI_VORLAGE
+    return (
         "Erprobungsfassung (Stand 17.09.2026). Die Angaben gelten für die Zeit "
         "des Pilotbetriebs; der verbindliche Wortlaut wird vor dem allgemeinen "
         "Start rechtlich geprüft.\n\n"
         "Zwischen\n\n"
-        f"    {PARTEI_BETRIEB['name']}\n"
-        f"    {PARTEI_BETRIEB['anschrift']}\n"
-        f"    Vertretung: {PARTEI_BETRIEB['vertretung']}\n"
-        f"    Kontakt: {PARTEI_BETRIEB['kontakt']}\n"
-        f"    Steuernummer: {PARTEI_BETRIEB['steuernummer']}\n\n"
+        f"    {p['name']}\n"
+        f"    {p['anschrift']}\n"
+        f"    Vertretung: {p['vertretung']}\n"
+        f"    Kontakt: {p['kontakt']}\n"
+        f"    Steuernummer: {p['steuernummer']}\n\n"
         "— der verantwortlichen Stelle, nachfolgend „der Betrieb“ —\n\n"
         "und\n\n"
         f"    {ANBIETER}\n\n"
         "— dem Auftragsverarbeiter, nachfolgend „babu“ —\n\n"
-        f"gilt folgender Vertrag. Beginn der Verarbeitung: {PARTEI_BETRIEB['beginn']}.\n\n"
+        f"gilt folgender Vertrag. Beginn der Verarbeitung: {p['beginn']}.\n\n"
         "1. Gegenstand und Umfang. Der Betrieb reicht Belege (Fotos, PDFs), "
         "Kontoauszüge und Betriebsangaben über die babu-App und das babu-Portal "
         "ein. babu liest die Belege, ordnet sie ein, legt sie in der Ablage des "
@@ -102,7 +136,11 @@ TEXTE: dict[str, tuple[str, str]] = {
         "die Löschung nach § 11 vollständig durchgeführt ist. Jede Seite kann "
         "mit vier Wochen Frist kündigen; die Löschung und Rückgabe bleibt "
         "hiervon unberührt.\n\n"
-        "Es gilt deutsches Recht."),
+        "Es gilt deutsches Recht.")
+
+
+TEXTE: dict[str, tuple[str, str]] = {
+    "avv": ("Auftragsverarbeitungsvertrag", text()),
 }
 
 ARTEN = tuple(TEXTE)

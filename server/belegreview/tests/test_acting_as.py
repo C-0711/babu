@@ -145,10 +145,12 @@ def _belege(client, mandant_id=None) -> set[str]:
 
 # ————— Die Belegbox folgt dem Kopf —————
 
-def test_ohne_kopf_bleibt_es_die_eigene_box(welt2):
-    """Das Alt-Verhalten, an dem der Golden-Diff des Deploys hängt."""
+def test_ohne_kopf_kommt_die_kanzlei_nicht_in_die_standard_ablage(welt2):
+    """Seit 03.10.2026: eine Kanzlei arbeitet nur noch über den Kopf. Vorher
+    las jedes Kanzlei-Konto ohne Kopf die Standard-Ablage — auf der H200V
+    die eines fremden Betriebs (Go-live-Plan Phase 1.4)."""
     client = _login(welt2["bw"], welt2["kanzlei"])
-    assert _belege(client) == set()
+    assert client.get("/api/belege").status_code == 403
 
 
 def test_mit_kopf_kommen_die_belege_des_mandanten(welt2):
@@ -163,8 +165,8 @@ def test_derselbe_zugang_wechselt_zwischen_zwei_mandanten(welt2):
     assert any("alpha" in s for s in _belege(client, welt2["nina_id"]))
     assert any("beta" in s for s in _belege(client, welt2["berta_id"]))
     assert not any("alpha" in s for s in _belege(client, welt2["berta_id"]))
-    # …und danach wieder die eigene, leere Box.
-    assert _belege(client) == set()
+    # …und ohne Kopf keine Box (die Standard-Ablage gehört keiner Kanzlei).
+    assert client.get("/api/belege").status_code == 403
 
 
 def test_ein_sachbearbeiter_darf_erst_nach_dem_eintragen(welt2):
@@ -215,7 +217,7 @@ def test_acting_as_zeigt_die_kundinnen_des_mandanten(welt2):
     assert nina.post("/api/kundinnen", json={"name": "Frau Meier"}).status_code == 200
 
     kanzlei = _login(bw, welt2["kanzlei"])
-    assert kanzlei.get("/api/kundinnen").json()["kundinnen"] == []
+    assert kanzlei.get("/api/kundinnen").status_code == 403
     mit = kanzlei.get("/api/kundinnen",
                       headers={"X-Mandant": str(welt2["nina_id"])}).json()
     assert [k["name"] for k in mit["kundinnen"]] == ["Frau Meier"]
@@ -235,9 +237,8 @@ def test_acting_as_rechnet_mit_den_einstellungen_des_mandanten(welt2):
         fuer[name] = r.json()["profil"]["braucht_ustva"]
     assert fuer["nina_id"] is True and fuer["berta_id"] is False, \
         "beide Mandanten wurden mit demselben Umsatzprofil gerechnet"
-    # Und ohne Kopf das eigene Profil der Kanzlei, unverändert.
-    assert kanzlei.get("/api/monatsabschluss/2026-05"
-                       ).json()["profil"]["braucht_ustva"] is True
+    # Ohne Kopf rechnet die Kanzlei für niemanden.
+    assert kanzlei.get("/api/monatsabschluss/2026-05").status_code == 403
 
 
 # ————— Der Export-Kopf —————
@@ -263,8 +264,8 @@ def test_der_export_traegt_die_nummern_des_mandanten(welt2, monkeypatch):
     monkeypatch.setenv("BABU_MANDANT", "1")
     kanzlei = _login(welt2["bw"], welt2["kanzlei"])
 
-    ohne = _kopffelder(kanzlei, "2026-05")
-    assert (ohne[10], ohne[11]) == ("99999", "1")
+    # Ohne Kopf kein Stapel — die Umgebungsnummern gehören keiner Kanzlei.
+    assert kanzlei.get("/api/export/2026-05.csv").status_code == 403
 
     fuer_nina = _kopffelder(kanzlei, "2026-05", welt2["nina_id"])
     assert (fuer_nina[10], fuer_nina[11]) == ("12345", "4711")
@@ -328,15 +329,20 @@ def test_ein_leerer_kopf_ist_wie_kein_kopf(welt2):
     """Sonst brächte ein Frontend, das die Variable noch nicht gefüllt hat,
     jeden Aufruf zum Scheitern."""
     client = _login(welt2["bw"], welt2["kanzlei"])
-    assert client.get("/api/belege", headers={"X-Mandant": "  "}).status_code == 200
+    assert client.get("/api/belege", headers={"X-Mandant": "  "}).status_code \
+        == client.get("/api/belege").status_code
+    nina = _login(welt2["bw"], welt2["nina"])
+    assert nina.get("/api/belege", headers={"X-Mandant": "  "}).status_code == 200
 
 
-def test_box_mitglied_ohne_nummer_ist_die_regel_von_heute(welt2):
-    """Die Zusicherung für den Ein-Betrieb: ohne `mandant_id` entscheidet
-    weiter die Rolle, mit `mandant_id` nur noch die Mitgliedschaft."""
+def test_box_mitglied_ohne_nummer_kennt_keine_kanzlei(welt2):
+    """Ohne `mandant_id` die Standard-Ablage: Betreiber ja, Kanzlei nein
+    (seit 03.10.2026). Mit `mandant_id` nur die Mitgliedschaft."""
     bw = welt2["bw"]
-    assert bw.box_mitglied(welt2["kanzlei"]) is True
-    assert bw.box_mitglied(welt2["fremde"]) is True
+    assert bw.box_mitglied(welt2["kanzlei"]) is False
+    assert bw.box_mitglied(welt2["fremde"]) is False
+    _konto(bw, "betreiber@0711.io", "admin")
+    assert bw.box_mitglied("betreiber@0711.io") is True
     assert bw.box_mitglied(welt2["kanzlei"], welt2["nina_id"]) is True
     assert bw.box_mitglied(welt2["fremde"], welt2["nina_id"]) is False
     assert bw.box_mitglied(welt2["nina"], welt2["nina_id"]) is False

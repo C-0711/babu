@@ -165,16 +165,18 @@ def test_registrierung_einrichten_schreibt_eine_zeile(welt):
 
 
 def test_export_schreibt_eine_zeile(welt):
+    # Die Standard-Ablage exportiert seit 03.10.2026 nur noch der Betreiber;
+    # eine Kanzlei exportiert über den X-Mandant-Kopf (test_acting_as).
     bw = welt
-    _, kanzlei_pw = _konto(bw, "kanzlei@babu.local", "kanzlei")
-    kanzlei = _login(bw, "kanzlei@babu.local", kanzlei_pw)
+    _, admin_pw = _konto(bw, "admin@babu.local", "admin")
+    admin = _login(bw, "admin@babu.local", admin_pw)
 
-    r = kanzlei.get("/api/export/2026-08.csv")
+    r = admin.get("/api/export/2026-08.csv")
     assert r.status_code == 200, r.text
 
     treffer = [z for z in _audit_zeilen(bw) if z["aktion"] == "export"]
     assert len(treffer) == 1
-    assert treffer[0]["akteur_un"] == "kanzlei@babu.local"
+    assert treffer[0]["akteur_un"] == "admin@babu.local"
     assert treffer[0]["ziel_un"] is None
     assert "2026-08" in treffer[0]["details"]
 

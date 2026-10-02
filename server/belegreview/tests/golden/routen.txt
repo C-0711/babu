@@ -90,6 +90,7 @@ GET /app
 GET /app/{name}
 GET /auswertung/{schluessel}
 GET /avv
+GET /avv/mein
 GET /bilder/{name}
 GET /datenschutz
 GET /datev

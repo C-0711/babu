@@ -85,6 +85,13 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   `BABU_ROLLEN` in `docker/compose.yml`. Als Mandant arbeiten geht über den
   Kopf `X-Mandant: <id>` oder `?mandant=<id>` (für Downloads) — nur für
   Mitglieder in `kanzlei_mitglied`, **Admin ist nicht automatisch Mitglied**.
+- **Betreiber ≠ Kanzlei (seit 03.10.2026):** Warteliste, Registrierungen
+  (IBAN!), Ambassador-Programm, Abos und Auszahlungen hängen an
+  `_betreiber_wache` (nur `admin`), nie an `_verwalter_wache`. `admin`/
+  `kanzlei` vergibt nur ein Admin (`_darf_rolle_vergeben`). Die
+  Standard-Ablage ohne `X-Mandant` sehen nur Betrieb, Team und Admin —
+  keine Kanzlei. Der öffentliche AVV (`/avv`, `/app/avv.pdf`) ist eine
+  Vorlage ohne Betrieb; ausgefüllt unter `/avv/mein`.
 - Produktivkonten: `christoph0711.io` (PAT, admin + Sachbearbeiter Kanzlei
   Afflek), `afflek@0711.io` (Kanzlei Afflek, id 7), Mandanten 1 „Jenny from
   the Block" (Box ausstehend) und 2 „SupremeStudio" = Nina (Berater 16149,
