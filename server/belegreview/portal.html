@@ -564,6 +564,134 @@ main p, .leer, .karte > p{max-width:78ch}
   background:var(--gc-accent-subtle);color:var(--gc-fg);font-weight:550;font-size:13px;
   border:none;cursor:pointer;font-family:inherit}
 
+/* Ambassador-Bereich (seit 02.10.2026): oben nur Betrag und Code, darunter
+   je Salon ein Stufenband (eingeladen → Test → gezeichnet → 3 Monate), alles
+   andere klappt auf. Dieselbe Tabelle steht in der Verwaltung, dort mit den
+   Knöpfen in der aufgeklappten Zeile. */
+.amb-kopf{display:flex;align-items:flex-start;justify-content:space-between;gap:14px 24px;flex-wrap:wrap}
+.amb-titel{font:600 15px/1.3 var(--gc-sans);color:var(--gc-desc);margin:0}
+.amb-betrag{margin-top:6px;font:600 36px/1 var(--gc-serif);letter-spacing:-.02em;color:var(--gc-fg);font-variant-numeric:tabular-nums}
+.amb-betrag small{font:500 14px/1 var(--gc-sans);letter-spacing:0;color:var(--gc-desc);margin-left:8px}
+.amb-lauf{margin-top:8px;font-size:13.5px;color:var(--gc-body)}
+.amb-lauf.still{color:var(--gc-muted)}
+.amb-code{display:flex;align-items:center;gap:10px;padding:5px 5px 5px 14px;border:1px solid var(--gc-border);border-radius:999px;font-size:13px;color:var(--gc-desc)}
+.amb-code b{font:600 13px/1 var(--gc-mono);letter-spacing:.02em;color:var(--gc-fg)}
+.amb-code button{padding:6px 12px;border-radius:999px;background:var(--gc-accent-subtle);color:var(--gc-fg);font-size:12.5px;font-weight:550}
+.amb-tabelle{width:100%;border-collapse:collapse;margin-top:20px;font-size:14px}
+.amb-tabelle th{font:500 12px/1.2 var(--gc-sans);color:var(--gc-muted);text-align:center;padding:0 2px 8px;white-space:nowrap}
+.amb-tabelle th:first-child{text-align:left}
+.amb-tabelle td{padding:12px 2px 10px;border-top:1px solid var(--gc-border-l);vertical-align:top}
+.amb-tabelle .amb-geld{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--gc-fg);font-weight:550;padding-left:8px}
+.amb-tabelle td.amb-geld{padding-top:11px}
+.amb-tabelle th.amb-geld{font-weight:500;color:var(--gc-muted)}
+.amb-name{padding-right:10px!important;min-width:0}
+.amb-name button{display:flex;align-items:flex-start;gap:9px;text-align:left;color:var(--gc-fg);font-weight:550;line-height:1.3;border-radius:4px}
+.amb-name button::before{content:"";flex:none;width:6px;height:6px;margin-top:5px;border-right:1.5px solid var(--gc-muted);border-bottom:1.5px solid var(--gc-muted);transform:rotate(-45deg);transition:transform .15s}
+.amb-name button[aria-expanded="true"]::before{transform:rotate(45deg);margin-top:3px}
+.amb-name button:hover{color:var(--gc-accent)}
+.amb-stufe{position:relative;width:84px;text-align:center}
+/* Die Linie verbindet die Mitte der vorigen Stufe mit dieser — grün, sobald
+   der Salon hier angekommen ist. */
+.amb-stufe:not(.erste)::before{content:"";position:absolute;top:19px;right:50%;width:100%;height:2px;background:var(--gc-border)}
+.amb-stufe.fertig::before,.amb-stufe.jetzt::before,.amb-stufe.bald::before,.amb-stufe.vorbei::before{background:var(--gc-ok)}
+.amb-punkt{position:relative;z-index:1;display:block;margin:0 auto;width:16px;height:16px;border-radius:50%;border:2px solid var(--gc-border);background:var(--gc-bg)}
+.fertig>.amb-punkt{background:var(--gc-ok);border-color:var(--gc-ok)}
+.fertig>.amb-punkt::after{content:"";position:absolute;left:4px;top:1.5px;width:4px;height:7px;border:solid #fff;border-width:0 1.8px 1.8px 0;transform:rotate(45deg)}
+.jetzt>.amb-punkt{border-color:var(--gc-ok);box-shadow:0 0 0 4px var(--gc-accent-subtle)}
+.jetzt>.amb-punkt::after,.bald>.amb-punkt::after{content:"";position:absolute;inset:3px;border-radius:50%;background:currentColor}
+.jetzt>.amb-punkt{color:var(--gc-ok)}
+.bald>.amb-punkt{border-color:var(--gc-warn);color:var(--gc-warn);box-shadow:0 0 0 4px #f6ecd6}
+.vorbei>.amb-punkt{border-color:var(--gc-danger)}
+.vorbei>.amb-punkt::after{content:"";position:absolute;left:5px;top:1px;width:2px;height:10px;background:var(--gc-danger);transform:rotate(45deg);box-shadow:0 0 0 0 var(--gc-danger)}
+.vorbei>.amb-punkt::before{content:"";position:absolute;left:5px;top:1px;width:2px;height:10px;background:var(--gc-danger);transform:rotate(-45deg)}
+.wartet>.amb-punkt{border-style:dashed;border-color:var(--gc-muted)}
+.amb-notiz{display:block;margin-top:5px;font-size:11.5px;line-height:1.2;color:var(--gc-desc);white-space:nowrap;font-variant-numeric:tabular-nums}
+.bald>.amb-notiz{color:var(--gc-warn);font-weight:600}
+.vorbei>.amb-notiz{color:var(--gc-danger)}
+.jetzt>.amb-notiz{color:var(--gc-fg);font-weight:550}
+.amb-detail td{border-top:0;padding:0 2px 14px 17px}
+.amb-schritt{font-size:13.5px;color:var(--gc-fg);max-width:62ch}
+.amb-daten{display:flex;flex-wrap:wrap;gap:4px 22px;margin-top:6px;font-size:12.5px;color:var(--gc-desc)}
+.amb-daten span b{font-weight:550;color:var(--gc-body)}
+.amb-knoepfe{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.amb-knoepfe .hin{margin-top:0}
+.hin.leise{background:transparent;color:var(--gc-accent);box-shadow:inset 0 0 0 1px var(--gc-accent)}
+.amb-leer{margin-top:18px;font-size:13.5px;color:var(--gc-desc)}
+/* Das Konto der Ambassadorin: Stand und Bewegungen wie auf einem Auszug —
+   immer sichtbar, nicht hinter einem Ausklapper (Rückmeldung 02.10.2026). */
+.amb-konto{margin-top:16px;padding:18px 20px 14px;border-radius:12px;background:var(--gc-canvas);border:1px solid var(--gc-border-l)}
+.amb-konto-oben{display:flex;justify-content:space-between;align-items:flex-end;gap:18px 36px;flex-wrap:wrap}
+.amb-konto-name{font:600 13px/1.2 var(--gc-sans);color:var(--gc-desc)}
+.amb-konto .amb-betrag{margin-top:8px}
+.amb-konto-zahlen{display:grid;grid-template-columns:repeat(3,auto);gap:6px 30px;margin:0}
+.amb-konto-zahlen dt{font-size:12px;color:var(--gc-desc)}
+.amb-konto-zahlen dd{margin:3px 0 0;font:600 19px/1.15 var(--gc-sans);color:var(--gc-fg);font-variant-numeric:tabular-nums}
+.amb-konto-zahlen dd small{display:block;margin-top:3px;font:500 11.5px/1.3 var(--gc-sans);color:var(--gc-desc)}
+.amb-bewegungen{list-style:none;margin:16px 0 0;padding:0;border-top:1px solid var(--gc-border)}
+.amb-bewegungen li{display:grid;grid-template-columns:6.6em 1fr auto;gap:14px;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--gc-border-l);font-size:13.5px;color:var(--gc-body)}
+.amb-bewegungen time{font-size:12.5px;color:var(--gc-muted);font-variant-numeric:tabular-nums}
+.amb-bewegungen .betrag{text-align:right;white-space:nowrap;font-weight:600;font-variant-numeric:tabular-nums}
+.amb-bewegungen .plus{color:var(--gc-ok)}
+.amb-bewegungen .minus{color:var(--gc-fg)}
+.amb-bewegungen-leer{margin-top:14px;padding-top:12px;border-top:1px solid var(--gc-border);font-size:13px;color:var(--gc-desc)}
+.amb-konto-mehr>summary{list-style:none;cursor:pointer;padding:9px 0 0;font-size:13px;font-weight:550;color:var(--gc-accent)}
+.amb-konto-mehr>summary::-webkit-details-marker{display:none}
+.amb-konto-mehr[open]>summary{display:none}
+.amb-konto-regel{margin-top:10px;font-size:12px;color:var(--gc-muted)}
+.amb-mehr{border-top:1px solid var(--gc-border-l)}
+.amb-tabelle+.amb-mehr,.amb-leer+.amb-mehr{margin-top:6px}
+.amb-mehr>summary{list-style:none;cursor:pointer;display:flex;align-items:baseline;gap:8px;padding:13px 2px;font-weight:550;color:var(--gc-fg);border-radius:4px}
+.amb-mehr>summary::-webkit-details-marker{display:none}
+.amb-mehr>summary small{font-size:12.5px;font-weight:500;color:var(--gc-muted)}
+.amb-mehr>summary::after{content:"";margin-left:auto;align-self:center;width:7px;height:7px;border-right:1.5px solid var(--gc-muted);border-bottom:1.5px solid var(--gc-muted);transform:rotate(45deg) translateY(-2px);transition:transform .15s}
+.amb-mehr[open]>summary::after{transform:rotate(-135deg)}
+.amb-mehr>summary:hover{color:var(--gc-accent)}
+.amb-mehr-inhalt{padding:0 2px 16px;font-size:13.5px}
+.amb-felder{display:flex;gap:8px;flex-wrap:wrap}
+.amb-felder input{flex:1;min-width:170px;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;font-size:14px;background:var(--gc-bg);color:var(--gc-fg)}
+.amb-felder .hin{margin-top:0}
+.amb-linkbox{margin-top:12px;padding:12px;border-radius:10px;background:var(--gc-canvas)}
+.amb-linkbox code{display:block;font:13px/1.4 var(--gc-mono);color:var(--gc-fg);word-break:break-all}
+.amb-liste{list-style:none;margin:0;padding:0}
+.amb-liste li{display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--gc-border-l)}
+.amb-liste li:first-child{border-top:0}
+.amb-liste .wer{flex:1;min-width:0}
+.amb-liste .wer small{display:block;color:var(--gc-desc);font-size:12px}
+.amb-liste .wann{color:var(--gc-desc);font-size:12.5px;white-space:nowrap}
+.amb-geldliste{display:grid;grid-template-columns:auto auto;justify-content:start;gap:6px 28px;font-variant-numeric:tabular-nums}
+.amb-geldliste dt{color:var(--gc-desc)} .amb-geldliste dd{margin:0;text-align:right;color:var(--gc-fg);font-weight:550}
+.amb-hinweis{margin-top:12px;font-size:12.5px;color:var(--gc-muted);max-width:64ch}
+/* Verwaltung: eine Karte je Ambassadorin, zu bis man sie öffnet. */
+details.amb-verw>summary{list-style:none;cursor:pointer;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+details.amb-verw>summary::-webkit-details-marker{display:none}
+details.amb-verw>summary::after{content:"";margin-left:auto;align-self:center;width:7px;height:7px;border-right:1.5px solid var(--gc-muted);border-bottom:1.5px solid var(--gc-muted);transform:rotate(45deg) translateY(-2px);transition:transform .15s}
+details.amb-verw[open]>summary::after{transform:rotate(-135deg)}
+.amb-verw-name{font:600 17px/1.2 var(--gc-serif);color:var(--gc-fg)}
+.amb-verw-info{font-size:13px;color:var(--gc-desc)}
+.amb-verw-info b{color:var(--gc-fg);font-weight:600}
+.amb-verw-kopf{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;margin-top:14px;font-size:13px;color:var(--gc-desc)}
+@media (max-width:600px){
+  .amb-tabelle .amb-geld{display:none}
+  .amb-stufe{width:50px}
+  .amb-stufe:not(.erste)::before{top:18px}
+  .amb-tabelle th{font-size:10px;letter-spacing:-.01em;padding-bottom:6px}
+  .amb-tabelle td{padding:11px 1px 9px}
+  .amb-punkt{width:14px;height:14px}
+  .fertig>.amb-punkt::after{left:3.5px;top:1px;width:3.5px;height:6.5px}
+  .amb-notiz{font-size:10px;letter-spacing:-.01em}
+  .amb-name button{font-size:13.5px;gap:7px}
+  .amb-betrag{font-size:30px}
+  .amb-detail td{padding-left:2px}
+  .amb-konto{padding:16px 14px 12px}
+  .amb-konto-zahlen{grid-template-columns:1fr 1fr}
+  .amb-konto-zahlen>div:first-child{grid-column:1/-1}
+  .amb-bewegungen li{grid-template-columns:5.4em 1fr auto;gap:8px;font-size:13px}
+  .amb-bewegungen time{font-size:11.5px}
+}
+@media (prefers-reduced-motion:reduce){
+  .amb-name button::before,.amb-mehr>summary::after,details.amb-verw>summary::after{transition:none}
+}
+
 /* Monat in Zahlen */
 .mrow{display:flex;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px solid var(--gc-border-l)}
 .mrow.unter{padding-left:18px;font-size:13px;border-top:0}
@@ -6446,44 +6574,42 @@ async function ladeVerwaltung(){
     </div>`;
   }
 
-  /* Ambassadorinnen (seit 21.09.2026): Salon wirbt Salon. Anlegen hier,
-     Meilensteine anerkennen in den Wartelisten-Karten passiert über den
-     eigenen Block unten — Auszahlung quartalsweise. */
+  /* Ambassadorinnen (seit 21.09.2026): Salon wirbt Salon. Je Ambassadorin
+     eine aufklappbare Karte mit dem Stufenband ihrer Salons; die Knöpfe
+     (gezeichnet, +14 Tage, 3 Monate, Auszahlungslauf) stehen in der
+     aufgeklappten Zeile. Im onclick nur Nummern (AMB_ZEILEN/AMB_CODES). */
   let amb = null;
-  AMB_TESTSALONS = [];
+  AMB_ZEILEN = []; AMB_CODES = [];
   try{ const ra = await api("/api/ambassador/liste"); if (ra.ok) amb = (await ra.json()).ambassadorinnen || []; }catch{}
   html += `<div class="sektion lbl">Ambassadorinnen (${(amb || []).length})</div>`;
-  html += `<div class="karte" style="margin-bottom:12px">
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <input id="amb-name" type="text" placeholder="Name der Ambassadorin"
-        style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
-      <input id="amb-email" type="email" placeholder="E-Mail"
-        style="flex:1;min-width:180px;padding:9px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
-      <button class="hin" style="margin-top:0" onclick="ambassadorAnlegen()">Anlegen ›</button>
-    </div>
-    <p style="margin-top:6px;font-size:12px;color:var(--gc-desc)">Bekommt Code + Startpasswort per Mail — sie erzeugt damit Einladungslinks für Salons (30 Tage babu, sofort und kostenlos) und verdient 25 % bei Zeichnung, +25 % nach 3 Monaten.</p>
+  html += `<div class="karte" style="padding-top:2px;padding-bottom:2px">
+    <details class="amb-mehr" style="border-top:0"><summary>Ambassadorin anlegen</summary>
+      <div class="amb-mehr-inhalt">
+        <div class="amb-felder">
+          <input id="amb-name" type="text" placeholder="Name" aria-label="Name der Ambassadorin">
+          <input id="amb-email" type="email" placeholder="E-Mail" aria-label="E-Mail der Ambassadorin">
+          <button class="hin" onclick="ambassadorAnlegen()">Anlegen</button>
+        </div>
+        <p class="amb-hinweis">Sie bekommt ihren Code per Mail und lädt damit Salons ein: 30 Tage babu sofort und kostenlos, für sie 25 % bei Zeichnung und noch einmal 25 % nach 3 Monaten.</p>
+      </div>
+    </details>
   </div>`;
   for (const a of (amb || [])){
-    html += `<div class="karte" style="margin-bottom:10px">
-      <h3>${esc(a.name)} <span style="font-family:ui-monospace,monospace;font-size:13px;background:var(--gc-muted);color:var(--gc-bg);padding:2px 8px;border-radius:6px">${esc(a.code)}</span></h3>
-      <p style="font-size:13px">${esc(a.email)}</p>
-      <p style="font-size:13px;margin-top:4px">Verdient: <b>${a.verdient} €</b> · Ausgezahlt: ${a.gezahlt} € · Offen: <b>${a.verdient - a.gezahlt} €</b></p>
-      ${a.zahlen ? `<p style="font-size:12px;margin-top:2px;color:var(--gc-desc)">${ambZahlenSatz(a.zahlen)}</p>` : ""}
-      ${(a.salons || []).length ? `<table style="width:100%;font-size:13px;margin-top:8px;border-collapse:collapse">
-        <thead><tr><th style="text-align:left;padding:4px">Salon</th><th style="text-align:left;padding:4px">Stand</th><th style="text-align:right;padding:4px">Anerkennen</th></tr></thead><tbody>
-        ${a.salons.map(s => `<tr>
-          <td style="padding:4px">${esc(s.salon || s.email)}</td>
-          <td style="padding:4px">${esc(ambStand(s))}${s.verdienst ? ` · ${s.verdienst} €` : ""}${s.naechster_schritt ? `<div style="font-size:11px;color:var(--gc-desc)">${esc(s.naechster_schritt)}</div>` : ""}</td>
-          <td style="padding:4px;text-align:right">${s.meilenstein === "testet"
-            ? `${s.testmonat ? `<button class="hin" style="margin-top:0;padding:5px 10px;font-size:12px;background:transparent;color:var(--gc-accent);border:1px solid var(--gc-accent)" onclick="ambassadorVerlaengern(${AMB_TESTSALONS.push(s.email) - 1})">+14 Tage</button> ` : ""}<button class="hin" style="margin-top:0;padding:5px 10px;font-size:12px" onclick="ambassadorMeilenstein('${esc(a.code)}','${esc(s.email)}','gezeichnet')">Gezeichnet +25 %</button>`
-            : s.meilenstein === "gezeichnet"
-            ? `<button class="hin" style="margin-top:0;padding:5px 10px;font-size:12px" onclick="ambassadorMeilenstein('${esc(a.code)}','${esc(s.email)}','gehalten')">3 Monate +25 %</button>`
-            : `✓ ${s.verdienst} €`}</td>
-        </tr>`).join("")}</tbody></table>`
-        : `<p style="font-size:12px;color:var(--gc-muted);margin-top:6px">noch keine Salons über ihren Code</p>`}
-      ${a.geld ? `<p style="font-size:12px;margin-top:6px;color:var(--gc-desc)">Nächster Lauf ${ambDatum(a.geld.naechster_lauf.datum)}: ${a.geld.naechster_lauf.betrag} € (verdient bis ${ambDatum(a.geld.naechster_lauf.stichtag)})${a.geld.danach ? " · danach " + a.geld.danach + " €" : ""}${(a.geld.auszahlungen || []).length ? " · bisher ausgezahlt: " + a.geld.auszahlungen.map(x => ambDatum(x.datum) + " " + x.betrag + " €").join(", ") : ""}</p>` : ""}
-      ${a.geld && a.geld.faelliger_lauf.auszahlbar ? `<button class="hin" style="margin-top:10px" onclick="ambassadorGezahlt('${esc(a.code)}')">Auszahlungslauf ${ambDatum(a.geld.faelliger_lauf.datum)}: ${a.geld.faelliger_lauf.betrag} € ausführen ›</button>` : ""}
-    </div>`;
+    const c = AMB_CODES.push(a.code) - 1;
+    const g = a.geld;
+    const f = g && g.faelliger_lauf;
+    const offenBetrag = a.verdient - a.gezahlt;
+    html += `<details class="karte amb-verw">
+      <summary><span class="amb-verw-name">${esc(a.name)}</span>
+        <span class="amb-verw-info">${(a.salons || []).length} ${(a.salons || []).length === 1 ? "Salon" : "Salons"}${offenBetrag ? `, <b>${offenBetrag} €</b> offen` : ""}${f && f.auszahlbar ? ", Auszahlung fällig" : ""}</span></summary>
+      <div class="amb-verw-kopf">
+        <span>${esc(a.email)}</span>
+        <span class="amb-code"><span>Code</span><b>${esc(a.code)}</b></span>
+        ${g ? `<span>Nächster Lauf am ${ambDatum(g.naechster_lauf.datum)}: <b style="color:var(--gc-fg)">${g.naechster_lauf.betrag} €</b></span>` : ""}
+        ${f && f.auszahlbar ? `<button class="hin" style="margin-top:0" onclick="ambassadorGezahlt(${c})">Auszahlungslauf vom ${ambDatum(f.datum)} ausführen: ${f.betrag} €</button>` : ""}
+      </div>
+      ${ambTabelle(a.salons || [], "v" + c, true, a.code)}
+    </details>`;
   }
 
   const offen = regs.filter(r => r.status === "neu");
@@ -7528,13 +7654,15 @@ async function ambassadorAnlegen(){
     else alert(d.fehler || "Ging gerade nicht.");
   }catch{ alert("Gerade keine Verbindung — später nochmal."); }
 }
-async function ambassadorMeilenstein(code, email, meilenstein){
-  const betrag = meilenstein === "gezeichnet" ? 237 : 237;
-  if (!confirm("Meilenstein „" + meilenstein + "“ anerkennen — " + betrag + " € Guthaben für die Ambassadorin?")) return;
+async function ambassadorMeilenstein(nr, meilenstein){
+  const z = AMB_ZEILEN[nr];
+  const betrag = 237;
+  if (!z || !confirm((meilenstein === "gezeichnet" ? "Als gezeichnet buchen" : "3 Monate dabei buchen")
+      + ": " + betrag + " € für die Ambassadorin?")) return;
   try{
     const r = await api("/api/ambassador/meilenstein", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({code, email, meilenstein, betrag})});
+      body: JSON.stringify({code: z.code, email: z.email, meilenstein, betrag})});
     const d = await r.json();
     if (r.ok) ladeVerwaltung();
     else alert(d.fehler || "Ging gerade nicht.");
@@ -7544,6 +7672,7 @@ async function ambassadorMeilenstein(code, email, meilenstein){
    Code, Salons, Saldo — und der Einladungs-Generator nach dem
    Design-Entwurf design/ambassador-bereich.html. */
 let _ambZiel = "#heute-ambassador";
+let _ambCode = "";
 async function ladeAmbassador(zielSel){
   _ambZiel = zielSel || "#heute-ambassador";
   const ziel = $(_ambZiel);
@@ -7551,54 +7680,52 @@ async function ladeAmbassador(zielSel){
     const r = await api("/api/ambassador/me");
     if (!r.ok){ ziel.hidden = true; return false; }
     const d = await r.json();
+    _ambCode = d.code;
     const g = d.geld || {verdient: d.verdient, ausgezahlt: d.gezahlt, offen: d.offen};
     const eing = d.einladungen || [];
+    const salons = d.salons || [];
+    /* Was aufgeklappt war, bleibt nach dem Neuzeichnen aufgeklappt. */
+    const warOffen = [...ziel.querySelectorAll("details[open]")].map(x => x.id);
     ziel.innerHTML = `
-      <div class="lbl" style="margin-top:24px">Dein Ambassador-Bereich</div>
-      <div class="karte" style="margin-top:10px">
-        <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap">
-          <span style="font-size:28px;font-weight:700;color:var(--gc-accent)">${g.offen} €</span>
-          <span style="font-size:13px;color:var(--gc-desc)">offen · ${g.verdient} € verdient · ${g.ausgezahlt} € ausgezahlt</span>
-          <span style="font-family:ui-monospace,monospace;font-size:14px;background:var(--gc-muted);color:var(--gc-bg);padding:3px 10px;border-radius:6px">${esc(d.code)}</span>
+      <div class="karte amb" style="margin-top:24px">
+        <div class="amb-kopf" style="align-items:center">
+          <h3 class="amb-titel">Dein Ambassador-Bereich</h3>
+          <div class="amb-code"><span>Dein Code</span><b>${esc(d.code)}</b>
+            <button type="button" onclick="ambCodeKopieren(this)">Kopieren</button></div>
         </div>
-        ${ambLaufSatz(g)}
-        <p style="margin-top:8px;font-size:13px;color:var(--gc-desc)">Ein Salon löst deinen Code ein → sofort 30 Tage babu, kostenlos. Zeichnet er ab: <b>25 %</b> für dich. Bleibt er 3 Monate: nochmal <b>25 %</b> — gesamt 50 % der Jahreszahlung, für immer dir zugeordnet. Ausgezahlt wird vierteljährlich zum 15. (Januar, April, Juli, Oktober), ab 100 €.</p>
-        ${d.zahlen && d.zahlen.eingeladen ? `<p style="margin-top:6px;font-size:13px">${ambZahlenSatz(d.zahlen)}</p>` : ""}
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px">
-          <input id="amb-neu-salon" type="text" placeholder="Name des Salons (optional)"
-            style="flex:1;min-width:160px;padding:9px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
-          <input id="amb-neu-mail" type="email" placeholder="E-Mail der Besitzerin"
-            style="flex:1;min-width:180px;padding:9px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;background:var(--gc-bg)">
-          <button class="hin" style="margin-top:0" onclick="ambassadorLinkErzeugen()">Link erzeugen ›</button>
-        </div>
-        <div id="amb-link-box" style="display:none;margin-top:10px">
-          <div id="amb-link" style="font-family:ui-monospace,monospace;font-size:13px;background:var(--gc-muted);color:var(--gc-bg);padding:10px 12px;border-radius:8px;word-break:break-all"></div>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <button class="hin" style="margin-top:0" onclick="ambassadorLinkKopieren()">Kopieren</button>
-            <button class="hin" style="margin-top:0;background:transparent;color:var(--gc-accent);border:1px solid var(--gc-accent)" onclick="ambassadorMailSenden()">Als Mail verschicken</button>
-            <span id="amb-mail-status" style="font-size:12px;color:var(--gc-desc);align-self:center"></span>
+        ${ambKonto(g)}
+        ${salons.length ? ambTabelle(salons, "a", false)
+          : `<p class="amb-leer">Noch kein Salon dabei. Lade unten den ersten ein.</p>`}
+        <details class="amb-mehr" id="amb-d-einladen"><summary>Salon einladen</summary>
+          <div class="amb-mehr-inhalt">
+            <div class="amb-felder">
+              <input id="amb-neu-salon" type="text" placeholder="Name des Salons" aria-label="Name des Salons">
+              <input id="amb-neu-mail" type="email" placeholder="E-Mail der Besitzerin (optional)" aria-label="E-Mail der Besitzerin">
+              <button class="hin" onclick="ambassadorLinkErzeugen()">Link erzeugen</button>
+            </div>
+            <div id="amb-link-box" class="amb-linkbox" style="display:none">
+              <code id="amb-link"></code>
+              <div class="amb-knoepfe">
+                <button class="hin" onclick="ambassadorLinkKopieren()">Link kopieren</button>
+                <button class="hin leise" onclick="ambassadorMailSenden()">Per Mail senden</button>
+                <span id="amb-mail-status" style="font-size:12.5px;color:var(--gc-desc);align-self:center"></span>
+              </div>
+            </div>
           </div>
-        </div>
-        ${eing.length ? `<div class="lbl" style="margin-top:18px">Eingeladen, noch nicht eingelöst (${eing.length})</div>
-          <table style="width:100%;font-size:13px;margin-top:6px;border-collapse:collapse"><tbody>
-          ${eing.map(e => `<tr>
-            <td style="padding:5px 4px">${esc(e.salon || "ohne Namen")}${e.email ? `<div style="font-size:12px;color:var(--gc-desc)">${esc(e.email)}</div>` : ""}</td>
-            <td style="padding:5px 4px;color:var(--gc-desc)">${e.gesendet ? "Mail am " + ambDatum(e.gesendet) : "Link vom " + ambDatum(e.erstellt)}</td>
-            <td style="padding:5px 4px;text-align:right">${e.email ? `<button class="hin" style="margin-top:0;padding:5px 10px;font-size:12px;background:transparent;color:var(--gc-accent);border:1px solid var(--gc-accent)" onclick="ambassadorNochmal(${Number(e.id)})">Nochmal schicken</button>` : ""}</td>
-          </tr>`).join("")}</tbody></table>` : ""}
-        ${(d.salons || []).length ? `<div class="lbl" style="margin-top:18px">Deine Salons</div>
-          <table style="width:100%;font-size:13px;margin-top:6px;border-collapse:collapse">
-          <thead><tr><th style="text-align:left;padding:4px;color:var(--gc-desc)">Salon</th><th style="text-align:left;padding:4px;color:var(--gc-desc)">Stand</th><th style="text-align:left;padding:4px;color:var(--gc-desc)">Nächster Schritt</th><th style="text-align:right;padding:4px;color:var(--gc-desc)">Dein Verdienst</th></tr></thead>
-          <tbody>${d.salons.map(s => `<tr style="vertical-align:top">
-            <td style="padding:6px 4px">${esc(s.salon || s.email)}<div style="font-size:11px;color:var(--gc-desc);margin-top:2px">${ambZeitleiste(s.stufen)}</div></td>
-            <td style="padding:6px 4px">${esc(ambStand(s))}</td>
-            <td style="padding:6px 4px;font-size:12px">${esc(s.naechster_schritt || "")}</td>
-            <td style="padding:6px 4px;text-align:right">${s.verdienst ? `<b>${s.verdienst} €</b>` : "—"}</td>
-          </tr>`).join("")}</tbody></table>`
-          : `<p style="font-size:12px;color:var(--gc-muted);margin-top:10px">Noch keine Einlösungen — verschicke deinen ersten Link.</p>`}
-        ${(g.auszahlungen || []).length ? `<div class="lbl" style="margin-top:18px">Deine Auszahlungen</div>
-          <p style="font-size:13px;margin-top:6px">${g.auszahlungen.map(a => ambDatum(a.datum) + ": <b>" + a.betrag + " €</b>").join(" · ")}</p>` : ""}
+        </details>
+        ${eing.length ? `<details class="amb-mehr" id="amb-d-offen"><summary>Offene Einladungen <small>${eing.length}</small></summary>
+          <div class="amb-mehr-inhalt"><ul class="amb-liste">
+          ${eing.map(e => `<li>
+            <span class="wer">${esc(e.salon || "Ohne Namen")}${e.email ? `<small>${esc(e.email)}</small>` : ""}</span>
+            <span class="wann">${e.gesendet ? "Mail vom " + ambDatum(e.gesendet) : "Link vom " + ambDatum(e.erstellt)}</span>
+            ${e.email ? `<button class="hin leise" style="margin-top:0" onclick="ambassadorNochmal(${Number(e.id)})">Nochmal senden</button>` : ""}
+          </li>`).join("")}</ul></div>
+        </details>` : ""}
+        <details class="amb-mehr" id="amb-d-so"><summary>So verdienst du</summary>
+          <div class="amb-mehr-inhalt"><p style="max-width:64ch">Ein Salon löst deinen Code ein und nutzt babu sofort 30 Tage kostenlos. Zeichnet er danach ab, bekommst du 25 % seiner Jahreszahlung. Ist er nach 3 Monaten noch dabei, noch einmal 25 %. Der Salon bleibt dir für immer zugeordnet.</p></div>
+        </details>
       </div>`;
+    for (const id of warOffen){ const x = document.getElementById(id); if (x) x.open = true; }
     ziel.hidden = false;
     return true;
   }catch{ ziel.hidden = true; return false; }
@@ -7609,39 +7736,126 @@ function ambDatum(iso){
   const t = String(iso).slice(0, 10).split("-");
   return t.length === 3 ? t[2] + "." + t[1] + "." + t[0] : esc(String(iso));
 }
-/* Was der nächste Auszahlungslauf bringt — in einem Satz (seit 02.10.2026). */
-function ambLaufSatz(g){
-  const n = g.naechster_lauf;
-  if (!n) return "";
+/* Das Konto: Stand, nächste Auszahlung, verdient, ausgezahlt und die
+   Bewegungen (Provision = Gutschrift, Auszahlung = Abgang). */
+function ambKonto(g){
+  const n = g.naechster_lauf, f = g.faelliger_lauf;
   const heute = new Date().toISOString().slice(0, 10);
-  const f = g.faelliger_lauf;
-  let satz = "";
+  let naechste = "";
   if (f && f.auszahlbar && f.datum < heute)
-    satz = `Aus dem Lauf vom ${ambDatum(f.datum)}: <b>${f.betrag} €</b> — kommt in den nächsten Tagen.`;
-  else if (n.wird_ausgezahlt)
-    satz = `Nächste Auszahlung am ${ambDatum(n.datum)}: <b>${n.betrag} €</b> (verdient bis ${ambDatum(n.stichtag)}).`;
-  else
-    satz = `Nächste Auszahlung am ${ambDatum(n.datum)} — ${esc(n.hinweis)}`;
-  if (g.danach) satz += ` Danach schon verdient: <b>${g.danach} €</b> — kommt mit dem Lauf darauf.`;
-  return `<p style="margin-top:8px;font-size:13px">${satz}</p>`;
+    naechste = `${f.betrag} €<small>kommt in den nächsten Tagen</small>`;
+  else if (n && n.wird_ausgezahlt)
+    naechste = `${n.betrag} €<small>am ${ambDatum(n.datum)}</small>`;
+  else if (n)
+    naechste = `${n.betrag} €<small>${n.betrag ? "unter 100 €, wartet bis " + ambDatum(n.datum) : "Lauf am " + ambDatum(n.datum)}</small>`;
+  const bew = g.bewegungen || [];
+  const zeile = b => `<li><time datetime="${esc(b.datum)}">${ambDatum(b.datum)}</time>
+      <span>${esc(b.text)}</span>
+      <span class="betrag ${b.betrag < 0 ? "minus" : "plus"}">${b.betrag < 0 ? "−" : "+"}${Math.abs(b.betrag)} €</span></li>`;
+  const sichtbar = bew.slice(0, 4), rest = bew.slice(4);
+  return `<section class="amb-konto" aria-label="Dein Konto">
+      <div class="amb-konto-oben">
+        <div>
+          <div class="amb-konto-name">Dein Konto</div>
+          <div class="amb-betrag">${g.offen} €<small>offen</small></div>
+        </div>
+        <dl class="amb-konto-zahlen">
+          ${naechste ? `<div><dt>Nächste Auszahlung</dt><dd>${naechste}</dd></div>` : ""}
+          <div><dt>Verdient</dt><dd>${g.verdient} €</dd></div>
+          <div><dt>Ausgezahlt</dt><dd>${g.ausgezahlt} €</dd></div>
+        </dl>
+      </div>
+      ${bew.length ? `<ul class="amb-bewegungen">${sichtbar.map(zeile).join("")}</ul>
+        ${rest.length ? `<details class="amb-konto-mehr"><summary>Alle ${bew.length} Bewegungen zeigen</summary>
+          <ul class="amb-bewegungen" style="margin-top:0;border-top:0">${rest.map(zeile).join("")}</ul></details>` : ""}`
+        : `<p class="amb-bewegungen-leer">Noch keine Bewegungen. Deine erste Provision steht hier, sobald ein Salon abzeichnet.</p>`}
+      <p class="amb-konto-regel">Ausgezahlt wird am 15. Januar, April, Juli und Oktober, was bis zum Quartalsende davor verdient ist, ab 100 €.</p>
+    </section>`;
 }
-/* Die Stufen eines Salons als kurze Zeile. */
-function ambZeitleiste(stufen){
-  if (!stufen) return "";
-  const s = Object.fromEntries(stufen.map(x => [x.stufe, x]));
-  const teile = ["eingeladen " + ambDatum(s.eingeladen && s.eingeladen.datum)];
-  if (s.test_endet && s.test_endet.datum) teile.push("Test bis " + ambDatum(s.test_endet.datum));
-  if (s.gezeichnet && s.gezeichnet.datum) teile.push("gezeichnet " + ambDatum(s.gezeichnet.datum));
-  if (s.gehalten && s.gehalten.datum) teile.push("3 Monate ✓ " + ambDatum(s.gehalten.datum));
-  else if (s.gehalten && s.gehalten.faellig) teile.push("3 Monate am " + ambDatum(s.gehalten.faellig));
-  return teile.join(" · ");
+/* Die vier Stufen eines Salons: Zustand und eine kurze Notiz darunter. */
+const AMB_ZUSTAND = {fertig: "erledigt", jetzt: "läuft", bald: "läuft bald ab",
+  vorbei: "abgelaufen", wartet: "wartet auf den Zugang", offen: "noch offen"};
+function ambStufen(s){
+  const st = Object.fromEntries((s.stufen || []).map(x => [x.stufe, x]));
+  const tm = s.testmonat, m = s.meilenstein;
+  const gez = m === "gezeichnet" || m === "gehalten";
+  const kurz = iso => iso ? ambDatum(iso).slice(0, 6) : "";
+  const test = gez ? {zustand: "fertig", notiz: "geschafft"}
+    : !tm ? {zustand: "wartet", notiz: "wartet"}
+    : tm.vorbei ? {zustand: "vorbei", notiz: "abgelaufen"}
+    : {zustand: tm.tage_uebrig <= 7 ? "bald" : "jetzt",
+       notiz: tm.tage_uebrig + (tm.tage_uebrig === 1 ? " Tag" : " Tage")};
+  return [
+    {name: "Eingeladen", zustand: "fertig", notiz: kurz(st.eingeladen && st.eingeladen.datum)},
+    {name: "Test", ...test},
+    gez ? {name: "Gezeichnet", zustand: "fertig", notiz: kurz(st.gezeichnet && st.gezeichnet.datum)}
+        : {name: "Gezeichnet", zustand: "offen", notiz: ""},
+    m === "gehalten" ? {name: "3 Monate", zustand: "fertig", notiz: kurz(st.gehalten && st.gehalten.datum)}
+      : m === "gezeichnet" ? {name: "3 Monate", zustand: "jetzt", notiz: "ab " + kurz(st.gehalten && st.gehalten.faellig)}
+      : {name: "3 Monate", zustand: "offen", notiz: ""},
+  ];
+}
+/* Die Ablauftabelle: eine Zeile je Salon, ein Klick auf den Namen klappt
+   Daten, nächsten Schritt und — in der Verwaltung — die Knöpfe auf. */
+let AMB_ZEILEN = [];
+let AMB_CODES = [];
+function ambTabelle(salons, praefix, verwaltung, code){
+  if (!salons.length)
+    return `<p class="amb-leer">Noch kein Salon über diesen Code.</p>`;
+  const zeilen = salons.map((s, i) => {
+    const id = "amb-z-" + praefix + "-" + i;
+    const stufen = ambStufen(s);
+    const st = Object.fromEntries((s.stufen || []).map(x => [x.stufe, x]));
+    const daten = [
+      ["Eingeladen", st.eingeladen && st.eingeladen.datum],
+      ["Test bis", st.test_endet && st.test_endet.datum],
+      ["Gezeichnet", st.gezeichnet && st.gezeichnet.datum],
+      [s.meilenstein === "gehalten" ? "3 Monate dabei" : "3 Monate am",
+       st.gehalten && (st.gehalten.datum || st.gehalten.faellig)],
+    ].filter(x => x[1]);
+    let knoepfe = "";
+    if (verwaltung){
+      const n = AMB_ZEILEN.push({code, email: s.email}) - 1;
+      if (s.meilenstein === "testet"){
+        if (s.testmonat) knoepfe += `<button class="hin leise" onclick="ambassadorVerlaengern(${n})">Test um 14 Tage verlängern</button>`;
+        knoepfe += `<button class="hin" onclick="ambassadorMeilenstein(${n},'gezeichnet')">Als gezeichnet buchen (+25 %)</button>`;
+      } else if (s.meilenstein === "gezeichnet"){
+        knoepfe += `<button class="hin" onclick="ambassadorMeilenstein(${n},'gehalten')">3 Monate dabei buchen (+25 %)</button>`;
+      }
+    }
+    return `<tr>
+        <td class="amb-name"><button type="button" aria-expanded="false" aria-controls="${id}" onclick="ambZeile(this)">${esc(s.salon || s.email)}</button></td>
+        ${stufen.map((x, j) => `<td class="amb-stufe ${x.zustand}${j === 0 ? " erste" : ""}" title="${x.name}: ${AMB_ZUSTAND[x.zustand]}"><span class="amb-punkt" aria-hidden="true"></span><span class="amb-notiz">${esc(x.notiz)}</span><span class="nurvorlesen">${x.name}: ${AMB_ZUSTAND[x.zustand]}</span></td>`).join("")}
+        <td class="amb-geld">${s.verdienst ? s.verdienst + " €" : "–"}</td>
+      </tr>
+      <tr class="amb-detail" id="${id}" hidden><td colspan="6">
+        <p class="amb-schritt">${esc(s.naechster_schritt || "")}</p>
+        ${daten.length ? `<p class="amb-daten">${daten.map(x => `<span>${x[0]} <b>${ambDatum(x[1])}</b></span>`).join("")}${verwaltung ? `<span>${esc(s.email)}</span>` : ""}${s.verdienst ? `<span>Verdienst <b>${s.verdienst} €</b></span>` : ""}</p>` : ""}
+        ${knoepfe ? `<div class="amb-knoepfe">${knoepfe}</div>` : ""}
+      </td></tr>`;
+  }).join("");
+  return `<table class="amb-tabelle">
+    <thead><tr><th scope="col">Salon</th><th scope="col">Eingeladen</th><th scope="col">Test</th>
+      <th scope="col">Gezeichnet</th><th scope="col">3 Monate</th><th scope="col" class="amb-geld">Verdienst</th></tr></thead>
+    <tbody>${zeilen}</tbody></table>`;
+}
+function ambZeile(knopf){
+  const auf = knopf.getAttribute("aria-expanded") !== "true";
+  knopf.setAttribute("aria-expanded", String(auf));
+  document.getElementById(knopf.getAttribute("aria-controls")).hidden = !auf;
+}
+function ambCodeKopieren(knopf){
+  navigator.clipboard.writeText(_ambCode).then(() => {
+    knopf.textContent = "Kopiert";
+    setTimeout(() => { knopf.textContent = "Kopieren"; }, 1600);
+  });
 }
 async function ambassadorNochmal(nr){
   try{
     const r = await api("/api/ambassador/einladen", {method:"POST",
       headers:{"Content-Type":"application/json"}, body: JSON.stringify({id: nr})});
     const d = await r.json();
-    if (r.ok) alert("Einladung ist nochmal raus ✓");
+    if (r.ok) alert("Einladung nochmal gesendet.");
     else alert(d.fehler || "Ging gerade nicht.");
     ladeAmbassador(_ambZiel);
   }catch{ alert("Gerade keine Verbindung — später nochmal."); }
@@ -7654,34 +7868,14 @@ async function gesperrtLaden(){
   $("#gesperrt-box-karte").hidden = ist;
   if (ist) $("#gesperrt-gruss").textContent = "Schön, dass du da bist";
 }
-/* Der Stand eines geworbenen Salons in einem Satz (Testmonat seit 02.10.2026). */
-function ambStand(s){
-  if (s.meilenstein === "gehalten") return "3 Monate dabei ✓";
-  if (s.meilenstein === "gezeichnet") return "gezeichnet ✓";
-  const t = s.testmonat;
-  if (!t) return "wartet auf Zugang";
-  if (t.vorbei) return "Test abgelaufen, nicht gezeichnet";
-  return "testet (" + t.tage_uebrig + (t.tage_uebrig === 1 ? " Tag" : " Tage") + " übrig)";
-}
-function ambZahlenSatz(z){
-  const teile = [z.eingeladen + " eingeladen"];
-  if (z.testet) teile.push(z.testet + " im Test");
-  if (z.abgelaufen) teile.push(z.abgelaufen + " Test vorbei");
-  if (z.gezeichnet + z.gehalten) teile.push((z.gezeichnet + z.gehalten) + " gezeichnet");
-  if (z.gehalten) teile.push(z.gehalten + " schon 3 Monate dabei");
-  if (z.wartet) teile.push(z.wartet + " warten auf Zugang");
-  return teile.join(" · ");
-}
-/* Verwaltung: Testmonat um 14 Tage verlängern. Nur eine Nummer im onclick,
-   die Adresse steht in AMB_TESTSALONS (Portal-Regel: keine Namen in Attributen). */
-let AMB_TESTSALONS = [];
+/* Verwaltung: Testmonat um 14 Tage verlängern (Nummer aus AMB_ZEILEN). */
 async function ambassadorVerlaengern(nr){
-  const email = AMB_TESTSALONS[nr];
-  if (!email || !confirm("Testmonat für " + email + " um 14 Tage verlängern?")) return;
+  const z = AMB_ZEILEN[nr];
+  if (!z || !confirm("Test von " + z.email + " um 14 Tage verlängern?")) return;
   try{
     const r = await api("/api/ambassador/verlaengern", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({email, tage: 14})});
+      body: JSON.stringify({email: z.email, tage: 14})});
     const d = await r.json();
     if (r.ok) ladeVerwaltung();
     else alert(d.fehler || "Ging gerade nicht.");
@@ -7718,6 +7912,7 @@ async function ambassadorLinkErzeugen(){
     _ambMailAn = mail.trim();
     const salonWert = salon;
     await ladeAmbassador(_ambZiel);
+    $("#amb-d-einladen").open = true;
     $("#amb-neu-salon").value = salonWert; $("#amb-neu-mail").value = _ambMailAn;
     $("#amb-link").textContent = _ambLink;
     $("#amb-link-box").style.display = "block";
@@ -7726,22 +7921,24 @@ async function ambassadorLinkErzeugen(){
 let _ambMailAn = "";
 function ambassadorLinkKopieren(){
   navigator.clipboard.writeText(_ambLink).then(() => {
-    $("#amb-mail-status").textContent = "Kopiert ✓";
+    $("#amb-mail-status").textContent = "Kopiert";
   });
 }
 async function ambassadorMailSenden(){
-  if (!_ambMailAn.includes("@")){ alert("Bitte oben die E-Mail der Besitzerin eintragen."); return; }
+  _ambMailAn = (($("#amb-neu-mail") || {}).value || _ambMailAn).trim();
+  if (!_ambMailAn.includes("@")){ alert("Bitte die E-Mail der Besitzerin eintragen."); return; }
   try{
     const r = await api("/api/ambassador/einladen", {method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({email: _ambMailAn, salon: ($("#amb-neu-salon") || {}).value || "", link: _ambLink})});
     const d = await r.json();
-    if (r.ok){ await ladeAmbassador(_ambZiel); return; }
+    if (r.ok){ await ladeAmbassador(_ambZiel); const o = $("#amb-d-offen"); if (o) o.open = true; return; }
     $("#amb-mail-status").textContent = d.fehler || "Ging gerade nicht.";
   }catch{ $("#amb-mail-status").textContent = "Gerade keine Verbindung."; }
 }
-async function ambassadorGezahlt(code){
-  if (!confirm("Auszahlungslauf ausführen? Gebucht wird, was bis zum Stichtag verdient ist — die Überweisung machst du selbst.")) return;
+async function ambassadorGezahlt(nr){
+  const code = AMB_CODES[nr];
+  if (!code || !confirm("Auszahlungslauf ausführen? Gebucht wird, was bis zum Stichtag verdient ist. Die Überweisung machst du selbst.")) return;
   try{
     const r = await api("/api/ambassador/gezahlt", {method:"POST",
       headers:{"Content-Type":"application/json"}, body: JSON.stringify({code})});

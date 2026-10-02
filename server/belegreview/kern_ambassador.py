@@ -818,6 +818,28 @@ def _faellig(offen: list[dict], heute: dt.date) -> dict:
             "auszahlbar": betrag >= MINDEST_AUSZAHLUNG}
 
 
+_MEILENSTEIN_TEXT = {"gezeichnet": "gezeichnet", "gehalten": "3 Monate dabei"}
+
+
+def _bewegungen(code: str, c) -> list[dict]:
+    """Das Konto der Ambassadorin wie ein Kontoauszug: jede Provision als
+    Gutschrift, jede Auszahlung als Abgang — neueste zuerst."""
+    zeilen = [{"datum": str(b[0])[:10],
+               "text": f"Provision {b[1] or 'Salon'}, "
+                       f"{_MEILENSTEIN_TEXT.get(b[2], b[2])}",
+               "betrag": int(b[3]), "art": "provision"}
+              for b in c.execute("SELECT datum, salon, meilenstein, betrag "
+                                 "FROM ambassador_buchung WHERE code=?", (code,))]
+    zeilen += [{"datum": str(a[0])[:10],
+                "text": f"Auszahlung (verdient bis {_de(_datum(a[1]))})",
+                "betrag": -int(a[2]), "art": "auszahlung"}
+               for a in c.execute("SELECT datum, stichtag, betrag "
+                                  "FROM ambassador_auszahlung WHERE code=?", (code,))]
+    # Am selben Tag erst die Gutschrift, dann die Auszahlung (absteigend sortiert).
+    zeilen.sort(key=lambda z: (z["datum"], z["art"] == "provision"), reverse=True)
+    return zeilen
+
+
 def _geld(code: str, c) -> dict:
     """Verdient, ausgezahlt, offen — und was der nächste Lauf bringt."""
     heute = _heute()
@@ -849,6 +871,7 @@ def _geld(code: str, c) -> dict:
         # Für die Verwaltung: was der Lauf, der schon da ist, auszahlen würde
         # (derselbe Stichtag wie in api_ambassador_gezahlt).
         "faelliger_lauf": _faellig(offen, heute),
+        "bewegungen": _bewegungen(code, c),
         "auszahlungen": [dict(zip(("datum", "betrag", "stichtag"), a))
                          for a in c.execute(
                              "SELECT datum, betrag, stichtag FROM ambassador_auszahlung "

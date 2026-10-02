@@ -283,3 +283,18 @@ def test_verwaltung_sieht_den_faelligen_lauf_auch_ein_paar_tage_danach(welt, mon
     assert geld["faelliger_lauf"] == {"datum": "2026-10-15", "stichtag": "2026-09-30",
                                       "betrag": 237, "auszahlbar": True}
     assert geld["naechster_lauf"]["datum"] == "2027-01-15"
+
+
+def test_konto_zeigt_bewegungen_wie_ein_kontoauszug(welt, monkeypatch):
+    monkeypatch.setattr(ka, "_heute", lambda: D(2026, 10, 15))
+    _einloesen(welt, "a@example.org", "Salon A")
+    _einloesen(welt, "b@example.org", "Salon B")
+    _meilenstein(welt, "a@example.org", "gezeichnet", am=D(2026, 9, 20))
+    _meilenstein(welt, "b@example.org", "gezeichnet", am=D(2026, 10, 1))
+    assert welt["chef"].post("/api/ambassador/gezahlt",
+                             json={"code": welt["code"]}).status_code == 200
+    bew = welt["babs"].get("/api/ambassador/me").json()["geld"]["bewegungen"]
+    assert [(b["datum"], b["betrag"]) for b in bew] == [
+        ("2026-10-15", -237), ("2026-10-01", 237), ("2026-09-20", 237)]
+    assert bew[0]["text"] == "Auszahlung (verdient bis 30.09.2026)"
+    assert bew[2]["text"] == "Provision Salon A, gezeichnet"
