@@ -316,6 +316,25 @@ def test_review_vertrag_unveraendert(client):
             assert live[k] == golden[k], f"Schlüssel {k} weicht ab"
 
 
+def test_review_herkunft_als_satz_bricht_die_app_nicht(client, monkeypatch):
+    """Seit 26.08.2026 steht im Review `felder.herkunft = {"quelle": "<Satz>"}`.
+    Die App liest `felder.herkunft` als {feld: {regel, zeile, zeilentext, konf}}
+    und verwarf am Satz das GANZE Ergebnis — „Die Belegbox meldet einen Fehler"
+    unter „Prüfung" bei jedem Beleg seither (gefunden 03.10.2026). Die Route
+    liefert ihr nur Angaben je Feld; der Satz steht daneben."""
+    import babu_web  # noqa: PLC0415
+    roh = json.dumps({"datei": f"docs/2026-08/{STAMM}.jpg", "engine": "Vision (Gerät) + Gemma",
+                      "felder": {"lieferant": "Gordon Ramsay Bar & Grill", "herkunft": {
+                          "quelle": "Einschätzung auf dem Telefon — Vision-Zeilen, von Gemma gebucht",
+                          "brutto": {"zeile": 12, "konf": 1.0}}}})
+    monkeypatch.setattr(babu_web, "git_show", lambda pfad: roh)
+    live = client.get(f"/review/{STAMM}",
+                      headers={"Authorization": "Bearer test-pat"}).json()
+    assert live["felder"]["herkunft"] == {"brutto": {"zeile": 12, "konf": 1.0}}
+    assert live["felder"]["herkunft_quelle"].startswith("Einschätzung auf dem Telefon")
+    assert live["felder"]["lieferant"] == "Gordon Ramsay Bar & Grill"
+
+
 def test_chat_ohne_reviews_ok_mit_cookie(client):
     _anmelden(client)
     r = client.post("/chat", json={"frage": ""})

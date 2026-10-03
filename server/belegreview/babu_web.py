@@ -6369,6 +6369,24 @@ async def api_buchung_einschaetzung(request: Request) -> Response:
     return JSONResponse(ergebnis)
 
 
+def _herkunft_fuer_app(d: dict) -> None:
+    """Die App liest `felder.herkunft` als {feld: {regel, zeile, zeilentext, konf}}.
+
+    Seit 26.08.2026 steht dort im Archiv auch `{"quelle": "<Satz>"}` — ein
+    Text statt Angaben je Feld. Daran verwarf die App das GANZE Ergebnis
+    („Die Belegbox meldet einen Fehler" unter „Prüfung", gefunden 03.10.2026).
+    Für die Antwort wandert jeder Text nach `felder.herkunft_quelle`; das
+    Archiv bleibt, wie es ist."""
+    felder = d.get("felder")
+    herkunft = felder.get("herkunft") if isinstance(felder, dict) else None
+    if not isinstance(herkunft, dict):
+        return
+    texte = [v for v in herkunft.values() if not isinstance(v, dict)]
+    if texte:
+        felder["herkunft"] = {k: v for k, v in herkunft.items() if isinstance(v, dict)}
+        felder.setdefault("herkunft_quelle", str(herkunft.get("quelle") or texte[0]))
+
+
 @app.get("/review/{stamm}")
 def review(stamm: str, request: Request) -> Response:
     # Dieselbe Tür wie beim Einreichen — seit 08.09.2026 wörtlich dieselbe:
@@ -6392,6 +6410,7 @@ def review(stamm: str, request: Request) -> Response:
     # serverseitig berechnet, wirkt damit auch für bereits vorhandene Reviews.
     try:
         d = json.loads(daten)
+        _herkunft_fuer_app(d)
         d["audit"] = {"aufnahme": commit_info(d.get("datei", "")),
                       "review": commit_info(pfad)}
         d["buchungssatz"] = datev_buchungssatz(d)
