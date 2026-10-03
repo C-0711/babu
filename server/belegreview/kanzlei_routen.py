@@ -805,7 +805,7 @@ def _einladung_verschicken(bw, mandant_name: str, mail: str) -> str | None:
             + f"\nDer Link gilt {pr.FRIST.days} Tage und nur einmal. Danach meldest "
             f"du dich ganz normal mit dieser E-Mail-Adresse und deinem Passwort "
             f"an.\n\n"
-            + startguide.testflight_absatz()
+            + startguide.app_absatz()
             + f"\nWenn du damit nichts anfangen kannst, ignoriere diese Nachricht "
             f"einfach — ohne den Link passiert nichts.\n")
     ok, hinweis = postfach.senden(mail, "Dein Zugang zu babu ist eingerichtet",

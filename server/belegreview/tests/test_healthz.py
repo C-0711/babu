@@ -40,7 +40,10 @@ def test_alles_da_ist_ok(welt):
     # Keine Anmeldung, keine Geheimnisse — nur die fünf Felder plus stand.
     # `spiegel` seit dem GitChain-Standard (27.09.2026): Lesespiegel-Befund
     # ohne Netz; die Suite liest im Modus `store`.
-    assert set(d) == {"db", "box", "gemma", "seit_s", "arbeit_offen", "spiegel", "stand"}
+    assert set(d) == {"db", "box", "gemma", "seit_s", "arbeit_offen", "spiegel", "stand",
+                      "abo"}
+    # Abo (seit 03.10.2026): nur der Modus, nie ein Schlüssel.
+    assert d["abo"] in ("aus", "test", "live", "aus an", "test an", "live an")
     assert d["spiegel"] == "store"
 
 

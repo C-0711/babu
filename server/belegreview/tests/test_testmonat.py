@@ -133,6 +133,7 @@ def welt(tmp_path, monkeypatch):
     monkeypatch.delenv("BABU_TEST_JE_CODE_TAG", raising=False)
     monkeypatch.delenv("BABU_TEST_JE_TAG", raising=False)
     monkeypatch.delenv("BABU_TESTFLIGHT_LINK", raising=False)
+    monkeypatch.delenv("BABU_APPSTORE_LINK", raising=False)
     monkeypatch.delenv("BABU_DIREKT_INHABER", raising=False)
     babu_web._REG_ZULETZT.clear()  # noqa: SLF001
     babu_web._LOGIN_VERSUCHE.clear()  # noqa: SLF001
@@ -163,7 +164,7 @@ def _einloesen(email="meridian@example.org", salon="Salon Meridian", code=None,
     client = TestClient(babu_web.app, base_url="https://testserver")
     return client.post("/api/ambassador/einloesen",
                        json={"code": code or welt["code"], "salon": salon,
-                             "email": email})
+                             "email": email, "agb": True})
 
 
 def _direkt_mandant(email: str) -> dict | None:
@@ -246,6 +247,16 @@ def test_oeffentlicher_testflight_link_steht_in_der_mail(welt, monkeypatch):
     text = [p for p in welt["post"] if p[0] == "meridian@example.org"][0][2]
     assert "https://testflight.apple.com/join/ABCD" in text
     assert "Apple-ID-Adresse" not in text
+
+
+def test_app_store_link_schlaegt_testflight(welt, monkeypatch):
+    """Nach Apples Freigabe (Go-live-Plan Phase 6) führt die Mail in den Store."""
+    monkeypatch.setenv("BABU_TESTFLIGHT_LINK", "https://testflight.apple.com/join/ABCD")
+    monkeypatch.setenv("BABU_APPSTORE_LINK", "https://apps.apple.com/de/app/id6811956687")
+    assert _einloesen(welt=welt).status_code == 200
+    text = [p for p in welt["post"] if p[0] == "meridian@example.org"][0][2]
+    assert "https://apps.apple.com/de/app/id6811956687" in text
+    assert "testflight" not in text.lower()
 
 
 def test_nina_bekommt_eine_kopie(welt, monkeypatch):
@@ -499,3 +510,27 @@ def test_unbekannter_code_auf_der_warteliste_ordnet_nichts_zu(welt):
     with babu_web._DB_LOCK, babu_web._db() as c:
         assert c.execute("SELECT COUNT(*) FROM ambassador_salon WHERE email=?",
                          ("frei@example.org",)).fetchone()[0] == 0
+
+
+def test_einloesen_braucht_die_zustimmung(welt):
+    babu_web._REG_ZULETZT.clear()  # noqa: SLF001
+    r = TestClient(babu_web.app, base_url="https://testserver").post(
+        "/api/ambassador/einloesen",
+        json={"code": welt["code"], "salon": "Salon X", "email": "x@example.org"})
+    assert r.status_code == 400 and "zustimmen" in r.json()["fehler"]
+    assert babu_web.nutzer_holen("x@example.org") is None
+
+
+def test_einloesen_merkt_die_fassung_der_texte(welt):
+    import recht
+    assert _einloesen(welt=welt).status_code == 200
+    with babu_web._DB_LOCK, babu_web._db() as c:  # noqa: SLF001
+        details = c.execute("SELECT details FROM audit_log WHERE "
+                            "aktion='testmonat_eingeloest'").fetchone()[0]
+    assert recht.fassung("agb") in details and recht.fassung("datenschutz") in details
+
+
+def test_landing_fragt_nach_zustimmung(welt, monkeypatch):
+    seite = TestClient(babu_web.app, base_url="https://testserver").get(
+        f"/ambassador/{welt['code']}/salon").text
+    assert 'name="agb"' in seite and "/agb" in seite and "/datenschutz" in seite

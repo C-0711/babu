@@ -26,9 +26,11 @@ import time
 from fastapi import Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
+import abo
 import audit
 import begleiter
 import mandanten
+import provision
 import testmonat
 
 _app = None
@@ -167,7 +169,8 @@ async def api_ambassador_me(request: Request) -> Response:
     if fehler:
         return fehler
     with bw._DB_LOCK, bw._db() as c:
-        a = c.execute("SELECT code, name, verdient, gezahlt FROM ambassador "
+        a = c.execute("SELECT code, name, verdient, gezahlt, "
+                      "COALESCE(heute_mail, 1) FROM ambassador "
                       "WHERE email=? AND aktiv=1", (un,)).fetchone()
         if not a:
             return JSONResponse({"fehler": "Du bist (noch) keine Ambassadorin."},
@@ -181,12 +184,38 @@ async def api_ambassador_me(request: Request) -> Response:
         einladungen = _offene_einladungen(a[0], c)
         geld = _geld(a[0], c)
         roh = _kontakt_zeilen(a[0], c)
+        import kern_auszahlung as kz  # noqa: PLC0415
+        profil_fehlt = kz.fehlt(kz.profil_holen(c, a[0]))
+        gutschriften = kz.gutschriften_von(a[0], c)
     kontakte, heute = _begleiter(a[0], a[1], roh)
     return JSONResponse({"code": a[0], "name": a[1],
                          "verdient": a[2], "gezahlt": a[3], "offen": a[2] - a[3],
                          "salons": salons, "zahlen": _zahlen(salons),
                          "einladungen": einladungen, "geld": geld,
-                         "kontakte": kontakte, "heute": heute})
+                         "kontakte": kontakte, "heute": heute,
+                         "heute_mail": bool(a[4]),
+                         "profil_vollstaendig": not profil_fehlt,
+                         "profil_fehlt": profil_fehlt, "gutschriften": gutschriften})
+
+
+async def api_ambassador_heute_mail(request: Request) -> Response:
+    """Die Ambassadorin selbst: die Mail „Heute für dich" an oder aus."""
+    if not bw._origin_ok(request):
+        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    un, fehler = bw._api_wache(request)
+    if fehler:
+        return fehler
+    try:
+        an = bool(json.loads(await bw.koerper_lesen(request, 1024)).get("an"))
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    with bw._DB_LOCK, bw._db() as c:
+        n = c.execute("UPDATE ambassador SET heute_mail=? WHERE email=? AND aktiv=1",
+                      (1 if an else 0, un)).rowcount
+    if not n:
+        return JSONResponse({"fehler": "Du bist (noch) keine Ambassadorin."},
+                            status_code=404)
+    return JSONResponse({"ok": True, "heute_mail": an})
 
 
 async def api_ambassador_link(request: Request) -> Response:
@@ -275,6 +304,10 @@ border-radius:8px;font-size:14px}}</style></head><body>
 <form onsubmit="return einlosen(this)">
 <input name="salon" placeholder="Name deines Salons" required>
 <input name="email" type="email" placeholder="Deine E-Mail" required>
+<label style="display:flex;gap:8px;align-items:flex-start;font-size:13.5px;margin:0 0 14px">
+<input name="agb" type="checkbox" required style="width:auto;margin:3px 0 0">
+<span>Ich stimme den <a href="/agb" target="_blank">Nutzungsbedingungen</a> zu und habe den
+<a href="/datenschutz" target="_blank">Datenschutz</a> gelesen.</span></label>
 <button class="knopf">Platz sichern</button></form>
 <p id="ok" style="display:none;color:#55705a;font-weight:600"></p>
 <p style="font-size:12.5px;color:#6b6151;margin-top:14px">Wenn du einlöst, sieht {html_text.escape(a[0])}, ob du babu nutzt: wie viele Belege du hochlädst, nicht die Belege selbst.</p></div>
@@ -283,7 +316,7 @@ function einlosen(f){{
   fetch({json.dumps(ziel)}, {{method:"POST",
     headers:{{"Content-Type":"application/json"}},
     body: JSON.stringify({{email:f.email.value, art:"salon", code:{json.dumps(code)}, slug:{json.dumps(slug)},
-      salon:f.salon.value, bemerkung:"Code " + {json.dumps(code)}}})}})
+      salon:f.salon.value, agb:f.agb.checked, bemerkung:"Code " + {json.dumps(code)}}})}})
   .then(r => r.json()).then(d => {{
     if(d.ok){{ document.getElementById("ok").textContent = {json.dumps(danke)};
       f.style.display="none"; }}
@@ -356,12 +389,19 @@ async def api_ambassador_einladen(request: Request) -> Response:
 
 
 async def api_ambassador_meilenstein(request: Request) -> Response:
-    """Verwaltung: einen Meilenstein anerkennen (manuelles Abhaken).
+    """Betreiber: einen Meilenstein von Hand anerkennen.
+
+    Seit 03.10.2026 bucht sich die Provision selbst, sobald Stripe die erste
+    bzw. dritte Monatsrechnung als bezahlt meldet (kern_abo). Dieser Weg
+    bleibt für Salons ohne Abo über babu (z. B. Überweisung) und für
+    Korrekturen — mit derselben Regel (provision.buchen): einmal je Salon und
+    Meilenstein, nur in der Reihenfolge testet → gezeichnet → gehalten.
 
     koerper: code, email (des Salons), meilenstein ('gezeichnet' | 'gehalten'),
-    betrag (EUR, aus dem Paket des Salons). Setzt den Stand, addiert das
-    Guthaben der Ambassadorin — ein Rückschritt ('testet') ist nicht möglich,
-    doppeltes Anerkennen desselben Meilensteins wird abgewiesen."""
+    optional paket (solo/salon/plus — sonst das Paket des Abos oder die
+    Empfehlung aus den Betriebsangaben), optional betrag (EUR) mit grund:
+    ein Betrag abweichend von 3 × Netto-Monatspreis braucht eine Begründung
+    und steht im Audit-Log."""
     un, fehler = bw._betreiber_wache(request)
     if fehler or not un:
         return fehler or JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
@@ -372,49 +412,63 @@ async def api_ambassador_meilenstein(request: Request) -> Response:
     code = str(koerper.get("code", "") or "").strip()[:60]
     email = str(koerper.get("email", "") or "").strip().lower()[:200]
     meilenstein = str(koerper.get("meilenstein", "") or "").strip()
+    if meilenstein not in ("gezeichnet", "gehalten"):
+        return JSONResponse({"fehler": "meilenstein (gezeichnet/gehalten) nötig."},
+                            status_code=400)
+    paket = str(koerper.get("paket", "") or "").strip() or _paket_von(email)
+    regel = provision.betrag(paket)
     betrag = koerper.get("betrag")
-    if meilenstein not in ("gezeichnet", "gehalten") \
-            or not isinstance(betrag, (int, float)) or betrag <= 0:
-        return JSONResponse({"fehler": "meilenstein (gezeichnet/gehalten) und "
-                                       "positiver betrag nötig."}, status_code=400)
+    grund = str(koerper.get("grund", "") or "").strip()[:200]
+    if betrag is None or betrag == regel:
+        betrag = regel
+    elif not isinstance(betrag, (int, float)) or betrag <= 0:
+        return JSONResponse({"fehler": "betrag muss positiv sein."}, status_code=400)
+    elif not grund:
+        return JSONResponse({"fehler": f"Abweichend von {regel} € — bitte einen Grund "
+                                       f"angeben."}, status_code=400)
     betrag = int(betrag)
-    folge = {"gezeichnet": ("testet", "gezeichnet"),
-             "gehalten": ("gezeichnet", "gehalten")}
-    von, bis = folge[meilenstein]
+    if betrag <= 0:
+        return JSONResponse({"fehler": "Für dieses Paket gibt es keinen Betrag — "
+                                       "bitte paket angeben."}, status_code=400)
     with bw._DB_LOCK, bw._db() as c:
-        z = c.execute("""SELECT meilenstein, verdienst FROM ambassador_salon
-                         WHERE code=? AND email=?""", (code, email)).fetchone()
-        if not z:
-            return JSONResponse({"fehler": "Diesen Salon gibt es unter dem Code "
-                                           "nicht."}, status_code=404)
-        if z[0] != von:
-            return JSONResponse({"fehler": f"Salon steht auf „{z[0]}“ — "
-                                           f"„{bis}“ setzt „{von}“ voraus."},
-                                status_code=409)
-        c.execute("""UPDATE ambassador_salon SET meilenstein=?, verdienst=?
-                     WHERE code=? AND email=?""", (bis, betrag, code, email))
-        c.execute("UPDATE ambassador SET verdient = verdient + ? WHERE code=?",
-                  (betrag, code))
-        # Mit Datum gebucht (seit 02.10.2026): daran hängt, in welchem
-        # Auszahlungslauf die Provision kommt.
-        heute = _heute().isoformat()
-        c.execute(f"UPDATE ambassador_salon SET {bis}_am=? WHERE code=? AND email=?",
-                  (heute, code, email))
-        salon_name = c.execute("SELECT salon FROM ambassador_salon WHERE code=? "
-                               "AND email=?", (code, email)).fetchone()
-        c.execute("""INSERT INTO ambassador_buchung
-                     (code, email, salon, meilenstein, betrag, datum)
-                     VALUES (?,?,?,?,?,?)""",
-                  (code, email, salon_name[0] if salon_name else None, bis,
-                   betrag, heute))
-        if bis == "gezeichnet":
+        r = provision.buchen(c, email=email, meilenstein=meilenstein,
+                             betrag_eur=betrag, paket=paket, quelle="hand",
+                             heute=_heute().isoformat(), code=code)
+        if r["ok"] and meilenstein == "gezeichnet":
             # Wer abzeichnet, ist Kunde: der Testmonat endet, alles ist offen.
             direkt = testmonat.direkt_mandant_von(email, c)
             if direkt is not None:
                 testmonat.setzen(direkt[0], None, c)
-    audit.audit(un, "ambassador_meilenstein", ziel_un=email,
-                code=code, meilenstein=meilenstein, betrag=betrag)
-    return JSONResponse({"ok": True, "meilenstein": bis, "verdienst": betrag})
+    if not r["ok"]:
+        if r["grund"] == "keine_ambassadorin":
+            return JSONResponse({"fehler": "Diesen Salon gibt es unter dem Code "
+                                           "nicht."}, status_code=404)
+        if r["grund"] == "selbst":
+            return JSONResponse({"fehler": "Der eigene Salon bringt keine Provision."},
+                                status_code=409)
+        if r["grund"] == "stand":
+            return JSONResponse({"fehler": f"Salon steht auf „{r.get('stand')}“ — "
+                                           f"„{meilenstein}“ setzt „"
+                                           f"{provision.VORHER[meilenstein]}“ voraus."},
+                                status_code=409)
+        return JSONResponse({"fehler": "Dieser Meilenstein ist schon gebucht."},
+                            status_code=409)
+    audit.audit(un, "ambassador_meilenstein", ziel_un=email, code=code,
+                meilenstein=meilenstein, betrag=betrag, paket=paket,
+                **({"grund": grund} if betrag != regel else {}))
+    return JSONResponse({"ok": True, "meilenstein": meilenstein, "verdienst": betrag,
+                         "paket": paket})
+
+
+def _paket_von(email: str) -> str:
+    """Paket des Salons: aus dem Abo, sonst die Empfehlung seiner Angaben."""
+    with bw._DB_LOCK, bw._db() as c:
+        z = c.execute("SELECT m.paket FROM mandant m WHERE m.besitzer_un=? AND "
+                      "m.paket IS NOT NULL ORDER BY m.id DESC", (email,)).fetchone()
+    if z and z[0]:
+        return z[0]
+    import saloncheck  # noqa: PLC0415
+    return saloncheck.paket_empfehlung(bw.db_einstellungen(email))["paket"]
 
 
 async def api_ambassador_gezahlt(request: Request) -> Response:
@@ -531,17 +585,9 @@ def _passwort_link(email: str) -> str | None:
 
 
 def _app_absatz() -> str:
-    """Wie die App aufs Telefon kommt: über den öffentlichen TestFlight-Link,
-    sobald es ihn gibt — sonst wie bisher per Apple-ID-Antwort."""
+    """Wie die App aufs Telefon kommt — siehe startguide.app_absatz."""
     import startguide  # noqa: PLC0415
-    link = os.environ.get("BABU_TESTFLIGHT_LINK", "").strip()
-    if not link:
-        return startguide.testflight_absatz()
-    return ("Die babu-App aufs iPhone: diesen Link auf dem Telefon öffnen —\n\n"
-            f"    {link}\n\n"
-            "Er führt zu TestFlight, Apples offiziellem Weg für Test-Apps. Einmal\n"
-            "„Testen“ antippen, dann installiert sich babu wie jede andere App.\n"
-            "In der App meldest du dich mit dieser E-Mail-Adresse an.\n")
+    return startguide.app_absatz()
 
 
 def _senden(an: str, betreff: str, text: str) -> None:
@@ -585,6 +631,9 @@ async def api_ambassador_einloesen(request: Request) -> Response:
     email = str(koerper.get("email", "") or "").strip().lower()[:200]
     if not salon:
         return JSONResponse({"fehler": "Wie heißt dein Salon?"}, status_code=400)
+    if koerper.get("agb") is not True:
+        return JSONResponse({"fehler": "Bitte den Nutzungsbedingungen zustimmen."},
+                            status_code=400)
     if not ei.mail_gueltig(email):
         return JSONResponse({"fehler": "Diese E-Mail-Adresse sieht nicht "
                                        "richtig aus."}, status_code=400)
@@ -667,8 +716,10 @@ async def api_ambassador_einloesen(request: Request) -> Response:
             f"    Testmonat bis: {bis.strftime('%d.%m.%Y')}\n\n"
             f"Die Ablage richtet sich von selbst ein. Gezeichnet oder "
             f"verlängern: Portal → Verwaltung → Ambassadorinnen.\n")
+    import recht  # noqa: PLC0415
     audit.audit(f"code:{code}", "testmonat_eingeloest", ziel_un=email,
-                mandant_id=str(mandant_id), bis=bis.isoformat())
+                mandant_id=str(mandant_id), bis=bis.isoformat(),
+                agb=recht.fassung("agb"), datenschutz=recht.fassung("datenschutz"))
     print(f"[testmonat] {salon} <{email}> über {code} bis {bis}", flush=True)
     return JSONResponse({"ok": True, "hinweis": _EINGELOEST})
 
@@ -849,7 +900,9 @@ def _faellig(offen: list[dict], heute: dt.date) -> dict:
             "auszahlbar": betrag >= MINDEST_AUSZAHLUNG}
 
 
-_MEILENSTEIN_TEXT = {"gezeichnet": "gezeichnet", "gehalten": "3 Monate dabei"}
+_MEILENSTEIN_TEXT = {"gezeichnet": "gezeichnet", "gehalten": "3 Monate dabei",
+                     "storno_gezeichnet": "Zahlung zurückgebucht",
+                     "storno_gehalten": "Zahlung zurückgebucht"}
 
 
 def _bewegungen(code: str, c) -> list[dict]:
@@ -865,7 +918,8 @@ def _bewegungen(code: str, c) -> list[dict]:
                 "text": f"Auszahlung (verdient bis {_de(_datum(a[1]))})",
                 "betrag": -int(a[2]), "art": "auszahlung"}
                for a in c.execute("SELECT datum, stichtag, betrag "
-                                  "FROM ambassador_auszahlung WHERE code=?", (code,))]
+                                  "FROM ambassador_auszahlung WHERE code=? AND "
+                                  "(status IS NULL OR status='ueberwiesen')", (code,))]
     # Am selben Tag erst die Gutschrift, dann die Auszahlung (absteigend sortiert).
     zeilen.sort(key=lambda z: (z["datum"], z["art"] == "provision"), reverse=True)
     return zeilen
@@ -906,7 +960,8 @@ def _geld(code: str, c) -> dict:
         "auszahlungen": [dict(zip(("datum", "betrag", "stichtag"), a))
                          for a in c.execute(
                              "SELECT datum, betrag, stichtag FROM ambassador_auszahlung "
-                             "WHERE code=? ORDER BY datum DESC, id DESC", (code,))],
+                             "WHERE code=? AND (status IS NULL OR status='ueberwiesen') "
+                             "ORDER BY datum DESC, id DESC", (code,))],
     }
 
 
@@ -1016,7 +1071,8 @@ def _begleiter(code: str, ambassadorin: str, roh: dict) -> tuple[list, list]:
             text = begleiter.nachricht(
                 a["art"], person=person, ambassadorin=ambassadorin,
                 link=_link(code, e["slug"]),
-                tage=st["tage_uebrig"] if st else None)
+                tage=st["tage_uebrig"] if st else None,
+                weiter=_weiter_link() if abo.an() else None)
             a.update(nr=e["id"], person=person, salon=zeile["salon"],
                      telefon=zeile["telefon"], nachricht=text,
                      whatsapp=begleiter.whatsapp(e["telefon"], text))
@@ -1086,6 +1142,11 @@ async def api_ambassador_erinnert(request: Request) -> Response:
     return JSONResponse({"ok": True, "erinnerungen": anzahl})
 
 
+def _weiter_link() -> str:
+    """Wo der Salon selbst abschließt (Seite „Weitermachen", seit 03.10.2026)."""
+    return f"{bw.PORTAL_ORIGIN.rstrip('/')}/portal#abo"
+
+
 async def api_ambassador_weitermachen(request: Request) -> Response:
     """Der Salon will weitermachen — Nina bekommt Bescheid und bucht ihn als
     gezeichnet; bis dahin schlägt babu für ihn nichts mehr vor."""
@@ -1097,6 +1158,16 @@ async def api_ambassador_weitermachen(request: Request) -> Response:
         c.execute("UPDATE ambassador_einladung SET weiter_am=? WHERE id=?",
                   (_heute().isoformat(), z["id"]))
     wer = z["person"] or z["salon"] or "Ein Salon"
+    selbst = abo.an() and bool(z["email"])
+    if selbst:
+        # Seit 03.10.2026 schließt der Salon selbst ab — er bekommt den Weg
+        # per Mail; die Provision bucht sich mit der ersten Zahlung.
+        await bw.run_in_threadpool(
+            _senden, z["email"], "So machst du mit babu weiter",
+            f"Hallo {z['person'] or ''},\n\n{name} hat uns gesagt, dass du mit babu "
+            "weitermachen willst — schön!\n\nHier wählst du dein Paket und "
+            f"schließt in zwei Minuten ab:\n{_weiter_link()}\n\nAlles, was du im "
+            "Testmonat erfasst hast, bleibt da.\n\nLiebe Grüße\nbabu\n")
     if bw.SUPPORT_MAIL:
         await bw.run_in_threadpool(
             _senden, bw.SUPPORT_MAIL, f"Will weitermachen: {wer}",
@@ -1104,7 +1175,9 @@ async def api_ambassador_weitermachen(request: Request) -> Response:
             + (f" ({z['salon']})" if z["salon"] and z["salon"] != wer else "")
             + f" will bei babu weitermachen. Gemeldet von {name} (Code {code})"
             + (f", Telefon {begleiter.anzeige(z['telefon'])}" if z["telefon"] else "")
-            + ".\n\nBitte in der Verwaltung als gezeichnet buchen.\n")
+            + (".\n\nDer Salon hat den Link zum Abschließen per Mail bekommen; die "
+               "Provision bucht sich mit der ersten Zahlung.\n" if selbst else
+               ".\n\nBitte in der Verwaltung als gezeichnet buchen.\n"))
     audit.audit(un, "begleiter_weitermachen", code=code, nr=str(z["id"]))
     return JSONResponse({"ok": True})
 
@@ -1121,5 +1194,6 @@ _ROUTEN = [
     ("POST", "/api/ambassador/verlaengern", api_ambassador_verlaengern),
     ("POST", "/api/ambassador/erinnert", api_ambassador_erinnert),
     ("POST", "/api/ambassador/weitermachen", api_ambassador_weitermachen),
+    ("POST", "/api/ambassador/heute-mail", api_ambassador_heute_mail),
     ("POST", "/api/ambassador/gezahlt", api_ambassador_gezahlt),
 ]

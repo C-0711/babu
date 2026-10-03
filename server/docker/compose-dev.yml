@@ -56,6 +56,17 @@ services:
       # Mail: nichts geht raus, landet unter /data/babu-web/postausgang.
       BABU_ABSENDER: ""
       BABU_SUPPORT_MAIL: ""
+      # Abo per Stripe (seit 03.10.2026): TEST-Werte aus ~/babu-src/server/
+      # docker/.env (git-ignoriert, überlebt den reset --hard des Polls).
+      # Ohne sie bleibt das Abo aus. Live-Schlüssel lehnt babu hier ab.
+      BABU_ABO: "${BABU_ABO:-0}"
+      BABU_STRIPE_SCHLUESSEL: "${BABU_STRIPE_SCHLUESSEL:-}"
+      BABU_STRIPE_WEBHOOK_GEHEIMNIS: "${BABU_STRIPE_WEBHOOK_GEHEIMNIS:-}"
+      BABU_STRIPE_PREIS_SOLO: "${BABU_STRIPE_PREIS_SOLO:-}"
+      BABU_STRIPE_PREIS_SALON: "${BABU_STRIPE_PREIS_SALON:-}"
+      BABU_STRIPE_PREIS_PLUS: "${BABU_STRIPE_PREIS_PLUS:-}"
+      BABU_STRIPE_STEUERSATZ: "${BABU_STRIPE_STEUERSATZ:-}"
+      BABU_STRIPE_VERSION: "${BABU_STRIPE_VERSION:-}"
     volumes:
       - ~/babu-dev/babu-web:/data/babu-web
       # Startseite, Bilder und die /app-Seite aus dem Repo — sonst hätte die

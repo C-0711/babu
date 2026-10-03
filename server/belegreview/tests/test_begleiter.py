@@ -295,7 +295,8 @@ def test_kontakte_mit_status_und_aktivitaet(welt):
     r = TestClient(babu_web.app, base_url="https://testserver").post(
         "/api/ambassador/einloesen",
         json={"code": welt["code"], "salon": "Salon Meridian",
-              "email": "meridian@example.org", "slug": d["link"].rsplit("/", 1)[-1]})
+              "email": "meridian@example.org", "slug": d["link"].rsplit("/", 1)[-1],
+              "agb": True})
     assert r.status_code == 200, r.text
     welt["aktiv"]["meridian@example.org"] = (5, HEUTE)
     kontakte = welt["babs"].get("/api/ambassador/me").json()["kontakte"]
@@ -311,7 +312,8 @@ def test_drei_tage_ohne_beleg_steht_unter_heute(welt):
     TestClient(babu_web.app, base_url="https://testserver").post(
         "/api/ambassador/einloesen",
         json={"code": welt["code"], "salon": "Salon Meridian",
-              "email": "meridian@example.org", "slug": d["link"].rsplit("/", 1)[-1]})
+              "email": "meridian@example.org", "slug": d["link"].rsplit("/", 1)[-1],
+              "agb": True})
     with babu_web._DB_LOCK, babu_web._db() as c:
         c.execute("UPDATE ambassador_salon SET eingelöst=?",
                   ((HEUTE - dt.timedelta(days=10)).isoformat() + "T09:00:00Z",))
@@ -339,3 +341,18 @@ def test_aktivitaet_aus_dem_index():
         "c": {"hochgeladen": None}}}
     assert ka.aktivitaet_aus_index(idx) == (3, D(2026, 10, 1))
     assert ka.aktivitaet_aus_index({"belege": {}}) == (0, None)
+
+
+# ————— Mit Abo-Weg (seit 03.10.2026) —————
+
+def test_test_lagen_tragen_den_weg_zum_abschluss():
+    weg = "https://mybabu.io/portal#abo"
+    for art in ("test_endet", "test_vorbei"):
+        t = bg.nachricht(art, person="Sonja", ambassadorin="Babs", tage=3,
+                                weiter=weg)
+        assert weg in t and "Babs" in t
+        ohne = bg.nachricht(art, person="Sonja", ambassadorin="Babs", tage=3)
+        assert weg not in ohne
+    # Andere Lagen bleiben, wie sie sind.
+    assert bg.nachricht("kein_beleg", person="S", ambassadorin="B", weiter=weg) \
+        == bg.nachricht("kein_beleg", person="S", ambassadorin="B")

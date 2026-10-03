@@ -66,6 +66,17 @@ _TEXTE = {
               "Fragen hast, schreib mir jederzeit.\nLiebe Grüße, {ambassadorin}"),
 }
 
+#: Mit Abo-Weg (seit 03.10.2026, `BABU_ABO=1`): der Salon schließt selbst ab —
+#: die Nachricht trägt den Link zur Seite „Weitermachen" statt „sag mir Bescheid".
+_TEXTE_MIT_WEG = {
+    "test_endet": ("Hallo {person}, wie läuft es mit babu? Dein Test läuft "
+                   "noch {tage} Tage. Wenn du weitermachen willst, geht das "
+                   "hier in zwei Minuten: {weiter}\nLiebe Grüße, {ambassadorin}"),
+    "test_vorbei": ("Hallo {person}, dein Test mit babu ist vorbei. Deine "
+                    "Belege bleiben gespeichert. Weitermachen geht hier: "
+                    "{weiter}\nLiebe Grüße, {ambassadorin}"),
+}
+
 
 # ---------------------------------------------------------------------------
 # Handynummer und WhatsApp-Link
@@ -109,9 +120,14 @@ def whatsapp(roh_oder_nummer: str, text: str) -> str | None:
 
 
 def nachricht(art: str, *, person: str, ambassadorin: str, link: str = "",
-              tage: int | None = None) -> str:
-    return _TEXTE[art].format(person=person or "du", ambassadorin=ambassadorin,
-                              link=link, tage=tage if tage is not None else "")
+              tage: int | None = None, weiter: str | None = None) -> str:
+    """Der Text für WhatsApp. `weiter`: Link zur Seite „Weitermachen" — dann
+    sagen die Test-Lagen, wo der Salon selbst abschließt."""
+    vorlage = (_TEXTE_MIT_WEG[art] if weiter and art in _TEXTE_MIT_WEG
+               else _TEXTE[art])
+    return vorlage.format(person=person or "du", ambassadorin=ambassadorin,
+                          link=link, tage=tage if tage is not None else "",
+                          weiter=weiter or "")
 
 
 # ---------------------------------------------------------------------------

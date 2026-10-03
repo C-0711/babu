@@ -58,3 +58,19 @@ def test_portal_und_landing_verlinken_die_seiten():
     for pfad in ("/impressum", "/datenschutz", "/agb"):
         assert f'href="{pfad}"' in landing, pfad
     assert "Impressum &amp; Datenschutz folgen" not in landing
+
+
+def test_hilfe_und_ambassador_vereinbarung_sind_oeffentlich():
+    from fastapi.testclient import TestClient
+    import babu_web
+    c = TestClient(babu_web.app)
+    r = c.get("/hilfe")
+    assert r.status_code == 200 and "hallo@0711.io" in r.text and "Abo verwalten" in r.text
+    r = c.get("/ambassador/vereinbarung")
+    assert r.status_code == 200 and "Gutschrift" in r.text and "237" in r.text
+
+
+def test_fassung_aendert_sich_mit_dem_text(monkeypatch):
+    alt = recht.fassung("agb")
+    monkeypatch.setitem(recht.TEXTE, "agb", ("Nutzungsbedingungen", "anders"))
+    assert recht.fassung("agb") != alt and len(alt) == 12

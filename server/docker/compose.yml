@@ -96,9 +96,41 @@ services:
       BABU_TEST_JE_CODE_TAG: "${BABU_TEST_JE_CODE_TAG:-5}"
       BABU_TEST_JE_TAG: "${BABU_TEST_JE_TAG:-20}"
       BABU_TESTFLIGHT_LINK: "${BABU_TESTFLIGHT_LINK:-}"
+      # Nach Apples Freigabe: der App-Store-Link schlägt TestFlight in jeder
+      # Willkommensmail (startguide.app_absatz).
+      BABU_APPSTORE_LINK: "${BABU_APPSTORE_LINK:-}"
       # Wer die Direktkunden der Hauskanzlei „babu direkt" im Kanzlei-Cockpit
       # betreut (Konto mit Rolle kanzlei). Leer = nur die Verwaltung.
       BABU_DIREKT_INHABER: "${BABU_DIREKT_INHABER:-}"
+      # --- Abo per Stripe (seit 03.10.2026, kern_abo.py) -----------------
+      # BABU_ABO=1 öffnet die Seite „Weitermachen" — erst, wenn alles unten
+      # gesetzt UND die Rechtstexte freigegeben sind. Die WERTE stehen nur in
+      # docker/.env (rsync immer mit --exclude=.env), nie hier und nie im
+      # Repo. Live-Schlüssel arbeiten nur auf https://mybabu.io, Test-
+      # Schlüssel nur woanders (stripe_api.eingerichtet).
+      BABU_ABO: "${BABU_ABO:-0}"
+      BABU_STRIPE_SCHLUESSEL: "${BABU_STRIPE_SCHLUESSEL:-}"
+      BABU_STRIPE_WEBHOOK_GEHEIMNIS: "${BABU_STRIPE_WEBHOOK_GEHEIMNIS:-}"
+      BABU_STRIPE_PREIS_SOLO: "${BABU_STRIPE_PREIS_SOLO:-}"
+      BABU_STRIPE_PREIS_SALON: "${BABU_STRIPE_PREIS_SALON:-}"
+      BABU_STRIPE_PREIS_PLUS: "${BABU_STRIPE_PREIS_PLUS:-}"
+      BABU_STRIPE_STEUERSATZ: "${BABU_STRIPE_STEUERSATZ:-}"
+      BABU_STRIPE_VERSION: "${BABU_STRIPE_VERSION:-}"
+      # Wer „Neues Abo", Zahlungsfehler und den Tagesbericht bekommt
+      # (leer = BABU_SUPPORT_MAIL).
+      BABU_BETREIBER_MAIL: "${BABU_BETREIBER_MAIL:-}"
+      # --- Auszahlung an Ambassadorinnen (seit 03.10.2026, kern_auszahlung.py)
+      # Aussteller der Gutschriften und das Konto, von dem die Bankdatei
+      # (SEPA-Sammelüberweisung) abbucht. Werte nur in .env.
+      BABU_FIRMA_NAME: "${BABU_FIRMA_NAME:-}"
+      BABU_FIRMA_ANSCHRIFT: "${BABU_FIRMA_ANSCHRIFT:-}"
+      BABU_FIRMA_USTID: "${BABU_FIRMA_USTID:-}"
+      BABU_AUSZAHLUNG_NAME: "${BABU_AUSZAHLUNG_NAME:-}"
+      BABU_AUSZAHLUNG_IBAN: "${BABU_AUSZAHLUNG_IBAN:-}"
+      BABU_AUSZAHLUNG_BIC: "${BABU_AUSZAHLUNG_BIC:-}"
+      # Provisionen müssen so viele Tage vor dem Stichtag gebucht sein, um
+      # mitzukommen (Schutz vor späten Rücklastschriften; 0 = keine Wartezeit).
+      BABU_PROVISION_KARENZ_TAGE: "${BABU_PROVISION_KARENZ_TAGE:-0}"
       # --- Postgres scharf schalten (Plan 21, Phase 1) -------------------
       # Erst hochfahren, dann EINMAL von Hand umziehen
       #   docker compose up -d postgres

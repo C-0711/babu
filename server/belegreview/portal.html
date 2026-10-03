@@ -578,6 +578,9 @@ main p, .leer, .karte > p{max-width:78ch}
 .amb-code b{font:600 13px/1 var(--gc-mono);letter-spacing:.02em;color:var(--gc-fg)}
 .amb-code button{padding:6px 12px;border-radius:999px;background:var(--gc-accent-subtle);color:var(--gc-fg);font-size:12.5px;font-weight:550}
 .amb-tabelle{width:100%;border-collapse:collapse;margin-top:20px;font-size:14px}
+.tabelle-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tabelle-scroll .amb-tabelle{margin-top:6px}
+.amb-tabelle td,.amb-tabelle th{padding:6px 8px;text-align:left}
 .amb-tabelle th{font:500 12px/1.2 var(--gc-sans);color:var(--gc-muted);text-align:center;padding:0 2px 8px;white-space:nowrap}
 .amb-tabelle th:first-child{text-align:left}
 .amb-tabelle td{padding:12px 2px 10px;border-top:1px solid var(--gc-border-l);vertical-align:top}
@@ -647,6 +650,20 @@ main p, .leer, .karte > p{max-width:78ch}
 .amb-mehr[open]>summary::after{transform:rotate(-135deg)}
 .amb-mehr>summary:hover{color:var(--gc-accent)}
 .amb-mehr-inhalt{padding:0 2px 16px;font-size:13.5px}
+/* Weitermachen (Abo, seit 03.10.2026) */
+.abo-pakete{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin:10px 0 14px}
+.abo-paket{display:flex;flex-direction:column;gap:3px;padding:14px;border:1px solid var(--gc-border);
+  border-radius:var(--r);background:var(--gc-bg);cursor:pointer}
+.abo-paket input{position:absolute;opacity:0;pointer-events:none}
+.abo-paket.an{border-color:var(--gc-fg);box-shadow:0 0 0 1px var(--gc-fg)}
+.abo-paket:focus-within{outline:2px solid var(--gc-accent);outline-offset:2px}
+.abo-paket b{font-size:16px} .abo-preis{font-size:20px;font-weight:600}
+.abo-paket small{font-size:12px;color:var(--gc-muted)} .abo-paket .abo-tipp{color:var(--gc-ok)}
+.abo-zustimmung{display:flex;gap:10px;align-items:flex-start;font-size:14px;margin:6px 0}
+.abo-zustimmung input{margin-top:3px;width:18px;height:18px;flex:none}
+.abo-klein{font-size:12px;color:var(--gc-muted);margin:6px 0 0}
+.abo-probe{background:var(--gc-accent-subtle);font-size:13px}
+.abo-fehler{color:var(--gc-danger);font-size:13px;margin-top:8px}
 .amb-felder{display:flex;gap:8px;flex-wrap:wrap}
 .amb-felder input{flex:1;min-width:170px;padding:10px 12px;border:1px solid var(--gc-border);border-radius:8px;font:inherit;font-size:14px;background:var(--gc-bg);color:var(--gc-fg)}
 .amb-felder .hin{margin-top:0}
@@ -2094,6 +2111,15 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <div style="max-width:560px;margin:0 auto" id="einrichtung-inhalt"></div>
   </section>
 
+  <!-- WEITERMACHEN (Abo, seit 03.10.2026) -->
+  <section class="ansicht" id="a-abo">
+    <a class="zurueck" href="#heute">‹ Heute</a>
+    <div style="max-width:640px;margin:0 auto">
+      <div class="gruss" style="font-size:22px;margin-bottom:14px">Weitermachen mit babu</div>
+      <div id="abo-inhalt"></div>
+    </div>
+  </section>
+
   <!-- AUFRÄUMEN -->
   <section class="ansicht" id="a-aufraeumen">
     <a class="zurueck" href="#heute">‹ Heute</a>
@@ -2235,7 +2261,7 @@ function zeigeApp(){
 
 /* Ohne eigene Belegbox gibt es nichts zu zeigen — dann bleiben die Wege
    dorthin zu, statt Ansichten zu öffnen, die nur 403 zurückbekommen. */
-const OHNE_BOX_ERLAUBT = ["gesperrt", "einrichtung", "einstellungen", "mandanten"];
+const OHNE_BOX_ERLAUBT = ["gesperrt", "einrichtung", "einstellungen", "mandanten", "abo"];
 function boxZustandZeigen(){
   document.querySelectorAll("nav button").forEach(b => b.hidden = !meineBox);
   $("#hochladen-knopf").hidden = !meineBox;
@@ -2422,6 +2448,7 @@ const ansichten = { gesperrt: gesperrtLaden, heute: ladeHeute, belege: ladeBeleg
                     einrichtung: ladeEinrichtung, verwaltung: ladeVerwaltung,
                     mandanten: ladeUeberblick,
                     einstellungen: ladeEinstellungen, detail: null,
+                    abo: null,
                     unterlage: null };
 /* Welcher Reiter oben leuchtet, wenn die Ansicht selbst keiner ist.
    Der Salon-Check ist seit 03.09.2026 ein Unterreiter der Auswertung —
@@ -2433,7 +2460,9 @@ function routen(){
   // Der Rest hinter dem ersten Schrägstrich, ungeteilt: ein Ablagepfad ist
   // „dokumente/2026-08/miete.pdf" und hätte sich sonst in Stücke zerlegt.
   const arg = h.slice(ziel.length + 1);
-  let name = ansichten[ziel] !== undefined ? ziel : startAnsicht();
+  /* Zurück vom Bezahlen: #abo-danke/<sitzung> zeigt die Seite „Weitermachen". */
+  const aboDanke = ziel === "abo-danke";
+  let name = aboDanke ? "abo" : ansichten[ziel] !== undefined ? ziel : startAnsicht();
   if (!meineBox && !OHNE_BOX_ERLAUBT.includes(name)) name = "gesperrt";
   document.querySelectorAll(".ansicht").forEach(a => a.classList.remove("an"));
   document.querySelectorAll("nav button").forEach(b =>
@@ -2443,6 +2472,7 @@ function routen(){
      schaut nicht mehr zu — sonst fragt das Portal im Hintergrund weiter. */
   if (name !== "mandanten") mdImportStop();
   if (name === "detail") ladeDetail(arg);
+  else if (name === "abo") ladeAbo(aboDanke ? arg : "");
   else if (name === "unterlage") ladeUnterlage(arg);
   else if (ansichten[name]) ansichten[name]();
 }
@@ -6689,11 +6719,15 @@ async function ladeVerwaltung(){
         <span>${esc(a.email)}</span>
         <span class="amb-code"><span>Code</span><b>${esc(a.code)}</b></span>
         ${g ? `<span>Nächster Lauf am ${ambDatum(g.naechster_lauf.datum)}: <b style="color:var(--gc-fg)">${g.naechster_lauf.betrag} €</b></span>` : ""}
-        ${f && f.auszahlbar ? `<button class="hin" style="margin-top:0" onclick="ambassadorGezahlt(${c})">Auszahlungslauf vom ${ambDatum(f.datum)} ausführen: ${f.betrag} €</button>` : ""}
       </div>
       ${ambTabelle(a.salons || [], "v" + c, true, a.code)}
     </details>`;
   }
+
+  /* Auszahlung (seit 03.10.2026): ein Lauf je Quartal mit Gutschriften und
+     Bankdatei — gefüllt von ladeAuszahlung(), sobald die Seite steht. */
+  html += `<div class="sektion lbl">Auszahlung an Ambassadorinnen</div><div id="verw-auszahlung"><div class="skelett"></div></div>`;
+  html += `<div class="sektion lbl">Abos</div><div id="verw-abos"><div class="skelett"></div></div>`;
 
   const offen = regs.filter(r => r.status === "neu");
   html += `<div class="sektion lbl">Anfragen (${offen.length})</div>`;
@@ -6742,10 +6776,88 @@ async function ladeVerwaltung(){
     <div id="nv-ergebnis"></div>
   </div>`;
   ziel.innerHTML = html;
+  if (betreiber){ ladeAuszahlung(); ladeAboUebersicht(); }
   $("#verw-suche").addEventListener("input", ev => {
     _verwSuche = ev.target.value; _verwSeite = 1; verwListeRendern();
   });
   verwListeRendern();
+}
+
+/* ————— Betreiber: Auszahlungslauf und Abos (seit 03.10.2026) —————
+   Im onclick nur Nummern: die Nummer des Laufs. */
+async function ladeAuszahlung(){
+  const ziel = $("#verw-auszahlung");
+  if (!ziel) return;
+  let v, l;
+  try{
+    v = await (await api("/api/auszahlung/vorschau")).json();
+    l = (await (await api("/api/auszahlung/laeufe")).json()).laeufe || [];
+  }catch{ ziel.innerHTML = ""; return; }
+  const zahlbar = (v.zeilen || []).filter(z => z.zahlbar);
+  const zeilen = (v.zeilen || []).map(z => `<tr><td>${esc(z.name)}</td>
+      <td style="text-align:right">${aboEuro(z.brutto_cent)}</td>
+      <td>${z.zahlbar ? "kommt mit" : esc(z.grund || "")}</td></tr>`).join("");
+  let html = `<div class="karte"><p>Lauf vom ${ambDatum(v.lauf)} — verdient bis ${ambDatum(v.stichtag)}.</p>
+    ${zeilen ? `<div class="tabelle-scroll"><table class="amb-tabelle" style="width:100%"><thead><tr><th>Ambassadorin</th>
+      <th style="text-align:right">Betrag</th><th>Stand</th></tr></thead><tbody>${zeilen}</tbody></table></div>`
+      : `<p style="color:var(--gc-desc)">Für diesen Lauf ist nichts offen.</p>`}
+    ${v.konto_fehlt ? `<p class="abo-fehler">Das Auszahlungskonto von 0711 ist noch nicht eingetragen.</p>` : ""}
+    ${zahlbar.length && !(v.schon || []).length && !v.konto_fehlt
+      ? `<button class="hin" onclick="auszahlungAnlegen()">Gutschriften und Bankdatei erzeugen (${aboEuro(v.summe_cent)})</button>` : ""}
+  </div>`;
+  for (const lauf of l.filter(x => x.status !== "verworfen").slice(0, 4)){
+    const offenLauf = lauf.status === "erstellt";
+    html += `<div class="karte"><h3>Lauf ${ambDatum(lauf.lauf)} — ${lauf.anzahl} ${lauf.anzahl === 1 ? "Gutschrift" : "Gutschriften"}, ${aboEuro(lauf.summe_cent)}</h3>
+      <p>${offenLauf ? "Erzeugt — Bankdatei ins Online-Banking laden, freigeben, dann hier bestätigen."
+                     : "Überwiesen am " + ambDatum(lauf.ueberwiesen) + "."}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <a class="chip" href="/api/auszahlung/lauf/${Number(lauf.id)}/sepa.xml">Bankdatei</a>
+        <a class="chip" href="/api/auszahlung/lauf/${Number(lauf.id)}/gutschriften.zip">Gutschriften</a>
+        ${offenLauf ? `<button class="hin" style="margin-top:0" onclick="auszahlungUeberwiesen(${Number(lauf.id)})">Überwiesen bestätigen</button>
+          <button class="chip" onclick="auszahlungVerwerfen(${Number(lauf.id)})">Verwerfen</button>` : ""}
+      </div></div>`;
+  }
+  ziel.innerHTML = html;
+}
+async function auszahlungSchritt(pfad, frage){
+  if (frage && !confirm(frage)) return;
+  try{
+    const r = await api(pfad, {method:"POST"});
+    const d = await r.json();
+    if (!r.ok) alert(d.fehler || "Ging gerade nicht.");
+    ladeAuszahlung();
+  }catch{ alert("Gerade keine Verbindung — später nochmal."); }
+}
+function auszahlungAnlegen(){
+  auszahlungSchritt("/api/auszahlung/lauf", "Gutschriften und Bankdatei erzeugen? Die Nummern werden dabei fest vergeben.");
+}
+function auszahlungUeberwiesen(nr){
+  auszahlungSchritt("/api/auszahlung/lauf/" + nr + "/ueberwiesen",
+    "Hast du die Bankdatei hochgeladen und freigegeben? Die Ambassadorinnen bekommen jetzt Bescheid.");
+}
+function auszahlungVerwerfen(nr){
+  auszahlungSchritt("/api/auszahlung/lauf/" + nr + "/verwerfen",
+    "Lauf verwerfen? Die Gutschriften gelten dann als storniert, die Provisionen sind wieder offen.");
+}
+async function ladeAboUebersicht(){
+  const ziel = $("#verw-abos");
+  if (!ziel) return;
+  let d;
+  try{ d = await (await api("/api/abo/uebersicht")).json(); }catch{ ziel.innerHTML = ""; return; }
+  const wort = {zahlung_laeuft: "erste Zahlung läuft", aktiv: "zahlt", zahlung_offen: "Zahlung offen",
+                gekuendigt: "gekündigt", beendet: "beendet"};
+  const zeilen = (d.abos || []).map(a => `<tr><td>${esc(a.salon)}</td>
+      <td>${esc(a.paket ? (a.paket === "plus" ? "Salon Plus" : a.paket[0].toUpperCase() + a.paket.slice(1)) : "–")}</td>
+      <td>${a.abo_status ? esc(wort[a.abo_status] || a.abo_status)
+            : a.test_bis ? "Test bis " + ambDatum(a.test_bis) : "–"}</td>
+      <td style="text-align:right">${a.bezahlte_monate}</td></tr>`).join("");
+  ziel.innerHTML = `<div class="karte">
+    ${d.modus === "test" ? `<p class="abo-probe" style="padding:6px 10px;border-radius:8px">Probelauf — es wird nichts abgebucht.</p>` : ""}
+    ${!d.an ? `<p style="color:var(--gc-desc)">„Weitermachen" ist für Salons noch nicht freigeschaltet.</p>` : ""}
+    ${d.ereignis_fehler ? `<p class="abo-fehler">${d.ereignis_fehler} Zahlungsmeldungen konnten nicht verarbeitet werden.</p>` : ""}
+    ${zeilen ? `<div class="tabelle-scroll"><table class="amb-tabelle" style="width:100%"><thead><tr><th>Salon</th><th>Paket</th><th>Stand</th>
+      <th style="text-align:right">Monate bezahlt</th></tr></thead><tbody>${zeilen}</tbody></table></div>`
+      : `<p style="color:var(--gc-desc)">Noch keine Salons direkt bei babu.</p>`}</div>`;
 }
 
 function zugangKarteHtml(n){
@@ -7746,16 +7858,18 @@ async function ambassadorAnlegen(){
   }catch{ alert("Gerade keine Verbindung — später nochmal."); }
 }
 async function ambassadorMeilenstein(nr, meilenstein){
+  /* Seit 03.10.2026 bucht sich die Provision mit der Zahlung selbst; das
+     hier ist der Handweg (z. B. Überweisung). Den Betrag rechnet babu aus
+     dem Paket: 3 Monatspreise — Solo 117 €, Salon 237 €, Salon Plus 447 €. */
   const z = AMB_ZEILEN[nr];
-  const betrag = 237;
   if (!z || !confirm((meilenstein === "gezeichnet" ? "Als gezeichnet buchen" : "3 Monate dabei buchen")
-      + ": " + betrag + " € für die Ambassadorin?")) return;
+      + "? Die Provision richtet sich nach dem Paket des Salons (Solo 117 €, Salon 237 €, Salon Plus 447 €).")) return;
   try{
     const r = await api("/api/ambassador/meilenstein", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({code: z.code, email: z.email, meilenstein, betrag})});
+      body: JSON.stringify({code: z.code, email: z.email, meilenstein})});
     const d = await r.json();
-    if (r.ok) ladeVerwaltung();
+    if (r.ok){ alert("Gebucht: " + d.verdienst + " € für die Ambassadorin."); ladeVerwaltung(); }
     else alert(d.fehler || "Ging gerade nicht.");
   }catch{ alert("Gerade keine Verbindung — später nochmal."); }
 }
@@ -7804,7 +7918,14 @@ function ambZeichnen(ziel){
     <div class="karte amb" style="margin-top:24px;padding:20px 18px 14px">
       <p class="bg-hallo">Hallo ${esc(d.name || "")}</p>
       <div class="bg-geld"><span class="amb-betrag">${g.offen} €</span><span>${geldSatz}</span></div>
-      <details id="bg-konto"><summary class="bg-leise">Wofür?</summary>${ambKonto(g)}</details>
+      <details id="bg-konto"><summary class="bg-leise">Wofür?</summary>${ambKonto(g)}
+        ${(d.gutschriften || []).length ? `<ul class="bg-liste" style="margin-top:8px">${d.gutschriften.map(x =>
+          `<li><div class="bg-zeile"><b>${esc(x.nr)}</b><p>${aboEuro(x.brutto_cent)} · ${ambDatum(x.datum)}</p></div>
+           <a class="bg-zeilenknopf" href="/api/ambassador/gutschrift/${encodeURIComponent(x.nr)}.pdf">Gutschrift</a></li>`).join("")}</ul>` : ""}
+      </details>
+      ${g.offen > 0 && !d.profil_vollstaendig ? `<div class="bg-karte" style="border-color:var(--gc-warn)">
+          <p class="bg-grund dringend">Trag deine Kontodaten ein, damit wir dir ${g.offen} € überweisen können.</p>
+          <button type="button" class="bg-haupt" onclick="ambProfilOeffnen()">Kontodaten eintragen</button></div>` : ""}
       <div class="bg-titel"><h3>Heute für dich</h3>${heute.length ? `<span>${heute.length === 1 ? "1 Aufgabe" : heute.length + " Aufgaben"}</span>` : ""}</div>
       ${_ambMeldung ? `<p class="bg-meldung" role="status">${esc(_ambMeldung)}</p>` : ""}
       ${a ? `<article class="bg-karte">
@@ -7833,10 +7954,77 @@ function ambZeichnen(ziel){
       <details id="bg-wie"><summary class="bg-leise">Wie hilft mir babu?</summary>
         <ol class="bg-schritte">${BG_SCHRITTE.map(x => `<li><b>${x[0]}</b><span>${x[1]}</span></li>`).join("")}</ol>
         <p class="bg-hinweis">Höchstens eine Nachricht alle drei Tage pro Salon. Nach drei Erinnerungen ohne Antwort hört babu auf.</p>
+        <label class="abo-zustimmung" style="margin-top:10px"><input type="checkbox" ${d.heute_mail !== false ? "checked" : ""}
+          onchange="ambHeuteMail(this.checked)"><span>Morgens eine Mail, wenn etwas zu tun ist</span></label>
+      </details>
+      <details id="bg-profil" ontoggle="if(this.open) ambProfilLaden()"><summary class="bg-leise">Wohin soll dein Geld?${d.profil_vollstaendig ? " ✓" : ""}</summary>
+        <div class="bg-einladen-inhalt" id="bg-profil-inhalt"><div class="skelett"></div></div>
       </details>
       <p class="bg-code">Dein Code zum Weitersagen: <b>${esc(d.code)}</b></p>
     </div>`;
   for (const id of warOffen){ const x = document.getElementById(id); if (x) x.open = true; }
+}
+/* Auszahlungsprofil (seit 03.10.2026): Konto, Anschrift, wie sie steuerlich
+   arbeitet, Zustimmung zur Abrechnung per Gutschrift. Die IBAN kommt nur
+   maskiert zurück — zum Ändern wird sie neu eingetragen. */
+function ambProfilOeffnen(){
+  const x = document.getElementById("bg-profil");
+  if (!x) return;
+  x.open = true;
+  x.scrollIntoView({behavior: "smooth", block: "start"});
+}
+async function ambProfilLaden(){
+  const ziel = document.getElementById("bg-profil-inhalt");
+  if (!ziel) return;
+  let p = {};
+  try{ p = await (await api("/api/ambassador/profil")).json(); }catch{}
+  const wahl = p.steuerstatus_wahl || {ust: "umsatzsteuerpflichtig", klein: "Kleinunternehmerin", privat: "Privatperson"};
+  const feld = (id, titel, wert, art = "text", extra = "") =>
+    `<label class="bg-feld">${titel}<input id="${id}" type="${art}" value="${esc(wert || "")}" ${extra}></label>`;
+  ziel.innerHTML = `
+    ${feld("bp-inhaber", "Kontoinhaberin", p.kontoinhaber, "text", 'autocomplete="name"')}
+    ${feld("bp-iban", "IBAN", "", "text", `inputmode="text" autocomplete="off" placeholder="${esc(p.iban || "DE…")}"`)}
+    ${feld("bp-strasse", "Straße und Hausnummer", p.strasse, "text", 'autocomplete="street-address"')}
+    <div style="display:flex;gap:8px">${feld("bp-plz", "PLZ", p.plz, "text", 'inputmode="numeric" autocomplete="postal-code" style="max-width:90px"')}
+      ${feld("bp-ort", "Ort", p.ort, "text", 'autocomplete="address-level2"')}</div>
+    <fieldset class="bg-feld" style="border:0;padding:0;margin:6px 0"><legend>Wie arbeitest du?</legend>
+      ${Object.entries(wahl).map(([k, t], i) => `<label class="abo-zustimmung"><input type="radio" name="bp-status" value="${i}"
+         ${p.steuerstatus === k ? "checked" : ""}><span>${esc(t)}</span></label>`).join("")}</fieldset>
+    ${feld("bp-stnr", "Steuernummer (nicht nötig als Privatperson)", p.steuernummer)}
+    ${feld("bp-ustid", "USt-IdNr. (falls du eine hast)", p.ust_id)}
+    <label class="abo-zustimmung"><input type="checkbox" id="bp-zustimmung" ${p.zustimmung_am ? "checked" : ""}>
+      <span>Ich stimme der <a href="/ambassador/vereinbarung" target="_blank" rel="noopener">Ambassador-Vereinbarung</a> zu
+      und bin einverstanden, dass babu meine Provision per Gutschrift abrechnet.</span></label>
+    <button type="button" class="bg-haupt" onclick="ambProfilSpeichern()">Speichern</button>
+    <p class="bg-hinweis" id="bp-meldung" role="status">${p.vorhanden && p.fehlt && p.fehlt.length ? "Es fehlt noch: " + esc(p.fehlt.join(", ")) : ""}</p>`;
+  ziel.dataset.status = JSON.stringify(Object.keys(wahl));
+  ziel.dataset.iban = p.vorhanden ? "1" : "";
+}
+async function ambProfilSpeichern(){
+  const ziel = document.getElementById("bg-profil-inhalt");
+  const schluessel = JSON.parse(ziel.dataset.status || "[]");
+  const gewaehlt = document.querySelector('input[name="bp-status"]:checked');
+  const iban = $("#bp-iban").value.trim();
+  const meldung = $("#bp-meldung");
+  if (!iban && ziel.dataset.iban){ meldung.textContent = "Bitte die IBAN noch einmal eintragen — aus Sicherheitsgründen zeigen wir sie nicht an."; return; }
+  try{
+    const r = await api("/api/ambassador/profil", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({kontoinhaber: $("#bp-inhaber").value, iban, strasse: $("#bp-strasse").value,
+        plz: $("#bp-plz").value.trim(), ort: $("#bp-ort").value,
+        steuerstatus: gewaehlt ? schluessel[Number(gewaehlt.value)] : "",
+        steuernummer: $("#bp-stnr").value, ust_id: $("#bp-ustid").value,
+        zustimmung: $("#bp-zustimmung").checked})});
+    const d = await r.json();
+    if (!r.ok){ meldung.textContent = d.fehler || "Ging gerade nicht."; return; }
+    meldung.textContent = "Gespeichert. Danke!";
+    ladeAmbassador();
+  }catch{ meldung.textContent = "Gerade keine Verbindung — gleich nochmal versuchen."; }
+}
+async function ambHeuteMail(an){
+  try{
+    await api("/api/ambassador/heute-mail", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({an})});
+  }catch{}
 }
 function ambKontaktZeile(k){
   const zeichen = k.stand === "macht mit" ? "dabei"
@@ -8044,19 +8232,161 @@ async function ladeTestmonat(){
   const ziel = $("#heute-testmonat");
   try{
     const d = await (await api("/api/ich")).json();
-    const t = d.testmonat;
-    if (!t){ ziel.hidden = true; return; }
-    const bis = t.bis.split("-").reverse().join(".");
-    ziel.innerHTML = t.vorbei
-      ? `<div class="karte" style="margin-top:14px"><h3>Dein Testmonat ist vorbei</h3>
-           <p>Alles bleibt da — ansehen und herunterladen geht weiter. Damit du wieder
-           Belege erfassen kannst, schreib uns kurz an
-           <a href="mailto:hallo@0711.io">hallo@0711.io</a>, dann schalten wir dich frei.</p></div>`
-      : `<div class="karte" style="margin-top:14px"><h3>Dein Testmonat: noch ${t.tage_uebrig}
-           ${t.tage_uebrig === 1 ? "Tag" : "Tage"}</h3>
-           <p>babu komplett und kostenlos, bis einschließlich ${esc(bis)}.</p></div>`;
+    const t = d.testmonat, z = d.zugang;
+    if (!t && !(z && z.grund)){ ziel.hidden = true; return; }
+    /* Gibt es den Weg „Weitermachen" schon? Nur dann zeigt die Karte den
+       Knopf — sonst bleibt es beim „schreib uns kurz". */
+    let weg = false;
+    try{ const a = await (await api("/api/abo")).json(); weg = !!(a.an && a.bereit); }catch{}
+    const knopf = weg ? `<button class="hin" onclick="location.hash='#abo'">Weitermachen ›</button>` : "";
+    const datum = x => x ? x.split("-").reverse().join(".") : "";
+    let html = "";
+    if (z && z.grund === "frist")
+      html = `<h3>Die letzte Zahlung ist nicht angekommen</h3>
+        <p>Bitte prüf deine Zahlungsdaten bis zum ${esc(datum(z.bis))} — danach kannst du nur noch ansehen.</p>
+        <button class="hin" onclick="location.hash='#abo'">Zahlungsdaten prüfen ›</button>`;
+    else if (z && z.grund === "zahlung_offen")
+      html = `<h3>Die letzte Zahlung ist nicht angekommen</h3>
+        <p>Alles bleibt da — ansehen und herunterladen geht weiter. Zum Erfassen bitte die Zahlungsdaten prüfen.</p>
+        <button class="hin" onclick="location.hash='#abo'">Zahlungsdaten prüfen ›</button>`;
+    else if (z && z.grund === "gekuendigt" && z.stufe === "voll")
+      html = `<h3>Dein Abo endet am ${esc(datum(z.bis))}</h3>
+        <p>Bis dahin geht alles wie gewohnt. Danach kannst du alles weiter ansehen und herunterladen.</p>`;
+    else if (z && (z.grund === "gekuendigt" || z.grund === "beendet"))
+      html = `<h3>Dein Abo ist beendet</h3>
+        <p>Alles bleibt da — ansehen und herunterladen geht weiter.</p>${knopf}`;
+    else if (t && t.vorbei)
+      html = `<h3>Dein Testmonat ist vorbei</h3>
+        <p>Alles bleibt da — ansehen und herunterladen geht weiter.
+        ${weg ? "Mach mit babu weiter, dann kannst du sofort wieder Belege erfassen."
+              : `Damit du wieder Belege erfassen kannst, schreib uns kurz an
+                 <a href="mailto:hallo@0711.io">hallo@0711.io</a>, dann schalten wir dich frei.`}</p>${knopf}`;
+    else if (t)
+      html = `<h3>Dein Testmonat: noch ${t.tage_uebrig} ${t.tage_uebrig === 1 ? "Tag" : "Tage"}</h3>
+        <p>babu komplett und kostenlos, bis einschließlich ${esc(datum(t.bis))}.</p>
+        ${t.tage_uebrig <= 7 ? knopf : ""}`;
+    if (!html){ ziel.hidden = true; return; }
+    ziel.innerHTML = `<div class="karte" style="margin-top:14px">${html}</div>`;
     ziel.hidden = false;
   }catch{ ziel.hidden = true; }
+}
+
+/* ————— Weitermachen (Abo, seit 03.10.2026) —————
+   Paket wählen, zustimmen, abschließen. Bezahlt wird auf der Seite des
+   Zahlungsdienstes; zurück geht es nach #abo-danke/<sitzung>. Im onclick
+   nur Nummern (ABO_PAKETE), keine Namen. */
+let ABO_PAKETE = [];
+let _aboWahl = 0;
+const aboEuro = cent => euro(cent / 100);
+const aboDatum = x => x ? x.split("-").reverse().join(".") : "";
+
+async function ladeAbo(sitzung){
+  const ziel = $("#abo-inhalt");
+  ziel.innerHTML = `<div class="skelett"></div>`;
+  let d = null, danke = false;
+  try{
+    if (sitzung){
+      const r = await api("/api/abo/bestaetigen", {method:"POST",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify({session: sitzung})});
+      if (r.ok){ d = await r.json(); danke = !!d.abo_status; }
+      history.replaceState(null, "", "#abo");
+    }
+    if (!d){
+      const r = await api("/api/abo");
+      d = await r.json();
+      if (!r.ok){
+        ziel.innerHTML = `<div class="leer"><b>${esc(d.fehler || "Für deinen Zugang gibt es hier nichts abzuschließen.")}</b></div>`;
+        return;
+      }
+    }
+  }catch{
+    ziel.innerHTML = `<div class="leer"><b>Gerade keine Verbindung — gleich nochmal versuchen.</b></div>`;
+    return;
+  }
+  ABO_PAKETE = d.pakete || [];
+  const empf = ABO_PAKETE.findIndex(p => p.paket === (d.paket || d.empfehlung));
+  _aboWahl = empf >= 0 ? empf : 1;
+  let html = d.testmodus ? `<div class="karte abo-probe">Probelauf: Hier wird nichts abgebucht.</div>` : "";
+  if (danke) html += `<div class="karte" style="border-color:var(--gc-ok)"><h3>Danke, du bist dabei!</h3>
+    <p>Du kannst sofort weiterarbeiten. Die erste Abbuchung kommt in den nächsten Tagen, die Rechnung per E-Mail.</p></div>`;
+  if (d.abo_status && d.abo_status !== "beendet") html += aboStandHtml(d);
+  if (d.kann_abschliessen) html += (d.an && d.bereit) ? aboWahlHtml(d)
+    : `<div class="karte"><p>Weitermachen richten wir gerade für dich ein. Schreib uns kurz an
+       <a href="mailto:hallo@0711.io">hallo@0711.io</a> — dann geht es sofort weiter.</p></div>`;
+  ziel.innerHTML = html;
+}
+
+function aboStandHtml(d){
+  const p = ABO_PAKETE.find(x => x.paket === d.paket);
+  const preis = p ? `${p.name} — ${p.netto_cent / 100} € im Monat zzgl. USt` : "babu";
+  let satz;
+  if (d.abo_status === "zahlung_offen")
+    satz = d.zugang && d.zugang.bis
+      ? `Die letzte Zahlung ist nicht angekommen. Bitte prüf bis zum ${esc(aboDatum(d.zugang.bis))} deine Zahlungsdaten.`
+      : "Die letzte Zahlung ist nicht angekommen. Bitte prüf deine Zahlungsdaten, damit du wieder erfassen kannst.";
+  else if (d.abo_status === "gekuendigt")
+    satz = d.abo_ende ? `Gekündigt — läuft bis ${esc(aboDatum(d.abo_ende))}. Bis dahin geht alles wie gewohnt.`
+                      : "Gekündigt — läuft bis zum Ende des bezahlten Monats.";
+  else if (d.bezahlt_bis) satz = `Bezahlt bis ${esc(aboDatum(d.bezahlt_bis))}.`;
+  else satz = "Die erste Abbuchung läuft — du kannst schon voll arbeiten.";
+  return `<div class="karte"><h3>Dein Paket: ${esc(preis)}</h3><p>${satz}</p>
+    ${d.kann_verwalten ? `<button class="hin" onclick="aboVerwalten()">Abo verwalten ›</button>
+    <p class="abo-klein">Zahlungsdaten ändern, Rechnungen ansehen, kündigen.</p>` : ""}
+    <div class="abo-fehler" id="abo-fehler" hidden></div></div>`;
+}
+
+function aboWahlHtml(d){
+  const karten = ABO_PAKETE.map((p, i) => `
+    <label class="abo-paket${i === _aboWahl ? " an" : ""}" id="abo-paket-${i}">
+      <input type="radio" name="abo-paket" ${i === _aboWahl ? "checked" : ""} onchange="aboWaehlen(${i})">
+      <b>${esc(p.name)}</b>
+      <span class="abo-preis">${p.netto_cent / 100} €</span>
+      <small>im Monat zzgl. USt (${aboEuro(p.brutto_cent)})</small>
+      ${p.paket === d.empfehlung ? `<small class="abo-tipp">passt zu deinen Angaben</small>` : ""}
+    </label>`).join("");
+  return `<div class="karte">
+    <p>Wähl dein Paket. Alles, was du im Testmonat erfasst hast, bleibt da.</p>
+    <div class="abo-pakete" role="radiogroup" aria-label="Paket">${karten}</div>
+    <label class="abo-zustimmung"><input type="checkbox" id="abo-agb">
+      <span>Ich stimme den <a href="/agb" target="_blank" rel="noopener">Nutzungsbedingungen</a> zu und habe den
+      <a href="/datenschutz" target="_blank" rel="noopener">Datenschutz</a> gelesen.</span></label>
+    <p class="abo-klein">Monatlich kündbar. Bezahlt wird per Lastschrift vom Geschäftskonto oder per Karte.</p>
+    <button class="hin" style="background:var(--gc-fg);color:var(--gc-bg)" onclick="aboAbschliessen()">Mit Lastschrift abschließen</button>
+    <div class="abo-fehler" id="abo-fehler" hidden></div>
+  </div>`;
+}
+
+function aboWaehlen(i){
+  _aboWahl = i;
+  document.querySelectorAll(".abo-paket").forEach((el, j) => el.classList.toggle("an", j === i));
+}
+
+function aboFehler(text){
+  const f = $("#abo-fehler");
+  if (!f) return alert(text);
+  f.textContent = text; f.hidden = false;
+}
+
+async function aboAbschliessen(){
+  if (!$("#abo-agb").checked) return aboFehler("Bitte stimm zuerst den Nutzungsbedingungen zu.");
+  const p = ABO_PAKETE[_aboWahl];
+  if (!p) return aboFehler("Bitte ein Paket wählen.");
+  try{
+    const r = await api("/api/abo/checkout", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({paket: p.paket, agb: true})});
+    const d = await r.json();
+    if (r.ok && d.url) location.href = d.url;
+    else aboFehler(d.fehler || "Ging gerade nicht — gleich nochmal versuchen.");
+  }catch{ aboFehler("Gerade keine Verbindung — gleich nochmal versuchen."); }
+}
+
+async function aboVerwalten(){
+  try{
+    const r = await api("/api/abo/portal", {method:"POST"});
+    const d = await r.json();
+    if (r.ok && d.url) location.href = d.url;
+    else aboFehler(d.fehler || "Ging gerade nicht — gleich nochmal versuchen.");
+  }catch{ aboFehler("Gerade keine Verbindung — gleich nochmal versuchen."); }
 }
 async function ambassadorGezahlt(nr){
   const code = AMB_CODES[nr];
@@ -8258,8 +8588,8 @@ function ladeEinrichtung(){
         const e = await (await api("/api/einstellungen")).json();
         const p = e.paket_empfehlung;
         if (p) paketHtml = `<div class="karte" style="margin-top:16px;border-color:var(--gc-ok)">
-          <b>Dein Paket: ${esc(p.name)}</b> — ${p.preis_beispiel} € im Monat
-          <span style="font-size:12px;color:var(--gc-muted)">(Beispielpreis)</span>
+          <b>Dein Paket: ${esc(p.name)}</b> — ${p.preis || p.preis_beispiel} € im Monat
+          <span style="font-size:12px;color:var(--gc-muted)">(zzgl. USt)</span>
           ${(p.hinweise || []).map(h => `<p style="color:var(--gc-desc);font-size:13px;margin-top:6px">${esc(h)}</p>`).join("")}</div>`;
       }catch{}
       ziel.innerHTML = `<div class="haken"><div class="kreis stempel">✓</div><div class="txt">

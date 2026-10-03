@@ -202,9 +202,12 @@ def _ust_karte(stammdaten: dict, zahlen: dict, unsicher: set[str]) -> dict:
 
 
 PAKETE = {
-    "solo": {"name": "Solo", "preis_beispiel": 39},
-    "salon": {"name": "Salon", "preis_beispiel": 79},
-    "plus": {"name": "Salon Plus", "preis_beispiel": 149},
+    # Nettopreise je Monat, verbindlich seit 03.10.2026 (Quelle der Wahrheit
+    # ist abo.PAKETE in Cent). `preis_beispiel` bleibt als alter Name für
+    # Aufrufer, die ihn noch lesen.
+    "solo": {"name": "Solo", "preis": 39, "preis_beispiel": 39},
+    "salon": {"name": "Salon", "preis": 79, "preis_beispiel": 79},
+    "plus": {"name": "Salon Plus", "preis": 149, "preis_beispiel": 149},
 }
 
 
@@ -212,8 +215,7 @@ def paket_empfehlung(einstellungen: dict) -> dict:
     """Transparente Einstufung aus den Einstellungen (Werte sind Strings).
 
     Plus schlägt alles (Filialen, mehrere Firmen, Bilanz); Solo nur für
-    Kleinunternehmerinnen; sonst Salon. Beispielpreise, bis die
-    endgültigen feststehen.
+    Kleinunternehmerinnen; sonst Salon. Preise netto zzgl. USt.
     """
     e = {k: (v or "").strip() for k, v in (einstellungen or {}).items()}
     if (e.get("filialen") == "Ja" or e.get("mehrere_unternehmen") == "Ja"

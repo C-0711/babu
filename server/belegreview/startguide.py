@@ -39,6 +39,29 @@ def schritte(portal: str, art: str = "salon") -> str:
     )
 
 
+def app_absatz() -> str:
+    """Wie die App aufs iPhone kommt — der EINE Absatz für jede Willkommensmail.
+
+    Ist `BABU_APPSTORE_LINK` gesetzt (nach Apples Freigabe, Go-live-Plan
+    Phase 6), führt er in den App Store. Bis dahin der öffentliche
+    TestFlight-Link (`BABU_TESTFLIGHT_LINK`), und ohne den die Bitte um die
+    Apple-ID wie seit 17.09.2026."""
+    import os  # noqa: PLC0415
+    store = os.environ.get("BABU_APPSTORE_LINK", "").strip()
+    if store:
+        return ("Die babu-App aufs iPhone: im App Store „babu Belege“ laden —\n\n"
+                f"    {store}\n\n"
+                "In der App meldest du dich mit dieser E-Mail-Adresse an.\n")
+    test = os.environ.get("BABU_TESTFLIGHT_LINK", "").strip()
+    if test:
+        return ("Die babu-App aufs iPhone: diesen Link auf dem Telefon öffnen —\n\n"
+                f"    {test}\n\n"
+                "Er führt zu TestFlight, Apples offiziellem Weg für Test-Apps. Einmal\n"
+                "„Testen“ antippen, dann installiert sich babu wie jede andere App.\n"
+                "In der App meldest du dich mit dieser E-Mail-Adresse an.\n")
+    return testflight_absatz()
+
+
 def testflight_absatz() -> str:
     """Der App-Hinweis mit der Frage nach der Apple-ID-Adresse.
 

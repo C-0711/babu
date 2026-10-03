@@ -93,7 +93,8 @@ def _einloesen(welt, email, salon, slug="salon"):
     babu_web._REG_ZULETZT.clear()  # noqa: SLF001
     return TestClient(babu_web.app, base_url="https://testserver").post(
         "/api/ambassador/einloesen",
-        json={"code": welt["code"], "salon": salon, "email": email, "slug": slug})
+        json={"code": welt["code"], "salon": salon, "email": email, "slug": slug,
+              "agb": True})
 
 
 def _meilenstein(welt, email, meilenstein, am: D | None = None):
@@ -220,7 +221,8 @@ def test_unter_100_euro_wartet(welt, monkeypatch):
     _einloesen(welt, "a@example.org", "Salon A")
     r = welt["chef"].post("/api/ambassador/meilenstein", json={
         "code": welt["code"], "email": "a@example.org",
-        "meilenstein": "gezeichnet", "betrag": 60})
+        "meilenstein": "gezeichnet", "betrag": 60,
+        "grund": "kleiner Betrag für den Test der 100-€-Grenze"})
     assert r.status_code == 200
     with babu_web._DB_LOCK, babu_web._db() as c:
         c.execute("UPDATE ambassador_buchung SET datum='2026-09-01'")
@@ -252,7 +254,8 @@ def test_auszahlungslauf_unter_100_euro_abgelehnt(welt, monkeypatch):
     _einloesen(welt, "a@example.org", "Salon A")
     welt["chef"].post("/api/ambassador/meilenstein", json={
         "code": welt["code"], "email": "a@example.org",
-        "meilenstein": "gezeichnet", "betrag": 60})
+        "meilenstein": "gezeichnet", "betrag": 60,
+        "grund": "kleiner Betrag für den Test der 100-€-Grenze"})
     with babu_web._DB_LOCK, babu_web._db() as c:
         c.execute("UPDATE ambassador_buchung SET datum='2026-09-01'")
     r = welt["chef"].post("/api/ambassador/gezahlt", json={"code": welt["code"]})
@@ -298,3 +301,60 @@ def test_konto_zeigt_bewegungen_wie_ein_kontoauszug(welt, monkeypatch):
         ("2026-10-15", -237), ("2026-10-01", 237), ("2026-09-20", 237)]
     assert bew[0]["text"] == "Auszahlung (verdient bis 30.09.2026)"
     assert bew[2]["text"] == "Provision Salon A, gezeichnet"
+
+
+# ————— Handweg nach der Regel (seit 03.10.2026, provision.py) —————
+
+def test_handweg_rechnet_den_betrag_aus_dem_paket(welt, monkeypatch):
+    monkeypatch.setattr(ka, "_heute", lambda: D(2026, 10, 2))
+    _einloesen(welt, "a@example.org", "Salon A")
+    r = welt["chef"].post("/api/ambassador/meilenstein", json={
+        "code": welt["code"], "email": "a@example.org", "meilenstein": "gezeichnet",
+        "paket": "plus"})
+    assert r.status_code == 200, r.text
+    assert r.json()["verdienst"] == 447
+    with babu_web._DB_LOCK, babu_web._db() as c:
+        z = c.execute("SELECT betrag, quelle, paket FROM ambassador_buchung").fetchone()
+    assert tuple(z) == (447, "hand", "plus")
+
+
+def test_handweg_ohne_paket_nimmt_die_empfehlung(welt, monkeypatch):
+    monkeypatch.setattr(ka, "_heute", lambda: D(2026, 10, 2))
+    _einloesen(welt, "a@example.org", "Salon A")
+    babu_web.db_einstellung_setzen("a@example.org", "kleinunternehmer", "Ja")
+    r = welt["chef"].post("/api/ambassador/meilenstein", json={
+        "code": welt["code"], "email": "a@example.org", "meilenstein": "gezeichnet"})
+    assert r.status_code == 200 and r.json()["verdienst"] == 117
+
+
+def test_abweichender_betrag_braucht_einen_grund(welt, monkeypatch):
+    monkeypatch.setattr(ka, "_heute", lambda: D(2026, 10, 2))
+    _einloesen(welt, "a@example.org", "Salon A")
+    r = welt["chef"].post("/api/ambassador/meilenstein", json={
+        "code": welt["code"], "email": "a@example.org", "meilenstein": "gezeichnet",
+        "betrag": 300})
+    assert r.status_code == 400 and "Grund" in r.json()["fehler"]
+    r = welt["chef"].post("/api/ambassador/meilenstein", json={
+        "code": welt["code"], "email": "a@example.org", "meilenstein": "gezeichnet",
+        "betrag": 300, "grund": "Sonderabsprache Messe"})
+    assert r.status_code == 200 and r.json()["verdienst"] == 300
+
+
+def test_gehalten_addiert_in_der_salonzeile(welt, monkeypatch):
+    """Bis 03.10.2026 überschrieb „gehalten" den Betrag von „gezeichnet"."""
+    monkeypatch.setattr(ka, "_heute", lambda: D(2026, 10, 2))
+    _einloesen(welt, "a@example.org", "Salon A")
+    _meilenstein(welt, "a@example.org", "gezeichnet")
+    _meilenstein(welt, "a@example.org", "gehalten")
+    with babu_web._DB_LOCK, babu_web._db() as c:
+        assert c.execute("SELECT verdienst FROM ambassador_salon WHERE email=?",
+                         ("a@example.org",)).fetchone()[0] == 474
+
+
+def test_handweg_doppelt_wird_abgewiesen(welt, monkeypatch):
+    monkeypatch.setattr(ka, "_heute", lambda: D(2026, 10, 2))
+    _einloesen(welt, "a@example.org", "Salon A")
+    _meilenstein(welt, "a@example.org", "gezeichnet")
+    r = welt["chef"].post("/api/ambassador/meilenstein", json={
+        "code": welt["code"], "email": "a@example.org", "meilenstein": "gezeichnet"})
+    assert r.status_code == 409

@@ -3,13 +3,18 @@ DELETE /api/geraete/{gid}
 GET /
 GET /agb
 GET /ambassador/{code}/{slug}
+GET /ambassador/vereinbarung
 GET /api/abgleich/{monat}
 GET /api/ablage
 GET /api/ablage/suche
+GET /api/abo
+GET /api/abo/uebersicht
 GET /api/abschluss/status
 GET /api/abschluss/{jahr}/{datei}/vorschau
+GET /api/ambassador/gutschrift/{nr}
 GET /api/ambassador/liste
 GET /api/ambassador/me
+GET /api/ambassador/profil
 GET /api/anlagen
 GET /api/anlagen/{jahr}.csv
 GET /api/arbeitsvertrag/arten
@@ -17,6 +22,10 @@ GET /api/audit
 GET /api/auswertung
 GET /api/auswertung/bericht
 GET /api/auswertung/stand
+GET /api/auszahlung/laeufe
+GET /api/auszahlung/lauf/{lauf_id}/gutschriften.zip
+GET /api/auszahlung/lauf/{lauf_id}/sepa.xml
+GET /api/auszahlung/vorschau
 GET /api/beleg/{stamm}
 GET /api/beleg/{stamm}/bild
 GET /api/belege
@@ -97,6 +106,7 @@ GET /datev
 GET /barber
 GET /einkauf
 GET /healthz
+GET /hilfe
 GET /impressum
 GET /openapi.json
 GET /portal
@@ -113,6 +123,9 @@ POST /ablage
 POST /api/ablage/umbenennen
 POST /api/ablage/verschieben
 POST /api/abmelden
+POST /api/abo/bestaetigen
+POST /api/abo/checkout
+POST /api/abo/portal
 POST /api/abschluss
 POST /api/abschluss/karte-korrektur
 POST /api/abschluss/start
@@ -122,8 +135,10 @@ POST /api/ambassador/einladen
 POST /api/ambassador/einloesen
 POST /api/ambassador/erinnert
 POST /api/ambassador/gezahlt
+POST /api/ambassador/heute-mail
 POST /api/ambassador/link
 POST /api/ambassador/meilenstein
+POST /api/ambassador/profil
 POST /api/ambassador/verlaengern
 POST /api/ambassador/weitermachen
 POST /api/angaben/{stamm}
@@ -138,6 +153,9 @@ POST /api/auswertung/konto
 POST /api/auswertung/lesen
 POST /api/auswertung/uebernehmen
 POST /api/auswertung/unterlage
+POST /api/auszahlung/lauf
+POST /api/auszahlung/lauf/{lauf_id}/ueberwiesen
+POST /api/auszahlung/lauf/{lauf_id}/verwerfen
 POST /api/auszug-loeschen
 POST /api/beleg/{stamm}/erneut-lesen
 POST /api/beleg/{stamm}/loeschen
@@ -207,6 +225,7 @@ POST /api/rueckmeldung
 POST /api/rueckmeldungen/{iid}/beanstanden
 POST /api/rueckmeldungen/{iid}/freigeben
 POST /api/signup
+POST /api/stripe/webhook
 POST /api/team
 POST /api/team-aktion
 POST /api/team-foto

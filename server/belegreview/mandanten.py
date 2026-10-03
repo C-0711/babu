@@ -100,6 +100,17 @@ def schema(c) -> None:
         c.execute("ALTER TABLE mandant ADD COLUMN test_bis TEXT")
     except sqlite3.OperationalError:
         pass  # Spalte existiert schon (jede Verbindung läuft durchs Schema)
+    # Abo (seit 03.10.2026, abo.py): Paket, Stripe-Status und -Nummern,
+    # bezahlt bis, Kündigungs- und Fehlerdatum. Alles NULL = kein Abo, wie
+    # jeder Mandant bis dahin. Abbild für Postgres: migrations/0013_abo.sql.
+    for spalte in ("paket", "abo_status", "stripe_kunde", "stripe_abo",
+                   "abo_seit", "bezahlt_bis", "abo_ende", "zahlungsfehler_seit"):
+        try:
+            c.execute(f"ALTER TABLE mandant ADD COLUMN {spalte} TEXT")
+        except sqlite3.OperationalError:
+            pass  # Spalte existiert schon
+    c.execute("CREATE UNIQUE INDEX IF NOT EXISTS mandant_stripe_abo "
+              "ON mandant (stripe_abo)")
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +156,18 @@ def _sitzung(c):
 #: Test, der `babu_web.PORTAL_DB` umbiegt, liefe eine davon auf die falsche
 #: Datei. Deshalb genau eine Anmeldung, hier.
 sitzung = _sitzung
+
+
+#: Was die Nur-Lesen-Regel (abo.zugang) von der Mandantenzeile braucht.
+ABO_STAND = ("test_bis", "abo_status", "abo_ende", "zahlungsfehler_seit")
+
+
+def abo_stand(mandant_id: int, c=None) -> dict:
+    """Testmonat und Abo eines Mandanten — Eingabe für `abo.zugang()`."""
+    with _sitzung(c) as cc:
+        z = cc.execute(f"SELECT {', '.join(ABO_STAND)} FROM mandant WHERE id=?",
+                       (mandant_id,)).fetchone()
+    return dict(zip(ABO_STAND, z)) if z else dict.fromkeys(ABO_STAND)
 
 
 def _jetzt_iso() -> str:

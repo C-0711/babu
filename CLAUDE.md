@@ -79,6 +79,24 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
 - **Noch nicht in Betrieb**: MX, Portweiterleitung 25 und Reverse-DNS
   fehlen. Die Liste steht in `server/posteingang/README.md`.
 
+## Verbindlich: Abo, Provision, Auszahlung (seit 03.10.2026)
+
+- Preise netto zzgl. 19 % USt: Solo 39, Salon 79, Salon Plus 149 €/Monat —
+  Quelle `abo.PAKETE` (Cent), `saloncheck.PAKETE[…]["preis"]` muss gleich sein.
+- Bezahlen nur über Stripe (`kern_abo.py`, `stripe_api.py`, kein SDK);
+  Schlüssel NUR in `docker/.env`. Live-Schlüssel nur auf mybabu.io, Test-
+  Schlüssel nur woanders (`stripe_api.eingerichtet`). `BABU_ABO=1` erst nach
+  Freigabe der Rechtstexte.
+- Wer nur ansehen darf, entscheidet `abo.zugang()` in `_box_wache`; ohne
+  Abo-Spalten ist es genau der Testmonat. In der App (Bearer) nie ein Hinweis
+  aufs Abschließen (`abo.TEXTE_APP`, App Store).
+- Provision = 3 × Netto-Monatspreis bei der 1. und 3. bezahlten Monats-
+  rechnung, gebucht NUR über `provision.buchen` (eindeutig je Salon und
+  Meilenstein); Storno über `provision.stornieren`. Monate zählen je Mandant.
+- Auszahlung nur als Lauf mit Gutschrift + Bankdatei (`kern_auszahlung.py`),
+  „überwiesen" bestätigt der Betreiber. Kein Geld bewegt babu selbst.
+- Zustimmungen tragen die Fassung (`recht.fassung`), nicht nur ein Häkchen.
+
 ## Rollen, Mandanten, DATEV
 
 - Rollen `admin`/`kanzlei`/`salon`/`mitarbeit`; PAT-Konten über

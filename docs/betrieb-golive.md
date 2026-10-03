@@ -60,7 +60,56 @@ Entwurf: `docs/superpowers/specs/2026-10-02-testmonat-code-design.md`.
 - **Abschalten:** `BABU_TESTMONAT=0`, `docker compose up -d`. Laufende Testmonate bleiben
   bestehen; ohne Schalter führt der Code-Link wieder auf die Warteliste.
 
-## 2. Wenn etwas nicht geht
+### 1b. Abo per Stripe (seit 03.10.2026, Go-live-Plan Phase 2)
+
+Salons aus „babu direkt" schließen selbst ab: Portal → **Weitermachen** (`#abo`) → Paket →
+Stripe Checkout (SEPA-Lastschrift oder Karte) → zurück auf `#abo-danke/<sitzung>`.
+Zahlungsdaten, Rechnungen, Kündigung: „Abo verwalten" (Stripe-Kundenportal).
+
+- **Einschalten erst, wenn alles steht:** `.env` mit `BABU_STRIPE_*` (Werte nur dort, siehe
+  `docker/.env.beispiel`), Rechtstexte freigegeben, dann `BABU_ABO=1` und
+  `docker compose up -d`. `/healthz` zeigt `abo: aus|test|live` (+ ` an`).
+- **Verwechslungsschutz:** Live-Schlüssel nur auf `https://mybabu.io`, Test-Schlüssel nur
+  woanders (Dev-Spur) — sonst ist das Abo aus und das Log sagt `[stripe] AUS`.
+- **Webhook:** Stripe-Dashboard → Endpunkt `https://mybabu.io/api/stripe/webhook`, Ereignisse
+  wie `kern_abo.EREIGNISSE`; das Signatur-Geheimnis kommt nach `BABU_STRIPE_WEBHOOK_GEHEIMNIS`.
+  Cloudflare darf den Rumpf nicht verändern.
+- **Was Stripe auslöst:** erster Checkout → `mandant.abo_status`, Testmonat endet. 1. bezahlte
+  Monatsrechnung → Provision „gezeichnet" (3 × Netto-Monatspreis), 3. → „gehalten".
+  Rücklastschrift/Erstattung → einmalige Storno-Buchung. Zahlung offen → 14 Tage voll, dann
+  nur ansehen; gekündigt → bis Periodenende voll.
+- **Übersicht:** Verwaltung → „Abos" (`GET /api/abo/uebersicht`, nur Betreiber).
+- **Notfall „Webhook kaputt":** Stripe versucht es 3 Tage; der tägliche Lauf (1d) holt die
+  letzten 3 Tage nach. Hängende Ereignisse: `stripe_ereignis` mit `fehler` (Tagesbericht).
+  Abschalten: `BABU_ABO=0` versteckt Weitermachen; laufende Abos laufen bei Stripe weiter.
+
+### 1c. Auszahlung an Ambassadorinnen (seit 03.10.2026, Phase 3)
+
+Quartalsweise am 15.01./04./07./10. für alles bis Quartalsende davor, ab 100 €, nur mit
+vollständigem Profil (Konto, Anschrift, Steuerstatus, Zustimmung — die Ambassadorin trägt es
+selbst ein: „Wohin soll dein Geld?").
+
+1. Verwaltung → „Auszahlung an Ambassadorinnen": Vorschau prüfen.
+2. „Gutschriften und Bankdatei erzeugen" — Nummern `GS-JJJJ-NNNN` werden fest vergeben.
+3. „Bankdatei" (pain.001.001.09) herunterladen, im Online-Banking von 0711 hochladen, freigeben.
+4. „Überwiesen bestätigen" — erst jetzt gilt das Geld als ausgezahlt; die Ambassadorinnen
+   bekommen eine Mail und sehen ihre Gutschrift. Vorher geht noch „Verwerfen" (Nummern
+   bleiben als storniert dokumentiert, Provisionen wieder offen).
+
+Voraussetzung in `.env`: `BABU_FIRMA_NAME|ANSCHRIFT|USTID`, `BABU_AUSZAHLUNG_NAME|IBAN|BIC`;
+optional `BABU_PROVISION_KARENZ_TAGE`. PDFs und Bankdatei liegen in Postgres (pg_dump sichert).
+
+### 1d. Täglicher Lauf (seit 03.10.2026, Phase 4)
+
+Host-Cron auf der H200V:
+
+    15 6 * * *  flock -n /tmp/babu-taeglich.lock docker exec babu-web python /app/werkzeuge/taeglich.py >> ~/logs/taeglich.log 2>&1
+
+Stripe nachholen, Salon-Erinnerungen (Testende 7/1 Tage, Zahlungsfrist Tag 7/13 — nur mit
+`BABU_ABO=1`), „Heute für dich" an Ambassadorinnen (abbestellbar in ihrem Bereich),
+„Heute für Nina" an `BABU_BETREIBER_MAIL` (leer = Support). Jede Mail höchstens einmal am
+Tag (`tageslauf`). Probe: `… taeglich.py --probe`.
+
 
 | Meldung | Bedeutung | Handgriff |
 |---|---|---|
@@ -81,6 +130,16 @@ Ritual aus `CLAUDE.md` („Betrieb H200V"): Sicherung → `rsync server/ h200v:~
 komplett → `docker compose build && up -d` → `/healthz` 200 `stand: ok` → Golden-Diff
 (`/api/belege`, `/api/abgleich/<monat>`) → neue Routen durchrufen. Vor dem nächsten Deploy
 `arbeit_offen` in `/healthz` auf 0 warten.
+
+Golden-Diff seit 03.10.2026 ohne Zugangscode, im Container:
+
+    docker exec babu-web python /app/werkzeuge/golden.py --monat 2026-09 > ~/golden/vor-$ST.json
+    # … Deploy …
+    docker exec babu-web python /app/werkzeuge/golden.py --monat 2026-09 > ~/golden/nach-$ST.json
+    diff ~/golden/vor-$ST.json ~/golden/nach-$ST.json && echo GLEICH
+
+`~/babu-web/app/` (AVV-PDF, App-Seite) und `~/babu-web/index.html` liegen AUSSERHALB des
+rsync-Bereichs — geänderte Dateien dort einzeln kopieren (vorher `.bak-…` anlegen).
 
 ## 4. Sicherung und Wiederherstellung
 

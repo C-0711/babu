@@ -79,6 +79,8 @@ ID_TABELLEN = frozenset({
     "audit_log", "passwort_reset", "kanzlei", "mandant",
     # 0011: Ambassador-Cockpit
     "ambassador_einladung", "ambassador_buchung", "ambassador_auszahlung",
+    # 0014: Auszahlungslauf
+    "auszahlungslauf",
 })
 
 

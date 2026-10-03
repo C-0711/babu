@@ -43,6 +43,7 @@ import skr04_konten as skr  # noqa: E402
 import kontierung as kt  # noqa: E402
 import mandanten  # noqa: E402
 import postadresse  # noqa: E402
+import abo  # noqa: E402
 import testmonat  # noqa: E402
 
 SEITE = Path(os.environ.get("BABU_SEITE", str(Path.home() / "babu-web" / "index.html")))
@@ -384,6 +385,90 @@ def _sqlite_schema(conn) -> None:
             conn.execute(f"ALTER TABLE ambassador_einladung ADD COLUMN {spalte} {typ}")
         except sqlite3.OperationalError:
             pass  # Spalte existiert schon
+    # Abo und Provision (seit 03.10.2026, abo.py/provision.py): woher eine
+    # Provision kam, EINE Buchung je Salon und Meilenstein, Stripe-Ereignisse
+    # und Rechnungen, der tägliche Lauf. migrations/0013_abo.sql, dieselben
+    # Tabellen; die mandant-Spalten stehen in mandanten.schema().
+    for tabelle, spalte, typ in (("ambassador_buchung", "stripe_rechnung", "TEXT"),
+                                 ("ambassador_buchung", "quelle", "TEXT"),
+                                 ("ambassador_buchung", "paket", "TEXT"),
+                                 ("ambassador", "heute_mail",
+                                  "INTEGER NOT NULL DEFAULT 1")):
+        try:
+            conn.execute(f"ALTER TABLE {tabelle} ADD COLUMN {spalte} {typ}")
+        except sqlite3.OperationalError:
+            pass  # Spalte existiert schon
+    conn.execute("""CREATE UNIQUE INDEX IF NOT EXISTS ambassador_buchung_einmal
+        ON ambassador_buchung (code, email, meilenstein)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS stripe_ereignis
+        (ereignis TEXT PRIMARY KEY,
+         typ TEXT NOT NULL,
+         objekt TEXT,
+         erstellt TEXT,
+         empfangen TEXT NOT NULL,
+         verarbeitet TEXT,
+         fehler TEXT)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS abo_rechnung
+        (rechnung TEXT PRIMARY KEY,
+         mandant_id INTEGER NOT NULL,
+         abo TEXT,
+         grund TEXT,
+         paket TEXT,
+         netto_cent INTEGER NOT NULL DEFAULT 0,
+         brutto_cent INTEGER NOT NULL DEFAULT 0,
+         status TEXT NOT NULL,
+         monat_nr INTEGER,
+         bezahlt_am TEXT,
+         zeit TEXT NOT NULL)""")
+    conn.execute("""CREATE INDEX IF NOT EXISTS abo_rechnung_mandant
+        ON abo_rechnung (mandant_id, status)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS tageslauf
+        (tag TEXT NOT NULL,
+         aufgabe TEXT NOT NULL,
+         erledigt TEXT NOT NULL,
+         ergebnis TEXT,
+         PRIMARY KEY (tag, aufgabe))""")
+    # Auszahlung mit Gutschrift und Bankdatei (seit 03.10.2026, gutschrift.py,
+    # sepa.py, kern_auszahlung.py). migrations/0014_auszahlung.sql.
+    conn.execute("""CREATE TABLE IF NOT EXISTS ambassador_profil
+        (code TEXT PRIMARY KEY,
+         kontoinhaber TEXT,
+         iban TEXT,
+         bic TEXT,
+         strasse TEXT,
+         plz TEXT,
+         ort TEXT,
+         land TEXT NOT NULL DEFAULT 'DE',
+         steuerstatus TEXT,
+         steuernummer TEXT,
+         ust_id TEXT,
+         zustimmung_am TEXT,
+         zustimmung_fassung TEXT,
+         geaendert TEXT NOT NULL,
+         FOREIGN KEY (code) REFERENCES ambassador(code))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS auszahlungslauf
+        (id INTEGER PRIMARY KEY AUTOINCREMENT,
+         lauf TEXT NOT NULL,
+         stichtag TEXT NOT NULL,
+         status TEXT NOT NULL,
+         anzahl INTEGER NOT NULL DEFAULT 0,
+         summe_cent INTEGER NOT NULL DEFAULT 0,
+         msg_id TEXT,
+         xml TEXT,
+         erstellt TEXT NOT NULL,
+         von TEXT NOT NULL,
+         ueberwiesen TEXT,
+         ueberwiesen_von TEXT)""")
+    for spalte, typ in (("lauf_id", "INTEGER"), ("gutschrift_nr", "TEXT"),
+                        ("netto_cent", "INTEGER"), ("ust_cent", "INTEGER"),
+                        ("brutto_cent", "INTEGER"), ("beleg", "TEXT"),
+                        ("pdf", "TEXT"), ("status", "TEXT")):
+        try:
+            conn.execute(f"ALTER TABLE ambassador_auszahlung ADD COLUMN {spalte} {typ}")
+        except sqlite3.OperationalError:
+            pass  # Spalte existiert schon
+    conn.execute("""CREATE UNIQUE INDEX IF NOT EXISTS ambassador_auszahlung_nr
+        ON ambassador_auszahlung (gutschrift_nr)""")
     conn.execute("""CREATE TABLE IF NOT EXISTS nutzer
         (email TEXT PRIMARY KEY, name TEXT, salon TEXT,
          rolle TEXT NOT NULL DEFAULT 'salon', pw TEXT NOT NULL,
@@ -1644,6 +1729,28 @@ def recht_seite(request: Request) -> Response:
                     headers=HTML_FRISCH)
 
 
+@app.get("/hilfe")
+def hilfe_seite() -> Response:
+    """Häufige Fragen und der Weg zu einem Menschen — Support-Adresse im App
+    Store (seit 03.10.2026; bis dahin stand dort das Impressum)."""
+    import recht  # noqa: PLC0415
+    titel, text = recht.HILFE
+    nav = [(a, recht.TEXTE[a][0]) for a in recht.ARTEN]
+    return Response(content=recht.seite_aus(titel, text, nav),
+                    media_type="text/html; charset=utf-8", headers=HTML_FRISCH)
+
+
+@app.get("/ambassador/vereinbarung")
+def ambassador_vereinbarung() -> Response:
+    """Die Vereinbarung mit den Ambassadorinnen (seit 03.10.2026) — öffentlich,
+    damit sie sie vor der Zustimmung lesen können."""
+    import recht  # noqa: PLC0415
+    titel, text = recht.AMBASSADOR
+    nav = [(a, recht.TEXTE[a][0]) for a in recht.ARTEN]
+    return Response(content=recht.seite_aus(titel, text, nav),
+                    media_type="text/html; charset=utf-8", headers=HTML_FRISCH)
+
+
 @app.get("/avv/mein")
 def avv_mein(request: Request) -> Response:
     """Der AVV mit den Angaben DIESES Betriebs — nur angemeldet (seit 03.10.2026).
@@ -2016,14 +2123,26 @@ def _box_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]
         # (`status = box_ausstehend`). Kein Fehler des Aufrufers und kein
         # Rechteproblem — deshalb 409 und nicht 403 oder 404.
         return None, JSONResponse({"fehler": str(ex)}, status_code=409)
-    # Testmonat (seit 02.10.2026): nach Ablauf nur noch ansehen. Fragt erst
+    # Nur noch ansehen (Testmonat seit 02.10.2026, Abo seit 03.10.2026):
+    # nach Testende, nach der Zahlungsfrist, nach Abo-Ende. Die Regel steht
+    # in abo.zugang(); ohne Abo ist sie genau die des Testmonats. Fragt erst
     # nach der Datenbank, wenn überhaupt geschrieben werden soll — lesende
     # Anfragen kosten nichts. Der Betreiber (admin) darf weiter helfen.
-    if (mandant_id is not None and request.method not in testmonat.LESEND
+    if (mandant_id is not None and request.method not in abo.LESEND
             and rolle(un) != "admin"):
-        st = testmonat.stand(testmonat.test_bis(mandant_id), testmonat.heute())
-        if testmonat.sperrt(request.method, request.url.path, st):
-            return None, JSONResponse({"fehler": testmonat.VORBEI_TEXT,
+        z = abo.zugang(**mandanten.abo_stand(mandant_id), heute=testmonat.heute())
+        if abo.sperrt(request.method, request.url.path, z):
+            # Ohne Abo-Weg (BABU_ABO=0) bleibt es beim Text von 02.10.:
+            # „schreib uns kurz" — eine Seite „Weitermachen" gibt es dann nicht.
+            # Die App meldet sich mit Geräteschlüssel (Bearer), das Portal mit
+            # Cookie: in der App nie ein Hinweis aufs Abschließen (App Store).
+            app = request.headers.get("authorization", "").lower().startswith("bearer ")
+            text = (abo.text(z, app=True) if app
+                    else abo.text(z) if abo.an() else testmonat.VORBEI_TEXT)
+            # `testmonat_vorbei` bleibt für die App von heute, die daran die
+            # Meldung festmacht; `nur_lesen`/`grund` sind die neue Form.
+            return None, JSONResponse({"fehler": text, "nur_lesen": True,
+                                       "grund": z["grund"],
                                        "testmonat_vorbei": True}, status_code=403)
     return un, None
 
@@ -2302,9 +2421,16 @@ def api_ich(request: Request) -> Response:
     # für alle anderen bleibt die Antwort Byte für Byte, wie sie war.
     aktiver = _AKTIVER_MANDANT.get(None)
     if aktiver is not None:
-        st = testmonat.stand(testmonat.test_bis(aktiver), testmonat.heute())
+        stand = mandanten.abo_stand(aktiver)
+        st = testmonat.stand(stand["test_bis"], testmonat.heute())
         if st:
             daten["testmonat"] = st
+        # Abo (seit 03.10.2026): nur, wenn es etwas zu sagen gibt — Frist,
+        # Kündigung, nur lesen. Ein Betrieb ohne Abo und Test bekommt die
+        # Antwort wie bisher.
+        z = abo.zugang(**stand, heute=testmonat.heute())
+        if stand["abo_status"] or z["stufe"] != "voll":
+            daten["zugang"] = z
     antwort = JSONResponse(daten)
     if request.cookies.get(SESSION_COOKIE):
         antwort.set_cookie(SESSION_COOKIE, _signieren(un, exp), max_age=SESSION_DAUER,
@@ -6031,6 +6157,10 @@ def healthz() -> Response:
         requests.get(GEMMA_API.rsplit("/chat/completions", 1)[0] + "/models", timeout=2)
     except Exception:  # noqa: BLE001
         befund["gemma"] = "weg"
+    # Abo (seit 03.10.2026): nur der Modus — aus/test/live und ob die Wege
+    # offen sind. Nie ein Schlüssel, nie eine Länge.
+    import stripe_api  # noqa: PLC0415
+    befund["abo"] = stripe_api.modus() + (" an" if abo.an() else "")
     befund["stand"] = ("gestoert" if status != 200
                        else "degraded" if befund["gemma"] != "ok"
                        or befund["spiegel"] not in ("ok", "store") else "ok")
@@ -12325,9 +12455,13 @@ _REG_ZULETZT: dict[str, float] = {}
 
 import kern_warteliste  # noqa: E402,F401
 import kern_ambassador  # noqa: E402,F401
+import kern_abo  # noqa: E402,F401
+import kern_auszahlung  # noqa: E402,F401
 
 kern_warteliste.setup(app, sys.modules[__name__])
 kern_ambassador.setup(app, sys.modules[__name__])
+kern_abo.setup(app, sys.modules[__name__])
+kern_auszahlung.setup(app, sys.modules[__name__])
 
 # Der Kern reicht sich selbst per setup() — die Familien hängen ihre
 # Routen an DIESES app-Objekt und benutzen DIESES Modul. Kein
