@@ -417,6 +417,45 @@ def _konto_und_rahmen(review: dict) -> tuple[str | None, str]:
     return (str(konto) if konto else None), rahmen
 
 
+def ist_ausgang(review: dict) -> bool:
+    """Steht dieser Beleg auf der Erlösseite — eine eigene Rechnung?"""
+    konto, _ = _konto_und_rahmen(review)
+    klasse = str((review.get("vlm") or {}).get("dokumentklasse")
+                 or (review.get("felder") or {}).get("dokumentklasse")
+                 or "").strip().lower()
+    return klasse == "ausgangsrechnung" or str(konto) in ERLOES_KONTEN
+
+
+def gegenkonto(review: dict, kreditor: str | None = None,
+               sammelkonto: str = GEGENKONTO) -> str:
+    """Gegen welches Konto dieser Beleg läuft — die EINE Regel im Haus.
+
+    Stapeldatei (`buchungszeilen`) und Anzeige (`babu_web.datev_buchungssatz`)
+    fragen beide hier. Bis 03.10.2026 stand die Regel zweimal, und die Anzeige
+    kannte den Debitor nicht: sie zeigte 70099, wo im Stapel 1200 stand.
+
+    Reihenfolge (Plan Kanzleiansicht, K0):
+
+    1. **Bar bezahlt → Kasse.** Bestätigt vom Auftraggeber 03.09.2026: nur
+       so stimmt der Kassenbestand im Stapel mit dem gezählten überein. Das
+       gilt auch, wenn der Lieferant einen Kreditor hat — bezahlt hat die
+       Kasse, ein offener Posten entsteht nicht.
+    2. **Ausgangsrechnung → Debitor** (seit 17.09.2026): Erlös im Haben,
+       Forderung im Soll. Ein Kreditor gehört nie zu einer eigenen Rechnung.
+    3. **Kreditor des Belegs**, wenn die Kanzlei einen zugeordnet hat.
+    4. Sonst das **Sammelkonto**, gegen das die Kanzlei die Zahlung mit dem
+       Kontoauszug auflöst.
+    """
+    if zahlungsart(review) == "bar":
+        return KASSE
+    if ist_ausgang(review):
+        _, rahmen = _konto_und_rahmen(review)
+        return DEBITOR.get(rahmen, DEBITOR["SKR04"])
+    if kreditor:
+        return str(kreditor)
+    return sammelkonto
+
+
 def buchungszeilen(review: dict, kleinunternehmerin: bool = False
                    ) -> list[dict]:
     """Ein Review → 1..n Buchungssätze (je Steuersatz einer).
@@ -432,40 +471,21 @@ def buchungszeilen(review: dict, kleinunternehmerin: bool = False
     Kleinunternehmerin auf der Ausgabenseite voller Vorsteuer-Schlüssel.
     """
     f = review.get("felder") or {}
-    e = review.get("einschaetzung") or {}
-    v = review.get("vlm") or {}
     konto, rahmen = _konto_und_rahmen(review)
     if not konto or f.get("brutto") is None:
         return []
-    datum = f.get("datum") or ""
-    teile = _datum_teile(datum)
-    belegdatum = _ttmm(datum)
-    text = (v.get("buchungstext") or "").strip()
-    if not text:
-        einordnung = ((review.get("semantik") or {}).get("belegart") or "").strip()
-        lieferant = (v.get("lieferant") or f.get("lieferant") or "").strip()
-        kurz = f"{teile[0]:02d}.{teile[1]:02d}." if teile else ""
-        text = " ".join(x for x in (einordnung, kurz, lieferant) if x)
-    # Bestätigt vom Auftraggeber 03.09.2026: bar bezahlte Belege gehen gegen
-    # die Kasse — nur so stimmt der Kassenbestand im Stapel mit dem gezählten
-    # überein. Alles andere läuft weiter über das Sammel-Gegenkonto, gegen das
-    # die Kanzlei die Zahlung mit dem Kontoauszug auflöst. Das Gegenkonto
-    # steht in `basis` und gilt damit für jede Zeile dieses Belegs: den
-    # Einzelsatz, jede Zeile des Mehrsatz-Splits und die Gutschrift im Haben.
-    gegenkonto = KASSE if zahlungsart(review) == "bar" else GEGENKONTO
+    belegdatum = _ttmm(f.get("datum") or "")
+    text = buchungstext(review)
+    # Das Gegenkonto steht in `basis` und gilt damit für jede Zeile dieses
+    # Belegs: den Einzelsatz, jede Zeile des Mehrsatz-Splits und die
+    # Gutschrift im Haben. Die Regel selbst steht in `gegenkonto`.
     # Eine AUSGANGSRECHNUNG (seit 17.09.2026) steht auf der anderen Seite:
-    # Erlös im Haben, Forderung gegen den Debitor im Soll. Bar gezahlte
-    # Erlöse laufen gegen die Kasse wie beim Einkauf. Die Gutschrift an
+    # Erlös im Haben, Forderung gegen den Debitor im Soll. Die Gutschrift an
     # einen Kunden (Storno unserer Rechnung) hat gutschrift=True und dreht
     # mit dem Vorzeichen zurück ins Soll — derselbe Mechanismus wie oben.
-    klasse = str((review.get("vlm") or {}).get("dokumentklasse")
-                 or (review.get("felder") or {}).get("dokumentklasse")
-                 or "").strip().lower()
-    ausgang = (klasse == "ausgangsrechnung"
-               or str(konto) in ERLOES_KONTEN)
-    if ausgang and zahlungsart(review) != "bar":
-        gegenkonto = DEBITOR[rahmen]
-    basis = {"konto": konto, "gegenkonto": gegenkonto, "belegdatum": belegdatum,
+    ausgang = ist_ausgang(review)
+    basis = {"konto": konto, "gegenkonto": gegenkonto(review),
+             "belegdatum": belegdatum,
              "belegfeld1": belegfeld1(review),
              "text": _text_saeubern(text)}
 

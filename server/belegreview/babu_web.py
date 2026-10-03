@@ -1496,19 +1496,7 @@ def _index_bauen(head: str) -> None:
                     eintrag[kk] = korrektur[kk]
             if review is not None:
                 review = json.loads(json.dumps(review))  # Kopie, Original bleibt
-                review.setdefault("einschaetzung", {})
-                for kk in ("konto_skr04", "steuerschluessel"):
-                    if korrektur.get(kk):
-                        review["einschaetzung"][kk] = korrektur[kk]
-                # Das Korrekturfeld heißt aus historischen Gründen
-                # `konto_skr04`; gemeint ist immer das Konto im Rahmen des
-                # Betriebs. Ohne diese Zeile ginge eine Korrektur am
-                # Buchungsstapel vorbei, seit der `konto` bevorzugt.
-                if korrektur.get("konto_skr04"):
-                    review["einschaetzung"]["konto"] = korrektur["konto_skr04"]
-                if korrektur.get("buchungstext"):
-                    review.setdefault("vlm", {})
-                    (review["vlm"] or {}).update(buchungstext=korrektur["buchungstext"])
+                _korrektur_anwenden(review, korrektur)
         belege[stamm] = eintrag
         if review is not None:
             reviews[stamm] = review
@@ -2562,6 +2550,17 @@ def api_beleg(stamm: str, request: Request) -> Response:
             if d["status"] in ("erfasst", "nachfrage", "unlesbar") and _beleg_abgeschlossen(
                     offen_nach_angaben, bewirtung_signal, eintrag["bewirtung_beantwortet"]):
                 d["status"] = "geprüft"
+    # Die Korrektur der Kanzlei gilt hier wie in Liste und Stapel.
+    roh_korr = git_show(f"review/{stamm}.korrektur.json")
+    if roh_korr is not None and d.get("felder") is not None:
+        try:
+            korr = json.loads(roh_korr)
+        except Exception:  # noqa: BLE001
+            korr = None
+        if isinstance(korr, dict):
+            _korrektur_anwenden(d, korr)
+            d["korrigiert"] = True
+            d["buchungssatz"] = datev_buchungssatz(d)
     d["bewirtung_beantwortet"] = eintrag["bewirtung_beantwortet"]
     if eintrag["bewirtung_beantwortet"]:
         roh = git_show(f"review/{stamm}.bewirtung.json")
@@ -2577,6 +2576,32 @@ def api_beleg(stamm: str, request: Request) -> Response:
     # liest ihn seit dem ersten Tag, und dieser Vertrag wird nicht gebrochen.
     d["stapelzeilen"] = _stapelzeilen(d, un)
     return JSONResponse(d)
+
+
+def _korrektur_anwenden(review: dict, korrektur: dict) -> None:
+    """Eine Kanzlei-Korrektur (`review/<stamm>.korrektur.json`) auf ein Review.
+
+    Ändert `review` an Ort und Stelle — Aufrufer geben eine Kopie herein.
+    Eine Stelle für Index (Liste, Stapel) und Einzelansicht: bis 03.10.2026
+    wandte nur der Index sie an, und die Einzelansicht zeigte das alte Konto.
+    """
+    if not isinstance(review.get("einschaetzung"), dict):
+        review["einschaetzung"] = {}
+    for kk in ("konto_skr04", "steuerschluessel"):
+        if korrektur.get(kk):
+            review["einschaetzung"][kk] = korrektur[kk]
+    # Das Korrekturfeld heißt aus historischen Gründen `konto_skr04`; gemeint
+    # ist immer das Konto im Rahmen des Betriebs. Ohne diese Zeile ginge eine
+    # Korrektur am Buchungsstapel vorbei, seit der `konto` bevorzugt.
+    if korrektur.get("konto_skr04"):
+        review["einschaetzung"]["konto"] = korrektur["konto_skr04"]
+    if korrektur.get("buchungstext"):
+        # `vlm` kann null sein (Stub-Reviews, Zielbild-Weg) — bis 03.10.2026
+        # landete der Text dann in einem Wegwerf-Dict, und der Stapel trug
+        # den alten.
+        if not isinstance(review.get("vlm"), dict):
+            review["vlm"] = {}
+        review["vlm"]["buchungstext"] = korrektur["buchungstext"]
 
 
 def _kennung(stamm: str) -> str | None:
@@ -6518,9 +6543,9 @@ def datev_buchungssatz(d: dict) -> dict | None:
         "konto": konto,
         # Dasselbe Gegenkonto, das `extf.buchungszeilen` schreibt — die
         # Vorschau darf nicht behaupten, was in der Datei anders steht.
-        # Bar bezahlt heißt seit dem 03.09.2026 gegen die Kasse.
-        "gegenkonto": extf.KASSE if extf.zahlungsart(d) == "bar"
-                      else extf.GEGENKONTO,
+        # Bis 03.10.2026 stand hier eine eigene Fassung der Regel ohne den
+        # Debitor für Ausgangsrechnungen.
+        "gegenkonto": extf.gegenkonto(d),
         "bu_schluessel": e.get("steuerschluessel"),
         "belegdatum": belegdatum,
         "belegfeld1": belegfeld1,

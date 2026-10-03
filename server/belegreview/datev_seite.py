@@ -33,13 +33,17 @@ import calendar
 import csv
 import os
 import re
+import threading
 import time
 
 from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 
+import boxschreiber
 import extf
+import historie
+import kreditoren as kr
 import skr04_konten
 
 router = APIRouter(prefix="/api/datev")
@@ -872,7 +876,6 @@ def api_uebergeben(request: Request, von: str = "", bis: str = "") -> Response:
     monate, meldung = _zeitraum(von, bis)
     if meldung:
         return _fehler(meldung)
-    import boxschreiber  # noqa: PLC0415
     try:
         daten, info = bw._stapel_uebergeben(monate, un)
     except bw.StapelSchonUebergeben as fehler_:
@@ -969,6 +972,269 @@ def api_kreditoren(request: Request, von: str = "", bis: str = "") -> Response:
                     media_type="text/csv; charset=windows-1252",
                     headers={"Content-Disposition":
                              f'attachment; filename="Kreditoren_{monate[0]}.csv"'})
+
+
+# ---------------------------------------------------------------------------
+# Kreditorenliste (Plan Kanzleiansicht, K1 — seit 03.10.2026)
+# ---------------------------------------------------------------------------
+#
+# Die Liste liegt in der Box des Betriebs (`kreditoren.PFAD`). Jede Änderung
+# liest den Stand, rechnet in `kreditoren` und schreibt EINEN Commit — unter
+# einem Schloss je Box, damit zwei gleichzeitige Änderungen sich nicht
+# gegenseitig überschreiben (das Schloss in `boxschreiber` schützt nur das
+# Schreiben selbst, nicht das Lesen davor).
+
+_KREDITOREN_SCHLOESSER: dict[str, threading.Lock] = {}
+_KREDITOREN_SCHLOSS = threading.Lock()
+
+
+def _kreditoren_schloss(bw) -> threading.Lock:
+    schluessel = str(bw._box().store)  # noqa: SLF001
+    with _KREDITOREN_SCHLOSS:
+        return _KREDITOREN_SCHLOESSER.setdefault(schluessel, threading.Lock())
+
+
+def _kreditoren_stand(bw) -> dict:
+    return kr.laden(bw.git_show(kr.PFAD))
+
+
+def _kreditoren_schreiben(bw, un: str, stand: dict, nachricht: str) -> str:
+    return boxschreiber.schreiben(bw._box(), kr.PFAD, kr.als_bytes(stand),  # noqa: SLF001
+                                  nachricht, un)
+
+
+def _kreditor_aussen(k: dict) -> dict:
+    """Was die Seite von einem Kreditor zeigt."""
+    return {s: k[s] for s in ("nummer", "name", "aliase", "iban", "quelle",
+                              "an_datev_am", "aktiv")}
+
+
+def _jetzt() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S%z")
+
+
+def _kreditoren_aendern(bw, un: str, rechnen, nachricht) -> tuple[dict, str | None, object]:
+    """Lesen, rechnen, schreiben — unter dem Schloss der Box.
+
+    `rechnen(stand)` gibt (neuer_stand, ergebnis) zurück; `nachricht(ergebnis)`
+    den Commit-Text. Ist der neue Stand derselbe wie der alte, wird nichts
+    geschrieben (kein leerer Commit).
+    """
+    with _kreditoren_schloss(bw):
+        alt = _kreditoren_stand(bw)
+        neu, ergebnis = rechnen(alt)
+        if neu == alt:
+            return neu, None, ergebnis
+        commit = _kreditoren_schreiben(bw, un, neu, nachricht(ergebnis))
+    return neu, commit, ergebnis
+
+
+def _schreibfehler() -> JSONResponse:
+    return _fehler("Gerade nicht speicherbar — gleich noch einmal.", 503)
+
+
+@router.get("/kreditoren")
+def api_kreditoren_liste(request: Request, q: str = "", buchstabe: str = "",
+                         seite: int = 1) -> Response:
+    """Die Kreditorenliste: Suche, Anfangsbuchstabe, Seiten."""
+    un, fehler = _wache(request)
+    if fehler:
+        return fehler
+    stand = _kreditoren_stand(_bw())
+    teil = kr.liste(stand, q=q, buchstabe=buchstabe, seite=seite)
+    return JSONResponse({
+        "modus": stand["modus"], "sammelkonto": stand["sammelkonto"],
+        "naechste": kr.naechste_nummer(stand), "anzahl": len(stand["kreditoren"]),
+        "gesamt": teil["gesamt"], "seite": teil["seite"], "seiten": teil["seiten"],
+        "buchstaben": teil["buchstaben"],
+        "eintraege": [_kreditor_aussen(k) for k in teil["eintraege"]],
+    })
+
+
+@router.post("/kreditoren")
+async def api_kreditor_anlegen(request: Request) -> Response:
+    """Ein neuer Lieferant — babu vergibt die nächste freie Nummer."""
+    un, fehler = _wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return _fehler("JSON erwartet.")
+    body = body if isinstance(body, dict) else {}
+    bw = _bw()
+    try:
+        _, _, k = await run_in_threadpool(
+            _kreditoren_aendern, bw, un,
+            lambda st: kr.anlegen(st, body.get("name"), un, _jetzt(),
+                                  iban=body.get("iban")),
+            lambda k: f"kreditoren: {k['nummer']} {k['name']} angelegt")
+    except kr.KreditorFehler as f:
+        return _fehler(str(f))
+    except boxschreiber.SchreibFehler:
+        return _schreibfehler()
+    return JSONResponse({"ok": True, "kreditor": _kreditor_aussen(k)})
+
+
+@router.post("/kreditoren/einstellung")
+async def api_kreditoren_einstellung(request: Request) -> Response:
+    """Sammelkonto für alle oder ein Konto je Lieferant."""
+    un, fehler = _wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return _fehler("JSON erwartet.")
+    body = body if isinstance(body, dict) else {}
+    try:
+        neu, _, _ = await run_in_threadpool(
+            _kreditoren_aendern, _bw(), un,
+            lambda st: (kr.einstellen(st, modus=body.get("modus"),
+                                      sammelkonto=body.get("sammelkonto")), None),
+            lambda _: "kreditoren: einstellung")
+    except kr.KreditorFehler as f:
+        return _fehler(str(f))
+    except boxschreiber.SchreibFehler:
+        return _schreibfehler()
+    return JSONResponse({"ok": True, "modus": neu["modus"],
+                         "sammelkonto": neu["sammelkonto"]})
+
+
+async def _kreditoren_datei(request: Request, datei: UploadFile):
+    """Wache, Bremse, Endung, Größe, Lesen — gemeinsam für Ansehen und Übernehmen."""
+    un, fehler = _wache(request)
+    if fehler:
+        return None, None, fehler
+    if _lese_gebremst(un):
+        return None, None, _fehler("Gerade wurden viele Dateien hereingelesen — "
+                                   "kurz warten, dann noch einmal.", 429)
+    if not (datei.filename or "").lower().endswith(ENDUNGEN):
+        return None, None, _fehler("Bitte eine Datei mit der Endung .csv oder "
+                                   ".txt wählen.")
+    roh = await datei.read(UPLOAD_MAX + 1)
+    if len(roh) > UPLOAD_MAX:
+        return None, None, _fehler(f"Die Datei ist größer als "
+                                   f"{UPLOAD_MAX // (1024 * 1024)} MB.")
+    try:
+        return un, kr.datei_lesen(roh), None
+    except kr.KreditorFehler as f:
+        return None, None, _fehler(str(f))
+
+
+@router.post("/kreditoren/lesen")
+async def api_kreditoren_lesen(request: Request,
+                               datei: UploadFile = File(...)) -> Response:
+    """Eine Kreditorenliste aus DATEV ansehen — es wird nichts gespeichert."""
+    un, gelesen, fehler = await _kreditoren_datei(request, datei)
+    if fehler:
+        return fehler
+    stand = await run_in_threadpool(_kreditoren_stand, _bw())
+    v = kr.vorschau(stand, gelesen["eintraege"], "datev")
+    return JSONResponse({"art": gelesen["art"], "anzahl": len(gelesen["eintraege"]),
+                         "uebersprungen": gelesen["uebersprungen"],
+                         "hinweise": gelesen["hinweise"], **v})
+
+
+@router.post("/kreditoren/uebernehmen")
+async def api_kreditoren_uebernehmen(request: Request,
+                                     datei: UploadFile = File(...)) -> Response:
+    """Dieselbe Datei übernehmen: neue Nummern dazu, DATEV gewinnt beim Namen."""
+    un, gelesen, fehler = await _kreditoren_datei(request, datei)
+    if fehler:
+        return fehler
+    try:
+        _, commit, z = await run_in_threadpool(
+            _kreditoren_aendern, _bw(), un,
+            lambda st: kr.zusammenfuehren(st, gelesen["eintraege"], "datev", un,
+                                          _jetzt()),
+            lambda z: (f"kreditoren: aus DATEV übernommen ({z['neu']} neu, "
+                       f"{z['geaendert']} geändert)"))
+    except boxschreiber.SchreibFehler:
+        return _schreibfehler()
+    return JSONResponse({"ok": True, "commit": commit, **z})
+
+
+def _historie_kreditoren(bw) -> list[dict]:
+    """Die Kreditorenkonten aus allen abgelegten Kanzlei-Stapeln der Box."""
+    out = bw._git(["ls-tree", "-r", "--name-only", "HEAD", "historie/"]) or ""  # noqa: SLF001
+    pfade = sorted(p for p in out.splitlines()
+                   if p.count("/") == 2 and not p.endswith(".json"))
+    return historie.personenkonten(d for d in (bw.git_show(p) for p in pfade) if d)
+
+
+@router.get("/kreditoren/aus-historie")
+def api_kreditoren_historie(request: Request) -> Response:
+    """Welche Kreditoren die Kanzlei in den bisherigen Stapeln führt."""
+    un, fehler = _wache(request)
+    if fehler:
+        return fehler
+    bw = _bw()
+    konten = [k for k in _historie_kreditoren(bw) if kr.ist_kreditornummer(k["nummer"])]
+    stand = _kreditoren_stand(bw)
+    vorhanden = {k["nummer"] for k in stand["kreditoren"]}
+    return JSONResponse({
+        "vorschlaege": [dict(k, vorhanden=k["nummer"] in vorhanden) for k in konten
+                        if not k["sammel"] and k["nummer"] != stand["sammelkonto"]],
+        "sammel": [k for k in konten
+                   if k["sammel"] or k["nummer"] == stand["sammelkonto"]],
+    })
+
+
+@router.post("/kreditoren/aus-historie")
+async def api_kreditoren_historie_uebernehmen(request: Request) -> Response:
+    """Vorschläge aus den bisherigen Stapeln übernehmen — alle oder eine Auswahl."""
+    un, fehler = _wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    auswahl = body.get("nummern")
+    bw = _bw()
+    konten = await run_in_threadpool(_historie_kreditoren, bw)
+    eintraege = [k for k in konten if not k["sammel"]
+                 and (auswahl is None or k["nummer"] in {str(n) for n in auswahl})]
+    try:
+        _, commit, z = await run_in_threadpool(
+            _kreditoren_aendern, bw, un,
+            lambda st: kr.zusammenfuehren(st, eintraege, "historie", un, _jetzt()),
+            lambda z: f"kreditoren: aus bisherigen Buchungen ({z['neu']} neu)")
+    except boxschreiber.SchreibFehler:
+        return _schreibfehler()
+    return JSONResponse({"ok": True, "commit": commit, **z})
+
+
+@router.post("/kreditoren/{nummer}")
+async def api_kreditor_aendern(nummer: str, request: Request) -> Response:
+    """Name, Nebennamen, IBAN oder aktiv ändern. Die Nummer bleibt."""
+    un, fehler = _wache(request)
+    if fehler:
+        return fehler
+    if not kr.ist_kreditornummer(nummer):
+        return _fehler("Unbekannter Kreditor.", 404)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return _fehler("JSON erwartet.")
+    felder = {s: body[s] for s in ("name", "aliase", "iban", "aktiv")
+              if isinstance(body, dict) and s in body}
+    bw = _bw()
+    stand = await run_in_threadpool(_kreditoren_stand, bw)
+    if not any(k["nummer"] == nummer for k in stand["kreditoren"]):
+        return _fehler(f"Den Kreditor {nummer} gibt es nicht.", 404)
+    try:
+        _, _, k = await run_in_threadpool(
+            _kreditoren_aendern, bw, un,
+            lambda st: kr.aendern(st, nummer, felder, un, _jetzt()),
+            lambda k: f"kreditoren: {k['nummer']} geändert")
+    except kr.KreditorFehler as f:
+        return _fehler(str(f))
+    except boxschreiber.SchreibFehler:
+        return _schreibfehler()
+    return JSONResponse({"ok": True, "kreditor": _kreditor_aussen(k)})
 
 
 def _sortdatum(d: str) -> str:

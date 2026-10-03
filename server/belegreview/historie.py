@@ -330,3 +330,88 @@ def vorjahresmonat(historie: dict, monat: str) -> dict | None:
         return None
     vorjahr = f"{int(monat[:4]) - 1}-{monat[5:7]}"
     return (historie.get("monate") or {}).get(vorjahr)
+
+
+# ---------------------------------------------------------------------------
+# Personenkonten: welche Kreditoren die Kanzlei schon führt (seit 03.10.2026)
+# ---------------------------------------------------------------------------
+#
+# Plan Kanzleiansicht, K1. In den alten Stapeln steht jede Lieferantenrechnung
+# mit ihrem Kreditorenkonto — im Gegenkonto bei der Rechnung, im Konto bei
+# der Zahlung. Daraus lässt sich die Kreditorenliste der Kanzlei ablesen,
+# auch wenn niemand die Datei „Debitoren/Kreditoren“ schickt. Der Name ist
+# nur ein VORSCHLAG aus dem Buchungstext; die Kanzlei sieht ihn vor dem
+# Übernehmen und kann ihn ändern.
+
+# Wörter, die in Buchungstexten stehen, aber keinen Lieferanten nennen.
+TEXT_RAUSCHEN = frozenset({
+    "re", "rg", "rechnung", "rechnungsnr", "nr", "lastschrift", "ueberweisung",
+    "überweisung", "gutschrift", "zahlung", "kd", "kdnr", "kundennr", "beleg",
+})
+
+
+def _nummernartig(wort: str) -> bool:
+    """„4711“, „03/25“, „RE4711“, „R-A687-2026“ — aber nicht „3M“."""
+    ziffern = sum(z.isdigit() for z in wort)
+    buchstaben = sum(z.isalpha() for z in wort)
+    return buchstaben == 0 or (ziffern >= 3 and buchstaben <= 2)
+
+
+def _name_aus_text(text: str) -> str:
+    worte = [w.strip(".,;:-/()#") for w in str(text or "").split()]
+    return " ".join(w for w in worte
+                    if w and not _nummernartig(w)
+                    and w.lower().rstrip(".") not in TEXT_RAUSCHEN)
+
+
+def personenkonten(dateien) -> list[dict]:
+    """Die Kreditorenkonten aus alten Buchungsstapeln — mit Namensvorschlag.
+
+    Ein Konto, auf dem viele verschiedene Namen gebucht sind, ist ein
+    Sammelkonto (`sammel`); es gehört nicht als Lieferant in die Liste.
+    Dateien, die kein Buchungsstapel sind, werden übergangen.
+    """
+    from collections import Counter  # noqa: PLC0415
+    topf: dict[str, dict] = {}
+    for daten in dateien:
+        if daten.startswith(b"\xef\xbb\xbf"):
+            text = daten.decode("utf-8-sig", errors="replace")
+        else:
+            text = daten.decode("cp1252", errors="replace")
+        zeilen = [z for z in text.splitlines() if z.strip()]
+        if len(zeilen) < 3:
+            continue
+        try:
+            kopf = kopf_lesen(zeilen[0], zeilen[1])
+        except (HistorieFehler, StopIteration):
+            continue
+        if kopf["kategorie"] != "21":
+            continue
+        laenge = int(kopf["sachkontenlaenge"]) if kopf["sachkontenlaenge"].isdigit() else 4
+        for f in csv.reader(io.StringIO("\n".join(zeilen[2:])), delimiter=";"):
+            if len(f) <= TEXT:
+                continue
+            buchungstext = (f[TEXT] or "").strip().strip('"')
+            for roh in (f[KONTO], f[GEGENKONTO]):
+                nummer = (roh or "").strip().strip('"')
+                if not (nummer.isdigit() and len(nummer) == laenge + 1
+                        and nummer[0] in "789"):
+                    continue
+                k = topf.setdefault(nummer, {"namen": Counter(), "texte": Counter(),
+                                             "buchungen": 0})
+                k["buchungen"] += 1
+                k["texte"][buchungstext] += 1
+                name = _name_aus_text(buchungstext)
+                if name:
+                    k["namen"][name] += 1
+    aus = []
+    for nummer in sorted(topf):
+        k = topf[nummer]
+        haeufig = k["namen"].most_common(1)
+        name, anzahl = haeufig[0] if haeufig else (f"Konto {nummer}", 0)
+        gesamt = sum(k["namen"].values())
+        sammel = len(k["namen"]) >= 5 and anzahl < 0.5 * gesamt
+        aus.append({"nummer": nummer, "name": name[:50], "buchungen": k["buchungen"],
+                    "texte": [t for t, _ in k["texte"].most_common(3) if t],
+                    "sammel": sammel})
+    return aus

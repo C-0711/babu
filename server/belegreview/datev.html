@@ -125,6 +125,26 @@ tfoot td{font-weight:600;color:var(--gc-fg);border-top:1px solid var(--gc-border
   line-height:1.5;background:var(--gc-accent-subtle);border-left:3px solid var(--gc-ok);
   color:var(--gc-body)}
 .laedt{color:var(--gc-muted);font-size:13px;padding:14px 0}
+input[type=text].feld{font:14px var(--gc-sans);padding:10px 12px;
+  border:1px solid var(--gc-border);border-radius:9px;background:var(--gc-bg);
+  color:var(--gc-fg);min-width:0}
+.abc{display:flex;gap:4px;flex-wrap:wrap;margin:12px 0}
+.abc button{min-width:30px;padding:6px 8px;border-radius:7px;font:600 12.5px var(--gc-mono);
+  color:var(--gc-fg);border:1px solid var(--gc-border);background:var(--gc-bg)}
+.abc button.an{background:var(--gc-fg);border-color:var(--gc-fg);color:#fff}
+.abc button[disabled]{color:var(--gc-border);border-color:var(--gc-border-l);cursor:default}
+td .neben{display:block;font-size:12px;color:var(--gc-muted)}
+td.aus{opacity:.55}
+.knopfchen{font-size:12.5px;font-weight:600;color:var(--gc-accent);padding:2px 4px}
+.knopfchen:hover{color:var(--gc-accent-hover)}
+#kr-uebernahme:not(:empty){margin-bottom:14px}
+#b-kreditoren td.k:first-child{width:1%;padding-right:22px}
+#b-kreditoren td.t{min-width:16ch}
+#b-kreditoren .werkzeug{text-align:right}
+@media (max-width:640px){
+  #b-kreditoren .kr-herkunft{display:none}
+  #b-kreditoren .werkzeug .knopfchen{display:block;margin-left:auto}
+}
 @media (min-width:1180px){
   .spalten{display:grid;align-items:start;gap:14px;
     grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -153,6 +173,7 @@ tfoot td{font-weight:600;color:var(--gc-fg);border-top:1px solid var(--gc-border
   <div class="unterreiter">
     <button id="r-export" class="an">Hinausgeben</button>
     <button id="r-stamm">Konten und Lieferanten</button>
+    <button id="r-kreditoren">Kreditoren</button>
     <button id="r-import">Hereinlesen und vergleichen</button>
   </div>
 
@@ -195,6 +216,62 @@ tfoot td{font-weight:600;color:var(--gc-fg);border-top:1px solid var(--gc-border
        sich nach dem Zeitraum, der unter „Hinausgeben" eingestellt ist.</p>
   </section>
 
+  <!-- ── Kreditoren ────────────────────────────────────────────────── -->
+  <section id="b-kreditoren" class="blatt">
+    <div class="spalten">
+      <div class="karte">
+        <h3>Wie dieser Betrieb gebucht wird</h3>
+        <p>Kleine Betriebe bleiben beim Sammelkonto. Größere führen je
+           Lieferant ein eigenes Kreditorenkonto — dann bleiben Rechnungen
+           und offene Posten je Lieferant nachvollziehbar.</p>
+        <div class="chips" id="kr-modus">
+          <button class="chip" data-modus="sammel">Ein Sammelkonto für alle</button>
+          <button class="chip" data-modus="einzeln">Ein Konto je Lieferant</button>
+        </div>
+        <div class="reihe" style="margin-top:6px">
+          <label class="feldchen"><span class="lbl">Sammelkonto</span>
+            <input type="text" class="feld num" id="kr-sammel" inputmode="numeric"
+                   maxlength="5" style="width:110px"></label>
+          <button class="chip" id="kr-sammel-sichern">Sichern</button>
+        </div>
+        <p id="kr-modus-hinweis" style="margin-top:10px"></p>
+      </div>
+      <div class="karte">
+        <h3>Liste übernehmen</h3>
+        <p>Die Nummern kommen aus dem DATEV der Kanzlei: als Datei
+           „Debitoren/Kreditoren“ oder aus den bisherigen Buchungsstapeln,
+           die schon in der Belegbox liegen. Erst ansehen, dann übernehmen.</p>
+        <div class="reihe" style="margin-top:12px">
+          <input type="file" id="kr-datei" accept=".csv,.txt">
+          <button class="chip" id="kr-lesen">Datei ansehen</button>
+        </div>
+        <div class="chips">
+          <button class="chip" id="kr-historie">Aus bisherigen Buchungen</button>
+        </div>
+      </div>
+    </div>
+    <div id="kr-uebernahme"></div>
+
+    <div class="karte">
+      <h3>Neuer Lieferant</h3>
+      <div class="reihe" style="margin-top:8px">
+        <label class="feldchen" style="flex:2 1 220px"><span class="lbl">Name</span>
+          <input type="text" class="feld" id="kr-name" maxlength="50"
+                 placeholder="z. B. Friseurbedarf Nord GmbH"></label>
+        <label class="feldchen" style="flex:1 1 200px"><span class="lbl">IBAN (wenn bekannt)</span>
+          <input type="text" class="feld num" id="kr-iban" maxlength="42"></label>
+        <button class="chip tinte" id="kr-anlegen">Anlegen</button>
+      </div>
+      <div id="kr-anlegen-meldung"></div>
+    </div>
+
+    <div class="deckel"><span class="lbl">Kreditoren</span><span id="kr-zahl"></span></div>
+    <input type="text" class="feld" id="kr-suche" placeholder="Suchen: Name oder Nummer"
+           style="width:100%;max-width:420px" autocomplete="off">
+    <div class="abc" id="kr-abc"></div>
+    <div id="kr-liste"><div class="laedt">Wird geladen …</div></div>
+  </section>
+
   <!-- ── Hereinlesen ───────────────────────────────────────────────── -->
   <section id="b-import" class="blatt">
     <div class="karte">
@@ -220,7 +297,7 @@ const txt = (s) => String(s == null ? "" : s).replace(/[&<>"]/g,
 // Der offene Reiter steht in der Adresse. Nicht als Spielerei: wer die
 // Kanzlei auf den Abgleich hinweisen will, schickt einen Verweis — und
 // landet dann dort und nicht wieder am Anfang.
-const REITER = ["export", "stamm", "import"];
+const REITER = ["export", "stamm", "kreditoren", "import"];
 function reiter(name, merken = true){
   if (!REITER.includes(name)) name = "export";
   for (const k of REITER){
@@ -228,6 +305,7 @@ function reiter(name, merken = true){
     $("#b-"+k).classList.toggle("an", k === name);
   }
   if (merken && location.hash.slice(1) !== name) location.hash = name;
+  if (name === "kreditoren" && !KR.geladen) kreditorenLaden();
 }
 for (const k of REITER) $("#r-"+k).onclick = () => reiter(k);
 addEventListener("hashchange", () => reiter(location.hash.slice(1), false));
@@ -542,6 +620,232 @@ $("#hol-konten").onclick = () => {
   window.location.href = mitMandant("/api/datev/konten.csv?" + spanne()); };
 $("#hol-kreditoren").onclick = () => {
   window.location.href = mitMandant("/api/datev/kreditoren.csv?" + spanne()); };
+
+// ── Kreditoren ───────────────────────────────────────────────────────
+/* Die Liste liegt in der Belegbox des Betriebs. Jede Änderung ist ein
+   eigener Schritt mit Antwort — nichts wird im Browser zwischengespeichert,
+   was nicht auch dort steht. */
+const KR = {geladen: false, q: "", buchstabe: "", seite: 1, daten: null};
+const HERKUNFT = {datev: "DATEV", historie: "Bisherige Buchungen", babu: "babu"};
+
+async function schick(pfad, koerper, methode = "POST"){
+  const a = await fetch(mitMandant(pfad), {method: methode, credentials: "same-origin",
+    headers: {"Content-Type": "application/json"}, body: JSON.stringify(koerper || {})});
+  const d = await a.json().catch(() => ({fehler: "Antwort nicht lesbar"}));
+  if (!a.ok) throw new Error(d.fehler || "Das hat nicht geklappt.");
+  return d;
+}
+
+async function kreditorenLaden(){
+  const q = new URLSearchParams({q: KR.q, buchstabe: KR.buchstabe, seite: KR.seite});
+  let d;
+  try { d = await hol("/api/datev/kreditoren?" + q); }
+  catch (e) { $("#kr-liste").innerHTML =
+    `<div class="meldung schlimm">${txt(e.message)}</div>`; return; }
+  KR.geladen = true; KR.daten = d;
+  for (const b of document.querySelectorAll("#kr-modus button"))
+    b.classList.toggle("an", b.dataset.modus === d.modus);
+  if (document.activeElement !== $("#kr-sammel")) $("#kr-sammel").value = d.sammelkonto;
+  $("#kr-modus-hinweis").textContent = d.modus === "einzeln"
+    ? "Noch laufen alle Belege über das Sammelkonto — die Zuordnung am Beleg kommt als Nächstes."
+    : `Alle Belege laufen über ${d.sammelkonto}.`;
+  $("#kr-anlegen").textContent = `Als ${d.naechste} anlegen`;
+  $("#kr-zahl").textContent = d.anzahl
+    ? `${d.anzahl} insgesamt` + (d.gesamt !== d.anzahl ? ` · ${d.gesamt} gefunden` : "")
+    : "";
+  const abc = ["#", ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ"];
+  $("#kr-abc").innerHTML = (d.anzahl ? [""] : []).concat(d.anzahl ? abc : [])
+    .map((b) => `<button data-b="${b}" class="${KR.buchstabe === b ? "an" : ""}"
+      ${b && !d.buchstaben[b] ? "disabled" : ""}>${b || "Alle"}</button>`).join("");
+  if (!d.eintraege.length){
+    $("#kr-liste").innerHTML = d.anzahl
+      ? `<div class="leer"><b>Nichts gefunden</b>Anders suchen oder einen anderen Buchstaben wählen.</div>`
+      : `<div class="leer"><b>Noch keine Kreditoren</b>Liste aus DATEV übernehmen
+         oder den ersten Lieferanten oben anlegen.</div>`;
+    return;
+  }
+  $("#kr-liste").innerHTML = `<div class="tabellenrahmen"><table><thead><tr>
+      <th>Nummer</th><th>Name</th><th class="kr-herkunft">Herkunft</th><th>In DATEV</th><th></th>
+    </tr></thead><tbody>` + d.eintraege.map((k) => `<tr>
+      <td class="k${k.aktiv ? "" : " aus"}">${txt(k.nummer)}</td>
+      <td class="t${k.aktiv ? "" : " aus"}">${txt(k.name)}${k.aliase.length
+        ? `<span class="neben">auch: ${txt(k.aliase.join(", "))}</span>` : ""}${k.aktiv
+        ? "" : `<span class="neben">nicht mehr verwendet</span>`}</td>
+      <td class="kr-herkunft">${txt(HERKUNFT[k.quelle] || k.quelle)}</td>
+      <td>${k.an_datev_am ? `<span class="marke ok">ja</span>`
+                          : `<span class="marke warn">noch nicht</span>`}</td>
+      <td class="werkzeug">
+        <button class="knopfchen" data-umbenennen="${txt(k.nummer)}">Umbenennen</button>
+        <button class="knopfchen" data-aktiv="${txt(k.nummer)}" data-wert="${k.aktiv ? 0 : 1}">
+          ${k.aktiv ? "Nicht mehr verwenden" : "Wieder verwenden"}</button></td>
+    </tr>`).join("") + `</tbody></table></div>` + (d.seiten > 1 ? `
+    <div class="chips"><button class="chip" data-seite="${d.seite - 1}"
+      ${d.seite <= 1 ? "disabled" : ""}>‹ Zurück</button>
+      <span style="align-self:center;font-size:13px;color:var(--gc-muted)">
+        Seite ${d.seite} von ${d.seiten}</span>
+      <button class="chip" data-seite="${d.seite + 1}"
+      ${d.seite >= d.seiten ? "disabled" : ""}>Weiter ›</button></div>` : "");
+}
+
+let krSucheUhr = null;
+$("#kr-suche").oninput = () => {
+  clearTimeout(krSucheUhr);
+  krSucheUhr = setTimeout(() => { KR.q = $("#kr-suche").value.trim();
+    KR.seite = 1; kreditorenLaden(); }, 250);
+};
+$("#kr-abc").onclick = (ev) => {
+  const b = ev.target.closest("button[data-b]");
+  if (!b || b.disabled) return;
+  KR.buchstabe = b.dataset.b; KR.seite = 1; kreditorenLaden();
+};
+$("#kr-liste").onclick = async (ev) => {
+  const seite = ev.target.closest("button[data-seite]");
+  if (seite && !seite.disabled){ KR.seite = Number(seite.dataset.seite); return kreditorenLaden(); }
+  const um = ev.target.closest("button[data-umbenennen]");
+  const ak = ev.target.closest("button[data-aktiv]");
+  const nummer = um ? um.dataset.umbenennen : ak ? ak.dataset.aktiv : null;
+  if (!nummer) return;
+  const k = KR.daten.eintraege.find((x) => x.nummer === nummer);
+  let felder;
+  if (um){
+    const name = prompt(`Neuer Name für ${nummer}:`, k ? k.name : "");
+    if (name === null || !name.trim()) return;
+    felder = {name: name.trim()};
+  } else {
+    felder = {aktiv: ak.dataset.wert === "1"};
+  }
+  try { await schick("/api/datev/kreditoren/" + nummer, felder); }
+  catch (e) { alert(e.message); }
+  kreditorenLaden();
+};
+
+$("#kr-modus").onclick = async (ev) => {
+  const b = ev.target.closest("button[data-modus]");
+  if (!b) return;
+  try { await schick("/api/datev/kreditoren/einstellung", {modus: b.dataset.modus}); }
+  catch (e) { alert(e.message); }
+  kreditorenLaden();
+};
+$("#kr-sammel-sichern").onclick = async () => {
+  try { await schick("/api/datev/kreditoren/einstellung",
+                     {sammelkonto: $("#kr-sammel").value.trim()}); }
+  catch (e) { alert(e.message); }
+  kreditorenLaden();
+};
+
+$("#kr-anlegen").onclick = async () => {
+  const ziel = $("#kr-anlegen-meldung");
+  const name = $("#kr-name").value.trim();
+  if (!name){ $("#kr-name").focus(); return; }
+  try {
+    const d = await schick("/api/datev/kreditoren",
+      {name, iban: $("#kr-iban").value.trim() || null});
+    ziel.innerHTML = `<div class="ruhe">${txt(d.kreditor.name)} ist jetzt
+      ${txt(d.kreditor.nummer)}. Die Kanzlei legt das Konto in DATEV an.</div>`;
+    $("#kr-name").value = ""; $("#kr-iban").value = "";
+    kreditorenLaden();
+  } catch (e) { ziel.innerHTML = `<div class="meldung">${txt(e.message)}</div>`; }
+};
+
+/* Übernehmen in zwei Schritten: ansehen zeigt, was sich ändern würde, und
+   schreibt nichts. Erst der zweite Knopf trägt ein. */
+function krNamenliste(titel, zeilen, spalte){
+  if (!zeilen.length) return "";
+  return `<div class="deckel"><span class="lbl">${txt(titel)} (${zeilen.length})</span></div>
+    <div class="tabellenrahmen"><table><tbody>` + zeilen.slice(0, 200).map((z) =>
+      `<tr><td class="k">${txt(z.nummer)}</td><td class="t">${spalte(z)}</td></tr>`).join("")
+    + `</tbody></table></div>`;
+}
+
+$("#kr-lesen").onclick = async () => {
+  const ziel = $("#kr-uebernahme");
+  const f = $("#kr-datei").files[0];
+  if (!f){ ziel.innerHTML = `<div class="meldung">Bitte zuerst eine Datei wählen.</div>`; return; }
+  ziel.innerHTML = `<div class="laedt">Wird gelesen …</div>`;
+  const paket = new FormData(); paket.append("datei", f, f.name);
+  const a = await fetch(mitMandant("/api/datev/kreditoren/lesen"),
+    {method: "POST", body: paket, credentials: "same-origin"});
+  const d = await a.json().catch(() => ({fehler: "Antwort nicht lesbar"}));
+  if (!a.ok){ ziel.innerHTML =
+    `<div class="meldung schlimm">${txt(d.fehler || "Das hat nicht geklappt.")}</div>`; return; }
+  const aenderung = d.neu.length + d.geaendert.length;
+  ziel.innerHTML = `<div class="karte"><span class="lbl">In der Datei</span>
+      <div class="kacheln">
+        <div class="kachel"><span class="lbl">Kreditoren</span><b>${d.anzahl}</b></div>
+        <div class="kachel"><span class="lbl">Neu</span><b>${d.neu.length}</b></div>
+        <div class="kachel"><span class="lbl">Geändert</span><b>${d.geaendert.length}</b></div>
+        <div class="kachel"><span class="lbl">Schon da</span><b>${d.gleich}</b></div>
+      </div>
+      ${d.uebersprungen ? `<p style="margin-top:10px">${d.uebersprungen} Zeile(n)
+        sind keine Kreditoren (Debitoren, Sachkonten oder ohne Namen) und
+        bleiben draußen.</p>` : ""}
+      ${(d.hinweise || []).map((h) => `<div class="meldung">${txt(h)}</div>`).join("")}
+      ${d.doppelt.length ? `<div class="meldung">${d.doppelt.length} Name(n) gibt es
+        schon unter einer anderen Nummer: ${txt(d.doppelt.slice(0, 5).map((x) =>
+        `${x.nummer} ${x.name} (schon ${x.schon})`).join(", "))}. Sie werden trotzdem
+        übernommen.</div>` : ""}
+      <div class="chips"><button class="chip tinte" id="kr-uebernehmen"
+        ${aenderung ? "" : "disabled"}>${aenderung
+        ? "Übernehmen" : "Nichts zu übernehmen"}</button></div>
+    </div>
+    ${krNamenliste("Neu", d.neu, (z) => txt(z.name))}
+    ${krNamenliste("Geändert — DATEV gewinnt", d.geaendert,
+      (z) => `${txt(z.neu)}${z.neu !== z.alt
+        ? `<span class="neben">bisher: ${txt(z.alt)}</span>` : ""}${z.iban_neu.length
+        ? `<span class="neben">IBAN dazu: ${txt(z.iban_neu.join(", "))}</span>` : ""}`)}`;
+  const knopf = $("#kr-uebernehmen");
+  if (knopf) knopf.onclick = async () => {
+    knopf.disabled = true;
+    const p2 = new FormData(); p2.append("datei", f, f.name);
+    const b = await fetch(mitMandant("/api/datev/kreditoren/uebernehmen"),
+      {method: "POST", body: p2, credentials: "same-origin"});
+    const e = await b.json().catch(() => ({fehler: "Antwort nicht lesbar"}));
+    ziel.innerHTML = b.ok
+      ? `<div class="ruhe">Übernommen: ${e.neu} neu, ${e.geaendert} geändert.</div>`
+      : `<div class="meldung schlimm">${txt(e.fehler || "Das hat nicht geklappt.")}</div>`;
+    kreditorenLaden();
+  };
+};
+
+$("#kr-historie").onclick = async () => {
+  const ziel = $("#kr-uebernahme");
+  ziel.innerHTML = `<div class="laedt">Die bisherigen Buchungen werden gelesen …</div>`;
+  let d;
+  try { d = await hol("/api/datev/kreditoren/aus-historie"); }
+  catch (e) { ziel.innerHTML = `<div class="meldung schlimm">${txt(e.message)}</div>`; return; }
+  const neu = d.vorschlaege.filter((v) => !v.vorhanden);
+  if (!d.vorschlaege.length){
+    ziel.innerHTML = `<div class="meldung">In den bisherigen Buchungen steht kein
+      Kreditorenkonto. Liegen die Stapel der Kanzlei schon in der Belegbox?</div>`;
+    return;
+  }
+  ziel.innerHTML = `<div class="karte"><span class="lbl">Aus bisherigen Buchungen</span>
+      <p>Die Namen stammen aus den Buchungstexten und sind ein Vorschlag —
+         nach dem Übernehmen lassen sie sich umbenennen.</p>
+      ${d.sammel.length ? `<p style="margin-top:6px">Nicht übernommen, weil darauf
+        viele verschiedene Lieferanten stehen (Sammelkonto):
+        ${txt(d.sammel.map((s) => s.nummer).join(", "))}.</p>` : ""}
+      <div class="chips"><button class="chip tinte" id="kr-hist-uebernehmen"
+        ${neu.length ? "" : "disabled"}>${neu.length
+        ? `${neu.length} übernehmen` : "Alle schon in der Liste"}</button></div>
+    </div>
+    <div class="tabellenrahmen"><table><thead><tr><th>Nummer</th><th>Vorschlag</th>
+      <th class="z">Buchungen</th><th>Buchungstexte</th><th></th></tr></thead><tbody>`
+    + d.vorschlaege.map((v) => `<tr><td class="k">${txt(v.nummer)}</td>
+      <td class="t">${txt(v.name)}</td><td class="z">${v.buchungen}</td>
+      <td class="t"><span class="neben">${txt(v.texte.join(" · "))}</span></td>
+      <td>${v.vorhanden ? `<span class="marke">schon da</span>` : ""}</td></tr>`).join("")
+    + `</tbody></table></div>`;
+  const knopf = $("#kr-hist-uebernehmen");
+  if (knopf) knopf.onclick = async () => {
+    knopf.disabled = true;
+    try {
+      const e = await schick("/api/datev/kreditoren/aus-historie", {});
+      ziel.innerHTML = `<div class="ruhe">Übernommen: ${e.neu} Kreditor(en).</div>`;
+    } catch (e) { ziel.innerHTML = `<div class="meldung schlimm">${txt(e.message)}</div>`; }
+    kreditorenLaden();
+  };
+};
 
 // ── Hereinlesen ──────────────────────────────────────────────────────
 function liste(titel, erklaerung, zeilen){

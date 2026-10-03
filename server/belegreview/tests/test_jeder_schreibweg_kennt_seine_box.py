@@ -27,13 +27,17 @@ def _ist_schreibweg(knoten) -> bool:
 
 
 def _ist_box_ruf(knoten) -> bool:
-    return (isinstance(knoten, ast.Call) and isinstance(knoten.func, ast.Name)
-            and knoten.func.id == "_box")
+    """`_box()` in babu_web, `bw._box()` in den Modulen daneben."""
+    if not isinstance(knoten, ast.Call):
+        return False
+    f = knoten.func
+    return ((isinstance(f, ast.Name) and f.id == "_box")
+            or (isinstance(f, ast.Attribute) and f.attr == "_box"))
 
 
-def _aufrufstellen() -> tuple[int, list[str]]:
+def _aufrufstellen(baum=BAUM, name="babu_web.py") -> tuple[int, list[str]]:
     mit, ohne = 0, []
-    for k in ast.walk(BAUM):
+    for k in ast.walk(baum):
         if not isinstance(k, ast.Call):
             continue
         if _ist_schreibweg(k.func):
@@ -46,7 +50,7 @@ def _aufrufstellen() -> tuple[int, list[str]]:
         if _ist_box_ruf(erstes):
             mit += 1
         else:
-            ohne.append(f"  babu_web.py:{k.lineno}")
+            ohne.append(f"  {name}:{k.lineno}")
     return mit, ohne
 
 
@@ -55,6 +59,16 @@ def test_jeder_aufruf_gibt_eine_box_mit():
     assert not ohne, ("Schreibweg ohne Box — landet still in der Default-Box:\n"
                       + "\n".join(ohne))
     assert mit > 30, f"nur {mit} Aufrufstellen gefunden — sucht der Wächter noch?"
+
+
+def test_auch_die_datev_seite_gibt_ihre_box_mit():
+    """Seit K1 (03.10.2026) schreibt auch `datev_seite` in die Box — die
+    Kreditorenliste. Dort heißt der Weg `bw._box()`."""
+    quelle = QUELLE.parent / "datev_seite.py"
+    mit, ohne = _aufrufstellen(ast.parse(quelle.read_text()), "datev_seite.py")
+    assert not ohne, ("Schreibweg ohne Box — landet still in der Default-Box:\n"
+                      + "\n".join(ohne))
+    assert mit >= 1
 
 
 def test_der_waechter_wuerde_eine_luecke_sehen():
