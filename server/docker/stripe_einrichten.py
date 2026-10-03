@@ -13,7 +13,7 @@ Den Schlüssel liest es aus der Umgebung `STRIPE_KEY`, sonst aus einer systemd-U
 Legt an (idempotent, Kennzeichen metadata.app=babu): drei Produkte mit Monatspreis
 netto, Steuersatz 19 % exklusiv, den Webhook (ein vorhandener für dieselbe Adresse
 wird ersetzt — sein Geheimnis gibt Stripe nur beim Anlegen heraus). Schreibt in der
-.env NUR die BABU_STRIPE_*-Zeilen (Sicherung daneben);
+.env NUR die BABU_STRIPE_*-Zeilen (Sicherung unter ~/sicherung/);
 Rechte eines eingeschränkten Schlüssels (rk_…) für babu: Checkout Sessions, Customer
 portal, Webhook Endpoints, Products, Prices, Tax Rates = Schreiben; Subscriptions,
 Invoices, Invoice Payments, Charges, Events, Customers = Lesen. im Testmodus zusätzlich
@@ -152,7 +152,10 @@ werte = {**({} if LIVE else {"BABU_ABO": "1"}), "BABU_STRIPE_SCHLUESSEL": KEY,
          "BABU_STRIPE_VERSION": version or ""}
 alt_zeilen = open(ENV).read().splitlines() if os.path.exists(ENV) else []
 if os.path.exists(ENV):
-    sicherung = ENV + ".bak-vor-stripe-" + time.strftime("%Y%m%d-%H%M%S")
+    # Nicht neben die .env: der Deploy (rsync --delete, nur .env ausgenommen) löscht sie dort.
+    os.makedirs(os.path.expanduser("~/sicherung"), exist_ok=True)
+    sicherung = os.path.expanduser("~/sicherung/" + ("live" if LIVE else "dev")
+                                   + ".env.bak-vor-stripe-" + time.strftime("%Y%m%d-%H%M%S"))
     with open(sicherung, "w") as f:
         f.write("\n".join(alt_zeilen) + "\n")
     os.chmod(sicherung, 0o600)

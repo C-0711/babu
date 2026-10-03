@@ -138,7 +138,8 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   (Belegbox-Gateway :7808) und `belege-review` (ANDERES Projekt).
   - **Achtung rsync + .env:** `docker/.env` auf der H200V (Support-Postfach,
     SMTP-Zugänge) liegt IM rsync-Bereich — immer `--exclude=.env` mitgeben,
-    sonst löscht `--delete` sie beim nächsten Deploy.
+    sonst löscht `--delete` sie beim nächsten Deploy. Sicherungen der `.env`
+    gehören nach `~/sicherung/`, nie daneben — `--delete` räumt sie sonst ab.
 
 - Deploy: **immer `rsync server/ h200v:~/babu-docker/` komplett, nie eine- Deploy: **immer `rsync server/ h200v:~/babu-docker/` komplett, nie eine
   Einzeldatei** (seit 15.09.2026 dazu `rsync werkzeuge/ h200v:~/babu-docker/werkzeuge/`,
