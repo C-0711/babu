@@ -55,6 +55,23 @@ def test_drei_monate_spaeter():
 
 # ————— Welt —————
 
+PROFIL = {"kontoinhaber": "Babs Beispiel", "iban": "DE02120300000000202051",
+          "strasse": "Weg 1", "plz": "70173", "ort": "Stuttgart",
+          "steuerstatus": "privat", "zustimmung": True}
+
+
+def _auszahlen(welt, monkeypatch):
+    """Der Lauf, wie Nina ihn fährt: Profil da, Lauf anlegen, überwiesen."""
+    monkeypatch.setenv("BABU_FIRMA_NAME", "0711 Intelligence")
+    monkeypatch.setenv("BABU_AUSZAHLUNG_IBAN", "DE89370400440532013000")
+    assert welt["babs"].post("/api/ambassador/profil", json=PROFIL).status_code == 200
+    r = welt["chef"].post("/api/auszahlung/lauf")
+    if r.status_code != 200:
+        return r
+    nr = r.json()["id"]
+    assert welt["chef"].post(f"/api/auszahlung/lauf/{nr}/ueberwiesen").status_code == 200
+    return r
+
 def _login(email: str) -> TestClient:
     client = TestClient(babu_web.app, base_url="https://testserver")
     babu_web._LOGIN_VERSUCHE.clear()  # noqa: SLF001
@@ -237,16 +254,15 @@ def test_auszahlungslauf_zahlt_bis_zum_stichtag(welt, monkeypatch):
     _einloesen(welt, "b@example.org", "Salon B")
     _meilenstein(welt, "a@example.org", "gezeichnet", am=D(2026, 9, 20))
     _meilenstein(welt, "b@example.org", "gezeichnet", am=D(2026, 10, 1))
-    r = welt["chef"].post("/api/ambassador/gezahlt", json={"code": welt["code"]})
+    r = _auszahlen(welt, monkeypatch)
     assert r.status_code == 200, r.text
-    assert r.json()["gezahlt"] == 237 and r.json()["stichtag"] == "2026-09-30"
+    assert r.json()["summe_cent"] == 23700        # bis Stichtag 30.09.
     geld = welt["babs"].get("/api/ambassador/me").json()["geld"]
     assert geld["ausgezahlt"] == 237 and geld["offen"] == 237
     assert [(a["datum"], a["betrag"]) for a in geld["auszahlungen"]] == \
         [("2026-10-15", 237)]
-    # Zweimal derselbe Lauf geht nicht — nichts mehr fällig.
-    r = welt["chef"].post("/api/ambassador/gezahlt", json={"code": welt["code"]})
-    assert r.status_code == 409
+    # Zweimal derselbe Lauf geht nicht.
+    assert welt["chef"].post("/api/auszahlung/lauf").status_code == 409
 
 
 def test_auszahlungslauf_unter_100_euro_abgelehnt(welt, monkeypatch):
@@ -258,8 +274,10 @@ def test_auszahlungslauf_unter_100_euro_abgelehnt(welt, monkeypatch):
         "grund": "kleiner Betrag für den Test der 100-€-Grenze"})
     with babu_web._DB_LOCK, babu_web._db() as c:
         c.execute("UPDATE ambassador_buchung SET datum='2026-09-01'")
-    r = welt["chef"].post("/api/ambassador/gezahlt", json={"code": welt["code"]})
-    assert r.status_code == 409 and "100" in r.json()["fehler"]
+    r = _auszahlen(welt, monkeypatch)
+    assert r.status_code == 409
+    v = welt["chef"].get("/api/auszahlung/vorschau").json()
+    assert v["zeilen"][0]["grund"] == "unter 100 €"
 
 
 def test_verwaltung_sieht_geld_und_lauf(welt, monkeypatch):
@@ -294,8 +312,7 @@ def test_konto_zeigt_bewegungen_wie_ein_kontoauszug(welt, monkeypatch):
     _einloesen(welt, "b@example.org", "Salon B")
     _meilenstein(welt, "a@example.org", "gezeichnet", am=D(2026, 9, 20))
     _meilenstein(welt, "b@example.org", "gezeichnet", am=D(2026, 10, 1))
-    assert welt["chef"].post("/api/ambassador/gezahlt",
-                             json={"code": welt["code"]}).status_code == 200
+    assert _auszahlen(welt, monkeypatch).status_code == 200
     bew = welt["babs"].get("/api/ambassador/me").json()["geld"]["bewegungen"]
     assert [(b["datum"], b["betrag"]) for b in bew] == [
         ("2026-10-15", -237), ("2026-10-01", 237), ("2026-09-20", 237)]
@@ -358,3 +375,8 @@ def test_handweg_doppelt_wird_abgewiesen(welt, monkeypatch):
     r = welt["chef"].post("/api/ambassador/meilenstein", json={
         "code": welt["code"], "email": "a@example.org", "meilenstein": "gezeichnet"})
     assert r.status_code == 409
+
+
+def test_alter_auszahlungsweg_ist_stillgelegt(welt):
+    r = welt["chef"].post("/api/ambassador/gezahlt", json={"code": welt["code"]})
+    assert r.status_code == 410 and "Auszahlungslauf" in r.json()["fehler"]

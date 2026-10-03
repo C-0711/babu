@@ -472,52 +472,16 @@ def _paket_von(email: str) -> str:
 
 
 async def api_ambassador_gezahlt(request: Request) -> Response:
-    """Verwaltung: der Auszahlungslauf (seit 02.10.2026).
-
-    Zahlt aus, was bis zum Stichtag des letzten fälligen Laufs verdient und
-    noch offen ist — quartalsweise zum 15. nach Quartalsende, ab 100 €.
-    Was danach verdient wurde, kommt mit dem nächsten Lauf."""
+    """Stillgelegt (03.10.2026): Auszahlung nur noch als Lauf mit Gutschrift
+    und Bankdatei (kern_auszahlung). Der alte Weg buchte „ausgezahlt" je
+    Ambassadorin ohne Gutschrift — zwei Wege für dasselbe Geld vertragen
+    sich nicht."""
     un, fehler = bw._betreiber_wache(request)
     if fehler or not un:
         return fehler or JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
-    try:
-        koerper = json.loads(await bw.koerper_lesen(request, 4 * 1024))
-    except Exception:  # noqa: BLE001
-        return JSONResponse({"fehler": "JSON mit code erwartet"}, status_code=400)
-    code = str(koerper.get("code", "") or "").strip()[:60]
-    heute = _heute()
-    lauf = letzter_lauf(heute)
-    bis = stichtag(lauf)
-    with bw._DB_LOCK, bw._db() as c:
-        z = c.execute("SELECT verdient, gezahlt FROM ambassador WHERE code=?",
-                      (code,)).fetchone()
-        if not z:
-            return JSONResponse({"fehler": "Code unbekannt."}, status_code=404)
-        faellig = c.execute(
-            "SELECT id, betrag FROM ambassador_buchung WHERE code=? AND "
-            "auszahlung_id IS NULL AND datum <= ?", (code, bis.isoformat())).fetchall()
-        summe = sum(b for _, b in faellig)
-        if summe <= 0:
-            return JSONResponse({"fehler": f"Für den Lauf vom {_de(lauf)} ist nichts "
-                                           f"fällig (Stichtag {_de(bis)})."},
-                                status_code=409)
-        if summe < MINDEST_AUSZAHLUNG:
-            return JSONResponse({"fehler": f"{summe} € liegt unter "
-                                           f"{MINDEST_AUSZAHLUNG} € — das wandert ins "
-                                           f"nächste Quartal."}, status_code=409)
-        cur = c.execute("""INSERT INTO ambassador_auszahlung
-                           (code, betrag, datum, stichtag, von) VALUES (?,?,?,?,?)""",
-                        (code, summe, heute.isoformat(), bis.isoformat(), un))
-        nr = cur.lastrowid
-        for bid, _ in faellig:
-            c.execute("UPDATE ambassador_buchung SET auszahlung_id=? WHERE id=?",
-                      (nr, bid))
-        c.execute("UPDATE ambassador SET gezahlt = gezahlt + ? WHERE code=?",
-                  (summe, code))
-    audit.audit(un, "ambassador_gezahlt", code=code, betrag=summe,
-                stichtag=bis.isoformat())
-    return JSONResponse({"ok": True, "gezahlt": summe, "stichtag": bis.isoformat(),
-                         "lauf": lauf.isoformat()})
+    return JSONResponse({"fehler": "Ausgezahlt wird über den Auszahlungslauf: "
+                                   "Verwaltung → Auszahlung an Ambassadorinnen."},
+                        status_code=410)
 
 
 

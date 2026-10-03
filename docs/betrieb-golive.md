@@ -79,6 +79,11 @@ Zahlungsdaten, Rechnungen, Kündigung: „Abo verwalten" (Stripe-Kundenportal).
   Rücklastschrift/Erstattung → einmalige Storno-Buchung. Zahlung offen → 14 Tage voll, dann
   nur ansehen; gekündigt → bis Periodenende voll.
 - **Übersicht:** Verwaltung → „Abos" (`GET /api/abo/uebersicht`, nur Betreiber).
+- **Testlauf vor dem Einschalten (Dev-Spur, Testmodus):**
+  `docker exec babu-web-dev python /app/werkzeuge/stripe_testlauf.py` — legt Test-Salon +
+  Ambassadorin an, Abo mit Stripes Test-IBAN an einer Test-Uhr, dreht drei Monate weiter und
+  prüft Status, Monate und Provision (gezeichnet/gehalten). Weigert sich bei Live-Schlüssel
+  oder auf mybabu.io. Fehl-/Rückbuchungsfälle mit `--iban` (IBANs aus Stripes Doku).
 - **Notfall „Webhook kaputt":** Stripe versucht es 3 Tage; der tägliche Lauf (1d) holt die
   letzten 3 Tage nach. Hängende Ereignisse: `stripe_ereignis` mit `fehler` (Tagesbericht).
   Abschalten: `BABU_ABO=0` versteckt Weitermachen; laufende Abos laufen bei Stripe weiter.
@@ -123,6 +128,13 @@ Tag (`tageslauf`). Probe: `… taeglich.py --probe`.
 
 Support-Rhythmus im Pilot: täglich das Support-Postfach (`BABU_SUPPORT_MAIL` bekommt jede
 Rückmeldung als Kopie) und die offenen Issues mit `von-nina`.
+
+**Verfügbarkeit von außen (seit 03.10.2026):** der Mac fragt alle 5 min
+`https://mybabu.io/healthz` (`server/docker/verfuegbarkeit.sh`, launchd
+`io.0711.babu-verfuegbarkeit`, Kopie unter `~/.babu/`). Mitteilung „ausgefallen“ nach zwei
+Fehlschlägen, „eingeschränkt“ bei `degraded`, „wieder da“ nach Erholung; Verlauf
+`~/Library/Logs/babu-verfuegbarkeit.log`. Ersetzt keinen Dienst, der auch nachts mailt
+(Cloudflare Health Check / UptimeRobot — offen, Christoph).
 
 ## 3. Deploy
 

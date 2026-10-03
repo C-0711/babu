@@ -33,7 +33,7 @@ def _als_verwaltung(k, email="chef@example.org"):
     return tc, bw
 
 
-def test_ambassador_voller_weg(kunde):
+def test_ambassador_voller_weg(kunde, monkeypatch):
     tc, bw = _als_verwaltung(kunde)
 
     # 1) Verwaltung legt die Ambassadorin an
@@ -99,15 +99,21 @@ def test_ambassador_voller_weg(kunde):
     tc.post("/api/abmelden")
     r = tc.post("/api/login", json={"email": "chef@example.org", "passwort": "test-test"})
     assert r.status_code == 200, r.text
-    # Seit 02.10.2026 zahlt der Lauf quartalsweise, was bis zum Stichtag
-    # verdient ist: heute Verdientes kommt erst mit dem nächsten Lauf.
-    r = tc.post("/api/ambassador/gezahlt", json={"code": code})
-    assert r.status_code == 409
+    # Seit 03.10.2026 zahlt ein Lauf mit Gutschrift und Bankdatei aus, was
+    # bis zum Stichtag verdient ist (kern_auszahlung). Dafür braucht es das
+    # Profil der Ambassadorin — das trägt sie selbst ein (hier vorab).
     with bw._DB_LOCK, bw._db() as c:
         c.execute("UPDATE ambassador_buchung SET datum='2026-01-10' WHERE code=?",
                   (code,))
-    r = tc.post("/api/ambassador/gezahlt", json={"code": code})
-    assert r.status_code == 200 and r.json()["gezahlt"] == 474
+        c.execute("INSERT INTO ambassador_profil (code, kontoinhaber, iban, strasse, "
+                  "plz, ort, steuerstatus, zustimmung_am, geaendert) VALUES "
+                  "(?, 'Babs', 'DE02120300000000202051', 'Weg 1', '70173', "
+                  "'Stuttgart', 'privat', '2026-01-01', '2026-01-01')", (code,))
+    monkeypatch.setenv("BABU_FIRMA_NAME", "0711 Intelligence")
+    monkeypatch.setenv("BABU_AUSZAHLUNG_IBAN", "DE89370400440532013000")
+    r = tc.post("/api/auszahlung/lauf")
+    assert r.status_code == 200 and r.json()["summe_cent"] == 47400, r.text
+    assert tc.post(f"/api/auszahlung/lauf/{r.json()['id']}/ueberwiesen").status_code == 200
     tc.post("/api/abmelden")
     r = tc.post("/api/login", json={"email": "babs@example.org", "passwort": startpw})
     assert r.status_code == 200, r.text

@@ -42,6 +42,22 @@ dem Server, Geheimnis-Archiv entschlüsselbar mit allen vier Dateien.
 
 ## Protokoll
 
+### 2026-10-03 — Probe nach Abo/Auszahlung (Migration 0013/0014), bestanden
+
+Anlass: Go-live-Plan Phase 7.4 — neue Tabellen (stripe_ereignis, abo_rechnung,
+tageslauf, ambassador_profil, auszahlungslauf) und Gutschrift-PDFs, die als base64 in
+Postgres liegen. Die Nachtsicherung von 03:17 lag noch vor dem Deploy, deshalb ein frischer
+`pg_dump -Fc` vom Server (76 KB) statt der Mac-Kopie. Socket des Wegwerf-Clusters in ein
+kurzes `/tmp`-Verzeichnis legen (`-k`), sonst „Unix-domain socket path too long“.
+
+| Stück | zurückgespielt | Ergebnis |
+|---|---|---|
+| Postgres (live, 02:5x) | Wegwerf-Cluster auf dem Mac, `pg_restore` ohne Meldung | 38 Tabellen = Server (37 + schema_version) |
+| Zeilenzahlen | Server = Mac | nutzer 21 · mandant 5 · ambassador 1 · audit_log 78 · neue Tabellen 0 |
+| Gutschrift-PDF | eine Gutschrift (base64) im Cluster → `pg_dump` → zweite DB → gelesen | `%PDF-`, byte-gleich (1726 Bytes) |
+
+Offen: dieselbe Probe am 01.11. mit der Nachtsicherung, sobald echte Gutschriften liegen.
+
 ### 2026-09-14 — erste Probe, bestanden
 
 Anlass: Woche 4 des Go-Live-Plans (`docs/golive-babu-2026-09-14.md`, B7). Vorgeschichte:

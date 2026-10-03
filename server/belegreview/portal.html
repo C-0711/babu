@@ -579,6 +579,7 @@ main p, .leer, .karte > p{max-width:78ch}
 .amb-code button{padding:6px 12px;border-radius:999px;background:var(--gc-accent-subtle);color:var(--gc-fg);font-size:12.5px;font-weight:550}
 .amb-tabelle{width:100%;border-collapse:collapse;margin-top:20px;font-size:14px}
 .tabelle-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+a.chip{text-decoration:none;color:inherit;display:inline-block}
 .tabelle-scroll .amb-tabelle{margin-top:6px}
 .amb-tabelle td,.amb-tabelle th{padding:6px 8px;text-align:left}
 .amb-tabelle th{font:500 12px/1.2 var(--gc-sans);color:var(--gc-muted);text-align:center;padding:0 2px 8px;white-space:nowrap}
@@ -6797,7 +6798,8 @@ async function ladeAuszahlung(){
   const zeilen = (v.zeilen || []).map(z => `<tr><td>${esc(z.name)}</td>
       <td style="text-align:right">${aboEuro(z.brutto_cent)}</td>
       <td>${z.zahlbar ? "kommt mit" : esc(z.grund || "")}</td></tr>`).join("");
-  let html = `<div class="karte"><p>Lauf vom ${ambDatum(v.lauf)} — verdient bis ${ambDatum(v.stichtag)}.</p>
+  let html = `<div class="karte"><p>Lauf vom ${ambDatum(v.lauf)} — verdient bis ${ambDatum(v.stichtag)}.
+    ${v.naechster ? ` Nächster Lauf am ${ambDatum(v.naechster)}.` : ""}</p>
     ${zeilen ? `<div class="tabelle-scroll"><table class="amb-tabelle" style="width:100%"><thead><tr><th>Ambassadorin</th>
       <th style="text-align:right">Betrag</th><th>Stand</th></tr></thead><tbody>${zeilen}</tbody></table></div>`
       : `<p style="color:var(--gc-desc)">Für diesen Lauf ist nichts offen.</p>`}
@@ -7911,9 +7913,11 @@ function ambZeichnen(ziel){
   const heute = (d.heute || []).filter(a => !_ambSpaeter.has(a.nr));
   const a = heute[0];
   const n = g.naechster_lauf;
-  const geldSatz = g.offen
-    ? `kommen${n ? ` am <b>${ambDatumLang(n.datum)}</b>` : ""} auf dein Konto.`
-    : "Sobald ein Salon mitmacht, steht dein Geld hier.";
+  /* Ohne Kontodaten wird nichts überwiesen — dann verspricht die Zeile auch
+     keinen Termin, sondern sagt, was fehlt (seit 03.10.2026). */
+  const geldSatz = !g.offen ? "Sobald ein Salon mitmacht, steht dein Geld hier."
+    : d.profil_vollstaendig === false ? "liegen für dich bereit — sobald deine Kontodaten da sind, überweisen wir."
+    : `kommen${n ? ` am <b>${ambDatumLang(n.datum)}</b>` : ""} auf dein Konto.`;
   ziel.innerHTML = `
     <div class="karte amb" style="margin-top:24px;padding:20px 18px 14px">
       <p class="bg-hallo">Hallo ${esc(d.name || "")}</p>
@@ -8017,7 +8021,7 @@ async function ambProfilSpeichern(){
     const d = await r.json();
     if (!r.ok){ meldung.textContent = d.fehler || "Ging gerade nicht."; return; }
     meldung.textContent = "Gespeichert. Danke!";
-    ladeAmbassador();
+    ladeAmbassador(_ambZiel);
   }catch{ meldung.textContent = "Gerade keine Verbindung — gleich nochmal versuchen."; }
 }
 async function ambHeuteMail(an){
@@ -8282,6 +8286,7 @@ const aboDatum = x => x ? x.split("-").reverse().join(".") : "";
 
 async function ladeAbo(sitzung){
   const ziel = $("#abo-inhalt");
+  window.scrollTo(0, 0);
   ziel.innerHTML = `<div class="skelett"></div>`;
   let d = null, danke = false;
   try{
@@ -8387,17 +8392,6 @@ async function aboVerwalten(){
     if (r.ok && d.url) location.href = d.url;
     else aboFehler(d.fehler || "Ging gerade nicht — gleich nochmal versuchen.");
   }catch{ aboFehler("Gerade keine Verbindung — gleich nochmal versuchen."); }
-}
-async function ambassadorGezahlt(nr){
-  const code = AMB_CODES[nr];
-  if (!code || !confirm("Auszahlungslauf ausführen? Gebucht wird, was bis zum Stichtag verdient ist. Die Überweisung machst du selbst.")) return;
-  try{
-    const r = await api("/api/ambassador/gezahlt", {method:"POST",
-      headers:{"Content-Type":"application/json"}, body: JSON.stringify({code})});
-    const d = await r.json();
-    if (r.ok) ladeVerwaltung();
-    else alert(d.fehler || "Ging gerade nicht.");
-  }catch{ alert("Gerade keine Verbindung — später nochmal."); }
 }
 async function nutzerAktion(email, aktion, rolleNeu){
   try{

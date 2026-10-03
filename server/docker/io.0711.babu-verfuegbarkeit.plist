@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- launchd auf dem Mac: fragt alle 5 min https://mybabu.io/healthz von außen.
+	     Einrichten und Abschalten: siehe Kopf von server/docker/verfuegbarkeit.sh.
+	     Das Skript liegt als Kopie unter ~/.babu/, damit kein Checkout-Wechsel
+	     den Check still abschaltet. -->
+	<key>Label</key>
+	<string>io.0711.babu-verfuegbarkeit</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>-c</string>
+		<string>exec /bin/bash "$HOME/.babu/verfuegbarkeit.sh"</string>
+	</array>
+	<key>StartInterval</key>
+	<integer>300</integer>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>/tmp/babu-verfuegbarkeit.out</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/babu-verfuegbarkeit.err</string>
+</dict>
+</plist>

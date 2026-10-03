@@ -285,7 +285,9 @@ def vorschau(c, heute: dt.date) -> dict:
     laeufe = [dict(zip(("id", "status"), z)) for z in c.execute(
         "SELECT id, status FROM auszahlungslauf WHERE lauf=? AND status IN "
         "('erstellt','ueberwiesen')", (lauf.isoformat(),))]
+    naechster = ka.naechster_lauf(heute + dt.timedelta(days=1))
     return {"lauf": lauf.isoformat(), "stichtag": stichtag.isoformat(),
+            "naechster": naechster.isoformat(),
             "bis": bis, "zeilen": zeilen, "schon": laeufe,
             "summe_cent": sum(z["brutto_cent"] for z in zeilen if z["zahlbar"]),
             "konto_fehlt": not (schuldner()["iban"] and firma()["name"])}

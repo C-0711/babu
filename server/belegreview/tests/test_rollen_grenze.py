@@ -101,7 +101,7 @@ BETREIBER_ROUTEN = [
                                              "meilenstein": "gezeichnet",
                                              "betrag": 237}),
     ("POST", "/api/ambassador/verlaengern", {"code": "X", "email": "x@salon.de"}),
-    ("POST", "/api/ambassador/gezahlt", {"code": "X"}),
+    ("POST", "/api/ambassador/gezahlt", {"code": "X"}),       # stillgelegt: 410
 ]
 
 
