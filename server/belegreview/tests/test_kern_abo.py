@@ -200,11 +200,28 @@ def test_checkout_baut_die_sitzung_fuer_diesen_server(welt):
     assert daten["line_items"][0] == {"price": "price_salon", "quantity": 1,
                                       "tax_rates": ["txr_19"]}
     assert daten["customer_email"] == "sonne@salon.de"
-    assert "sepa_debit" in daten["payment_method_types"]
+    # Zahlarten nennt babu nicht selbst: Stripe zeigt, was im Konto aktiv ist.
+    # Live war SEPA im (mit Camp45 geteilten) Konto nicht freigeschaltet, und
+    # ein fest verlangtes `sepa_debit` ließ jede Bezahlseite scheitern (03.10.2026).
+    assert "payment_method_types" not in daten
     assert idem.startswith(f"checkout-{welt['mid']}-salon-")
     with babu_web._DB_LOCK, babu_web._db() as c:  # noqa: SLF001
         assert c.execute("SELECT COUNT(*) FROM audit_log WHERE aktion='abo_checkout'"
                          ).fetchone()[0] == 1
+
+
+def test_checkout_verlangt_keine_stripe_agb_url_und_nennt_die_texte(welt):
+    """Live 03.10.2026: Stripe lehnte jede Bezahlseite ab („You cannot collect
+    consent to your terms of service unless a URL is set in the Stripe
+    Dashboard“) — das Konto teilt babu mit Camp45, dort steht keine babu-AGB.
+    Zugestimmt wird in babu (agb + Fassung); die Bezahlseite nennt die Texte."""
+    r = welt["sonne"].post("/api/abo/checkout", json={"paket": "salon", "agb": True})
+    assert r.status_code == 200, r.text
+    _m, _p, daten, _i = welt["stripe"].aufrufe[-1]
+    assert "consent_collection" not in daten
+    hinweis = daten["custom_text"]["submit"]["message"]
+    assert f"{URSPRUNG}/agb" in hinweis and f"{URSPRUNG}/datenschutz" in hinweis
+    assert len(hinweis) <= 1200      # Grenze von Stripe für custom_text
 
 
 def test_checkout_aus_ohne_schalter(welt, monkeypatch):

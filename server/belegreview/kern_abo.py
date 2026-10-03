@@ -202,13 +202,24 @@ async def api_abo_checkout(request: Request) -> Response:
         "mode": "subscription",
         "line_items": [{"price": stripe_api.preis_id(paket), "quantity": 1,
                         "tax_rates": [stripe_api.steuersatz()]}],
-        "payment_method_types": ["sepa_debit", "card"],
+        # Keine festen `payment_method_types`: Stripe bietet an, was im Konto
+        # freigeschaltet ist. Fest verlangtes `sepa_debit` ließ live jede
+        # Bezahlseite scheitern, solange SEPA im (mit Camp45 geteilten) Konto
+        # aus ist (03.10.2026); ist es an, erscheint die Lastschrift von selbst.
         "client_reference_id": str(m["id"]),
         "metadata": meta,
         "subscription_data": {"metadata": meta},
         "billing_address_collection": "required",
         "tax_id_collection": {"enabled": True},
-        "consent_collection": {"terms_of_service": "required"},
+        # Keine `consent_collection`: Stripe verlangt dafür eine AGB-Adresse
+        # im Konto, und das Konto teilt babu mit Camp45 — live lehnte Stripe
+        # deshalb jede Bezahlseite ab (03.10.2026). Zugestimmt wird vorher in
+        # babu (Pflichthaken `agb`, Fassung im Audit); hier stehen die Texte.
+        "custom_text": {"submit": {"message": (
+            f"Mit dem Abschluss gelten die [Nutzungsbedingungen]({ursprung}/agb) "
+            f"und die [Datenschutzhinweise]({ursprung}/datenschutz) von babu. "
+            "Monatlich kündbar zum Ende des bezahlten Monats; alles, was du "
+            "erfasst hast, bleibt lesbar und exportierbar.")}},
         "locale": "de",
         "success_url": f"{ursprung}/portal#abo-danke/{{CHECKOUT_SESSION_ID}}",
         "cancel_url": f"{ursprung}/portal#abo",
