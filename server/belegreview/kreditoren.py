@@ -143,15 +143,21 @@ def _sortiert(kreditoren: list[dict]) -> list[dict]:
     return sorted(kreditoren, key=lambda k: int(k["nummer"]))
 
 
-def laden(roh: bytes | None) -> dict:
-    """Der Stand aus der Box — Unlesbares gilt als leerer Stand."""
+def laden(roh: bytes | dict | None) -> dict:
+    """Der Stand aus der Box — Unlesbares gilt als leerer Stand.
+
+    Nimmt die Bytes der Datei oder das schon gelesene JSON (der Index hält
+    Blobs gelesen im Cache)."""
     stand = leer()
     if not roh:
         return stand
-    try:
-        d = json.loads(roh)
-    except ValueError:
-        return stand
+    if isinstance(roh, dict):
+        d = roh
+    else:
+        try:
+            d = json.loads(roh)
+        except ValueError:
+            return stand
     if not isinstance(d, dict):
         return stand
     if d.get("modus") in MODI:
@@ -302,7 +308,7 @@ def liste(stand: dict, q: str = "", buchstabe: str = "", seite: int = 1,
         n = norm_name(suche)
         treffer = [k for k in treffer
                    if any(n in norm_name(x) for x in [k["name"], *k["aliase"]])]
-    pro_seite = max(1, min(int(pro_seite or 50), 200))
+    pro_seite = max(1, min(int(pro_seite or 50), 2000))
     seiten = max(1, math.ceil(len(treffer) / pro_seite))
     seite = max(1, min(int(seite or 1), seiten))
     anfang = (seite - 1) * pro_seite
@@ -508,3 +514,86 @@ def zusammenfuehren(stand: dict, eintraege: list[dict], quelle: str, von: str,
             zaehler["geaendert"] += 1
     neu_stand["kreditoren"] = _sortiert(neu_stand["kreditoren"])
     return neu_stand, zaehler
+
+
+# ---------------------------------------------------------------------------
+# K2: Kreditor am Beleg
+# ---------------------------------------------------------------------------
+
+def aufloesen(stand: dict, lieferant: str | None, zuordnung: dict | None,
+              exportiert: bool = False) -> dict | None:
+    """Welcher Kreditor gehört zu diesem Beleg — oder None (Sammelkonto).
+
+    Nur im Modus „einzeln“. Zuerst gilt die ausdrückliche Zuordnung der
+    Kanzlei (`review/<stamm>.kreditor.json`); `nummer: null` darin heißt
+    bewusst Sammelkonto und ist damit kein offener Beleg mehr. Sonst findet
+    der Lieferantenname seinen Kreditor — nur GENAU (Name oder Nebenname,
+    vergleichbar gemacht), nur unter den verwendeten, nur wenn es genau
+    einer ist, und nie bei einem Beleg, der schon bei der Kanzlei liegt.
+    """
+    if stand["modus"] != "einzeln":
+        return None
+    if isinstance(zuordnung, dict):
+        nummer = str(zuordnung.get("nummer") or "") or None
+        k = next((x for x in stand["kreditoren"] if x["nummer"] == nummer), None)
+        return {"nummer": nummer, "name": k["name"] if k else None,
+                "quelle": "zuordnung"}
+    if exportiert:
+        return None
+    n = norm_name(lieferant)
+    if not n:
+        return None
+    treffer = [k for k in stand["kreditoren"] if k["aktiv"]
+               and n in {norm_name(x) for x in [k["name"], *k["aliase"]]}]
+    if len(treffer) != 1:
+        return None
+    return {"nummer": treffer[0]["nummer"], "name": treffer[0]["name"],
+            "quelle": "name"}
+
+
+def vorschlaege(stand: dict, lieferant: str | None, n: int = 5) -> list[dict]:
+    """Die Kreditoren, deren Name dem Lieferanten am ähnlichsten ist.
+
+    Gemessen wird an den Wörtern der vergleichbaren Namen: wie viele des
+    kürzeren Namens im anderen stehen (ab der Hälfte), bei Gleichstand der
+    größere gemeinsame Anteil.
+    """
+    worte = set(norm_name(lieferant).split())
+    if not worte:
+        return []
+    bewertet = []
+    for k in stand["kreditoren"]:
+        if not k["aktiv"]:
+            continue
+        beste = (0.0, 0.0)
+        for x in [k["name"], *k["aliase"]]:
+            andere = set(norm_name(x).split())
+            if not andere:
+                continue
+            gemeinsam = len(worte & andere)
+            beste = max(beste, (gemeinsam / min(len(worte), len(andere)),
+                                gemeinsam / len(worte | andere)))
+        if beste[0] >= 0.5:
+            bewertet.append((beste, k))
+    bewertet.sort(key=lambda bk: (-bk[0][0], -bk[0][1], norm_name(bk[1]["name"])))
+    return [{"nummer": k["nummer"], "name": k["name"]} for _, k in bewertet[:n]]
+
+
+def merken(stand: dict, nummer: str, name: str) -> dict:
+    """Den Lieferantennamen als Nebennamen des Kreditors ablegen.
+
+    Der nächste Beleg dieses Lieferanten findet seinen Kreditor dann von
+    selbst (`aufloesen`). Gehört der Name schon einem anderen Kreditor,
+    wird abgelehnt — sonst fänden zwei Kreditoren denselben Beleg.
+    """
+    name = _name_pruefen(name)
+    k = _finden(stand, nummer)
+    if norm_name(name) in {norm_name(x) for x in [k["name"], *k["aliase"]]}:
+        return stand
+    fremd = _namensgleich(stand, name, ausser=k["nummer"])
+    if fremd:
+        raise KreditorFehler(f"Der Name „{name}“ gehört schon zu "
+                             f"{fremd['nummer']} {fremd['name']}.")
+    neu = copy.deepcopy(stand)
+    _alias_dazu(_finden(neu, nummer), name)
+    return neu

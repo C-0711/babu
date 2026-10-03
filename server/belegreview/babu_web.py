@@ -1354,6 +1354,7 @@ def _index_bauen(head: str) -> None:
                     and not p.endswith(".embedding.json")
                     and not p.endswith(".bewirtung.json")
                     and not p.endswith(".korrektur.json")
+                    and not p.endswith(".kreditor.json")
                     and not p.endswith(".angaben.json")}
     korrektur_pfade = {p[len("review/"):-len(".korrektur.json")]: oid
                        for p, oid in pfade.items() if p.endswith(".korrektur.json")}
@@ -1632,6 +1633,9 @@ def _index_bauen(head: str) -> None:
         if stamm_ in exportiert and z_["status"] == "geprüft":
             z_["status"] = "exportiert"
 
+    _kreditoren_einlegen(idx, pfade, oid_cache, belege, reviews, export_pfade,
+                         exportiert)
+
     # Der Weg von babus eigener Belegnummer zurück zum Beleg. Sie steht im
     # Stapel bei jedem Beleg ohne gelesene Rechnungsnummer im Belegfeld 1 —
     # wer sie in einer Rückfrage der Kanzlei liest, muss den Beleg damit
@@ -1651,6 +1655,64 @@ def _index_bauen(head: str) -> None:
     idx["zeiten"] = zeiten
     idx["head"] = head
     idx["geprueft"] = time.time()
+
+
+def _kreditoren_einlegen(idx: dict, pfade: dict, oid_cache: dict, belege: dict,
+                         reviews: dict, export_pfade: dict, exportiert: set) -> None:
+    """Kreditor und Sammelkonto in die Reviews legen, die in den Stapel gehen.
+
+    Plan Kanzleiansicht, K2 (seit 04.10.2026). Die Kreditorenliste des
+    Betriebs (`stammdaten/kreditoren.json`), die Zuordnungen der Kanzlei
+    (`review/<stamm>.kreditor.json`) und die bei jeder Übergabe
+    festgehaltenen Gegenkonten werden hier zusammengeführt —
+    `extf.gegenkonto` liest das Ergebnis aus dem Review.
+
+    Geändert wird nur eine KOPIE des Reviews in `reviews`, nie der Eintrag in
+    `belege`: `/api/belege` ist der festgeschriebene Vertrag mit der App und
+    bleibt Byte für Byte, wie er ist. Ohne Liste, Zuordnung und Übergabe mit
+    Gegenkonten bleibt auch jedes Review unberührt.
+    """
+    import extf  # noqa: PLC0415
+    import kreditoren as kr  # noqa: PLC0415
+    lesen = [oid for p_, oid in pfade.items()
+             if (p_ == kr.PFAD or (p_.startswith("review/")
+                                   and p_.endswith(".kreditor.json")))
+             and oid not in oid_cache]
+    for oid, roh in _blobs_lesen(lesen).items():
+        try:
+            oid_cache[oid] = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            oid_cache[oid] = None
+    stand = kr.laden(oid_cache.get(pfade.get(kr.PFAD, "")))
+    zuordnungen = {p_[len("review/"):-len(".kreditor.json")]: oid_cache.get(oid)
+                   for p_, oid in pfade.items()
+                   if p_.startswith("review/") and p_.endswith(".kreditor.json")}
+    fest: dict[str, str] = {}
+    for oid in export_pfade.values():
+        d_ = oid_cache.get(oid)
+        if isinstance(d_, dict):
+            for lauf in d_.get("laeufe") or []:
+                if isinstance(lauf, dict) and isinstance(lauf.get("gegenkonten"), dict):
+                    fest.update(lauf["gegenkonten"])
+    aufgeloest: dict[str, dict | None] = {}
+    for stamm_, review_ in list(reviews.items()):
+        weg = stamm_ in exportiert
+        kred = kr.aufloesen(stand, (belege.get(stamm_) or {}).get("lieferant"),
+                            zuordnungen.get(stamm_), exportiert=weg)
+        aufgeloest[stamm_] = kred
+        zusatz: dict = {}
+        if fest.get(stamm_):
+            zusatz["gegenkonto_fest"] = fest[stamm_]
+        if kred and kred["nummer"]:
+            zusatz["kreditor"] = kred
+        # Ein anderes Sammelkonto gilt nur für Belege, die noch nicht bei der
+        # Kanzlei liegen: übergeben wurde vor K2 immer gegen 70099.
+        if stand["sammelkonto"] != extf.GEGENKONTO and not weg:
+            zusatz["sammelkonto"] = stand["sammelkonto"]
+        if zusatz:
+            reviews[stamm_] = {**review_, **zusatz}
+    idx["kreditoren"] = stand
+    idx["kreditor_je_beleg"] = aufgeloest
 
 
 def index_aktuell() -> dict:
@@ -2561,6 +2623,8 @@ def api_beleg(stamm: str, request: Request) -> Response:
             _korrektur_anwenden(d, korr)
             d["korrigiert"] = True
             d["buchungssatz"] = datev_buchungssatz(d)
+    if d.get("felder") is not None:
+        _kreditor_in_detail(d, idx, stamm, eintrag)
     d["bewirtung_beantwortet"] = eintrag["bewirtung_beantwortet"]
     if eintrag["bewirtung_beantwortet"]:
         roh = git_show(f"review/{stamm}.bewirtung.json")
@@ -2576,6 +2640,45 @@ def api_beleg(stamm: str, request: Request) -> Response:
     # liest ihn seit dem ersten Tag, und dieser Vertrag wird nicht gebrochen.
     d["stapelzeilen"] = _stapelzeilen(d, un)
     return JSONResponse(d)
+
+
+def _kreditor_in_detail(d: dict, idx: dict, stamm: str, eintrag: dict) -> None:
+    """Kreditor und Gegenkonto in der Einzelansicht — wie im Stapel (K2).
+
+    Die Einzelansicht baut ihr Review selbst aus der Box; was der Index für
+    den Stapel dazulegt (`_kreditoren_einlegen`), kommt deshalb von dort.
+    `kreditor_wahl` steht nur im Modus „ein Konto je Lieferant“ da — es ist
+    das, was das Portal für das Feld „Kreditor“ braucht.
+    """
+    import extf  # noqa: PLC0415
+    import kreditoren as kr  # noqa: PLC0415
+    ir = idx["reviews"].get(stamm) or {}
+    zusatz = {k: ir[k] for k in ("kreditor", "sammelkonto", "gegenkonto_fest")
+              if k in ir}
+    if zusatz:
+        d.update(zusatz)
+        d["buchungssatz"] = datev_buchungssatz(d)
+    stand = idx.get("kreditoren")
+    if not stand or stand["modus"] != "einzeln":
+        return
+    kred = (idx.get("kreditor_je_beleg") or {}).get(stamm)
+    grund = None
+    if eintrag["status"] == "exportiert":
+        grund = "Der Beleg liegt schon bei der Kanzlei — sein Gegenkonto bleibt."
+    elif extf.zahlungsart(d) == "bar":
+        grund = "Bar bezahlt — der Beleg läuft gegen die Kasse."
+    elif extf.ist_ausgang(d):
+        grund = "Eine eigene Rechnung läuft gegen den Debitor."
+    nummer = kred["nummer"] if kred else None
+    d["kreditor_wahl"] = {
+        "nummer": nummer, "name": kred["name"] if kred else None,
+        "quelle": kred["quelle"] if kred else None,
+        "gegenkonto": extf.gegenkonto(d), "sammelkonto": stand["sammelkonto"],
+        "lieferant": eintrag.get("lieferant"),
+        "aenderbar": grund is None, "grund": grund,
+        "vorschlaege": (kr.vorschlaege(stand, eintrag.get("lieferant"), 3)
+                        if grund is None and not nummer else []),
+    }
 
 
 def _korrektur_anwenden(review: dict, korrektur: dict) -> None:
@@ -3307,7 +3410,7 @@ async def api_hochladen(request: Request, name: str = "beleg.jpg") -> Response:
 # Beiakten eines Belegs: das Lese-Ergebnis und alles, was später dazukam.
 # Beim Löschen gehen sie mit — sonst bliebe eine Prüfung ohne Beleg zurück.
 BELEG_BEIAKTEN = (".json", ".md", ".embedding.json", ".angaben.json",
-                  ".bewirtung.json", ".korrektur.json")
+                  ".bewirtung.json", ".korrektur.json", ".kreditor.json")
 
 
 @app.post("/api/beleg/{stamm}/loeschen")
@@ -5927,12 +6030,17 @@ def _stapel_uebergeben(monate: list[str], un: str) -> tuple[bytes, dict]:
         neu_s = [s for s in alle_s if s not in schon_s] if bisher else alle_s
         neu_t = [t for t in alle_t if t not in schon_t] if bisher else alle_t
         reviews = [idx["reviews"][s] for s in neu_s if s in idx["reviews"]]
+        # Das Gegenkonto jedes Belegs, so wie er jetzt übergeben wird (K2):
+        # danach ändert keine Zuordnung und kein Sammelkonto mehr daran.
+        gegenkonten = {s: extf.gegenkonto(idx["reviews"][s])
+                       for s in neu_s if s in idx["reviews"]}
         blaetter = [idx["kassenblaetter"][t] for t in neu_t]
         buchungen = sum(len(extf.buchungszeilen(r, klein)) for r in reviews)
         if rahmen != "SKR03":
             buchungen += len(extf.kassenzeilen(blaetter, klein))
         je_monat[monat] = {"reviews": reviews, "staemme": neu_s,
                            "ohne_konto": [], "hinweise": [],
+                           "gegenkonten": gegenkonten,
                            "blaetter": blaetter, "neu_staemme": neu_s,
                            "neu_tage": neu_t, "buchungen": buchungen,
                            "bisher": len(bisher)}
@@ -5972,7 +6080,8 @@ def _stapel_uebergeben(monate: list[str], un: str) -> tuple[bytes, dict]:
         laeufe = _laeufe_lesen(stand)
         laeufe.append({"zeit": stempel, "datei": dateiname,
                        "staemme": m["neu_staemme"], "kassentage": m["neu_tage"],
-                       "buchungen": m["buchungen"], "von": un})
+                       "buchungen": m["buchungen"], "von": un,
+                       "gegenkonten": m["gegenkonten"]})
         # `staemme` und `kassentage` bleiben die Vereinigung aller Läufe —
         # der Index liest nur die, und für ihn ändert sich nichts.
         alle_s = sorted({x for lauf in laeufe for x in (lauf["staemme"] or [])}

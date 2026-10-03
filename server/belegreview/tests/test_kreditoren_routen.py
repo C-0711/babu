@@ -190,3 +190,124 @@ def test_die_kanzlei_schreibt_in_die_box_des_mandanten(welt2, monkeypatch):
     assert client.get("/api/datev/kreditoren",
                       headers={"X-Mandant": str(welt2["berta_id"])}
                       ).json()["eintraege"] == []
+
+
+# ————— K2: Kreditor am Beleg, im Stapel, im Befund —————
+
+NORD = "20260714-101500-aaa001-friseurbedarf"
+DELILA = "20260722-183000-aaa002-delila"
+BUERO = "20260812-093000-aaa003-buero"
+
+
+def _gegenkonten(c, monat="2026-07") -> dict:
+    d = c.get("/api/datev/vorschau", params={"von": monat, "bis": monat}).json()
+    return {z["quelle"]: z["gegenkonto"] for z in d["zeilen"] if z["art"] == "beleg"}
+
+
+def _befund(c, monat="2026-07") -> dict:
+    return c.get("/api/datev/vorschau", params={"von": monat, "bis": monat}).json()["befund"]
+
+
+@pytest.fixture()
+def einzeln(c):
+    """Ein Betrieb mit „Ein Konto je Lieferant“ und zwei Kreditoren."""
+    assert c.post("/api/datev/kreditoren", json={"name": "Friseurbedarf Nord"}).status_code == 200
+    assert c.post("/api/datev/kreditoren", json={"name": "Delila"}).status_code == 200
+    assert c.post("/api/datev/kreditoren/einstellung",
+                  json={"modus": "einzeln"}).status_code == 200
+    return c
+
+
+def test_ohne_einzeln_bleibt_jeder_beleg_beim_sammelkonto(c):
+    c.post("/api/datev/kreditoren", json={"name": "Friseurbedarf Nord"})
+    assert set(_gegenkonten(c).values()) == {"70099"}
+    assert _befund(c).get("sammelkonto_belege", []) == []
+
+
+def test_der_lieferantenname_bringt_den_kreditor_in_den_stapel(einzeln):
+    assert _gegenkonten(einzeln) == {NORD: "70001", DELILA: "70099"}
+
+
+def test_zuordnen_mit_merken(welt, einzeln):
+    r = einzeln.post("/api/datev/kreditoren/zuordnen",
+                     json={"stamm": DELILA, "nummer": "70002", "merken": True})
+    assert r.status_code == 200, r.text
+    assert _gegenkonten(einzeln)[DELILA] == "70002"
+    assert _letzte_nachricht(welt) == "kreditoren: Delila Hair GmbH → 70002"
+    k = next(x for x in einzeln.get("/api/datev/kreditoren").json()["eintraege"]
+             if x["nummer"] == "70002")
+    assert k["aliase"] == ["Delila Hair GmbH"]
+    datei = _datei(welt, f"review/{DELILA}.kreditor.json")
+    assert (datei["nummer"], datei["von"]) == ("70002", "chef@0711.io")
+
+
+def test_ausdruecklich_sammelkonto(einzeln):
+    r = einzeln.post("/api/datev/kreditoren/zuordnen", json={"stamm": NORD, "nummer": None})
+    assert r.status_code == 200, r.text
+    assert _gegenkonten(einzeln)[NORD] == "70099"
+    offen = einzeln.get("/api/datev/kreditoren/belege", params={"ohne": 1}).json()["belege"]
+    assert NORD not in [b["stamm"] for b in offen]
+
+
+def test_zuordnen_prueft_was_es_bekommt(einzeln):
+    assert einzeln.post("/api/datev/kreditoren/zuordnen",
+                        json={"stamm": NORD, "nummer": "70777"}).status_code == 400
+    assert einzeln.post("/api/datev/kreditoren/zuordnen",
+                        json={"stamm": "gibt-es-nicht", "nummer": "70001"}).status_code == 404
+    einzeln.post("/api/datev/kreditoren/einstellung", json={"modus": "sammel"})
+    r = einzeln.post("/api/datev/kreditoren/zuordnen", json={"stamm": NORD, "nummer": "70001"})
+    assert r.status_code == 409
+
+
+def test_offene_belege_mit_vorschlaegen(einzeln):
+    d = einzeln.get("/api/datev/kreditoren/belege", params={"ohne": 1}).json()
+    offen = {b["stamm"]: b for b in d["belege"]}
+    assert set(offen) == {DELILA, BUERO}
+    assert offen[DELILA]["vorschlaege"][0]["nummer"] == "70002"
+    alle = einzeln.get("/api/datev/kreditoren/belege").json()["belege"]
+    nord = next(b for b in alle if b["stamm"] == NORD)
+    assert (nord["nummer"], nord["quelle"]) == ("70001", "name")
+
+
+def test_der_befund_nennt_sammelkonto_und_neue_kreditoren(einzeln):
+    b = _befund(einzeln)
+    assert b["sammelkonto_belege"] == [DELILA]
+    assert [k["nummer"] for k in b["kreditoren_neu"]] == ["70001"]
+    assert "70001" not in b["unbenannte_konten"]
+
+
+def test_uebergeben_haelt_das_gegenkonto_fest(welt, einzeln):
+    r = einzeln.post("/api/datev/uebergeben", params={"von": "2026-07", "bis": "2026-07"})
+    assert r.status_code == 200, r.text
+    lauf = _datei(welt, "export/2026-07/stapel.json")["laeufe"][-1]
+    assert lauf["gegenkonten"] == {NORD: "70001", DELILA: "70099"}
+    # Danach ändert sich am übergebenen Beleg nichts mehr — weder durch
+    # eine Zuordnung noch durch den Wechsel zurück aufs Sammelkonto.
+    r = einzeln.post("/api/datev/kreditoren/zuordnen", json={"stamm": DELILA, "nummer": "70002"})
+    assert r.status_code == 409
+    einzeln.post("/api/datev/kreditoren/einstellung", json={"modus": "sammel"})
+    assert _gegenkonten(einzeln) == {NORD: "70001", DELILA: "70099"}
+
+
+def test_die_einzelansicht_zeigt_den_kreditor(welt, einzeln, monkeypatch):
+    # Die DATEV-Testwelt kennt nur die Verwaltung; die Belegrouten brauchen
+    # zusätzlich die Mitgliedschaft in der Box.
+    monkeypatch.setattr(welt, "box_mitglied", lambda un, mandant_id=None: True)
+    d = einzeln.get(f"/api/beleg/{NORD}").json()
+    assert d["buchungssatz"]["gegenkonto"] == "70001"
+    assert d["kreditor_wahl"]["nummer"] == "70001"
+    assert d["kreditor_wahl"]["aenderbar"] is True
+    assert {z["gegenkonto"] for z in d["stapelzeilen"]} == {"70001"}
+
+
+def test_die_belegliste_der_app_bleibt_unberuehrt(welt, c, monkeypatch):
+    monkeypatch.setattr(welt, "box_mitglied", lambda un, mandant_id=None: True)
+    vorher = c.get("/api/belege").json()["belege"]
+    c.post("/api/datev/kreditoren", json={"name": "Friseurbedarf Nord"})
+    c.post("/api/datev/kreditoren/einstellung", json={"modus": "einzeln"})
+    c.post("/api/datev/kreditoren/zuordnen", json={"stamm": DELILA, "nummer": "70001"})
+    assert c.get("/api/belege").json()["belege"] == vorher
+
+
+def test_die_zuordnung_geht_beim_loeschen_mit(welt):
+    assert ".kreditor.json" in welt.BELEG_BEIAKTEN

@@ -913,6 +913,13 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
 @keyframes stempel{0%{transform:scale(1.7);opacity:0}60%{transform:scale(.95);opacity:1}100%{transform:scale(1)}}
 .datev{display:flex;flex-wrap:wrap;gap:8px}
 .datev .box{background:var(--gc-canvas);border:1px solid var(--gc-border);border-radius:8px;padding:8px 12px}
+.kred-feld{margin-top:12px;padding:12px 14px;border:1px solid var(--gc-border);border-radius:10px;background:var(--gc-bg)}
+.kred-feld .jetzt{font-size:14px;color:var(--gc-fg)}
+.kred-feld .jetzt small{display:block;font-size:12px;color:var(--gc-muted)}
+.kred-feld .chips{margin:10px 0 0}
+.kred-feld .chip{padding:7px 13px;font-size:13px}
+.kred-feld input.suchfeld{margin:10px 0 0;width:100%;max-width:360px}
+.kred-feld label.merken{display:block;font-size:12px;color:var(--gc-desc);margin-top:10px}
 .datev .box i{display:block;font:9px var(--gc-mono);letter-spacing:.1em;
   text-transform:uppercase;color:var(--gc-muted);font-style:normal}
 .datev .box b{font:600 13px var(--gc-mono);font-variant-numeric:tabular-nums;color:var(--gc-fg)}
@@ -2973,7 +2980,7 @@ async function ladeDetail(stamm){
   const haengt = d.status === "unlesbar";
   const bildTag = /\.(jpg|jpeg|png)$/i.test(d.datei||"")
     ? `<img id="belegbild" alt="Foto des Belegs" src="${mitMandant(d.bild_url)}">`
-    : `<div class="pdfhinweis"><svg class="ik" viewBox="0 0 24 24"><use href="#ik-dokument"/></svg><br>Dieses Dokument kam als Datei —<br><a href="${d.bild_url}">herunterladen und ansehen</a></div>`;
+    : `<div class="pdfhinweis"><svg class="ik" viewBox="0 0 24 24"><use href="#ik-dokument"/></svg><br>Dieses Dokument kam als Datei —<br><a href="${mitMandant(d.bild_url)}">herunterladen und ansehen</a></div>`;
 
   /* Beleg-Weg: eine Punktreihe. Was Aufmerksamkeit braucht, bekommt den
      einen Hinweis-Satz darunter — alles andere erzaehlt der Punkt selbst. */
@@ -3085,7 +3092,7 @@ async function ladeDetail(stamm){
       html += `<div class="sekt"><span class="lbl">Das geht an DATEV</span>
         <p style="font-size:13px;color:var(--gc-desc);margin:0 0 8px">So steht der Beleg
         im Stapel für deine Kanzlei.</p>
-        ${gezeigt.join("")}</div>`;
+        ${gezeigt.join("")}${kreditorFeld(d)}</div>`;
     }
 
     const siegelZeit = rev ? rev.zeit : (aufn ? aufn.zeit : null);
@@ -3131,6 +3138,84 @@ async function ladeDetail(stamm){
   const bild = $("#belegbild");
   if (bild) bild.addEventListener("click", () => bild.classList.toggle("zoom"));
 }
+/* ————— KREDITOR AM BELEG —————
+   Nur für die Kanzlei, nur wenn der Betrieb ein Konto je Lieferant führt
+   (sonst schickt die Antwort kein `kreditor_wahl`). Gewählt wird über
+   Vorschläge, eine Suche oder „neu anlegen“; „merken“ legt den Namen des
+   Lieferanten beim Kreditor ab, damit der nächste Beleg ihn selbst findet.
+   In den Knöpfen stehen nur Nummern. */
+let kredBeleg = null;
+function kreditorFeld(d){
+  const k = d.kreditor_wahl;
+  if (!k) return "";
+  kredBeleg = {stamm: d.stamm, wahl: k};
+  const jetzt = k.nummer
+    ? `${esc(k.nummer)} ${esc(k.name || "")}<small>${k.quelle === "name"
+        ? "über den Namen des Lieferanten gefunden" : "von der Kanzlei zugeordnet"}</small>`
+    : `Sammelkonto ${esc(k.sammelkonto)}<small>${k.quelle === "zuordnung"
+        ? "bewusst ohne eigenen Kreditor" : "noch kein Kreditor zugeordnet"}</small>`;
+  if (!k.aenderbar){
+    return `<div class="kred-feld"><span class="lbl">Kreditor</span>
+      <div class="jetzt">${esc(k.gegenkonto)}<small>${esc(k.grund || "")}</small></div></div>`;
+  }
+  const vorschlag = (k.vorschlaege || []).map(v =>
+    `<button class="chip" data-kred="${esc(v.nummer)}">${esc(v.nummer)} ${esc(v.name)}</button>`).join("");
+  return `<div class="kred-feld" id="kred-feld"><span class="lbl">Kreditor</span>
+    <div class="jetzt">${jetzt}</div>
+    ${vorschlag ? `<div class="chips">${vorschlag}</div>` : ""}
+    <input class="suchfeld" id="kred-suche" placeholder="Kreditor suchen: Name oder Nummer" autocomplete="off">
+    <div class="chips" id="kred-treffer"></div>
+    <div class="chips">
+      ${k.nummer ? `<button class="chip" data-kred="sammel">Zurück aufs Sammelkonto ${esc(k.sammelkonto)}</button>`
+        : k.quelle !== "zuordnung" ? `<button class="chip" data-kred="sammel">Bleibt beim Sammelkonto</button>` : ""}
+      ${k.lieferant && !k.nummer ? `<button class="chip" data-kred="neu">Neu anlegen: ${esc(k.lieferant)}</button>` : ""}
+    </div>
+    <label class="merken"><input type="checkbox" id="kred-merken" checked> für diesen Lieferanten merken</label>
+    <span id="kred-status" style="font-size:12px;color:var(--gc-muted)"></span>
+  </div>`;
+}
+let kredSucheUhr = null;
+document.addEventListener("input", ev => {
+  if (ev.target.id !== "kred-suche") return;
+  clearTimeout(kredSucheUhr);
+  kredSucheUhr = setTimeout(async () => {
+    const q = ev.target.value.trim(), ziel = $("#kred-treffer");
+    if (!q){ ziel.innerHTML = ""; return; }
+    try{
+      const d = await (await api("/api/datev/kreditoren?pro_seite=8&q=" + encodeURIComponent(q))).json();
+      ziel.innerHTML = (d.eintraege || []).filter(x => x.aktiv).map(x =>
+        `<button class="chip" data-kred="${esc(x.nummer)}">${esc(x.nummer)} ${esc(x.name)}</button>`).join("")
+        || `<span style="font-size:12px;color:var(--gc-muted)">Nichts gefunden.</span>`;
+    }catch{ ziel.innerHTML = ""; }
+  }, 250);
+});
+document.addEventListener("click", async ev => {
+  const knopf = ev.target.closest("#kred-feld [data-kred]");
+  if (!knopf || !kredBeleg) return;
+  const status = $("#kred-status");
+  const merken = !!($("#kred-merken") && $("#kred-merken").checked);
+  let nummer = knopf.dataset.kred;
+  status.textContent = "wird gespeichert …";
+  try{
+    if (nummer === "neu"){
+      const r = await api("/api/datev/kreditoren", {method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({name: kredBeleg.wahl.lieferant})});
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok){ status.textContent = d.fehler || "Ging gerade nicht."; return; }
+      nummer = d.kreditor.nummer;
+    }
+    const r = await api("/api/datev/kreditoren/zuordnen", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({stamm: kredBeleg.stamm,
+                            nummer: nummer === "sammel" ? null : nummer, merken})});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok){ status.textContent = d.fehler || "Ging gerade nicht."; return; }
+    status.textContent = "Gespeichert ✓";
+    setTimeout(() => ladeDetail(kredBeleg.stamm), 500);
+  }catch{ status.textContent = "Gerade keine Verbindung."; }
+});
+
 function datumDeutsch(iso){
   if (!iso) return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);

@@ -427,15 +427,16 @@ def ist_ausgang(review: dict) -> bool:
 
 
 def gegenkonto(review: dict, kreditor: str | None = None,
-               sammelkonto: str = GEGENKONTO) -> str:
+               sammelkonto: str | None = None) -> str:
     """Gegen welches Konto dieser Beleg läuft — die EINE Regel im Haus.
 
     Stapeldatei (`buchungszeilen`) und Anzeige (`babu_web.datev_buchungssatz`)
     fragen beide hier. Bis 03.10.2026 stand die Regel zweimal, und die Anzeige
     kannte den Debitor nicht: sie zeigte 70099, wo im Stapel 1200 stand.
 
-    Reihenfolge (Plan Kanzleiansicht, K0):
+    Reihenfolge (Plan Kanzleiansicht, K0 und K2):
 
+    0. **Schon übergeben → das übergebene Gegenkonto** (`gegenkonto_fest`).
     1. **Bar bezahlt → Kasse.** Bestätigt vom Auftraggeber 03.09.2026: nur
        so stimmt der Kassenbestand im Stapel mit dem gezählten überein. Das
        gilt auch, wenn der Lieferant einen Kreditor hat — bezahlt hat die
@@ -446,14 +447,24 @@ def gegenkonto(review: dict, kreditor: str | None = None,
     4. Sonst das **Sammelkonto**, gegen das die Kanzlei die Zahlung mit dem
        Kontoauszug auflöst.
     """
+    # Was schon bei der Kanzlei liegt, behält sein Gegenkonto (K2, seit
+    # 04.10.2026): die Übergabe hält es je Beleg fest, der Index legt es als
+    # `gegenkonto_fest` in die Kopie des Reviews. Eine spätere Zuordnung oder
+    # ein anderes Sammelkonto ändert daran nichts mehr.
+    fest = review.get("gegenkonto_fest")
+    if fest:
+        return str(fest)
     if zahlungsart(review) == "bar":
         return KASSE
     if ist_ausgang(review):
         _, rahmen = _konto_und_rahmen(review)
         return DEBITOR.get(rahmen, DEBITOR["SKR04"])
+    # `kreditor` und `sammelkonto` legt der Index aus der Kreditorenliste
+    # des Betriebs dazu; ohne Liste fehlen beide, und es bleibt bei 70099.
+    kreditor = kreditor or (review.get("kreditor") or {}).get("nummer")
     if kreditor:
         return str(kreditor)
-    return sammelkonto
+    return str(sammelkonto or review.get("sammelkonto") or GEGENKONTO)
 
 
 def buchungszeilen(review: dict, kleinunternehmerin: bool = False

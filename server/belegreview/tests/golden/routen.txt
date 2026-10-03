@@ -32,6 +32,7 @@ GET /api/belege
 GET /api/datev/konten.csv
 GET /api/datev/kreditoren
 GET /api/datev/kreditoren/aus-historie
+GET /api/datev/kreditoren/belege
 GET /api/datev/kreditoren.csv
 GET /api/datev/stapel.csv
 GET /api/datev/uebersicht
@@ -170,6 +171,7 @@ POST /api/datev/kreditoren/aus-historie
 POST /api/datev/kreditoren/einstellung
 POST /api/datev/kreditoren/lesen
 POST /api/datev/kreditoren/uebernehmen
+POST /api/datev/kreditoren/zuordnen
 POST /api/datev/kreditoren/{nummer}
 POST /api/datev/lesen
 POST /api/datev/uebergeben

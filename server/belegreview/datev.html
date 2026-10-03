@@ -265,6 +265,8 @@ td.aus{opacity:.55}
       <div id="kr-anlegen-meldung"></div>
     </div>
 
+    <div id="kr-offen"></div>
+
     <div class="deckel"><span class="lbl">Kreditoren</span><span id="kr-zahl"></span></div>
     <input type="text" class="feld" id="kr-suche" placeholder="Suchen: Name oder Nummer"
            style="width:100%;max-width:420px" autocomplete="off">
@@ -458,6 +460,12 @@ function befundzeilen(b){
   if (rns && rns.anzahl)
     gelb.push([`${rns.anzahl} Rechnung(en) stehen nicht im Stapel`,
       b.rechnungen_text]);
+  if (b.sammelkonto_text)
+    gelb.push([`${b.sammelkonto_belege.length} Beleg(e) noch ohne Kreditor`,
+      b.sammelkonto_text + " Zuordnen geht unter „Kreditoren“."]);
+  if (b.kreditoren_neu_text)
+    gelb.push([`${b.kreditoren_neu.length} Kreditor(en) gibt es in DATEV noch nicht`,
+      b.kreditoren_neu_text]);
   if (b.unbenannte_konten && b.unbenannte_konten.length)
     gelb.push(["Konten ohne Namen im Kontenrahmen",
       b.unbenannte_konten.join(", ") + " — bitte bei der Kanzlei nachfragen."]);
@@ -647,9 +655,10 @@ async function kreditorenLaden(){
     b.classList.toggle("an", b.dataset.modus === d.modus);
   if (document.activeElement !== $("#kr-sammel")) $("#kr-sammel").value = d.sammelkonto;
   $("#kr-modus-hinweis").textContent = d.modus === "einzeln"
-    ? "Noch laufen alle Belege über das Sammelkonto — die Zuordnung am Beleg kommt als Nächstes."
+    ? `Jeder Beleg läuft über den Kreditor seines Lieferanten. Wem keiner zugeordnet ist, der läuft über ${d.sammelkonto}.`
     : `Alle Belege laufen über ${d.sammelkonto}.`;
   $("#kr-anlegen").textContent = `Als ${d.naechste} anlegen`;
+  offeneBelegeLaden(d);
   $("#kr-zahl").textContent = d.anzahl
     ? `${d.anzahl} insgesamt` + (d.gesamt !== d.anzahl ? ` · ${d.gesamt} gefunden` : "")
     : "";
@@ -685,6 +694,61 @@ async function kreditorenLaden(){
         Seite ${d.seite} von ${d.seiten}</span>
       <button class="chip" data-seite="${d.seite + 1}"
       ${d.seite >= d.seiten ? "disabled" : ""}>Weiter ›</button></div>` : "");
+}
+
+/* Belege ohne Kreditor — nur bei „ein Konto je Lieferant“. Eine Zeile je
+   Beleg: Vorschlag oder Auswahl aus der Liste, „merken“ legt den Namen des
+   Lieferanten beim Kreditor ab, damit der nächste Beleg ihn von selbst findet. */
+async function offeneBelegeLaden(liste){
+  const ziel = $("#kr-offen");
+  if (liste.modus !== "einzeln"){ ziel.innerHTML = ""; return; }
+  let d;
+  try { d = await hol("/api/datev/kreditoren/belege?ohne=1"); }
+  catch (e) { ziel.innerHTML = `<div class="meldung schlimm">${txt(e.message)}</div>`; return; }
+  if (!d.belege.length){
+    ziel.innerHTML = `<div class="ruhe">Jedem offenen Beleg ist ein Kreditor zugeordnet
+      — oder bewusst das Sammelkonto.</div>`;
+    return;
+  }
+  let alle = [];
+  try { alle = (await hol("/api/datev/kreditoren?pro_seite=2000")).eintraege; } catch {}
+  const optionen = alle.filter((k) => k.aktiv)
+    .map((k) => `<option value="${txt(k.nummer)}">${txt(k.nummer)} ${txt(k.name)}</option>`).join("");
+  ziel.innerHTML = `<div class="deckel"><span class="lbl">Belege ohne Kreditor (${d.gesamt})</span>
+      <span>Sie laufen sonst über das Sammelkonto ${txt(liste.sammelkonto)}.</span></div>
+    <div class="tabellenrahmen"><table><thead><tr><th>Datum</th><th>Lieferant</th>
+      <th class="z">Betrag</th><th>Kreditor</th><th></th></tr></thead><tbody>`
+    + d.belege.map((b, i) => `<tr data-i="${i}">
+      <td class="k">${txt(b.datum || b.monat)}</td>
+      <td class="t">${txt(b.lieferant || "—")}</td>
+      <td class="z">${b.brutto == null ? "" : Number(b.brutto).toLocaleString("de-DE",
+        {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+      <td><select class="kr-wahl" style="min-width:200px">
+        <option value="">— wählen —</option>
+        ${b.vorschlaege.length ? `<optgroup label="Vorschläge">${b.vorschlaege.map((v) =>
+          `<option value="${txt(v.nummer)}">${txt(v.nummer)} ${txt(v.name)}</option>`).join("")}</optgroup>` : ""}
+        <optgroup label="Alle">${optionen}</optgroup>
+        <option value="sammel">Sammelkonto ${txt(liste.sammelkonto)}</option>
+      </select>
+      <label style="display:block;font-size:12px;color:var(--gc-desc);margin-top:4px">
+        <input type="checkbox" class="kr-merken" checked> für diesen Lieferanten merken</label></td>
+      <td><button class="chip kr-zuordnen" style="padding:7px 14px">Zuordnen</button></td>
+    </tr>`).join("") + `</tbody></table></div>`;
+  ziel.onclick = async (ev) => {
+    const knopf = ev.target.closest(".kr-zuordnen");
+    if (!knopf) return;
+    const zeile = knopf.closest("tr");
+    const b = d.belege[Number(zeile.dataset.i)];
+    const wahl = zeile.querySelector(".kr-wahl").value;
+    if (!wahl) return zeile.querySelector(".kr-wahl").focus();
+    knopf.disabled = true;
+    try {
+      await schick("/api/datev/kreditoren/zuordnen", {stamm: b.stamm,
+        nummer: wahl === "sammel" ? null : wahl,
+        merken: zeile.querySelector(".kr-merken").checked});
+      kreditorenLaden();
+    } catch (e) { knopf.disabled = false; alert(e.message); }
+  };
 }
 
 let krSucheUhr = null;

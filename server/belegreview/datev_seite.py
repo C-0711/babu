@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import calendar
 import csv
+import json
 import os
 import re
 import threading
@@ -344,6 +345,7 @@ def _sammeln(bw, un: str, monate: list[str]) -> dict:
                            "rechnungen": _rechnungen(bw, idx, un, monat)}
     berater, mandant = _berater_mandant(bw)
     return {"idx": idx, "rahmen": rahmen, "kleinunternehmerin": klein,
+            "kreditoren": idx.get("kreditoren") or kr.leer(),
             "uebergaben": {m: _uebergabe_stand(bw, idx, m) for m in monate},
             "berater": berater, "mandant": mandant,
             "monate": monate, "je_monat": je_monat}
@@ -435,9 +437,29 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
     # Bis 03.09.2026 stand hier `not k.startswith("7")`: damit war JEDES
     # Konto ab 70000 von der Prüfung befreit, auch ein handkorrigiertes,
     # das dort nichts zu suchen hat.
+    # Seit K2 (04.10.2026) gelten auch das eingestellte Sammelkonto und jeder
+    # Kreditor der Liste als benannt — Personenkonten stehen in keinem
+    # Kontenrahmen, ihr Name steht in der Kreditorenliste.
+    kred = daten.get("kreditoren") or kr.leer()
+    bekannt = {k["nummer"]: k for k in kred["kreditoren"]}
+    sammelkonten = {extf.GEGENKONTO, kred["sammelkonto"]}
     unbenannt = ([k for k in benutzt
-                  if k != extf.GEGENKONTO and skr04_konten.name(k) is None]
+                  if k not in sammelkonten and k not in bekannt
+                  and skr04_konten.name(k) is None]
                  if rahmen == "SKR04" else [])
+    # Gelb, nur bei „ein Konto je Lieferant“: Belege, die noch über das
+    # Sammelkonto laufen (übergebene ausgenommen — die bleiben, wie sie sind),
+    # und Kreditoren, die es in DATEV noch nicht gibt.
+    idx_ = daten.get("idx") or {}
+    offen_status = {s_: z_["status"] for s_, z_ in (idx_.get("belege") or {}).items()}
+    sammel_belege = (sorted({z["quelle"] for z in zeilen
+                             if z.get("art") == "beleg"
+                             and z["gegenkonto"] == kred["sammelkonto"]
+                             and offen_status.get(z["quelle"]) != "exportiert"})
+                     if kred["modus"] == "einzeln" else [])
+    kred_neu = [{"nummer": n, "name": bekannt[n]["name"]}
+                for n in sorted({z["gegenkonto"] for z in zeilen})
+                if n in bekannt and not bekannt[n]["an_datev_am"]]
     # Konten, die babu selbst vergibt, für die aber noch keine Steuer-
     # beratung bestätigt hat, dass sie richtig sind (`kontierung.geprueft`).
     # Sie gehen mit — es sind die besten, die babu hat — aber wer die Datei
@@ -556,6 +578,20 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
         "ohne_kontierung": ohne_konto,
         "unbenannte_konten": unbenannt,
         "unbestaetigte_konten": unbestaetigt,
+        # Gelb (K2): noch über das Sammelkonto — und Kreditoren, die die
+        # Kanzlei in DATEV erst anlegen muss.
+        "sammelkonto_belege": sammel_belege,
+        "sammelkonto_text": (None if not sammel_belege else
+                             f"{len(sammel_belege)} Beleg(e) laufen noch über "
+                             f"das Sammelkonto {kred['sammelkonto']} — ihnen ist "
+                             f"kein Kreditor zugeordnet."),
+        "kreditoren_neu": kred_neu,
+        "kreditoren_neu_text": (None if not kred_neu else
+                                "Diese Kreditoren gibt es in DATEV noch nicht: "
+                                + ", ".join(f"{k['nummer']} {k['name']}"
+                                            for k in kred_neu[:6])
+                                + (" …" if len(kred_neu) > 6 else "")
+                                + " — die Kanzlei legt sie vor dem Import an."),
         # Rot: das Belegdatum liegt nicht im Zeitraum, den der Kopf nennt.
         "ausserhalb_zeitraum": len(ausserhalb),
         "ausserhalb_zeitraum_belege": sorted({z["quelle"] for z in ausserhalb
@@ -1035,13 +1071,14 @@ def _schreibfehler() -> JSONResponse:
 
 @router.get("/kreditoren")
 def api_kreditoren_liste(request: Request, q: str = "", buchstabe: str = "",
-                         seite: int = 1) -> Response:
+                         seite: int = 1, pro_seite: int = 50) -> Response:
     """Die Kreditorenliste: Suche, Anfangsbuchstabe, Seiten."""
     un, fehler = _wache(request)
     if fehler:
         return fehler
     stand = _kreditoren_stand(_bw())
-    teil = kr.liste(stand, q=q, buchstabe=buchstabe, seite=seite)
+    teil = kr.liste(stand, q=q, buchstabe=buchstabe, seite=seite,
+                    pro_seite=pro_seite)
     return JSONResponse({
         "modus": stand["modus"], "sammelkonto": stand["sammelkonto"],
         "naechste": kr.naechste_nummer(stand), "anzahl": len(stand["kreditoren"]),
@@ -1205,6 +1242,112 @@ async def api_kreditoren_historie_uebernehmen(request: Request) -> Response:
     except boxschreiber.SchreibFehler:
         return _schreibfehler()
     return JSONResponse({"ok": True, "commit": commit, **z})
+
+
+class _Konflikt(Exception):
+    """Ein 409 aus dem Inneren eines Schreibwegs — mit einem Satz dazu."""
+
+
+@router.get("/kreditoren/belege")
+def api_kreditoren_belege(request: Request, ohne: int = 0) -> Response:
+    """Belege, die einen Kreditor brauchen — mit Stand und Vorschlägen (K2).
+
+    Nur Belege, die noch nicht bei der Kanzlei liegen und weder bar bezahlt
+    noch eigene Rechnungen sind (die laufen gegen Kasse bzw. Debitor).
+    `ohne=1`: nur die, denen noch nichts zugeordnet ist.
+    """
+    un, fehler = _wache(request)
+    if fehler:
+        return fehler
+    idx = _bw().index_aktuell()
+    stand = idx.get("kreditoren") or kr.leer()
+    if stand["modus"] != "einzeln":
+        return JSONResponse({"modus": stand["modus"], "belege": []})
+    je = idx.get("kreditor_je_beleg") or {}
+    zeilen = []
+    for stamm, z in idx["belege"].items():
+        review = idx["reviews"].get(stamm)
+        if review is None or z["status"] == "exportiert":
+            continue
+        if extf.zahlungsart(review) == "bar" or extf.ist_ausgang(review):
+            continue
+        k = je.get(stamm)
+        if ohne and k is not None:
+            continue
+        zeilen.append({"stamm": stamm, "monat": z["monat"], "datum": z.get("datum"),
+                       "lieferant": z.get("lieferant"), "brutto": z.get("brutto"),
+                       "nummer": k["nummer"] if k else None,
+                       "name": k["name"] if k else None,
+                       "quelle": k["quelle"] if k else None,
+                       "vorschlaege": ([] if k else
+                                       kr.vorschlaege(stand, z.get("lieferant"), 3))})
+    zeilen.sort(key=lambda b: (b["monat"] or "", b["stamm"]), reverse=True)
+    return JSONResponse({"modus": stand["modus"], "belege": zeilen[:500],
+                         "gesamt": len(zeilen)})
+
+
+def _zuordnen(bw, un: str, stamm: str, nummer: str | None, merken: bool,
+              lieferant: str | None) -> str:
+    """Die Zuordnung schreiben — mit „merken“ im selben Commit den Nebennamen."""
+    with _kreditoren_schloss(bw):
+        stand = _kreditoren_stand(bw)
+        if stand["modus"] != "einzeln":
+            raise _Konflikt("Erst auf „Ein Konto je Lieferant“ umstellen — "
+                            "dann lassen sich Kreditoren zuordnen.")
+        if nummer and not any(k["nummer"] == nummer for k in stand["kreditoren"]):
+            raise kr.KreditorFehler(f"Den Kreditor {nummer} gibt es nicht.")
+        dateien = {f"review/{stamm}.kreditor.json": json.dumps(
+            {"nummer": nummer, "von": un, "am": _jetzt(), "merken": bool(merken)},
+            ensure_ascii=False, indent=1).encode()}
+        if merken and nummer and (lieferant or "").strip():
+            neu = kr.merken(stand, nummer, lieferant)
+            if neu != stand:
+                dateien[kr.PFAD] = kr.als_bytes(neu)
+        nachricht = (f"kreditoren: {(lieferant or stamm).strip()} → "
+                     f"{nummer or 'Sammelkonto'}")
+        commit = boxschreiber.schreiben(bw._box(), dateien, None, nachricht, un)  # noqa: SLF001
+    with bw._box().index_schloss:  # noqa: SLF001
+        bw._box().invalidieren()  # noqa: SLF001
+    return commit
+
+
+@router.post("/kreditoren/zuordnen")
+async def api_kreditor_zuordnen(request: Request) -> Response:
+    """Einem Beleg seinen Kreditor geben — oder bewusst das Sammelkonto (K2)."""
+    un, fehler = _wache(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return _fehler("JSON erwartet.")
+    body = body if isinstance(body, dict) else {}
+    stamm = str(body.get("stamm") or "")
+    nummer = str(body.get("nummer") or "").strip() or None
+    bw = _bw()
+    idx = await run_in_threadpool(bw.index_aktuell)
+    eintrag = idx["belege"].get(stamm)
+    if eintrag is None:
+        return _fehler("Diesen Beleg gibt es nicht.", 404)
+    if eintrag["status"] == "exportiert":
+        return _fehler("Der Beleg liegt schon bei der Kanzlei — sein Gegenkonto "
+                       "bleibt, wie es übergeben wurde.", 409)
+    review = idx["reviews"].get(stamm) or {}
+    if extf.zahlungsart(review) == "bar":
+        return _fehler("Bar bezahlt — der Beleg läuft gegen die Kasse.", 409)
+    if extf.ist_ausgang(review):
+        return _fehler("Eine eigene Rechnung läuft gegen den Debitor.", 409)
+    try:
+        commit = await run_in_threadpool(_zuordnen, bw, un, stamm, nummer,
+                                         bool(body.get("merken")),
+                                         eintrag.get("lieferant"))
+    except _Konflikt as f:
+        return _fehler(str(f), 409)
+    except kr.KreditorFehler as f:
+        return _fehler(str(f))
+    except boxschreiber.SchreibFehler:
+        return _schreibfehler()
+    return JSONResponse({"ok": True, "commit": commit, "nummer": nummer})
 
 
 @router.post("/kreditoren/{nummer}")

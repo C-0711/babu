@@ -350,3 +350,84 @@ def test_eine_neue_iban_ist_eine_aenderung_aber_kein_neuer_name():
                              "iban": ["DE89370400440532013000"]}], "datev")
     assert v["geaendert"] == [{"nummer": "70001", "alt": "Wella", "neu": "Wella",
                                "iban_neu": ["DE89370400440532013000"]}]
+
+
+# ————— K2: welcher Kreditor gehört zu einem Beleg? —————
+
+def _einzeln(*paare) -> dict:
+    return kr.einstellen(_mit(*paare), modus="einzeln")
+
+
+def test_im_sammelmodus_gibt_es_keinen_kreditor():
+    stand = _mit(("70001", "Wella"))
+    assert kr.aufloesen(stand, "Wella", {"nummer": "70001"}) is None
+
+
+def test_eine_ausdrueckliche_zuordnung_gilt():
+    k = kr.aufloesen(_einzeln(("70001", "Wella")), "irgendwer", {"nummer": "70001"})
+    assert k == {"nummer": "70001", "name": "Wella", "quelle": "zuordnung"}
+
+
+def test_ausdruecklich_sammelkonto_ist_eine_antwort():
+    """„Kein eigener Kreditor“ ist eine Entscheidung — kein offener Beleg."""
+    k = kr.aufloesen(_einzeln(("70001", "Wella")), "Wella", {"nummer": None})
+    assert k == {"nummer": None, "name": None, "quelle": "zuordnung"}
+
+
+def test_der_lieferantenname_findet_seinen_kreditor():
+    stand, _ = kr.aendern(_einzeln(("70001", "Wella Deutschland GmbH")), "70001",
+                          {"aliase": ["Wella Kosmetik"]}, "k", AM)
+    assert kr.aufloesen(stand, "WELLA DEUTSCHLAND", None)["nummer"] == "70001"
+    assert kr.aufloesen(stand, "Wella Kosmetik GmbH", None)["quelle"] == "name"
+    assert kr.aufloesen(stand, "Wella", None) is None          # nur genau
+    assert kr.aufloesen(stand, "", None) is None
+
+
+def test_ein_uebergebener_beleg_bekommt_keinen_neuen_kreditor_ueber_den_namen():
+    stand = _einzeln(("70001", "Wella"))
+    assert kr.aufloesen(stand, "Wella", None, exportiert=True) is None
+
+
+def test_ein_nicht_mehr_verwendeter_kreditor_wird_nicht_gefunden():
+    stand, _ = kr.aendern(_einzeln(("70001", "Wella")), "70001", {"aktiv": False},
+                          "k", AM)
+    assert kr.aufloesen(stand, "Wella", None) is None
+
+
+def test_vorschlaege_nach_aehnlichkeit():
+    stand = _einzeln(("70001", "Friseurbedarf Nord GmbH"), ("70002", "Friseurbedarf Süd"),
+                     ("70003", "Wella"))
+    v = kr.vorschlaege(stand, "Friseurbedarf Nord Hamburg")
+    assert [x["nummer"] for x in v][:2] == ["70001", "70002"]
+    assert "70003" not in [x["nummer"] for x in v]
+
+
+def test_merken_legt_den_lieferanten_als_nebennamen_ab():
+    stand = kr.merken(_einzeln(("70001", "Wella")), "70001", "Wella Deutschland GmbH")
+    assert stand["kreditoren"][0]["aliase"] == ["Wella Deutschland GmbH"]
+    # Schon derselbe Name: nichts zu merken.
+    assert kr.merken(stand, "70001", "WELLA") == stand
+
+
+def test_merken_lehnt_einen_fremden_namen_ab():
+    stand = _einzeln(("70001", "Wella"), ("70002", "Kao"))
+    with pytest.raises(kr.KreditorFehler, match="70002"):
+        kr.merken(stand, "70001", "Kao GmbH")
+
+
+# ————— K2: das Gegenkonto im Stapel —————
+
+def test_das_uebergebene_gegenkonto_bleibt():
+    import extf  # noqa: PLC0415
+    r = {"felder": {"zahlungsart": "karte"}, "einschaetzung": {"konto": "6815"},
+         "kreditor": {"nummer": "70002"}, "gegenkonto_fest": "70001"}
+    assert extf.gegenkonto(r) == "70001"
+
+
+def test_der_kreditor_aus_dem_index_ersetzt_das_sammelkonto():
+    import extf  # noqa: PLC0415
+    r = {"felder": {"zahlungsart": "karte"}, "einschaetzung": {"konto": "6815"},
+         "kreditor": {"nummer": "70002"}, "sammelkonto": "70000"}
+    assert extf.gegenkonto(r) == "70002"
+    del r["kreditor"]
+    assert extf.gegenkonto(r) == "70000"
