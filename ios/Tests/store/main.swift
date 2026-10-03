@@ -84,6 +84,37 @@ Task { @MainActor in
         }
     }
 
+    // ————— Fremdwährung: der Originalbetrag kommt aus der Buchung —————
+    // (03.10.2026, Gordon Ramsay London £301,01 → 355,18 €.) Das Telefon las
+    // „Amount Due" unter einem Schatten nicht; gemerkt wurde dessen Betrag 0
+    // statt Gemmas £301,01 — die App zeigte „0.00 GBP umgerechnet".
+    do {
+        let id = store.routen(bildJpeg: nil, ocrText: "GORDON RAMSAY\nBAR & GRILL\nLondon").id
+        store.gemmaBuchungAnwenden(
+            id: id, konto: "6640", ustSatz: 0, betragEur: 355.18, waehrung: "GBP",
+            betragOriginal: 301.01, begruendung: "Bewirtung Lieferant London")
+        if let b = store.belege.first(where: { $0.id == id }) {
+            pruefe(nahe(b.brutto, 355.18), "Fremdwährung: gebucht in Euro 355,18 (ist \(b.brutto))")
+            pruefe(nahe(b.fremdBetrag ?? 0, 301.01),
+                   "Fremdwährung: Originalbetrag aus der Buchung 301,01 (ist \(b.fremdBetrag ?? 0))")
+            pruefe(b.fremdWaehrung == "GBP", "Fremdwährung: GBP gemerkt")
+        } else {
+            pruefe(false, "Beleg nach der Buchung auffindbar")
+        }
+    }
+    // Ohne Originalbetrag und ohne eigene Lesung: lieber keine Angabe als „0.00 GBP".
+    do {
+        let id = store.routen(bildJpeg: nil, ocrText: "GORDON RAMSAY\nLondon").id
+        store.gemmaBuchungAnwenden(
+            id: id, konto: "6640", ustSatz: 0, betragEur: 355.18, waehrung: "GBP",
+            begruendung: "Bewirtung")
+        if let b = store.belege.first(where: { $0.id == id }) {
+            pruefe(b.fremdBetrag == nil, "Fremdwährung ohne Betrag: keine 0 gemerkt (ist \(String(describing: b.fremdBetrag)))")
+        } else {
+            pruefe(false, "Beleg nach der Buchung auffindbar")
+        }
+    }
+
     // ————— Ein Konto ohne Ablage sagt nicht „alles bereit" —————
     //
     // Bis 08.09.2026 galt jeder Status außer 401 als gewöhnlicher

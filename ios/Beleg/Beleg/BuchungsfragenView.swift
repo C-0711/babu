@@ -203,6 +203,7 @@ struct BuchungsfragenView: View {
             store.gemmaBuchungAnwenden(id: belegID, konto: b.konto,
                                        ustSatz: b.ustSatz, betragEur: b.betragEur,
                                        waehrung: b.waehrung,
+                                       betragOriginal: b.betrag,
                                        begruendung: b.begruendung,
                                        lieferant: b.lieferant, datum: b.datum,
                                        steuersaetze: b.steuersaetze)

@@ -421,7 +421,8 @@ struct DetailView: View {
                                 Text(fmtEur(b.brutto))
                                     .font(.system(size: 22, weight: .medium, design: .monospaced))
                                     .foregroundStyle(GC.fg)
-                                if let w = b.fremdWaehrung, let orig = b.fremdBetrag {
+                                // Belege von vor dem 03.10.2026 können eine 0 gemerkt haben.
+                                if let w = b.fremdWaehrung, let orig = b.fremdBetrag, orig > 0 {
                                     Text("\(orig, format: .number.precision(.fractionLength(2))) \(w) umgerechnet")
                                         .font(.caption2.monospacedDigit())
                                         .foregroundStyle(GC.desc)

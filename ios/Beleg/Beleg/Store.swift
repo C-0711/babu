@@ -505,6 +505,7 @@ final class AppStore: ObservableObject {
     /// wird der Euro-Betrag gebucht; der Originalbetrag bleibt am Beleg.
     func gemmaBuchungAnwenden(id: UUID, konto: String, ustSatz: Int,
                               betragEur: Double, waehrung: String,
+                              betragOriginal: Double? = nil,
                               begruendung: String, lieferant: String? = nil,
                               datum: String? = nil,
                               steuersaetze: [SteuerPosition] = []) {
@@ -519,8 +520,16 @@ final class AppStore: ObservableObject {
            !l.isEmpty { b.lieferant = l }
         if let d = deutschesDatum(datum) { b.datumText = d }
         if betragEur > 0, waehrung != "EUR" {
-            b.fremdBetrag = b.fremdBetrag ?? b.brutto
-            b.fremdWaehrung = waehrung
+            // Der Originalbetrag kommt aus der Buchung — die Buchhaltung hat
+            // ihn vom Beleg gelesen. Die eigene Lesung des Telefons ist nur
+            // Rückfall: unter einem Schatten war sie 0, und die App zeigte
+            // „0.00 GBP umgerechnet" (03.10.2026). Keine 0 merken.
+            if let o = betragOriginal, o > 0 {
+                b.fremdBetrag = o
+            } else if b.fremdBetrag == nil, b.brutto > 0 {
+                b.fremdBetrag = b.brutto
+            }
+            if b.fremdBetrag != nil { b.fremdWaehrung = waehrung }
         }
         if betragEur > 0 {
             b.brutto = betragEur
