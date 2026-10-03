@@ -356,3 +356,19 @@ def test_test_lagen_tragen_den_weg_zum_abschluss():
     # Andere Lagen bleiben, wie sie sind.
     assert bg.nachricht("kein_beleg", person="S", ambassadorin="B", weiter=weg) \
         == bg.nachricht("kein_beleg", person="S", ambassadorin="B")
+
+
+# ————— Stand mit Abo (seit 03.10.2026) —————
+
+@pytest.mark.parametrize("abo,meilenstein,wort", [
+    ("zahlung_laeuft", "testet", "hat abgeschlossen"),
+    ("aktiv", "testet", "hat abgeschlossen"),
+    ("aktiv", "gezeichnet", "macht mit"),
+    ("zahlung_offen", "gezeichnet", "Zahlung offen"),
+    ("gekuendigt", "gehalten", "gekündigt"),
+    ("beendet", "gezeichnet", "Abo beendet"),
+    (None, "testet", "wartet auf Zugang"),
+])
+def test_stand_wort_kennt_das_abo(abo, meilenstein, wort):
+    k = {"meilenstein": meilenstein, "eingeloest_am": HEUTE, "abo": abo}
+    assert ka._stand_wort(k, None) == wort

@@ -977,11 +977,14 @@ def _kontakt_zeilen(code: str, c) -> dict:
               for z in c.execute("SELECT email, salon, eingelöst, meilenstein, "
                                  "gezeichnet_am FROM ambassador_salon WHERE code=?",
                                  (code,))}
-    tests = {}
+    tests, abos = {}, {}
     for email in salons:
         direkt = testmonat.direkt_mandant_von(email, c)
         tests[email] = direkt[1] if direkt else None
-    return {"einladungen": einl, "salons": salons, "tests": tests}
+        if direkt:
+            z = c.execute("SELECT abo_status FROM mandant WHERE id=?", (direkt[0],)).fetchone()
+            abos[email] = z[0] if z else None
+    return {"einladungen": einl, "salons": salons, "tests": tests, "abos": abos}
 
 
 def _begleiter(code: str, ambassadorin: str, roh: dict) -> tuple[list, list]:
@@ -1014,6 +1017,7 @@ def _begleiter(code: str, ambassadorin: str, roh: dict) -> tuple[list, list]:
              "eingeladen_am": _datum(e["erstellt"]) if e else _datum(s["eingelöst"]),
              "eingeloest_am": _datum(s["eingelöst"]) if s else None,
              "test": st, "meilenstein": s["meilenstein"] if s else None,
+             "abo": (roh.get("abos") or {}).get(email) if email else None,
              "gezeichnet_am": _datum(s.get("gezeichnet_am")) if s else None,
              "belege": belege, "letzter_beleg": letzter,
              "erinnert_am": _datum(e["erinnert_am"]) if e else None,
@@ -1050,8 +1054,15 @@ def _begleiter(code: str, ambassadorin: str, roh: dict) -> tuple[list, list]:
 
 def _stand_wort(k: dict, st: dict | None) -> str:
     m = k["meilenstein"]
+    abo_stand = k.get("abo")
+    if abo_stand == "zahlung_offen":
+        return "Zahlung offen"        # sie kann beim Nachholen helfen
+    if abo_stand in ("gekuendigt", "beendet"):
+        return "Abo beendet" if abo_stand == "beendet" else "gekündigt"
     if m in ("gezeichnet", "gehalten"):
         return "macht mit"
+    if abo_stand in ("zahlung_laeuft", "aktiv"):
+        return "hat abgeschlossen"    # erste Lastschrift läuft noch
     if k.get("weiter_am"):
         return "will weitermachen"
     if k["eingeloest_am"] is None:

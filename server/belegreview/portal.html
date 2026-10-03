@@ -584,6 +584,8 @@ a.chip{text-decoration:none;color:inherit;display:inline-block}
 .amb-tabelle td,.amb-tabelle th{padding:6px 8px;text-align:left}
 .amb-tabelle th{font:500 12px/1.2 var(--gc-sans);color:var(--gc-muted);text-align:center;padding:0 2px 8px;white-space:nowrap}
 .amb-tabelle th:first-child{text-align:left}
+.amb-tabelle.verw-tabelle th{text-align:left}
+.amb-tabelle.verw-tabelle td+td,.amb-tabelle.verw-tabelle th+th{padding-left:16px}
 .amb-tabelle td{padding:12px 2px 10px;border-top:1px solid var(--gc-border-l);vertical-align:top}
 .amb-tabelle .amb-geld{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--gc-fg);font-weight:550;padding-left:8px}
 .amb-tabelle td.amb-geld{padding-top:11px}
@@ -6800,7 +6802,7 @@ async function ladeAuszahlung(){
       <td>${z.zahlbar ? "kommt mit" : esc(z.grund || "")}</td></tr>`).join("");
   let html = `<div class="karte"><p>Lauf vom ${ambDatum(v.lauf)} — verdient bis ${ambDatum(v.stichtag)}.
     ${v.naechster ? ` Nächster Lauf am ${ambDatum(v.naechster)}.` : ""}</p>
-    ${zeilen ? `<div class="tabelle-scroll"><table class="amb-tabelle" style="width:100%"><thead><tr><th>Ambassadorin</th>
+    ${zeilen ? `<div class="tabelle-scroll"><table class="amb-tabelle verw-tabelle" style="width:100%"><thead><tr><th>Ambassadorin</th>
       <th style="text-align:right">Betrag</th><th>Stand</th></tr></thead><tbody>${zeilen}</tbody></table></div>`
       : `<p style="color:var(--gc-desc)">Für diesen Lauf ist nichts offen.</p>`}
     ${v.konto_fehlt ? `<p class="abo-fehler">Das Auszahlungskonto von 0711 ist noch nicht eingetragen.</p>` : ""}
@@ -6857,7 +6859,7 @@ async function ladeAboUebersicht(){
     ${d.modus === "test" ? `<p class="abo-probe" style="padding:6px 10px;border-radius:8px">Probelauf — es wird nichts abgebucht.</p>` : ""}
     ${!d.an ? `<p style="color:var(--gc-desc)">„Weitermachen" ist für Salons noch nicht freigeschaltet.</p>` : ""}
     ${d.ereignis_fehler ? `<p class="abo-fehler">${d.ereignis_fehler} Zahlungsmeldungen konnten nicht verarbeitet werden.</p>` : ""}
-    ${zeilen ? `<div class="tabelle-scroll"><table class="amb-tabelle" style="width:100%"><thead><tr><th>Salon</th><th>Paket</th><th>Stand</th>
+    ${zeilen ? `<div class="tabelle-scroll"><table class="amb-tabelle verw-tabelle" style="width:100%"><thead><tr><th>Salon</th><th>Paket</th><th>Stand</th>
       <th style="text-align:right">Monate bezahlt</th></tr></thead><tbody>${zeilen}</tbody></table></div>`
       : `<p style="color:var(--gc-desc)">Noch keine Salons direkt bei babu.</p>`}</div>`;
 }
@@ -8031,9 +8033,9 @@ async function ambHeuteMail(an){
   }catch{}
 }
 function ambKontaktZeile(k){
-  const zeichen = k.stand === "macht mit" ? "dabei"
-    : (k.stand === "probiert aus" || k.stand === "will weitermachen") ? "probiert"
-    : k.stand === "Test vorbei" ? "aus" : "";
+  const zeichen = (k.stand === "macht mit" || k.stand === "hat abgeschlossen") ? "dabei"
+    : (k.stand === "probiert aus" || k.stand === "will weitermachen" || k.stand === "Zahlung offen") ? "probiert"
+    : (k.stand === "Test vorbei" || k.stand === "gekündigt" || k.stand === "Abo beendet") ? "aus" : "";
   const a = k.aufgabe;
   return `<li><span class="bg-zeichen ${zeichen}" aria-hidden="true"></span>
     <div class="bg-zeile"><b>${esc(k.name)}</b><em>${esc(k.stand)}</em>

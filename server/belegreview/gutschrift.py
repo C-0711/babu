@@ -28,6 +28,7 @@ STEUERSTATUS = {
     "privat": "Privatperson (gelegentliche Vermittlung)",
 }
 
+_PAKET_NAME = {"solo": "Solo", "salon": "Salon", "plus": "Salon Plus"}
 _MEILENSTEIN = {"gezeichnet": "Abschluss", "gehalten": "3 Monate dabei",
                 "storno_gezeichnet": "Korrektur: Zahlung zurückgebucht",
                 "storno_gehalten": "Korrektur: Zahlung zurückgebucht"}
@@ -96,7 +97,7 @@ def pdf(beleg: dict) -> bytes:
     for p in beleg["posten"]:
         text = (f"{_de(p['datum'])}  {p.get('salon') or 'Salon'} — "
                 f"{_MEILENSTEIN.get(p['meilenstein'], p['meilenstein'])}"
-                + (f" ({p['paket']})" if p.get("paket") else ""))
+                + (f", Paket {_PAKET_NAME.get(p['paket'], p['paket'])}" if p.get("paket") else ""))
         b.zeile(text[:90], _eur(p["netto_cent"] / 100), size=9)
     b.linie()
     if status == "ust":
