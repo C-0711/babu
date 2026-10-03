@@ -145,7 +145,8 @@ async def api_ambassador_liste(request: Request) -> Response:
         return fehler
     with bw._DB_LOCK, bw._db() as c:
         zeilen = [{"code": z[0], "email": z[1], "name": z[2], "erstellt": z[3],
-                   "aktiv": bool(z[4]), "verdient": z[5], "gezahlt": z[6]}
+                   "aktiv": bool(z[4]), "verdient": z[5], "gezahlt": z[6],
+                   "link": _link(z[0], "salon")}
                   for z in c.execute(
                       "SELECT code, email, name, erstellt, aktiv, verdient, "
                       "gezahlt FROM ambassador ORDER BY erstellt DESC")]
@@ -169,9 +170,11 @@ async def api_ambassador_me(request: Request) -> Response:
     if fehler:
         return fehler
     with bw._DB_LOCK, bw._db() as c:
+        # Ohne `aktiv=1` (seit 03.10.2026): ein abgeschalteter Code nimmt
+        # keine neuen Salons mehr an, aber Geld und Gutschriften bleiben sichtbar.
         a = c.execute("SELECT code, name, verdient, gezahlt, "
-                      "COALESCE(heute_mail, 1) FROM ambassador "
-                      "WHERE email=? AND aktiv=1", (un,)).fetchone()
+                      "COALESCE(heute_mail, 1), aktiv FROM ambassador "
+                      "WHERE email=?", (un,)).fetchone()
         if not a:
             return JSONResponse({"fehler": "Du bist (noch) keine Ambassadorin."},
                                 status_code=404)
@@ -187,8 +190,11 @@ async def api_ambassador_me(request: Request) -> Response:
         import kern_auszahlung as kz  # noqa: PLC0415
         profil_fehlt = kz.fehlt(kz.profil_holen(c, a[0]))
         gutschriften = kz.gutschriften_von(a[0], c)
-    kontakte, heute = _begleiter(a[0], a[1], roh)
-    return JSONResponse({"code": a[0], "name": a[1],
+    kontakte, heute = _begleiter(a[0], a[1], roh, aktiv=bool(a[5]))
+    return JSONResponse({"code": a[0], "name": a[1], "aktiv": bool(a[5]),
+                         # Der allgemeine Link für Instagram, Flyer und Mails —
+                         # jeder Slug löst denselben Code ein.
+                         "link": _link(a[0], "salon"),
                          "verdient": a[2], "gezahlt": a[3], "offen": a[2] - a[3],
                          "salons": salons, "zahlen": _zahlen(salons),
                          "einladungen": einladungen, "geld": geld,
@@ -225,11 +231,14 @@ async def api_ambassador_link(request: Request) -> Response:
     if fehler:
         return fehler
     with bw._DB_LOCK, bw._db() as c:
-        a = c.execute("SELECT code FROM ambassador WHERE email=? AND aktiv=1",
+        a = c.execute("SELECT code, aktiv FROM ambassador WHERE email=?",
                       (un,)).fetchone()
     if not a:
         return JSONResponse({"fehler": "Du bist (noch) keine Ambassadorin."},
                             status_code=404)
+    if not a[1]:
+        return JSONResponse({"fehler": "Dein Code ist gerade abgeschaltet — neue "
+                                       "Einladungen gehen nicht."}, status_code=403)
     try:
         koerper = json.loads(await bw.koerper_lesen(request, 4 * 1024))
     except Exception:  # noqa: BLE001
@@ -242,8 +251,12 @@ async def api_ambassador_link(request: Request) -> Response:
     if telefon_roh and telefon is None:
         return JSONResponse({"fehler": "Diese Handynummer sieht nicht richtig aus."},
                             status_code=400)
+    import einladung as ei  # noqa: PLC0415
+    if email and not ei.mail_gueltig(email):
+        return JSONResponse({"fehler": "Diese E-Mail-Adresse sieht nicht richtig aus."},
+                            status_code=400)
     slug = re.sub(r"[^a-z0-9]+", "-", (salon or person).lower()).strip("-")[:20] or "salon"
-    if telefon:
+    if telefon or email:
         # Ein eigener Link je Einladung (seit 03.10.2026): zwei „Sabine"
         # dürfen sich beim Einlösen nicht verwechseln.
         slug = f"{slug}-{secrets.token_hex(2)}"
@@ -348,13 +361,24 @@ async def api_ambassador_einladen(request: Request) -> Response:
         if a and isinstance(nr, int) and not isinstance(nr, bool):
             # „Nochmal schicken": nur eine eigene, noch offene Einladung.
             gemerkt = c.execute(
-                "SELECT id, salon, email, slug FROM ambassador_einladung "
+                "SELECT id, salon, email, slug, person FROM ambassador_einladung "
                 "WHERE id=? AND code=? AND eingeloest IS NULL", (nr, a[1])).fetchone()
             if not gemerkt:
                 return JSONResponse({"fehler": "Diese Einladung gibt es nicht (mehr)."},
                                     status_code=404)
+        elif a and link:
+            # Ohne Nummer nur ein Link aus IHRER offenen Einladung — babu
+            # verschickt von seiner Adresse nie einen fremden Link (03.10.2026).
+            slug = link.rstrip("/").rsplit("/", 1)[-1][:24]
+            eigen = link.rstrip("/") == _link(a[1], slug) and c.execute(
+                "SELECT 1 FROM ambassador_einladung WHERE code=? AND slug=? "
+                "AND eingeloest IS NULL", (a[1], slug)).fetchone()
+            if not eigen:
+                return JSONResponse({"fehler": "Diesen Link kennt babu nicht — bitte "
+                                               "neu einladen."}, status_code=400)
     if gemerkt:
-        salon, email, link = gemerkt[1] or "", gemerkt[2] or "", _link(a[1], gemerkt[3])
+        salon = gemerkt[1] or gemerkt[4] or ""
+        email, link = gemerkt[2] or "", _link(a[1], gemerkt[3])
     if "@" not in email or not link:
         return JSONResponse({"fehler": "email und link brauchen wir."}, status_code=400)
     import einladung as ei  # noqa: PLC0415
@@ -386,6 +410,33 @@ async def api_ambassador_einladen(request: Request) -> Response:
     _einladung_gesendet(a[1], gemerkt[0] if gemerkt else None, link, salon, email)
     audit.audit(un, "ambassador_einladen", ziel_un=email)
     return JSONResponse({"ok": True})
+
+
+async def api_ambassador_aktiv(request: Request) -> Response:
+    """Betreiber: einen Code ab- oder wieder einschalten.
+
+    Abgeschaltet nimmt der Code keine neuen Salons an (Einladungsseite,
+    Einlösen, neue Einladungen). Ihre Salons, ihr Geld, ihre Gutschriften und
+    die Auszahlung bleiben. Das Konto selbst schaltet „Zugänge“ ab."""
+    un, fehler = bw._betreiber_wache(request)
+    if fehler or not un:
+        return fehler or JSONResponse({"fehler": "nicht angemeldet"}, status_code=401)
+    try:
+        koerper = json.loads(await bw.koerper_lesen(request, 2 * 1024))
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON mit code und aktiv erwartet"}, status_code=400)
+    code = str(koerper.get("code", "") or "").strip()[:60]
+    aktiv = koerper.get("aktiv")
+    if not code or not isinstance(aktiv, bool):
+        return JSONResponse({"fehler": "code und aktiv (ja/nein) brauchen wir."},
+                            status_code=400)
+    with bw._DB_LOCK, bw._db() as c:
+        n = c.execute("UPDATE ambassador SET aktiv=? WHERE code=?",
+                      (1 if aktiv else 0, code)).rowcount
+    if not n:
+        return JSONResponse({"fehler": "Diesen Code gibt es nicht."}, status_code=404)
+    audit.audit(un, "ambassador_code_an" if aktiv else "ambassador_code_aus", code=code)
+    return JSONResponse({"ok": True, "code": code, "aktiv": aktiv})
 
 
 async def api_ambassador_meilenstein(request: Request) -> Response:
@@ -937,7 +988,7 @@ def _geld(code: str, c) -> dict:
 
 _KONTAKT_SPALTEN = ("id", "salon", "email", "slug", "erstellt", "eingeloest",
                     "person", "telefon", "erinnert_am", "erinnerungen",
-                    "erinnert_art", "weiter_am")
+                    "erinnert_art", "weiter_am", "gesendet")
 
 
 def aktivitaet_aus_index(idx: dict) -> tuple[int, dt.date | None]:
@@ -987,7 +1038,8 @@ def _kontakt_zeilen(code: str, c) -> dict:
     return {"einladungen": einl, "salons": salons, "tests": tests, "abos": abos}
 
 
-def _begleiter(code: str, ambassadorin: str, roh: dict) -> tuple[list, list]:
+def _begleiter(code: str, ambassadorin: str, roh: dict,
+               aktiv: bool = True) -> tuple[list, list]:
     """Die Kontaktliste und „Heute für dich" — eine Zeile je Einladung, dazu
     eingelöste Salons ohne gespeicherte Einladung (ohne Nummer, ohne Knopf)."""
     heute = _heute()
@@ -1000,8 +1052,8 @@ def _begleiter(code: str, ambassadorin: str, roh: dict) -> tuple[list, list]:
             gesehen.add(email)
         elif e["eingeloest"]:
             continue                      # eingelöst, aber nicht über diesen Code
-        if not e["telefon"] and not email:
-            continue                      # alter Link ohne Nummer: Cockpit zeigt ihn
+        if not e["telefon"] and not e["email"] and not email:
+            continue                      # alter Link ohne Nummer und ohne Mail: Cockpit zeigt ihn
         zeilen.append((e, salons.get(email) if email else None))
     for email, s in salons.items():
         if email not in gesehen:
@@ -1034,7 +1086,17 @@ def _begleiter(code: str, ambassadorin: str, roh: dict) -> tuple[list, list]:
                  and (heute - _datum(e["erinnert_am"])).days < begleiter.ABSTAND_TAGE
                  else None,
                  "aufgabe": None}
-        a = begleiter.aufgabe(k, heute)
+        if e and not e["telefon"] and e["email"] and s is None and aktiv:
+            # Per Mail eingeladen (seit 03.10.2026): kein WhatsApp-Auftrag, aber
+            # nach drei Tagen ohne Start ein Knopf „Nochmal per Mail“.
+            weg = e["gesendet"] or e["erstellt"]
+            if weg and (heute - _datum(weg)).days < begleiter.ABSTAND_TAGE:
+                zeile["gesendet_am"] = weg[:10]
+            else:
+                zeile["mail_nr"] = e["id"]
+        # Abgeschalteter Code: keine Erinnerung an noch nicht eingelöste
+        # Einladungen — ihr Link führt ins Leere. Hilfe für Salons im Test bleibt.
+        a = begleiter.aufgabe(k, heute) if (e is None or e["telefon"]) and (aktiv or s) else None
         if a and e:
             text = begleiter.nachricht(
                 a["art"], person=person, ambassadorin=ambassadorin,
@@ -1165,6 +1227,7 @@ _ROUTEN = [
     ("POST", "/api/ambassador/einladen", api_ambassador_einladen),
     ("GET", "/ambassador/{code}/{slug}", ambassador_landing),
     ("POST", "/api/ambassador/meilenstein", api_ambassador_meilenstein),
+    ("POST", "/api/ambassador/aktiv", api_ambassador_aktiv),
     ("POST", "/api/ambassador/einloesen", api_ambassador_einloesen),
     ("POST", "/api/ambassador/verlaengern", api_ambassador_verlaengern),
     ("POST", "/api/ambassador/erinnert", api_ambassador_erinnert),

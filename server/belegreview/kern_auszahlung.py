@@ -96,7 +96,8 @@ def fassung() -> str:
 
 
 def _ambassadorin(un: str, c) -> tuple | None:
-    return c.execute("SELECT code, name, email FROM ambassador WHERE email=? AND aktiv=1",
+    # Auch mit abgeschaltetem Code: Kontodaten und Gutschriften bleiben ihre.
+    return c.execute("SELECT code, name, email FROM ambassador WHERE email=?",
                      (un,)).fetchone()
 
 

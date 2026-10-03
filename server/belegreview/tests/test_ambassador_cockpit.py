@@ -380,3 +380,103 @@ def test_handweg_doppelt_wird_abgewiesen(welt, monkeypatch):
 def test_alter_auszahlungsweg_ist_stillgelegt(welt):
     r = welt["chef"].post("/api/ambassador/gezahlt", json={"code": welt["code"]})
     assert r.status_code == 410 and "Auszahlungslauf" in r.json()["fehler"]
+
+
+# ————— Knöpfe für Nina (03.10.2026): Link sichtbar, Mail-Einladung, Code an/aus —————
+
+def test_eigener_bereich_nennt_den_allgemeinen_link(welt):
+    me = welt["babs"].get("/api/ambassador/me").json()
+    assert me["aktiv"] is True
+    assert me["link"].endswith(f"/ambassador/{welt['code']}/salon")
+    # Der Link funktioniert wirklich: die Einladungsseite lädt.
+    seite = TestClient(babu_web.app, base_url="https://testserver").get(
+        me["link"].split("testserver", 1)[-1] if "testserver" in me["link"]
+        else "/" + me["link"].split("/", 3)[3])
+    assert seite.status_code == 200
+
+
+def test_mail_einladung_ueber_die_nummer_mit_vorname(welt):
+    r = welt["babs"].post("/api/ambassador/link",
+                          json={"person": "Lea", "email": "lea@haarwerk.de"})
+    assert r.status_code == 200
+    nr = r.json()["id"]
+    welt["post"].clear()
+    r = welt["babs"].post("/api/ambassador/einladen", json={"id": nr})
+    assert r.status_code == 200, r.text
+    an, _betreff, text = welt["post"][0][:3]
+    assert an == "lea@haarwerk.de"
+    assert text.startswith("Hallo Lea,")
+    assert f"/ambassador/{welt['code']}/" in text
+
+
+def test_mail_einladung_mit_fremdem_link_verschickt_nichts(welt):
+    welt["post"].clear()
+    r = welt["babs"].post("/api/ambassador/einladen", json={
+        "email": "opfer@example.org", "salon": "Opfer",
+        "link": "https://boese.example/ambassador/X/y"})
+    assert r.status_code == 400
+    assert welt["post"] == []
+
+
+def test_code_abschalten_stoppt_neue_salons_und_laesst_das_geld(welt):
+    assert welt["babs"].post("/api/ambassador/aktiv",
+                             json={"code": welt["code"], "aktiv": False}).status_code == 403
+    r = welt["chef"].post("/api/ambassador/aktiv", json={"code": welt["code"], "aktiv": False})
+    assert r.status_code == 200 and r.json()["aktiv"] is False
+    gast = TestClient(babu_web.app, base_url="https://testserver")
+    assert gast.get(f"/ambassador/{welt['code']}/salon").status_code == 404
+    assert _einloesen(welt, "neu@salon.de", "Salon Neu").status_code == 404
+    assert welt["babs"].post("/api/ambassador/link", json={"person": "Mia"}).status_code == 403
+    me = welt["babs"].get("/api/ambassador/me")
+    assert me.status_code == 200 and me.json()["aktiv"] is False
+    assert welt["babs"].get("/api/ambassador/profil").status_code == 200
+    liste = welt["chef"].get("/api/ambassador/liste").json()["ambassadorinnen"]
+    assert [a["aktiv"] for a in liste if a["code"] == welt["code"]] == [False]
+    # wieder einschalten
+    assert welt["chef"].post("/api/ambassador/aktiv",
+                             json={"code": welt["code"], "aktiv": True}).status_code == 200
+    assert gast.get(f"/ambassador/{welt['code']}/salon").status_code == 200
+    with babu_web._DB_LOCK, babu_web._db() as c:  # noqa: SLF001
+        aktionen = [z[0] for z in c.execute(
+            "SELECT aktion FROM audit_log WHERE aktion LIKE 'ambassador_code_%' ORDER BY id")]
+    assert aktionen == ["ambassador_code_aus", "ambassador_code_an"]
+
+
+def test_code_an_aus_braucht_code_und_ja_nein(welt):
+    assert welt["chef"].post("/api/ambassador/aktiv", json={"code": welt["code"]}).status_code == 400
+    assert welt["chef"].post("/api/ambassador/aktiv",
+                             json={"code": "GIBTS-NICHT", "aktiv": False}).status_code == 404
+
+
+def test_mail_eingeladene_stehen_in_deine_salons(welt):
+    """Bis 03.10.2026 übersprang die Liste jede Einladung ohne Handynummer —
+    „steht jetzt in deiner Liste“ stimmte für Mail-Einladungen nicht."""
+    nr = welt["babs"].post("/api/ambassador/link",
+                           json={"person": "Mia", "email": "mia@studio-mia.de"}).json()["id"]
+    assert welt["babs"].post("/api/ambassador/einladen", json={"id": nr}).status_code == 200
+    me = welt["babs"].get("/api/ambassador/me").json()
+    mia = [k for k in me["kontakte"] if k["name"] == "Mia"]
+    assert len(mia) == 1
+    assert mia[0]["stand"] == "noch nicht gestartet"
+    assert mia[0]["gesendet_am"] and not mia[0].get("mail_nr")     # gerade erst geschickt
+    assert mia[0]["aufgabe"] is None                               # kein WhatsApp ohne Nummer
+    # nach drei Tagen: „Nochmal per Mail“
+    with babu_web._DB_LOCK, babu_web._db() as c:  # noqa: SLF001
+        c.execute("UPDATE ambassador_einladung SET gesendet='2026-01-01T09:00:00Z', "
+                  "erstellt='2026-01-01T09:00:00Z' WHERE id=?", (nr,))
+    mia = [k for k in welt["babs"].get("/api/ambassador/me").json()["kontakte"] if k["name"] == "Mia"]
+    assert mia[0]["mail_nr"] == nr
+
+
+def test_abgeschalteter_code_erinnert_nicht_an_offene_einladungen(welt):
+    """Der Einladungslink führt bei abgeschaltetem Code ins Leere — also kein
+    „Erinnern“ für Eingeladene, die noch nicht gestartet sind."""
+    welt["babs"].post("/api/ambassador/link", json={"person": "Lea", "telefon": "0176 1112223"})
+    with babu_web._DB_LOCK, babu_web._db() as c:  # noqa: SLF001
+        c.execute("UPDATE ambassador_einladung SET erstellt='2026-01-01T09:00:00Z', "
+                  "gesendet='2026-01-01T09:00:00Z' WHERE person='Lea'")
+    vorher = [k for k in welt["babs"].get("/api/ambassador/me").json()["kontakte"] if k["name"] == "Lea"]
+    assert vorher[0]["aufgabe"] is not None                      # mit Code: Erinnern
+    welt["chef"].post("/api/ambassador/aktiv", json={"code": welt["code"], "aktiv": False})
+    nachher = [k for k in welt["babs"].get("/api/ambassador/me").json()["kontakte"] if k["name"] == "Lea"]
+    assert nachher[0]["aufgabe"] is None

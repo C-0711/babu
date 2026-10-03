@@ -690,6 +690,9 @@ details.amb-verw[open]>summary::after{transform:rotate(-135deg)}
 .amb-verw-info{font-size:13px;color:var(--gc-desc)}
 .amb-verw-info b{color:var(--gc-fg);font-weight:600}
 .amb-verw-kopf{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;margin-top:14px;font-size:13px;color:var(--gc-desc)}
+.amb-verw-link{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin-top:10px;font-size:13px}
+.amb-link{font:12.5px/1.4 var(--gc-mono);color:var(--gc-fg);word-break:break-all;min-width:0}
+.amb-aus{font-style:normal;font-size:12px;font-weight:600;color:var(--gc-warn);margin-left:2px}
 @media (max-width:600px){
   .amb-tabelle .amb-geld{display:none}
   .amb-stufe{width:50px}
@@ -747,6 +750,11 @@ details.amb-verw[open]>summary::after{transform:rotate(-135deg)}
 .bg-feld{display:flex;flex-direction:column;gap:6px;margin-top:14px;font-size:15px;font-weight:600;color:var(--gc-fg)}
 .bg-feld input{box-sizing:border-box;min-height:52px;padding:0 14px;border:1px solid #d6cfc0;border-radius:12px;background:var(--gc-bg);font:inherit;font-size:17px;font-weight:400;color:var(--gc-fg)}
 .bg-hinweis{margin:12px 0 0;font-size:14px;color:var(--gc-desc)}
+.bg-linkzeile{margin:14px 0 4px}
+.bg-linkzeile .bg-leise{margin:0 0 6px}
+.bg-link{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border:1px solid #d6cfc0;border-radius:14px;background:var(--gc-bg)}
+.bg-link span:first-child{flex:1 1 180px;min-width:0;font:13px/1.4 var(--gc-mono);color:var(--gc-fg);word-break:break-all}
+.bg-link-knoepfe{display:flex;gap:8px}
 .bg-liste{list-style:none;margin:6px 0 0;padding:0}
 .bg-liste li{display:flex;align-items:center;gap:12px;min-height:64px;padding:8px 0;border-bottom:1px solid var(--gc-border)}
 .bg-zeichen{flex:none;align-self:flex-start;margin-top:3px;box-sizing:border-box;width:22px;height:22px;border-radius:50%;border:2px solid #cfc7b8;background:var(--gc-bg);display:flex;align-items:center;justify-content:center}
@@ -6695,7 +6703,7 @@ async function ladeVerwaltung(){
      (gezeichnet, +14 Tage, 3 Monate, Auszahlungslauf) stehen in der
      aufgeklappten Zeile. Im onclick nur Nummern (AMB_ZEILEN/AMB_CODES). */
   let amb = null;
-  AMB_ZEILEN = []; AMB_CODES = [];
+  AMB_ZEILEN = []; AMB_CODES = []; AMB_INFO = [];
   try{ const ra = await api("/api/ambassador/liste"); if (ra.ok) amb = (await ra.json()).ambassadorinnen || []; }catch{}
   html += `<div class="sektion lbl">Ambassadorinnen (${(amb || []).length})</div>`;
   html += `<div class="karte" style="padding-top:2px;padding-bottom:2px">
@@ -6712,16 +6720,22 @@ async function ladeVerwaltung(){
   </div>`;
   for (const a of (amb || [])){
     const c = AMB_CODES.push(a.code) - 1;
+    AMB_INFO[c] = {link: a.link || "", aktiv: a.aktiv !== false};
     const g = a.geld;
     const f = g && g.faelliger_lauf;
     const offenBetrag = a.verdient - a.gezahlt;
     html += `<details class="karte amb-verw">
       <summary><span class="amb-verw-name">${esc(a.name)}</span>
-        <span class="amb-verw-info">${(a.salons || []).length} ${(a.salons || []).length === 1 ? "Salon" : "Salons"}${offenBetrag ? `, <b>${offenBetrag} €</b> offen` : ""}${f && f.auszahlbar ? ", Auszahlung fällig" : ""}</span></summary>
+        <span class="amb-verw-info">${(a.salons || []).length} ${(a.salons || []).length === 1 ? "Salon" : "Salons"}${offenBetrag ? `, <b>${offenBetrag} €</b> offen` : ""}${f && f.auszahlbar ? ", Auszahlung fällig" : ""}${a.aktiv === false ? ", Code abgeschaltet" : ""}</span></summary>
       <div class="amb-verw-kopf">
         <span>${esc(a.email)}</span>
-        <span class="amb-code"><span>Code</span><b>${esc(a.code)}</b></span>
+        <span class="amb-code"><span>Code</span><b>${esc(a.code)}</b>${a.aktiv === false ? `<em class="amb-aus">abgeschaltet</em>` : ""}</span>
         ${g ? `<span>Nächster Lauf am ${ambDatum(g.naechster_lauf.datum)}: <b style="color:var(--gc-fg)">${g.naechster_lauf.betrag} €</b></span>` : ""}
+      </div>
+      <div class="amb-verw-link">
+        <span class="amb-link">${esc(a.link || "")}</span>
+        <button type="button" class="chip" onclick="ambVerwLinkKopieren(${c}, this)">Link kopieren</button>
+        <button type="button" class="chip" onclick="ambassadorCodeSchalten(${c})">${a.aktiv === false ? "Code wieder einschalten" : "Code abschalten"}</button>
       </div>
       ${ambTabelle(a.salons || [], "v" + c, true, a.code)}
     </details>`;
@@ -7946,14 +7960,25 @@ function ambZeichnen(ziel){
         </article>`
       : `<div class="bg-fertig"><svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="22" fill="#6f8a6e"></circle><path d="M13 22.5l6 6 12-13" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
           <b>Alles erledigt für heute</b><p>Morgen schaut babu wieder nach deinen Salons und sagt dir Bescheid.</p></div>`}
-      <details class="bg-einladen" id="bg-einladen"><summary>+ Neuen Salon einladen</summary>
+      ${d.aktiv === false ? `<div class="bg-karte" style="border-color:var(--gc-warn)">
+          <p class="bg-grund dringend">Dein Code ist gerade abgeschaltet. Neue Salons können sich darüber nicht anmelden — deine Salons, dein Geld und deine Gutschriften bleiben hier.</p></div>`
+      : `<details class="bg-einladen" id="bg-einladen"><summary>+ Neuen Salon einladen</summary>
         <div class="bg-einladen-inhalt">
           <label class="bg-feld">Wen lädst du ein?<input id="bg-person" type="text" autocomplete="off" placeholder="Vorname"></label>
           <label class="bg-feld">Handynummer<input id="bg-telefon" type="tel" inputmode="tel" autocomplete="off" placeholder="0171 …"></label>
           <button type="button" class="bg-haupt" onclick="ambEinladen()">Per WhatsApp einladen</button>
+          <label class="bg-feld" style="margin-top:14px">… oder E-Mail<input id="bg-mail" type="email" inputmode="email" autocomplete="off" placeholder="name@salon.de"></label>
+          <button type="button" class="bg-neben" onclick="ambEinladenMail()">Per E-Mail einladen</button>
           <p class="bg-hinweis">babu schreibt die Einladung für dich und erinnert dich, falls der Salon nicht startet.</p>
         </div>
       </details>
+      <div class="bg-linkzeile">
+        <p class="bg-leise">Dein Einladungslink — für Instagram, Flyer oder eine Mail</p>
+        <div class="bg-link"><span id="bg-link-text">${esc(d.link || "")}</span>
+          <span class="bg-link-knoepfe"><button type="button" class="bg-zeilenknopf" onclick="ambLinkKopieren(this)">Kopieren</button>
+          <button type="button" class="bg-zeilenknopf" id="bg-link-teilen" hidden onclick="ambLinkTeilen()">Teilen</button></span>
+        </div>
+      </div>`}
       <div class="bg-titel"><h3>Deine Salons</h3></div>
       ${(d.kontakte || []).length ? `<ul class="bg-liste">${d.kontakte.map(k => ambKontaktZeile(k)).join("")}</ul>`
         : `<p class="bg-hinweis">Noch niemand eingeladen. Tipp oben auf „Neuen Salon einladen“.</p>`}
@@ -7969,6 +7994,36 @@ function ambZeichnen(ziel){
       <p class="bg-code">Dein Code zum Weitersagen: <b>${esc(d.code)}</b></p>
     </div>`;
   for (const id of warOffen){ const x = document.getElementById(id); if (x) x.open = true; }
+  const teilen = document.getElementById("bg-link-teilen");
+  if (teilen && navigator.share) teilen.hidden = false;
+}
+/* Text in die Zwischenablage — mit Rückweg über eine Markierung, falls der
+   Browser das direkte Kopieren nicht erlaubt. Der Knopf sagt, dass es geklappt hat. */
+async function textKopieren(text, knopf){
+  let ok = false;
+  try{ await navigator.clipboard.writeText(text); ok = true; }
+  catch{
+    const feld = document.createElement("textarea");
+    feld.value = text; feld.setAttribute("readonly", ""); feld.style.position = "fixed"; feld.style.opacity = "0";
+    document.body.appendChild(feld); feld.select();
+    try{ ok = document.execCommand("copy"); }catch{ ok = false; }
+    feld.remove();
+  }
+  if (!knopf) return ok;
+  const alt = knopf.textContent;
+  knopf.textContent = ok ? "Kopiert ✓" : "Bitte von Hand markieren";
+  setTimeout(() => { knopf.textContent = alt; }, 2200);
+  return ok;
+}
+function ambLinkKopieren(knopf){
+  textKopieren((_ambDaten && _ambDaten.link) || "", knopf);
+}
+async function ambLinkTeilen(){
+  if (!navigator.share || !_ambDaten || !_ambDaten.link) return;
+  try{
+    await navigator.share({title: "babu — 30 Tage testen",
+      text: "30 Tage babu kostenlos testen — Belege fotografieren statt sortieren:", url: _ambDaten.link});
+  }catch{}
 }
 /* Auszahlungsprofil (seit 03.10.2026): Konto, Anschrift, wie sie steuerlich
    arbeitet, Zustimmung zur Abrechnung per Gutschrift. Die IBAN kommt nur
@@ -8041,6 +8096,7 @@ function ambKontaktZeile(k){
     <div class="bg-zeile"><b>${esc(k.name)}</b><em>${esc(k.stand)}</em>
       <p class="${k.ton === "gut" ? "gut" : k.ton === "warnung" ? "warnung" : ""}">${esc(k.aktiv)}</p></div>
     ${a ? `<button type="button" class="bg-zeilenknopf" onclick="ambSchicken(${Number(a.nr)})">${esc(a.knopf)}</button>`
+        : k.mail_nr ? `<button type="button" class="bg-zeilenknopf" onclick="ambMailNochmal(${Number(k.mail_nr)})">Nochmal per Mail</button>`
         : k.gesendet_am ? `<span class="bg-gesendet">Gesendet</span>` : ""}
   </li>`;
 }
@@ -8097,6 +8153,38 @@ async function ambEinladen(){
     _ambMeldung = "Eingeladen. " + person.trim() + " steht jetzt in deiner Liste.";
     ladeAmbassador(_ambZiel);
   }catch{ if (fenster) fenster.close(); alert("Gerade keine Verbindung — später nochmal."); }
+}
+/* Einladen per E-Mail: erst die Einladung anlegen (babu baut den Link),
+   dann die Mail über ihre Nummer verschicken — nie mit einem Link aus dem Browser. */
+async function ambEinladenMail(){
+  const person = ($("#bg-person") || {}).value || "";
+  const mail = ($("#bg-mail") || {}).value || "";
+  if (!person.trim() || !mail.trim()){ alert("Bitte Vornamen und E-Mail eintragen."); return; }
+  try{
+    const r = await api("/api/ambassador/link", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({person: person.trim(), email: mail.trim()})});
+    const d = await r.json();
+    if (!r.ok){ alert(d.fehler || "Das ging gerade nicht."); return; }
+    const r2 = await api("/api/ambassador/einladen", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({id: d.id})});
+    const d2 = await r2.json();
+    if (!r2.ok){ alert(d2.fehler || "Die Mail ging gerade nicht raus — später nochmal."); ladeAmbassador(_ambZiel); return; }
+    _ambMeldung = "Einladung an " + mail.trim() + " verschickt. " + person.trim() + " steht jetzt in deiner Liste.";
+    ladeAmbassador(_ambZiel);
+  }catch{ alert("Gerade keine Verbindung — später nochmal."); }
+}
+/* Eine Mail-Einladung noch einmal schicken — babu nimmt Adresse und Link aus
+   der gespeicherten Einladung (im onclick nur ihre Nummer). */
+async function ambMailNochmal(nr){
+  try{
+    const r = await api("/api/ambassador/einladen", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({id: nr})});
+    const d = await r.json();
+    if (!r.ok){ alert(d.fehler || "Die Mail ging gerade nicht raus — später nochmal."); return; }
+    _ambMeldung = "Einladung noch einmal verschickt.";
+    ladeAmbassador(_ambZiel);
+  }catch{ alert("Gerade keine Verbindung — später nochmal."); }
 }
 /* Datum aus ISO (auch mit Uhrzeit) als TT.MM.JJJJ. */
 function ambDatum(iso){
@@ -8167,6 +8255,7 @@ function ambStufen(s){
    Daten, nächsten Schritt und — in der Verwaltung — die Knöpfe auf. */
 let AMB_ZEILEN = [];
 let AMB_CODES = [];
+let AMB_INFO = [];   /* je Ambassadorin: Link und ob der Code an ist — im onclick nur die Nummer */
 function ambTabelle(salons, praefix, verwaltung, code){
   if (!salons.length)
     return `<p class="amb-leer">Noch kein Salon über diesen Code.</p>`;
@@ -8219,6 +8308,28 @@ async function gesperrtLaden(){
   const ist = await ladeAmbassador("#gesperrt-ambassador");
   $("#gesperrt-box-karte").hidden = ist;
   if (ist) $("#gesperrt-gruss").textContent = "Schön, dass du da bist";
+}
+/* Verwaltung: Link einer Ambassadorin kopieren, ihren Code ab- oder
+   wieder einschalten (Nummer aus AMB_CODES/AMB_INFO). Abgeschaltet nimmt
+   der Code keine neuen Salons an; ihr Geld und ihre Salons bleiben. */
+function ambVerwLinkKopieren(nr, knopf){
+  const info = AMB_INFO[nr];
+  if (info) textKopieren(info.link, knopf);
+}
+async function ambassadorCodeSchalten(nr){
+  const code = AMB_CODES[nr], info = AMB_INFO[nr];
+  if (!code || !info) return;
+  const frage = info.aktiv
+    ? "Code " + code + " abschalten? Neue Salons können sich darüber nicht mehr anmelden. Ihre Salons, ihr Geld und ihre Gutschriften bleiben."
+    : "Code " + code + " wieder einschalten? Dann können sich wieder neue Salons darüber anmelden.";
+  if (!confirm(frage)) return;
+  try{
+    const r = await api("/api/ambassador/aktiv", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({code, aktiv: !info.aktiv})});
+    const d = await r.json();
+    if (!r.ok){ alert(d.fehler || "Ging gerade nicht."); return; }
+    ladeVerwaltung();
+  }catch{ alert("Gerade keine Verbindung — später nochmal."); }
 }
 /* Verwaltung: Testmonat um 14 Tage verlängern (Nummer aus AMB_ZEILEN). */
 async function ambassadorVerlaengern(nr){

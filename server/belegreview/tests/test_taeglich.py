@@ -91,7 +91,7 @@ def test_bericht_leer_heisst_keine_mail(welt):
 
 def test_ambassadorin_bekommt_heute_fuer_dich(welt, monkeypatch):
     import kern_ambassador as ka
-    monkeypatch.setattr(ka, "_begleiter", lambda code, name, roh: (
+    monkeypatch.setattr(ka, "_begleiter", lambda code, name, roh, aktiv=True: (
         [], [{"person": "Sonja", "grund": "Test läuft noch 5 Tage",
               "knopf": "Nachfragen"}]))
     taeglich.main(["--nur", "ambassador"])
@@ -102,7 +102,7 @@ def test_ambassadorin_bekommt_heute_fuer_dich(welt, monkeypatch):
 
 def test_abbestellt_heisst_keine_mail(welt, monkeypatch):
     import kern_ambassador as ka
-    monkeypatch.setattr(ka, "_begleiter", lambda code, name, roh: (
+    monkeypatch.setattr(ka, "_begleiter", lambda code, name, roh, aktiv=True: (
         [], [{"person": "Sonja", "grund": "x", "knopf": "y"}]))
     babs = welt["sonne"].__class__(babu_web.app, base_url="https://testserver")
     babu_web._LOGIN_VERSUCHE.clear()  # noqa: SLF001

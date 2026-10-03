@@ -138,6 +138,7 @@ POST /api/ambassador/gezahlt
 POST /api/ambassador/heute-mail
 POST /api/ambassador/link
 POST /api/ambassador/meilenstein
+POST /api/ambassador/aktiv
 POST /api/ambassador/profil
 POST /api/ambassador/verlaengern
 POST /api/ambassador/weitermachen
