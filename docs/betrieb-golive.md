@@ -69,6 +69,17 @@ Zahlungsdaten, Rechnungen, Kündigung: „Abo verwalten" (Stripe-Kundenportal).
 - **Einschalten erst, wenn alles steht:** `.env` mit `BABU_STRIPE_*` (Werte nur dort, siehe
   `docker/.env.beispiel`), Rechtstexte freigegeben, dann `BABU_ABO=1` und
   `docker compose up -d`. `/healthz` zeigt `abo: aus|test|live` (+ ` an`).
+- **Stand 03.10.2026:** Stripe-Konto **„0711.io“** (acct_1RbavUG1IQEnqe6L), gemeinsam mit
+  Camp45 (Entscheidung Auftraggeber); Abbuchungstext auf Kontoauszügen „NULLSIEBAENELF GMBH“.
+  Live: Preise, Steuersatz und Webhook `we_1UMHPMG1IQEnqe6LctETsqvM` angelegt, `.env`
+  gefüllt, `/healthz` → `abo: live`, `BABU_ABO=0` bis zur Rechtsfreigabe. Dev-Spur im
+  Sandbox-Konto mit eigenem Webhook, Testlauf (drei Monate, Fehlzahlung) bestanden.
+  Eingerichtet mit `server/docker/stripe_einrichten.py --modus test|live` (auf dem Host;
+  liest den Schlüssel aus der Camp45-Unit oder `STRIPE_KEY`). Der Schlüssel ist der volle
+  Camp45-Secret-Key — sobald möglich durch einen eingeschränkten babu-Schlüssel (`rk_live_…`,
+  Dashboard) ersetzen: `STRIPE_KEY=rk_live_… python3 stripe_einrichten.py --modus live`.
+  Babus Webhook bekommt auch Camp45-Ereignisse; babu ignoriert sie (kein Mandant, fremder
+  Ursprung) — das ist so gewollt.
 - **Verwechslungsschutz:** Live-Schlüssel nur auf `https://mybabu.io`, Test-Schlüssel nur
   woanders (Dev-Spur) — sonst ist das Abo aus und das Log sagt `[stripe] AUS`.
 - **Webhook:** Stripe-Dashboard → Endpunkt `https://mybabu.io/api/stripe/webhook`, Ereignisse

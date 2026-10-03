@@ -6,7 +6,8 @@ durch — mit einer Stripe-Test-Uhr (test clock) — und prüft, was babu daraus
 macht. Läuft IM Dev-Container (dort liegen Test-Schlüssel und Dev-Datenbank):
 
     docker exec babu-web-dev python /app/werkzeuge/stripe_testlauf.py
-    docker exec babu-web-dev python /app/werkzeuge/stripe_testlauf.py --iban <Fehl-IBAN>
+    docker exec babu-web-dev python /app/werkzeuge/stripe_testlauf.py \
+        --fehlzahlung --iban DE62370400440532013001   # Lastschrift platzt
 
 Weigert sich, wenn der Schlüssel kein Test-Schlüssel ist oder der Server
 mybabu.io ist. Legt in der Dev-Datenbank einen Test-Salon „Testlauf <Zeit>“ mit
@@ -126,6 +127,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--paket", default="salon", choices=sorted(abo.PAKETE))
     p.add_argument("--iban", default=TEST_IBAN, help="Stripes Test-IBAN (Standard: gelingt)")
     p.add_argument("--warten", type=int, default=240, help="Sekunden je Schritt")
+    p.add_argument("--fehlzahlung", action="store_true",
+                   help="erwartet, dass die Lastschrift platzt (Fehl-IBAN): keine Zahlung, "
+                        "zahlung_offen/beendet, keine Provision")
     args = p.parse_args(argv)
 
     if not stripe_api.testmodus():
@@ -165,6 +169,18 @@ def main(argv: list[str] | None = None) -> int:
 
     erwartet = provision.betrag(args.paket)
     fehler = 0
+    if args.fehlzahlung:
+        st = warten(lambda: (s := stand(mid, code))["status"] in ("zahlung_offen", "beendet")
+                    and s, args.warten)
+        neu = 0 if st else nachholen(beginn - 60)
+        st = st or stand(mid, code)
+        ok = st["status"] in ("zahlung_offen", "beendet") and st["monate"] == 0 \
+            and st["buchungen"] == []
+        sagen(f"Fehlzahlung: {'OK ' if ok else 'FEHLER'} status={st['status']} "
+              f"monate={st['monate']} provision={st['buchungen']}"
+              + (f" (nachgeholt: {neu} — Webhook der Dev-Spur prüfen!)" if neu else " via Webhook"))
+        sagen(f"Ende: {'wie erwartet' if ok else 'Abweichung'}. Aufräumen: Test-Uhr {uhr} löschen.")
+        return 0 if ok else 1
     for schritt, (monate, soll) in enumerate([(1, [("gezeichnet", erwartet)]),
                                               (2, [("gezeichnet", erwartet)]),
                                               (3, [("gezeichnet", erwartet),
@@ -176,14 +192,15 @@ def main(argv: list[str] | None = None) -> int:
         quelle = "Webhook"
         if not st:
             neu = nachholen(beginn - 60)
-            quelle = f"nachgeholt ({neu} Ereignisse) — Webhook der Dev-Spur prüfen!"
+            quelle = (f"nachgeholt ({neu} Ereignisse) — Webhook der Dev-Spur prüfen!" if neu
+                      else "Webhook (Zahlung kam in der Frist nicht an)")
             st = stand(mid, code)
         ok = st["monate"] >= monate and st["buchungen"] == soll and \
             st["status"] in ("aktiv", "zahlung_laeuft")
         fehler += 0 if ok else 1
         sagen(f"Monat {monate}: {'OK ' if ok else 'FEHLER'} status={st['status']} "
               f"monate={st['monate']} provision={st['buchungen']} via {quelle}")
-        if not ok and args.iban == TEST_IBAN:
+        if not ok:
             break
     sagen(f"Ende: {'alles wie erwartet' if not fehler else f'{fehler} Abweichung(en)'}. "
           f"Aufräumen bei Stripe: Test-Uhr {uhr} löschen (räumt Kunde und Abo mit ab).")

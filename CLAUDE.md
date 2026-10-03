@@ -83,6 +83,8 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
 
 - Preise netto zzgl. 19 % USt: Solo 39, Salon 79, Salon Plus 149 €/Monat —
   Quelle `abo.PAKETE` (Cent), `saloncheck.PAKETE[…]["preis"]` muss gleich sein.
+- Stripe-Konto „0711.io“ gemeinsam mit Camp45 (seit 03.10.2026, live
+  eingerichtet, `BABU_ABO=0`); Einrichtung nur über `server/docker/stripe_einrichten.py`.
 - Bezahlen nur über Stripe (`kern_abo.py`, `stripe_api.py`, kein SDK);
   Schlüssel NUR in `docker/.env`. Live-Schlüssel nur auf mybabu.io, Test-
   Schlüssel nur woanders (`stripe_api.eingerichtet`). `BABU_ABO=1` erst nach
