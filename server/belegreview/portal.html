@@ -1691,6 +1691,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     </div>
     <p style="color:var(--gc-desc);margin-bottom:10px">Hat jede Zahlung vom Konto ihren Beleg?</p>
     <button class="chip" id="bank-auszug-knopf" style="margin-bottom:14px">Kontoauszug ablegen</button>
+    <p id="bank-nur-lesen" style="display:none;color:var(--gc-muted);font-size:13px;margin-bottom:14px"></p>
     <div id="bank-hochladen"></div>
     <div id="bank-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
@@ -2232,6 +2233,11 @@ const MANDANT_SCHLUESSEL = "babu.mandant";
 let aktiverMandant = null;
 try{ aktiverMandant = JSON.parse(sessionStorage.getItem(MANDANT_SCHLUESSEL) || "null"); }catch{}
 
+/* Kontoauszüge und Zahlungen pflegt der Betrieb selbst: wer als Mandant
+   arbeitet, sieht sie nur an (seit 03.10.2026, der Server sperrt dasselbe). */
+const BANK_NUR_LESEN = "Nur ansehen — Kontoauszüge und Zahlungen pflegt der Betrieb selbst.";
+function bankNurLesen(){ return !!(aktiverMandant && aktiverMandant.id); }
+
 async function api(pfad, opts){
   const o = Object.assign({credentials:"same-origin"}, opts);
   if (aktiverMandant && aktiverMandant.id){
@@ -2240,6 +2246,13 @@ async function api(pfad, opts){
   const r = await fetch(pfad, o);
   if (r.status === 401) { zeigeLogin(); throw new Error("abgemeldet"); }
   return r;
+}
+/* Bilder und geöffnete Unterlagen sind Adressen, kein fetch() — dort kann
+   kein Kopf mit. Der Betrieb geht deshalb als Adressparameter mit; der Server
+   prüft ihn genauso wie den Kopf. Ohne gewählten Betrieb bleibt die Adresse. */
+function mitMandant(url){
+  if (!(aktiverMandant && aktiverMandant.id)) return url;
+  return url + (url.includes("?") ? "&" : "?") + "mandant=" + aktiverMandant.id;
 }
 
 /* ————— Status-Sätze (Sprachregel: menschlich, kein Technik-Vokabular) ————— */
@@ -2267,15 +2280,21 @@ function zeigeApp(){
   $("#login").hidden = true; $("#app").hidden = false;
   boxZustandZeigen();
   routen();
-  if (meineBox) postPunktAktualisieren();
+  if (boxDa()) postPunktAktualisieren();
 }
 
 /* Ohne eigene Belegbox gibt es nichts zu zeigen — dann bleiben die Wege
    dorthin zu, statt Ansichten zu öffnen, die nur 403 zurückbekommen. */
 const OHNE_BOX_ERLAUBT = ["gesperrt", "einrichtung", "einstellungen", "mandanten", "abo"];
+/* Eine Box gibt es, wenn der Zugang selbst eine hat — oder wenn eine Kanzlei
+   gerade in einem Betrieb arbeitet: dann ist es DESSEN Box. Seit 03.10.2026
+   hat ein Kanzlei-Konto ohne Kopf keine eigene Box mehr (`/api/ich` sagt
+   `box: false`); ohne diese Ausnahme sähe sie in jedem Betrieb nur
+   „Fast fertig". Eine noch ausstehende Box meldet der Server je Aufruf (409). */
+function boxDa(){ return meineBox || !!(aktiverMandant && aktiverMandant.id); }
 function boxZustandZeigen(){
-  document.querySelectorAll("nav button").forEach(b => b.hidden = !meineBox);
-  $("#hochladen-knopf").hidden = !meineBox;
+  document.querySelectorAll("nav button").forEach(b => b.hidden = !boxDa());
+  $("#hochladen-knopf").hidden = !boxDa();
   // Der Weg zur Kanzlei hängt nicht an der eigenen Belegbox — wer Betriebe
   // betreut, hat oft selbst gar keine.
   $("#reiter-kanzlei").hidden = !istKanzlei();
@@ -2474,7 +2493,7 @@ function routen(){
   /* Zurück vom Bezahlen: #abo-danke/<sitzung> zeigt die Seite „Weitermachen". */
   const aboDanke = ziel === "abo-danke";
   let name = aboDanke ? "abo" : ansichten[ziel] !== undefined ? ziel : startAnsicht();
-  if (!meineBox && !OHNE_BOX_ERLAUBT.includes(name)) name = "gesperrt";
+  if (!boxDa() && !OHNE_BOX_ERLAUBT.includes(name)) name = "gesperrt";
   document.querySelectorAll(".ansicht").forEach(a => a.classList.remove("an"));
   document.querySelectorAll("nav button").forEach(b =>
     b.classList.toggle("an", b.dataset.ziel === (REITER_ZU[name] || name)));
@@ -2692,7 +2711,7 @@ function statusMarke(z){
 function belegZeile(z){
   const [marke, art] = statusMarke(z);
   const bild = z.datei && /\.(jpg|jpeg|png)$/i.test(z.datei)
-    ? `<img class="thumb" loading="lazy" alt="" src="/api/beleg/${z.stamm}/bild?v=${z.bild_oid}">`
+    ? `<img class="thumb" loading="lazy" alt="" src="${mitMandant(`/api/beleg/${z.stamm}/bild?v=${z.bild_oid}`)}">`
     : `<div class="thumb doc"><svg class="ik" viewBox="0 0 24 24"><use href="#ik-dokument"/></svg></div>`;
   return `<button class="zeile einflug" onclick="location.hash='#detail/${z.stamm}'">
     ${bild}<div class="zmitte"><div class="zname">${z.lieferant || "Beleg vom " + (z.datum || zeitKurz(z.hochgeladen))}</div>
@@ -2814,7 +2833,7 @@ function belegTabellenzeile(z){
 function belegKarte(z){
   const [marke, art] = statusMarke(z);
   const bild = z.datei && /\.(jpg|jpeg|png)$/i.test(z.datei)
-    ? `<img loading="lazy" alt="" src="/api/beleg/${z.stamm}/bild?v=${z.bild_oid}">`
+    ? `<img loading="lazy" alt="" src="${mitMandant(`/api/beleg/${z.stamm}/bild?v=${z.bild_oid}`)}">`
     : `<svg class="ik" viewBox="0 0 24 24" style="width:28px;height:28px;color:var(--gc-muted)"><use href="#ik-dokument"/></svg>`;
   return `<button class="belegkarte einflug" onclick="location.hash='#detail/${z.stamm}'">
     <div class="bk-foto">${bild}</div>
@@ -2953,7 +2972,7 @@ async function ladeDetail(stamm){
   const frage = d.status === "nachfrage";
   const haengt = d.status === "unlesbar";
   const bildTag = /\.(jpg|jpeg|png)$/i.test(d.datei||"")
-    ? `<img id="belegbild" alt="Foto des Belegs" src="${d.bild_url}">`
+    ? `<img id="belegbild" alt="Foto des Belegs" src="${mitMandant(d.bild_url)}">`
     : `<div class="pdfhinweis"><svg class="ik" viewBox="0 0 24 24"><use href="#ik-dokument"/></svg><br>Dieses Dokument kam als Datei —<br><a href="${d.bild_url}">herunterladen und ansehen</a></div>`;
 
   /* Beleg-Weg: eine Punktreihe. Was Aufmerksamkeit braucht, bekommt den
@@ -3599,15 +3618,22 @@ $("#z-mon-vor").addEventListener("click", () => { zMonat = monatSchieben(zMonat,
 
 /* ————— BANK (Zahlungs-Abgleich Konto ↔ Belege) ————— */
 let bMonat = jetztMonat();
+let bankAuszuege = [];
 async function ladeBank(){
   $("#b-mon-anzeige").textContent = monatName(bMonat);
+  const nurLesen = bankNurLesen();
+  $("#bank-auszug-knopf").style.display = nurLesen ? "none" : "";
+  $("#bank-nur-lesen").style.display = nurLesen ? "" : "none";
+  $("#bank-nur-lesen").textContent = BANK_NUR_LESEN;
   let ab;
   try{ ab = await (await api("/api/abgleich/" + bMonat)).json(); }
   catch{ return; }
   const ziel = $("#bank-inhalt");
   if (!ab.auszug_da){
     ziel.innerHTML = `<div class="leer"><b>Für ${monatName(bMonat).split(" ")[0]} liegt noch kein Kontoauszug da.</b>
-      Leg ihn oben ab (PDF von deiner Bank) — dann prüfe ich, ob zu jeder Zahlung ein Beleg da ist.</div>`;
+      ${nurLesen
+        ? "Sobald der Betrieb ihn ablegt, siehst du hier, ob zu jeder Zahlung ein Beleg da ist."
+        : "Leg ihn oben ab (PDF von deiner Bank) — dann prüfe ich, ob zu jeder Zahlung ein Beleg da ist."}</div>`;
     return;
   }
   const gedeckt = Array.isArray(ab.gedeckt) ? ab.gedeckt.length : (ab.gedeckt || 0);
@@ -3620,21 +3646,22 @@ async function ladeBank(){
   </div></div>`;
 
   /* Der Auszug selbst, als Blatt — man erkennt seine Bank wieder. */
-  if (Array.isArray(ab.auszuege) && ab.auszuege.length){
+  bankAuszuege = Array.isArray(ab.auszuege) ? ab.auszuege : [];
+  if (bankAuszuege.length){
     html += `<div class="kacheln" style="grid-template-columns:repeat(auto-fill,minmax(128px,1fr));margin:14px 0">`
-      + ab.auszuege.map(a => {
+      + bankAuszuege.map((a, i) => {
           const stapel = (a.seiten || 0) > 1;
           const name = a.pfad.split("/").pop().replace(/^\d{8}-\d{6}-\w+-/, "");
           return `<div><a class="kachel" href="#unterlage/${encodeURI(a.pfad)}">
             <div class="blatt${stapel ? " stapel" : ""}">
-              <img alt="" loading="lazy" src="/api/vorschau/${encodeURI(a.pfad)}"
+              <img alt="" loading="lazy" src="${mitMandant("/api/vorschau/" + encodeURI(a.pfad))}"
                 onerror="this.closest('.blatt').innerHTML=ikoneKnoten().outerHTML">${
               stapel ? `<span class="seitenzahl">${a.seiten} Seiten</span>` : ""}
             </div>
             <div class="name">${esc(name)}</div>
-          </a>${meineRolle !== "mitarbeit"
+          </a>${meineRolle !== "mitarbeit" && !nurLesen
             ? `<button class="loeschknopf" style="margin-top:4px;padding:3px 9px;font-size:11px"
-                 onclick="auszugLoeschen('${a.pfad.replace(/'/g, "")}','${esc(name).replace(/'/g, "")}')">Löschen</button>`
+                 onclick="bankAuszugLoeschen(${i})">Löschen</button>`
             : ""}</div>`;
         }).join("") + `</div>`;
   }
@@ -3686,6 +3713,11 @@ async function ladeBank(){
 $("#b-mon-zurueck").addEventListener("click", () => { bMonat = monatSchieben(bMonat,-1); ladeBank(); });
 $("#b-mon-vor").addEventListener("click", () => { bMonat = monatSchieben(bMonat, 1); ladeBank(); });
 $("#bank-auszug-knopf").addEventListener("click", () => $("#auszug-datei").click());
+function bankAuszugLoeschen(i){
+  const a = bankAuszuege[i];
+  if (!a) return;
+  auszugLoeschen(a.pfad, a.pfad.split("/").pop().replace(/^\d{8}-\d{6}-\w+-/, ""));
+}
 
 /* ————— POST (Kanzlei-Dokumente) ————— */
 let postNurUngelesen = false, postSuche = "";
@@ -3784,13 +3816,13 @@ function ablageBaumZeichnen(){
    sein Symbol statt eines kaputten Rahmens. */
 function ablageVorschau(s){
   if (/\.(jpg|jpeg|png)$/i.test(s.pfad)){
-    return `<img alt="" loading="lazy" src="/api/dokument/${encodeURI(s.pfad)}">`;
+    return `<img alt="" loading="lazy" src="${mitMandant("/api/dokument/" + encodeURI(s.pfad))}">`;
   }
   if (/\.pdf$/i.test(s.pfad)){
     /* Die erste Seite als Bild — ein Kontoauszug ist wiedererkennbar,
        ein graues Dokumentsymbol nicht. Scheitert das Rendern, bleibt
        das Symbol als Rückfall. */
-    return `<img alt="" loading="lazy" src="/api/vorschau/${encodeURI(s.pfad)}"
+    return `<img alt="" loading="lazy" src="${mitMandant("/api/vorschau/" + encodeURI(s.pfad))}"
       onerror="this.closest('.blatt').innerHTML=ikoneKnoten().outerHTML">`;
   }
   return ikone("dokument", "gross");
@@ -3857,6 +3889,7 @@ function ablageWerkzeugVoll(s){
     ${ordnerbar ? `<button onclick="ablageUmbenennen('${s.pfad}','${wie}')">Umbenennen</button>
       <button onclick="ablageVerschieben('${s.pfad}')">Verschieben</button>` : ""}
     ${s.loeschbar && meineRolle !== "mitarbeit"
+        && !(bankNurLesen() && s.pfad.startsWith("auszuege/"))
       ? `<button onclick="dokumentLoeschen('${s.pfad}','${wie}')">Löschen</button>` : ""}
   </div>`;
 }
@@ -3969,7 +4002,7 @@ async function ladeUnterlage(pfad){
     ziel.innerHTML = `<div class="leer"><b>Diese Unterlage finden wir gerade nicht.</b></div>`;
     return;
   }
-  const url = "/api/dokument/" + encodeURI(s.pfad);
+  const url = mitMandant("/api/dokument/" + encodeURI(s.pfad));
   const buehne = /\.(jpg|jpeg|png)$/i.test(s.pfad)
     ? `<img alt="${esc(s.titel)}" src="${url}">`
     : /\.pdf$/i.test(s.pfad)
@@ -4063,6 +4096,7 @@ $("#wissen-datei").addEventListener("change", async ev => {
 });
 
 async function ladePost(){
+  $("#auszug-knopf").style.display = bankNurLesen() ? "none" : "";
   let d;
   try{ d = await (await api("/api/dokumente")).json(); }
   catch{ return; }
@@ -4316,8 +4350,8 @@ function scBlaetter(dokumente){
         // erst beim Scrollen geladen — dabei sind sie der Grund, warum man
         // auf diesen Schirm schaut. Bei einer Handvoll Unterlagen im
         // Onboarding kostet das nichts.
-        `<div class="bild"><img alt="" src="/api/abschluss/${SC_JAHR}/` +
-        `${encodeURIComponent(dok.datei)}/vorschau" ` +
+        `<div class="bild"><img alt="" src="${mitMandant(`/api/abschluss/${SC_JAHR}/` +
+          `${encodeURIComponent(dok.datei)}/vorschau`)}" ` +
         `onerror="this.replaceWith(ikoneKnoten())"></div>` +
         `<div class="name">${esc(dok.datei.replace(/^\d{8}-\d{6}-\w+-/, ""))}</div>`;
       ziel.appendChild(blatt);
@@ -4519,7 +4553,7 @@ async function freigeben(pfad, knopf){
   knopf.disabled = false; knopf.textContent = "Gerade nicht möglich — nochmal";
 }
 async function postOeffnen(pfad, knopf){
-  window.open("/api/dokument/" + pfad, "_blank");
+  window.open(mitMandant("/api/dokument/" + pfad), "_blank");
   try{
     await api("/api/dokument-gelesen", {method:"POST",
       headers:{"Content-Type":"application/json"}, body: JSON.stringify({pfad})});
@@ -5723,7 +5757,7 @@ function zeigeStapel(){
   const frage = bewirtungOffen ? "Mit wem warst du essen?" : offenSatz((o.offen||[])[0]);
   ziel.innerHTML = `
     <div class="lbl" style="margin-bottom:10px">Noch ${stapel.length} zu klären</div>
-    <div class="bild"><img alt="" src="/api/beleg/${o.stamm}/bild"></div>
+    <div class="bild"><img alt="" src="${mitMandant(`/api/beleg/${o.stamm}/bild`)}"></div>
     <div class="karte nachfrage" style="margin:0"><h3>${frage}</h3>
       <p>${o.lieferant||"Beleg"} · ${euro(o.brutto)}</p></div>
     <div class="aktionen">
@@ -5764,17 +5798,19 @@ async function ladeRechnungen(){
   }catch{ ziel.innerHTML = `<div class="leer">Gerade keine Verbindung.</div>`; return; }
 
   // Was der Kontoauszug schon weiß — vorgeschlagen, nicht entschieden.
-  const v = z.vorschlaege || [];
+  const v = zahlVorschlaege = z.vorschlaege || [];
+  const nurLesen = bankNurLesen();
   konto.innerHTML = !v.length ? "" : `<div class="karte" style="margin-bottom:14px">
     <div style="font:9.5px var(--gc-mono);letter-spacing:.11em;
       text-transform:uppercase;color:var(--gc-muted);margin-bottom:8px">Vom Konto</div>
-    ${v.map(x => `<div class="ablage-zeile">
+    ${v.map((x, i) => `<div class="ablage-zeile">
       <span>${esc(x.text)}</span>
       ${x.sicher ? "" : `<span class="chip" style="font-size:11px">bitte kurz prüfen</span>`}
-      <button class="chip" onclick="zahlungUebernehmen('${x.nummer}','${x.bezahlt_am}')">
-        Stimmt</button></div>`).join("")}
+      ${nurLesen ? "" : `<button class="chip" onclick="zahlungUebernehmenNr(${i})">
+        Stimmt</button>`}</div>`).join("")}
     <div style="font-size:11px;color:var(--gc-muted);margin-top:8px">
-      babu trägt nichts von allein ein — bezahlt heißt, es zählt als Umsatz.</div>
+      ${nurLesen ? BANK_NUR_LESEN
+        : "babu trägt nichts von allein ein — bezahlt heißt, es zählt als Umsatz."}</div>
   </div>`;
 
   const liste = d.rechnungen || [];
@@ -5797,6 +5833,11 @@ async function ladeRechnungen(){
       </div>`).join("");
 }
 
+let zahlVorschlaege = [];
+function zahlungUebernehmenNr(i){
+  const x = zahlVorschlaege[i];
+  if (x) zahlungUebernehmen(x.nummer, x.bezahlt_am);
+}
 async function zahlungUebernehmen(nummer, am){
   await api("/api/zahlungen/uebernehmen", {method:"POST",
     headers:{"Content-Type":"application/json"},
@@ -6972,6 +7013,7 @@ function mandantAbwaehlen(){
   try{ sessionStorage.removeItem(MANDANT_SCHLUESSEL); }catch{}
   kategorienCache = null;
   mandantChipAktualisieren();
+  boxZustandZeigen();
 }
 function mandantSetzen(m, ziel){
   aktiverMandant = (m && m.id) ? {id: m.id, name: m.name} : null;
@@ -6982,6 +7024,7 @@ function mandantSetzen(m, ziel){
   // Alles, was sich das Portal gemerkt hat, gehört zum vorigen Betrieb.
   kategorienCache = null;
   mandantChipAktualisieren();
+  boxZustandZeigen();
   // Mit Betrieb geht es an die Arbeit, ohne ihn zurück in den Arbeitsvorrat.
   const hin = aktiverMandant ? (ziel || "#belege") : "#mandanten";
   if (location.hash === hin) routen(); else location.hash = hin;
@@ -7754,7 +7797,7 @@ async function mdImportFortsetzen(id, nur){
 function mandantOeffnen(id, hash){
   aktiverMandant = mdVon(id);
   try{ sessionStorage.setItem(MANDANT_SCHLUESSEL, JSON.stringify(aktiverMandant)); }catch{}
-  kategorienCache = null; mandantChipAktualisieren();
+  kategorienCache = null; mandantChipAktualisieren(); boxZustandZeigen();
   if (location.hash === hash) routen(); else location.hash = hash;
 }
 async function ladeWarteschlange(){

@@ -44,6 +44,7 @@ import kontierung as kt  # noqa: E402
 import mandanten  # noqa: E402
 import postadresse  # noqa: E402
 import abo  # noqa: E402
+import bankrecht  # noqa: E402
 import testmonat  # noqa: E402
 
 SEITE = Path(os.environ.get("BABU_SEITE", str(Path.home() / "babu-web" / "index.html")))
@@ -130,6 +131,13 @@ _AKTIVE_BOX: contextvars.ContextVar = contextvars.ContextVar("aktive_box")
 # leeren Team. Deshalb legt `_api_wache` den Mandanten hier ab, und
 # `_box_wache` macht daraus zusätzlich eine Box.
 _AKTIVER_MANDANT: contextvars.ContextVar = contextvars.ContextVar("aktiver_mandant")
+
+# Arbeitet dieser Request „als" Mandant — eine Kanzlei über `X-Mandant`?
+# Dann darf sie Bankdaten nur lesen (`bankrecht`, seit 03.10.2026). Gesetzt
+# von `_api_wache` bei JEDEM Request (True mit angenommenem Kopf, sonst
+# False), damit kein Wert aus einem früheren Request stehen bleibt.
+_ALS_KANZLEI: contextvars.ContextVar = contextvars.ContextVar("als_kanzlei",
+                                                              default=False)
 
 
 def _box() -> bx.Box:
@@ -1955,8 +1963,10 @@ def _api_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]
                   flush=True)
             return None, JSONResponse({"fehler": MANDANT_FREMD}, status_code=403)
         _AKTIVER_MANDANT.set(mandant_id)
+        _ALS_KANZLEI.set(True)
         request.state.mandant = mandant_id
     else:
+        _ALS_KANZLEI.set(False)
         eigener, fehler = _eigener_mandant(un)
         if fehler:
             return None, fehler
@@ -2123,6 +2133,11 @@ def _box_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]
         # (`status = box_ausstehend`). Kein Fehler des Aufrufers und kein
         # Rechteproblem — deshalb 409 und nicht 403 oder 404.
         return None, JSONResponse({"fehler": str(ex)}, status_code=409)
+    # Bankdaten pflegt der Betrieb selbst (seit 03.10.2026): die Kanzlei
+    # sieht Auszüge, Abgleich und Zahlungen, ändert aber nichts daran — auch
+    # nicht als Betreiber mit Kopf. Die Regel steht in `bankrecht`.
+    if bankrecht.sperrt(request.method, request.url.path, _ALS_KANZLEI.get()):
+        return None, JSONResponse(bankrecht.antwort(), status_code=403)
     # Nur noch ansehen (Testmonat seit 02.10.2026, Abo seit 03.10.2026):
     # nach Testende, nach der Zahlungsfrist, nach Abo-Ende. Die Regel steht
     # in abo.zugang(); ohne Abo ist sie genau die des Testmonats. Fragt erst
@@ -3452,6 +3467,10 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
                         "punkte": entscheidung["punkte"], "sicher": False,
                         "grund": "Sieht nach Kontoauszug aus — der Leser "
                                  "prüft das nach."}
+
+    # Ins Auszugsfach legt nur der Betrieb selbst (bankrecht, 03.10.2026).
+    if entscheidung["art"] == "kontoauszug" and _ALS_KANZLEI.get():
+        return JSONResponse(bankrecht.antwort(), status_code=403)
 
     import boxschreiber  # noqa: PLC0415
     dateiname = boxschreiber.beleg_dateiname(name)
@@ -9123,6 +9142,8 @@ def _beiakte_aendern(un: str, pfad: str, **felder) -> Response | None:
             {"fehler": "Belege heißen nach dem, was auf ihnen steht — ändere sie "
                        "im Beleg selbst. Kassenbuch und Stapel bleiben, wie "
                        "sie sind."}, status_code=400)
+    if bankrecht.pfad_gesperrt(pfad, _ALS_KANZLEI.get()):
+        return JSONResponse(bankrecht.antwort(), status_code=403)
     if git_show(pfad) is None:
         return JSONResponse({"fehler": "unbekannte Unterlage"}, status_code=404)
     alt = {}
