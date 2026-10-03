@@ -72,7 +72,8 @@ Zahlungsdaten, Rechnungen, Kündigung: „Abo verwalten" (Stripe-Kundenportal).
 - **Stand 03.10.2026:** Stripe-Konto **„0711.io“** (acct_1RbavUG1IQEnqe6L), gemeinsam mit
   Camp45 (Entscheidung Auftraggeber); Abbuchungstext auf Kontoauszügen „NULLSIEBAENELF GMBH“.
   Live: Preise, Steuersatz und Webhook `we_1UMHPMG1IQEnqe6LctETsqvM` angelegt, `.env`
-  gefüllt, `/healthz` → `abo: live`, `BABU_ABO=0` bis zur Rechtsfreigabe. Dev-Spur im
+  gefüllt. **`BABU_ABO=1` seit 03.10.2026 (Auftraggeber), `/healthz` → `abo: live an`**;
+  Rechtstexte laufen als Erprobungsfassung, Prüfung offen. Dev-Spur im
   Sandbox-Konto mit eigenem Webhook, Testlauf (drei Monate, Fehlzahlung) bestanden.
   Eingerichtet mit `server/docker/stripe_einrichten.py --modus test|live` (auf dem Host;
   liest den Schlüssel aus der Camp45-Unit oder `STRIPE_KEY`). Der Schlüssel ist der volle
