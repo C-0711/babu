@@ -13,7 +13,10 @@ Den Schlüssel liest es aus der Umgebung `STRIPE_KEY`, sonst aus einer systemd-U
 Legt an (idempotent, Kennzeichen metadata.app=babu): drei Produkte mit Monatspreis
 netto, Steuersatz 19 % exklusiv, den Webhook (ein vorhandener für dieselbe Adresse
 wird ersetzt — sein Geheimnis gibt Stripe nur beim Anlegen heraus). Schreibt in der
-.env NUR die BABU_STRIPE_*-Zeilen (Sicherung daneben); im Testmodus zusätzlich
+.env NUR die BABU_STRIPE_*-Zeilen (Sicherung daneben);
+Rechte eines eingeschränkten Schlüssels (rk_…) für babu: Checkout Sessions, Customer
+portal, Webhook Endpoints, Products, Prices, Tax Rates = Schreiben; Subscriptions,
+Invoices, Invoice Payments, Charges, Events, Customers = Lesen. im Testmodus zusätzlich
 BABU_ABO=1, im Betrieb bleibt BABU_ABO, wie es ist. Danach den Container neu starten:
 `docker compose up -d babu-web` (bzw. `-f compose-dev.yml up -d`).
 """
@@ -87,10 +90,14 @@ def stripe(methode, pfad, daten=None):
         raise SystemExit(f"Stripe {ex.code} bei {methode} {pfad}: {fehler.get('message')}")
 
 
-konto = stripe("GET", "/account")
-print(f"Konto: {konto.get('settings', {}).get('dashboard', {}).get('display_name') or konto.get('business_profile', {}).get('name')} "
+# Ein eingeschränkter Schlüssel darf das Konto oft nicht lesen — dann ohne Namen weiter.
+try:
+    konto = stripe("GET", "/account")
+except SystemExit:
+    konto = {"id": "(mit diesem Schlüssel nicht lesbar)"}
+print(f"Konto: {(konto.get('settings') or {}).get('dashboard', {}).get('display_name') or (konto.get('business_profile') or {}).get('name')} "
       f"({konto.get('id')}), {'LIVE' if LIVE else 'Testmodus'}, Abbuchungstext: "
-      f"{konto.get('settings', {}).get('payments', {}).get('statement_descriptor')}")
+      f"{((konto.get('settings') or {}).get('payments') or {}).get('statement_descriptor')}")
 
 # API-Version: die des Kontos (aus dem jüngsten Ereignis), sonst die des Webhooks
 ev = stripe("GET", "/events", {"limit": 1}).get("data") or []
