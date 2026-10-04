@@ -244,3 +244,11 @@ def test_jahresfrist_folgt_der_arbeitsweise():
     assert fristen.termin_profil({"steuerberater_modus": "Ich selbst (Independence Day)",
                                   "steuerberater_status": "Ja"})["steuerberater"] is False
     assert fristen.termin_profil({}, betreut=True)["steuerberater"] is True
+
+
+def test_kleinunternehmerin_hat_nie_voranmeldungen():
+    """§ 19 UStG: keine Voranmeldung — auch wenn sie in der Einrichtung einen
+    Rhythmus angeklickt hat (Review Independence Day A)."""
+    for antwort in ("Monatlich", "Vierteljährlich"):
+        p = fr.termin_profil({"kleinunternehmer": "Ja", "ustva_rhythmus": antwort})
+        assert p["ustva_rhythmus"] == "keine", antwort

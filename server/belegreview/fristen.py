@@ -164,7 +164,9 @@ def termin_profil(einstellungen: dict, hat_team: bool = False,
     klein = e.get("kleinunternehmer") == "Ja"
     rhythmus = e.get("ustva_rhythmus", "").lower().replace("ä", "ae")
     if rhythmus not in ("monatlich", "vierteljaehrlich", "keine"):
-        rhythmus = "keine" if klein else "monatlich"
+        rhythmus = "monatlich"
+    if klein:
+        rhythmus = "keine"          # § 19 UStG: keine Voranmeldung, egal was angeklickt ist
     return {
         "kleinunternehmer": klein,
         "ustva_rhythmus": rhythmus,
