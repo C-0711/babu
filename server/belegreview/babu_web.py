@@ -4646,10 +4646,21 @@ async def api_korrektur(stamm: str, request: Request) -> Response:
     konto = str(body.get("konto_skr04", "")).strip()
     if konto and not re.match(r"^\d{4,8}$", konto):
         return JSONResponse({"fehler": "Konto prüfen"}, status_code=400)
-    daten = {"konto_skr04": konto or None,
-             "steuerschluessel": str(body.get("steuerschluessel", "")).strip()[:2] or None,
-             "buchungstext": str(body.get("buchungstext", "")).strip()[:60] or None,
-             "von": un, "am": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    # Was der Aufruf nicht nennt, bleibt wie es war (seit 04.10.2026): das
+    # Portal schickt nur geänderte Felder, und eine reine Textkorrektur darf
+    # ein vorher korrigiertes Konto nicht löschen. Ein leerer Wert löscht.
+    try:
+        vorher = json.loads(await run_in_threadpool(
+            git_show, f"review/{stamm}.korrektur.json") or "{}")
+    except (ValueError, TypeError):
+        vorher = {}
+    if not isinstance(vorher, dict):
+        vorher = {}
+    neu = {"konto_skr04": konto or None,
+           "steuerschluessel": str(body.get("steuerschluessel", "")).strip()[:2] or None,
+           "buchungstext": str(body.get("buchungstext", "")).strip()[:60] or None}
+    daten = {k: (w if k in body else vorher.get(k)) for k, w in neu.items()}
+    daten.update({"von": un, "am": time.strftime("%Y-%m-%dT%H:%M:%S%z")})
     import boxschreiber  # noqa: PLC0415
     try:
         commit = await run_in_threadpool(boxschreiber.schreiben, _box(),

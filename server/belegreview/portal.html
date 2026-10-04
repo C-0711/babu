@@ -3205,16 +3205,15 @@ function kreditorFeld(d){
 /* Konto, Steuer und Buchungstext von Hand — dieselbe Korrektur wie in der
    Werkbank des Steuerbüros. */
 function korrekturFormular(d){
+  /* Konto und Buchungstext — beides wertet der Stapel aus. Den Steuersatz
+     nimmt er aus den Positionen, ein Feld dafür versprach nur etwas. Das
+     Konto ist `konto` (bei SKR03 ohne `konto_skr04`). */
   const e = d.einschaetzung || {}, v = d.vlm || {};
-  const bu = String(e.steuerschluessel || "");
+  const konto = String(e.konto || e.konto_skr04 || ""), text = String(v.buchungstext || "");
   return `<div class="kred-feld" id="korr-feld"><span class="lbl">Korrektur</span>
     <div class="eingabe-gitter" style="margin-top:8px">
-      <label for="korr-konto">Konto<input id="korr-konto" inputmode="numeric" maxlength="8" value="${esc(e.konto_skr04 || "")}"></label>
-      <label for="korr-bu">Steuer<select id="korr-bu">
-        <option value="9"${bu === "9" ? " selected" : ""}>19 %</option>
-        <option value="8"${bu === "8" ? " selected" : ""}>7 %</option>
-        <option value=""${bu === "" || bu === "0" ? " selected" : ""}>ohne Steuer</option></select></label>
-      <label class="breit" for="korr-text">Buchungstext<input id="korr-text" maxlength="60" value="${esc(v.buchungstext || "")}"></label>
+      <label for="korr-konto">Konto<input id="korr-konto" inputmode="numeric" maxlength="8" value="${esc(konto)}" data-vorher="${esc(konto)}"></label>
+      <label class="breit" for="korr-text">Buchungstext<input id="korr-text" maxlength="60" value="${esc(text)}" data-vorher="${esc(text)}"></label>
     </div>
     <button class="chip" style="margin-top:10px" data-korr="${esc(d.stamm)}">Korrektur speichern</button>
     <span id="korr-status" style="font-size:12px;color:var(--gc-muted)"></span></div>`;
@@ -3223,13 +3222,15 @@ document.addEventListener("click", async ev => {
   const knopf = ev.target.closest("#korr-feld [data-korr]");
   if (!knopf) return;
   const status = $("#korr-status");
+  /* Nur was sich geändert hat — sonst schriebe eine reine Textkorrektur
+     das alte Konto fest. */
+  const geaendert = (feld) => feld.value.trim() !== (feld.dataset.vorher || "") ? feld.value.trim() : "";
+  const koerper = {konto_skr04: geaendert($("#korr-konto")), buchungstext: geaendert($("#korr-text"))};
+  if (!koerper.konto_skr04 && !koerper.buchungstext){ status.textContent = "Nichts geändert."; return; }
   status.textContent = "wird gespeichert …";
   try{
     const r = await api("/api/korrektur/" + knopf.dataset.korr, {method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({konto_skr04: $("#korr-konto").value.trim(),
-                            steuerschluessel: $("#korr-bu").value,
-                            buchungstext: $("#korr-text").value.trim()})});
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(koerper)});
     const d = await r.json().catch(() => ({}));
     status.textContent = r.ok ? "Gespeichert ✓" : (d.fehler || "Ging gerade nicht.");
     if (r.ok) setTimeout(() => ladeDetail(knopf.dataset.korr), 500);

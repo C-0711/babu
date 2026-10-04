@@ -127,3 +127,15 @@ def test_die_einzelansicht_zeigt_die_korrektur(welt):
     assert d["buchungssatz"]["konto"] == "6643"
     assert d["buchungssatz"]["buchungstext"] == "Aufmerksamkeit Team"
     assert d["korrigiert"] is True
+
+
+def test_eine_zweite_korrektur_behaelt_was_sie_nicht_nennt(welt):
+    """Das Portal schickt nur geänderte Felder (Review 04.10.2026): eine reine
+    Textkorrektur darf ein vorher korrigiertes Konto nicht wieder löschen."""
+    client, _ = welt
+    assert client.post(f"/api/korrektur/{STAMM}", json={"konto_skr04": "6643"}).status_code == 200
+    assert client.post(f"/api/korrektur/{STAMM}",
+                       json={"buchungstext": "Aufmerksamkeit Team"}).status_code == 200
+    d = client.get(f"/api/beleg/{STAMM}").json()
+    assert d["buchungssatz"]["konto"] == "6643"
+    assert d["buchungssatz"]["buchungstext"] == "Aufmerksamkeit Team"
