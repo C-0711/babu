@@ -70,3 +70,19 @@ def test_bar_erstattung_im_stapel_und_nachtrag_nur_einmal(auslagen_welt):
     text = erst.content.decode("cp1252")
     assert f"23,40;S;EUR;;;;{kreditor};1600;" in text      # extf._zeile: umsatz;sh;EUR;;;;konto;gegenkonto
     assert berta.post("/api/datev/uebergeben", params=SPANNE).status_code == 409
+
+
+def test_abgleich_belege_ohne_auslagen_und_mit_erstattung():
+    import babu_web as bw  # noqa: PLC0415
+    idx = {"belege": {"a": {"stamm": "a", "brutto": 10.0}, "b": {"stamm": "b", "brutto": 23.4}},
+           "auslagen": {"b": {"status": "erstattet"}},
+           "erstattungen": {"E-2026-001": {"kennung": "E-2026-001", "art": "ueberweisung",
+                                           "status": "ueberwiesen", "datum": "2026-05-20",
+                                           "ueberwiesen_am": "2026-05-22",
+                                           "je_person": [{"kreditor": "7", "name": "Lea",
+                                                          "von": "l", "summe": 23.4}]}}}
+    assert bw._abgleich_belege(idx) == [
+        {"stamm": "a", "brutto": 10.0},
+        {"stamm": "E-2026-001", "brutto": 23.4, "datum": "2026-05-22", "erstattung": True}]
+    ohne = {"belege": {"a": {"stamm": "a", "brutto": 10.0}}}
+    assert bw._abgleich_belege(ohne) == list(ohne["belege"].values())

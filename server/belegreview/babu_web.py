@@ -1746,6 +1746,19 @@ def _kreditoren_einlegen(idx: dict, pfade: dict, oid_cache: dict, belege: dict,
     idx["kreditor_je_beleg"] = aufgeloest
 
 
+def _abgleich_belege(idx: dict) -> list[dict]:
+    """Was der Bankabgleich als Beleg kennt (babu Expenses D1, seit 04.10.2026).
+
+    Auslagen hat die Mitarbeiterin privat bezahlt — zu ihnen gibt es keine
+    Abbuchung. Dafür steht jede überwiesene Erstattung je Person drin. Ohne
+    Auslagen ist das genau `idx["belege"].values()`: `/api/abgleich` bleibt
+    bytegleich."""
+    import auslagen as al  # noqa: PLC0415
+    ausl = idx.get("auslagen") or {}
+    return ([z for s, z in idx["belege"].items() if s not in ausl]
+            + al.abgleich_eintraege((idx.get("erstattungen") or {}).values()))
+
+
 def _auslagen_einlegen(idx: dict, pfade: dict, oid_cache: dict, belege: dict,
                        reviews: dict) -> None:
     """Auslagen der Mitarbeiterinnen und Erstattungen in den Index (D1, 04.10.2026).
@@ -4834,7 +4847,7 @@ def api_abgleich(monat: str, request: Request) -> Response:
     umsaetze = idx["umsaetze"].get(monat, [])
     if not umsaetze:
         return JSONResponse({"monat": monat, "auszug_da": False})
-    ergebnis = ka.abgleich(umsaetze, list(idx["belege"].values()))
+    ergebnis = ka.abgleich(umsaetze, _abgleich_belege(idx))
     ergebnis["monat"] = monat
     ergebnis["auszug_da"] = True
     # Die abgelegten Auszüge selbst — damit die Bank-Ansicht das Blatt
@@ -6677,7 +6690,7 @@ async def _einschaetzungs_kontext(un: str, monat: str) -> dict:
                 {"datum": u.get("datum"), "betrag": u.get("betrag"),
                  "text": u.get("text"), "gegenpartei": u.get("gegenpartei")}
                 for u in ka.abgleich(idx["umsaetze"].get(monat, []),
-                                     list(idx["belege"].values()))["fehlend"]
+                                     _abgleich_belege(idx))["fehlend"]
             ][:10]
         except Exception:  # noqa: BLE001
             pass
@@ -9930,7 +9943,7 @@ def _fehlende_belege_fuer(monat: str) -> list[dict]:
     umsaetze = idx["umsaetze"].get(monat) or []
     if not umsaetze:
         return []
-    ergebnis = ka.abgleich(umsaetze, list(idx["belege"].values()))
+    ergebnis = ka.abgleich(umsaetze, _abgleich_belege(idx))
     return bj.offene_fragen(ergebnis["fehlend"], vertraege_aktuell(),
                             set(_geklaert_lesen()))
 
@@ -9955,7 +9968,7 @@ def api_fehlende_belege(request: Request) -> Response:
     umsaetze = [u for liste in idx["umsaetze"].values() for u in liste]
     if not umsaetze:
         return JSONResponse({"auszug_da": False, "fragen": [], "summe": 0.0})
-    ergebnis = ka.abgleich(umsaetze, list(idx["belege"].values()))
+    ergebnis = ka.abgleich(umsaetze, _abgleich_belege(idx))
     geklaert = _geklaert_lesen()
     fragen = bj.offene_fragen(ergebnis["fehlend"], vertraege_aktuell(),
                               set(geklaert))
@@ -11669,7 +11682,7 @@ def api_meldungen(request: Request) -> Response:
     umsaetze_vm = idx["umsaetze"].get(vormonat) or []
     if umsaetze_vm:
         fehlende = ka.abgleich(umsaetze_vm,
-                               list(idx["belege"].values()))["fehlend"]
+                               _abgleich_belege(idx))["fehlend"]
     welt = {
         "fristen": termine,
         "vertraege": vt.uebersicht(vertraege_aktuell(), heute)["vertraege"],

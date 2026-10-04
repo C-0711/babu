@@ -346,10 +346,13 @@ def bank_abgleich(idx: dict, monat: str) -> dict:
     umsaetze = idx["umsaetze"].get(monat) or []
     if not umsaetze:
         return {"monat": monat, "auszug_da": False}
-    ab = ka.abgleich(umsaetze, list(idx["belege"].values()))
+    ab = ka.abgleich(umsaetze, bw._abgleich_belege(idx))  # noqa: SLF001
     kandidaten = [dict(z) for z in idx["belege"].values()
                   if z["monat"] == monat and z["status"] in ("geprüft", "exportiert")
-                  and _zahlbar(idx, z)]
+                  and _zahlbar(idx, z)
+                  # Auslagen hat die Mitarbeiterin privat bezahlt (D1) — zu
+                  # ihnen gibt es keine Abbuchung, nur die Erstattung.
+                  and z["stamm"] not in (idx.get("auslagen") or {})]
     gefunden = ka.abgleich(umsaetze + (idx["umsaetze"].get(_folgemonat(monat)) or []),
                            kandidaten)
     bezahlt = {g["stamm"] for g in gefunden["gedeckt"]}
