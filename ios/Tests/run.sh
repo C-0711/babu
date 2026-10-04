@@ -125,3 +125,9 @@ v "keine ATS-Ausnahme in Info.plist" "$(! grep -q NSAllowsLocalNetworking $P/Sup
 v "Export-Compliance beantwortet" "$(grep -q ITSAppUsesNonExemptEncryption $P/Support/Info.plist && echo 1)"
 v "ExportOptions.plist vorhanden und gueltig" "$(plutil -lint -s $P/ExportOptions.plist >/dev/null 2>&1 && echo 1)"
 v "archiv.sh ausfuehrbar" "$([ -x ../archiv.sh ] && echo 1)"
+
+echo "— Ablage-Harness —"
+# 403/409 heißt „keine Ablage“ — außer der Server nennt einen Grund, der nur
+# den einen Beleg betrifft (Simulator-Test 04.10.2026, babu Expenses D1).
+swiftc -o "$ZIEL/ablage" ../Beleg/Beleg/AblageService.swift ablage/main.swift
+"$ZIEL/ablage"

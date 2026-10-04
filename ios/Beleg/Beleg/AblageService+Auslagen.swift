@@ -11,6 +11,18 @@ struct AuslageZeile: Identifiable, Decodable {
     let grund: String?
     var id: String { stamm }
 
+    /// „23,40 €“ — für Beträge in den Auslagen-Ansichten.
+    static func euro(_ wert: Double) -> String {
+        String(format: "%.2f €", wert).replacingOccurrences(of: ".", with: ",")
+    }
+
+    /// „2026-08-05“ → „05.08.2026“; alles andere bleibt, wie es kam.
+    static func datumDE(_ iso: String) -> String {
+        let t = iso.prefix(10).split(separator: "-")
+        guard t.count == 3, t[0].count == 4 else { return iso }
+        return "\(t[2]).\(t[1]).\(t[0])"
+    }
+
     var standText: String {
         switch status {
         case "eingereicht": return "wartet auf Freigabe"

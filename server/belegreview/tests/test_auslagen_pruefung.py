@@ -190,3 +190,27 @@ def test_dublette_einer_auslage_sagt_es_ehrlich(auslagen_welt):
     assert lea_c.post("/api/aufnahme", params={"name": "bon.jpg"}, files=datei, data=daten).status_code == 200
     r = lea_c.post("/api/aufnahme", params={"name": "bon.jpg"}, files=datei, data=daten)
     assert r.status_code == 409 and "datei" not in r.json()
+
+
+# ————— App-Vertrag: 403/409 heißt „keine Ablage“ — außer mit grund —————
+# Die App schaltet bei 403/409 die ganze Übertragung ab (AblageErgebnis.keineAblage).
+# Eine fehlende Freigabe oder ein doppeltes Foto darf das nicht auslösen: der
+# Server sagt deshalb maschinenlesbar, warum (Simulator-Test 04.10.2026).
+
+def test_grund_dublette_unterscheidet_sich_von_keiner_ablage(auslagen_welt):
+    lea_c, _, _ = lea(auslagen_welt)
+    daten = {"text": "Rossmann", "auslage": "1",
+             "ergebnis": json.dumps({"buchung": BUCHUNG, "zeilen": []})}
+    datei = {"file": ("bon.jpg", b"\xff\xd8\xff\xe0gleiches-foto-2", "image/jpeg")}
+    lea_c.post("/api/aufnahme", params={"name": "bon.jpg"}, files=datei, data=daten)
+    r = lea_c.post("/api/aufnahme", params={"name": "bon.jpg"}, files=datei, data=daten)
+    assert r.status_code == 409 and r.json()["grund"] == "dublette"
+
+
+def test_grund_freigabe_bei_fehlendem_recht(auslagen_welt):
+    lea_c, nina, _ = lea(auslagen_welt)
+    assert lea_c.get("/api/monat/2026-05").json()["grund"] == "freigabe"
+    r = lea_c.post("/api/aufnahme", params={"name": "bon.jpg"},
+                   files={"file": ("bon.jpg", b"\xff\xd8\xff\xe0ohne-recht", "image/jpeg")},
+                   data={"text": "Rossmann"})
+    assert r.status_code == 403 and r.json()["grund"] == "freigabe"

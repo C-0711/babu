@@ -231,6 +231,10 @@ struct Beleg: Identifiable, Codable {
     /// Auslage einer Mitarbeiterin (babu Expenses D1) — reist beim Upload mit.
     /// Optional: alte Stände laden weiter.
     var istAuslage: Bool? = nil
+    /// Warum der Server genau diesen Beleg nicht nimmt (doppeltes Foto, keine
+    /// Freigabe) — sein Klartext. Solange er dasteht, klopft die App nicht von
+    /// selbst wieder an; „Nochmal versuchen" geht weiter. Optional wie oben.
+    var ablageHinweis: String? = nil
     /// Mehrseitiger Beleg: ALLE Seiten als JPEG (bildJpeg bleibt Seite 1,
     /// damit jede bestehende Anzeige weiterlebt). Optional — alte
     /// zustand.json laden unverändert. Hochgeladen wird daraus EIN PDF.

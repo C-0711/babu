@@ -348,18 +348,19 @@ extension AblageService {
     /// Nebenbei ist es die ehrlichste Prüfung, ob der Zugang noch gilt:
     /// 401 heißt abgelaufen, und das gehört im Konto auch so hin.
     static func werBinIch(basis: URL, pat: String) async
-        -> (un: String?, rolle: String?, abgelaufen: Bool, rechte: Ausbaustufe.Rechte?) {
+        -> (un: String?, rolle: String?, abgelaufen: Bool, rechte: Ausbaustufe.Rechte?,
+            ablage: Bool?) {
         var request = URLRequest(url: basis.appendingPathComponent("api/ich"))
         request.timeoutInterval = 12
         request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
         guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
-              let http = antwort as? HTTPURLResponse else { return (nil, nil, false, nil) }
+              let http = antwort as? HTTPURLResponse else { return (nil, nil, false, nil, nil) }
         if http.statusCode == 401 || http.statusCode == 403 {
-            return (nil, nil, true, nil)
+            return (nil, nil, true, nil, nil)
         }
         guard http.statusCode == 200,
               let json = (try? JSONSerialization.jsonObject(with: daten)) as? [String: Any]
-        else { return (nil, nil, false, nil) }
+        else { return (nil, nil, false, nil, nil) }
         // Was eine Mitarbeiterin darf (babu Expenses D1) — fehlt bei allen anderen.
         var rechte: Ausbaustufe.Rechte?
         if let r = json["rechte"] as? [String: Any] {
@@ -367,7 +368,8 @@ extension AblageService {
                                         kasse: r["kasse"] as? Bool ?? false,
                                         auslagen: r["auslagen"] as? Bool ?? false)
         }
-        return (json["un"] as? String, json["rolle"] as? String, false, rechte)
+        return (json["un"] as? String, json["rolle"] as? String, false, rechte,
+                json["box"] as? Bool)
     }
 
     // MARK: - Früher auf dem Server gespeicherte Gespräche (BABU-25)

@@ -2103,7 +2103,8 @@ def _api_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]
                   "auslagen": team_recht(un, "darf_auslagen")}
         if not mitarbeitrecht.erlaubt(request.method, request.url.path, rechte):
             return None, JSONResponse(
-                {"fehler": "Das gehört zur Inhaberin — dafür hast du keinen Zugang."},
+                {"fehler": "Das gehört zur Inhaberin — dafür hast du keinen Zugang.",
+                 "grund": "freigabe"},
                 status_code=403)
     gewuenscht = _mandant_gewuenscht(request)
     if gewuenscht:
@@ -3510,7 +3511,8 @@ def _mitarbeit_wache(un: str, recht: str, was: str) -> Response | None:
         return None
     return JSONResponse(
         {"fehler": f"Dafür fehlt dir die Freigabe. {was} darf im Salon "
-                   "nur, wer dafür freigeschaltet ist — frag kurz nach."},
+                   "nur, wer dafür freigeschaltet ist — frag kurz nach.",
+         "grund": "freigabe"},
         status_code=403)
 
 
@@ -3717,8 +3719,11 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
     if schon and als_auslage:
         # Ehrlich statt still (Gesamtprüfung D1): sonst hieße es „ok“, aber
         # eine Auslage gäbe es nicht — und der Pfad eines fremden Belegs ginge mit.
+        # `grund` trennt das vom 409 „Ablage noch nicht eingerichtet“ — die App
+        # schaltet sonst ihre ganze Übertragung ab (AblageErgebnis.keineAblage).
         return JSONResponse({"fehler": "Dieses Foto liegt schon im Betrieb. Sprich kurz mit "
-                                       "der Inhaberin, ob es schon gebucht ist."},
+                                       "der Inhaberin, ob es schon gebucht ist.",
+                             "grund": "dublette"},
                             status_code=409)
     if schon:
         return JSONResponse({"ok": True, "dublette": True, "commit": None,

@@ -79,13 +79,13 @@ extension AblageService {
                          auslage: Bool = false,
                          basis: URL, pat: String) async
             -> (ergebnis: AblageErgebnis, serverDatei: String?,
-                art: String?, wohin: String?, sicher: Bool) {
+                art: String?, wohin: String?, sicher: Bool, hinweis: String?) {
         var teile = URLComponents(
             url: basis.appendingPathComponent("api/aufnahme"),
             resolvingAgainstBaseURL: false)
         teile?.queryItems = [URLQueryItem(name: "name", value: dateiname)]
         guard let url = teile?.url else {
-            return (.nichtErreichbar, nil, nil, nil, false)
+            return (.nichtErreichbar, nil, nil, nil, false, nil)
         }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -119,13 +119,14 @@ extension AblageService {
         let (ergebnis, antwort) = await ausfuehrenMitDaten(request)
         guard ergebnis == .uebertragen, let antwort,
               let json = try? JSONSerialization.jsonObject(with: antwort) as? [String: Any]
-        else { return (ergebnis, nil, nil, nil, false) }
+        else { return (ergebnis, nil, nil, nil, false, AblageErgebnis.hinweis(antwort)) }
         let pfad = json["datei"] as? String
         return (ergebnis,
                 pfad.map { ($0 as NSString).lastPathComponent },
                 json["art"] as? String,
                 json["wohin"] as? String,
-                json["sicher"] as? Bool ?? false)
+                json["sicher"] as? Bool ?? false,
+                nil)
     }
 
     /// Wozu vom Konto Geld abging, ohne dass ein Beleg da ist.

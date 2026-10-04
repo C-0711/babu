@@ -354,6 +354,9 @@ struct EinstellungenView: View {
                 store.ablageAktiv = ergebnis.ablage
                 email = ""
                 passwort = ""
+                // Rolle und Rechte sofort holen: sonst zeigt die App einer
+                // Mitarbeiterin bis zum nächsten Start die Reiter der Inhaberin.
+                await store.kontoNachfragen()
                 // Nur „alles bereit" sagen, wenn es das auch ist. Ein
                 // selbst angelegtes Konto hat noch keine Ablage; bis
                 // 08.09.2026 behauptete die App trotzdem, es sei alles

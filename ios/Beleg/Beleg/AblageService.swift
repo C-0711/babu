@@ -22,6 +22,34 @@ enum AblageErgebnis: Equatable {
     case keineAblage
     case abgelehnt(Int)       // sonstiger HTTP-Status
     case nichtErreichbar      // Netzfehler (kein WLAN, falsches Netz, Timeout)
+
+    /// Ein HTTP-Status als Ergebnis. 403/409 heißt „keine Ablage“ — außer der
+    /// Server nennt einen `grund`, der nur diesen einen Beleg betrifft
+    /// (doppeltes Foto, fehlende Freigabe). Sonst schaltete eine einzige
+    /// Ablehnung die ganze Übertragung ab: so erging es Lea im Simulator-Test
+    /// 04.10.2026, ihre Auslagen blieben für immer auf dem Telefon.
+    static func aus(status: Int, daten: Data?) -> AblageErgebnis {
+        switch status {
+        case 200..<300: return .uebertragen
+        case 401: return .tokenFehler
+        case 403, 409: return grund(daten) == nil ? .keineAblage : .abgelehnt(status)
+        default: return .abgelehnt(status)
+        }
+    }
+
+    /// Der Klartext des Servers, wenn er einen Grund nennt — für den Beleg.
+    static func hinweis(_ daten: Data?) -> String? {
+        guard grund(daten) != nil else { return nil }
+        return json(daten)?["fehler"] as? String
+    }
+
+    private static func grund(_ daten: Data?) -> String? {
+        json(daten)?["grund"] as? String
+    }
+
+    private static func json(_ daten: Data?) -> [String: Any]? {
+        daten.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+    }
 }
 
 /// Client für die GitChain-Ablage auf der H200V:
@@ -81,7 +109,31 @@ enum AblageService {
         let ergebnis = await ausfuehren(request, erfolg2xx: false)
         if case .abgelehnt(400) = ergebnis { return .uebertragen }
         if case .uebertragen = ergebnis { return .uebertragen }   // falls Server 2xx liefert
+        // Eine Mitarbeiterin darf /ablage nicht (Positivliste, babu Expenses D1) —
+        // ihr Zugang stimmt trotzdem. Ob die Ablage steht, sagt dann /api/ich.
+        // Auch bei „keine Ablage“: ein Server ohne `grund` sagt für sie nur 403.
+        if ergebnis == .keineAblage || ergebnis == .abgelehnt(403) {
+            switch await ablageLautKonto(basis: basis, pat: pat) {
+            case true?: return .uebertragen
+            case false?: return .keineAblage
+            case nil: break
+            }
+        }
         return ergebnis
+    }
+
+    /// `box` aus /api/ich, nur für Mitarbeiterinnen — für alle anderen bleibt
+    /// /ablage die Auskunft (nil), ebenso ohne Antwort.
+    static func ablageLautKonto(basis: URL, pat: String) async -> Bool? {
+        var request = URLRequest(url: basis.appendingPathComponent("api/ich"))
+        request.timeoutInterval = 8
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              (antwort as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any]
+        else { return nil }
+        guard json["rolle"] as? String == "mitarbeit" else { return nil }
+        return json["box"] as? Bool
     }
 
     static func ausfuehren(_ request: URLRequest, erfolg2xx: Bool) async -> AblageErgebnis {
@@ -92,11 +144,10 @@ enum AblageService {
         do {
             let (daten, antwort) = try await URLSession.shared.data(for: request)
             guard let http = antwort as? HTTPURLResponse else { return (.nichtErreichbar, nil) }
+            let ergebnis = AblageErgebnis.aus(status: http.statusCode, daten: daten)
             switch http.statusCode {
-            case 200..<300: return (.uebertragen, daten)
-            case 401: return (.tokenFehler, nil)
-            case 403, 409: return (.keineAblage, daten)
-            default: return (.abgelehnt(http.statusCode), nil)
+            case 200..<300, 403, 409: return (ergebnis, daten)
+            default: return (ergebnis, nil)
             }
         } catch {
             return (.nichtErreichbar, nil)

@@ -123,14 +123,32 @@ struct BuchungsfragenView: View {
 
     // MARK: - Der grüne Haken
 
+    /// Auslage einer Mitarbeiterin (babu Expenses D1): für sie ist der Beleg
+    /// eingereicht, nicht gebucht — buchen und freigeben tut die Inhaberin.
+    private var istAuslage: Bool {
+        store.belege.first { $0.id == belegID }?.istAuslage == true
+    }
+
+    /// Eingereicht ist eine Auslage erst, wenn sie im Betrieb liegt — das
+    /// Hochladen läuft NACH der Einschätzung. Bis dahin ehrlich „wird
+    /// eingereicht“, und lehnt der Server ab (doppeltes Foto), sein Satz.
+    private var auslageStand: (titel: String, hinweis: String?, ok: Bool) {
+        let b = store.belege.first { $0.id == belegID }
+        if let h = b?.ablageHinweis { return ("Nicht eingereicht", h, false) }
+        if b?.ablageStatus == .uebertragen { return ("Eingereicht", nil, true) }
+        return ("Wird eingereicht …", nil, true)
+    }
+
     private func gebuchtAnsicht(_ b: AblageService.GemmaBuchung) -> some View {
         VStack(spacing: 14) {
-            Image(systemName: "checkmark.circle.fill")
+            Image(systemName: istAuslage && !auslageStand.ok
+                  ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
                 .font(.system(size: 52))
-                .foregroundStyle(GC.ok)
-            Text("Gebucht").font(.title2.weight(.semibold)).fontDesign(.serif)
+                .foregroundStyle(istAuslage && !auslageStand.ok ? GC.warn : GC.ok)
+            Text(istAuslage ? auslageStand.titel : "Gebucht")
+                .font(.title2.weight(.semibold)).fontDesign(.serif)
             VStack(spacing: 4) {
-                Text("\(b.kategorieName) · Konto \(b.konto)")
+                Text(istAuslage ? b.kategorieName : "\(b.kategorieName) · Konto \(b.konto)")
                     .font(.subheadline)
                 if b.waehrung != "EUR", let betrag = b.betrag {
                     Text("\(betrag, format: .number.precision(.fractionLength(2))) \(b.waehrung) ≈ \(fmtEur(b.betragEur))")
@@ -140,7 +158,12 @@ struct BuchungsfragenView: View {
                         .font(.subheadline.monospacedDigit())
                 }
             }
-            if !b.begruendung.isEmpty {
+            if istAuslage {
+                Text(auslageStand.hinweis
+                     ?? "Die Inhaberin gibt sie frei. Den Stand siehst du unter „Meine Auslagen“.")
+                    .font(.footnote).foregroundStyle(GC.desc)
+                    .multilineTextAlignment(.center)
+            } else if !b.begruendung.isEmpty {
                 Text(b.begruendung)
                     .font(.footnote).foregroundStyle(GC.desc)
                     .multilineTextAlignment(.center)
@@ -185,7 +208,9 @@ struct BuchungsfragenView: View {
         laedt = true
         // Das Profil liegt auf dem Telefon; beim allerersten Mal wird es
         // einmal aus dem Konto geholt und dann hier gehalten.
-        if store.profil.isEmpty,
+        // Eine Mitarbeiterin sieht die Betriebsangaben nicht (403) — der
+        // Server kennt das Profil der Inhaberin ohnehin.
+        if store.rechte == nil, store.profil.isEmpty,
            let frisch = await AblageService.stammdatenLaden(basis: url, pat: pat) {
             store.profil = frisch
         }

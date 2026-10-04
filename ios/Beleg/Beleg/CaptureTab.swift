@@ -29,6 +29,7 @@ struct CaptureTab: View {
     // liegt als Papier auf dem Tresen.
     @State private var fotoAuswahl: PhotosPickerItem?
     @State private var zeigeDateien = false
+    @State private var zeigeFotos = false
     @State private var ladeFehler: String?
     @State private var zeigeAufraeumen = false
 
@@ -68,6 +69,8 @@ struct CaptureTab: View {
     /// Erst zeigen, wenn wir wirklich nachgesehen haben. Sonst blitzt die
     /// Karte bei jeder eingerichteten Nutzerin kurz auf.
     private var zeigeEinrichtung: Bool {
+        // Den Betrieb richtet die Inhaberin ein, nicht ihr Team (babu Expenses D1).
+        guard store.rechte == nil else { return false }
         guard !einrichtungFertig, angabenGeholt else { return false }
         return !Einrichtung.anfangGeschafft(kontoVerbunden: kontoDa,
                                             ersterBeleg: belegDa)
@@ -149,6 +152,8 @@ struct CaptureTab: View {
                     }
                 )
             }
+            .photosPicker(isPresented: $zeigeFotos, selection: $fotoAuswahl,
+                          matching: .images, photoLibrary: .shared())
             .fileImporter(isPresented: $zeigeDateien,
                           allowedContentTypes: [.pdf, .image]) { ergebnis in
                 switch ergebnis {
@@ -255,7 +260,8 @@ struct CaptureTab: View {
         VStack(spacing: 22) {
             // Der Stapel wohnt am Anfang des Tages: was zu klären ist,
             // steht hier — nicht erst hinter dem Dokumente-Reiter.
-            if offeneAnzahl > 0 {
+            // Aufräumen ist Sache der Inhaberin (babu Expenses D1).
+            if offeneAnzahl > 0, store.rechte == nil {
                 AufraeumenKarte(anzahl: offeneAnzahl) { zeigeAufraeumen = true }
                     .padding(.horizontal, 20)
                     .padding(.top, 8)
@@ -315,8 +321,12 @@ struct CaptureTab: View {
                     .controlSize(.large)
                 }
                 Menu {
-                    PhotosPicker(selection: $fotoAuswahl, matching: .images,
-                                 photoLibrary: .shared()) {
+                    // Ein PhotosPicker IM Menü öffnet sich in einem Sheet nicht
+                    // (Auslage einer Mitarbeiterin, Simulator-Test 04.10.2026) —
+                    // der Knopf schaltet deshalb nur den Picker am Reiter an.
+                    Button {
+                        zeigeFotos = true
+                    } label: {
                         Label("Aus deinen Fotos", systemImage: "photo.on.rectangle")
                     }
                     Button {
@@ -362,7 +372,10 @@ struct CaptureTab: View {
     /// die Frage danach als gestellt — sonst wartet die Karte ewig.
     private func angabenHolen() async {
         defer { angabenGeholt = true; einrichtungNachsehen() }
-        guard let url = URL(string: store.ablageURL),
+        // Die Betriebsangaben gehören der Inhaberin — eine Mitarbeiterin
+        // bekäme nur ein 403 dafür.
+        guard store.rechte == nil,
+              let url = URL(string: store.ablageURL),
               let pat = KeychainHelfer.ladePAT() else { return }
         if let geladen = await AblageService.stammdatenLaden(basis: url, pat: pat) {
             kontoAngaben = geladen
@@ -638,8 +651,20 @@ struct ErgebnisKarte: View {
     @State private var zeigeReview = false
     @State private var zeigeBuchungsfragen = false
     @State private var zeigeBewirtung = false
+    @Environment(\.dismiss) private var schliessen
 
     private var aktuell: Beleg { store.belege.first { $0.id == beleg.id } ?? beleg }
+
+    /// Wohin es nach dem Erfassen geht: die Inhaberin zu ihren Dokumenten,
+    /// eine Mitarbeiterin zurück zu ihren Auslagen (das Blatt schließt).
+    private var uebersichtText: String {
+        store.auslageModus ? "Zu meinen Auslagen" : "Zu den Dokumenten"
+    }
+
+    private func zurUebersicht() {
+        fertig()
+        if store.auslageModus { schliessen() } else { store.tab = .belege }
+    }
 
     /// Gleicher Betrag, gleicher Tag, gleicher Lieferant oder gleiche Nummer —
     /// vermutlich derselbe Beleg noch einmal fotografiert.
@@ -728,9 +753,9 @@ struct ErgebnisKarte: View {
                         Text("Kontierung prüfen").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
-                    Button("Später — zu den Dokumenten") {
-                        fertig()
-                        store.tab = .belege
+                    Button(store.auslageModus ? "Später — zu meinen Auslagen"
+                                              : "Später — zu den Dokumenten") {
+                        zurUebersicht()
                     }
                     .font(.footnote)
                     .frame(maxWidth: .infinity)
@@ -776,10 +801,9 @@ struct ErgebnisKarte: View {
             }
             .buttonStyle(.bordered)
             Button {
-                fertig()
-                store.tab = .belege
+                zurUebersicht()
             } label: {
-                Text("Zu den Dokumenten").frame(maxWidth: .infinity)
+                Text(uebersichtText).frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
         }

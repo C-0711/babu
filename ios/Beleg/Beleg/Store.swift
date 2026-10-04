@@ -286,6 +286,14 @@ final class AppStore: ObservableObject {
         if verbundenAls != un { verbundenAls = un }
         if verbundenRolle != antwort.rolle { verbundenRolle = antwort.rolle }
         if rechte != antwort.rechte { rechte = antwort.rechte }
+        // Die Ablage kam nach der Anmeldung dazu (Box angelegt, freigeschaltet):
+        // jetzt losschicken, was auf dem Telefon wartet. Bis 04.10.2026 sagte
+        // die App „geht von selbst los, sobald sie da ist" — und fragte nie nach.
+        if antwort.ablage == true, ablageFehlt {
+            ablageFehlt = false
+            ablageAktiv = true
+            altBelegeNachreichen()
+        }
         // Push (babu Expenses D1): einmal je Start um Erlaubnis fragen; das
         // Gerät meldet sich, sobald Apple ein Token gibt.
         if !pushAngefragt {
@@ -319,12 +327,23 @@ final class AppStore: ObservableObject {
     func ablageRetry() {
         guard ablageAktiv else { return }
         let jetzt = Date()
-        for b in belege where b.ablageStatus == .ausstehend || b.ablageStatus == .fehlgeschlagen {
+        for b in belege where (b.ablageStatus == .ausstehend || b.ablageStatus == .fehlgeschlagen)
+            && b.ablageHinweis == nil {
             let id = b.id
             if let ab = naechsterVersuch[id], ab > jetzt { continue }
             Task { await self.uebertrage(id) }
         }
         kassenRetry()
+    }
+
+    /// „Nochmal versuchen" an einem Beleg, den der Server mit Grund abgelehnt
+    /// hat (doppeltes Foto, keine Freigabe): den Hinweis vergessen, sofort schicken.
+    func auslageNochmal(_ id: UUID) {
+        guard let i = belege.firstIndex(where: { $0.id == id }) else { return }
+        belege[i].ablageHinweis = nil
+        fehlversuche[id] = nil
+        naechsterVersuch[id] = nil
+        Task { await self.uebertrage(id) }
     }
 
     /// Nach einem Fehlschlag: die nächste Pause, doppelt so lang wie die letzte.
@@ -372,7 +391,7 @@ final class AppStore: ObservableObject {
         // Der auf dem Gerät gelesene Text geht mit: daraus entscheidet der
         // Server, ob das ein Bon, ein Vertrag, ein Brief vom Amt oder ein
         // Kontoauszug ist — die Nutzerin muss nichts auswählen.
-        let (ergebnis, serverDatei, art, wohin, _) = await AblageService.aufnahme(
+        let (ergebnis, serverDatei, art, wohin, _, hinweis) = await AblageService.aufnahme(
             daten: daten, dateiname: uploadName, gelesenerText: belege[i].ocrText,
             ergebnis: belege[i].ergebnisJson, auslage: belege[i].istAuslage ?? false,
             basis: url, pat: pat)
@@ -388,6 +407,7 @@ final class AppStore: ObservableObject {
         switch ergebnis {
         case .uebertragen:
             belege[j].ablageStatus = .uebertragen
+            belege[j].ablageHinweis = nil
             belege[j].ablageZeit = Date()
             belege[j].abgelegtAls = art
             belege[j].abgelegtWohin = wohin
@@ -404,6 +424,7 @@ final class AppStore: ObservableObject {
             naechsterVersuch[id] = nil
         default:
             belege[j].ablageStatus = .fehlgeschlagen
+            belege[j].ablageHinweis = hinweis
             versuchVerschieben(id)
         }
     }
@@ -423,7 +444,10 @@ final class AppStore: ObservableObject {
     /// des abgelegten Belegs. Die Lesung selbst entsteht auf dem Telefon
     /// und wird nur archiviert — nichts überschreibt Ninas Ergebnis.
     func auditLaden(_ id: UUID) async {
-        guard let url = URL(string: ablageURL),
+        // Die Prüfstempel gehören zum Betrieb; eine Mitarbeiterin sieht ihre
+        // Auslage unter „Meine Auslagen" und bekäme hier nur ein 403.
+        guard rechte == nil,
+              let url = URL(string: ablageURL),
               let pat = KeychainHelfer.ladePAT(),
               let i = belege.firstIndex(where: { $0.id == id }),
               belege[i].auditReview == nil,
@@ -629,6 +653,15 @@ final class AppStore: ObservableObject {
         }
     }
 
+    /// Eine Auslage, die nie im Betrieb ankam (doppeltes Foto, keine Freigabe),
+    /// vom Telefon nehmen. Gebucht hat sie dort niemand — das tut die Inhaberin.
+    func auslageVerwerfen(_ id: UUID) {
+        guard let b = belege.first(where: { $0.id == id }), b.istAuslage == true,
+              b.ablageStatus != .uebertragen, !uploadLaeuft.contains(id) else { return }
+        belege.removeAll { $0.id == id }
+        abgleich.removeAll { $0.belegID == id }
+    }
+
     // MARK: - Abgleich mit der Belegbox
 
     /// Einen Auftrag einreihen. Demo-Belege haben keine Box; ein Beleg ohne
@@ -831,7 +864,9 @@ final class AppStore: ObservableObject {
     /// stünde bis zum nächsten Beleg „Verbunden ✓" da, obwohl nichts
     /// mehr ankommt.
     func zugangNachsehen() {
-        guard verbundenAls != nil, ablageAktiv,
+        // Mitarbeiterinnen dürfen /ablage nicht; ihren Zugang und die Ablage
+        // prüft kontoNachfragen() über /api/ich (babu Expenses D1).
+        guard rechte == nil, verbundenAls != nil, ablageAktiv,
               let url = URL(string: ablageURL),
               let pat = KeychainHelfer.ladePAT() else { return }
         Task {

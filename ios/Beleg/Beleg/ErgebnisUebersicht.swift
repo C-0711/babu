@@ -19,6 +19,7 @@ struct ErgebnisUebersicht: View {
     @State private var zeigeInfo = false
     @State private var zeigeBewirtung = false
     @Namespace private var hakenNS
+    @Environment(\.dismiss) private var schliessen
 
     private var aktuell: Beleg? { store.belege.first { $0.id == belegID } }
 
@@ -58,6 +59,9 @@ struct ErgebnisUebersicht: View {
                             .font(.system(size: 22, weight: .medium, design: .monospaced))
                             .foregroundStyle(GC.fg)
                             .layoutPriority(1)
+                    }
+                    if b.istAuslage == true {
+                        auslageZeile(b)
                     }
                     if hatHinweis {
                         // Sanfter Fingerzeig statt Warntafel — Details unterm ⓘ.
@@ -198,12 +202,36 @@ struct ErgebnisUebersicht: View {
             .buttonStyle(.bordered)
             Button {
                 fertig()
-                store.tab = .belege
+                // Eine Mitarbeiterin hat keinen Dokumente-Reiter: zurück zu
+                // ihren Auslagen, das Blatt schließt (babu Expenses D1).
+                if store.auslageModus { schliessen() } else { store.tab = .belege }
             } label: {
-                Text("Zu den Dokumenten").frame(maxWidth: .infinity)
+                Text(store.auslageModus ? "Zu meinen Auslagen" : "Zu den Dokumenten")
+                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
         }
+    }
+
+    /// Wo die Auslage steht: gelesen ist nicht eingereicht — das Hochladen
+    /// läuft danach, und ein doppeltes Foto lehnt der Server ab.
+    @ViewBuilder
+    private func auslageZeile(_ b: Beleg) -> some View {
+        Group {
+            if let hinweis = b.ablageHinweis {
+                Label(hinweis, systemImage: "exclamationmark.circle")
+                    .foregroundStyle(GC.warn)
+            } else if b.ablageStatus == .uebertragen {
+                Label("Eingereicht — wartet auf Freigabe", systemImage: "paperplane")
+                    .foregroundStyle(GC.ok)
+            } else {
+                Label("Wird eingereicht …", systemImage: "arrow.up.circle")
+                    .foregroundStyle(GC.desc)
+            }
+        }
+        .font(.footnote)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - ⓘ: alle Angaben (die bisherige Ergebnis-Karte)
