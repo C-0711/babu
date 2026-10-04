@@ -356,7 +356,9 @@ def test_monatsabschluss_aus_kassenbuch_und_belegen(welt):
     kz = {z["kz"]: z for z in d["ustva"]["zeilen"]}
     assert kz["81"]["netto"] == 1680.67                # 2000 / 1,19
     assert d["ustva"]["stand"] == "entwurf"
-    assert "Steuer-Backend" in d["ustva"]["hinweis"]
+    # Seit 04.10.2026 ehrlich: Steuerbüro oder Mein ELSTER, kein „Steuer-Backend“.
+    assert "Steuer-Backend" not in d["ustva"]["hinweis"]
+    assert "Steuerbüro" in d["ustva"]["hinweis"] or "Mein ELSTER" in d["ustva"]["hinweis"]
     assert d["bwa"]["umsatz_netto"] == 1680.67
 
     # Kleinunternehmerin: kein Entwurf, aber die BWA bleibt.

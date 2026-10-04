@@ -3,9 +3,9 @@
 Reine Rechnung ohne I/O — die Daten kommen aus `babu_web` (Belege des
 Monats, Kassenblätter, Einstellungen), damit alles ohne Server testbar ist.
 
-Grundhaltung: babu RECHNET und ZEIGT, geprüft und übermittelt wird vom
-steuerlichen Backend. Jede Ausgabe ist ein Entwurf und sagt selbst, worauf
-sie sich stützt und was noch fehlt.
+Grundhaltung: babu RECHNET und ZEIGT. Wer übermittelt — das Steuerbüro oder
+die Unternehmerin selbst —, steht in `uebermittlung_text`. Jede Ausgabe ist
+ein Entwurf und sagt selbst, worauf sie sich stützt und was noch fehlt.
 """
 from __future__ import annotations
 
@@ -332,8 +332,20 @@ def vorsteuer_monat(belege: list[dict]) -> dict:
             "belege_gezaehlt": zaehlt, "pruefliste": prueflise}
 
 
+def uebermittlung_text(arbeitsweise: str) -> str:
+    """Wer die Voranmeldung ans Finanzamt schickt — ehrlich (Stufe A, 04.10.2026).
+
+    Bis dahin stand hier „geschickt wird er von deinem Steuer-Backend“ — ein
+    Dienst, den es nicht gibt. Den Versand per ELSTER bringt Stufe C.
+    """
+    if arbeitsweise == "selbst":
+        return ("Entwurf aus deinen Zahlen. Den Versand ans Finanzamt bereiten wir "
+                "vor — bis dahin trägst du die Zahlen in Mein ELSTER ein.")
+    return "Entwurf aus deinen Zahlen. Geprüft und übermittelt wird er von deinem Steuerbüro."
+
+
 def ustva_entwurf(monat: str, erloese: dict, vorsteuer: dict,
-                  profil: dict) -> dict:
+                  profil: dict, arbeitsweise: str = "steuerbuero") -> dict:
     """Entwurf der Voranmeldung — die Kennziffern des Formulars."""
     if not profil.get("braucht_ustva"):
         return {"monat": monat, "stand": "keine",
@@ -365,8 +377,7 @@ def ustva_entwurf(monat: str, erloese: dict, vorsteuer: dict,
         "satz": ("Du zahlst " + _euro(zahllast) if zahllast >= 0
                  else "Du bekommst " + _euro(-zahllast) + " zurück"),
         "pruefliste": vorsteuer["pruefliste"],
-        "hinweis": "Entwurf aus deinen Zahlen. Geprüft und ans Finanzamt "
-                   "geschickt wird er von deinem Steuer-Backend.",
+        "hinweis": uebermittlung_text(arbeitsweise),
     }
 
 

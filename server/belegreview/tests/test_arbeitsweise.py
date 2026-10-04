@@ -57,3 +57,21 @@ def test_die_inhaberin_stellt_auf_selbst_um(welt2):
     assert e["arbeitsweise"] == "selbst"
     assert (e["ustva_rhythmus"], e["bundesland"]) == ("Vierteljährlich", "Baden-Württemberg")
     assert nina.get("/api/ich").json()["arbeitsweise"] == "selbst"
+
+
+# ————— Task 5: ehrliche Texte —————
+
+def test_kein_steuer_backend_mehr_in_den_texten():
+    import monatsabschluss as ma  # noqa: PLC0415
+    selbst = ma.uebermittlung_text("selbst")
+    buero = ma.uebermittlung_text("steuerbuero")
+    assert "Mein ELSTER" in selbst and "Steuer-Backend" not in selbst
+    assert "Steuerbüro" in buero and "Steuer-Backend" not in buero
+
+
+def test_der_entwurf_und_das_pdf_sagen_wer_uebermittelt(welt2, monkeypatch):
+    nina = _login(welt2["bw"], welt2["nina"])
+    nina.post("/api/einstellungen", json={"steuerberater_modus": "Ich selbst (Independence Day)",
+                                          "kleinunternehmer": "Nein"})
+    d = nina.get("/api/monatsabschluss/2026-05").json()
+    assert "Mein ELSTER" in d["ustva"]["hinweis"]

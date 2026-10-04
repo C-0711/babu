@@ -11919,8 +11919,9 @@ def api_team_foto_holen(person_id: int, request: Request) -> Response:
 def api_monatsabschluss(monat: str, request: Request) -> Response:
     """BWA und Umsatzsteuer-Entwurf eines Monats — aus Belegen und Kassenbuch.
 
-    Entwurf, kein fertiger Abschluss: geprüft und übermittelt wird vom
-    steuerlichen Backend. Was babu nicht sicher weiß, steht in der Prüfliste.
+    Entwurf, kein fertiger Abschluss: übermittelt wird vom Steuerbüro oder
+    von der Unternehmerin selbst (`arbeitsweise`). Was babu nicht sicher
+    weiß, steht in der Prüfliste.
     """
     un, fehler = _box_wache(request)
     if fehler:
@@ -11973,7 +11974,7 @@ def api_monatsabschluss(monat: str, request: Request) -> Response:
                       personal_monat=(team_personalkosten(salon_von_aktiv(un))
                                       or _zahl(einstellungen.get("personal_monat"))),
                       vertraege=vertraege_aktuell()),
-        "ustva": ma.ustva_entwurf(monat, erloese, vorsteuer, profil),
+        "ustva": ma.ustva_entwurf(monat, erloese, vorsteuer, profil, _arbeitsweise(un)),
         "profil": profil,
         # Wie gut der Monat gelaufen ist, gemessen an den Zielen der Spec.
         # Das stand vorher nur in `/api/kpi/{monat}`, und die rief niemand
@@ -11984,7 +11985,7 @@ def api_monatsabschluss(monat: str, request: Request) -> Response:
 
 @app.post("/api/monatsabschluss/{monat}/freigeben")
 def api_monatsabschluss_freigeben(monat: str, request: Request) -> Response:
-    """Den Entwurf zur Prüfung übergeben — an das steuerliche Backend.
+    """Den Entwurf festhalten — für das Steuerbüro oder die Unternehmerin selbst.
 
     babu rechnet und legt ab; geprüft und ans Finanzamt übermittelt wird
     dort. Die Ablage ist der Nachweis: Zahlen, Prüfliste und Zeitpunkt
@@ -12004,13 +12005,14 @@ def api_monatsabschluss_freigeben(monat: str, request: Request) -> Response:
         return antwort
     zahlen = json.loads(antwort.body)
 
+    import monatsabschluss as ma  # noqa: PLC0415
     offen = (zahlen.get("ustva") or {}).get("pruefliste") or []
     inhalt = json.dumps({
         "monat": monat, "von": un,
         "am": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "ustva": zahlen.get("ustva"), "bwa": zahlen.get("bwa"),
         "erloese": zahlen.get("erloese"),
-        "hinweis": "Entwurf aus babu — Prüfung und Übermittlung durch das Steuer-Backend.",
+        "hinweis": "Entwurf aus babu — " + ma.uebermittlung_text(_arbeitsweise(un)),
     }, ensure_ascii=False, indent=1).encode()
 
     import boxschreiber  # noqa: PLC0415
@@ -12280,8 +12282,8 @@ def api_ustva_erstellen(monat: str, request: Request) -> Response:
                              "gibst du keine Umsatzsteuer-Voranmeldung ab."},
                             status_code=400)
     vorsteuer, befunde = vordrucke.vorsteuer_geprueft(belege)
-    entwurf = ma.ustva_entwurf(monat, erloese, vorsteuer, profil)
-    pdf = vordrucke.ustva_pdf(entwurf, einstellungen, befunde)
+    entwurf = ma.ustva_entwurf(monat, erloese, vorsteuer, profil, _arbeitsweise(un))
+    pdf = vordrucke.ustva_pdf(entwurf, einstellungen, befunde, _arbeitsweise(un))
     beiakte = json.dumps({"entwurf": entwurf, "befunde": befunde,
                           "erstellt": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                           "von": un}, ensure_ascii=False, indent=1).encode()

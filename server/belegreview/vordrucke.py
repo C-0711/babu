@@ -429,7 +429,8 @@ def _fuss(b: _Blatt, hinweise: list[str]):
         b.zeile(h, size=7.5, abstand=10)
 
 
-def ustva_pdf(entwurf: dict, betrieb: dict, befunde: list[dict]) -> bytes:
+def ustva_pdf(entwurf: dict, betrieb: dict, befunde: list[dict],
+              arbeitsweise: str = "steuerbuero") -> bytes:
     """Das Blatt zur Voranmeldung — nach Vordruckmuster USt 1 A 2026."""
     b = _Blatt()
     _kopf(b, "Umsatzsteuer-Voranmeldung", entwurf["monat"], betrieb)
@@ -481,9 +482,8 @@ def ustva_pdf(entwurf: dict, betrieb: dict, befunde: list[dict]) -> bytes:
             b.zeile(f"· {_beleg_name(p)}: {p['hinweis']} — nicht in Kz 66 "
                     "enthalten.", size=8, einzug=8, abstand=11)
 
-    _fuss(b, ["Entwurf aus deinen Zahlen — geprüft und ans Finanzamt "
-              "übermittelt wird über ELSTER durch das steuerliche Backend "
-              "(§ 18 Abs. 1 UStG).",
+    import monatsabschluss as ma  # noqa: PLC0415
+    _fuss(b, [ma.uebermittlung_text(arbeitsweise) + " (§ 18 Abs. 1 UStG)",
               "Grundlage: Kassenbuch, gestellte Rechnungen und die Belege "
               "des Monats; Kennziffern nach Vordruckmuster USt 1 A 2026."])
     return b.bytes()
