@@ -2690,6 +2690,10 @@ def api_beleg(stamm: str, request: Request) -> Response:
     d["monat"] = eintrag["monat"]
     d["datei"] = eintrag["datei"]
     d["bild_url"] = f"/api/beleg/{stamm}/bild?v={eintrag['bild_oid']}"
+    auslage = (idx.get("auslagen") or {}).get(stamm)
+    if auslage:
+        d["auslage"] = {"name": auslage.get("name"), "status": auslage["status"],
+                        "entschieden_am": auslage.get("entschieden_am")}
     # Nachgetragene Angaben gelten — sie beantworten genau die offenen Punkte.
     roh_ang = git_show(f"review/{stamm}.angaben.json")
     if roh_ang is not None:

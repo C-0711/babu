@@ -1441,6 +1441,8 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-diagramm"/></svg> Monatsabschluss</button>
       <button role="menuitem" onclick="menuGeh('#export')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-export"/></svg> Export für die Buchhaltung</button>
+      <button role="menuitem" id="menu-auslagen" hidden onclick="menuGeh('#auslagen')">
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-euro"/></svg> Auslagen</button>
       <button role="menuitem" id="menu-abschliessen" hidden onclick="location.href='/datev'">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-diagramm"/></svg> Prüfen und abschließen</button>
       <div class="menu-gruppe">Dein Salon</div>
@@ -1518,6 +1520,8 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-diagramm"/></svg><span class="txt">Monatsabschluss</span></button>
     <button type="button" title="Export für die Buchhaltung" onclick="menuGeh('#export')">
       <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-export"/></svg><span class="txt">Export für die Buchhaltung</span></button>
+    <button type="button" id="nav-auslagen" hidden title="Auslagen" onclick="menuGeh('#auslagen')">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-euro"/></svg><span class="txt">Auslagen</span></button>
     <!-- Wer selbst einreicht, schließt den Monat auf der DATEV-Seite ab (Independence Day A). -->
     <button type="button" id="nav-abschliessen" hidden title="Prüfen und abschließen" onclick="location.href='/datev'">
       <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-diagramm"/></svg><span class="txt">Prüfen und abschließen</span></button>
@@ -1788,6 +1792,14 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       was du zahlst. Mehr braucht babu nicht — Steuerklasse und Sozialversicherung
       macht das Lohnbüro. Die Summe rechnen wir in deiner Auswertung mit.</p>
     <div id="team-inhalt"><div class="skelett"></div></div>
+  </section>
+
+  <!-- AUSLAGEN: was das Team ausgelegt hat (babu Expenses D1) -->
+  <section class="ansicht" id="a-auslagen">
+    <div class="gruss" style="font-size:22px;margin-bottom:4px" id="ausl-titel">Auslagen</div>
+    <p id="ausl-satz" style="color:var(--gc-desc);margin-bottom:12px"></p>
+    <div class="chips" id="ausl-reiter" style="margin-bottom:12px"></div>
+    <div id="ausl-inhalt"><div class="skelett"></div></div>
   </section>
 
   <!-- EXPORT: Buchungsstapel für die Buchhaltung -->
@@ -2276,6 +2288,8 @@ function mitMandant(url){
 function statusSatz(z){
   if (z.status === "unlesbar") return ["Konnte nicht gelesen werden — magst du drauf schauen?","frage"];
   if (z.status === "exportiert") return [uebergebenWort() + " ✓","ok"];
+  if (z.status === "wartet") return ["Auslage — wartet auf Freigabe","frage"];
+  if (z.status === "abgelehnt") return ["abgelehnt — geht nicht in die Buchhaltung","laeuft"];
   if (z.status === "geprüft") return ["geprüft ✓","ok"];
   if (z.status === "erfasst") return ["wird noch gelesen …","laeuft"];
   if (z.bewirtung && !z.bewirtung_beantwortet) return ["Mit wem warst du essen?","frage"];
@@ -2321,6 +2335,7 @@ function boxZustandZeigen(){
 let meineRolle = "salon";
 let meineBox = true;
 let meineArbeitsweise = "steuerbuero";
+let meineRechte = null;
 /* Independence Day A: die Inhaberin macht ihre Buchhaltung selbst — dann
    sieht sie die Werkzeuge, die sonst nur das Steuerbüro sieht. Erlaubt sind
    sie ihr in beiden Arbeitsweisen; hier geht es nur um die Oberfläche. */
@@ -2347,6 +2362,7 @@ function sitzungUebernehmen(d){
   meineRolle = d.rolle || "salon";
   meineBox = d.box !== false;
   meineArbeitsweise = d.arbeitsweise || "steuerbuero";
+  meineRechte = d.rechte || null;
   meineMandanten = d.mandanten || 0;
   $("#avatar").textContent = (d.un || "·")[0].toUpperCase();
   naviKopfAktualisieren(d.un, meineRolle);
@@ -2494,7 +2510,7 @@ $("#reset-zur-anmeldung").addEventListener("click", () => {
 
 /* ————— Router ————— */
 const ansichten = { gesperrt: gesperrtLaden, heute: ladeHeute, belege: ladeBelege, fragen: () => {},
-                    aufraeumen: ladeAufraeumen, post: ladePost, ablage: ladeAblage, export: ladeExport, team: ladeTeam,
+                    aufraeumen: ladeAufraeumen, post: ladePost, ablage: ladeAblage, export: ladeExport, auslagen: ladeAuslagen, team: ladeTeam,
                     abschluss: ladeAbschluss,
                     zahlen: ladeZahlen, bank: ladeBank, saloncheck: ladeSalonCheck,
                     termine: ladeTermine, kundinnen: ladeKundinnen,
@@ -2640,6 +2656,18 @@ async function ladeHeute(){
           <h3>${esc(f.kanzlei || "Dein Steuerbüro")} bittet um deine Kontoumsätze</h3>
           <p>Nur ansehen, um Belege und Zahlungen abzugleichen — niemand kann damit Geld bewegen.</p>
           <span class="hin">Ansehen und entscheiden ›</span></button>`;
+      }
+    }catch{}
+  }
+  if (meineRolle === "salon"){
+    try{
+      const a = await (await api("/api/auslagen?stand=offen")).json();
+      if (a.wartet > 0){
+        html += `<button class="karte nachfrage einflug voll" style="display:block;width:100%;text-align:left"
+          onclick="location.hash='#auslagen'">
+          <h3>${a.wartet} Auslage${a.wartet === 1 ? "" : "n"} warte${a.wartet === 1 ? "t" : "n"} auf dich</h3>
+          <p>Dein Team hat etwas aus eigener Tasche bezahlt.</p>
+          <span class="hin">Ansehen ›</span></button>`;
       }
     }catch{}
   }
@@ -3114,6 +3142,7 @@ async function ladeDetail(stamm){
         <div class="feld"><span>Dabei waren</span><b style="font-family:var(--gc-sans)">${(d.bewirtung.teilnehmer||[]).join(", ")}</b></div>` : ""}
       </div>`;
 
+    if (d.auslage) html += `<p style="font-size:13px;color:var(--gc-desc)">Auslage von ${esc(d.auslage.name || "")} · ${esc(AUSLAGE_STAND[d.auslage.status] || d.auslage.status)}</p>`;
     if (d.bezahlt){
       html += `<p style="font-size:13px;color:var(--gc-ok);margin:10px 0 0">Bezahlt am ${esc(d.bezahlt.datum)}
         — ${euro(Math.abs(d.bezahlt.betrag || 0))} vom Konto.</p>`;
@@ -5020,6 +5049,7 @@ async function menuUmschalten(){
       $("#menu-mandanten").hidden = $("#menu-verwaltung").hidden;
       sitzungUebernehmen(d);
       $("#menu-abschliessen").hidden = !buchhaltungSelbst();
+      $("#menu-auslagen").hidden = !auslagenSichtbar();
     }catch{}
   }
 }
@@ -5050,6 +5080,7 @@ function naviKopfAktualisieren(un, rolle){
   $("#nav-verwaltung").hidden = !(rolle === "admin" || rolle === "kanzlei");
   $("#nav-datev").hidden = $("#nav-verwaltung").hidden;
   $("#nav-abschliessen").hidden = !buchhaltungSelbst();
+  $("#nav-auslagen").hidden = !auslagenSichtbar();
   $("#nav-gruppe-kanzlei").hidden = !istKanzlei();
   $("#reiter-kanzlei").hidden = !istKanzlei();
   $("#tab-kanzlei").hidden = !istKanzlei();
@@ -5128,6 +5159,10 @@ async function ladeTeam(){
           <input type="checkbox" ${p.darf_kasse ? "checked" : ""}
             onchange="teamRecht(${p.id}, 'darf_kasse', this.checked)">
           Darf das Kassenbuch führen</label>
+        <label style="display:flex;gap:6px;align-items:center;cursor:pointer">
+          <input type="checkbox" ${p.darf_auslagen ? "checked" : ""}
+            onchange="teamRecht(${p.id}, 'darf_auslagen', this.checked)">
+          Darf Auslagen einreichen${p.iban_kurz ? ` <span style="color:var(--gc-muted)">· ${esc(p.iban_kurz)}</span>` : ""}</label>
       </div>
       <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
         <button class="chip" onclick="teamBearbeiten(${p.id})">Ändern</button>
@@ -5233,7 +5268,8 @@ async function teamRecht(id, recht, an){
   const koerper = {id, name: p.name, email: p.email || "", lohn_art: p.lohn_art,
                    betrag: p.betrag || "", stundenlohn: p.stundenlohn || "",
                    stunden: p.stunden || "",
-                   darf_belege: p.darf_belege, darf_kasse: p.darf_kasse};
+                   darf_belege: p.darf_belege, darf_kasse: p.darf_kasse,
+                   darf_auslagen: p.darf_auslagen};
   koerper[recht] = an;
   try{
     await api("/api/team", {method:"POST",
@@ -5720,6 +5756,95 @@ $("#ab-mon-vor").addEventListener("click", () => { abMonat = monatSchieben(abMon
 
 /* ————— Export-Ansicht ————— */
 let eMonat = jetztMonat();
+/* ————— Auslagen (babu Expenses D1) ————— */
+function auslagenSichtbar(){
+  return meineRolle === "salon" || istKanzlei()
+    || (meineRolle === "mitarbeit" && !!(meineRechte && meineRechte.auslagen));
+}
+let auslagenReiter = "offen", auslagenListe = [], auslagenOffen = [], auslagenWahl = new Set();
+const AUSLAGE_STAND = {eingereicht: "wartet auf Freigabe", freigegeben: "freigegeben",
+  abgelehnt: "abgelehnt", zurueckgezogen: "zurückgezogen", erstattet: "erstattet ✓"};
+function heuteIso(){ return new Date().toISOString().slice(0, 10); }
+
+async function ladeAuslagen(){
+  const ziel = $("#ausl-inhalt"), reiter = $("#ausl-reiter");
+  if (meineRolle === "mitarbeit"){
+    $("#ausl-titel").textContent = "Meine Auslagen";
+    $("#ausl-satz").textContent = "Eingereicht wird in der App. Hier siehst du, wie weit jede Auslage ist.";
+    reiter.innerHTML = "";
+    let d;
+    try{ d = await (await api("/api/auslagen/meine")).json(); }catch{ ziel.innerHTML = ""; return; }
+    ziel.innerHTML = (d.auslagen || []).map(z => `<div class="karte" style="margin-bottom:8px">
+      <b>${esc(z.lieferant || "Beleg")}</b> · ${esc(z.datum || "")} · ${euro(z.betrag)}
+      <p style="font-size:13px;color:var(--gc-desc)">${esc(AUSLAGE_STAND[z.status] || z.status)}${z.grund ? " — " + esc(z.grund) : ""}</p></div>`).join("")
+      || `<div class="leer"><b>Noch keine Auslagen</b>Fotografiere den Beleg in der App unter „Auslagen“.</div>`;
+    return;
+  }
+  $("#ausl-titel").textContent = "Auslagen";
+  $("#ausl-satz").textContent = istKanzlei()
+    ? "Was das Team ausgelegt hat — freigeben und erstatten macht die Inhaberin."
+    : "Was dein Team aus eigener Tasche bezahlt hat: freigeben, dann erstatten.";
+  reiter.innerHTML = [["offen", "Offen"], ["zu_erstatten", "Zu erstatten"], ["erstattet", "Erstattet"]]
+    .map(([k, t], n) => `<button class="chip${k === auslagenReiter ? " an" : ""}" onclick="auslagenReiterWahl(${n})">${t}</button>`).join("");
+  let d;
+  try{ d = await (await api("/api/auslagen?stand=" + auslagenReiter)).json(); }catch{ ziel.innerHTML = ""; return; }
+  auslagenListe = d.auslagen || []; auslagenOffen = d.erstattungen_offen || []; auslagenWahl = new Set();
+  const darf = meineRolle === "salon";
+  let html = auslagenListe.map((z, i) => `<div class="karte" style="margin-bottom:8px">
+    ${auslagenReiter === "zu_erstatten" && darf ? `<input type="checkbox" onchange="auslageWaehlen(${i}, this.checked)" aria-label="auswählen">` : ""}
+    <b>${esc(z.name || "")}</b> · ${esc(z.lieferant || "Beleg")} · ${esc(z.datum || "")} · ${euro(z.betrag)}
+    ${auslagenReiter === "offen" && darf ? `<div style="margin-top:8px;display:flex;gap:8px">
+      <button class="chip" onclick="auslageFreigeben(${i})">Freigeben</button>
+      <button class="chip" onclick="auslageAblehnen(${i})">Ablehnen</button></div>` : ""}</div>`).join("")
+    || `<div class="leer"><b>Nichts offen</b>Sobald jemand aus dem Team eine Auslage einreicht, steht sie hier.</div>`;
+  if (auslagenReiter === "zu_erstatten" && darf && auslagenListe.length){
+    html += `<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="chip" onclick="erstattungErstellen('ueberweisung')">Bankdatei für die Überweisung</button>
+      <button class="chip" onclick="erstattungErstellen('bar')">Bar aus der Kasse</button>
+      <span id="ausl-status" style="font-size:12px;color:var(--gc-muted)"></span></div>`;
+  }
+  if (auslagenOffen.length && darf){
+    html += `<h3 style="margin-top:16px">Überweisungen, die noch raus müssen</h3>` + auslagenOffen.map((e, i) =>
+      `<div class="karte" style="margin-bottom:8px"><b>${esc(e.kennung)}</b> · ${euro(e.je_person.reduce((s, p) => s + p.summe, 0))}
+       <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+       <a class="chip" href="${mitMandant("/api/auslagen/erstattung/" + encodeURIComponent(e.kennung) + "/bankdatei.xml")}">Bankdatei laden</a>
+       <button class="chip" onclick="erstattungUeberwiesen(${i})">Überwiesen ✓</button>
+       <button class="chip" onclick="erstattungVerwerfen(${i})">Verwerfen</button></div></div>`).join("");
+  }
+  ziel.innerHTML = html;
+}
+function auslagenReiterWahl(n){ auslagenReiter = ["offen", "zu_erstatten", "erstattet"][n]; ladeAuslagen(); }
+function auslageWaehlen(i, an){ const s = auslagenListe[i].stamm; an ? auslagenWahl.add(s) : auslagenWahl.delete(s); }
+async function auslagePost(pfad, koerper){
+  const r = await api(pfad, {method: "POST", headers: {"Content-Type": "application/json"},
+                             body: JSON.stringify(koerper || {})});
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) alert(d.fehler || "Ging gerade nicht.");
+  return r.ok ? d : null;
+}
+async function auslageFreigeben(i){
+  if (await auslagePost("/api/auslagen/" + encodeURIComponent(auslagenListe[i].stamm) + "/freigeben")) ladeAuslagen();
+}
+async function auslageAblehnen(i){
+  const grund = prompt("Warum nicht? Ein Satz genügt.");
+  if (!grund) return;
+  if (await auslagePost("/api/auslagen/" + encodeURIComponent(auslagenListe[i].stamm) + "/ablehnen", {grund})) ladeAuslagen();
+}
+async function erstattungErstellen(art){
+  if (!auslagenWahl.size){ $("#ausl-status").textContent = "Bitte zuerst Auslagen auswählen."; return; }
+  const d = await auslagePost("/api/auslagen/erstattung", {art, staemme: [...auslagenWahl], datum: heuteIso()});
+  if (!d) return;
+  if (art === "bar") window.open(mitMandant("/api/auslagen/erstattung/" + encodeURIComponent(d.kennung) + "/beleg.pdf"), "_blank");
+  ladeAuslagen();
+}
+async function erstattungUeberwiesen(i){
+  if (await auslagePost("/api/auslagen/erstattung/" + encodeURIComponent(auslagenOffen[i].kennung) + "/ueberwiesen", {am: heuteIso()})) ladeAuslagen();
+}
+async function erstattungVerwerfen(i){
+  if (!confirm("Diese Erstattung verwerfen? Die Auslagen werden wieder frei.")) return;
+  if (await auslagePost("/api/auslagen/erstattung/" + encodeURIComponent(auslagenOffen[i].kennung) + "/verwerfen")) ladeAuslagen();
+}
+
 async function ladeExport(){
   const satz = $("#export-satz");
   if (satz) satz.textContent = "Der fertige Buchungsstapel eines Monats — im Format, das "
