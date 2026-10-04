@@ -69,3 +69,13 @@ def test_nur_lesen_sperrt_den_abschluss_der_inhaberin(welt2, monkeypatch):
     nina = _login(welt2["bw"], welt2["nina"])
     assert nina.get("/api/datev/vorschau", params={"von": "2026-05", "bis": "2026-05"}).status_code == 200
     assert nina.post("/api/datev/uebergeben", params={"von": "2026-05", "bis": "2026-05"}).status_code == 403
+
+
+def test_die_seite_weiss_wer_den_monat_abschliesst(welt2):
+    nina = _login(welt2["bw"], welt2["nina"])
+    assert nina.get("/api/datev/uebersicht").json()["wer"] == "steuerbuero"
+    nina.post("/api/einstellungen", json={"steuerberater_modus": "Ich selbst (Independence Day)"})
+    assert nina.get("/api/datev/uebersicht").json()["wer"] == "selbst"
+    kanzlei = _login(welt2["bw"], welt2["kanzlei"])
+    assert kanzlei.get("/api/datev/uebersicht",
+                       headers={"X-Mandant": str(welt2["nina_id"])}).json()["wer"] == "kanzlei"

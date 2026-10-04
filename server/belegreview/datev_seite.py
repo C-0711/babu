@@ -812,6 +812,9 @@ def api_uebersicht(request: Request) -> Response:
         "je_monat": offen,
         "rahmen": bw.kontenrahmen_von(un),
         "kleinunternehmerin": _kleinunternehmerin(bw, un),
+        # Wer hier den Monat abschließt (Independence Day A): die Kanzlei, die
+        # Inhaberin für sich selbst oder die Inhaberin für ihr Steuerbüro.
+        "wer": ("kanzlei" if bw.darf_verwalten(un) else bw._arbeitsweise(un)),
         # Wessen Buchhaltung das ist — im Kopf der Seite, damit niemand
         # den Stapel des falschen Betriebs weitergibt.
         "berater": berater, "mandant": mandant,

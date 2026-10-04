@@ -335,12 +335,20 @@ async function hol(pfad){
 
 // ── Monate füllen ────────────────────────────────────────────────────
 let MONATE = [];
+/* Wer hier den Monat abschließt (seit 04.10.2026): die Kanzlei, die
+   Inhaberin für sich selbst oder die Inhaberin für ihr Steuerbüro. */
+let WER = "kanzlei";
+const UEBERGABE = {kanzlei: ["Stapel übergeben", "Nachtrag übergeben"],
+                   selbst: ["Monat abschließen", "Nachtrag abschließen"],
+                   steuerbuero: ["An mein Steuerbüro geben", "Nachtrag ans Steuerbüro geben"]};
 async function starten(){
   let d;
   try { d = await hol("/api/datev/uebersicht"); }
   catch (e) { $("#export-ausgabe").innerHTML =
     `<div class="meldung schlimm">${txt(e.message)}</div>`; return; }
   $("#rahmen").textContent = d.rahmen || "—";
+  WER = d.wer || "kanzlei";
+  if (WER !== "kanzlei" && !MANDANT) document.getElementById("zurueck").href = "/portal";
   // Berater- und Mandantennummer stehen im Kopf jeder Stapeldatei und
   // sagen der Kanzlei, wessen Buchhaltung sie importiert. Sie gehören
   // deshalb sichtbar auf die Seite, nicht nur in die Datei.
@@ -563,7 +571,7 @@ async function vorschau(){
         ${b.zeichen_ersetzt ? `<button class="chip" id="holen-alle">
           Stapel mit allen Buchstaben</button>` : ""}
         <button class="chip" id="uebergeben"${b.buchungen ? "" : " disabled"}>
-          ${b.uebergeben_text ? "Nachtrag übergeben" : "Stapel übergeben"}</button>
+          ${(UEBERGABE[WER] || UEBERGABE.kanzlei)[b.uebergeben_text ? 1 : 0]}</button>
         <span class="marke ${d.festgeschrieben ? "ok" : ""}" style="align-self:center">
           ${d.festgeschrieben ? "Zahlen freigegeben" : "Zahlen noch offen"}</span>
       </div>
@@ -593,9 +601,10 @@ async function vorschau(){
    dort liegt. */
 async function uebergeben(){
   const ziel = $("#export-ausgabe");
-  if (!confirm("Diesen Stapel jetzt an die Kanzlei übergeben?\n\n"
-      + "Danach gilt der Monat als bei der Kanzlei; was später kommt, "
-      + "geht als Nachtrag.")) return;
+  const frage = WER === "selbst"
+    ? "Diesen Monat jetzt abschließen?\n\nDanach ist er festgeschrieben; was später kommt, geht als Nachtrag."
+    : "Diesen Stapel jetzt an die Kanzlei übergeben?\n\nDanach gilt der Monat als bei der Kanzlei; was später kommt, geht als Nachtrag.";
+  if (!confirm(frage)) return;
   const a = await fetch(mitMandant("/api/datev/uebergeben?" + spanne()),
     {method:"POST", credentials:"same-origin"});
   if (!a.ok){
