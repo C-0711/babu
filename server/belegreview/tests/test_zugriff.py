@@ -370,8 +370,16 @@ def test_mitarbeiterin_sieht_die_verwaltung_nicht(welt, methode, pfad, kwargs):
 
 
 def test_mitarbeiterin_behaelt_ihre_taegliche_arbeit(welt):
-    """P3-26 sperrt die Verwaltung, nicht die Box der Mitarbeiterin."""
+    """P3-26 sperrt die Verwaltung, nicht die Box der Mitarbeiterin.
+
+    Seit babu Expenses D1 (04.10.2026) sieht eine Mitarbeiterin die Belege nur
+    mit dem Recht „darf Belege“ — ihre tägliche Arbeit ist genau das Recht,
+    das die Inhaberin ihr im Team gibt."""
     client = _mitarbeiterin(welt)
+    with welt._DB_LOCK, welt._db() as c:
+        c.execute("""INSERT INTO team (un, name, email, darf_belege, zugang, aktiv)
+                     VALUES ('christoph0711.io','Helfer','helfer@salon.de',1,
+                             'helfer@salon.de',1)""")
     assert client.get("/api/ich").json()["box"] is True
     assert client.get("/api/belege").status_code == 200
 
