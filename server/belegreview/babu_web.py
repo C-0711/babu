@@ -502,11 +502,20 @@ def _sqlite_schema(conn) -> None:
     # Nachrüstbare Spalten: Rechte, die die Inhaberin je Person vergibt.
     for spalte, typ in (("darf_belege", "INTEGER NOT NULL DEFAULT 0"),
                         ("darf_kasse", "INTEGER NOT NULL DEFAULT 0"),
-                        ("zugang", "TEXT")):
+                        ("zugang", "TEXT"),
+                        # babu Expenses D1 (04.10.2026): Auslagen einreichen,
+                        # und wohin die Erstattung geht.
+                        ("darf_auslagen", "INTEGER NOT NULL DEFAULT 0"),
+                        ("iban", "TEXT")):
         try:
             conn.execute(f"ALTER TABLE team ADD COLUMN {spalte} {typ}")
         except sqlite3.OperationalError:
             pass          # Spalte gibt es schon
+    # Geräte für Push-Nachrichten (D1). Kein Fremdschlüssel auf nutzer(email):
+    # PAT-Konten haben keine nutzer-Zeile. `thema` ist die App (babu / babu Pro).
+    conn.execute("""CREATE TABLE IF NOT EXISTS push_geraet
+        (token TEXT PRIMARY KEY, un TEXT NOT NULL, umgebung TEXT NOT NULL,
+         thema TEXT NOT NULL, angelegt_am TEXT NOT NULL, zuletzt_am TEXT NOT NULL)""")
     # Mitarbeiterkonten zeigen auf den Salon, dem die Daten gehören.
     try:
         conn.execute("ALTER TABLE nutzer ADD COLUMN gehoert_zu TEXT")
@@ -2522,6 +2531,12 @@ def api_ich(request: Request) -> Response:
     daten = {"un": un, "rolle": meine_rolle, "box": _hat_ablage(un),
              "hat_passwort": bool(nutzer_holen(un)), "mandanten": betreute,
              "arbeitsweise": _arbeitsweise(un)}
+    # Was eine Mitarbeiterin darf — die App zeigt danach ihre Reiter (D1).
+    # Nur für diese Rolle: alle anderen bekommen die Antwort wie bisher.
+    if meine_rolle == "mitarbeit":
+        daten["rechte"] = {"belege": team_recht(un, "darf_belege"),
+                           "kasse": team_recht(un, "darf_kasse"),
+                           "auslagen": team_recht(un, "darf_auslagen")}
     # Testmonat (seit 02.10.2026) — nur, wenn der Betrieb gerade einen hat;
     # für alle anderen bleibt die Antwort Byte für Byte, wie sie war.
     aktiver = _AKTIVER_MANDANT.get(None)
@@ -11721,10 +11736,30 @@ def vertraege_aktuell() -> list[dict]:
 # babu braucht nur die Summe, damit die Auswertung stimmt.
 # ---------------------------------------------------------------------------
 
+def _iban_kurz(iban: str) -> str:
+    import bank_anbindung  # noqa: PLC0415
+    return bank_anbindung.iban_kurz(iban)
+
+
+def team_person_von_zugang(un: str) -> dict | None:
+    """Die Team-Zeile einer Mitarbeiterin mit Zugang (babu Expenses D1)."""
+    n = nutzer_holen(un)
+    if not n or not n.get("gehoert_zu"):
+        return None
+    with _DB_LOCK, _db() as c:
+        z = c.execute("SELECT id, name, iban, aktiv FROM team WHERE zugang=? AND un=?",
+                      (un, n["gehoert_zu"])).fetchone()
+    if not z:
+        return None
+    return {"id": z[0], "name": z[1], "iban": z[2] or "", "aktiv": bool(z[3]),
+            "salon": n["gehoert_zu"]}
+
+
 def team_liste(un: str, nur_aktive: bool = False) -> list[dict]:
     with _DB_LOCK, _db() as c:
         sql = """SELECT id, name, email, lohn_art, betrag, stundenlohn, stunden,
-                        seit, aktiv, darf_belege, darf_kasse, zugang
+                        seit, aktiv, darf_belege, darf_kasse, zugang,
+                        darf_auslagen, iban
                  FROM team WHERE un=?"""
         if nur_aktive:
             sql += " AND aktiv=1"
@@ -11735,7 +11770,9 @@ def team_liste(un: str, nur_aktive: bool = False) -> list[dict]:
                   "betrag": z[4], "stundenlohn": z[5], "stunden": z[6],
                   "seit": z[7], "aktiv": bool(z[8]),
                   "darf_belege": bool(z[9]), "darf_kasse": bool(z[10]),
-                  "hat_zugang": bool(z[11])}
+                  "hat_zugang": bool(z[11]),
+                  "darf_auslagen": bool(z[12]),
+                  "iban_kurz": _iban_kurz(z[13]) if z[13] else None}
         person["kosten_monat"] = round(
             (z[4] or 0.0) if z[3] == "fest" else (z[5] or 0.0) * (z[6] or 0.0), 2)
         person["foto"] = (f"/api/team-foto/{z[0]}"
@@ -11807,6 +11844,8 @@ async def api_team_speichern(request: Request) -> Response:
     with _DB_LOCK, _db() as c:
         darf_belege = 1 if body.get("darf_belege") else 0
         darf_kasse = 1 if body.get("darf_kasse") else 0
+        darf_auslagen = (None if "darf_auslagen" not in body
+                         else 1 if body.get("darf_auslagen") else 0)
         if person_id:
             c.execute("""UPDATE team SET name=?, email=?, lohn_art=?, betrag=?,
                          stundenlohn=?, stunden=?, seit=?, darf_belege=?,
@@ -11814,12 +11853,18 @@ async def api_team_speichern(request: Request) -> Response:
                       (name, email or None, lohn_art, betrag, stundenlohn,
                        stunden, seit, darf_belege, darf_kasse,
                        int(person_id), un))
+            # Wer darf_auslagen nicht kennt (ältere App), lässt es stehen.
+            if darf_auslagen is not None:
+                c.execute("UPDATE team SET darf_auslagen=? WHERE id=? AND un=?",
+                          (darf_auslagen, int(person_id), un))
         else:
             c.execute("""INSERT INTO team (un, name, email, lohn_art, betrag,
-                         stundenlohn, stunden, seit, angelegt, darf_belege, darf_kasse)
-                         VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                         stundenlohn, stunden, seit, angelegt, darf_belege, darf_kasse,
+                         darf_auslagen)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                       (un, name, email or None, lohn_art, betrag, stundenlohn,
-                       stunden, seit, _jetzt_iso(), darf_belege, darf_kasse))
+                       stunden, seit, _jetzt_iso(), darf_belege, darf_kasse,
+                       darf_auslagen or 0))
     return JSONResponse({"ok": True, "team": team_liste(un),
                          "kosten_monat": team_personalkosten(un) or 0.0})
 
