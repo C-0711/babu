@@ -49,6 +49,11 @@ def schluessel_fuer(umsatz: dict) -> str:
     Muss über Neuladen hinweg gleich bleiben, sonst taucht eine geklärte
     Frage beim nächsten Öffnen wieder auf.
     """
+    # Umsätze aus einer Bankdatei tragen eine eigene stabile Kennung
+    # (bank_anbindung, seit 04.10.2026); die PDF-Umsätze behalten ihren
+    # Schlüssel, damit Geklärtes geklärt bleibt.
+    if umsatz.get("id"):
+        return str(umsatz["id"])[:16]
     roh = (f"{umsatz.get('datum')}|{umsatz.get('betrag')}|"
            f"{(umsatz.get('text') or '')[:80]}")
     return hashlib.sha256(roh.encode()).hexdigest()[:16]

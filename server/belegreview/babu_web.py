@@ -1561,6 +1561,26 @@ def _index_bauen(head: str) -> None:
         d_ = oid_cache.get(oid)
         if isinstance(d_, dict) and d_.get("monat"):
             umsaetze.setdefault(d_["monat"], []).extend(d_.get("umsaetze") or [])
+    # Bankdateien (B2, seit 04.10.2026): bank/umsaetze/<konto>/<JJJJ-MM>.json,
+    # übersetzt ins Format der PDF-Auszüge. Was ein PDF desselben Monats
+    # doppelt zeigt (gleicher Tag, gleicher Betrag), fällt dort weg.
+    import bank_anbindung as ba  # noqa: PLC0415
+    bank_pfade = {p_: oid for p_, oid in pfade.items()
+                  if p_.startswith("bank/umsaetze/") and p_.endswith(".json")}
+    for oid, roh in _blobs_lesen([o for o in bank_pfade.values()
+                                  if o not in oid_cache]).items():
+        try:
+            oid_cache[oid] = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            oid_cache[oid] = None
+    importiert: dict[str, list] = {}
+    for oid in bank_pfade.values():
+        for u in oid_cache.get(oid) or []:
+            if isinstance(u, dict) and u.get("buchung") and u.get("id"):
+                importiert.setdefault(u["buchung"][:7], []).append(ba.als_alt(u))
+    for monat_, liste in importiert.items():
+        liste.sort(key=lambda u: (u["datum"][6:10], u["datum"][3:5], u["datum"][:2]))
+        umsaetze[monat_] = liste + ba.ohne_doppelte_pdf(liste, umsaetze.get(monat_, []))
     idx["umsaetze"] = umsaetze
 
     # Kassenbuch: kassenbuch/<JJJJ-MM>/<JJJJ-MM-TT>.json — die Erlösseite.
@@ -2632,6 +2652,11 @@ def api_beleg(stamm: str, request: Request) -> Response:
             d["buchungssatz"] = datev_buchungssatz(d)
     if d.get("felder") is not None:
         _kreditor_in_detail(d, idx, stamm, eintrag)
+        # Die Abbuchung auf dem Konto (B3, seit 04.10.2026) — nur wenn es sie gibt.
+        import kern_bank  # noqa: PLC0415
+        bezahlt = kern_bank.zahlung_fuer(idx, stamm)
+        if bezahlt:
+            d["bezahlt"] = bezahlt
     d["bewirtung_beantwortet"] = eintrag["bewirtung_beantwortet"]
     if eintrag["bewirtung_beantwortet"]:
         roh = git_show(f"review/{stamm}.bewirtung.json")

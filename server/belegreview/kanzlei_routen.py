@@ -562,6 +562,15 @@ def _umsatz(blaetter: list[dict]) -> float | None:
     return round(summe, 2)
 
 
+def _bank_block(idx: dict, monat: str, frei: bool) -> dict | None:
+    """Die Bankzahlen eines Monats fürs Cockpit — nur mit Freigabe."""
+    if not frei:
+        return {"freigegeben": False}
+    import kern_bank  # noqa: PLC0415
+    ab = kern_bank.bank_abgleich(idx, monat)
+    return dict(ab["zaehler"], freigegeben=True) if ab.get("auszug_da") else None
+
+
 def _monats_befund(bw, un: str, mandant_id: int, monate: tuple[str, ...],
                    oeffnungstage: tuple[int, ...], heute: date) -> dict:
     """Ein Blick in EINE Box, aus dem alle angefragten Monate fallen.
@@ -574,6 +583,9 @@ def _monats_befund(bw, un: str, mandant_id: int, monate: tuple[str, ...],
     belege = list(idx["belege"].values())
     blaetter = idx.get("kassenblaetter") or {}
     zeiten = idx.get("zeiten") or {}
+    import bankrecht  # noqa: PLC0415
+    bank_frei = (not bankrecht.freigabe_pflicht()
+                 or mandanten.bank_stand(mandant_id)["freigegeben"])
 
     aus = []
     for monat in monate:
@@ -586,6 +598,9 @@ def _monats_befund(bw, un: str, mandant_id: int, monate: tuple[str, ...],
         export_am = (zeiten.get(f"export/{monat}/stapel.json") or {}).get("zeit")
         aus.append({
             "monat": monat,
+            # Das Konto (B3, seit 04.10.2026): Umsätze, Zahlungen ohne Beleg,
+            # Belege ohne Zahlung — oder None ohne Umsätze im Monat.
+            "bank": _bank_block(idx, monat, bank_frei),
             "belege": zaehler,
             "rueckfragen": _rueckfragen(m_belege),
             # `float(...)`: ohne das käme für einen leeren Monat die

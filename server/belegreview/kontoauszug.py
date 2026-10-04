@@ -128,7 +128,9 @@ def abgleich(umsaetze: list[dict], belege: list[dict],
                 einnahmen.append(u)
             positionen.append(dict(u, status="einnahme", stamm=None))
             continue
-        if BANK_RE.search(u.get("text", "")):
+        # Bankentgelte: im PDF der Kreissparkasse am Text erkannt, aus einer
+        # Bankdatei (CAMT, seit 04.10.2026) an der Art „Entgelt“.
+        if BANK_RE.search(u.get("text", "")) or (u.get("typ") or "").lower() == "entgelt":
             bank.append(u)
             positionen.append(dict(u, status="bank", stamm=None))
             continue

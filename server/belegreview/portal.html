@@ -1698,6 +1698,9 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     </div>
     <p style="color:var(--gc-desc);margin-bottom:10px">Hat jede Zahlung vom Konto ihren Beleg?</p>
     <button class="chip" id="bank-auszug-knopf" style="margin-bottom:14px">Kontoauszug ablegen</button>
+    <button class="chip" id="bank-datei-knopf" style="margin-bottom:14px">Umsätze aus der Bank (CAMT oder CSV)</button>
+    <input type="file" id="bank-datei" accept=".xml,.zip,.csv,.txt" hidden>
+    <div id="bank-datei-status"></div>
     <p id="bank-nur-lesen" style="display:none;color:var(--gc-muted);font-size:13px;margin-bottom:14px"></p>
     <div id="bank-freigabe"></div>
     <div id="bank-hochladen"></div>
@@ -3093,6 +3096,10 @@ async function ladeDetail(stamm){
         <div class="feld"><span>Dabei waren</span><b style="font-family:var(--gc-sans)">${(d.bewirtung.teilnehmer||[]).join(", ")}</b></div>` : ""}
       </div>`;
 
+    if (d.bezahlt){
+      html += `<p style="font-size:13px;color:var(--gc-ok);margin:10px 0 0">Bezahlt am ${esc(d.bezahlt.datum)}
+        — ${euro(Math.abs(d.bezahlt.betrag || 0))} vom Konto.</p>`;
+    }
     html += rechenproben(f.proben);
 
     /* Kontonummern und Buchungsschlüssel sind Kanzlei-Vokabular — Nina
@@ -3722,6 +3729,7 @@ async function ladeBank(){
   $("#b-mon-anzeige").textContent = monatName(bMonat);
   const nurLesen = bankNurLesen();
   $("#bank-auszug-knopf").style.display = nurLesen ? "none" : "";
+  $("#bank-datei-knopf").style.display = nurLesen || meineRolle === "mitarbeit" ? "none" : "";
   $("#bank-nur-lesen").style.display = nurLesen ? "" : "none";
   $("#bank-nur-lesen").textContent = BANK_NUR_LESEN;
   bankFreigabeZeigen();
@@ -3813,10 +3821,114 @@ async function ladeBank(){
       Alle Zahlungen vom Konto haben ihren Beleg ✓</div>`;
   }
   ziel.innerHTML = html;
+  bankKanzleiTeil(ab);
+}
+
+/* Die andere Richtung (seit 04.10.2026): Belege, zu denen auf dem Konto keine
+   Zahlung steht — und für die Kanzlei der Knopf, den Betrieb an die
+   fehlenden Belege zu erinnern (landet in seiner Post). */
+async function bankKanzleiTeil(ab){
+  let d;
+  try{
+    const r = await api("/api/bank/abgleich/" + bMonat);
+    if (!r.ok) return;
+    d = await r.json();
+  }catch{ return; }
+  if (!d.auszug_da) return;
+  let html = "";
+  if (d.belege_ohne_zahlung.length){
+    html += `<div class="sektion lbl">Belege ohne Zahlung auf dem Konto</div>`
+      + d.belege_ohne_zahlung.map(b => `<a href="#detail/${esc(b.stamm)}" style="color:inherit;text-decoration:none">
+        <div class="zeile"><div class="thumb doc" style="font:700 17px/1 var(--gc-serif);color:var(--gc-warn)">○</div>
+        <div class="zmitte"><div class="zname">${esc(b.lieferant || "Beleg")}</div>
+        <div class="zstatus">vom ${esc(b.datum || "")} — noch nicht abgebucht oder anders bezahlt</div></div>
+        <div class="zrechts"><div class="zbetrag">${euro(b.brutto || 0)}</div></div></div></a>`).join("");
+  }
+  if (d.je_kreditor && d.je_kreditor.length){
+    html += `<div class="sektion lbl">Je Kreditor</div><div class="karte">`
+      + d.je_kreditor.map(k => `<div class="ablage-zeile"><b>${esc(k.nummer ? k.nummer + " " + (k.name || "") : "Sammelkonto")}</b>
+        <span class="wann">${k.bezahlt} von ${k.belege} bezahlt</span>
+        <span class="wann num">${k.offen_summe ? "offen " + euro(k.offen_summe) : ""}</span></div>`).join("") + `</div>`;
+  }
+  const fehlend = (ab && ab.fehlend) || [];
+  if (bankNurLesen() && fehlend.length){
+    html += `<button class="chip" id="bank-erinnern" style="margin-top:12px">Betrieb an ${fehlend.length} fehlende Beleg${fehlend.length === 1 ? "" : "e"} erinnern</button>
+      <span id="bank-erinnern-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>`;
+  }
+  if (!html) return;
+  $("#bank-inhalt").insertAdjacentHTML("beforeend", html);
+  const knopf = $("#bank-erinnern");
+  if (knopf) knopf.onclick = async () => {
+    knopf.disabled = true;
+    const text = `Bitte reich die Belege zu diesen Zahlungen vom Konto nach (${monatName(bMonat)}):\n\n`
+      + fehlend.map(u => `- ${u.datum || ""}  ${(u.gegenpartei || "Zahlung")}  ${Math.abs(u.betrag || 0).toFixed(2).replace(".", ",")} €`).join("\n")
+      + "\n\nEin Foto in der App reicht. Danke!";
+    try{
+      const r = await api("/api/dokumente?art=kanzlei&name=" + encodeURIComponent("fehlende-belege-" + bMonat + ".txt")
+                          + "&titel=" + encodeURIComponent("Fehlende Belege " + monatName(bMonat)),
+                          {method: "POST", body: new Blob([text], {type: "text/plain"})});
+      const e = await r.json().catch(() => ({}));
+      $("#bank-erinnern-status").textContent = r.ok ? "Liegt jetzt in der Post des Betriebs ✓" : (e.fehler || "Ging gerade nicht.");
+    }catch{ $("#bank-erinnern-status").textContent = "Gerade keine Verbindung."; }
+  };
 }
 $("#b-mon-zurueck").addEventListener("click", () => { bMonat = monatSchieben(bMonat,-1); ladeBank(); });
 $("#b-mon-vor").addEventListener("click", () => { bMonat = monatSchieben(bMonat, 1); ladeBank(); });
 $("#bank-auszug-knopf").addEventListener("click", () => $("#auszug-datei").click());
+$("#bank-datei-knopf").addEventListener("click", () => $("#bank-datei").click());
+$("#bank-datei").addEventListener("change", ev => {
+  const f = ev.target.files[0];
+  ev.target.value = "";
+  if (f) bankDateiSenden(f, {});
+});
+/* Eine Datei der Bank: CAMT (auch als ZIP) oder CSV. Kennt babu die Spalten
+   einer CSV nicht oder steht das Konto nicht darin, wird einmal gefragt. */
+async function bankDateiSenden(datei, extra){
+  const ziel = $("#bank-datei-status");
+  ziel.innerHTML = `<p style="font-size:13px;color:var(--gc-muted)">wird gelesen …</p>`;
+  const paket = new FormData();
+  paket.append("datei", datei, datei.name);
+  if (extra.iban) paket.append("iban", extra.iban);
+  if (extra.spalten) paket.append("spalten", JSON.stringify(extra.spalten));
+  let r, d;
+  try{ r = await api("/api/bank/import", {method: "POST", body: paket}); d = await r.json().catch(() => ({})); }
+  catch{ ziel.innerHTML = `<p style="font-size:13px;color:var(--gc-danger)">Gerade keine Verbindung.</p>`; return; }
+  if (r.ok){
+    ziel.innerHTML = `<div class="karte" style="border-left:3px solid var(--gc-ok);margin-bottom:12px">
+      ${d.neu ? `${d.neu} neue Umsätze abgelegt` : "Alles schon da — nichts doppelt abgelegt"}${d.doppelt && d.neu ? `, ${d.doppelt} waren schon da` : ""}.</div>`;
+    if (d.monate && d.monate.length) bMonat = d.monate[d.monate.length - 1];
+    ladeBank();
+    return;
+  }
+  if (d.spalten && d.spalten.length){
+    const opt = `<option value="">—</option>` + d.spalten.map((s, i) => `<option value="${i}">${esc(s)}</option>`).join("");
+    const feld = (k, t) => `<label style="display:block;font-size:13px;margin-top:6px">${t}
+      <select data-spalte="${k}">${opt}</select></label>`;
+    ziel.innerHTML = `<div class="karte nachfrage" style="margin-bottom:12px"><h3>Welche Spalte ist was?</h3>
+      <p style="font-size:13px;color:var(--gc-desc)">${esc(d.fehler)}</p>
+      ${feld("buchung", "Datum")}${feld("betrag", "Betrag")}${feld("gegenpartei", "Name")}${feld("zweck", "Verwendungszweck")}
+      <label style="display:block;font-size:13px;margin-top:6px">IBAN des Kontos (wenn sie nicht in der Datei steht)
+        <input class="suchfeld" id="bank-datei-iban" style="margin:4px 0 0"></label>
+      <button class="chip" id="bank-datei-nochmal" style="margin-top:10px">So ablegen</button></div>`;
+    $("#bank-datei-nochmal").onclick = () => {
+      const spalten = {};
+      ziel.querySelectorAll("select[data-spalte]").forEach(s => {
+        if (s.value !== "") spalten[s.dataset.spalte] = d.spalten[Number(s.value)];
+      });
+      bankDateiSenden(datei, {spalten, iban: $("#bank-datei-iban").value.trim()});
+    };
+    return;
+  }
+  if (/IBAN/.test(d.fehler || "")){
+    ziel.innerHTML = `<div class="karte nachfrage" style="margin-bottom:12px"><h3>Für welches Konto?</h3>
+      <p style="font-size:13px;color:var(--gc-desc)">${esc(d.fehler)}</p>
+      <input class="suchfeld" id="bank-datei-iban" placeholder="DE…" style="margin:6px 0 0">
+      <button class="chip" id="bank-datei-nochmal" style="margin-top:10px">Ablegen</button></div>`;
+    $("#bank-datei-nochmal").onclick = () => bankDateiSenden(datei, {...extra, iban: $("#bank-datei-iban").value.trim()});
+    return;
+  }
+  ziel.innerHTML = `<p style="font-size:13px;color:var(--gc-danger)">${esc(d.fehler || "Das ging nicht.")}</p>`;
+}
 /* Die Freigabe der Kontoumsätze für das Steuerbüro (seit 04.10.2026).
    Der Betrieb liest den Text und gibt frei oder widerruft; das Steuerbüro
    sieht den Stand und kann einmal am Tag anfragen. */
@@ -7659,7 +7771,7 @@ async function mdMonate(id){
   }
   let html = `<div class="md-rollt"><table class="md-tabelle"><thead><tr>
     <th>Monat</th><th>Stand</th><th class="num">Belege</th><th class="num">Offen</th>
-    <th class="num">Ausgaben</th><th>Kassenbuch</th><th class="num">Umsatz</th><th></th></tr></thead><tbody>`;
+    <th class="num">Ausgaben</th><th>Kassenbuch</th><th>Konto</th><th class="num">Umsatz</th><th></th></tr></thead><tbody>`;
   for (const m of monate){
     const b = m.belege || {}, k = m.kassenbuch || {}, a = m.abschluss || {};
     const [wort, farbe] = CK_STAND[a.stand] || CK_STAND.leer;
@@ -7670,11 +7782,12 @@ async function mdMonate(id){
       <td class="num">${b.offen ? `<span style="color:var(--gc-accent);font-weight:600">${b.offen}</span>` : "0"}</td>
       <td class="num">${m.brutto_summe != null ? euro(m.brutto_summe) : "—"}</td>
       <td class="md-mail">${kb}</td>
+      <td class="md-mail">${kontoZelle(m.bank)}</td>
       <td class="num">${m.umsatz != null ? euro(m.umsatz) : "—"}</td>
       <td>${b.gesamt ? `<a class="chip" style="text-decoration:none" href="/datev?von=${m.monat}&bis=${m.monat}&mandant=${d.mandant.id}&name=${encodeURIComponent(d.mandant.name)}">Stapel ›</a>` : ""}</td></tr>`;
     const fragen = m.rueckfragen || [];
     if (fragen.length){
-      html += `<tr><td colspan="8" style="padding:4px 12px 12px;background:var(--gc-chrome)">
+      html += `<tr><td colspan="9" style="padding:4px 12px 12px;background:var(--gc-chrome)">
         ${fragen.map(f => `<div style="display:flex;gap:10px;align-items:baseline;padding:4px 0;font-size:13px">
           <span style="flex:0 0 auto;color:var(--gc-accent)">?</span>
           <span style="flex:1 1 auto"><b>${esc(f.lieferant || "Beleg")}</b> · ${euro(f.brutto)} — ${esc(f.frage || "Bitte ansehen")}</span>
@@ -7684,6 +7797,16 @@ async function mdMonate(id){
   }
   html += `</tbody></table></div>`;
   ziel.innerHTML = html;
+}
+
+/* Die Kontozahlen eines Monats im Cockpit (seit 04.10.2026). */
+function kontoZelle(b){
+  if (!b) return "—";
+  if (b.freigegeben === false) return "nicht freigegeben";
+  const teile = [`${b.umsaetze} Umsätze`];
+  if (b.ohne_beleg) teile.push(`<span style="color:var(--gc-accent);font-weight:600">${b.ohne_beleg} ohne Beleg</span>`);
+  if (b.belege_ohne_zahlung) teile.push(`${b.belege_ohne_zahlung} Belege ohne Zahlung`);
+  return teile.join("<br>");
 }
 
 /* ————— Ein Ordner Belege auf einmal (Massenimport je Mandant) —————
