@@ -484,6 +484,12 @@ function befundzeilen(b){
   if (b.kreditoren_neu_text)
     gelb.push([`${b.kreditoren_neu.length} Kreditor(en) gibt es in DATEV noch nicht`,
       b.kreditoren_neu_text]);
+  if (b.auslagen_warten)
+    gelb.push([`${b.auslagen_warten} Auslage(n) warten auf Freigabe`,
+      "Sie gehen erst in den Stapel, wenn die Inhaberin sie freigibt."]);
+  if (b.auslagen_ueber_250 && b.auslagen_ueber_250.length)
+    gelb.push(["Auslagen über 250 € mit Vorsteuer",
+      kurzliste(b.auslagen_ueber_250) + " — eine Rechnung über 250 € muss auf den Betrieb lauten."]);
   if (b.unbenannte_konten && b.unbenannte_konten.length)
     gelb.push(["Konten ohne Namen im Kontenrahmen",
       b.unbenannte_konten.join(", ") + (WER === "selbst" ? " — bitte prüfen, ob sie stimmen."

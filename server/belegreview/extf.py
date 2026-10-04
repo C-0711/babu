@@ -437,6 +437,8 @@ def gegenkonto(review: dict, kreditor: str | None = None,
     Reihenfolge (Plan Kanzleiansicht, K0 und K2):
 
     0. **Schon übergeben → das übergebene Gegenkonto** (`gegenkonto_fest`).
+    0b. **Auslage einer Mitarbeiterin → ihr Kreditor** (babu Expenses D1, seit
+       04.10.2026), auch wenn der Bon „bar“ sagt.
     1. **Bar bezahlt → Kasse.** Bestätigt vom Auftraggeber 03.09.2026: nur
        so stimmt der Kassenbestand im Stapel mit dem gezählten überein. Das
        gilt auch, wenn der Lieferant einen Kreditor hat — bezahlt hat die
@@ -454,6 +456,11 @@ def gegenkonto(review: dict, kreditor: str | None = None,
     fest = review.get("gegenkonto_fest")
     if fest:
         return str(fest)
+    # Auslage einer Mitarbeiterin (babu Expenses D1): gegen IHREN Kreditor —
+    # auch wenn der Bon „bar“ sagt, denn bar war ihr eigenes Geld.
+    auslage = review.get("auslage") or {}
+    if auslage.get("status") in ("freigegeben", "erstattet") and auslage.get("kreditor"):
+        return str(auslage["kreditor"])
     if zahlungsart(review) == "bar":
         return KASSE
     if ist_ausgang(review):
@@ -864,6 +871,27 @@ def kassenzeilen(kassenblaetter: list[dict], kleinunternehmerin: bool = False
     return aus
 
 
+def erstattungszeilen(erstattungen: list[dict]) -> list[dict]:
+    """Bar erstattete Auslagen: Kreditor der Mitarbeiterin an Kasse (D1, 04.10.2026).
+
+    Überweisungen bucht babu nicht — die Bank bucht das Steuerbüro wie jede
+    andere Lieferantenzahlung."""
+    aus: list[dict] = []
+    for e in erstattungen or []:
+        if e.get("art") != "bar" or e.get("status") != "ausgezahlt":
+            continue
+        datum = str(e.get("datum") or "")
+        for p in e["je_person"]:
+            if round(p["summe"], 2) > 0:
+                aus.append({"belegdatum": datum[8:10] + datum[5:7],
+                            "belegfeld1": _belegfeld1(e["kennung"]),
+                            "bu": "", "satz": None, "sh": "S",
+                            "konto": str(p["kreditor"]), "gegenkonto": KASSE,
+                            "umsatz": _de(p["summe"]),
+                            "text": f"Auslagenerstattung {p['name']}"[:60]})
+    return aus
+
+
 def erloeszeilen(kassenblaetter: list[dict], kleinunternehmerin: bool = False
                  ) -> list[dict]:
     """Der alte Name für `kassenzeilen` — es sind längst mehr als Erlöse.
@@ -985,6 +1013,8 @@ def _bar_je_monat(reviews: list[dict] | None) -> dict[str, float]:
     """
     aus: dict[str, float] = {}
     for review in reviews or []:
+        if (review.get("auslage") or {}).get("status"):
+            continue          # Auslage: bezahlt hat die Mitarbeiterin, nicht die Kasse
         if zahlungsart(review) != "bar":
             continue
         f = (review or {}).get("felder") or {}
@@ -1001,7 +1031,8 @@ def _bar_je_monat(reviews: list[dict] | None) -> dict[str, float]:
 
 
 def kassenluecke(kassenblaetter: list[dict],
-                 reviews: list[dict] | None = None) -> list[dict]:
+                 reviews: list[dict] | None = None,
+                 bar_erstattungen: dict[str, float] | None = None) -> list[dict]:
     """Um wie viel der Kassenbestand im Stapel zu hoch steht — je Monat.
 
     Die Folge des Vorsatzes oben: was der Stapel nicht bucht, fehlt in
@@ -1043,9 +1074,23 @@ def kassenluecke(kassenblaetter: list[dict],
     # sonst gar keinen Eintrag — und genau der wäre der auffälligste.
     for monat in bar:
         je_monat.setdefault(monat, dict(leer))
+    erstattet = bar_erstattungen or {}
+    for monat in erstattet:
+        je_monat.setdefault(monat, dict(leer))
 
     aus: list[dict] = []
     for monat, e in sorted(je_monat.items()):
+        bar_erstattet = round(erstattet.get(monat, 0.0), 2)
+        kassenzeile = round(e.get("auslagenErstattet", 0.0), 2)
+        e["auslagenErstattet"] = round(kassenzeile - min(bar_erstattet, kassenzeile), 2)
+        ohne_zeile = round(bar_erstattet - kassenzeile, 2)
+        if ohne_zeile > KASSEN_TOLERANZ:
+            aus.append({
+                "grund": "bar_erstattung_ohne_kassenzeile", "hart": False,
+                "monat": monat, "betrag": ohne_zeile,
+                "text": f"Im Zeitraum {monat} sind Auslagen über {_de(ohne_zeile)} € bar "
+                        f"erstattet, im Kassenbuch steht dafür nichts unter „Auslagen "
+                        f"erstattet“."})
         gebucht = round(bar.get(monat, 0.0), 2)
         ausgaben = round(e[BARAUSGABEN], 2)
         ohne_beleg = round(ausgaben - gebucht, 2)
@@ -1178,7 +1223,8 @@ def stapel(reviews: list[dict], monat: str, erzeugt: time.struct_time | None = N
            berater: str = BERATER, mandant: str = MANDANT,
            festschreibung: bool = False, rahmen: str | None = None,
            kassenblaetter: list[dict] | None = None,
-           kleinunternehmerin: bool = False) -> str:
+           kleinunternehmerin: bool = False,
+           erstattungen: list[dict] | None = None) -> str:
     """Kompletter Stapel als Text (Zeilen mit CRLF verbinden macht als_bytes).
 
     Mit `rahmen` läuft der Mischungs-Melder mit: ein Konto aus dem anderen
@@ -1233,6 +1279,12 @@ def stapel(reviews: list[dict], monat: str, erzeugt: time.struct_time | None = N
         else:
             zeilen += [_zeile(b) for b in kassenzeilen(kassenblaetter,
                                                        kleinunternehmerin)]
+    if erstattungen:
+        if rahmen == "SKR03":
+            print("[extf] Bar-Erstattungen bleiben aus dem SKR03-Stapel — Kasse nur "
+                  "für SKR04 hinterlegt", flush=True)
+        else:
+            zeilen += [_zeile(b) for b in erstattungszeilen(erstattungen)]
     return "\r\n".join(zeilen) + "\r\n"
 
 

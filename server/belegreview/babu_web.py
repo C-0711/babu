@@ -6206,6 +6206,12 @@ def _laeufe_lesen(stand: dict) -> list[dict]:
              "buchungen": None, "von": stand.get("von")}]
 
 
+def _bar_erstattungen(idx: dict, monat: str) -> list[dict]:
+    """Bar erstattete Auslagen eines Monats (babu Expenses D1)."""
+    import auslagen as al  # noqa: PLC0415
+    return al.bar_erstattungen_im_monat((idx.get("erstattungen") or {}).values(), monat)
+
+
 def _stapel_uebergeben(monate: list[str], un: str) -> tuple[bytes, dict]:
     """Einen Zeitraum an die Kanzlei übergeben — Datei erzeugen UND ablegen.
 
@@ -6251,19 +6257,25 @@ def _stapel_uebergeben(monate: list[str], un: str) -> tuple[bytes, dict]:
         gegenkonten = {s: extf.gegenkonto(idx["reviews"][s])
                        for s in neu_s if s in idx["reviews"]}
         blaetter = [idx["kassenblaetter"][t] for t in neu_t]
+        schon_e = {k for lauf in bisher for k in (lauf.get("erstattungen") or [])}
+        erstattungen = [e for e in _bar_erstattungen(idx, monat) if e["kennung"] not in schon_e]
         buchungen = sum(len(extf.buchungszeilen(r, klein)) for r in reviews)
         if rahmen != "SKR03":
             buchungen += len(extf.kassenzeilen(blaetter, klein))
+            buchungen += len(extf.erstattungszeilen(erstattungen))
         je_monat[monat] = {"reviews": reviews, "staemme": neu_s,
                            "ohne_konto": [], "hinweise": [],
                            "gegenkonten": gegenkonten,
                            "blaetter": blaetter, "neu_staemme": neu_s,
                            "neu_tage": neu_t, "buchungen": buchungen,
-                           "bisher": len(bisher)}
+                           "bisher": len(bisher),
+                           "erstattungen": erstattungen,
+                           "neu_erstattungen": [e["kennung"] for e in erstattungen]}
         hoechster_lauf = max(hoechster_lauf, len(bisher))
 
     betroffen = [m for m in monate
-                 if je_monat[m]["neu_staemme"] or je_monat[m]["neu_tage"]]
+                 if je_monat[m]["neu_staemme"] or je_monat[m]["neu_tage"]
+                 or je_monat[m]["neu_erstattungen"]]
     if not betroffen:
         namen = " und ".join(_monat_in_worten(m) for m in monate)
         bei = _bei_wem(un)
@@ -6300,7 +6312,9 @@ def _stapel_uebergeben(monate: list[str], un: str) -> tuple[bytes, dict]:
         laeufe.append({"zeit": stempel, "datei": dateiname,
                        "staemme": m["neu_staemme"], "kassentage": m["neu_tage"],
                        "buchungen": m["buchungen"], "von": un,
-                       "gegenkonten": m["gegenkonten"]})
+                       "gegenkonten": m["gegenkonten"],
+                       **({"erstattungen": m["neu_erstattungen"]}
+                          if m["neu_erstattungen"] else {})})
         # `staemme` und `kassentage` bleiben die Vereinigung aller Läufe —
         # der Index liest nur die, und für ihn ändert sich nichts.
         alle_s = sorted({x for lauf in laeufe for x in (lauf["staemme"] or [])}
@@ -6409,7 +6423,8 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
                            festschreibung=False,   # Vorschau, siehe oben
                            rahmen=kontenrahmen_von(un),
                            kassenblaetter=blaetter,
-                           kleinunternehmerin=not profil.get("braucht_ustva"))
+                           kleinunternehmerin=not profil.get("braucht_ustva"),
+                           erstattungen=_bar_erstattungen(idx, monat))
     except extf.RahmenVermischung as fehler_:
         return JSONResponse({"fehler": str(fehler_)}, status_code=409)
     daten = extf.als_bytes(text)

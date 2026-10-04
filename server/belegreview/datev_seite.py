@@ -42,6 +42,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 
 import boxschreiber
+import auslagen as al
 import extf
 import historie
 import kreditoren as kr
@@ -343,7 +344,9 @@ def _sammeln(bw, un: str, monate: list[str]) -> dict:
         je_monat[monat] = {"reviews": reviews, "staemme": mit, "ohne_konto": ohne,
                            "hinweise": hinweise,
                            "blaetter": _kassenblaetter(idx, monat),
-                           "rechnungen": _rechnungen(bw, idx, un, monat)}
+                           "rechnungen": _rechnungen(bw, idx, un, monat),
+                           "erstattungen": al.bar_erstattungen_im_monat(
+                               (idx.get("erstattungen") or {}).values(), monat)}
     berater, mandant = _berater_mandant(bw)
     return {"idx": idx, "rahmen": rahmen, "kleinunternehmerin": klein,
             "kreditoren": idx.get("kreditoren") or kr.leer(),
@@ -370,6 +373,8 @@ def _zeilen(daten: dict) -> list[dict]:
         if daten["rahmen"] != "SKR03":
             for z in extf.kassenzeilen(m["blaetter"], daten["kleinunternehmerin"]):
                 aus.append(dict(z, monat=monat, quelle="Kassenbuch", art="kasse"))
+            for z in extf.erstattungszeilen(m.get("erstattungen") or []):
+                aus.append(dict(z, monat=monat, quelle="Erstattung", art="kasse"))
     return aus
 
 
@@ -512,7 +517,9 @@ def _befund(daten: dict, zeilen: list[dict],
     # bucht der Stapel seit dem 03.09.2026 selbst gegen die Kasse. Übrig
     # bleibt, was ohne Beleg aus der Schublade ging — und umgekehrt der
     # Barbeleg, zu dem im Kassenbuch kein Eintrag steht.
-    luecken_alle = (extf.kassenluecke(blaetter, alle_reviews)
+    luecken_alle = (extf.kassenluecke(
+        blaetter, alle_reviews,
+        bar_erstattungen=al.bar_je_monat((daten["idx"].get("erstattungen") or {}).values()))
                     if rahmen != "SKR03" else [])
     luecken = [l for l in luecken_alle if l["grund"] == "kassenluecke"]
     bar_ohne_eintrag = [l for l in luecken_alle
@@ -554,6 +561,15 @@ def _befund(daten: dict, zeilen: list[dict],
     # schon getan hat.
     uebergeben = [u for u in (daten.get("uebergaben") or {}).values()
                   if u.get("uebergeben_am")]
+    idx_ = daten["idx"]
+    belege_ = idx_["belege"]
+    im_zeitraum = {s: a for s, a in (idx_.get("auslagen") or {}).items()
+                   if (belege_.get(s) or {}).get("monat") in daten["monate"]}
+    auslagen_warten = sum(1 for a in im_zeitraum.values() if a["status"] == "eingereicht")
+    auslagen_ueber_250 = sorted(
+        s for s, a in im_zeitraum.items()
+        if a["status"] in ("freigegeben", "erstattet")
+        and float(belege_[s].get("brutto") or 0) > 250 and float(belege_[s].get("ust") or 0) > 0)
     return {
         "rahmen": rahmen,
         "uebergeben": uebergeben,
@@ -571,6 +587,8 @@ def _befund(daten: dict, zeilen: list[dict],
                             f"{'die Kanzlei' if 'Kanzlei' in bei else 'dein Steuerbüro'} "
                             f"muss sie von Hand dem richtigen Betrieb "
                             f"zuordnen."),
+        "auslagen_warten": auslagen_warten,
+        "auslagen_ueber_250": auslagen_ueber_250,
         "sauber": (pruef.sauber and not ohne_konto and not unbenannt
                    and not ohne_datum and not zurueckgehalten
                    and not ausserhalb and not kassen_hart),
@@ -683,6 +701,7 @@ def stapel_zeitraum(daten: dict, monate: list[str], festschreibung: bool,
             m["reviews"], monat, erzeugt=erzeugt, berater=berater, mandant=mandant,
             festschreibung=festschreibung, rahmen=daten["rahmen"],
             kassenblaetter=m["blaetter"],
+            erstattungen=m.get("erstattungen"),
             kleinunternehmerin=daten["kleinunternehmerin"])
         zeilen = [z for z in text.split("\r\n") if z]
         if kopf is None:
