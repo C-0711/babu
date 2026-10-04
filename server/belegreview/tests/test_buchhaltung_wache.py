@@ -165,3 +165,12 @@ def test_im_menue_buchhaltung_fuehrt_ein_weg_zum_abschluss():
     assert 'id="menu-abschliessen"' in menue and "location.href='/datev'" in menue
     assert '$("#nav-abschliessen").hidden = !buchhaltungSelbst()' in roh
     assert '$("#menu-abschliessen").hidden = !buchhaltungSelbst()' in roh
+
+
+def test_wer_beim_steuerbuero_bleibt_bekommt_keinen_kuendigungsrat():
+    """Die Schlusskarte der Einrichtung rät nur dann zum Wechsel, wenn die
+    Inhaberin selbst einreichen will — „mit oder ohne Steuerberater“."""
+    roh = (HIER.parent / "portal.html").read_text()
+    karte = roh[roh.index("Du bist noch bei einem Steuerberater?") - 400:
+                roh.index("Du bist noch bei einem Steuerberater?")]
+    assert 'werte.steuerberater_modus' in karte and "Ich selbst" in karte

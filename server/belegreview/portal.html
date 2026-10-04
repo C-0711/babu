@@ -9112,7 +9112,8 @@ function ladeEinrichtung(){
       ziel.innerHTML = `<div class="haken"><div class="kreis stempel">✓</div><div class="txt">
         <b>Alles da — danke!</b><span>Du findest und änderst das jederzeit unter Einstellungen.</span></div></div>
         ${paketHtml}
-        ${werte.steuerberater_status === "Ja" ? `<div class="karte" style="margin-top:16px">
+        ${werte.steuerberater_status === "Ja"
+          && String(werte.steuerberater_modus || "").startsWith("Ich selbst") ? `<div class="karte" style="margin-top:16px">
           <b>Du bist noch bei einem Steuerberater?</b>
           <p style="color:var(--gc-desc);font-size:13px;margin-top:4px">Kein Problem — der Wechsel ist
           leicht: kurz kündigen (Vorlage kommt von uns), eine Vollmacht, den Rest holen wir.
