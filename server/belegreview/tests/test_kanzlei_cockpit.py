@@ -421,7 +421,13 @@ def test_eine_fremde_kanzlei_kommt_auch_ueber_datev_nicht_hinein(welt, k):
 
 def test_die_datev_seite_selbst_haengt_an_derselben_wache(welt, k):
     """Eine Seite, die eine andere Frage stellt als ihre Daten, ist keine
-    Wache."""
-    assert k.get("/datev").status_code == 200
-    _als(welt, "nina@0711.io")
-    assert k.get("/datev").status_code == 403
+    Wache. Seit Independence Day A (315c321) darf die Inhaberin die Seite
+    selbst — die fremde Kanzlei weiter nicht."""
+    erwartet = {("kanzlei-a@0711.io", None): 200, ("kanzlei-a@0711.io", welt["nina"]): 200,
+                ("nina@0711.io", None): 200, ("kanzlei-b@0711.io", welt["nina"]): 403}
+    for (wer, mandant), status in erwartet.items():
+        _als(welt, wer)
+        frage = {"mandant": mandant} if mandant else {}
+        seite = k.get("/datev", params=frage).status_code
+        daten = k.get("/api/datev/uebersicht", params=frage).status_code
+        assert (seite, daten) == (status, status), (wer, mandant)
