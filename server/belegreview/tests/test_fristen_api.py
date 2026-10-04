@@ -122,8 +122,10 @@ def test_freigabe_legt_den_entwurf_in_die_box(welt):
     abgelegt = json.loads(roh)
     assert abgelegt["monat"] == "2026-07"
     assert abgelegt["ustva"]["stand"] == "entwurf"
-    # Der Nachweis muss sagen, dass babu nicht übermittelt.
-    assert "Übermittlung" in abgelegt["hinweis"]
+    # Der Nachweis muss sagen, dass babu nicht übermittelt — ohne Steuerbüro
+    # trägt die Inhaberin die Zahlen selbst in Mein ELSTER ein (Stufe A).
+    assert "Mein ELSTER" in abgelegt["hinweis"]
+    assert "Steuer-Backend" not in abgelegt["hinweis"]
 
 
 def test_freigabe_braucht_einen_gueltigen_monat(welt):
