@@ -350,12 +350,30 @@ def test_mitarbeiterin_darf_nur_was_freigegeben_ist(bw, client):
     assert jana_client.get("/api/monatsabschluss/2026-08").status_code == 403
     assert jana_client.get("/api/team").status_code == 403
     assert jana_client.post("/api/team-zugang", json={"id": jana["id"]}).status_code == 403
+    # Und ändern kann sie das Team auch nicht: weder sich selbst die Kasse
+    # geben noch Kolleginnen beenden (Befund 04.10.2026 — die Antwort auf
+    # POST /api/team enthielt dazu die Löhne aller).
+    r = jana_client.post("/api/team", json={"id": jana["id"], "name": "Jana",
+                                           "darf_belege": True, "darf_kasse": True})
+    assert r.status_code == 403 and "team" not in r.json()
+    assert bw.team_recht("jana@salon.de", "darf_kasse") is False
+    assert jana_client.post("/api/team-aktion",
+                            json={"id": jana["id"], "aktion": "beenden"}).status_code == 403
+    assert jana_client.post("/api/team-foto", params={"id": jana["id"]},
+                            content=b"x").status_code == 403
 
     # Nina gibt die Kasse frei → Jana darf.
     client.post("/api/team", json={"id": jana["id"], "name": "Jana",
                                    "email": "jana@salon.de", "betrag": "2400",
                                    "darf_belege": True, "darf_kasse": True})
     assert bw.team_recht("jana@salon.de", "darf_kasse") is True
+
+    # Ohne „darf Belege“ lädt sie auch über die App nichts hoch.
+    client.post("/api/team", json={"id": jana["id"], "name": "Jana",
+                                   "email": "jana@salon.de", "betrag": "2400",
+                                   "darf_belege": False, "darf_kasse": True})
+    assert jana_client.post("/ablage", files={"file": ("bon.jpg", b"\xff\xd8\xff\xe0x",
+                                                       "image/jpeg")}).status_code == 403
 
     # Jana hört auf → ihr Zugang ist zu.
     client.post("/api/team-aktion", json={"id": jana["id"], "aktion": "beenden"})

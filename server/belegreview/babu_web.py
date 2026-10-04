@@ -3335,6 +3335,10 @@ async def ablage(request: Request) -> Response:
     un, fehler = _box_wache(request)   # App schickt Bearer; Cookie geht auch
     if fehler:
         return fehler
+    # Dieselbe Freigabe wie im Portal (`/api/aufnahme`): ohne „darf Belege“
+    # lädt eine Mitarbeiterin auch über die App nichts hoch (Befund 04.10.2026).
+    if (sperre := _mitarbeit_wache(un, "darf_belege", "Belege einreichen")):
+        return sperre
     # Multipart landet über eine Spool-Datei auf der Platte, kippt den
     # Prozess also nicht über den Speicher. Trotzdem gilt hier dieselbe
     # Grenze wie überall: sagt der Kopf schon, dass es zu viel wird, wird
@@ -11669,6 +11673,11 @@ async def api_team_speichern(request: Request) -> Response:
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
+    if rolle(un) == "mitarbeit":
+        # Befund 04.10.2026: ohne diese Zeile gab sich eine Mitarbeiterin
+        # selbst Rechte, beendete Kolleginnen und sah alle Löhne.
+        return JSONResponse({"fehler": "Das Team pflegt die Inhaberin."},
+                            status_code=403)
     un = salon_von_aktiv(un)   # Acting-as (Plan 21, 4.2): das Team gehört dem Mandanten
     try:
         body = await request.json()
@@ -11775,6 +11784,11 @@ async def api_team_aktion(request: Request) -> Response:
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
+    if rolle(un) == "mitarbeit":
+        # Befund 04.10.2026: ohne diese Zeile gab sich eine Mitarbeiterin
+        # selbst Rechte, beendete Kolleginnen und sah alle Löhne.
+        return JSONResponse({"fehler": "Das Team pflegt die Inhaberin."},
+                            status_code=403)
     un = salon_von_aktiv(un)   # Acting-as (Plan 21, 4.2): das Team gehört dem Mandanten
     try:
         body = await request.json()
@@ -11819,6 +11833,11 @@ async def api_team_foto(request: Request, id: int) -> Response:
     un, fehler = _api_wache(request)
     if fehler:
         return fehler
+    if rolle(un) == "mitarbeit":
+        # Befund 04.10.2026: ohne diese Zeile gab sich eine Mitarbeiterin
+        # selbst Rechte, beendete Kolleginnen und sah alle Löhne.
+        return JSONResponse({"fehler": "Das Team pflegt die Inhaberin."},
+                            status_code=403)
     un = salon_von_aktiv(un)   # Acting-as (Plan 21, 4.2): das Team gehört dem Mandanten
     with _DB_LOCK, _db() as c:
         if not c.execute("SELECT 1 FROM team WHERE id=? AND un=?",

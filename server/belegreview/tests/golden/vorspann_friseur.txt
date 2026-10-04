@@ -11,6 +11,7 @@ KATEGORIEN (wähle GENAU eine über ihren Code — Kontonummern vergibst nicht d
   wareneinkauf: Wareneinkauf (Weiterverkauf) — Ware, die die Kundin mitnimmt: Shampoo, Pflege, Styling.
   verbrauchsmaterial: Verbrauchsmaterial Salon — Wird im Salon aufgebraucht: Farbe, Folie, Handschuhe.
   materialeinsatz: Materialeinsatz am Kunden — Wird in der Dienstleistung verarbeitet und geht mit der Kundin mit: Extensions, Bondings, Strähnensets. Vergleichbar mit Haarfarbe, aber Wareneinsatz.
+  pfand: Pfand und Leergut — Pfand für Flaschen, Dosen, Kästen und Mehrweg — und die Leergutrückgabe als negative Position. Nur als POSITION eines Bons; der Rest des Bons bleibt bei seiner Kategorie.
   fremdleistung: Fremdleistungen — Stuhlmiete, freie Kosmetikerin, Subunternehmerin.
   gwg: Geringwertiges Wirtschaftsgut — Selbständig nutzbar, 250,01–800 € netto je Stück. Im Jahr der Anschaffung voll abgesetzt.
   anlagevermoegen: Anlagevermögen — Über 800 € netto. Wird über die Nutzungsdauer verteilt und gehört ins Anlagenverzeichnis.
@@ -31,10 +32,10 @@ KATEGORIEN (wähle GENAU eine über ihren Code — Kontonummern vergibst nicht d
   fahrt: Reise- und Fahrtkosten — Flug, Bahn, Taxi, Mietwagen, Hotel für Geschäftsreisen — auch wenn der Anlass ein Seminar ist (der Kursbeitrag bleibt Fortbildung). Internationale Flüge tragen KEINE deutsche Umsatzsteuer. Trennung Unternehmerin/Arbeitnehmerin noch nicht abgebildet — die Konten unterscheiden sich dort.
   telekom: Telefon und Internet
   buerobedarf: Bürobedarf
-  porto: Porto und Versand — Briefmarken, Frankierung, Paketversand, Zollgebühren des Versenders. Briefmarken tragen keine Umsatzsteuer, Expressdienste schon — was der Beleg ausweist, gilt.
+  porto: Porto und Versand — Briefmarken, Frankierung, Paketversand, Zollgebühren des Versenders — und Versand- und Frachtkosten auf einer Warenrechnung, dort als eigene Position. Briefmarken tragen keine Umsatzsteuer, Expressdienste schon — was der Beleg ausweist, gilt.
   literatur: Fachliteratur
   fortbildung: Fortbildung und Seminare — Kurse, Seminare, Schulungen, Meisterkurse — auch im Ausland und auch, wenn Reisekosten getrennt anfallen.
-  it: IT, Hosting, Software — SKR03-Gegenstück noch nicht bestätigt.
+  it: IT, Hosting, Software — Software-Abos, Lizenzen, App- und Plattformgebühren (z. B. Salonkee, Canva, Microsoft 365), Hosting, Domains. Wartungsverträge sind wartung. SKR03-Gegenstück noch nicht bestätigt.
   steuerberatung: Steuerberatung und Buchführung — Laufende Buchführung, Lohnabrechnung, Steuererklärungen. Weist die Kanzlei den Jahresabschluss getrennt aus, gehört DIESE Position auf Abschluss- und Prüfungskosten (SKR04 6827).
   rechtsberatung: Rechts- und Beratungskosten — Anwältin, Notar, Unternehmensberatung.
   werkzeug: Werkzeug und Kleingeräte — Scheren, Clipper, Föhn, Bürsten — unter der GWG-Grenze sofort Aufwand, darüber Anlagevermögen.
@@ -90,10 +91,15 @@ Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
 - Pfand (Flaschen, Kästen, Mehrweg) ist eine durchlaufende Kaution, KEINE
   Ware und KEIN Umsatz des Verkäufers: es trägt 0 % Umsatzsteuer. Steht auf
   dem Bon eine eigene Pfand-Zeile, gib sie als eigene Position mit
-  ust_satz 0 aus — rechne sie NIE in die Bemessungsgrundlage der 19 %/7 %
-  Positionen hinein. Weist der Bon Netto und Steuer bereits fertig
-  aus, übernimm genau diese Werte, statt sie aus dem Bruttobetrag
-  zurückzurechnen.
+  ust_satz 0 und kategorie pfand aus; eine Leergut- oder Pfandrückgabe ist
+  eine NEGATIVE Position mit kategorie pfand. Rechne Pfand NIE in die
+  Bemessungsgrundlage der 19 %/7 % Positionen hinein. Weist der Bon Netto
+  und Steuer bereits fertig aus, übernimm genau diese Werte, statt sie aus
+  dem Bruttobetrag zurückzurechnen.
+- Versand-, Fracht- und Portokosten auf einer Rechnung sind IMMER eine
+  eigene Position mit kategorie porto — auch auf einer Warenrechnung.
+  Pfand- und Versandpositionen bucht der Stapel auf ihr eigenes Konto;
+  das Ganze buchst du trotzdem auf die Kategorie der übrigen Positionen.
 - Hoheitliche Gebühren und Pflichtbeiträge sind nicht steuerbar und tragen
   NIE Umsatzsteuer: Handwerkskammer, Innung, IHK (kategorie
   kammerbeitrag) · Abfall-, Müll- und Straßenreinigungsgebühren, Grundsteuer
