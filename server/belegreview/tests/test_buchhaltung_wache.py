@@ -151,3 +151,17 @@ def test_datev_seite_und_portal_sagen_niemandem_mehr_deine_kanzlei():
             zeilen = [z.strip() for z in roh.splitlines() if verboten in z
                       and "von deiner kanzlei" not in z.lower()]   # Post der Kanzlei: Absender
             assert not zeilen, (name, zeilen)
+
+
+def test_im_menue_buchhaltung_fuehrt_ein_weg_zum_abschluss():
+    """Spezifikation §3: im Modus selbst steht der Weg zur DATEV-Seite im Menü
+    „Buchhaltung“ — in der Seitenleiste und im Menü fürs Handy."""
+    roh = (HIER.parent / "portal.html").read_text()
+    leiste = roh[roh.index('id="nav-gruppe-buchhaltung"'):]
+    leiste = leiste[:leiste.index("</details>")]
+    assert 'id="nav-abschliessen"' in leiste and "location.href='/datev'" in leiste
+    menue = roh[roh.index('<div class="menu-gruppe">Buchhaltung</div>'):]
+    menue = menue[:menue.index('<div class="menu-gruppe">Dein Salon</div>')]
+    assert 'id="menu-abschliessen"' in menue and "location.href='/datev'" in menue
+    assert '$("#nav-abschliessen").hidden = !buchhaltungSelbst()' in roh
+    assert '$("#menu-abschliessen").hidden = !buchhaltungSelbst()' in roh

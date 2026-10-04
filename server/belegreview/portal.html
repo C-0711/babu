@@ -1441,6 +1441,8 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-diagramm"/></svg> Monatsabschluss</button>
       <button role="menuitem" onclick="menuGeh('#export')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-export"/></svg> Export für die Buchhaltung</button>
+      <button role="menuitem" id="menu-abschliessen" hidden onclick="location.href='/datev'">
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-diagramm"/></svg> Prüfen und abschließen</button>
       <div class="menu-gruppe">Dein Salon</div>
       <button role="menuitem" onclick="menuGeh('#termine')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-kalender"/></svg> Termine</button>
@@ -1516,6 +1518,9 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
       <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-diagramm"/></svg><span class="txt">Monatsabschluss</span></button>
     <button type="button" title="Export für die Buchhaltung" onclick="menuGeh('#export')">
       <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-export"/></svg><span class="txt">Export für die Buchhaltung</span></button>
+    <!-- Wer selbst einreicht, schließt den Monat auf der DATEV-Seite ab (Independence Day A). -->
+    <button type="button" id="nav-abschliessen" hidden title="Prüfen und abschließen" onclick="location.href='/datev'">
+      <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-diagramm"/></svg><span class="txt">Prüfen und abschließen</span></button>
   </details>
   <details open data-gruppe="Dein Salon" id="nav-gruppe-salon">
     <summary>Dein Salon</summary>
@@ -5014,6 +5019,7 @@ async function menuUmschalten(){
       $("#menu-datev").hidden = $("#menu-verwaltung").hidden;
       $("#menu-mandanten").hidden = $("#menu-verwaltung").hidden;
       sitzungUebernehmen(d);
+      $("#menu-abschliessen").hidden = !buchhaltungSelbst();
     }catch{}
   }
 }
@@ -5042,7 +5048,8 @@ function naviKopfAktualisieren(un, rolle){
   $("#nav-avatar").textContent = (un || "·")[0].toUpperCase();
   $("#nav-rolle").textContent = rolleAnzeige(rolle);
   $("#nav-verwaltung").hidden = !(rolle === "admin" || rolle === "kanzlei");
-  $("#nav-datev").hidden = $("#nav-verwaltung").hidden && !buchhaltungSelbst();
+  $("#nav-datev").hidden = $("#nav-verwaltung").hidden;
+  $("#nav-abschliessen").hidden = !buchhaltungSelbst();
   $("#nav-gruppe-kanzlei").hidden = !istKanzlei();
   $("#reiter-kanzlei").hidden = !istKanzlei();
   $("#tab-kanzlei").hidden = !istKanzlei();
