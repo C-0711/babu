@@ -5811,6 +5811,17 @@ async function ladeAuslagen(){
        <button class="chip" onclick="erstattungUeberwiesen(${i})">Überwiesen ✓</button>
        <button class="chip" onclick="erstattungVerwerfen(${i})">Verwerfen</button></div></div>`).join("");
   }
+  /* Feste Links: Bankdatei und Erstattungsbeleg bleiben auch später erreichbar. */
+  if (auslagenReiter === "erstattet" && (d.erstattungen || []).length){
+    html += `<h3 style="margin-top:16px">Erstattungen</h3>` + d.erstattungen.map(e => {
+      const link = e.art === "bar"
+        ? `<a class="chip" href="${mitMandant("/api/auslagen/erstattung/" + encodeURIComponent(e.kennung) + "/beleg.pdf")}" target="_blank">Erstattungsbeleg</a>`
+        : `<a class="chip" href="${mitMandant("/api/auslagen/erstattung/" + encodeURIComponent(e.kennung) + "/bankdatei.xml")}">Bankdatei</a>`;
+      return `<div class="karte" style="margin-bottom:8px"><b>${esc(e.kennung)}</b> · ${e.art === "bar" ? "bar" : "Überweisung"}
+        · ${esc(e.datum || "")} · ${euro(e.je_person.reduce((x, p) => x + p.summe, 0))}
+        ${darf ? `<div style="margin-top:8px">${link}</div>` : ""}</div>`;
+    }).join("");
+  }
   ziel.innerHTML = html;
 }
 function auslagenReiterWahl(n){ auslagenReiter = ["offen", "zu_erstatten", "erstattet"][n]; ladeAuslagen(); }
@@ -5832,9 +5843,11 @@ async function auslageAblehnen(i){
 }
 async function erstattungErstellen(art){
   if (!auslagenWahl.size){ $("#ausl-status").textContent = "Bitte zuerst Auslagen auswählen."; return; }
+  /* Das Fenster VOR dem Warten öffnen — sonst hält der Popup-Blocker es auf. */
+  const fenster = art === "bar" ? window.open("", "_blank") : null;
   const d = await auslagePost("/api/auslagen/erstattung", {art, staemme: [...auslagenWahl], datum: heuteIso()});
-  if (!d) return;
-  if (art === "bar") window.open(mitMandant("/api/auslagen/erstattung/" + encodeURIComponent(d.kennung) + "/beleg.pdf"), "_blank");
+  if (!d){ if (fenster) fenster.close(); return; }
+  if (fenster) fenster.location = mitMandant("/api/auslagen/erstattung/" + encodeURIComponent(d.kennung) + "/beleg.pdf");
   ladeAuslagen();
 }
 async function erstattungUeberwiesen(i){

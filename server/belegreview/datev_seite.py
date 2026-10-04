@@ -1301,6 +1301,8 @@ def api_kreditoren_belege(request: Request, ohne: int = 0) -> Response:
     je = idx.get("kreditor_je_beleg") or {}
     zeilen = []
     for stamm, z in idx["belege"].items():
+        if stamm in (idx.get("auslagen") or {}):
+            continue          # Auslage: Kreditor der Mitarbeiterin (D1)
         review = idx["reviews"].get(stamm)
         if review is None or z["status"] == "exportiert":
             continue
@@ -1362,6 +1364,10 @@ async def api_kreditor_zuordnen(request: Request) -> Response:
     bw = _bw()
     idx = await run_in_threadpool(bw.index_aktuell)
     eintrag = idx["belege"].get(stamm)
+    if stamm in (idx.get("auslagen") or {}):
+        # Eine Auslage läuft immer über den Kreditor der Mitarbeiterin (D1).
+        return _fehler("Das ist eine Auslage — sie läuft über den Kreditor der "
+                       "Mitarbeiterin.", 409)
     if eintrag is None:
         return _fehler("Diesen Beleg gibt es nicht.", 404)
     if eintrag["status"] == "exportiert":

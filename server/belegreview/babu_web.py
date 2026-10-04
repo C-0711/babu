@@ -1790,7 +1790,9 @@ def _auslagen_einlegen(idx: dict, pfade: dict, oid_cache: dict, belege: dict,
         if stamm_ in reviews:
             reviews[stamm_] = {**reviews[stamm_], "auslage": a}
         stand = al.index_stand(a)
-        if stand and belege[stamm_]["status"] != "exportiert":
+        # Nur mit Lesung: ohne Review bleibt der Beleg „erfasst“, und die
+        # Nachlese findet ihn (Gesamtprüfung I1).
+        if stand and stamm_ in reviews and belege[stamm_]["status"] != "exportiert":
             belege[stamm_]["status"] = stand
     erstattungen: dict[str, dict] = {}
     for p_, oid in pfade.items():
@@ -2092,6 +2094,17 @@ def _api_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]
         print(f"[wache] 403: '{un}' weder Allowlist noch aktives Konto", flush=True)
         return None, JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
     request.state.un = un          # für die Zugriffszeile in `_metrik_mw`
+    # Mitarbeiterinnen nur über eine Positivliste je Recht (babu Expenses D1,
+    # Gesamtprüfung C1) — alles andere gehört der Inhaberin.
+    if rolle(un) == "mitarbeit":
+        import mitarbeitrecht  # noqa: PLC0415
+        rechte = {"belege": team_recht(un, "darf_belege"),
+                  "kasse": team_recht(un, "darf_kasse"),
+                  "auslagen": team_recht(un, "darf_auslagen")}
+        if not mitarbeitrecht.erlaubt(request.method, request.url.path, rechte):
+            return None, JSONResponse(
+                {"fehler": "Das gehört zur Inhaberin — dafür hast du keinen Zugang."},
+                status_code=403)
     gewuenscht = _mandant_gewuenscht(request)
     if gewuenscht:
         mandant_id = _mandant_aus_kontext(request, un)
@@ -2779,7 +2792,7 @@ def _kreditor_in_detail(d: dict, idx: dict, stamm: str, eintrag: dict) -> None:
     import extf  # noqa: PLC0415
     import kreditoren as kr  # noqa: PLC0415
     ir = idx["reviews"].get(stamm) or {}
-    zusatz = {k: ir[k] for k in ("kreditor", "sammelkonto", "gegenkonto_fest")
+    zusatz = {k: ir[k] for k in ("kreditor", "sammelkonto", "gegenkonto_fest", "auslage")
               if k in ir}
     if zusatz:
         d.update(zusatz)
@@ -3701,6 +3714,12 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
         except Exception:  # noqa: BLE001
             gelesen = ""
     schon = await run_in_threadpool(_blob_schon_da, daten)
+    if schon and als_auslage:
+        # Ehrlich statt still (Gesamtprüfung D1): sonst hieße es „ok“, aber
+        # eine Auslage gäbe es nicht — und der Pfad eines fremden Belegs ginge mit.
+        return JSONResponse({"fehler": "Dieses Foto liegt schon im Betrieb. Sprich kurz mit "
+                                       "der Inhaberin, ob es schon gebucht ist."},
+                            status_code=409)
     if schon:
         return JSONResponse({"ok": True, "dublette": True, "commit": None,
                              "datei": schon, "art": "beleg", "sicher": True,
@@ -3838,7 +3857,9 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
         _box().invalidieren()
     if als_auslage:
         import kern_auslagen  # noqa: PLC0415
-        kern_auslagen.eingereicht_melden(un, Path(pfad).name.rsplit(".", 1)[0])
+        b_ = (ergebnis or {}).get("buchung") if isinstance(ergebnis, dict) else None
+        b_ = b_ if isinstance(b_, dict) else {}
+        kern_auslagen.eingereicht_melden(un, b_.get("lieferant"), b_.get("betrag_eur"))
 
     # Kam kein Ergebnis mit, hat dieser Beleg noch GAR KEINE Lesung — der
     # Nutzer hat die Fragen abgebrochen, die Einschätzung lief in einen

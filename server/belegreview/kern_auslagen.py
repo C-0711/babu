@@ -14,10 +14,12 @@ import threading
 import time
 
 from fastapi import Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 
 import audit
 import auslagen as al
+import box as bx
 import boxschreiber
 
 bw = None   # der Kern, gesetzt von setup()
@@ -48,6 +50,15 @@ def _schloss() -> threading.Lock:
         return _SCHLOESSER.setdefault(schluessel, threading.Lock())
 
 
+def _frisch() -> None:
+    """Den Lesespiegel nachziehen, bevor unter dem Schloss gelesen wird.
+
+    Gesamtprüfung I5: im Modus `klon` las ein zweiter Klick sonst den alten
+    Stand — dieselbe Kennung oder verwaiste Reservierungen. Im Modus `store`
+    gibt es nichts nachzuziehen."""
+    bx.lesestand_holen(bw._box(), sofort=True, warten=True)  # noqa: SLF001
+
+
 def _pfad(stamm: str) -> str:
     return f"review/{stamm}.auslage.json"
 
@@ -72,6 +83,7 @@ def _schreiben(dateien: dict[str, bytes], nachricht: str, un: str) -> str:
 def _aendern(stamm: str, un: str, schritt, nachricht: str) -> dict:
     """Beiakte lesen, Schritt rechnen, schreiben — unter dem Schloss der Box."""
     with _schloss():
+        _frisch()
         a = _lesen(stamm)
         if a is None:
             raise KeineAuslage(stamm)
@@ -229,7 +241,12 @@ def api_liste(request: Request, stand: str = "offen") -> Response:
     zeilen.sort(key=lambda z: (z["name"] or "", z["datum"] or ""))
     offene = sorted((e for e in (idx.get("erstattungen") or {}).values()
                      if e.get("status") == "erstellt"), key=lambda e: e["kennung"])
+    # Alle Erstattungen, neueste zuerst — damit Bankdatei und Erstattungsbeleg
+    # auch später erreichbar bleiben (Gesamtprüfung I4).
+    alle = sorted((idx.get("erstattungen") or {}).values(),
+                  key=lambda e: e["kennung"], reverse=True)[:50]
     return JSONResponse({"auslagen": zeilen, "erstattungen_offen": offene,
+                         "erstattungen": alle,
                          "wartet": sum(1 for a in (idx.get("auslagen") or {}).values()
                                        if a["status"] == "eingereicht")})
 
@@ -267,15 +284,28 @@ def _entscheiden(request: Request, stamm: str, schritt_bauen, nachricht: str):
 def api_freigeben(stamm: str, request: Request) -> Response:
     def bauen(un):
         def schritt(a):
-            return al.uebergang(a, "freigegeben", von=un, am=bw._jetzt_iso(),  # noqa: SLF001
-                                kreditor=_kreditor_fuer(un, a))
+            # Erst prüfen, dann den Kreditor anlegen — ein veralteter Klick auf
+            # eine abgelehnte Auslage legt sonst einen Kreditor an.
+            if a["status"] != "eingereicht":
+                raise al.AuslageFehler("Das geht bei dieser Auslage gerade nicht.")
+            eintrag = bw.index_aktuell()["belege"].get(stamm) or {}
+            betrag = eintrag.get("brutto")
+            if not isinstance(betrag, (int, float)) or betrag <= 0:
+                raise al.AuslageFehler("Ohne Betrag lässt sich die Auslage nicht freigeben — "
+                                       "bitte zuerst den Betrag nachtragen.")
+            neu = al.uebergang(a, "freigegeben", von=un, am=bw._jetzt_iso(),  # noqa: SLF001
+                               kreditor=_kreditor_fuer(un, a))
+            # Bezahlt wird, was freigegeben wurde (Gesamtprüfung C2).
+            neu.update(betrag=round(float(betrag), 2), lieferant=eintrag.get("lieferant"),
+                       datum=eintrag.get("datum"))
+            return neu
         return schritt
     neu, fehler = _entscheiden(request, stamm, bauen, f"auslage freigegeben: {stamm}")
     if fehler:
         return fehler
-    lieferant, betrag = _betrag(stamm)
+    betrag_text = f"{neu['betrag']:.2f}".replace(".", ",")
     _melden("freigegeben", [neu["von"]], "Auslage freigegeben",
-            f"Deine Auslage {lieferant} ({betrag} €) ist freigegeben.")
+            f"Deine Auslage {neu.get('lieferant') or 'Beleg'} ({betrag_text} €) ist freigegeben.")
     return JSONResponse({"ok": True, "status": neu["status"], "kreditor": neu["kreditor"]})
 
 
@@ -284,7 +314,10 @@ async def api_ablehnen(stamm: str, request: Request) -> Response:
         body = await request.json()
     except Exception:  # noqa: BLE001
         body = {}
+    return await run_in_threadpool(_ablehnen, stamm, request, body)
 
+
+def _ablehnen(stamm: str, request: Request, body: dict) -> Response:
     def bauen(un):
         return lambda a: al.uebergang(a, "abgelehnt", von=un, am=bw._jetzt_iso(),  # noqa: SLF001
                                       grund=body.get("grund"))
@@ -323,16 +356,29 @@ def _erstattung_lesen(kennung: str) -> dict | None:
         return None
 
 
+def _naechste_freie(kennung: str) -> str:
+    """Die erste Kennung ab `kennung`, deren Datei es noch nicht gibt (Prüfung I5)."""
+    jahr, n = kennung[2:6], int(kennung.rsplit("-", 1)[1])
+    while bw.git_show(_erstattung_pfad(kennung)) is not None:
+        n += 1
+        kennung = f"E-{jahr}-{n:03d}"
+    return kennung
+
+
 async def api_erstattung(request: Request) -> Response:
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return _fehler("JSON erwartet", 400)
+    return await run_in_threadpool(_erstattung, request, body)
+
+
+def _erstattung(request: Request, body: dict) -> Response:
     import sepa  # noqa: PLC0415
     import vordrucke  # noqa: PLC0415
     un, fehler = _inhaberin(request)
     if fehler:
         return fehler
-    try:
-        body = await request.json()
-    except Exception:  # noqa: BLE001
-        return _fehler("JSON erwartet", 400)
     art = body.get("art")
     staemme = [str(s) for s in (body.get("staemme") or [])]
     datum = str(body.get("datum") or bw._jetzt_iso()[:10])[:10]  # noqa: SLF001
@@ -340,6 +386,7 @@ async def api_erstattung(request: Request) -> Response:
         return _fehler("Bitte Auslagen und die Art der Erstattung wählen.", 400)
     einst = bw.db_einstellungen(bw.salon_von_aktiv(un))
     with _schloss():
+        _frisch()
         idx = bw.index_aktuell()
         auslagen_ = {}
         for s in staemme:
@@ -347,11 +394,21 @@ async def api_erstattung(request: Request) -> Response:
             if a is None or a["status"] != "freigegeben" or a.get("erstattung"):
                 return _fehler("Eine der Auslagen ist nicht frei zum Erstatten — "
                                "bitte die Liste neu laden.", 409)
+            # Bezahlt wird der freigegebene Betrag — hat sich der Beleg seither
+            # geändert, braucht er eine neue Freigabe (Gesamtprüfung C2).
+            frei = a.get("betrag")
+            jetzt_ = (idx["belege"].get(s) or {}).get("brutto")
+            if not isinstance(frei, (int, float)) or frei <= 0 or not isinstance(
+                    jetzt_, (int, float)) or round(float(jetzt_), 2) != round(float(frei), 2):
+                return _fehler(f"Der Betrag der Auslage von {a.get('name') or 'der Mitarbeiterin'} "
+                               "hat sich seit der Freigabe geändert — bitte Freigabe "
+                               "zurücknehmen und neu freigeben.", 409)
             auslagen_[s] = a
-        kennung = al.naechste_kennung(list(idx.get("erstattungen") or {}), int(datum[:4]))
+        kennung = _naechste_freie(al.naechste_kennung(list(idx.get("erstattungen") or {}),
+                                                      int(datum[:4])))
         posten = [{"stamm": s, "kreditor": a["kreditor"], "name": a.get("name") or a["von"],
                    "von": a["von"],
-                   "betrag": float((idx["belege"].get(s) or {}).get("brutto") or 0),
+                   "betrag": round(float(a["betrag"]), 2),
                    "text": f"{(idx['belege'].get(s) or {}).get('lieferant') or 'Beleg'} "
                            f"{(idx['belege'].get(s) or {}).get('datum') or ''}".strip()}
                   for s, a in auslagen_.items()]
@@ -375,12 +432,16 @@ async def api_erstattung(request: Request) -> Response:
                                   "betrag_cent": int(round(p["summe"] * 100)),
                                   "name": p["name"], "iban": iban,
                                   "zweck": al.verwendungszweck(p["name"], kennung)})
-            dateien[_erstattung_pfad(kennung, "xml")] = sepa.pain001(
-                msg_id=kennung, erstellt=dt.datetime.now(),
-                ausfuehrung=dt.date.fromisoformat(datum),
-                schuldner={"name": einst["betrieb_name"], "iban": al.iban_normal(einst["iban"]),
-                           "bic": einst.get("bic") or None},
-                zahlungen=zahlungen)
+            try:
+                dateien[_erstattung_pfad(kennung, "xml")] = sepa.pain001(
+                    msg_id=kennung, erstellt=dt.datetime.now(),
+                    ausfuehrung=dt.date.fromisoformat(datum),
+                    schuldner={"name": einst["betrieb_name"],
+                               "iban": al.iban_normal(einst["iban"]),
+                               "bic": einst.get("bic") or None},
+                    zahlungen=zahlungen)
+            except ValueError as ex:
+                return _fehler(f"Die Bankdatei ließ sich nicht bauen: {ex}", 409)
             neu = {s: al.reservieren(a, kennung) for s, a in auslagen_.items()}
         else:
             dateien[_erstattung_pfad(kennung, "pdf")] = vordrucke.erstattungsbeleg_pdf(
@@ -428,15 +489,20 @@ def api_erstattungsbeleg(kennung: str, request: Request) -> Response:
 
 
 async def api_ueberwiesen(kennung: str, request: Request) -> Response:
-    un, fehler = _inhaberin(request)
-    if fehler:
-        return fehler
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001
         body = {}
+    return await run_in_threadpool(_ueberwiesen, kennung, request, body)
+
+
+def _ueberwiesen(kennung: str, request: Request, body: dict) -> Response:
+    un, fehler = _inhaberin(request)
+    if fehler:
+        return fehler
     am = str(body.get("am") or bw._jetzt_iso()[:10])[:10]  # noqa: SLF001
     with _schloss():
+        _frisch()
         e = _erstattung_lesen(kennung)
         if e is None:
             return _fehler("Diese Erstattung gibt es nicht.", 404)
@@ -464,6 +530,7 @@ def api_verwerfen(kennung: str, request: Request) -> Response:
     if fehler:
         return fehler
     with _schloss():
+        _frisch()
         e = _erstattung_lesen(kennung)
         if e is None:
             return _fehler("Diese Erstattung gibt es nicht.", 404)
@@ -520,11 +587,15 @@ def _betrag(stamm: str) -> tuple[str, str]:
     return z.get("lieferant") or "Beleg", betrag
 
 
-def eingereicht_melden(un: str, stamm: str) -> None:
+def eingereicht_melden(un: str, lieferant: str | None, betrag) -> None:
+    """Die Inhaberin erfährt von der neuen Auslage. Lieferant und Betrag kommen
+    aus der Einschätzung — kein Indexbau auf dem Ereignis-Loop (Prüfung I2)."""
     person = bw.team_person_von_zugang(un) or {}
-    lieferant, betrag = _betrag(stamm)
+    text = (f"{float(betrag):.2f}".replace(".", ",") + " €"
+            if isinstance(betrag, (int, float)) else "ohne Betrag")
     _melden("eingereicht", [bw.salon_von(un)], "Neue Auslage",
-            f"{person.get('name') or un} hat eine Auslage eingereicht: {lieferant}, {betrag} €.")
+            f"{person.get('name') or un} hat eine Auslage eingereicht: "
+            f"{lieferant or 'Beleg'}, {text}.")
 
 
 async def api_push_geraet(request: Request) -> Response:
