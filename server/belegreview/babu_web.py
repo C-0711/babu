@@ -1364,6 +1364,7 @@ def _index_bauen(head: str) -> None:
                     and not p.endswith(".bewirtung.json")
                     and not p.endswith(".korrektur.json")
                     and not p.endswith(".kreditor.json")
+                    and not p.endswith(".auslage.json")
                     and not p.endswith(".angaben.json")}
     korrektur_pfade = {p[len("review/"):-len(".korrektur.json")]: oid
                        for p, oid in pfade.items() if p.endswith(".korrektur.json")}
@@ -1664,6 +1665,7 @@ def _index_bauen(head: str) -> None:
 
     _kreditoren_einlegen(idx, pfade, oid_cache, belege, reviews, export_pfade,
                          exportiert)
+    _auslagen_einlegen(idx, pfade, oid_cache, belege, reviews)
 
     # Der Weg von babus eigener Belegnummer zurück zum Beleg. Sie steht im
     # Stapel bei jedem Beleg ohne gelesene Rechnungsnummer im Belegfeld 1 —
@@ -1742,6 +1744,49 @@ def _kreditoren_einlegen(idx: dict, pfade: dict, oid_cache: dict, belege: dict,
             reviews[stamm_] = {**review_, **zusatz}
     idx["kreditoren"] = stand
     idx["kreditor_je_beleg"] = aufgeloest
+
+
+def _auslagen_einlegen(idx: dict, pfade: dict, oid_cache: dict, belege: dict,
+                       reviews: dict) -> None:
+    """Auslagen der Mitarbeiterinnen und Erstattungen in den Index (D1, 04.10.2026).
+
+    `auslage` kommt nur in die KOPIE des Reviews. Für Auslagen, die nicht in
+    den Stapel gehören (eingereicht, abgelehnt, zurückgezogen), wird der
+    Beleg-Stand `wartet` bzw. `abgelehnt` — so greifen alle Stapel-Filter
+    ohne eigene Ausnahme. Belege ohne Auslage bleiben Byte für Byte, wie sie sind.
+    """
+    import auslagen as al  # noqa: PLC0415
+    lesen = [oid for p_, oid in pfade.items()
+             if ((p_.startswith("review/") and p_.endswith(".auslage.json"))
+                 or (p_.startswith("auslagen/erstattungen/") and p_.endswith(".json")))
+             and oid not in oid_cache]
+    for oid, roh in _blobs_lesen(lesen).items():
+        try:
+            oid_cache[oid] = json.loads(roh)
+        except Exception:  # noqa: BLE001
+            oid_cache[oid] = None
+    gefunden: dict[str, dict] = {}
+    for p_, oid in pfade.items():
+        if not (p_.startswith("review/") and p_.endswith(".auslage.json")):
+            continue
+        stamm_ = p_[len("review/"):-len(".auslage.json")]
+        a = al.laden(oid_cache.get(oid))
+        if a is None or stamm_ not in belege:
+            continue
+        gefunden[stamm_] = a
+        if stamm_ in reviews:
+            reviews[stamm_] = {**reviews[stamm_], "auslage": a}
+        stand = al.index_stand(a)
+        if stand and belege[stamm_]["status"] != "exportiert":
+            belege[stamm_]["status"] = stand
+    erstattungen: dict[str, dict] = {}
+    for p_, oid in pfade.items():
+        if p_.startswith("auslagen/erstattungen/") and p_.endswith(".json"):
+            e = oid_cache.get(oid)
+            if isinstance(e, dict) and e.get("kennung"):
+                erstattungen[str(e["kennung"])] = e
+    idx["auslagen"] = gefunden
+    idx["erstattungen"] = erstattungen
 
 
 def index_aktuell() -> dict:
@@ -2564,6 +2609,8 @@ def api_belege(request: Request, monat: str | None = None, status: str | None = 
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
+    if (sperre := _mitarbeit_wache(un, "darf_belege", "Belege ansehen")):
+        return sperre
     idx = index_aktuell()
     etag = f'"{idx["head"]}"'
     if request.headers.get("if-none-match") == etag:
@@ -2584,6 +2631,8 @@ def api_beleg(stamm: str, request: Request) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
+    if (sperre := _mitarbeit_wache(un, "darf_belege", "Belege ansehen")):
+        return sperre
     if not NAME_RE.match(stamm):
         return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
     stamm = re.sub(r"\.(jpg|jpeg|png|pdf|heic|xml)$", "", stamm, flags=re.I)
@@ -2800,6 +2849,8 @@ def api_beleg_bild(stamm: str, request: Request) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
+    if (sperre := _mitarbeit_wache(un, "darf_belege", "Belege ansehen")):
+        return sperre
     if not NAME_RE.match(stamm):
         return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
     eintrag = index_aktuell()["belege"].get(stamm)
@@ -3474,7 +3525,8 @@ async def api_hochladen(request: Request, name: str = "beleg.jpg") -> Response:
 # Beiakten eines Belegs: das Lese-Ergebnis und alles, was später dazukam.
 # Beim Löschen gehen sie mit — sonst bliebe eine Prüfung ohne Beleg zurück.
 BELEG_BEIAKTEN = (".json", ".md", ".embedding.json", ".angaben.json",
-                  ".bewirtung.json", ".korrektur.json", ".kreditor.json")
+                  ".bewirtung.json", ".korrektur.json", ".kreditor.json",
+                  ".auslage.json")
 
 
 @app.post("/api/beleg/{stamm}/loeschen")
@@ -3562,7 +3614,7 @@ async def api_beleg_erneut_lesen(stamm: str, request: Request) -> Response:
 
 @app.post("/api/aufnahme")
 async def api_aufnahme(request: Request, name: str = "foto.jpg",
-                       text: str = "") -> Response:
+                       text: str = "", auslage: str = "") -> Response:
     """Ein Foto — egal wovon. babu entscheidet, wohin es gehört.
 
     Die Kamera fragt nicht mehr „was ist das?". Die App liest den Text schon
@@ -3574,8 +3626,6 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    if (sperre := _mitarbeit_wache(un, "darf_belege", "Belege einreichen")):
-        return sperre
     endung = Path(name).suffix.lower()
     if endung not in HOCHLADEN_ENDUNGEN:
         return JSONResponse({"fehler": "kein Beleg-Format"}, status_code=400)
@@ -3592,6 +3642,7 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
         if len(daten) > HOCHLADEN_MAX:
             return JSONResponse({"fehler": "zu groß"}, status_code=413)
         text = str(form.get("text") or text or "")
+        auslage = str(form.get("auslage") or auslage or "")
         roh_ergebnis = form.get("ergebnis")
         if roh_ergebnis:
             try:
@@ -3606,6 +3657,18 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
             return JSONResponse({"fehler": "zu groß"}, status_code=413)
     if not daten:
         return JSONResponse({"fehler": "leer"}, status_code=400)
+    # Auslage einer Mitarbeiterin (babu Expenses D1): ihr eigenes Geld, ihr
+    # eigenes Recht. Ohne das Feld bleibt alles beim Betriebsbeleg.
+    als_auslage = str(auslage or "") == "1"
+    if als_auslage:
+        if rolle(un) != "mitarbeit":
+            return JSONResponse({"fehler": "Auslagen reichen Mitarbeiterinnen ein. Was du "
+                                           "selbst ausgelegt hast, trägst du im Kassenbuch ein."},
+                                status_code=403)
+        if (sperre := _mitarbeit_wache(un, "darf_auslagen", "Auslagen einreichen")):
+            return sperre
+    elif (sperre := _mitarbeit_wache(un, "darf_belege", "Belege einreichen")):
+        return sperre
 
     import einsortieren  # noqa: PLC0415
     # Bei PDFs liest der Server selbst nach — die App hat dort keinen Text.
@@ -3662,6 +3725,11 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
                         "punkte": entscheidung["punkte"], "sicher": False,
                         "grund": "Sieht nach Kontoauszug aus — der Leser "
                                  "prüft das nach."}
+    if als_auslage:
+        # Eine Auslage ist immer ein Beleg — nie Vertrag, Brief oder Auszug.
+        klasse = "beleg"
+        entscheidung = {"art": "beleg", "ziel": einsortieren.ZIELE["beleg"], "punkte": 99,
+                        "sicher": True, "grund": "Auslage einer Mitarbeiterin."}
 
     # Ins Auszugsfach legt nur der Betrieb selbst (bankrecht, 03.10.2026).
     if entscheidung["art"] == "kontoauszug" and _ALS_KANZLEI.get():
@@ -3736,6 +3804,13 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
             dateien[f"review/{stamm_neu}.embedding.json"] = json.dumps(
                 semantik).encode()
 
+    if als_auslage:
+        import auslagen as al  # noqa: PLC0415
+        stamm_a = Path(pfad).name.rsplit(".", 1)[0]
+        person = team_person_von_zugang(un) or {}
+        dateien[f"review/{stamm_a}.auslage.json"] = json.dumps(
+            al.neu(un, person.get("name") or un, _jetzt_iso()),
+            ensure_ascii=False, indent=1).encode()
     try:
         commit = await run_in_threadpool(boxschreiber.schreiben, _box(), dateien, None,
                                          f"aufnahme: {dateiname}", un)
@@ -3771,10 +3846,12 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
                          args=(_box(), _brief_job, pfad, daten, name, un),
                          daemon=True).start()
 
-    return JSONResponse({"ok": True, "commit": commit, "datei": pfad,
-                         "art": art, "sicher": entscheidung["sicher"],
-                         "grund": entscheidung["grund"], "hinweis": hinweis,
-                         "wohin": WOHIN_TEXT.get(art, WOHIN_TEXT["beleg"])})
+    antwort = {"ok": True, "commit": commit, "datei": pfad, "art": art,
+               "sicher": entscheidung["sicher"], "grund": entscheidung["grund"],
+               "hinweis": hinweis, "wohin": WOHIN_TEXT.get(art, WOHIN_TEXT["beleg"])}
+    if als_auslage:
+        antwort["auslage"] = True
+    return JSONResponse(antwort)
 
 
 def _zeilen_normalisieren(roh) -> list[str]:
@@ -6614,6 +6691,12 @@ async def api_buchung_einschaetzung(request: Request) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
+    if rolle(un) == "mitarbeit" and not (team_recht(un, "darf_belege")
+                                         or team_recht(un, "darf_auslagen")):
+        return JSONResponse({"fehler": "Dafür fehlt dir die Freigabe. Belege und Auslagen "
+                                       "einreichen darf im Salon nur, wer dafür "
+                                       "freigeschaltet ist — frag kurz nach."},
+                            status_code=403)
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001
@@ -12832,12 +12915,14 @@ import kern_ambassador  # noqa: E402,F401
 import kern_abo  # noqa: E402,F401
 import kern_auszahlung  # noqa: E402,F401
 import kern_bank  # noqa: E402,F401
+import kern_auslagen  # noqa: E402,F401
 
 kern_warteliste.setup(app, sys.modules[__name__])
 kern_ambassador.setup(app, sys.modules[__name__])
 kern_abo.setup(app, sys.modules[__name__])
 kern_auszahlung.setup(app, sys.modules[__name__])
 kern_bank.setup(app, sys.modules[__name__])
+kern_auslagen.setup(app, sys.modules[__name__])
 
 # Der Kern reicht sich selbst per setup() — die Familien hängen ihre
 # Routen an DIESES app-Objekt und benutzen DIESES Modul. Kein
