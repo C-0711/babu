@@ -2220,23 +2220,35 @@ def _box_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]
     # in abo.zugang(); ohne Abo ist sie genau die des Testmonats. Fragt erst
     # nach der Datenbank, wenn überhaupt geschrieben werden soll — lesende
     # Anfragen kosten nichts. Der Betreiber (admin) darf weiter helfen.
-    if (mandant_id is not None and request.method not in abo.LESEND
-            and rolle(un) != "admin"):
-        z = abo.zugang(**mandanten.abo_stand(mandant_id), heute=testmonat.heute())
-        if abo.sperrt(request.method, request.url.path, z):
-            # Ohne Abo-Weg (BABU_ABO=0) bleibt es beim Text von 02.10.:
-            # „schreib uns kurz" — eine Seite „Weitermachen" gibt es dann nicht.
-            # Die App meldet sich mit Geräteschlüssel (Bearer), das Portal mit
-            # Cookie: in der App nie ein Hinweis aufs Abschließen (App Store).
-            app = request.headers.get("authorization", "").lower().startswith("bearer ")
-            text = (abo.text(z, app=True) if app
-                    else abo.text(z) if abo.an() else testmonat.VORBEI_TEXT)
-            # `testmonat_vorbei` bleibt für die App von heute, die daran die
-            # Meldung festmacht; `nur_lesen`/`grund` sind die neue Form.
-            return None, JSONResponse({"fehler": text, "nur_lesen": True,
-                                       "grund": z["grund"],
-                                       "testmonat_vorbei": True}, status_code=403)
+    sperre = _nur_lesen_sperre(request, un, request.method)
+    if sperre is not None:
+        return None, sperre
     return un, None
+
+
+def _nur_lesen_sperre(request: Request, un: str, methode: str) -> JSONResponse | None:
+    """Die Abo-Sperre für eine Anfrage, die als `methode` zählt.
+
+    Eigene Funktion, weil ein GET nicht immer liest: `/api/export?festschreiben=1`
+    übergibt den Monat und muss deshalb wie ein POST gesperrt werden
+    (Review Independence Day A, 04.10.2026)."""
+    mandant_id = _AKTIVER_MANDANT.get(None)
+    if mandant_id is None or methode in abo.LESEND or rolle(un) == "admin":
+        return None
+    z = abo.zugang(**mandanten.abo_stand(mandant_id), heute=testmonat.heute())
+    if not abo.sperrt(methode, request.url.path, z):
+        return None
+    # Ohne Abo-Weg (BABU_ABO=0) bleibt es beim Text von 02.10.:
+    # „schreib uns kurz" — eine Seite „Weitermachen" gibt es dann nicht.
+    # Die App meldet sich mit Geräteschlüssel (Bearer), das Portal mit
+    # Cookie: in der App nie ein Hinweis aufs Abschließen (App Store).
+    app = request.headers.get("authorization", "").lower().startswith("bearer ")
+    text = (abo.text(z, app=True) if app
+            else abo.text(z) if abo.an() else testmonat.VORBEI_TEXT)
+    # `testmonat_vorbei` bleibt für die App von heute, die daran die
+    # Meldung festmacht; `nur_lesen`/`grund` sind die neue Form.
+    return JSONResponse({"fehler": text, "nur_lesen": True, "grund": z["grund"],
+                         "testmonat_vorbei": True}, status_code=403)
 
 
 @app.post("/api/anmelden")
@@ -6229,6 +6241,14 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
     # jemand hier oder auf der DATEV-Seite drückt — zwei Wege hätten zwei
     # Wahrheiten darüber, was die Kanzlei schon hat.
     if festschreiben:
+        # Ein GET, der übergibt: ein Link auf einer fremden Seite darf das
+        # nicht auslösen (das Cookie geht bei SameSite=Lax mit), und die
+        # Abo-Sperre gilt wie für jeden schreibenden Weg.
+        if request.headers.get("sec-fetch-site", "").lower() in ("cross-site", "same-site"):
+            return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+        sperre = _nur_lesen_sperre(request, un, "POST")
+        if sperre is not None:
+            return sperre
         import boxschreiber  # noqa: PLC0415
         try:
             daten, info = _stapel_uebergeben([monat], un)

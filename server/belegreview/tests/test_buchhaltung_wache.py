@@ -79,3 +79,29 @@ def test_die_seite_weiss_wer_den_monat_abschliesst(welt2):
     kanzlei = _login(welt2["bw"], welt2["kanzlei"])
     assert kanzlei.get("/api/datev/uebersicht",
                        headers={"X-Mandant": str(welt2["nina_id"])}).json()["wer"] == "kanzlei"
+
+
+def test_nur_lesen_sperrt_auch_festschreiben_und_korrektur(welt2, monkeypatch):
+    """Festschreiben per GET ist eine Übergabe — es darf die Abo-Sperre nicht
+    umgehen, nur weil GET sonst als lesend gilt (Review 04.10.2026)."""
+    import abo  # noqa: PLC0415
+    monkeypatch.setattr(abo, "zugang", lambda **kw: {"stufe": "nur_lesen", "grund": "test_vorbei"})
+    nina = _login(welt2["bw"], welt2["nina"])
+    r = nina.get("/api/export/2026-05.csv", params={"festschreiben": 1})
+    assert r.status_code == 403, r.text
+    assert r.json().get("nur_lesen") is True
+    assert nina.post(f"/api/korrektur/{ALPHA}", json={"buchungstext": "x"}).status_code == 403
+    assert nina.get("/api/export/2026-05.csv").status_code == 200     # die Vorschau bleibt
+
+
+def test_festschreiben_von_einer_fremden_seite_wird_abgelehnt(welt2):
+    """Ein Link auf einer fremden Seite darf keinen Monat festschreiben."""
+    nina = _login(welt2["bw"], welt2["nina"])
+    for quelle in ("cross-site", "same-site"):
+        r = nina.get("/api/export/2026-05.csv", params={"festschreiben": 1},
+                     headers={"Sec-Fetch-Site": quelle})
+        assert r.status_code == 403, (quelle, r.text)
+    kanzlei = _login(welt2["bw"], welt2["kanzlei"])
+    r = kanzlei.get("/api/export/2026-05.csv", params={"festschreiben": 1},
+                    headers={"Sec-Fetch-Site": "cross-site", "X-Mandant": str(welt2["nina_id"])})
+    assert r.status_code == 403
