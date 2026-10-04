@@ -401,13 +401,17 @@ def _hinweistext(hinweise: list[dict], hoechstens: int = 3) -> str | None:
     return " ".join(stuecke)
 
 
-def _uebergabe_text(uebergeben: list[dict]) -> str | None:
-    """Ein Satz je Monat, der schon bei der Kanzlei liegt."""
+def _uebergabe_text(uebergeben: list[dict],
+                    bei: str | None = "bei der Kanzlei") -> str | None:
+    """Ein Satz je Monat, der schon übergeben ist — `bei` aus `_bei_wem`,
+    None für eine Inhaberin, die selbst abschließt."""
     saetze = []
     for u in uebergeben:
         monat = f"{_monatsname(u['monat'])}"
-        satz = (f"Für {monat} liegt ein Stapel vom {u['uebergeben_am']} bei "
-                f"der Kanzlei ({u['buchungen']} Buchungen)")
+        satz = (f"Für {monat} liegt ein Stapel vom {u['uebergeben_am']} {bei} "
+                f"({u['buchungen']} Buchungen)" if bei else
+                f"{monat} ist seit {u['uebergeben_am']} abgeschlossen "
+                f"({u['buchungen']} Buchungen)")
         if u["nachtrag_offen"]:
             satz += f", {u['nachtrag_offen']} Beleg(e) seitdem"
         saetze.append(satz + ".")
@@ -423,8 +427,11 @@ def _monatsname(monat: str) -> str:
         return monat
 
 
-def _befund(daten: dict, zeilen: list[dict]) -> dict:
-    """Was jemand wissen muss, BEVOR er die Datei an die Kanzlei gibt."""
+def _befund(daten: dict, zeilen: list[dict],
+            bei: str | None = "bei der Kanzlei") -> dict:
+    """Was jemand wissen muss, BEVOR er die Datei an die Kanzlei gibt.
+
+    `bei` (aus `_bei_wem`) nennt den Empfänger in Worten der Leserin."""
     rahmen = daten["rahmen"]
     alle_reviews = [r for m in daten["je_monat"].values() for r in m["reviews"]]
     pruef = extf.rahmen_pruefen(alle_reviews, rahmen)
@@ -550,15 +557,18 @@ def _befund(daten: dict, zeilen: list[dict]) -> dict:
     return {
         "rahmen": rahmen,
         "uebergeben": uebergeben,
-        "uebergeben_text": _uebergabe_text(uebergeben),
+        "uebergeben_text": _uebergabe_text(uebergeben, bei),
         "nachtrag_offen": sum(u["nachtrag_offen"] for u in uebergeben),
         "berater": daten.get("berater") or "",
         "mandant": daten.get("mandant") or "",
         "stammdaten_fehlen": stammdaten,
-        "stammdaten_text": (None if not stammdaten else
+        # Ohne Steuerbüro importiert niemand den Stapel in DATEV — dann ist
+        # die fehlende Beraternummer kein Hinweis wert.
+        "stammdaten_text": (None if not stammdaten or not bei else
                             f"Im Kopf des Stapels fehlt die "
                             f"{' und die '.join(stammdaten)}. Die Datei "
-                            f"lässt sich herunterladen, aber die Kanzlei "
+                            f"lässt sich herunterladen, aber "
+                            f"{'die Kanzlei' if 'Kanzlei' in bei else 'dein Steuerbüro'} "
                             f"muss sie von Hand dem richtigen Betrieb "
                             f"zuordnen."),
         "sauber": (pruef.sauber and not ohne_konto and not unbenannt
@@ -851,7 +861,7 @@ def api_vorschau(request: Request, von: str = "", bis: str = "") -> Response:
     } for z in zeilen]
     return JSONResponse({
         "von": monate[0], "bis": monate[-1], "monate": monate,
-        "befund": _befund(daten, zeilen),
+        "befund": _befund(daten, zeilen, bw._bei_wem(un)),
         "zeilen": tabelle,
         "je_konto": _je_konto(zeilen),
         "festgeschrieben": all(bw._monat_festgeschrieben(m) for m in monate),
@@ -1334,8 +1344,11 @@ async def api_kreditor_zuordnen(request: Request) -> Response:
     if eintrag is None:
         return _fehler("Diesen Beleg gibt es nicht.", 404)
     if eintrag["status"] == "exportiert":
-        return _fehler("Der Beleg liegt schon bei der Kanzlei — sein Gegenkonto "
-                       "bleibt, wie es übergeben wurde.", 409)
+        bei = _bw()._bei_wem(un)
+        return _fehler(f"Der Beleg liegt schon {bei} — sein Gegenkonto bleibt, "
+                       f"wie es übergeben wurde." if bei else
+                       "Der Beleg gehört zu einem abgeschlossenen Monat — sein "
+                       "Gegenkonto bleibt, wie es abgeschlossen wurde.", 409)
     review = idx["reviews"].get(stamm) or {}
     if extf.zahlungsart(review) == "bar":
         return _fehler("Bar bezahlt — der Beleg läuft gegen die Kasse.", 409)

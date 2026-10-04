@@ -1788,9 +1788,9 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   <!-- EXPORT: Buchungsstapel für die Buchhaltung -->
   <section class="ansicht" id="a-export">
     <div class="gruss" style="font-size:22px;margin-bottom:4px">Export für die Buchhaltung</div>
-    <p style="color:var(--gc-desc);margin-bottom:16px">Der fertige Buchungsstapel eines
-      Monats — im Format, das Buchhaltungsprogramme lesen. Normalerweise holt ihn deine
-      Kanzlei selbst; hier kannst du ihn zusätzlich herunterladen.</p>
+    <p id="export-satz" style="color:var(--gc-desc);margin-bottom:16px">Der fertige Buchungsstapel eines
+      Monats — im Format, das Buchhaltungsprogramme lesen. Normalerweise holt ihn dein
+      Steuerbüro selbst; hier kannst du ihn zusätzlich herunterladen.</p>
     <div class="karte">
       <div class="mon-schalter" style="margin-bottom:12px">
         <button id="e-mon-zurueck" aria-label="Vormonat">‹</button>
@@ -2270,7 +2270,7 @@ function mitMandant(url){
 /* ————— Status-Sätze (Sprachregel: menschlich, kein Technik-Vokabular) ————— */
 function statusSatz(z){
   if (z.status === "unlesbar") return ["Konnte nicht gelesen werden — magst du drauf schauen?","frage"];
-  if (z.status === "exportiert") return ["bei der Kanzlei ✓","ok"];
+  if (z.status === "exportiert") return [uebergebenWort() + " ✓","ok"];
   if (z.status === "geprüft") return ["geprüft ✓","ok"];
   if (z.status === "erfasst") return ["wird noch gelesen …","laeuft"];
   if (z.bewirtung && !z.bewirtung_beantwortet) return ["Mit wem warst du essen?","frage"];
@@ -2322,6 +2322,11 @@ let meineArbeitsweise = "steuerbuero";
 function buchhaltungSelbst(){ return meineRolle === "salon" && meineArbeitsweise === "selbst"; }
 let meineMandanten = 0;
 function istKanzlei(){ return meineRolle === "kanzlei" || meineRolle === "admin"; }
+/* Wo ein übergebener Monat liegt, in Worten der Leserin (seit 04.10.2026):
+   leer heißt „abgeschlossen“ — die Inhaberin reicht selbst ein. */
+function beiWem(){ return istKanzlei() ? "bei der Kanzlei" : buchhaltungSelbst() ? "" : "beim Steuerbüro"; }
+function uebergebenWort(){ return beiWem() || "abgeschlossen"; }
+function grossAnfang(t){ return t ? t[0].toUpperCase() + t.slice(1) : t; }
 /* Wo das Portal aufgeht. Eine Kanzlei mit betreuten Betrieben und ohne
    gewählten Betrieb startet im Arbeitsvorrat — alle anderen bei „Heute".
    Wer im eigenen Betrieb arbeitet (auch der Betreiber, solange er keine
@@ -3016,13 +3021,14 @@ async function ladeDetail(stamm){
           : {t:"Geprüft" + (geprueft||b ? " ✓" : ""), klasse: rev ? "" : "offen"},
     {t:"Für DATEV bereit", klasse: b ? "" : "offen"},
     d.status === "exportiert"
-      ? {t:"Bei der Kanzlei ✓", klasse:""}
-      : {t:"Bei der Kanzlei", klasse:"offen"},
+      ? {t:grossAnfang(uebergebenWort()) + " ✓", klasse:""}
+      : {t:grossAnfang(uebergebenWort()), klasse:"offen"},
   ];
   const wegHinweis = haengt ? "konnte nicht gelesen werden — sieh unten nach"
     : frage ? "eine Frage ist offen — siehe unten"
     : (!rev ? "wird gerade gelesen — dauert einen Moment …"
-    : (b ? "im " + monatName(d.monat||jetztMonat()).split(" ")[0] + "-Stapel deiner Kanzlei"
+    : (b ? "im " + monatName(d.monat||jetztMonat()).split(" ")[0] + "-Stapel"
+         + (istKanzlei() ? " für die Kanzlei" : buchhaltungSelbst() ? "" : " für dein Steuerbüro")
          : null));
 
   /* Steht auf dem Beleg keine Nummer, zeigt der Kopf babus eigene — genau
@@ -3119,7 +3125,7 @@ async function ladeDetail(stamm){
       const gezeigt = zeilen.length ? zeilen.map(stapelzeile) : [stapelzeile(b)];
       html += `<div class="sekt"><span class="lbl">Das geht an DATEV</span>
         <p style="font-size:13px;color:var(--gc-desc);margin:0 0 8px">So steht der Beleg
-        im Stapel${istKanzlei() ? " für deine Kanzlei" : ""}.</p>
+        im Stapel${istKanzlei() ? " für die Kanzlei" : ""}.</p>
         ${gezeigt.join("")}${kreditorFeld(d)}${korrekturFormular(d)}</div>`;
     }
 
@@ -5708,6 +5714,13 @@ $("#ab-mon-vor").addEventListener("click", () => { abMonat = monatSchieben(abMon
 /* ————— Export-Ansicht ————— */
 let eMonat = jetztMonat();
 async function ladeExport(){
+  const satz = $("#export-satz");
+  if (satz) satz.textContent = "Der fertige Buchungsstapel eines Monats — im Format, das "
+    + "Buchhaltungsprogramme lesen. " + (istKanzlei()
+      ? "Normalerweise holt ihn die Kanzlei selbst; hier lässt er sich zusätzlich herunterladen."
+      : buchhaltungSelbst()
+      ? "Den Monat schließt du auf der DATEV-Seite ab; hier kannst du den Stapel zusätzlich herunterladen."
+      : "Normalerweise holt ihn dein Steuerbüro selbst; hier kannst du ihn zusätzlich herunterladen.");
   $("#e-mon-anzeige").textContent = monatName(eMonat);
   const ziel = $("#export-inhalt");
   let d;

@@ -884,7 +884,9 @@ def test_die_seite_zeigt_rot_vor_gelb(c):
     stelle_rot = seite.index("...rot.map")
     stelle_gelb = seite.index("...gelb.map")
     assert stelle_rot < stelle_gelb
-    assert "Konten, die deine Kanzlei noch nicht bestätigt hat" in seite
+    # Seit Independence Day A je nach Leserin (Steuerbüro oder niemand).
+    assert "Konten, die dein Steuerbüro noch nicht bestätigt hat" in seite
+    assert "Konten, die noch niemand bestätigt hat" in seite
 
 
 # ── Festschreibung (03.09.2026) ─────────────────────────────────────────

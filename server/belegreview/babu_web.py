@@ -3482,9 +3482,12 @@ async def api_beleg_loeschen(stamm: str, request: Request) -> Response:
     if eintrag is None:
         return JSONResponse({"fehler": "unbekannter Beleg"}, status_code=404)
     if eintrag["status"] == "exportiert":
+        bei = _bei_wem(un)
         return JSONResponse(
-            {"fehler": "Dieser Beleg liegt schon im Stapel bei deiner Kanzlei. "
-                       "Zum Löschen sprich kurz mit ihr."}, status_code=409)
+            {"fehler": (f"Dieser Beleg liegt schon im Stapel {bei}. Zum Löschen "
+                        f"sprich kurz mit {'ihr' if 'Kanzlei' in bei else 'ihm'}.") if bei else
+                       "Dieser Beleg gehört zu einem abgeschlossenen Monat und "
+                       "lässt sich nicht mehr löschen."}, status_code=409)
 
     try:
         body = await request.json()
@@ -4842,6 +4845,17 @@ def _arbeitsweise(un: str) -> str:
     return arbeitsweise.modus(db_einstellungen(salon_von_aktiv(un)), _betreut())
 
 
+def _bei_wem(un: str) -> str | None:
+    """Wo ein übergebener Monat liegt, in Worten der Leserin (Independence Day A).
+
+    „bei der Kanzlei“ für Kanzlei und Admin, „bei deinem Steuerbüro“ für eine
+    Inhaberin mit Steuerbüro, None für eine, die selbst abschließt — dann
+    heißt es „abgeschlossen“."""
+    if darf_verwalten(un):
+        return "bei der Kanzlei"
+    return None if _arbeitsweise(un) == "selbst" else "bei deinem Steuerbüro"
+
+
 def _einstellungen_mit_paket(un: str) -> dict:
     """Die Einstellungen eines Kontos, wie `/api/einstellungen` sie zeigt.
 
@@ -6160,9 +6174,12 @@ def _stapel_uebergeben(monate: list[str], un: str) -> tuple[bytes, dict]:
                  if je_monat[m]["neu_staemme"] or je_monat[m]["neu_tage"]]
     if not betroffen:
         namen = " und ".join(_monat_in_worten(m) for m in monate)
+        bei = _bei_wem(un)
         raise StapelSchonUebergeben(
-            f"Für {namen} liegt alles bei der Kanzlei. Sobald ein neuer "
-            f"Beleg dazukommt, lässt sich ein Nachtrag übergeben.")
+            f"Für {namen} liegt alles {bei}. Sobald ein neuer "
+            f"Beleg dazukommt, lässt sich ein Nachtrag übergeben." if bei else
+            f"Für {namen} ist schon alles abgeschlossen. Sobald ein neuer "
+            f"Beleg dazukommt, lässt sich ein Nachtrag abschließen.")
 
     bezeichnung = (f"babu {monate[0]}" if len(monate) == 1
                    else f"babu {monate[0]} bis {monate[-1]}")

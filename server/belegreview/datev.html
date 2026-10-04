@@ -341,6 +341,9 @@ let WER = "kanzlei";
 const UEBERGABE = {kanzlei: ["Stapel übergeben", "Nachtrag übergeben"],
                    selbst: ["Monat abschließen", "Nachtrag abschließen"],
                    steuerbuero: ["An mein Steuerbüro geben", "Nachtrag ans Steuerbüro geben"]};
+/* Wo ein übergebener Monat liegt, in Worten der Leserin — leer heißt
+   „abgeschlossen“ (die Inhaberin reicht selbst ein). */
+const BEI = () => WER === "selbst" ? "" : WER === "steuerbuero" ? "bei deinem Steuerbüro" : "bei der Kanzlei";
 async function starten(){
   let d;
   try { d = await hol("/api/datev/uebersicht"); }
@@ -355,11 +358,14 @@ async function starten(){
   $("#berater").textContent = d.berater || "—";
   $("#mandant").textContent = d.mandant || "—";
   const fehlt = d.stammdaten_fehlen || [];
-  if (fehlt.length){
+  /* Ohne Steuerbüro importiert niemand den Stapel in DATEV — dann ist die
+     fehlende Beraternummer kein Hinweis wert. */
+  if (fehlt.length && WER !== "selbst"){
     const w = $("#stammdaten-fehlt"); w.hidden = false;
     w.textContent = "Im Kopf des Stapels fehlt die " + fehlt.join(" und die ")
-      + ". Die Datei lässt sich herunterladen, aber die Kanzlei muss sie von "
-      + "Hand dem richtigen Betrieb zuordnen.";
+      + ". Die Datei lässt sich herunterladen, aber "
+      + (WER === "steuerbuero" ? "dein Steuerbüro" : "die Kanzlei")
+      + " muss sie von Hand dem richtigen Betrieb zuordnen.";
   }
   MONATE = d.monate || [];
   if (!MONATE.length){
@@ -374,7 +380,7 @@ async function starten(){
       // Steht der Monat schon bei der Kanzlei, gehört das in die Auswahl —
       // sonst sucht man den Hinweis erst nach dem Klick.
       const wo = z.uebergeben_am
-        ? ` · bei der Kanzlei seit ${z.uebergeben_am}`
+        ? ` · ${BEI() || "abgeschlossen"} seit ${z.uebergeben_am}`
           + (z.nachtrag_offen ? ` (${z.nachtrag_offen} neu)` : "")
         : "";
       return `<option value="${txt(m)}">${txt(m)} — ${z.fertig || 0} von
@@ -440,7 +446,9 @@ function befundzeilen(b){
     gelb.push([`${b.ohne_steuersatz.length} Beleg(e) ohne Steuersatz`,
       "Sie gehen ohne Steuerschlüssel mit, damit keine Vorsteuer gezogen "
       + "wird, die niemand gelesen hat: " + kurzliste(b.ohne_steuersatz)
-      + " — die Kanzlei trägt den Satz nach."]);
+      + (WER === "selbst" ? " — sieh sie dir einmal an, bevor du abschließt."
+        : WER === "steuerbuero" ? " — dein Steuerbüro trägt den Satz nach."
+        : " — die Kanzlei trägt den Satz nach.")]);
   if (b.ohne_kontierung && b.ohne_kontierung.length)
     gelb.push([`${b.ohne_kontierung.length} Beleg(e) ohne Konto`,
       "Sie fehlen im Stapel: " + kurzliste(b.ohne_kontierung)]);
@@ -448,7 +456,9 @@ function befundzeilen(b){
     gelb.push([`${b.ohne_belegdatum} Buchung(en) ohne Belegdatum`,
       "Die Spalte Belegdatum bleibt bei diesen Zeilen leer: "
       + kurzliste(b.ohne_belegdatum_belege)
-      + " — die Kanzlei muss das Datum sonst von Hand nachtragen."]);
+      + (WER === "selbst" ? " — trag das Datum im Beleg nach."
+        : WER === "steuerbuero" ? " — dein Steuerbüro muss das Datum sonst von Hand nachtragen."
+        : " — die Kanzlei muss das Datum sonst von Hand nachtragen.")]);
   if (b.kassen_weich && b.kassen_weich.length)
     gelb.push([`${b.kassen_weich.length} Kassentag(e) mit einer Differenz`,
       b.kassen_weich_text]);
@@ -476,11 +486,15 @@ function befundzeilen(b){
       b.kreditoren_neu_text]);
   if (b.unbenannte_konten && b.unbenannte_konten.length)
     gelb.push(["Konten ohne Namen im Kontenrahmen",
-      b.unbenannte_konten.join(", ") + " — bitte bei der Kanzlei nachfragen."]);
+      b.unbenannte_konten.join(", ") + (WER === "selbst" ? " — bitte prüfen, ob sie stimmen."
+        : WER === "steuerbuero" ? " — bitte bei deinem Steuerbüro nachfragen."
+        : " — bitte bei der Kanzlei nachfragen.")]);
   if (b.unbestaetigte_konten && b.unbestaetigte_konten.length)
-    gelb.push(["Konten, die deine Kanzlei noch nicht bestätigt hat",
+    gelb.push([WER === "steuerbuero" ? "Konten, die dein Steuerbüro noch nicht bestätigt hat"
+        : "Konten, die noch niemand bestätigt hat",
       b.unbestaetigte_konten.join(", ") + " — sie gehen mit, es sind die "
-      + "besten, die babu hat. Einmal darüber sprechen lohnt sich."]);
+      + "besten, die babu hat. "
+      + (WER === "selbst" ? "Einmal kurz nachsehen lohnt sich." : "Einmal darüber sprechen lohnt sich.")]);
   if (b.fremde_konten && b.fremde_konten.length)
     gelb.push(["Von Hand gesetzte Konten",
       b.fremde_konten.join(", ") + " — sie gehen unverändert mit."]);
@@ -488,8 +502,10 @@ function befundzeilen(b){
     gelb.push([`${b.zeichen_ersetzt} Buchstabe(n) werden zu Fragezeichen`,
       "Einzelne Buchstaben kann die übliche Stapeldatei nicht speichern — "
       + "meist in einem Lieferantennamen. Mit „Stapel mit allen Buchstaben“ "
-      + "bleiben sie stehen; frag im Zweifel deine Kanzlei, welche der "
-      + "beiden Dateien sie lieber hat."]);
+      + "bleiben sie stehen; "
+      + (WER === "steuerbuero" ? "frag im Zweifel dein Steuerbüro, welche der beiden Dateien es lieber hat."
+        : WER === "selbst" ? "nimm im Zweifel die, die dein Buchhaltungsprogramm lesen kann."
+        : "nimm die, die euer Import lieber liest.")]);
 
   // Was schon bei der Kanzlei liegt, ist kein Mangel — aber es gehört
   // ganz nach oben: wer gleich übergeben will, muss wissen, ob er das
@@ -498,7 +514,7 @@ function befundzeilen(b){
              ...gelb.map((e) => ["zu", "–", ...e])];
   if (b.uebergeben_text)
     z.unshift(["auf","✓", b.nachtrag_offen
-      ? `Ein Nachtrag ist fällig` : `Schon bei der Kanzlei`,
+      ? `Ein Nachtrag ist fällig` : (BEI() ? `Schon ${BEI()}` : `Schon abgeschlossen`),
       b.uebergeben_text]);
   if (!z.length || (z.length === 1 && z[0][0] === "auf"))
     z.push(["auf","✓","Nichts aufgefallen",
@@ -603,6 +619,8 @@ async function uebergeben(){
   const ziel = $("#export-ausgabe");
   const frage = WER === "selbst"
     ? "Diesen Monat jetzt abschließen?\n\nDanach ist er festgeschrieben; was später kommt, geht als Nachtrag."
+    : WER === "steuerbuero"
+    ? "Diesen Stapel jetzt an dein Steuerbüro geben?\n\nDanach gilt der Monat als bei deinem Steuerbüro; was später kommt, geht als Nachtrag."
     : "Diesen Stapel jetzt an die Kanzlei übergeben?\n\nDanach gilt der Monat als bei der Kanzlei; was später kommt, geht als Nachtrag.";
   if (!confirm(frage)) return;
   const a = await fetch(mitMandant("/api/datev/uebergeben?" + spanne()),

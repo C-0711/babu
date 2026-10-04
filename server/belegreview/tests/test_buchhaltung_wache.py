@@ -117,3 +117,37 @@ def test_die_kanzlei_liest_immer_die_texte_fuers_steuerbuero(welt2):
     kopf = {"X-Mandant": str(welt2["nina_id"])}
     assert kanzlei.get("/api/ich", headers=kopf).json()["arbeitsweise"] == "steuerbuero"
     assert nina.get("/api/ich").json()["arbeitsweise"] == "selbst"
+
+
+def test_der_hinweis_schon_uebergeben_spricht_die_leserin_an(welt2):
+    """„liegt alles bei der Kanzlei“ nur für die Kanzlei; die Inhaberin liest
+    „bei deinem Steuerbüro“ bzw. „abgeschlossen“ (Review 04.10.2026)."""
+    spanne = {"von": "2026-05", "bis": "2026-05"}
+    nina = _login(welt2["bw"], welt2["nina"])
+    r = nina.post("/api/datev/uebergeben", params=spanne)
+    assert r.status_code == 409 and "bei deinem Steuerbüro" in r.json()["fehler"], r.text
+    nina.post("/api/einstellungen", json={"steuerberater_modus": "Ich selbst (Independence Day)"})
+    text = nina.post("/api/datev/uebergeben", params=spanne).json()["fehler"]
+    assert "abgeschlossen" in text and "Kanzlei" not in text and "Steuerbüro" not in text
+    kanzlei = _login(welt2["bw"], welt2["kanzlei"])
+    r = kanzlei.post("/api/datev/uebergeben", params=spanne,
+                     headers={"X-Mandant": str(welt2["nina_id"])})
+    assert "bei der Kanzlei" in r.json()["fehler"]
+
+
+def test_der_satz_zum_uebergebenen_monat_kennt_drei_leserinnen():
+    import datev_seite  # noqa: PLC0415
+    u = [{"monat": "2026-05", "uebergeben_am": "03.06.2026", "buchungen": 12, "nachtrag_offen": 0}]
+    assert "bei der Kanzlei" in datev_seite._uebergabe_text(u)
+    assert "bei deinem Steuerbüro" in datev_seite._uebergabe_text(u, bei="bei deinem Steuerbüro")
+    selbst = datev_seite._uebergabe_text(u, bei=None)
+    assert "abgeschlossen" in selbst and "Kanzlei" not in selbst
+
+
+def test_datev_seite_und_portal_sagen_niemandem_mehr_deine_kanzlei():
+    for name in ("datev.html", "portal.html"):
+        roh = (HIER.parent / name).read_text()
+        for verboten in ("deine Kanzlei", "deiner Kanzlei"):
+            zeilen = [z.strip() for z in roh.splitlines() if verboten in z
+                      and "von deiner kanzlei" not in z.lower()]   # Post der Kanzlei: Absender
+            assert not zeilen, (name, zeilen)
