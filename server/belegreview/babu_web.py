@@ -4821,8 +4821,13 @@ def _betreut() -> bool:
 
 
 def _arbeitsweise(un: str) -> str:
-    """Steuerbüro oder selbst — für diesen Zugang, beim Acting-as für den Mandanten."""
+    """Steuerbüro oder selbst — für diesen Zugang, beim Acting-as für den Mandanten.
+
+    Kanzlei und Admin sind selbst das Steuerbüro: für sie gelten immer dessen
+    Texte, auch wenn das Portal /api/ich ohne Mandantenkopf fragt."""
     import arbeitsweise  # noqa: PLC0415
+    if darf_verwalten(un):
+        return arbeitsweise.STEUERBUERO
     return arbeitsweise.modus(db_einstellungen(salon_von_aktiv(un)), _betreut())
 
 

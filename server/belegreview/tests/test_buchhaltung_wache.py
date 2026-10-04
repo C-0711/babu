@@ -105,3 +105,15 @@ def test_festschreiben_von_einer_fremden_seite_wird_abgelehnt(welt2):
     r = kanzlei.get("/api/export/2026-05.csv", params={"festschreiben": 1},
                     headers={"Sec-Fetch-Site": "cross-site", "X-Mandant": str(welt2["nina_id"])})
     assert r.status_code == 403
+
+
+def test_die_kanzlei_liest_immer_die_texte_fuers_steuerbuero(welt2):
+    """Das Portal fragt /api/ich ohne Mandantenkopf. Für die Kanzlei darf das
+    nicht „selbst“ ergeben — sonst liest sie „trägst du in Mein ELSTER ein“."""
+    nina = _login(welt2["bw"], welt2["nina"])
+    nina.post("/api/einstellungen", json={"steuerberater_modus": "Ich selbst (Independence Day)"})
+    kanzlei = _login(welt2["bw"], welt2["kanzlei"])
+    assert kanzlei.get("/api/ich").json()["arbeitsweise"] == "steuerbuero"
+    kopf = {"X-Mandant": str(welt2["nina_id"])}
+    assert kanzlei.get("/api/ich", headers=kopf).json()["arbeitsweise"] == "steuerbuero"
+    assert nina.get("/api/ich").json()["arbeitsweise"] == "selbst"
