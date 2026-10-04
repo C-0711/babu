@@ -38,7 +38,10 @@ Steuerbüro genau so weiterarbeiten wie bisher.
   **„Mein Steuerbüro“** und **„Ich selbst (Independence Day)“**.
 - Alte Werte bleiben lesbar: „Mein Steuerbüro bleibt“/„vorbereitend“ → Steuerbüro,
   „Alles über babu“ → selbst. Leer → abgeleitet aus `steuerberater_status`
-  („Ja“ → Steuerbüro, sonst selbst).
+  („Ja“ → Steuerbüro, „Nein“ → selbst); ist auch das leer, entscheidet die
+  Betreuung: wird der Betrieb von einem echten Steuerbüro betreut (Kanzlei ≠
+  „babu direkt“), gilt Steuerbüro, sonst selbst. So bleibt z. B. ein von einer
+  Kanzlei angelegter Betrieb ohne Einstellungen beim Steuerbüro.
 - Ein neues reines Modul **`arbeitsweise.py`** mit `modus(einstellungen) ->
   "steuerbuero" | "selbst"` ist die einzige Stelle, die diese Werte deutet.
   `/api/ich` und `/api/einstellungen` liefern zusätzlich `arbeitsweise`.
