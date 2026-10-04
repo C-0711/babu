@@ -224,3 +224,23 @@ def test_termine_sind_aufsteigend_sortiert():
     termine = fr.fristen_jahr(2026, profil(lohn=True, dauerfristverlaengerung=True))
     daten = [t["datum"] for t in termine]
     assert daten == sorted(daten)
+
+
+# ————— Independence Day A (04.10.2026): Klartext und Arbeitsweise —————
+
+def test_klartext_aus_der_einrichtung_wird_verstanden():
+    import fristen  # noqa: PLC0415
+    p = fristen.termin_profil({"ustva_rhythmus": "Vierteljährlich",
+                               "bundesland": "Baden-Württemberg",
+                               "dauerfristverlaengerung": "Ja"})
+    assert (p["ustva_rhythmus"], p["bundesland"], p["dauerfristverlaengerung"]) == (
+        "vierteljaehrlich", "BW", True)
+    assert fristen.termin_profil({"ustva_rhythmus": "Weiß nicht"})["ustva_rhythmus"] == "monatlich"
+
+
+def test_jahresfrist_folgt_der_arbeitsweise():
+    import fristen  # noqa: PLC0415
+    assert fristen.termin_profil({"steuerberater_modus": "Mein Steuerbüro"})["steuerberater"] is True
+    assert fristen.termin_profil({"steuerberater_modus": "Ich selbst (Independence Day)",
+                                  "steuerberater_status": "Ja"})["steuerberater"] is False
+    assert fristen.termin_profil({}, betreut=True)["steuerberater"] is True

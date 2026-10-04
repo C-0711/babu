@@ -4798,16 +4798,20 @@ EINSTELLUNG_SCHLUESSEL = {"benachrichtigung_frage", "benachrichtigung_post",
 
 
 
+def _betreut() -> bool:
+    """Betreut ein echtes Steuerbüro den Betrieb dieses Requests (nicht „babu direkt“)?"""
+    import testmonat  # noqa: PLC0415
+    mandant_id = _AKTIVER_MANDANT.get(None)
+    if mandant_id is None:
+        return False
+    name = mandanten.kanzlei_name(mandant_id)
+    return bool(name) and name != testmonat.DIREKT_NAME
+
+
 def _arbeitsweise(un: str) -> str:
     """Steuerbüro oder selbst — für diesen Zugang, beim Acting-as für den Mandanten."""
     import arbeitsweise  # noqa: PLC0415
-    import testmonat  # noqa: PLC0415
-    mandant_id = _AKTIVER_MANDANT.get(None)
-    betreut = False
-    if mandant_id is not None:
-        name = mandanten.kanzlei_name(mandant_id)
-        betreut = bool(name) and name != testmonat.DIREKT_NAME
-    return arbeitsweise.modus(db_einstellungen(salon_von_aktiv(un)), betreut)
+    return arbeitsweise.modus(db_einstellungen(salon_von_aktiv(un)), _betreut())
 
 
 def _einstellungen_mit_paket(un: str) -> dict:
@@ -11460,7 +11464,8 @@ def api_meldungen(request: Request) -> Response:
     try:
         import fristen as fr  # noqa: PLC0415
         profil = fr.termin_profil(einstellungen,
-                                  hat_team=bool(team_liste(inhaber, nur_aktive=True)))
+                                  hat_team=bool(team_liste(inhaber, nur_aktive=True)),
+                                  betreut=_betreut())
         termine = fr.naechste(fr.fristen_jahr(heute.year, profil), heute, anzahl=8)
     except Exception:  # noqa: BLE001
         termine = []
@@ -12375,7 +12380,8 @@ def api_fristen(jahr: str, request: Request) -> Response:
 
     inhaber = salon_von_aktiv(un)
     profil = fr.termin_profil(db_einstellungen(inhaber),
-                             hat_team=bool(team_liste(inhaber, nur_aktive=True)))
+                             hat_team=bool(team_liste(inhaber, nur_aktive=True)),
+                                  betreut=_betreut())
     termine = fr.fristen_jahr(int(jahr), profil)
     heute = dt.date.today()
     return JSONResponse({
@@ -12570,7 +12576,8 @@ def _welt_fuer(un: str) -> dict:
         import datetime as _dt  # noqa: PLC0415
         import fristen as fr  # noqa: PLC0415
         profil = fr.termin_profil(einstellungen,
-                                  hat_team=bool(team_liste(inhaber, nur_aktive=True)))
+                                  hat_team=bool(team_liste(inhaber, nur_aktive=True)),
+                                  betreut=_betreut())
         termine = fr.fristen_jahr(int(monat[:4]), profil)
         fristen = fr.naechste(termine, _dt.date.today(), anzahl=6)
     except Exception:  # noqa: BLE001

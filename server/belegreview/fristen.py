@@ -51,6 +51,15 @@ _BEWEGLICH_LAENDER = {
 BUNDESLAENDER = ("BW", "BY", "BE", "BB", "HB", "HH", "HE", "MV",
                  "NI", "NW", "RP", "SL", "SN", "ST", "SH", "TH")
 
+#: Die Einrichtung fragt das Land im Klartext (04.10.2026); intern gelten Kürzel.
+LAND_KUERZEL = {
+    "baden-württemberg": "BW", "bayern": "BY", "berlin": "BE", "brandenburg": "BB",
+    "bremen": "HB", "hamburg": "HH", "hessen": "HE", "mecklenburg-vorpommern": "MV",
+    "niedersachsen": "NI", "nordrhein-westfalen": "NW", "rheinland-pfalz": "RP",
+    "saarland": "SL", "sachsen": "SN", "sachsen-anhalt": "ST",
+    "schleswig-holstein": "SH", "thüringen": "TH",
+}
+
 
 def ostersonntag(jahr: int) -> _dt.date:
     """Osterdatum nach der Gaußschen Osterformel (Butcher-Variante)."""
@@ -141,16 +150,19 @@ def _monatsname(monat: int) -> str:
 
 # ————— Profil: was die Stammdaten über die Termine sagen —————
 
-def termin_profil(einstellungen: dict, hat_team: bool = False) -> dict:
+def termin_profil(einstellungen: dict, hat_team: bool = False,
+                  betreut: bool = False) -> dict:
     """Welche Fristen gelten für diesen Salon?
 
     Der Rhythmus der Voranmeldung hängt an der Steuer des Vorjahres
     (§ 18 Abs. 2 UStG). Ist er nicht hinterlegt, gilt die vorsichtige
-    Annahme „monatlich" — lieber ein Termin zu viel im Kalender.
+    Annahme „monatlich" — lieber ein Termin zu viel im Kalender. Ob ein
+    Steuerbüro einreicht, sagt seit 04.10.2026 `arbeitsweise` (Stufe A).
     """
+    import arbeitsweise  # noqa: PLC0415
     e = {k: (v or "").strip() for k, v in (einstellungen or {}).items()}
     klein = e.get("kleinunternehmer") == "Ja"
-    rhythmus = e.get("ustva_rhythmus", "").lower()
+    rhythmus = e.get("ustva_rhythmus", "").lower().replace("ä", "ae")
     if rhythmus not in ("monatlich", "vierteljaehrlich", "keine"):
         rhythmus = "keine" if klein else "monatlich"
     return {
@@ -160,8 +172,9 @@ def termin_profil(einstellungen: dict, hat_team: bool = False) -> dict:
         "lohn": bool(hat_team) or e.get("hat_personal") == "Ja",
         "lohnsteuer_rhythmus": (e.get("lohnsteuer_rhythmus", "").lower()
                                 or "vierteljaehrlich"),
-        "bundesland": e.get("bundesland", "").strip().upper(),
-        "steuerberater": e.get("steuerberater_status") in ("Ja", "vorhanden"),
+        "bundesland": LAND_KUERZEL.get(e.get("bundesland", "").strip().lower(),
+                                       e.get("bundesland", "").strip().upper()),
+        "steuerberater": arbeitsweise.modus(e, betreut) == arbeitsweise.STEUERBUERO,
     }
 
 
