@@ -18,8 +18,12 @@ def auslagen_welt(welt2, monkeypatch, tmp_path):
     import postfach  # noqa: PLC0415
     monkeypatch.setattr(bx, "remote_aus_ref", lambda ref: str(bx.store_aus_ref(ref)))
     monkeypatch.setattr(welt2["bw"], "embedding_rechnen", lambda md: None)
-    # Nachrichten zu Auslagen gehen sonst in den echten Postausgang des Rechners.
+    # Nachrichten zu Auslagen gehen sonst in den echten Postausgang des Rechners —
+    # und ihr Hintergrund-Thread kann länger leben als der Test. Still, außer
+    # ein Test setzt seine eigene Aufzeichnung ein (test_push).
+    import kern_auslagen  # noqa: PLC0415
     monkeypatch.setattr(postfach, "POSTAUSGANG", tmp_path / "postausgang")
+    monkeypatch.setattr(kern_auslagen, "_melden", lambda ereignis, an, titel, text: None)
     return welt2
 
 
