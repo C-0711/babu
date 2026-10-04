@@ -88,9 +88,10 @@ def _wache(request: Request):
     Belegbox, und die kam beim Acting-as aus dem Kontext — den aber setzte
     niemand. Eine Kanzlei mit `X-Mandant`-Kopf bekam deshalb ihren eigenen
     (leeren) Stapel statt des Stapels ihres Mandanten. Ohne Kopf ändert
-    sich nichts; siehe `babu_web._verwalter_box_wache`.
+    sich nichts; siehe `babu_web._verwalter_box_wache`. Seit 04.10.2026
+    (Independence Day A) auch die Inhaberin in ihrer eigenen Box.
     """
-    return _bw()._verwalter_box_wache(request)
+    return _bw()._buchhaltung_box_wache(request)
 
 
 def _berater_mandant(bw) -> tuple[str, str]:

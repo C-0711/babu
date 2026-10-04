@@ -113,11 +113,12 @@ def c(welt):
 
 # ── Rollenschutz ────────────────────────────────────────────────────────
 
-def test_salon_sieht_weder_seite_noch_zahlen(welt, monkeypatch):
-    """Eine Inhaberin ohne Verwaltungsrolle bekommt nichts davon zu sehen —
-    die SEITE ebenso wenig wie ihre Zahlen. Eine Seite, die erst hinterher
-    „nicht erlaubt" sagt, hätte den Stapel schon ausgeliefert."""
-    monkeypatch.setattr(welt, "rolle", lambda un: "salon")
+def test_mitarbeiterin_sieht_weder_seite_noch_zahlen(welt, monkeypatch):
+    """Eine Mitarbeiterin bekommt nichts davon zu sehen — die SEITE ebenso
+    wenig wie die Zahlen. Eine Seite, die erst hinterher „nicht erlaubt"
+    sagt, hätte den Stapel schon ausgeliefert. (Die Inhaberin darf seit
+    04.10.2026 — Independence Day A, tests/test_buchhaltung_wache.py.)"""
+    monkeypatch.setattr(welt, "rolle", lambda un: "mitarbeit")
     k = TestClient(welt.app, base_url="https://testserver")
     seite = k.get("/datev")
     assert seite.status_code == 403

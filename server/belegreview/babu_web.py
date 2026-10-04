@@ -1978,7 +1978,7 @@ app.include_router(posteingang_routen.router)
 def datev_blatt(request: Request) -> Response:
     # Dieselbe Wache wie die Routen der Seite (`datev_seite._wache`) — eine
     # Seite, die eine andere Frage stellt als ihre Daten, ist keine Wache.
-    _, fehler = _verwalter_box_wache(request)
+    _, fehler = _buchhaltung_box_wache(request)
     if fehler:
         return Response(content=datev_seite.VERBOTEN, status_code=403,
                         media_type="text/html", headers=HTML_FRISCH)
@@ -4621,8 +4621,8 @@ async def api_korrektur(stamm: str, request: Request) -> Response:
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    if not darf_verwalten(un):
-        return JSONResponse({"fehler": "nur für die Kanzlei"}, status_code=403)
+    if not darf_buchhaltung(un):
+        return JSONResponse({"fehler": "Das macht die Inhaberin."}, status_code=403)
     if not NAME_RE.match(stamm):
         return JSONResponse({"fehler": "ungültiger Name"}, status_code=400)
     if stamm not in (await run_in_threadpool(index_aktuell))["belege"]:
@@ -5450,6 +5450,30 @@ def _verwalter_box_wache(request: Request):
     return un, None
 
 
+
+def darf_buchhaltung(un: str) -> bool:
+    """Prüfen, korrigieren, abschließen: Verwaltung — und jede Inhaberin
+    (Independence Day A, 04.10.2026). Mitarbeiterinnen nie."""
+    return darf_verwalten(un) or rolle(un) == "salon"
+
+
+def _buchhaltung_box_wache(request: Request):
+    """Die Wache der Buchhaltungswerkzeuge (DATEV-Seite, Korrektur, Export).
+
+    Kanzlei und Admin gehen den Weg von `_verwalter_box_wache` (mit
+    `X-Mandant`, unverändert). Die Inhaberin geht über `_box_wache`: ihre
+    eigene Box, und das Abo „nur lesen“ sperrt ihre Schreibwege.
+    """
+    un, fehler = _api_wache(request)
+    if fehler:
+        return None, fehler
+    if darf_verwalten(un):
+        return _verwalter_box_wache(request)
+    if rolle(un) != "salon":
+        return None, JSONResponse({"fehler": "Das macht die Inhaberin."},
+                                  status_code=403)
+    return _box_wache(request)
+
 # ---------------------------------------------------------------------------
 # Die Mandantengrenze der Verwaltung (Plan 21, Abschnitt 7).
 #
@@ -6194,8 +6218,8 @@ def api_export(monat: str, request: Request, festschreiben: int = 0) -> Response
     un, fehler = _box_wache(request)
     if fehler:
         return fehler
-    if not darf_verwalten(un):
-        return JSONResponse({"fehler": "nur für die Kanzlei"}, status_code=403)
+    if not darf_buchhaltung(un):
+        return JSONResponse({"fehler": "Das macht die Inhaberin."}, status_code=403)
     if not re.match(r"^\d{4}-\d{2}$", monat):
         return JSONResponse({"fehler": "ungültiger Monat"}, status_code=400)
     import extf  # noqa: PLC0415
