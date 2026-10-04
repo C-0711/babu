@@ -1699,6 +1699,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <p style="color:var(--gc-desc);margin-bottom:10px">Hat jede Zahlung vom Konto ihren Beleg?</p>
     <button class="chip" id="bank-auszug-knopf" style="margin-bottom:14px">Kontoauszug ablegen</button>
     <p id="bank-nur-lesen" style="display:none;color:var(--gc-muted);font-size:13px;margin-bottom:14px"></p>
+    <div id="bank-freigabe"></div>
     <div id="bank-hochladen"></div>
     <div id="bank-inhalt"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
@@ -2609,6 +2610,19 @@ async function ladeHeute(){
         <span class="hin">Los geht's ›</span></button>`;
     }
   }catch{}
+  if (!istKanzlei() && meineRolle !== "mitarbeit"){
+    try{
+      const r = await api("/api/bank/freigabe");
+      const f = r.ok ? await r.json() : null;
+      if (f && f.angefragt_am && !f.freigegeben){
+        html += `<button class="karte nachfrage einflug voll" style="display:block;width:100%;text-align:left"
+          onclick="location.hash='#bank'">
+          <h3>${esc(f.kanzlei || "Dein Steuerbüro")} bittet um deine Kontoumsätze</h3>
+          <p>Nur ansehen, um Belege und Zahlungen abzugleichen — niemand kann damit Geld bewegen.</p>
+          <span class="hin">Ansehen und entscheiden ›</span></button>`;
+      }
+    }catch{}
+  }
 
   const fragen = (d.offene||[]).filter(o => o.status === "nachfrage");
   if (fragen.length){
@@ -3710,10 +3724,15 @@ async function ladeBank(){
   $("#bank-auszug-knopf").style.display = nurLesen ? "none" : "";
   $("#bank-nur-lesen").style.display = nurLesen ? "" : "none";
   $("#bank-nur-lesen").textContent = BANK_NUR_LESEN;
+  bankFreigabeZeigen();
   let ab;
   try{ ab = await (await api("/api/abgleich/" + bMonat)).json(); }
   catch{ return; }
   const ziel = $("#bank-inhalt");
+  if (ab.bank_freigabe_fehlt){
+    ziel.innerHTML = `<div class="leer"><b>Noch nicht freigegeben</b>${esc(ab.fehler)}</div>`;
+    return;
+  }
   if (!ab.auszug_da){
     ziel.innerHTML = `<div class="leer"><b>Für ${monatName(bMonat).split(" ")[0]} liegt noch kein Kontoauszug da.</b>
       ${nurLesen
@@ -3798,6 +3817,68 @@ async function ladeBank(){
 $("#b-mon-zurueck").addEventListener("click", () => { bMonat = monatSchieben(bMonat,-1); ladeBank(); });
 $("#b-mon-vor").addEventListener("click", () => { bMonat = monatSchieben(bMonat, 1); ladeBank(); });
 $("#bank-auszug-knopf").addEventListener("click", () => $("#auszug-datei").click());
+/* Die Freigabe der Kontoumsätze für das Steuerbüro (seit 04.10.2026).
+   Der Betrieb liest den Text und gibt frei oder widerruft; das Steuerbüro
+   sieht den Stand und kann einmal am Tag anfragen. */
+let bankFreigabe = null;
+async function bankFreigabeZeigen(){
+  const ziel = $("#bank-freigabe");
+  if (!ziel) return;
+  try{
+    const r = await api("/api/bank/freigabe");
+    if (!r.ok){ ziel.innerHTML = ""; return; }
+    bankFreigabe = await r.json();
+  }catch{ ziel.innerHTML = ""; return; }
+  const f = bankFreigabe, datum = (x) => x ? zeitKurz(x) : "";
+  if (bankNurLesen()){
+    ziel.innerHTML = f.freigegeben
+      ? `<p style="font-size:13px;color:var(--gc-ok);margin-bottom:12px">Der Betrieb hat die Kontoumsätze am ${datum(f.am)} für dich freigegeben.</p>`
+      : `<div class="karte" style="margin-bottom:14px"><h3>Kontoumsätze noch nicht freigegeben</h3>
+          <p style="font-size:13px;color:var(--gc-desc)">${f.noetig
+            ? "Ohne Freigabe des Betriebs siehst du hier keine Umsätze."
+            : "Noch siehst du die Umsätze auch ohne Freigabe — bald braucht es sie."}
+          ${f.angefragt_am ? ` Angefragt am ${datum(f.angefragt_am)}.` : ""}</p>
+          <button class="chip" id="bank-anfragen">Freigabe anfragen</button>
+          <span id="bank-freigabe-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span></div>`;
+    const knopf = $("#bank-anfragen");
+    if (knopf) knopf.onclick = () => bankFreigabeSenden("/api/bank/freigabe/anfragen", {});
+    return;
+  }
+  /* Der Text ist noch eine Erprobungsfassung: ungefragt zeigt das Portal
+     die Freigabe erst, wenn sie gebraucht wird (Schalter an) oder das
+     Steuerbüro darum gebeten hat. */
+  if (meineRolle === "mitarbeit" || (!f.noetig && !f.angefragt_am && !f.freigegeben)){
+    ziel.innerHTML = ""; return;
+  }
+  const text = esc(f.text).replace(/\n\n/g, "</p><p style='font-size:13px;color:var(--gc-desc);margin-top:8px'>");
+  ziel.innerHTML = `<div class="karte ${f.angefragt_am && !f.freigegeben ? "nachfrage" : ""}" style="margin-bottom:14px">
+    <h3>${esc(f.titel)}</h3>
+    <p style="font-size:13px;color:var(--gc-desc)">${f.freigegeben
+      ? `Freigegeben am ${datum(f.am)} — ${esc(f.kanzlei || "dein Steuerbüro")} kann die Umsätze ansehen, aber nichts ändern.`
+      : (f.angefragt_am ? `${esc(f.kanzlei || "Dein Steuerbüro")} hat am ${datum(f.angefragt_am)} darum gebeten. ` : "")
+        + "Noch nicht freigegeben."}</p>
+    ${f.neue_fassung ? `<p style="font-size:13px;color:var(--gc-warn);margin-top:6px">Der Text hat sich seit deiner Freigabe geändert — bitte einmal neu lesen.</p>` : ""}
+    <details style="margin-top:8px"><summary style="font-size:13px;cursor:pointer">Was heißt das?</summary>
+      <p style="font-size:13px;color:var(--gc-desc);margin-top:8px">${text}</p></details>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      ${!f.freigegeben || f.neue_fassung ? `<button class="chip" id="bank-freigeben">Freigeben</button>` : ""}
+      ${f.freigegeben ? `<button class="chip" id="bank-widerrufen">Widerrufen</button>` : ""}
+      <span id="bank-freigabe-status" style="font-size:12px;color:var(--gc-muted)"></span></div></div>`;
+  const frei = $("#bank-freigeben"), weg = $("#bank-widerrufen");
+  if (frei) frei.onclick = () => bankFreigabeSenden("/api/bank/freigabe", {fassung: f.fassung_aktuell});
+  if (weg) weg.onclick = () => bankFreigabeSenden("/api/bank/freigabe/widerrufen", {});
+}
+async function bankFreigabeSenden(pfad, koerper){
+  const status = $("#bank-freigabe-status");
+  if (status) status.textContent = "einen Moment …";
+  try{
+    const r = await api(pfad, {method: "POST", headers: {"Content-Type": "application/json"},
+                               body: JSON.stringify(koerper)});
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok){ if (status) status.textContent = d.fehler || "Ging gerade nicht."; return; }
+    ladeBank();
+  }catch{ if (status) status.textContent = "Gerade keine Verbindung."; }
+}
 function bankAuszugLoeschen(i){
   const a = bankAuszuege[i];
   if (!a) return;
@@ -7284,7 +7365,7 @@ async function ladeMandanten(){
     html += `<div class="karte" style="color:var(--gc-desc)">${_mdSuche || _mdStatus ? "Keine Treffer." : "Noch kein Mandant angelegt — unten geht es los."}</div>`;
   } else {
     html += `<div class="md-rollt"><table class="md-tabelle"><thead><tr>
-      <th>Mandant</th><th>Status</th><th>Nummer</th><th class="num">Offene Rückfragen</th><th></th></tr></thead><tbody>`;
+      <th>Mandant</th><th>Status</th><th>Nummer</th><th class="num">Offene Rückfragen</th><th>Bank</th><th></th></tr></thead><tbody>`;
     for (const m of d.mandanten){
       MD_NAMEN[m.id] = m.name;
       const an = _mdGewaehlt === m.id ? " an" : "";
@@ -7293,6 +7374,7 @@ async function ladeMandanten(){
         <td>${mdStatusChip(m.status)}</td>
         <td class="md-mail">${esc(m.mandant_nr || "—")}</td>
         <td class="num">${m.rueckfragen == null ? "—" : m.rueckfragen}</td>
+        <td>${m.bank_freigegeben ? `<span class="marke ok">freigegeben</span>` : `<span class="md-mail">—</span>`}</td>
         <td>${m.belegbox_da && m.status === "aktiv"
              ? `<button class="chip" onclick="event.stopPropagation();mandantSetzen(mdVon(${m.id}))">Für diesen Betrieb arbeiten ›</button>` : ""}</td>
       </tr>`;

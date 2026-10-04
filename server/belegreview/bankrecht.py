@@ -26,6 +26,37 @@ BOX_ORDNER = "auszuege/"
 
 TEXT = "Kontoauszüge und Zahlungen pflegt der Betrieb selbst. Du kannst sie ansehen."
 
+#: Die Freigabe selbst: anfragen darf die Kanzlei, freigeben nur der Betrieb
+#: (das prüft die Route). Sie ist deshalb weder Schreib- noch Lesesperre.
+FREIGABE = "/api/bank/freigabe"
+
+#: B1 (seit 04.10.2026): mit `BABU_BANK_FREIGABE=1` braucht die Kanzlei zum
+#: LESEN die Freigabe des Betriebs. Diese Wege zeigen Bankdaten.
+LESEND_BANK = ("/api/abgleich/", "/api/fehlende-belege", "/api/zahlungen",
+               "/api/bank/", "/api/vorschau/auszuege/", "/api/dokument/auszuege/")
+
+TEXT_FREIGABE = ("Die Kontoumsätze hat der Betrieb noch nicht für dich freigegeben. "
+                 "Du kannst die Freigabe anfragen.")
+
+
+def freigabe_pflicht() -> bool:
+    """Ist die Freigabe eingeschaltet? Ohne Schalter liest die Kanzlei wie bisher."""
+    import os  # noqa: PLC0415
+    return os.environ.get("BABU_BANK_FREIGABE", "").strip() == "1"
+
+
+def braucht_freigabe(methode: str, pfad: str, als_kanzlei: bool) -> bool:
+    """Liest diese Anfrage einer Kanzlei Bankdaten?"""
+    if not als_kanzlei or methode.upper() not in LESEND:
+        return False
+    if pfad.startswith(FREIGABE):
+        return False
+    return any(pfad.startswith(p) or pfad == p.rstrip("/") for p in LESEND_BANK)
+
+
+def antwort_freigabe() -> dict:
+    return {"fehler": TEXT_FREIGABE, "bank_freigabe_fehlt": True}
+
 
 def antwort() -> dict:
     """Der Körper der 403-Antwort — gleich für jeden gesperrten Weg."""
@@ -37,6 +68,8 @@ def sperrt(methode: str, pfad: str, als_kanzlei: bool) -> bool:
     if not als_kanzlei or methode.upper() in LESEND:
         return False
     pfad = pfad.rstrip("/") or "/"
+    if pfad.startswith(FREIGABE):
+        return False
     if pfad in SCHREIBEND:
         return True
     return any(pfad.startswith(b) or pfad == b.rstrip("/") for b in BEREICHE)

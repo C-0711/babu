@@ -2188,6 +2188,13 @@ def _box_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]
     # nicht als Betreiber mit Kopf. Die Regel steht in `bankrecht`.
     if bankrecht.sperrt(request.method, request.url.path, _ALS_KANZLEI.get()):
         return None, JSONResponse(bankrecht.antwort(), status_code=403)
+    # Lesen nur mit Freigabe des Betriebs (B1, Schalter BABU_BANK_FREIGABE).
+    # Die Datenbank wird nur gefragt, wenn eine Kanzlei Bankdaten lesen will.
+    if (mandant_id is not None and bankrecht.freigabe_pflicht()
+            and bankrecht.braucht_freigabe(request.method, request.url.path,
+                                           _ALS_KANZLEI.get())
+            and not mandanten.bank_stand(mandant_id)["freigegeben"]):
+        return None, JSONResponse(bankrecht.antwort_freigabe(), status_code=403)
     # Nur noch ansehen (Testmonat seit 02.10.2026, Abo seit 03.10.2026):
     # nach Testende, nach der Zahlungsfrist, nach Abo-Ende. Die Regel steht
     # in abo.zugang(); ohne Abo ist sie genau die des Testmonats. Fragt erst
@@ -12631,11 +12638,13 @@ import kern_warteliste  # noqa: E402,F401
 import kern_ambassador  # noqa: E402,F401
 import kern_abo  # noqa: E402,F401
 import kern_auszahlung  # noqa: E402,F401
+import kern_bank  # noqa: E402,F401
 
 kern_warteliste.setup(app, sys.modules[__name__])
 kern_ambassador.setup(app, sys.modules[__name__])
 kern_abo.setup(app, sys.modules[__name__])
 kern_auszahlung.setup(app, sys.modules[__name__])
+kern_bank.setup(app, sys.modules[__name__])
 
 # Der Kern reicht sich selbst per setup() — die Familien hängen ihre
 # Routen an DIESES app-Objekt und benutzen DIESES Modul. Kein

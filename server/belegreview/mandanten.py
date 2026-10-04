@@ -111,6 +111,14 @@ def schema(c) -> None:
             pass  # Spalte existiert schon
     c.execute("CREATE UNIQUE INDEX IF NOT EXISTS mandant_stripe_abo "
               "ON mandant (stripe_abo)")
+    # Bankfreigabe (seit 04.10.2026, Plan Kanzleiansicht B1): der Betrieb
+    # gibt seiner Kanzlei die Kontoumsätze zum Lesen frei. Abbild für
+    # Postgres: migrations/0015_bank_freigabe.sql.
+    for spalte in BANK_SPALTEN:
+        try:
+            c.execute(f"ALTER TABLE mandant ADD COLUMN {spalte} TEXT")
+        except sqlite3.OperationalError:
+            pass  # Spalte existiert schon
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +164,40 @@ def _sitzung(c):
 #: Test, der `babu_web.PORTAL_DB` umbiegt, liefe eine davon auf die falsche
 #: Datei. Deshalb genau eine Anmeldung, hier.
 sitzung = _sitzung
+
+
+#: Die Spalten der Bankfreigabe (B1) — Reihenfolge wie in 0015.
+BANK_SPALTEN = ("bank_freigabe_am", "bank_freigabe_fassung", "bank_freigabe_von",
+                "bank_widerruf_am", "bank_anfrage_am")
+
+
+def bank_stand(mandant_id: int, c=None) -> dict:
+    """Hat dieser Betrieb seiner Kanzlei die Kontoumsätze freigegeben?"""
+    with _sitzung(c) as cc:
+        z = cc.execute(f"SELECT {', '.join(BANK_SPALTEN)} FROM mandant WHERE id=?",
+                       (mandant_id,)).fetchone()
+    d = dict(zip(BANK_SPALTEN, z)) if z else dict.fromkeys(BANK_SPALTEN)
+    d["freigegeben"] = bool(d["bank_freigabe_am"])
+    return d
+
+
+def bank_freigeben(mandant_id: int, von: str, fassung: str, c=None) -> None:
+    with _sitzung(c) as cc:
+        cc.execute("UPDATE mandant SET bank_freigabe_am=?, bank_freigabe_fassung=?, "
+                   "bank_freigabe_von=? WHERE id=?",
+                   (_jetzt_iso(), fassung, von, mandant_id))
+
+
+def bank_widerrufen(mandant_id: int, c=None) -> None:
+    with _sitzung(c) as cc:
+        cc.execute("UPDATE mandant SET bank_freigabe_am=NULL, bank_widerruf_am=? "
+                   "WHERE id=?", (_jetzt_iso(), mandant_id))
+
+
+def bank_anfragen(mandant_id: int, c=None) -> None:
+    with _sitzung(c) as cc:
+        cc.execute("UPDATE mandant SET bank_anfrage_am=? WHERE id=?",
+                   (_jetzt_iso(), mandant_id))
 
 
 #: Was die Nur-Lesen-Regel (abo.zugang) von der Mandantenzeile braucht.

@@ -680,12 +680,17 @@ def api_mandanten(request: Request, q: str = "", seite: int = 1,
     ausschnitt = gefiltert[anfang:anfang + je_seite]
 
     befunde = _befunde(un, ausschnitt)
+    with _sitzung() as c:
+        # B1 (04.10.2026): hat der Betrieb die Kontoumsätze freigegeben?
+        freigaben = {int(z["id"]): mandanten.bank_stand(int(z["id"]), c)["freigegeben"]
+                     for z in ausschnitt}
     zeilen = []
     for z in ausschnitt:
         eintrag = _oeffentlich(z, betreiber)
         befund = befunde.get(int(z["id"]), dict(NICHT_ERREICHBAR))
         eintrag["rueckfragen"] = befund["rueckfragen"]
         eintrag["erreichbar"] = befund["erreichbar"]
+        eintrag["bank_freigegeben"] = freigaben.get(int(z["id"]), False)
         zeilen.append(eintrag)
     return JSONResponse({"mandanten": zeilen, "gesamt": len(gefiltert),
                          "seite": seite, "seiten": seiten,

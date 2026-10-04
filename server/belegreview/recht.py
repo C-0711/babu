@@ -235,12 +235,27 @@ HILFE: tuple[str, str] = ("Hilfe",
     "hallo@0711.io.")
 
 
+#: Freigabe der Kontoumsätze für die Kanzlei (seit 04.10.2026, Plan
+#: Kanzleiansicht B1). Erprobungsfassung — der Wortlaut wird vor dem
+#: Einschalten (`BABU_BANK_FREIGABE=1`) rechtlich geprüft.
+BANK_FREIGABE: tuple[str, str] = ("Kontoumsätze für dein Steuerbüro",
+    "Erprobungsfassung (Stand 04.10.2026).\n\n"
+    "Mit dieser Freigabe darf dein Steuerbüro in babu die Umsätze der Konten "
+    "ansehen, die du in babu ablegst oder verbindest — um Belege und Zahlungen "
+    "abzugleichen, fehlende Belege zu finden und offene Rechnungen zu sehen.\n\n"
+    "Dein Steuerbüro kann damit nur lesen. Es kann keine Zahlung auslösen, "
+    "nichts an deinen Kontoauszügen ändern und nichts löschen.\n\n"
+    "Die Freigabe gilt nur für dein Steuerbüro in babu, niemanden sonst. Du "
+    "kannst sie jederzeit widerrufen; danach sieht es die Umsätze nicht mehr.")
+
+
 def fassung(art: str) -> str:
     """Kurzer Fingerabdruck eines Rechtstexts — gespeichert bei jeder
     Zustimmung, damit sich später sagen lässt, WELCHER Fassung zugestimmt
-    wurde. `art`: ein Schlüssel aus TEXTE oder "ambassador"."""
+    wurde. `art`: ein Schlüssel aus TEXTE, "ambassador" oder "bank_freigabe"."""
     import hashlib  # noqa: PLC0415
-    titel, text = AMBASSADOR if art == "ambassador" else TEXTE[art]
+    titel, text = (AMBASSADOR if art == "ambassador"
+                   else BANK_FREIGABE if art == "bank_freigabe" else TEXTE[art])
     return hashlib.sha256((titel + text).encode("utf-8")).hexdigest()[:12]
 
 

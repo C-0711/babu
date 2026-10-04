@@ -28,6 +28,7 @@ GET /api/auszahlung/lauf/{lauf_id}/sepa.xml
 GET /api/auszahlung/vorschau
 GET /api/beleg/{stamm}
 GET /api/beleg/{stamm}/bild
+GET /api/bank/freigabe
 GET /api/belege
 GET /api/datev/konten.csv
 GET /api/datev/kreditoren
@@ -162,6 +163,9 @@ POST /api/auszahlung/lauf/{lauf_id}/ueberwiesen
 POST /api/auszahlung/lauf/{lauf_id}/verwerfen
 POST /api/auszug-loeschen
 POST /api/beleg/{stamm}/erneut-lesen
+POST /api/bank/freigabe
+POST /api/bank/freigabe/anfragen
+POST /api/bank/freigabe/widerrufen
 POST /api/beleg/{stamm}/loeschen
 POST /api/bewirtung/{stamm}
 POST /api/buchung/einschaetzung
