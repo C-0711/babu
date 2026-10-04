@@ -519,7 +519,7 @@ def _befund(daten: dict, zeilen: list[dict],
     # Barbeleg, zu dem im Kassenbuch kein Eintrag steht.
     luecken_alle = (extf.kassenluecke(
         blaetter, alle_reviews,
-        bar_erstattungen=al.bar_je_monat((daten["idx"].get("erstattungen") or {}).values()))
+        bar_erstattungen=al.bar_je_monat(((daten.get("idx") or {}).get("erstattungen") or {}).values()))
                     if rahmen != "SKR03" else [])
     luecken = [l for l in luecken_alle if l["grund"] == "kassenluecke"]
     bar_ohne_eintrag = [l for l in luecken_alle
@@ -561,8 +561,8 @@ def _befund(daten: dict, zeilen: list[dict],
     # schon getan hat.
     uebergeben = [u for u in (daten.get("uebergaben") or {}).values()
                   if u.get("uebergeben_am")]
-    idx_ = daten["idx"]
-    belege_ = idx_["belege"]
+    idx_ = daten.get("idx") or {}          # Handgebaute Daten (Tests) tragen keinen Index
+    belege_ = idx_.get("belege") or {}
     im_zeitraum = {s: a for s, a in (idx_.get("auslagen") or {}).items()
                    if (belege_.get(s) or {}).get("monat") in daten["monate"]}
     auslagen_warten = sum(1 for a in im_zeitraum.values() if a["status"] == "eingereicht")
