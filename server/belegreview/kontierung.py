@@ -45,6 +45,13 @@ GWG_GRENZE = Decimal("800.00")      # bis hier: GWG, im Jahr voll abgesetzt
 RAHMEN = ("SKR03", "SKR04")
 
 
+#: Kategorien, deren POSITIONEN auf einem Beleg auf ihr eigenes Konto gehen,
+#: auch wenn der Beleg sonst woanders hin gebucht wird (Auftraggeber-Entscheid
+#: 04.10.2026, Ninas Meldungen #80–#82). `extf.buchungszeilen` gliedert sie
+#: aus; `gemma_buchung.gemischt` zählt sie nicht mit.
+AUSGLIEDERN = ("pfand", "porto")
+
+
 @dataclass(frozen=True)
 class Kategorie:
     """Eine Buchungskategorie mit ihrem Konto in beiden Rahmen."""
@@ -98,6 +105,15 @@ _K = [
               hinweis="Wird in der Dienstleistung verarbeitet und geht mit "
                       "der Kundin mit: Extensions, Bondings, Strähnensets. "
                       "Vergleichbar mit Haarfarbe, aber Wareneinsatz."),
+    # Ninas Meldungen #80/#81 (Getränkemarkt-Bon mit Pfand und Leergut):
+    # Pfand bekommt ein eigenes Konto (Auftraggeber-Entscheid 04.10.2026).
+    # 5820 „Leergut“ steht so im DATEV-Kontenrahmen SKR04; die Kanzlei hat
+    # es noch nicht bestätigt, und das SKR03-Gegenstück ist offen.
+    Kategorie("pfand", "Pfand und Leergut", None, "5820",
+              hinweis="Pfand für Flaschen, Dosen, Kästen und Mehrweg — und "
+                      "die Leergutrückgabe als negative Position. Nur als "
+                      "POSITION eines Bons; der Rest des Bons bleibt bei "
+                      "seiner Kategorie."),
     Kategorie("fremdleistung", "Fremdleistungen",
               "3100", "5900", geprueft=True,
               hinweis="Stuhlmiete, freie Kosmetikerin, Subunternehmerin."),
@@ -181,18 +197,28 @@ _K = [
                       "sich dort."),
     Kategorie("telekom", "Telefon und Internet", "4920", "6805", geprueft=True),
     Kategorie("buerobedarf", "Bürobedarf", "4930", "6815", geprueft=True),
+    # Seit 04.10.2026 (Ninas Meldung #82, Auftraggeber-Entscheid): auch die
+    # Versandkosten einer Warenrechnung gehen hierher, als eigene Position.
     Kategorie("porto", "Porto und Versand", "4910", "6800",
               hinweis="Briefmarken, Frankierung, Paketversand, Zollgebühren "
-                      "des Versenders. Briefmarken tragen keine Umsatzsteuer, "
-                      "Expressdienste schon — was der Beleg ausweist, gilt."),
+                      "des Versenders — und Versand- und Frachtkosten auf "
+                      "einer Warenrechnung, dort als eigene Position. "
+                      "Briefmarken tragen keine Umsatzsteuer, Expressdienste "
+                      "schon — was der Beleg ausweist, gilt."),
     Kategorie("literatur", "Fachliteratur", "4940", "6820", geprueft=True),
     # Ohne diese Kategorie landete der Haarverlängerungskurs über 799 € auf
     # „Fachliteratur" — der Katalog kannte nichts Näheres (Prüflauf 24.08.2026).
     Kategorie("fortbildung", "Fortbildung und Seminare", "4945", "6821",
               hinweis="Kurse, Seminare, Schulungen, Meisterkurse — auch im "
                       "Ausland und auch, wenn Reisekosten getrennt anfallen."),
+    # Ninas Meldung #86 (04.10.2026): Software-Abos und Lizenzen gehören
+    # hierher, nicht auf Bürobedarf oder Sonstiges. 6837 ist im SKR04 das
+    # Konto für befristet überlassene Rechte (Lizenzen).
     Kategorie("it", "IT, Hosting, Software", None, "6837",
-              hinweis="SKR03-Gegenstück noch nicht bestätigt."),
+              hinweis="Software-Abos, Lizenzen, App- und Plattformgebühren "
+                      "(z. B. Salonkee, Canva, Microsoft 365), Hosting, "
+                      "Domains. Wartungsverträge sind wartung. "
+                      "SKR03-Gegenstück noch nicht bestätigt."),
     # Die Rechnung der Steuerkanzlei landete auf 6850 — sie hat ein eigenes
     # Konto, und der Jahresabschluss darin sogar ein zweites (P1-23).
     Kategorie("steuerberatung", "Steuerberatung und Buchführung",

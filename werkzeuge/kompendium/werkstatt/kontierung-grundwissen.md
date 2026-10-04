@@ -159,6 +159,18 @@ Zwei Verwendungen, die buchhalterisch verschieden sind:
 
 Der ursprüngliche Beitragsnachweis, das Guthaben und die spätere Auszahlung oder verminderte Lastschrift gehören zusammen; die Kanzlei will alle drei nebeneinander sehen.
 
+## Pfand, Versand und Software auf einem Beleg
+
+Festgelegt am 04.10.2026 nach Ninas Meldungen (#80–#82, #86).
+
+**Pfand und Leergut** (Flaschen, Dosen, Kästen, Mehrweg) bekommen ein eigenes Konto: **5820 Leergut** (SKR04; babu-Kategorie `pfand`). Auf dem Bon ist Pfand eine eigene Position, meist zu 0 % Umsatzsteuer — so weist es etwa der Getränkemarkt aus: Netto und Steuer stehen fertig auf dem Bon, die 19 % gelten nur für die Getränke. Eine Leergut- oder Pfandrückgabe ist eine negative Pfand-Position und mindert den Pfandbetrag. Der Rest des Bons (Getränke für die Kundschaft, Wasser) bleibt bei seiner Kategorie; nur der Pfandanteil geht auf 5820.
+
+**Versand-, Fracht- und Portokosten** gehen immer auf **6800 Porto** (babu-Kategorie `porto`) — auch, wenn sie auf einer Warenrechnung stehen. Die Ware bleibt auf ihrem Konto, die Versandposition geht getrennt auf 6800. Ein Beleg, der nur Versand ist (Paketdienst, Versandkostenrechnung), steht ganz auf 6800. Versand ist nie Software.
+
+**Software-Abos, Lizenzen und App- oder Plattformgebühren** (Salonkee, Canva, Microsoft 365, Hosting, Domains) gehören auf **6837** (SKR04, Aufwendungen für die zeitlich befristete Überlassung von Rechten; babu-Kategorie `it`) — nicht auf Bürobedarf und nicht auf Sonstiges. Wartungsverträge für Kasse, Rechner und Software bleiben auf 6495.
+
+Im Buchungsstapel wird ein Bon mit Pfand oder Versand deshalb zu mehreren Zeilen: eine je Konto und Steuersatz.
+
 <!-- skr04-atome: kontenuebersicht start -->
 ## Kontenübersicht (geprüfte babu-Kategorien)
 

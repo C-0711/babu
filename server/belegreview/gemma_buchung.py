@@ -116,10 +116,15 @@ REGELN = """Verbuche den Beleg unter Berücksichtigung des Profils. Regeln:
 - Pfand (Flaschen, Kästen, Mehrweg) ist eine durchlaufende Kaution, KEINE
   Ware und KEIN Umsatz des Verkäufers: es trägt 0 % Umsatzsteuer. Steht auf
   dem Bon eine eigene Pfand-Zeile, gib sie als eigene Position mit
-  ust_satz 0 aus — rechne sie NIE in die Bemessungsgrundlage der 19 %/7 %
-  Positionen hinein. Weist der Bon Netto und Steuer bereits fertig
-  aus, übernimm genau diese Werte, statt sie aus dem Bruttobetrag
-  zurückzurechnen.
+  ust_satz 0 und kategorie pfand aus; eine Leergut- oder Pfandrückgabe ist
+  eine NEGATIVE Position mit kategorie pfand. Rechne Pfand NIE in die
+  Bemessungsgrundlage der 19 %/7 % Positionen hinein. Weist der Bon Netto
+  und Steuer bereits fertig aus, übernimm genau diese Werte, statt sie aus
+  dem Bruttobetrag zurückzurechnen.
+- Versand-, Fracht- und Portokosten auf einer Rechnung sind IMMER eine
+  eigene Position mit kategorie porto — auch auf einer Warenrechnung.
+  Pfand- und Versandpositionen bucht der Stapel auf ihr eigenes Konto;
+  das Ganze buchst du trotzdem auf die Kategorie der übrigen Positionen.
 - Hoheitliche Gebühren und Pflichtbeiträge sind nicht steuerbar und tragen
   NIE Umsatzsteuer: Handwerkskammer, Innung, IHK (kategorie
   kammerbeitrag) · Abfall-, Müll- und Straßenreinigungsgebühren, Grundsteuer
@@ -584,6 +589,10 @@ def gemischt(buchung: dict) -> bool:
     Betrags), soll niemand still buchen — dann wird gefragt."""
     je_kat: dict[str, float] = {}
     for p in buchung.get("positionen") or []:
+        # Pfand und Versand gehen ohnehin auf ihr eigenes Konto (04.10.2026) —
+        # ein Wasserkasten mit viel Pfand ist deshalb kein gemischter Bon.
+        if p.get("kategorie") in kontierung.AUSGLIEDERN:
+            continue
         if p.get("kategorie") and p.get("betrag"):
             je_kat[p["kategorie"]] = je_kat.get(p["kategorie"], 0) + abs(p["betrag"])
     if len(je_kat) <= 1:

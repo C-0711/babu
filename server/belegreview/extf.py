@@ -514,24 +514,27 @@ def buchungszeilen(review: dict, kleinunternehmerin: bool = False
             return abs(w) if gutschrift else -abs(w)
         return -abs(w) if gutschrift else w
 
-    if kleinunternehmerin:
-        wert = _wert(f["brutto"])
-        return [_ohne_steuer(dict(basis, umsatz=_de(wert),
-                                  sh=_soll_haben(wert), bu="", satz=None),
-                             rahmen)]
-
+    # Die Teile des Belegs als (Konto, Satz, Betrag): einer, oder einer je
+    # Steuersatz (Mehrsatz-Split: der 19%+7%-Bon wird zwei Buchungen). Pfand
+    # und Versand gliedert `_ausgliedern` auf ihr eigenes Konto aus.
     tabelle = f.get("steuertabelle") or []
-    if len(tabelle) > 1:
-        # Mehrsatz-Split: der 19%+7%-Bon wird zwei Buchungen.
-        zeilen = [dict(basis, umsatz=_de(_wert(z["brutto"])),
-                       sh=_soll_haben(_wert(z["brutto"])),
-                       bu=_bu(int(z["satz"])), satz=int(z["satz"]))
-                  for z in tabelle]
+    if kleinunternehmerin:
+        teile = [(konto, None, f["brutto"])]
+    elif len(tabelle) > 1:
+        teile = [(konto, int(z["satz"]), z["brutto"]) for z in tabelle]
     else:
-        satz = f.get("ust_satz")
-        zeilen = [dict(basis, umsatz=_de(_wert(f["brutto"])),
-                       sh=_soll_haben(_wert(f["brutto"])),
-                       bu=_bu(satz), satz=satz)]
+        teile = [(konto, f.get("ust_satz"), f["brutto"])]
+    if not ausgang:
+        teile = _ausgliedern(teile, review, rahmen, kleinunternehmerin)
+
+    if kleinunternehmerin:
+        return [_ohne_steuer(dict(basis, konto=k, umsatz=_de(_wert(b)),
+                                  sh=_soll_haben(_wert(b)), bu="", satz=None),
+                             rahmen)
+                for k, _, b in teile]
+    zeilen = [dict(basis, konto=k, umsatz=_de(_wert(b)),
+                   sh=_soll_haben(_wert(b)), bu=_bu(s), satz=s)
+              for k, s, b in teile]
     zeilen = [_automatik_anpassen(z, rahmen) for z in zeilen]
     # Lieber eine Zeile weniger als eine mit dem falschen Steuerschlüssel:
     # was hier fehlt, fällt beim Abstimmen auf. Ein falscher Schlüssel nicht.
@@ -541,6 +544,64 @@ def buchungszeilen(review: dict, kleinunternehmerin: bool = False
             print(f"[extf] Steuersatz {z['satz']} % unbekannt — Zeile "
                   f"'{z['text'][:40]}' bleibt aus dem Stapel", flush=True)
     return brauchbar
+
+
+def _ausgegliedert(review: dict, rahmen: str) -> list[tuple[str, int, float]]:
+    """Pfand- und Versandpositionen des Belegs: (Konto, Satz, Summe).
+
+    Gelesen aus Gemmas Positionen (`buchung.positionen` im Review des
+    Zielbild-Wegs). Ausgegliedert wird nur, was NICHT schon die Kategorie
+    des ganzen Belegs ist und im Rahmen des Betriebs ein Konto hat.
+    """
+    buchung = (review.get("buchung") or {}).get("buchung") or {}
+    haupt = ((review.get("einschaetzung") or {}).get("kategorie")
+             or buchung.get("kategorie"))
+    je: dict[tuple[str, int], float] = {}
+    for p in buchung.get("positionen") or []:
+        code = (p or {}).get("kategorie")
+        if code not in kt.AUSGLIEDERN or code == haupt:
+            continue
+        kat = kt.KATEGORIEN.get(code)
+        ziel = kat.konto(rahmen) if kat and rahmen in kt.RAHMEN else None
+        if not ziel:
+            continue
+        try:
+            betrag, satz = float(p.get("betrag") or 0), int(p.get("ust_satz") or 0)
+        except (TypeError, ValueError):
+            continue
+        je[(ziel, satz)] = round(je.get((ziel, satz), 0.0) + betrag, 2)
+    return [(k, s, b) for (k, s), b in je.items() if b]
+
+
+def _ausgliedern(teile: list[tuple], review: dict, rahmen: str,
+                 klein: bool) -> list[tuple]:
+    """Pfand und Versand auf ihr eigenes Konto (Auftraggeber-Entscheid 04.10.2026).
+
+    Ninas Meldungen #80/#81 (Pfand) und #82 (Versand). Der Betrag wandert aus
+    dem Teil mit demselben Steuersatz heraus — oder der ganze Teil, wenn er
+    genau so groß ist (ein Bon, dessen 0 %-Anteil nur Pfand ist). Geht die
+    Rechnung nicht auf (mehr Pfand als der Teil hergibt, kein Teil mit dem
+    Satz), bleibt der Beleg ungeteilt: lieber ein Konto zu grob als ein
+    Betrag, der im Stapel doppelt oder gar nicht steht.
+    """
+    aus = _ausgegliedert(review, rahmen)
+    if not aus:
+        return teile
+    neu = [list(t) for t in teile]
+    for ziel, satz, betrag in aus:
+        teil = next((t for t in neu if t[0] != ziel and (
+            klein or int(t[1] or 0) == satz)), None)
+        if teil is None:
+            return teile
+        rest = round(float(teil[2]) - betrag, 2)
+        if abs(rest) < 0.005:
+            teil[0] = ziel                       # der ganze Teil ist Pfand/Versand
+            continue
+        if (rest > 0) != (float(teil[2]) > 0):
+            return teile                         # mehr ausgegliedert als da ist
+        teil[2] = rest
+        neu.append([ziel, None if klein else satz, betrag])
+    return [tuple(t) for t in neu]
 
 
 def _ohne_steuer(z: dict, rahmen: str) -> dict:

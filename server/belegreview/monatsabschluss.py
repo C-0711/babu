@@ -26,7 +26,7 @@ KOSTENGRUPPEN: list[tuple[str, str, tuple[str, ...]]] = [
                                         "6035", "6036", "6040", "6110",
                                         "6120", "6130")),
     ("material", "Material und Ware", ("5100", "5200", "5400", "5800",
-                                       "5900")),
+                                       "5820", "5900")),
     ("raum", "Raum", ("6305", "6310", "6315", "6320", "6325", "6330",
                       "6335", "6345")),
     ("steuern_betrieb", "Abgaben für Grundbesitz und Kfz", ("6340", "7685")),
