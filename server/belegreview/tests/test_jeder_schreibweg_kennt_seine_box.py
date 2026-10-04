@@ -71,6 +71,16 @@ def test_auch_die_datev_seite_gibt_ihre_box_mit():
     assert mit >= 1
 
 
+def test_auch_die_auslagen_geben_ihre_box_mit():
+    """Seit babu Expenses D1 (04.10.2026) schreibt `kern_auslagen` in die Box —
+    Auslagen und Erstattungen. Auch dort heißt der Weg `bw._box()`."""
+    quelle = QUELLE.parent / "kern_auslagen.py"
+    mit, ohne = _aufrufstellen(ast.parse(quelle.read_text()), "kern_auslagen.py")
+    assert not ohne, ("Schreibweg ohne Box — landet still in der Default-Box:\n"
+                      + "\n".join(ohne))
+    assert mit >= 1
+
+
 def test_der_waechter_wuerde_eine_luecke_sehen():
     """Gegenprobe: ein Wächter, der nie etwas findet, ist keiner."""
     luecke = ast.parse("boxschreiber.schreiben('docs/x.txt', b'x', 'm', 'n')")
