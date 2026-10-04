@@ -1632,8 +1632,8 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
         <button id="ab-mon-vor" aria-label="Folgemonat">›</button>
       </div>
     </div>
-    <p style="color:var(--gc-desc);margin:6px 0 16px">Aus deinen Belegen und
-      deinem Kassenbuch gerechnet — ein Entwurf, den dein Steuer-Backend prüft.</p>
+    <p id="ab-satz" style="color:var(--gc-desc);margin:6px 0 16px">Aus deinen Belegen und
+      deinem Kassenbuch gerechnet — ein Entwurf.</p>
     <div id="fristen-karte"></div>
     <div id="abschluss-inhalt" class="spalten"><div class="skelett"></div><div class="skelett"></div></div>
   </section>
@@ -1827,6 +1827,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     <div class="karte" id="einst-geraete" hidden><div class="skelett"></div></div>
     <div class="sektion lbl">Dein Paket</div>
     <div class="karte" id="einst-paket"><div class="skelett"></div></div>
+    <button class="chip" style="margin:8px 0 14px" onclick="location.hash='#einrichtung'">Arbeitsweise und Fristen ändern</button>
     <div class="sektion lbl">Sag mir Bescheid</div>
     <div class="karte" id="einst-schalter">
       <label class="feld" style="cursor:pointer"><span>Wenn ein Beleg eine Frage hat</span>
@@ -2314,6 +2315,11 @@ function boxZustandZeigen(){
 
 let meineRolle = "salon";
 let meineBox = true;
+let meineArbeitsweise = "steuerbuero";
+/* Independence Day A: die Inhaberin macht ihre Buchhaltung selbst — dann
+   sieht sie die Werkzeuge, die sonst nur das Steuerbüro sieht. Erlaubt sind
+   sie ihr in beiden Arbeitsweisen; hier geht es nur um die Oberfläche. */
+function buchhaltungSelbst(){ return meineRolle === "salon" && meineArbeitsweise === "selbst"; }
 let meineMandanten = 0;
 function istKanzlei(){ return meineRolle === "kanzlei" || meineRolle === "admin"; }
 /* Wo das Portal aufgeht. Eine Kanzlei mit betreuten Betrieben und ohne
@@ -2330,6 +2336,7 @@ function startAnsicht(){
 function sitzungUebernehmen(d){
   meineRolle = d.rolle || "salon";
   meineBox = d.box !== false;
+  meineArbeitsweise = d.arbeitsweise || "steuerbuero";
   meineMandanten = d.mandanten || 0;
   $("#avatar").textContent = (d.un || "·")[0].toUpperCase();
   naviKopfAktualisieren(d.un, meineRolle);
@@ -3108,12 +3115,12 @@ async function ladeDetail(stamm){
        Zeilen des Stapels und fällt nur dann auf die eine Vorstufe zurück,
        wenn keine da sind. */
     const zeilen = Array.isArray(d.stapelzeilen) ? d.stapelzeilen : [];
-    if ((zeilen.length || b) && istKanzlei()){
+    if ((zeilen.length || b) && (istKanzlei() || buchhaltungSelbst())){
       const gezeigt = zeilen.length ? zeilen.map(stapelzeile) : [stapelzeile(b)];
       html += `<div class="sekt"><span class="lbl">Das geht an DATEV</span>
         <p style="font-size:13px;color:var(--gc-desc);margin:0 0 8px">So steht der Beleg
-        im Stapel für deine Kanzlei.</p>
-        ${gezeigt.join("")}${kreditorFeld(d)}</div>`;
+        im Stapel${istKanzlei() ? " für deine Kanzlei" : ""}.</p>
+        ${gezeigt.join("")}${kreditorFeld(d)}${korrekturFormular(d)}</div>`;
     }
 
     const siegelZeit = rev ? rev.zeit : (aufn ? aufn.zeit : null);
@@ -3195,6 +3202,39 @@ function kreditorFeld(d){
     <span id="kred-status" style="font-size:12px;color:var(--gc-muted)"></span>
   </div>`;
 }
+/* Konto, Steuer und Buchungstext von Hand — dieselbe Korrektur wie in der
+   Werkbank des Steuerbüros. */
+function korrekturFormular(d){
+  const e = d.einschaetzung || {}, v = d.vlm || {};
+  const bu = String(e.steuerschluessel || "");
+  return `<div class="kred-feld" id="korr-feld"><span class="lbl">Korrektur</span>
+    <div class="eingabe-gitter" style="margin-top:8px">
+      <label for="korr-konto">Konto<input id="korr-konto" inputmode="numeric" maxlength="8" value="${esc(e.konto_skr04 || "")}"></label>
+      <label for="korr-bu">Steuer<select id="korr-bu">
+        <option value="9"${bu === "9" ? " selected" : ""}>19 %</option>
+        <option value="8"${bu === "8" ? " selected" : ""}>7 %</option>
+        <option value=""${bu === "" || bu === "0" ? " selected" : ""}>ohne Steuer</option></select></label>
+      <label class="breit" for="korr-text">Buchungstext<input id="korr-text" maxlength="60" value="${esc(v.buchungstext || "")}"></label>
+    </div>
+    <button class="chip" style="margin-top:10px" data-korr="${esc(d.stamm)}">Korrektur speichern</button>
+    <span id="korr-status" style="font-size:12px;color:var(--gc-muted)"></span></div>`;
+}
+document.addEventListener("click", async ev => {
+  const knopf = ev.target.closest("#korr-feld [data-korr]");
+  if (!knopf) return;
+  const status = $("#korr-status");
+  status.textContent = "wird gespeichert …";
+  try{
+    const r = await api("/api/korrektur/" + knopf.dataset.korr, {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({konto_skr04: $("#korr-konto").value.trim(),
+                            steuerschluessel: $("#korr-bu").value,
+                            buchungstext: $("#korr-text").value.trim()})});
+    const d = await r.json().catch(() => ({}));
+    status.textContent = r.ok ? "Gespeichert ✓" : (d.fehler || "Ging gerade nicht.");
+    if (r.ok) setTimeout(() => ladeDetail(knopf.dataset.korr), 500);
+  }catch{ status.textContent = "Gerade keine Verbindung."; }
+});
 let kredSucheUhr = null;
 document.addEventListener("input", ev => {
   if (ev.target.id !== "kred-suche") return;
@@ -3690,12 +3730,14 @@ async function ladeZahlen(){
      hielt man den geladenen Stapel für die Übergabe selbst. Liegt der
      Monat schon drüben, steht das Datum statt des Hinweises da. */
   const uebergeben = d.uebergeben_am;
-  html += `<div class="sektion lbl">Für die Kanzlei</div><div class="karte">
+  const selbst = buchhaltungSelbst();
+  html += `<div class="sektion lbl">${selbst ? "Für DATEV" : "Für die Kanzlei"}</div><div class="karte">
     <p style="color:var(--gc-desc);font-size:13px">Der fertige Buchungsstapel dieses Monats —
     im Format, das DATEV versteht.</p>
     <p style="color:var(--gc-desc);font-size:13px;margin-top:4px">${uebergeben
-      ? "Bei der Kanzlei seit " + esc(zeitKurz(uebergeben)) + "."
-      : "Dieser Stapel ist eine Vorschau — übergeben wird er von deiner Kanzlei."}</p>
+      ? (selbst ? "Abgeschlossen seit " : "Bei der Kanzlei seit ") + esc(zeitKurz(uebergeben)) + "."
+      : (selbst ? "Dieser Stapel ist eine Vorschau — abschließen kannst du den Monat auf der DATEV-Seite."
+                : "Dieser Stapel ist eine Vorschau — übergeben wird er von deinem Steuerbüro oder von dir auf der DATEV-Seite.")}</p>
     <button class="chip" style="margin-top:10px" id="stapel-knopf">Stapel herunterladen</button>
     <span id="stapel-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span></div>`;
 
@@ -3708,7 +3750,7 @@ async function stapelLaden(monat, statusWahl){
   status.textContent = "wird geholt …";
   try{
     const r = await api("/api/export/" + welcher + ".csv");
-    if (r.status === 403){ status.textContent = "Diesen Stapel lädt deine Kanzlei herunter."; return; }
+    if (r.status === 403){ status.textContent = "Den Stapel lädt die Inhaberin herunter."; return; }
     if (!r.ok){ status.textContent = "Gerade nicht möglich."; return; }
     const blob = await r.blob();
     const a = document.createElement("a");
@@ -4868,6 +4910,7 @@ async function ladeEinstellungen(){
     $("#einst-un").textContent = ich.un;
     meineRolle = ich.rolle || meineRolle;
     meineBox = ich.box !== false;
+    meineArbeitsweise = ich.arbeitsweise || meineArbeitsweise;
     $("#verwaltung-knopf").hidden = !(meineRolle === "admin" || meineRolle === "kanzlei");
     const eigenesKonto = !!ich.hat_passwort;
     $("#einst-pw-lbl").hidden = !eigenesKonto;
@@ -4992,7 +5035,7 @@ function naviKopfAktualisieren(un, rolle){
   $("#nav-avatar").textContent = (un || "·")[0].toUpperCase();
   $("#nav-rolle").textContent = rolleAnzeige(rolle);
   $("#nav-verwaltung").hidden = !(rolle === "admin" || rolle === "kanzlei");
-  $("#nav-datev").hidden = $("#nav-verwaltung").hidden;
+  $("#nav-datev").hidden = $("#nav-verwaltung").hidden && !buchhaltungSelbst();
   $("#nav-gruppe-kanzlei").hidden = !istKanzlei();
   $("#reiter-kanzlei").hidden = !istKanzlei();
   $("#tab-kanzlei").hidden = !istKanzlei();
@@ -5212,6 +5255,8 @@ async function teamAktion(id, aktion){
 let abMonat = jetztMonat();
 async function ladeAbschluss(){
   $("#ab-mon-anzeige").textContent = monatName(abMonat);
+  $("#ab-satz").textContent = "Aus deinen Belegen und deinem Kassenbuch gerechnet — "
+    + (meineArbeitsweise === "selbst" ? "ein Entwurf, den du selbst einreichst." : "ein Entwurf für dein Steuerbüro.");
   const ziel = $("#abschluss-inhalt");
   let d;
   try{ d = await (await api("/api/monatsabschluss/" + abMonat)).json(); }
@@ -5317,11 +5362,12 @@ async function ladeAbschluss(){
   }
   if (u.stand === "entwurf"){
     html += `<div class="karte" style="margin-top:10px">
-      <b>Fertig für die Prüfung?</b>
+      <b>${meineArbeitsweise === "selbst" ? "Fertig?" : "Fertig für die Prüfung?"}</b>
       <p style="color:var(--gc-desc);font-size:13px;margin:4px 0 10px">
-        Dein Steuer-Backend bekommt die Zahlen zur Prüfung und übermittelt sie
-        ans Finanzamt. Was hier steht, bleibt als Nachweis in deiner Belegbox.</p>
-      <button class="chip" id="freigabe-knopf">Zahlen zur Prüfung geben</button>
+        ${meineArbeitsweise === "selbst"
+        ? "Die Zahlen werden festgehalten und bleiben als Nachweis in deiner Belegbox. Den Versand ans Finanzamt bereiten wir vor — bis dahin trägst du sie in Mein ELSTER ein."
+        : "Dein Steuerbüro bekommt die Zahlen zur Prüfung und übermittelt sie ans Finanzamt. Was hier steht, bleibt als Nachweis in deiner Belegbox."}</p>
+      <button class="chip" id="freigabe-knopf">${meineArbeitsweise === "selbst" ? "Zahlen festhalten" : "Zahlen zur Prüfung geben"}</button>
       <span id="freigabe-status" style="font-size:12px;color:var(--gc-muted);margin-left:8px"></span>
     </div>`;
   }
@@ -9010,8 +9056,18 @@ const EINRICHTUNG_SCHRITTE = [
   {f:"Machst du medizinische Behandlungen ohne Umsatzsteuer — zum Beispiel podologische Fußpflege?",
    k:"ust_befreiung_medizinisch", wahl:["Ja","Nein"]},
   {f:"Hast du schon einen Steuerberater?", k:"steuerberater_status", wahl:["Ja","Nein"]},
-  {f:"Soll babu alles machen — oder bleibt dein Steuerbüro und wir arbeiten zu?",
-   k:"steuerberater_modus", wahl:["Alles über babu","Mein Steuerbüro bleibt"]},
+  {f:"Wer reicht beim Finanzamt ein?", k:"steuerberater_modus",
+   wahl:["Mein Steuerbüro","Ich selbst (Independence Day)"],
+   hilfe:"Beides geht — und du kannst es jederzeit ändern."},
+  {f:"Wie oft gibst du die Umsatzsteuer-Voranmeldung ab?", k:"ustva_rhythmus",
+   wahl:["Monatlich","Vierteljährlich","Weiß nicht"],
+   hilfe:"Steht im Brief vom Finanzamt. Nicht sicher? Dann rechnen wir vorsichtig mit monatlich."},
+  {f:"Hast du Dauerfristverlängerung?", k:"dauerfristverlaengerung", wahl:["Ja","Nein","Weiß nicht"]},
+  {f:"In welchem Bundesland ist dein Betrieb?", k:"bundesland",
+   wahl:["Baden-Württemberg","Bayern","Berlin","Brandenburg","Bremen","Hamburg","Hessen",
+         "Mecklenburg-Vorpommern","Niedersachsen","Nordrhein-Westfalen","Rheinland-Pfalz",
+         "Saarland","Sachsen","Sachsen-Anhalt","Schleswig-Holstein","Thüringen"]},
+  {f:"Beschäftigst du Personal?", k:"hat_personal", wahl:["Ja","Nein"]},
   {f:"Hat dein Salon mehr als einen Standort?", k:"filialen", wahl:["Ja","Nein"]},
   {f:"Hast du mehrere Firmen?", k:"mehrere_unternehmen", wahl:["Ja","Nein"]},
   {f:"Machst du eine Bilanz — oder die einfache Gewinnrechnung (EÜR)?",

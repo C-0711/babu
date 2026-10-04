@@ -226,7 +226,7 @@ def paket_empfehlung(einstellungen: dict) -> dict:
     else:
         stufe = "salon"
     hinweise = []
-    if e.get("steuerberater_modus") in ("vorbereitend", "Mein Steuerbüro bleibt"):
+    if e.get("steuerberater_modus") in ("vorbereitend", "Mein Steuerbüro bleibt", "Mein Steuerbüro"):
         hinweise.append("Dein Steuerbüro bleibt und babu arbeitet zu — "
                         "das wird günstiger. Wir melden uns dazu.")
     if e.get("ust_befreiung_medizinisch") == "Ja":

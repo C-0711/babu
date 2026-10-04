@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Monatsabschluss auf dem Telefon: was reinkam, was rausging — und was
-/// ans Finanzamt geht. Ein Entwurf; geprüft wird er vom Steuer-Backend.
+/// ans Finanzamt geht. Ein Entwurf; wer übermittelt, sagt die Arbeitsweise des Betriebs.
 struct AbschlussView: View {
     @EnvironmentObject var store: AppStore
 
