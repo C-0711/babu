@@ -431,3 +431,21 @@ def test_der_kreditor_aus_dem_index_ersetzt_das_sammelkonto():
     assert extf.gegenkonto(r) == "70002"
     del r["kreditor"]
     assert extf.gegenkonto(r) == "70000"
+
+
+def test_die_mitarbeiterin_bekommt_einen_eigenen_kreditor():
+    stand = kr.leer()
+    stand, k = kr.mitarbeiterin(stand, "Lea", "LEA@salon.de", "DE89370400440532013000", "nina", "2026-05-12")
+    assert (k["name"], k["art"], k["zugang"], k["iban"]) == (
+        "Lea", "mitarbeiterin", "lea@salon.de", ["DE89370400440532013000"])
+    stand2, k2 = kr.mitarbeiterin(stand, "Lea", "lea@salon.de", "", "nina", "2026-05-13")
+    assert k2["nummer"] == k["nummer"] and stand2 == stand              # dieselbe, nichts neu
+    stand3, k3 = kr.mitarbeiterin(stand, "Lea", "lea@salon.de", "DE02120300000000202051", "nina", "x")
+    assert k3["iban"] == ["DE89370400440532013000", "DE02120300000000202051"]
+    assert kr.laden(kr.als_bytes(stand3))["kreditoren"][0]["art"] == "mitarbeiterin"
+
+
+def test_gleichnamiger_lieferant_stoert_nicht():
+    stand, _ = kr.anlegen(kr.leer(), "Lea", "nina", "x")
+    stand, k = kr.mitarbeiterin(stand, "Lea", "lea@salon.de", "", "nina", "x")
+    assert k["name"] == "Lea (Auslagen)"

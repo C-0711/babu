@@ -1055,8 +1055,10 @@ def _kreditoren_schreiben(bw, un: str, stand: dict, nachricht: str) -> str:
 
 def _kreditor_aussen(k: dict) -> dict:
     """Was die Seite von einem Kreditor zeigt."""
-    return {s: k[s] for s in ("nummer", "name", "aliase", "iban", "quelle",
-                              "an_datev_am", "aktiv")}
+    aus = {s: k[s] for s in ("nummer", "name", "aliase", "iban", "quelle",
+                             "an_datev_am", "aktiv")}
+    aus["art"] = k.get("art", "lieferant")
+    return aus
 
 
 def _jetzt() -> str:

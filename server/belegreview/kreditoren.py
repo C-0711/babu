@@ -129,14 +129,20 @@ def _eintrag(roh: dict) -> dict | None:
         return None
     aliase = [str(a) for a in (roh.get("aliase") or []) if str(a or "").strip()]
     iban = [str(i) for i in (roh.get("iban") or []) if str(i or "").strip()]
-    return {"nummer": nummer, "name": name, "aliase": aliase, "iban": iban,
-            "quelle": str(roh.get("quelle") or "babu"),
-            "angelegt_am": roh.get("angelegt_am"),
-            "angelegt_von": roh.get("angelegt_von"),
-            "an_datev_am": roh.get("an_datev_am"),
-            "aktiv": roh.get("aktiv") is not False,
-            "geaendert_am": roh.get("geaendert_am"),
-            "geaendert_von": roh.get("geaendert_von")}
+    e = {"nummer": nummer, "name": name, "aliase": aliase, "iban": iban,
+         "quelle": str(roh.get("quelle") or "babu"),
+         "angelegt_am": roh.get("angelegt_am"),
+         "angelegt_von": roh.get("angelegt_von"),
+         "an_datev_am": roh.get("an_datev_am"),
+         "aktiv": roh.get("aktiv") is not False,
+         "geaendert_am": roh.get("geaendert_am"),
+         "geaendert_von": roh.get("geaendert_von")}
+    # Mitarbeiterinnen mit Auslagen (babu Expenses D1) — nur dann, sonst bleibt
+    # jeder Eintrag Byte für Byte, wie er war.
+    if roh.get("art") == "mitarbeiterin":
+        e["art"] = "mitarbeiterin"
+        e["zugang"] = str(roh.get("zugang") or "").strip().lower()
+    return e
 
 
 def _sortiert(kreditoren: list[dict]) -> list[dict]:
@@ -225,6 +231,35 @@ def anlegen(stand: dict, name: str, von: str, am: str,
                   "iban": _ibans(iban), "quelle": "babu",
                   "angelegt_am": am, "angelegt_von": von})
     neu["kreditoren"] = _sortiert([*neu["kreditoren"], k])
+    return neu, k
+
+
+def mitarbeiterin(stand: dict, name: str, zugang: str, iban: str, von: str,
+                  am: str) -> tuple[dict, dict]:
+    """Der Kreditor einer Mitarbeiterin mit Auslagen — einmal angelegt, danach derselbe.
+
+    Gefunden wird sie am Zugang, nicht am Namen. Kommt eine neue IBAN dazu,
+    wird sie angehängt. Heißt schon ein Lieferant so, bekommt sie den Zusatz
+    „(Auslagen)“ — eine Nummer, zwei Bedeutungen wäre schlimmer."""
+    zugang = str(zugang or "").strip().lower()
+    for k in stand["kreditoren"]:
+        if k.get("art") == "mitarbeiterin" and k.get("zugang") == zugang:
+            if not iban or iban in k["iban"]:
+                return stand, k
+            neu = copy.deepcopy(stand)
+            for x in neu["kreditoren"]:
+                if x["nummer"] == k["nummer"]:
+                    x["iban"] = [*x["iban"], iban]
+                    x["geaendert_am"], x["geaendert_von"] = am, von
+                    return neu, x
+    anzeige = _name_pruefen(name)
+    if _namensgleich(stand, anzeige):
+        anzeige = f"{anzeige} (Auslagen)"
+    neu, k = anlegen(stand, anzeige, von, am, iban=iban or None)
+    for x in neu["kreditoren"]:
+        if x["nummer"] == k["nummer"]:
+            x["art"], x["zugang"] = "mitarbeiterin", zugang
+            return neu, x
     return neu, k
 
 

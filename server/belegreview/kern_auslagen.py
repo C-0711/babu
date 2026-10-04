@@ -206,10 +206,108 @@ async def api_konto(request: Request) -> Response:
     return JSONResponse({"ok": True, "iban_kurz": bw._iban_kurz(iban)})  # noqa: SLF001
 
 
+STAND_FILTER = {"offen": ("eingereicht",),
+                "zu_erstatten": ("freigegeben",),
+                "erstattet": ("erstattet",),
+                "alle": al.STAENDE}
+
+
+def api_liste(request: Request, stand: str = "offen") -> Response:
+    un, fehler = _lesend(request)
+    if fehler:
+        return fehler
+    idx = bw.index_aktuell()
+    erlaubt = STAND_FILTER.get(stand, STAND_FILTER["offen"])
+    zeilen = [_zeile(s, a, idx["belege"].get(s) or {})
+              for s, a in (idx.get("auslagen") or {}).items() if a["status"] in erlaubt]
+    if stand == "zu_erstatten":
+        zeilen = [z for z in zeilen if not z["erstattung"]]
+    zeilen.sort(key=lambda z: (z["name"] or "", z["datum"] or ""))
+    offene = sorted((e for e in (idx.get("erstattungen") or {}).values()
+                     if e.get("status") == "erstellt"), key=lambda e: e["kennung"])
+    return JSONResponse({"auslagen": zeilen, "erstattungen_offen": offene,
+                         "wartet": sum(1 for a in (idx.get("auslagen") or {}).values()
+                                       if a["status"] == "eingereicht")})
+
+
+def _kreditor_fuer(un: str, a: dict) -> str:
+    """Die Kreditornummer der Mitarbeiterin — angelegt bei ihrer ersten Freigabe."""
+    import datev_seite  # noqa: PLC0415
+    import kreditoren as kr  # noqa: PLC0415
+    person = bw.team_person_von_zugang(a["von"]) or {}
+    name = person.get("name") or a.get("name") or a["von"]
+
+    def rechnen(stand):
+        return kr.mitarbeiterin(stand, name, a["von"], person.get("iban") or "",
+                                un, bw._jetzt_iso())  # noqa: SLF001
+    _, _, k = datev_seite._kreditoren_aendern(  # noqa: SLF001
+        bw, un, rechnen, lambda k_: f"kreditor für Auslagen: {k_['nummer']} {k_['name']}")
+    return k["nummer"]
+
+
+def _entscheiden(request: Request, stamm: str, schritt_bauen, nachricht: str):
+    un, fehler = _inhaberin(request)
+    if fehler:
+        return None, fehler
+    try:
+        neu = _aendern(stamm, un, schritt_bauen(un), nachricht)
+    except KeineAuslage:
+        return None, _fehler("Diese Auslage gibt es nicht.", 404)
+    except al.AuslageFehler as ex:
+        return None, _fehler(str(ex), 409)
+    except boxschreiber.SchreibFehler:
+        return None, _fehler("Gerade nicht speicherbar — gleich noch einmal.", 503)
+    return neu, None
+
+
+def api_freigeben(stamm: str, request: Request) -> Response:
+    def bauen(un):
+        def schritt(a):
+            return al.uebergang(a, "freigegeben", von=un, am=bw._jetzt_iso(),  # noqa: SLF001
+                                kreditor=_kreditor_fuer(un, a))
+        return schritt
+    neu, fehler = _entscheiden(request, stamm, bauen, f"auslage freigegeben: {stamm}")
+    if fehler:
+        return fehler
+    return JSONResponse({"ok": True, "status": neu["status"], "kreditor": neu["kreditor"]})
+
+
+async def api_ablehnen(stamm: str, request: Request) -> Response:
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+
+    def bauen(un):
+        return lambda a: al.uebergang(a, "abgelehnt", von=un, am=bw._jetzt_iso(),  # noqa: SLF001
+                                      grund=body.get("grund"))
+    neu, fehler = _entscheiden(request, stamm, bauen, f"auslage abgelehnt: {stamm}")
+    if fehler:
+        return fehler
+    return JSONResponse({"ok": True, "status": neu["status"]})
+
+
+def api_zuruecknehmen(stamm: str, request: Request) -> Response:
+    def bauen(un):
+        def schritt(a):
+            if (bw.index_aktuell()["belege"].get(stamm) or {}).get("status") == "exportiert":
+                raise al.AuslageFehler("Diese Auslage ist schon übergeben.")
+            return al.uebergang(a, "eingereicht", von=un, am=bw._jetzt_iso())  # noqa: SLF001
+        return schritt
+    neu, fehler = _entscheiden(request, stamm, bauen, f"freigabe zurückgenommen: {stamm}")
+    if fehler:
+        return fehler
+    return JSONResponse({"ok": True, "status": neu["status"]})
+
+
 _ROUTEN = [
     ("GET", "/api/auslagen/meine", api_meine),
     ("GET", "/api/auslagen/meine/{stamm}", api_meine_eine),
     ("GET", "/api/auslagen/meine/{stamm}/bild", api_meine_bild),
     ("POST", "/api/auslagen/{stamm}/zurueckziehen", api_zurueckziehen),
     ("POST", "/api/auslagen/konto", api_konto),
+    ("GET", "/api/auslagen", api_liste),
+    ("POST", "/api/auslagen/{stamm}/freigeben", api_freigeben),
+    ("POST", "/api/auslagen/{stamm}/ablehnen", api_ablehnen),
+    ("POST", "/api/auslagen/{stamm}/zuruecknehmen", api_zuruecknehmen),
 ]
