@@ -228,6 +228,9 @@ struct Beleg: Identifiable, Codable {
     var ergebnisJson: String?
     /// Visions Zeilen mit Ort und Konfidenz, serialisiert — die eine Lesung.
     var ocrGeoJson: String?
+    /// Auslage einer Mitarbeiterin (babu Expenses D1) — reist beim Upload mit.
+    /// Optional: alte Stände laden weiter.
+    var istAuslage: Bool? = nil
     /// Mehrseitiger Beleg: ALLE Seiten als JPEG (bildJpeg bleibt Seite 1,
     /// damit jede bestehende Anzeige weiterlebt). Optional — alte
     /// zustand.json laden unverändert. Hochgeladen wird daraus EIN PDF.

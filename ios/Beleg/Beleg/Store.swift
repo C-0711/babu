@@ -16,7 +16,7 @@ final class AppStore: ObservableObject {
     // unter Buchhaltung. Der Fall bleibt, damit alte gespeicherte
     // Stände nicht beim Laden stolpern.
     enum Tab: Hashable { case erfassen, belege, termine, kasse, rechnungen,
-                         fragen, export }
+                         fragen, export, auslagen }
 
     @Published var onboarded = false { didSet { speichern() } }
     @Published var skr = "SKR04" { didSet { speichern() } }
@@ -54,6 +54,11 @@ final class AppStore: ObservableObject {
     /// Wird beim Nachfragen mitgeliefert und im Konto angezeigt, damit
     /// sichtbar ist, WOMIT man angemeldet ist, nicht nur DASS.
     @Published var verbundenRolle: String? { didSet { speichern() } }
+    /// Was eine Mitarbeiterin darf (babu Expenses D1); `nil` für die Inhaberin.
+    @Published var rechte: Ausbaustufe.Rechte? { didSet { speichern() } }
+    /// Wahr, solange der Scanner aus dem Reiter „Auslagen“ heraus läuft.
+    @Published var auslageModus = false
+    private var pushAngefragt = false
 
     /// Das Profil des Salons (Betriebsangaben) — liegt auf dem Telefon und
     /// reist mit jeder Einschätzungs-Anfrage mit. Quelle: api/einstellungen,
@@ -96,6 +101,7 @@ final class AppStore: ObservableObject {
         vorlagen = z.vorlagen ?? []
             verbundenAls = z.verbundenAls
             verbundenRolle = z.verbundenRolle
+            rechte = z.rechte
             testmodus = z.testmodus ?? false
             profil = z.profil ?? [:]
             ablageFehlt = z.ablageFehlt ?? false
@@ -140,6 +146,8 @@ final class AppStore: ObservableObject {
         var ablageFehlt: Bool?
         // Neu ab 14.09.2026: Änderungen, die noch nicht in der Belegbox sind.
         var abgleich: [AbgleichAuftrag]?
+        // Neu ab 04.10.2026 (babu Expenses D1): Rechte einer Mitarbeiterin.
+        var rechte: Ausbaustufe.Rechte?
     }
 
     private var zustand: Zustand {
@@ -150,7 +158,7 @@ final class AppStore: ObservableObject {
                 verbundenAls: verbundenAls, verbundenRolle: verbundenRolle,
                 vorlagen: vorlagen,
                 testmodus: testmodus, profil: profil,
-                ablageFehlt: ablageFehlt, abgleich: abgleich)
+                ablageFehlt: ablageFehlt, abgleich: abgleich, rechte: rechte)
     }
 
     /// Entprellt auf ~0,25 s, damit Serien-Änderungen nicht pro Mutation schreiben.
@@ -207,6 +215,7 @@ final class AppStore: ObservableObject {
         )
         beleg.bildJpeg = bildJpeg
         beleg.ocrText = ocrText
+        if auslageModus { beleg.istAuslage = true }
         beleg.ocrGeoJson = ocrGeoJson
         // VOR dem Dateinamen setzen: Bündel bekommen die Endung .pdf.
         beleg.seitenJpeg = seitenJpeg
@@ -276,6 +285,26 @@ final class AppStore: ObservableObject {
         zugangAbgelaufen = false
         if verbundenAls != un { verbundenAls = un }
         if verbundenRolle != antwort.rolle { verbundenRolle = antwort.rolle }
+        if rechte != antwort.rechte { rechte = antwort.rechte }
+        // Push (babu Expenses D1): einmal je Start um Erlaubnis fragen; das
+        // Gerät meldet sich, sobald Apple ein Token gibt.
+        if !pushAngefragt {
+            pushAngefragt = true
+            PushDelegate.beiToken = { [weak self] token in
+                Task { @MainActor in await self?.pushMelden(token) }
+            }
+            PushDelegate.anfragen()
+        }
+    }
+
+    /// Das Gerät für Push-Nachrichten beim Server anmelden (babu Expenses D1).
+    func pushMelden(_ token: String) async {
+        guard let url = URL(string: ablageURL), let pat = KeychainHelfer.ladePAT() else { return }
+        _ = await AblageService.auslagePost(
+            "api/push/geraet",
+            koerper: ["token": token, "umgebung": PushDelegate.umgebung,
+                      "thema": Bundle.main.bundleIdentifier ?? "io.0711.beleg"],
+            basis: url, pat: pat)
     }
 
     /// Wartezeit vor dem nächsten Versuch je Beleg (nicht persistiert). Bis
@@ -345,7 +374,8 @@ final class AppStore: ObservableObject {
         // Kontoauszug ist — die Nutzerin muss nichts auswählen.
         let (ergebnis, serverDatei, art, wohin, _) = await AblageService.aufnahme(
             daten: daten, dateiname: uploadName, gelesenerText: belege[i].ocrText,
-            ergebnis: belege[i].ergebnisJson, basis: url, pat: pat)
+            ergebnis: belege[i].ergebnisJson, auslage: belege[i].istAuslage ?? false,
+            basis: url, pat: pat)
         pruefeZugang(ergebnis)
         if ergebnis == .uebertragen, let serverDatei {
             // Wer den Beleg währenddessen gelöscht oder geändert hat, wartet

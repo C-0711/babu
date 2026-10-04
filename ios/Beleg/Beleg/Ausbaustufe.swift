@@ -28,7 +28,9 @@ enum Ausbaustufe {
     static var name: String { voll ? "babu Pro" : "babu" }
 
     /// Die Reiter unten, in der Reihenfolge, in der sie stehen.
-    static var reiter: [Reiter] { Reiter.allCases.filter { voll || !$0.nurVoll } }
+    static var reiter: [Reiter] {
+        Reiter.allCases.filter { (voll || !$0.nurVoll) && !$0.nurMitarbeit }
+    }
 
     /// Die Zeilen im Menü rechts oben, in der Reihenfolge, in der sie stehen.
     static var kontomenue: [Kontomenuepunkt] {
@@ -41,19 +43,48 @@ enum Ausbaustufe {
     static func erreichbar(_ r: Reiter) -> Bool { reiter.contains(r) }
 
     static func erreichbar(_ p: Kontomenuepunkt) -> Bool { kontomenue.contains(p) }
+
+    /// Was eine Mitarbeiterin darf (aus `/api/ich`, babu Expenses D1).
+    /// `nil` heißt: Inhaberin oder Kanzlei — dann gilt der Zuschnitt oben.
+    struct Rechte: Equatable, Codable {
+        var belege: Bool
+        var kasse: Bool
+        var auslagen: Bool
+    }
+
+    static func reiter(fuer rechte: Rechte?) -> [Reiter] {
+        guard let r = rechte else { return reiter }
+        return Reiter.allCases.filter { t in
+            switch t {
+            case .auslagen: return r.auslagen
+            case .erfassen: return r.belege
+            case .kasse: return r.kasse && voll
+            case .dokumente, .termine, .fragen: return false
+            }
+        }
+    }
+
+    static func kontomenue(fuer rechte: Rechte?) -> [Kontomenuepunkt] {
+        guard rechte != nil else { return kontomenue }
+        return [.meldungen, .einstellungen]
+    }
 }
 
 /// Ein Reiter in der Leiste unten.
 enum Reiter: String, CaseIterable, Hashable {
-    case erfassen, dokumente, termine, kasse, fragen
+    case erfassen, dokumente, termine, kasse, fragen, auslagen
 
     /// Gibt es diesen Reiter nur im großen Bau?
     var nurVoll: Bool {
         switch self {
         case .termine, .kasse: return true
-        case .erfassen, .dokumente, .fragen: return false
+        case .erfassen, .dokumente, .fragen, .auslagen: return false
         }
     }
+
+    /// Nur für Mitarbeiterinnen (babu Expenses D1) — die Inhaberin gibt
+    /// Auslagen über das Menü frei.
+    var nurMitarbeit: Bool { self == .auslagen }
 
     var titel: String {
         switch self {
@@ -62,6 +93,7 @@ enum Reiter: String, CaseIterable, Hashable {
         case .termine:   return "Termine"
         case .kasse:     return "Kassenbuch"
         case .fragen:    return "Fragen"
+        case .auslagen:  return "Auslagen"
         }
     }
 
@@ -72,6 +104,7 @@ enum Reiter: String, CaseIterable, Hashable {
         case .termine:   return "calendar"
         case .kasse:     return "banknote"
         case .fragen:    return "questionmark.bubble"
+        case .auslagen:  return "eurosign.circle"
         }
     }
 }
@@ -80,6 +113,7 @@ enum Reiter: String, CaseIterable, Hashable {
 enum Kontomenuepunkt: String, CaseIterable, Hashable {
     // Was die Zahlen angeht
     case aufraeumen, rechnungen, vorlagen, briefkopf, monatsabschluss, export
+    case auslagen
     // Was den Salon angeht
     case betrieb, kundinnen, preise, kartenzahlung, team, vertraege
     case kontoauszug, marketing
@@ -90,7 +124,7 @@ enum Kontomenuepunkt: String, CaseIterable, Hashable {
     var nurVoll: Bool {
         switch self {
         case .rechnungen, .vorlagen, .briefkopf, .kundinnen, .preise,
-             .kartenzahlung, .team, .marketing:
+             .kartenzahlung, .team, .marketing, .auslagen:
             return true
         // Verträge und Versicherungen bleiben im schmalen Bau (Entscheidung
         // des Auftraggebers, 08.09.2026). Ein Mietvertrag oder eine Police
@@ -108,7 +142,7 @@ enum Kontomenuepunkt: String, CaseIterable, Hashable {
     var abschnitt: Abschnitt {
         switch self {
         case .aufraeumen, .rechnungen, .vorlagen, .briefkopf,
-             .monatsabschluss, .export:
+             .monatsabschluss, .export, .auslagen:
             return .buchhaltung
         case .betrieb, .kundinnen, .preise, .kartenzahlung, .team,
              .vertraege, .kontoauszug, .marketing:
@@ -126,6 +160,7 @@ enum Kontomenuepunkt: String, CaseIterable, Hashable {
         case .briefkopf:       return "Dein Briefkopf"
         case .monatsabschluss: return "Monatsabschluss"
         case .export:          return "Export für die Buchhaltung"
+        case .auslagen:        return "Auslagen freigeben"
         case .betrieb:         return "Dein Betrieb"
         case .kundinnen:       return "Kundinnen"
         case .preise:          return "Deine Preise"
@@ -148,6 +183,7 @@ enum Kontomenuepunkt: String, CaseIterable, Hashable {
         case .briefkopf:       return "paintpalette"
         case .monatsabschluss: return "chart.bar.doc.horizontal"
         case .export:          return "square.and.arrow.up"
+        case .auslagen:        return "person.crop.circle.badge.checkmark"
         case .betrieb:         return "building.2"
         case .kundinnen:       return "person.crop.circle"
         case .preise:          return "tag"

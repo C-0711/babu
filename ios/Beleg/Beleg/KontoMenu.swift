@@ -122,7 +122,7 @@ struct KontoMenuView: View {
     }
 
     private func punkte(_ abschnitt: Kontomenuepunkt.Abschnitt) -> [Kontomenuepunkt] {
-        Ausbaustufe.kontomenue.filter { $0.abschnitt == abschnitt }
+        Ausbaustufe.kontomenue(fuer: store.rechte).filter { $0.abschnitt == abschnitt }
     }
 
     /// Eine Zeile: entweder ein Blatt oder ein Weiterschieben.
@@ -158,6 +158,7 @@ struct KontoMenuView: View {
         case .rechnungen:      RechnungenTab()
         case .monatsabschluss: AbschlussView()
         case .export:          ExportView()
+        case .auslagen:        AuslagenFreigabe()
         // Was babu über den Betrieb weiß, was noch fehlt und woher es das
         // hat — an einer Stelle, statt über zwei Bildschirme verstreut.
         case .betrieb:         BetriebsprofilView()

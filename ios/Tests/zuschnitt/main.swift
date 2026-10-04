@@ -34,6 +34,7 @@ let schmalesMenue: [Kontomenuepunkt] = [
 let volleReiter: [Reiter] = [.erfassen, .dokumente, .termine, .kasse, .fragen]
 let vollesMenue: [Kontomenuepunkt] = [
     .aufraeumen, .rechnungen, .vorlagen, .briefkopf, .monatsabschluss, .export,
+    .auslagen,
     .betrieb, .kundinnen, .preise, .kartenzahlung, .team, .vertraege,
     .kontoauszug, .marketing,
     .wasBabuKann, .meldungen, .einstellungen,
@@ -131,6 +132,18 @@ pruefe("kein Technik-Wort in dem, was sie liest",
        !sichtbar.contains { text in
            verboten.contains { text.range(of: $0, options: .caseInsensitive) != nil }
        })
+
+// Mitarbeiterinnen (babu Expenses D1): nur, was sie dürfen.
+let nurAuslagen = Ausbaustufe.Rechte(belege: false, kasse: false, auslagen: true)
+pruefe("Mitarbeiterin mit Auslagen sieht nur den Reiter Auslagen",
+       Ausbaustufe.reiter(fuer: nurAuslagen) == [.auslagen])
+let mitBelegen = Ausbaustufe.Rechte(belege: true, kasse: false, auslagen: true)
+pruefe("mit darf Belege kommt Erfassen dazu",
+       Ausbaustufe.reiter(fuer: mitBelegen) == [.erfassen, .auslagen])
+pruefe("das Menü der Mitarbeiterin ist kurz",
+       Ausbaustufe.kontomenue(fuer: nurAuslagen) == [.meldungen, .einstellungen])
+pruefe("die Inhaberin sieht keinen Reiter Auslagen",
+       !Ausbaustufe.reiter(fuer: nil).contains(.auslagen))
 
 print(fehler == 0 ? "\nAlles in Ordnung." : "\n\(fehler) Fehler.")
 exit(fehler == 0 ? 0 : 1)

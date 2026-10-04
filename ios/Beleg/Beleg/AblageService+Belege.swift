@@ -76,6 +76,7 @@ extension AblageService {
     /// entscheidet aus dem gelesenen Text, wohin es gehört, und sagt es zurück.
     static func aufnahme(daten: Data, dateiname: String, gelesenerText: String,
                          ergebnis ergebnisJson: String? = nil,
+                         auslage: Bool = false,
                          basis: URL, pat: String) async
             -> (ergebnis: AblageErgebnis, serverDatei: String?,
                 art: String?, wohin: String?, sicher: Bool) {
@@ -103,6 +104,8 @@ extension AblageService {
             koerper.append(teil.data(using: .utf8)!)
         }
         feld("text", String(gelesenerText.prefix(4000)))
+        // Auslage einer Mitarbeiterin (babu Expenses D1): eigenes Recht, eigener Weg.
+        if auslage { feld("auslage", "1") }
         if let ergebnisJson { feld("ergebnis", ergebnisJson) }
         koerper.append(("--\(grenze)\r\nContent-Disposition: form-data; "
                         + "name=\"file\"; filename=\"\(dateiname)\"\r\n"

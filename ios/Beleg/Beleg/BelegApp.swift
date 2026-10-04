@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct BelegApp: App {
     @StateObject private var store = AppStore()
+    @UIApplicationDelegateAdaptor(PushDelegate.self) private var pushDelegate
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -46,7 +47,7 @@ struct MainTabs: View {
         // Welche Reiter es gibt, steht in `Ausbaustufe` — an einer Stelle für
         // beide Bauarten. Der schmale Bau hat drei: Erfassen, Dokumente, Fragen.
         TabView(selection: $store.tab) {
-            ForEach(Ausbaustufe.reiter, id: \.self) { reiter in
+            ForEach(Ausbaustufe.reiter(fuer: store.rechte), id: \.self) { reiter in
                 inhalt(reiter)
                     .tabItem { Label(reiter.titel, systemImage: reiter.symbol) }
                     .tag(reiter.tab)
@@ -68,6 +69,7 @@ struct MainTabs: View {
     private func inhalt(_ reiter: Reiter) -> some View {
         switch reiter {
         case .erfassen:  CaptureTab()
+        case .auslagen:  AuslagenTab()
         // Nicht mehr nur Belege: Kontoauszüge, Verträge und Post vom Amt
         // liegen hier ebenso, jedes in seiner Art.
         case .dokumente: ListeView()
@@ -89,6 +91,7 @@ extension Reiter {
         case .termine:   return .termine
         case .kasse:     return .kasse
         case .fragen:    return .fragen
+        case .auslagen:  return .auslagen
         }
     }
 }
