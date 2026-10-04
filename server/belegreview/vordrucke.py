@@ -584,6 +584,34 @@ def brief_pdf(brief: dict, betrieb: dict) -> bytes:
     return b.bytes()
 
 
+def erstattungsbeleg_pdf(erstattung: dict, betrieb: dict) -> bytes:
+    """Beleg für eine Bar-Erstattung von Auslagen (babu Expenses D1).
+
+    Er steht für den Kassenabgang: wer bekam wann wie viel für welche Belege —
+    mit einem Feld für die Unterschrift der Empfängerin."""
+    b = _Blatt()
+    _kopf(b, f"Erstattung von Auslagen {erstattung['kennung']}",
+          str(erstattung.get("datum") or "")[:7], betrieb)
+    b.zeile(f"Bar ausgezahlt am {_datum_de(erstattung.get('datum'))}", size=10)
+    b.frei(6)
+    for person in erstattung["je_person"]:
+        b.zeile(f"{person['name']} (Kreditor {person['kreditor']})", fett=True, size=10.5)
+        for p in erstattung["posten"]:
+            if p["kreditor"] == person["kreditor"]:
+                b.zeile(p.get("text") or p["stamm"], _eur(p["betrag"]) + " €", einzug=12)
+        b.zeile("Summe", _eur(person["summe"]) + " €", fett=True, einzug=12)
+        b.frei(18)
+        b.zeile("Erhalten: ______________________________   Datum: ____________", size=9.5)
+        b.frei(10)
+    _fuss(b, ["Erstellt mit babu — die Belege der einzelnen Auslagen liegen in der Belegbox."])
+    return b.bytes()
+
+
+def _datum_de(iso: str | None) -> str:
+    s = str(iso or "")
+    return f"{s[8:10]}.{s[5:7]}.{s[:4]}" if len(s) >= 10 else s
+
+
 def susa_pdf(s: dict, betrieb: dict) -> bytes:
     """Summen- und Saldenliste — Konto · Bezeichnung · Soll · Haben · Saldo."""
     b = _Blatt()

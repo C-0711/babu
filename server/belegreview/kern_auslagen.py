@@ -7,12 +7,14 @@ Erstattungen liegen unter `auslagen/erstattungen/`. Die reine Rechnung steht in
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import threading
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 
+import audit
 import auslagen as al
 import boxschreiber
 
@@ -300,7 +302,173 @@ def api_zuruecknehmen(stamm: str, request: Request) -> Response:
     return JSONResponse({"ok": True, "status": neu["status"]})
 
 
+def _erstattung_pfad(kennung: str, endung: str = "json") -> str:
+    return f"{ERSTATTUNGEN}/{kennung}.{endung}"
+
+
+def _erstattung_lesen(kennung: str) -> dict | None:
+    if not al._KENNUNG.match(kennung):  # noqa: SLF001
+        return None
+    roh = bw.git_show(_erstattung_pfad(kennung))
+    try:
+        return json.loads(roh) if roh else None
+    except ValueError:
+        return None
+
+
+async def api_erstattung(request: Request) -> Response:
+    import sepa  # noqa: PLC0415
+    import vordrucke  # noqa: PLC0415
+    un, fehler = _inhaberin(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return _fehler("JSON erwartet", 400)
+    art = body.get("art")
+    staemme = [str(s) for s in (body.get("staemme") or [])]
+    datum = str(body.get("datum") or bw._jetzt_iso()[:10])[:10]  # noqa: SLF001
+    if art not in ("ueberweisung", "bar") or not staemme:
+        return _fehler("Bitte Auslagen und die Art der Erstattung wählen.", 400)
+    einst = bw.db_einstellungen(bw.salon_von_aktiv(un))
+    with _schloss():
+        idx = bw.index_aktuell()
+        auslagen_ = {}
+        for s in staemme:
+            a = _lesen(s)
+            if a is None or a["status"] != "freigegeben" or a.get("erstattung"):
+                return _fehler("Eine der Auslagen ist nicht frei zum Erstatten — "
+                               "bitte die Liste neu laden.", 409)
+            auslagen_[s] = a
+        kennung = al.naechste_kennung(list(idx.get("erstattungen") or {}), int(datum[:4]))
+        posten = [{"stamm": s, "kreditor": a["kreditor"], "name": a.get("name") or a["von"],
+                   "von": a["von"],
+                   "betrag": float((idx["belege"].get(s) or {}).get("brutto") or 0),
+                   "text": f"{(idx['belege'].get(s) or {}).get('lieferant') or 'Beleg'} "
+                           f"{(idx['belege'].get(s) or {}).get('datum') or ''}".strip()}
+                  for s, a in auslagen_.items()]
+        e = {"kennung": kennung, "art": art, "datum": datum,
+             "status": "erstellt" if art == "ueberweisung" else "ausgezahlt",
+             "posten": posten, "je_person": al.je_person(posten),
+             "von": un, "am": bw._jetzt_iso(),  # noqa: SLF001
+             "ueberwiesen_am": None, "ueberwiesen_von": None}
+        dateien: dict[str, bytes] = {}
+        if art == "ueberweisung":
+            if not al.iban_gueltig(einst.get("iban")) or not einst.get("betrieb_name"):
+                return _fehler("Für die Bankdatei fehlen Name und IBAN des Betriebs "
+                               "(Einstellungen).", 409)
+            zahlungen = []
+            for p in e["je_person"]:
+                iban = (bw.team_person_von_zugang(p["von"]) or {}).get("iban") or ""
+                if not al.iban_gueltig(iban):
+                    return _fehler(f"Für {p['name']} fehlt die IBAN — sie trägt sie in der "
+                                   "App ein.", 409)
+                zahlungen.append({"e2e": f"{kennung}-{p['kreditor']}",
+                                  "betrag_cent": int(round(p["summe"] * 100)),
+                                  "name": p["name"], "iban": iban,
+                                  "zweck": al.verwendungszweck(p["name"], kennung)})
+            dateien[_erstattung_pfad(kennung, "xml")] = sepa.pain001(
+                msg_id=kennung, erstellt=dt.datetime.now(),
+                ausfuehrung=dt.date.fromisoformat(datum),
+                schuldner={"name": einst["betrieb_name"], "iban": al.iban_normal(einst["iban"]),
+                           "bic": einst.get("bic") or None},
+                zahlungen=zahlungen)
+            neu = {s: al.reservieren(a, kennung) for s, a in auslagen_.items()}
+        else:
+            dateien[_erstattung_pfad(kennung, "pdf")] = vordrucke.erstattungsbeleg_pdf(
+                e, {"betrieb_name": einst.get("betrieb_name") or "Salon"})
+            neu = {s: al.uebergang(al.reservieren(a, kennung), "erstattet", von=un,
+                                   am=e["am"], erstattung=kennung)
+                   for s, a in auslagen_.items()}
+        dateien[_erstattung_pfad(kennung)] = _als_bytes(e)
+        for s, a in neu.items():
+            dateien[_pfad(s)] = _als_bytes(a)
+        try:
+            _schreiben(dateien, f"erstattung {kennung} ({art})", un)
+        except boxschreiber.SchreibFehler:
+            return _fehler("Gerade nicht speicherbar — gleich noch einmal.", 503)
+    audit.audit(un, "auslagen_erstattung", mandant_id=bw._mandant_fuers_log(),  # noqa: SLF001
+                kennung=kennung, art=art, summe=round(sum(p["summe"] for p in e["je_person"]), 2))
+    return JSONResponse({"ok": True, "kennung": kennung, "status": e["status"],
+                         "je_person": e["je_person"]})
+
+
+def _erstattung_datei(kennung: str, request: Request, endung: str, typ: str) -> Response:
+    un, fehler = _inhaberin(request)
+    if fehler:
+        return fehler
+    if not al._KENNUNG.match(kennung):  # noqa: SLF001
+        return _fehler("Diese Erstattung gibt es nicht.", 404)
+    daten = bw.git_show(_erstattung_pfad(kennung, endung))
+    if daten is None:
+        return _fehler("Diese Datei gibt es nicht.", 404)
+    return Response(content=daten, media_type=typ, headers={
+        "Content-Disposition": f'attachment; filename="Auslagen_{kennung}.{endung}"'})
+
+
+def api_bankdatei(kennung: str, request: Request) -> Response:
+    return _erstattung_datei(kennung, request, "xml", "application/xml")
+
+
+def api_erstattungsbeleg(kennung: str, request: Request) -> Response:
+    return _erstattung_datei(kennung, request, "pdf", "application/pdf")
+
+
+async def api_ueberwiesen(kennung: str, request: Request) -> Response:
+    un, fehler = _inhaberin(request)
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    am = str(body.get("am") or bw._jetzt_iso()[:10])[:10]  # noqa: SLF001
+    with _schloss():
+        e = _erstattung_lesen(kennung)
+        if e is None:
+            return _fehler("Diese Erstattung gibt es nicht.", 404)
+        if e["status"] != "erstellt":
+            return _fehler("Diese Erstattung ist nicht mehr offen.", 409)
+        e = dict(e, status="ueberwiesen", ueberwiesen_am=am, ueberwiesen_von=un)
+        dateien = {_erstattung_pfad(kennung): _als_bytes(e)}
+        for p in e["posten"]:
+            a = _lesen(p["stamm"])
+            if a is not None and a.get("erstattung") == kennung and a["status"] == "freigegeben":
+                dateien[_pfad(p["stamm"])] = _als_bytes(
+                    al.uebergang(a, "erstattet", von=un, am=bw._jetzt_iso(),  # noqa: SLF001
+                                 erstattung=kennung))
+        _schreiben(dateien, f"erstattung {kennung} überwiesen", un)
+    audit.audit(un, "auslagen_ueberwiesen", mandant_id=bw._mandant_fuers_log(),  # noqa: SLF001
+                kennung=kennung)
+    return JSONResponse({"ok": True, "status": "ueberwiesen"})
+
+
+def api_verwerfen(kennung: str, request: Request) -> Response:
+    un, fehler = _inhaberin(request)
+    if fehler:
+        return fehler
+    with _schloss():
+        e = _erstattung_lesen(kennung)
+        if e is None:
+            return _fehler("Diese Erstattung gibt es nicht.", 404)
+        if e["status"] != "erstellt":
+            return _fehler("Diese Erstattung ist nicht mehr offen.", 409)
+        dateien = {_erstattung_pfad(kennung): _als_bytes(dict(e, status="verworfen"))}
+        for p in e["posten"]:
+            a = _lesen(p["stamm"])
+            if a is not None:
+                dateien[_pfad(p["stamm"])] = _als_bytes(al.reservierung_loesen(a, kennung))
+        _schreiben(dateien, f"erstattung {kennung} verworfen", un)
+    return JSONResponse({"ok": True, "status": "verworfen"})
+
+
 _ROUTEN = [
+    ("POST", "/api/auslagen/erstattung", api_erstattung),
+    ("GET", "/api/auslagen/erstattung/{kennung}/bankdatei.xml", api_bankdatei),
+    ("GET", "/api/auslagen/erstattung/{kennung}/beleg.pdf", api_erstattungsbeleg),
+    ("POST", "/api/auslagen/erstattung/{kennung}/ueberwiesen", api_ueberwiesen),
+    ("POST", "/api/auslagen/erstattung/{kennung}/verwerfen", api_verwerfen),
     ("GET", "/api/auslagen/meine", api_meine),
     ("GET", "/api/auslagen/meine/{stamm}", api_meine_eine),
     ("GET", "/api/auslagen/meine/{stamm}/bild", api_meine_bild),
