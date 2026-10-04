@@ -12,3 +12,7 @@ numpy==2.5.2
 # kein libpq-dev. Ohne BABU_DB_URL wird es nie importiert — der SQLite-Weg
 # läuft auch, wenn das Paket fehlt.
 psycopg[binary]==3.3.5
+# Push-Nachrichten über Apple (babu Expenses D1, 04.10.2026): APNs spricht nur
+# HTTP/2 und verlangt ein ES256-signiertes Token.
+httpx[http2]==0.28.1
+cryptography==50.0.2

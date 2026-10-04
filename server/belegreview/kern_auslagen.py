@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 import threading
+import time
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
@@ -271,6 +273,9 @@ def api_freigeben(stamm: str, request: Request) -> Response:
     neu, fehler = _entscheiden(request, stamm, bauen, f"auslage freigegeben: {stamm}")
     if fehler:
         return fehler
+    lieferant, betrag = _betrag(stamm)
+    _melden("freigegeben", [neu["von"]], "Auslage freigegeben",
+            f"Deine Auslage {lieferant} ({betrag} €) ist freigegeben.")
     return JSONResponse({"ok": True, "status": neu["status"], "kreditor": neu["kreditor"]})
 
 
@@ -286,6 +291,8 @@ async def api_ablehnen(stamm: str, request: Request) -> Response:
     neu, fehler = _entscheiden(request, stamm, bauen, f"auslage abgelehnt: {stamm}")
     if fehler:
         return fehler
+    _melden("abgelehnt", [neu["von"]], "Auslage abgelehnt",
+            f"Deine Auslage {_betrag(stamm)[0]} wurde abgelehnt: {neu['grund']}.")
     return JSONResponse({"ok": True, "status": neu["status"]})
 
 
@@ -390,6 +397,11 @@ async def api_erstattung(request: Request) -> Response:
             return _fehler("Gerade nicht speicherbar — gleich noch einmal.", 503)
     audit.audit(un, "auslagen_erstattung", mandant_id=bw._mandant_fuers_log(),  # noqa: SLF001
                 kennung=kennung, art=art, summe=round(sum(p["summe"] for p in e["je_person"]), 2))
+    if art == "bar":
+        for p in e["je_person"]:
+            _melden("bar", [p["von"]], "Erstattung",
+                    f"Deine Erstattung über {p['summe']:.2f} € wurde bar ausgezahlt."
+                    .replace(".", ",", 1))
     return JSONResponse({"ok": True, "kennung": kennung, "status": e["status"],
                          "je_person": e["je_person"]})
 
@@ -441,6 +453,9 @@ async def api_ueberwiesen(kennung: str, request: Request) -> Response:
         _schreiben(dateien, f"erstattung {kennung} überwiesen", un)
     audit.audit(un, "auslagen_ueberwiesen", mandant_id=bw._mandant_fuers_log(),  # noqa: SLF001
                 kennung=kennung)
+    for p in e["je_person"]:
+        _melden("ueberwiesen", [p["von"]], "Erstattung",
+                f"Deine Erstattung über {p['summe']:.2f} € ist unterwegs.".replace(".", ",", 1))
     return JSONResponse({"ok": True, "status": "ueberwiesen"})
 
 
@@ -463,7 +478,93 @@ def api_verwerfen(kennung: str, request: Request) -> Response:
     return JSONResponse({"ok": True, "status": "verworfen"})
 
 
+_TOKEN_RE = re.compile(r"^[0-9a-f]{64,200}$")
+
+
+def _geraete(uns: list[str]) -> list[dict]:
+    if not uns:
+        return []
+    with bw._DB_LOCK, bw._db() as c:  # noqa: SLF001
+        zeilen = c.execute(
+            f"SELECT token, umgebung, thema FROM push_geraet WHERE un IN ({','.join('?' * len(uns))})",
+            tuple(uns)).fetchall()
+    return [{"token": z[0], "umgebung": z[1], "thema": z[2]} for z in zeilen]
+
+
+def _geraet_loeschen(token: str) -> None:
+    with bw._DB_LOCK, bw._db() as c:  # noqa: SLF001
+        c.execute("DELETE FROM push_geraet WHERE token=?", (token,))
+
+
+def _melden(ereignis: str, an: list[str], titel: str, text: str) -> None:
+    """Push und Mail — im Hintergrund, nach dem Commit, nie blockierend."""
+    def lauf():
+        import postfach  # noqa: PLC0415
+        import push  # noqa: PLC0415
+        try:
+            push.senden_an(_geraete(an), titel, text, _geraet_loeschen)
+            for un_ in an:
+                if "@" not in un_ or bw.db_einstellungen(un_).get("mail_auslagen") == "Nein":
+                    continue
+                postfach.senden(un_, f"babu · {titel}",
+                                f"{text}\n\n{bw.PORTAL_ORIGIN.rstrip('/')}/portal#auslagen",
+                                stempel=time.strftime("%Y%m%d-%H%M%S"))
+        except Exception as ex:  # noqa: BLE001
+            print(f"[auslagen] Nachricht {ereignis} nicht raus: {ex!r}", flush=True)
+    threading.Thread(target=lauf, daemon=True).start()
+
+
+def _betrag(stamm: str) -> tuple[str, str]:
+    z = bw.index_aktuell()["belege"].get(stamm) or {}
+    betrag = f"{float(z.get('brutto') or 0):.2f}".replace(".", ",")
+    return z.get("lieferant") or "Beleg", betrag
+
+
+def eingereicht_melden(un: str, stamm: str) -> None:
+    person = bw.team_person_von_zugang(un) or {}
+    lieferant, betrag = _betrag(stamm)
+    _melden("eingereicht", [bw.salon_von(un)], "Neue Auslage",
+            f"{person.get('name') or un} hat eine Auslage eingereicht: {lieferant}, {betrag} €.")
+
+
+async def api_push_geraet(request: Request) -> Response:
+    import push  # noqa: PLC0415
+    un, fehler = bw._api_wache(request)  # noqa: SLF001
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return _fehler("JSON erwartet", 400)
+    token = str(body.get("token") or "").strip().lower()
+    umgebung = str(body.get("umgebung") or "")
+    thema = str(body.get("thema") or "")
+    if not _TOKEN_RE.match(token) or umgebung not in push.HOSTS or thema not in push.THEMEN:
+        return _fehler("Dieses Gerät lässt sich so nicht anmelden.", 400)
+    jetzt = bw._jetzt_iso()  # noqa: SLF001
+    with bw._DB_LOCK, bw._db() as c:  # noqa: SLF001
+        c.execute("DELETE FROM push_geraet WHERE token=?", (token,))
+        c.execute("INSERT INTO push_geraet (token, un, umgebung, thema, angelegt_am, zuletzt_am) "
+                  "VALUES (?,?,?,?,?,?)", (token, un, umgebung, thema, jetzt, jetzt))
+    return JSONResponse({"ok": True})
+
+
+async def api_nachrichten(request: Request) -> Response:
+    """Mails zu Auslagen an oder aus — für das eigene Konto, nicht den Betrieb."""
+    un, fehler = bw._box_wache(request)  # noqa: SLF001
+    if fehler:
+        return fehler
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return _fehler("JSON erwartet", 400)
+    bw.db_einstellung_setzen(un, "mail_auslagen", "Ja" if body.get("mail") else "Nein")
+    return JSONResponse({"ok": True})
+
+
 _ROUTEN = [
+    ("POST", "/api/push/geraet", api_push_geraet),
+    ("POST", "/api/auslagen/nachrichten", api_nachrichten),
     ("POST", "/api/auslagen/erstattung", api_erstattung),
     ("GET", "/api/auslagen/erstattung/{kennung}/bankdatei.xml", api_bankdatei),
     ("GET", "/api/auslagen/erstattung/{kennung}/beleg.pdf", api_erstattungsbeleg),

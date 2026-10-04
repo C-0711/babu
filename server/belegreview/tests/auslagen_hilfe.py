@@ -14,9 +14,12 @@ from test_acting_as import _login, _neuer_client
 
 
 @pytest.fixture()
-def auslagen_welt(welt2, monkeypatch):
+def auslagen_welt(welt2, monkeypatch, tmp_path):
+    import postfach  # noqa: PLC0415
     monkeypatch.setattr(bx, "remote_aus_ref", lambda ref: str(bx.store_aus_ref(ref)))
     monkeypatch.setattr(welt2["bw"], "embedding_rechnen", lambda md: None)
+    # Nachrichten zu Auslagen gehen sonst in den echten Postausgang des Rechners.
+    monkeypatch.setattr(postfach, "POSTAUSGANG", tmp_path / "postausgang")
     return welt2
 
 

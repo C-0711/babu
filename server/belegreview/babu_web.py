@@ -3832,6 +3832,9 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
                             status_code=503)
     with _box().index_schloss:
         _box().invalidieren()
+    if als_auslage:
+        import kern_auslagen  # noqa: PLC0415
+        kern_auslagen.eingereicht_melden(un, Path(pfad).name.rsplit(".", 1)[0])
 
     # Kam kein Ergebnis mit, hat dieser Beleg noch GAR KEINE Lesung — der
     # Nutzer hat die Fragen abgebrochen, die Einschätzung lief in einen
