@@ -32,3 +32,28 @@ def test_ohne_jede_angabe_entscheidet_die_betreuung():
     assert aw.modus({}, betreut=True) == aw.STEUERBUERO
     assert aw.modus(None, betreut=False) == aw.SELBST
     assert aw.modus({"steuerberater_modus": "  "}, betreut=True) == aw.STEUERBUERO
+
+
+# ————— Task 2: am Betrieb —————
+
+from test_acting_as import _login, welt2  # noqa: E402,F401
+
+
+def test_ein_kanzleibetrieb_ohne_einstellungen_bleibt_beim_steuerbuero(welt2):
+    nina = _login(welt2["bw"], welt2["nina"])
+    assert nina.get("/api/ich").json()["arbeitsweise"] == "steuerbuero"
+    assert nina.get("/api/einstellungen").json()["arbeitsweise"] == "steuerbuero"
+
+
+def test_die_inhaberin_stellt_auf_selbst_um(welt2):
+    nina = _login(welt2["bw"], welt2["nina"])
+    r = nina.post("/api/einstellungen",
+                  json={"steuerberater_modus": "Ich selbst (Independence Day)",
+                        "ustva_rhythmus": "Vierteljährlich",
+                        "dauerfristverlaengerung": "Ja",
+                        "bundesland": "Baden-Württemberg", "hat_personal": "Nein"})
+    assert r.status_code == 200, r.text
+    e = nina.get("/api/einstellungen").json()
+    assert e["arbeitsweise"] == "selbst"
+    assert (e["ustva_rhythmus"], e["bundesland"]) == ("Vierteljährlich", "Baden-Württemberg")
+    assert nina.get("/api/ich").json()["arbeitsweise"] == "selbst"

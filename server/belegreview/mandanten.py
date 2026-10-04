@@ -181,6 +181,14 @@ def bank_stand(mandant_id: int, c=None) -> dict:
     return d
 
 
+def kanzlei_name(mandant_id: int, c=None) -> str | None:
+    """Wie heißt die Kanzlei, die diesen Betrieb betreut?"""
+    with _sitzung(c) as cc:
+        z = cc.execute("SELECT k.name FROM mandant m JOIN kanzlei k "
+                       "ON k.id = m.kanzlei_id WHERE m.id=?", (mandant_id,)).fetchone()
+    return z[0] if z else None
+
+
 def bank_freigeben(mandant_id: int, von: str, fassung: str, c=None) -> None:
     with _sitzung(c) as cc:
         cc.execute("UPDATE mandant SET bank_freigabe_am=?, bank_freigabe_fassung=?, "

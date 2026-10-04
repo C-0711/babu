@@ -2508,7 +2508,8 @@ def api_ich(request: Request) -> Response:
     # beim Hochladen. Für Kanzlei- und PAT-Konten ohne eigenes Mandat fällt
     # es auf die Mitgliedschaft zurück — für sie ändert sich nichts.
     daten = {"un": un, "rolle": meine_rolle, "box": _hat_ablage(un),
-             "hat_passwort": bool(nutzer_holen(un)), "mandanten": betreute}
+             "hat_passwort": bool(nutzer_holen(un)), "mandanten": betreute,
+             "arbeitsweise": _arbeitsweise(un)}
     # Testmonat (seit 02.10.2026) — nur, wenn der Betrieb gerade einen hat;
     # für alle anderen bleibt die Antwort Byte für Byte, wie sie war.
     aktiver = _AKTIVER_MANDANT.get(None)
@@ -4778,6 +4779,10 @@ EINSTELLUNG_SCHLUESSEL = {"benachrichtigung_frage", "benachrichtigung_post",
                           # Umsatzprofil: steuert, was das Kassenbuch fragt
                           "ust_sieben_prozent", "verkauft_gutscheine",
                           "personal_monat",
+                          # Fristen (Independence Day A, 04.10.2026): fristen.py
+                          # las sie schon, setzen ließen sie sich nie.
+                          "ustva_rhythmus", "dauerfristverlaengerung",
+                          "bundesland", "hat_personal",
                           # Rechnungen: was auf den Kopf gehört, und wann eine
                           # Rechnung als Erlös zählt (ist = wenn bezahlt wird).
                           "anschrift", "ust_id", "iban", "bank", "versteuerung",
@@ -4793,6 +4798,18 @@ EINSTELLUNG_SCHLUESSEL = {"benachrichtigung_frage", "benachrichtigung_post",
 
 
 
+def _arbeitsweise(un: str) -> str:
+    """Steuerbüro oder selbst — für diesen Zugang, beim Acting-as für den Mandanten."""
+    import arbeitsweise  # noqa: PLC0415
+    import testmonat  # noqa: PLC0415
+    mandant_id = _AKTIVER_MANDANT.get(None)
+    betreut = False
+    if mandant_id is not None:
+        name = mandanten.kanzlei_name(mandant_id)
+        betreut = bool(name) and name != testmonat.DIREKT_NAME
+    return arbeitsweise.modus(db_einstellungen(salon_von_aktiv(un)), betreut)
+
+
 def _einstellungen_mit_paket(un: str) -> dict:
     """Die Einstellungen eines Kontos, wie `/api/einstellungen` sie zeigt.
 
@@ -4806,6 +4823,7 @@ def _einstellungen_mit_paket(un: str) -> dict:
     import saloncheck  # noqa: PLC0415
     e = db_einstellungen(un)
     e["paket_empfehlung"] = saloncheck.paket_empfehlung(e)
+    e["arbeitsweise"] = _arbeitsweise(un)
     # Der geltende Kontenrahmen kommt mit, damit App und Portal ihn nicht in
     # einem zweiten Aufruf holen müssen. Er ist ABGELEITET (Betriebsangabe
     # schlägt Umgebungsvorgabe) und heißt deshalb anders als der gespeicherte
