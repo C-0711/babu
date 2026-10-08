@@ -730,6 +730,22 @@ details.amb-verw[open]>summary::after{transform:rotate(-135deg)}
 .bg-geld{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin-top:6px}
 .bg-geld .amb-betrag{margin-top:0;font-size:40px}
 .bg-geld span{font-size:15.5px;color:var(--gc-body)}
+/* Der Topf füllt sich bis zur 100-€-Grenze, ab der überwiesen wird (08.10.2026). */
+.bg-geldzone{position:relative}
+.bg-topf{position:relative;height:10px;margin:12px 0 2px;border-radius:6px;background:#ece7dc;overflow:hidden}
+.bg-topf i{position:absolute;inset:0 auto 0 0;border-radius:6px;background:linear-gradient(90deg,#b8954e,#e3c77d);
+  transition:width 1.4s cubic-bezier(.2,.8,.2,1)}
+.bg-topf.voll i{box-shadow:0 0 12px rgba(227,199,125,.9)}
+.bg-topf-satz{font-size:12.5px;color:var(--gc-muted)}
+.bg-kaching{margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(111,138,110,.12);
+  color:#3f5a3e;font-weight:650;font-size:15.5px;animation:bgAuf .45s ease-out}
+.bg-muenze{position:absolute;top:-6px;width:16px;height:16px;border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle at 35% 35%,#f6e2a6,#c39b4f 70%);box-shadow:0 1px 2px rgba(0,0,0,.18);
+  animation:bgFall .95s cubic-bezier(.45,0,.75,1) forwards}
+@keyframes bgFall{0%{transform:translateY(-30px) scale(.8);opacity:0}15%{opacity:1}
+  100%{transform:translateY(64px) scale(1);opacity:0}}
+@keyframes bgAuf{from{transform:translateY(6px);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion: reduce){.bg-topf i{transition:none}.bg-muenze{display:none}.bg-kaching{animation:none}}
 .bg-leise{display:inline-flex;align-items:center;min-height:44px;font-size:14.5px;font-weight:600;color:var(--gc-accent-hover)}
 .bg-titel{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:20px 0 0}
 .bg-titel h3{margin:0;font:600 19px/1.3 var(--gc-sans);color:var(--gc-fg)}
@@ -8638,7 +8654,12 @@ function ambZeichnen(ziel){
   ziel.innerHTML = `
     <div class="karte amb" style="margin-top:24px;padding:20px 18px 14px">
       <p class="bg-hallo">Hallo ${esc(d.name || "")}</p>
-      <div class="bg-geld"><span class="amb-betrag">${g.offen} €</span><span>${geldSatz}</span></div>
+      <div class="bg-geldzone" id="bg-geldzone">
+        <div class="bg-geld"><span class="amb-betrag" id="bg-betrag">${g.offen} €</span><span>${geldSatz}</span></div>
+        <div class="bg-topf${g.offen >= AMB_GRENZE ? " voll" : ""}" aria-hidden="true"><i id="bg-topf" style="width:${ambTopf(g.offen)}%"></i></div>
+        ${g.offen > 0 && g.offen < AMB_GRENZE ? `<p class="bg-topf-satz">Noch ${AMB_GRENZE - g.offen} € bis zur Überweisung</p>` : ""}
+        <div id="bg-kaching" role="status" aria-live="polite"></div>
+      </div>
       <details id="bg-konto"><summary class="bg-leise">Wofür?</summary>${ambKonto(g)}
         ${(d.gutschriften || []).length ? `<ul class="bg-liste" style="margin-top:8px">${d.gutschriften.map(x =>
           `<li><div class="bg-zeile"><b>${esc(x.nr)}</b><p>${aboEuro(x.brutto_cent)} · ${ambDatum(x.datum)}</p></div>
@@ -8709,8 +8730,82 @@ function ambZeichnen(ziel){
       <p class="bg-code">Dein Code zum Weitersagen: <b>${esc(d.code)}</b></p>
     </div>`;
   for (const id of warOffen){ const x = document.getElementById(id); if (x) x.open = true; }
+  ambKachingPruefen(d);
   const teilen = document.getElementById("bg-link-teilen");
   if (teilen && navigator.share) teilen.hidden = false;
+}
+/* ————— Ka-ching (seit 08.10.2026) —————
+   Wird ein Salon zahlende Kundin, wächst ihr Geld: beim nächsten Öffnen
+   klingelt die Kasse, die Zahl zählt hoch, der Topf füllt sich bis zur
+   100-€-Grenze und ein paar Münzen fallen hinein. Gemerkt wird je Code im
+   Browser (nur eine Annehmlichkeit — beim ersten Öffnen wird nur gemerkt). */
+const AMB_GRENZE = 100;
+function ambTopf(euro){ return Math.max(0, Math.min(100, Math.round(euro / AMB_GRENZE * 100))); }
+function ambGemerkt(code){
+  try{ return JSON.parse(localStorage.getItem("babu.kaching." + code) || "null"); }catch{ return null; }
+}
+function ambMerken(code, stand){
+  try{ localStorage.setItem("babu.kaching." + code, JSON.stringify(stand)); }catch{}
+}
+function ambGruen(k){ return k.stand === "macht mit" || k.stand === "hat abgeschlossen"; }
+function ambKachingPruefen(d){
+  const g = d.geld || {offen: d.offen};
+  const gruen = (d.kontakte || []).filter(ambGruen).map(k => k.name || k.salon);
+  const jetzt = {verdient: Number(d.verdient) || 0, gruen};
+  const alt = ambGemerkt(d.code);
+  ambMerken(d.code, jetzt);
+  if (!alt) return;
+  const plus = jetzt.verdient - (Number(alt.verdient) || 0);
+  const neu = gruen.filter(n => !(alt.gruen || []).includes(n));
+  if (plus <= 0 && !neu.length) return;
+  /* Wer neu dabei ist: aus der Liste, sonst aus der jüngsten Gutschrift. */
+  let namen = neu;
+  if (!namen.length){
+    const b = (g.bewegungen || []).find(x => x.art === "provision");
+    const m = b && /^Provision (.+), /.exec(b.text || "");
+    if (m) namen = [m[1]];
+  }
+  const wer = namen.length > 2 ? namen.slice(0, 2).join(", ") + " und weitere"
+    : namen.join(" und ");
+  const satz = (plus > 0 ? `+${plus} € — ` : "")
+    + (wer ? `${wer} ${namen.length > 1 ? "machen" : "macht"} mit!` : "Ein Salon macht mit!");
+  ambKaching(Math.max(0, g.offen - Math.max(0, plus)), g.offen, satz);
+}
+function ambKaching(von, bis, satz){
+  const zahl = document.getElementById("bg-betrag"), topf = document.getElementById("bg-topf"),
+        zone = document.getElementById("bg-geldzone"), meldung = document.getElementById("bg-kaching");
+  if (!zahl || !topf || !zone) return;
+  const ruhig = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  /* Klang: Browser spielen ihn oft erst nach einer Berührung — dann eben
+     beim ersten Tipp auf die Seite. */
+  const klang = new Audio("/klang/kaching.m4a");
+  klang.play().catch(() => {
+    const einmal = () => { klang.play().catch(() => {}); };
+    document.addEventListener("pointerdown", einmal, {once: true});
+  });
+  if (navigator.vibrate) navigator.vibrate([18, 40, 28]);
+  meldung.innerHTML = `<p class="bg-kaching">${esc(satz)}</p>`;
+  if (ruhig || von === bis){ return; }
+  topf.style.transition = "none"; topf.style.width = ambTopf(von) + "%";
+  zahl.textContent = von + " €";
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    topf.style.transition = ""; topf.style.width = ambTopf(bis) + "%";
+  }));
+  const start = performance.now(), dauer = 1400;
+  const schritt = jetztT => {
+    const p = Math.min(1, (jetztT - start) / dauer), e = 1 - Math.pow(1 - p, 3);
+    zahl.textContent = Math.round(von + (bis - von) * e) + " €";
+    if (p < 1) requestAnimationFrame(schritt);
+  };
+  requestAnimationFrame(schritt);
+  for (let i = 0; i < 7; i++){
+    const m = document.createElement("span");
+    m.className = "bg-muenze";
+    m.style.left = (8 + Math.random() * 70) + "%";
+    m.style.animationDelay = (i * 110) + "ms";
+    zone.appendChild(m);
+    m.addEventListener("animationend", () => m.remove());
+  }
 }
 /* Text in die Zwischenablage — mit Rückweg über eine Markierung, falls der
    Browser das direkte Kopieren nicht erlaubt. Der Knopf sagt, dass es geklappt hat. */

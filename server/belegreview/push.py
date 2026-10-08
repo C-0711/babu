@@ -59,11 +59,13 @@ def token(jetzt: float | None = None, schluessel_pem: bytes | None = None,
 
 
 def anfrage(geraet: str, titel: str, text: str, umgebung: str, thema: str,
-            jwt: str) -> tuple[str, dict, bytes]:
+            jwt: str, klang: str = "default") -> tuple[str, dict, bytes]:
     url = f"{HOSTS.get(umgebung, HOSTS['produktion'])}/3/device/{geraet}"
     kopf = {"authorization": f"bearer {jwt}", "apns-topic": thema,
             "apns-push-type": "alert", "apns-priority": "10"}
-    body = json.dumps({"aps": {"alert": {"title": titel, "body": text}, "sound": "default"}},
+    # `klang`: Dateiname im App-Bundle (z. B. „kaching.caf“ für Provisionen,
+    # seit 08.10.2026) — fehlt die Datei, nimmt iOS den Standardton.
+    body = json.dumps({"aps": {"alert": {"title": titel, "body": text}, "sound": klang}},
                       ensure_ascii=False).encode()
     return url, kopf, body
 
@@ -76,7 +78,8 @@ def _client():
 _client_fabrik = _client
 
 
-def senden_an(geraete: list[dict], titel: str, text: str, loeschen) -> int:
+def senden_an(geraete: list[dict], titel: str, text: str, loeschen,
+              klang: str = "default") -> int:
     """An jedes Gerät einmal. 410 heißt: die App ist weg — `loeschen(token)`."""
     if not geraete or not eingerichtet():
         return 0
@@ -85,7 +88,8 @@ def senden_an(geraete: list[dict], titel: str, text: str, loeschen) -> int:
     angenommen = 0
     try:
         for g in geraete:
-            url, kopf, body = anfrage(g["token"], titel, text, g["umgebung"], g["thema"], jwt)
+            url, kopf, body = anfrage(g["token"], titel, text, g["umgebung"], g["thema"], jwt,
+                                      klang)
             try:
                 antwort = client.post(url, headers=kopf, content=body)
             except Exception as ex:  # noqa: BLE001

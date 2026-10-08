@@ -550,6 +550,9 @@ def _rechnung_bezahlt(rechnung: dict) -> str:
                 betrag_eur=provision.betrag(paket), paket=paket, quelle="stripe",
                 heute=heute, rechnung=rechnung.get("id"))
     if buchung and buchung["ok"]:
+        import kern_ambassador  # noqa: PLC0415
+        kern_ambassador.kaching_melden(buchung["code"], buchung["betrag"],
+                                       kern_ambassador._salon_name(m["besitzer_un"]))  # noqa: SLF001
         audit.audit("stripe", "provision_gebucht", ziel_un=m["besitzer_un"],
                     mandant_id=str(m["id"]), code=buchung["code"],
                     meilenstein=meilenstein, betrag=buchung["betrag"],

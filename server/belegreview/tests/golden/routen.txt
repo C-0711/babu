@@ -117,6 +117,7 @@ GET /einkauf
 GET /healthz
 GET /hilfe
 GET /impressum
+GET /klang/kaching.m4a
 GET /openapi.json
 GET /portal
 GET /portal/icon-{groesse}.png

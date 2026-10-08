@@ -395,6 +395,45 @@ def _seite(titel: str, kicker: str, ueberschrift: str, unterzeile: str,
 </main></body></html>"""
 
 
+def kaching_melden(code: str, betrag_eur: int, salon: str) -> None:
+    """Ka-ching auf ihr Telefon, wenn ein Salon zahlt und ihre Provision
+    gebucht ist (seit 08.10.2026) — mit dem Kassenklang der App. Läuft im
+    Hintergrund; ohne Push-Schlüssel (`push.eingerichtet`) passiert nichts,
+    und beim nächsten Öffnen klingelt es in App und Portal ohnehin."""
+    import threading  # noqa: PLC0415
+
+    def lauf():
+        import kern_auslagen  # noqa: PLC0415
+        import push  # noqa: PLC0415
+        try:
+            with bw._DB_LOCK, bw._db() as c:
+                a = c.execute("SELECT email FROM ambassador WHERE code=?", (code,)).fetchone()
+            if not a or not push.eingerichtet():
+                return
+            push.senden_an(kern_auslagen._geraete([a[0]]),  # noqa: SLF001
+                           f"Ka-ching! +{betrag_eur} €",
+                           f"{salon or 'Ein Salon'} macht mit. Dein Geld wächst.",
+                           kern_auslagen._geraet_loeschen, klang="kaching.caf")  # noqa: SLF001
+        except Exception as ex:  # noqa: BLE001
+            print(f"[ambassador] Ka-ching an {code} nicht raus: {ex!r}", flush=True)
+    threading.Thread(target=lauf, daemon=True).start()
+
+
+def _salon_name(email: str) -> str:
+    with bw._DB_LOCK, bw._db() as c:
+        z = c.execute("SELECT salon FROM ambassador_salon WHERE email=? ORDER BY eingelöst",
+                      (email,)).fetchone()
+    return (z[0] if z else "") or ""
+
+
+async def kaching_klang() -> Response:
+    """Der Kassenklang fürs Portal — dieselbe Synthese wie `kaching.caf` der App."""
+    from fastapi.responses import FileResponse  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+    return FileResponse(Path(__file__).with_name("kaching.m4a"), media_type="audio/mp4",
+                        headers={"Cache-Control": "public, max-age=604800"})
+
+
 def _js(wert) -> str:
     """Ein Wert als JavaScript-Literal in einem <script>-Block. `json.dumps`
     allein reicht dort nicht: ein Salonname mit „</script>“ (ihn tippt die
@@ -785,6 +824,7 @@ async def api_ambassador_meilenstein(request: Request) -> Response:
                                 status_code=409)
         return JSONResponse({"fehler": "Dieser Meilenstein ist schon gebucht."},
                             status_code=409)
+    kaching_melden(code, betrag, _salon_name(email))
     audit.audit(un, "ambassador_meilenstein", ziel_un=email, code=code,
                 meilenstein=meilenstein, betrag=betrag, paket=paket,
                 **({"grund": grund} if betrag != regel else {}))
@@ -1789,6 +1829,7 @@ _ROUTEN = [
     ("GET", "/api/ambassador/liste", api_ambassador_liste),
     ("GET", "/api/ambassador/me", api_ambassador_me),
     ("GET", "/api/ambassador/qr.png", api_ambassador_qr),
+    ("GET", "/klang/kaching.m4a", kaching_klang),
     ("POST", "/api/ambassador/link", api_ambassador_link),
     ("POST", "/api/ambassador/einladen", api_ambassador_einladen),
     ("GET", "/ambassador/{code}/{slug}", ambassador_landing),

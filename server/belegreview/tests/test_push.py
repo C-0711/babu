@@ -92,3 +92,14 @@ def test_mails_lassen_sich_abschalten(auslagen_welt):
     lea_c, _, _ = lea(auslagen_welt)
     assert lea_c.post("/api/auslagen/nachrichten", json={"mail": False}).status_code == 200
     assert auslagen_welt["bw"].db_einstellungen("lea@salon.de")["mail_auslagen"] == "Nein"
+
+
+def test_provisionen_klingeln_mit_dem_kassenklang():
+    """Ka-ching (08.10.2026): die Push-Nachricht zur Provision trägt den
+    Dateinamen des Kassenklangs aus dem App-Bundle; ohne Angabe bleibt es
+    der Standardton."""
+    _url, _kopf, body = push.anfrage("ab" * 32, "Ka-ching! +237 €", "Kim macht mit.",
+                                     "produktion", "io.0711.beleg", "jwt", klang="kaching.caf")
+    assert json.loads(body)["aps"]["sound"] == "kaching.caf"
+    _url, _kopf, body = push.anfrage("ab" * 32, "T", "X", "produktion", "io.0711.beleg", "jwt")
+    assert json.loads(body)["aps"]["sound"] == "default"

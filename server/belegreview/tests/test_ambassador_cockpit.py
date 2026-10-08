@@ -707,3 +707,29 @@ def test_bestehender_salon_wartet_auf_bestaetigung_in_ihrer_liste(welt):
     k = next(x for x in kontakte if x["name"] == "Wanda")
     assert k["stand"] == "wartet auf Bestätigung"
     assert "bestätigen" in k["aktiv"]
+
+
+# ————— Ka-ching (08.10.2026) —————
+
+def test_ka_ching_wenn_ein_salon_mitmacht(welt, monkeypatch):
+    """Wird ein Salon zahlende Kundin, geht an die Ambassadorin eine Push-
+    Nachricht mit dem Kassenklang; ohne Push-Schlüssel passiert still nichts.
+    Den Klang fürs Portal gibt es öffentlich."""
+    import push
+    import threading
+    gesendet = []
+    monkeypatch.setattr(push, "eingerichtet", lambda: True)
+    monkeypatch.setattr(push, "senden_an", lambda geraete, titel, text, loeschen, klang="default":
+                        gesendet.append((titel, text, klang)) or 1)
+
+    class Sofort:          # der Hintergrund-Thread läuft im Test gleich mit
+        def __init__(self, target, daemon=None): self.ziel = target
+        def start(self): self.ziel()
+    monkeypatch.setattr(threading, "Thread", Sofort)
+    assert _einloesen(welt, "kim@example.org", "Kims Haarstudio").status_code == 200
+    _meilenstein(welt, "kim@example.org", "gezeichnet")
+    assert gesendet == [("Ka-ching! +237 €", "Kims Haarstudio macht mit. Dein Geld wächst.",
+                         "kaching.caf")]
+    klang = TestClient(babu_web.app).get("/klang/kaching.m4a")
+    assert klang.status_code == 200 and klang.headers["content-type"] == "audio/mp4"
+    assert len(klang.content) > 5000
