@@ -84,6 +84,9 @@ struct Monatsabschluss {
     let steuerHinweis: String
     let steuerZeilen: [SteuerZeile]
     let zahllast: Double
+    /// Kennziffer 66 — was dieser Monat an Vorsteuer zurückholt. Der Zähler
+    /// im Konzept „Ein Knopf" nimmt diese Zahl, wenn sie da ist.
+    let vorsteuer: Double?
     let offenePunkte: [OffenerPunkt]
 
     init?(json: [String: Any]) {
@@ -108,6 +111,7 @@ struct Monatsabschluss {
         steuerStand = ustva["stand"] as? String ?? "keine"
         steuerSatz = ustva["satz"] as? String ?? ""
         steuerHinweis = ustva["hinweis"] as? String ?? ""
+        vorsteuer = ustva["vorsteuer"] as? Double
         zahllast = ustva["zahllast"] as? Double ?? 0
         steuerZeilen = ((ustva["zeilen"] as? [[String: Any]]) ?? []).compactMap { z in
             guard let kz = z["kz"] as? String, let n = z["name"] as? String

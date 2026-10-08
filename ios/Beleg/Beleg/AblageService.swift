@@ -93,6 +93,26 @@ enum AblageService {
         return "Das hat gerade nicht geklappt."
     }
 
+    /// Die steuerlichen Termine des Jahres — nur, was als Nächstes ansteht
+    /// (`naechste`: art, titel, datum als ISO, in_tagen). Für den Prototyp
+    /// „Ein Knopf" (Testphase).
+    static func fristen(jahr: Int, basis: URL, pat: String) async -> [[String: Any]] {
+        let json = await holen("api/fristen/\(jahr)", basis: basis, pat: pat)
+        return json?["naechste"] as? [[String: Any]] ?? []
+    }
+
+    /// Den Monat aus der Hand geben: die Zahlen werden festgeschrieben.
+    /// nil = geklappt, sonst der Klartext für sie.
+    static func monatFreigeben(monat: String, basis: URL, pat: String) async -> String? {
+        await schicken("api/monatsabschluss/\(monat)/freigeben", [:], basis: basis, pat: pat)
+    }
+
+    /// Die Voranmeldung als Blatt in die Ablage legen. Übermittelt wird
+    /// damit (noch) nichts — das ist ein späterer Schritt außerhalb der App.
+    static func ustvaErzeugen(monat: String, basis: URL, pat: String) async -> String? {
+        await schicken("api/ustva/\(monat)", [:], basis: basis, pat: pat)
+    }
+
     /// Verbindungs- und Token-Test OHNE Müll-Commit: eine Mini-txt-Datei senden.
     /// Der Server nimmt nur Bilder/PDF an — txt wird IMMER abgelehnt:
     /// gültiger Token ⇒ 400 (Dateityp) ⇒ verbunden · falscher Token ⇒ 401.

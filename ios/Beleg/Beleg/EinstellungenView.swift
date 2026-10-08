@@ -178,6 +178,17 @@ struct EinstellungenView: View {
             Toggle("Testwerkzeuge zeigen", isOn: $store.testmodus)
 
             if store.testmodus {
+                // Konzeptstudie V2: eine Seite statt Reiter. Der Schalter
+                // tauscht die Wurzel — diese Einstellungen gehen damit zu.
+                Toggle(isOn: $store.einKnopf) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Konzept „Ein Knopf“ ausprobieren")
+                        Text("Eine Seite statt Reiter: eine Zahl, ein Satz, ein Knopf. "
+                             + "Zurück geht es über das kleine „Konzept“ oben rechts.")
+                            .font(.caption).foregroundStyle(GC.desc)
+                    }
+                }
+
                 VStack(alignment: .leading, spacing: 10) {
                     liste("Wird zurückgesetzt", AppStore.werkseinstellungGeht,
                           symbol: "arrow.counterclockwise", farbe: GC.accent)

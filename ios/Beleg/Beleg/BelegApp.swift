@@ -33,7 +33,12 @@ struct RootView: View {
 
     var body: some View {
         if store.onboarded {
-            MainTabs()
+            // Konzept „Ein Knopf" (Testphase): eine Seite statt Reiter.
+            if store.einKnopf {
+                EinKnopfView()
+            } else {
+                MainTabs()
+            }
         } else {
             OnboardingView()
         }

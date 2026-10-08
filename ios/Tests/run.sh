@@ -63,6 +63,14 @@ echo "— Chattexte-Harness —"
 swiftc -o "$ZIEL/chat" ../Beleg/Beleg/Chattexte.swift chat/main.swift
 "$ZIEL/chat"
 
+echo "— Ein-Knopf-Harness —"
+# Konzept „Ein Knopf": Regie (welche Seite ist dran) und Tonsynthese
+# (das Katsching) — beides reine Foundation-Logik.
+swiftc -o "$ZIEL/einknopf" ../Beleg/Beleg/Models.swift \
+       ../Beleg/Beleg/EinKnopf/Regie.swift ../Beleg/Beleg/EinKnopf/Tonsynthese.swift \
+       einknopf/main.swift
+"$ZIEL/einknopf"
+
 echo "— Parser-Harness —"
 swiftc -o "$ZIEL/parser" ../Beleg/Beleg/Models.swift ../Beleg/Beleg/FeldParser.swift parser/main.swift
 "$ZIEL/parser"

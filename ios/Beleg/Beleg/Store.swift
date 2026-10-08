@@ -74,6 +74,10 @@ final class AppStore: ObservableObject {
     /// Belegbox ist (Ninas Fund 14.09.2026 — Löschen und Ändern blieben
     /// lokal). Regeln in Abgleich.swift, Abarbeitung in `abgleichVerarbeiten`.
     @Published var abgleich: [AbgleichAuftrag] = [] { didSet { speichern() } }
+    /// Konzept „Ein Knopf" (Testphase): ersetzt die Reiter durch eine Seite —
+    /// eine Zahl, ein Satz, ein Knopf. Zurück geht es nur über das kleine
+    /// „Konzept" oben rechts.
+    @Published var einKnopf = false { didSet { speichern() } }
 
     private var geladen = false
     private var speicherTask: Task<Void, Never>?
@@ -103,6 +107,7 @@ final class AppStore: ObservableObject {
             verbundenRolle = z.verbundenRolle
             rechte = z.rechte
             testmodus = z.testmodus ?? false
+            einKnopf = z.einKnopf ?? false
             profil = z.profil ?? [:]
             ablageFehlt = z.ablageFehlt ?? false
             abgleich = z.abgleich ?? []
@@ -148,6 +153,8 @@ final class AppStore: ObservableObject {
         var abgleich: [AbgleichAuftrag]?
         // Neu ab 04.10.2026 (babu Expenses D1): Rechte einer Mitarbeiterin.
         var rechte: Ausbaustufe.Rechte?
+        // Neu ab 03.09.2026: der Konzept-Schalter „Ein Knopf".
+        var einKnopf: Bool?
     }
 
     private var zustand: Zustand {
@@ -158,7 +165,7 @@ final class AppStore: ObservableObject {
                 verbundenAls: verbundenAls, verbundenRolle: verbundenRolle,
                 vorlagen: vorlagen,
                 testmodus: testmodus, profil: profil,
-                ablageFehlt: ablageFehlt, abgleich: abgleich, rechte: rechte)
+                ablageFehlt: ablageFehlt, abgleich: abgleich, rechte: rechte, einKnopf: einKnopf)
     }
 
     /// Entprellt auf ~0,25 s, damit Serien-Änderungen nicht pro Mutation schreiben.
