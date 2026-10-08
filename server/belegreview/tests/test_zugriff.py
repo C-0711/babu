@@ -307,21 +307,103 @@ def test_fremdes_konto_ohne_box_sieht_die_meldungsliste_nicht(welt):
     assert client.get("/api/rueckmeldungen").status_code in (401, 403)
 
 
-def test_von_der_verwaltung_angelegte_konten_haben_die_box(welt):
-    """Ein von Hand angelegter Zugang bekommt die Belegbox sofort — sonst
-    stünde die neue Kollegin vor einer verschlossenen Tür.
+def test_von_der_verwaltung_angelegte_konten_haben_keine_standard_ablage(welt):
+    """Ein von Hand angelegter Zugang bekommt die Standard-Ablage NICHT.
 
-    Auch das ist eine Betreiber-Handlung, aus demselben Grund wie in
-    `test_verwaltung_richtet_die_box_ein`.
+    Bis 08.10.2026 stand hier das Gegenteil („sonst stünde die neue Kollegin
+    vor einer verschlossenen Tür") — aus der Zeit mit einem Betrieb je
+    Server. Die Standard-Ablage ist live die Box von SupremeStudio; jedes
+    Konto, das Betreiberin oder Kanzlei über „Zugänge verwalten" anlegten,
+    sah damit deren Belege (Befund 08.10.: fünf aktive Konten anderer
+    Betriebe, eines davon von einer fremden Kanzlei angelegt). Kolleginnen
+    kommen über das Team (`gehoert_zu`), Betriebe über ihren Mandanten; die
+    Freigabe der Standard-Ablage ist ein eigener, bewusster Schritt.
     """
     bw = welt
     verwaltung = _admin(bw)
     r = verwaltung.post("/api/nutzer", json={"email": "kollegin@kanzlei.de",
                                              "name": "Kollegin", "rolle": "salon"})
     assert r.status_code == 200
-    assert bw.box_mitglied("kollegin@kanzlei.de") is True
-    assert any(n["email"] == "kollegin@kanzlei.de" and n["box"] is True
+    assert bw.box_mitglied("kollegin@kanzlei.de") is False
+    assert any(n["email"] == "kollegin@kanzlei.de" and n["box"] is False
                for n in verwaltung.get("/api/nutzer").json()["nutzer"])
+
+
+@pytest.mark.parametrize("rolle", ["salon", "mitarbeit"])
+def test_kanzlei_legt_kein_konto_mit_fremder_ablage_an(welt, rolle):
+    """Der Weg, auf dem live ein Kanzlei-Konto in die Ablage eines Betriebs
+    einer ANDEREN Kanzlei geriet (15.09.2026): Kanzlei legt über
+    `/api/nutzer` einen Salon-Zugang an, der erbte die Standard-Ablage."""
+    bw = welt
+    kanzlei = _kanzlei_ohne_mandanten(bw)
+    r = kanzlei.post("/api/nutzer", json={"email": "kollegin@buero.de",
+                                          "name": "Kollegin", "rolle": rolle})
+    assert r.status_code == 200, r.text
+    assert bw.box_mitglied("kollegin@buero.de") is False
+
+    client = _neuer_client(bw)
+    bw._LOGIN_VERSUCHE.clear()
+    assert client.post("/api/login", json={
+        "email": "kollegin@buero.de",
+        "passwort": r.json()["startpasswort"]}).status_code == 200
+    assert client.get("/api/belege").status_code == 403
+
+
+def test_nur_der_betreiber_gibt_die_standard_ablage_frei(welt):
+    """Die Standard-Ablage gehört einem Betrieb (live SupremeStudio). Eine
+    Kanzlei, die einen Betrieb betreut, darf dessen Inhaberin trotzdem nicht
+    in fremde Belege schalten — sperren darf sie weiter."""
+    import mandanten  # noqa: PLC0415
+
+    bw = welt
+    kanzlei = _kanzlei_ohne_mandanten(bw)
+    bw.nutzer_anlegen("betreut@salon.de", "Betreut", "Betreuter Salon", "salon",
+                      box=False)
+    with bw._DB_LOCK, bw._db() as c:
+        k = c.execute("SELECT kanzlei_id FROM kanzlei_mitglied WHERE un=?",
+                      ("kanzlei-ohne@buero.de",)).fetchone()
+        kanzlei_id = k[0] if k else mandanten.kanzlei_anlegen(
+            "Neues Büro", "kanzlei-ohne@buero.de", c=c)
+        mandanten.mandant_anlegen(kanzlei_id, "Betreuter Salon",
+                                  "betreut@salon.de", c=c)
+
+    r = kanzlei.post("/api/nutzer-aktion", json={
+        "email": "betreut@salon.de", "aktion": "box_freigeben"})
+    assert r.status_code == 403, r.text
+    assert bw.nutzer_holen("betreut@salon.de")["box"] is False
+
+    # Sperren bleibt der Kanzlei erlaubt — das nimmt niemandem etwas weg.
+    r = kanzlei.post("/api/nutzer-aktion", json={
+        "email": "betreut@salon.de", "aktion": "box_sperren"})
+    assert r.status_code == 200, r.text
+
+    # Der Betreiber darf freigeben.
+    r = _admin(bw).post("/api/nutzer-aktion", json={
+        "email": "betreut@salon.de", "aktion": "box_freigeben"})
+    assert r.status_code == 200, r.text
+    assert bw.nutzer_holen("betreut@salon.de")["box"] is True
+
+
+def test_jedes_anlegen_sagt_ausdruecklich_ob_es_die_standard_ablage_gibt():
+    """`nutzer_anlegen(box=…)` ohne Angabe heißt Zugang zur Standard-Ablage.
+    Jeder Aufruf im Produktivcode muss deshalb `box=` selbst nennen — ein
+    vergessenes Argument war genau die Lücke vom 08.10.2026."""
+    import ast  # noqa: PLC0415
+
+    wurzel = HIER.parent
+    dateien = sorted(wurzel.glob("*.py")) + sorted((wurzel.parent.parent / "werkzeuge").glob("*.py"))
+    ohne = []
+    for datei in dateien:
+        baum = ast.parse(datei.read_text(encoding="utf-8"))
+        for knoten in ast.walk(baum):
+            if not isinstance(knoten, ast.Call):
+                continue
+            f = knoten.func
+            name = f.attr if isinstance(f, ast.Attribute) else getattr(f, "id", None)
+            if name == "nutzer_anlegen" and not any(
+                    kw.arg == "box" for kw in knoten.keywords):
+                ohne.append(f"{datei.name}:{knoten.lineno}")
+    assert dateien and not ohne, f"nutzer_anlegen ohne box=: {ohne}"
 
 
 # ————— P3-26: die Verwaltung gehört nicht der Mitarbeiterin —————

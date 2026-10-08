@@ -118,7 +118,9 @@ def test_anfrage_einrichten_und_login(bw, client):
     bw._LOGIN_VERSUCHE.clear()
     r = nina.post("/api/login", json={"email": "nina@locke.de", "passwort": start})
     assert r.status_code == 200
-    assert r.json() == {"un": "nina@locke.de", "rolle": "salon", "box": True}
+    # Ohne Standard-Ablage (seit 08.10.2026): die gehört einem anderen
+    # Betrieb. Freigeben ist ein eigener Schritt des Betreibers.
+    assert r.json() == {"un": "nina@locke.de", "rolle": "salon", "box": False}
 
     # Ihre Steuerdaten aus der Anfrage sind vorbefüllt; Verwaltung bleibt zu.
     e = nina.get("/api/einstellungen").json()

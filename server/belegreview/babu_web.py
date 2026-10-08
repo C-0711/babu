@@ -6040,8 +6040,13 @@ async def api_nutzer_anlegen(request: Request) -> Response:
         audit.audit(un, "rolle_verweigert", ziel_un=email, rolle=neue_rolle)
         return JSONResponse({"fehler": "Diese Rolle vergibt nur der Betreiber."},
                             status_code=403)
+    # box=False: die Standard-Ablage ist die Box EINES Betriebs (live
+    # SupremeStudio). Bis 08.10.2026 bekam jedes hier angelegte Konto sie
+    # automatisch — auch die, die eine fremde Kanzlei anlegte. Kolleginnen
+    # kommen über das Team, Betriebe über ihren Mandanten; die Freigabe ist
+    # `box_freigeben`, und die gibt nur der Betreiber.
     passwort = nutzer_anlegen(email, str(body.get("name", "")),
-                              str(body.get("salon", "")), neue_rolle)
+                              str(body.get("salon", "")), neue_rolle, box=False)
     if passwort is None:
         return JSONResponse({"fehler": "Für diese E-Mail gibt es schon einen Zugang."},
                             status_code=409)
@@ -6098,6 +6103,14 @@ async def api_nutzer_aktion(request: Request) -> Response:
         zusatz["rolle_neu"] = neu
     elif aktion in ("box_freigeben", "box_sperren"):
         # Der Schalter, mit dem aus einer Registrierung ein echter Zugang wird.
+        # Freigeben heißt: Zugang zur Standard-Ablage, und die gehört einem
+        # bestimmten Betrieb — das entscheidet nur der Betreiber (seit
+        # 08.10.2026; vorher konnte jede Kanzlei ihre Mandanten dorthin
+        # schalten). Sperren nimmt niemandem etwas und bleibt der Kanzlei.
+        if aktion == "box_freigeben" and rolle(un) != "admin":
+            audit.audit(un, "box_verweigert", ziel_un=email)
+            return JSONResponse({"fehler": "Die Belegbox gibt nur der Betreiber frei."},
+                                status_code=403)
         with _DB_LOCK, _db() as c:
             c.execute("UPDATE nutzer SET box=? WHERE email=?",
                       (1 if aktion == "box_freigeben" else 0, email))
@@ -6132,7 +6145,10 @@ async def api_registrierung_einrichten(request: Request) -> Response:
     if "@" not in email:
         return JSONResponse({"fehler": "Die Anfrage hat keine brauchbare E-Mail."},
                             status_code=400)
-    passwort = nutzer_anlegen(email, daten.get("name", ""), daten.get("salon", ""), "salon")
+    # box=False wie in `/api/nutzer`: ein neuer Betrieb sieht nicht die
+    # Standard-Ablage eines anderen (bis 08.10.2026 tat er es).
+    passwort = nutzer_anlegen(email, daten.get("name", ""), daten.get("salon", ""), "salon",
+                              box=False)
     if passwort is None:
         return JSONResponse({"fehler": "Für diese E-Mail gibt es schon einen Zugang."},
                             status_code=409)
@@ -12052,7 +12068,9 @@ async def api_team_zugang(request: Request) -> Response:
         # Der Name des Betriebs, in dem sie arbeitet — nicht der des
         # Kontos, das den Zugang vergibt.
         db_einstellungen(salon_von_aktiv(un)).get("betrieb_name") or "",
-        "mitarbeit")
+        # Unverändert True: eine Mitarbeiterin erbt die Box über
+        # `gehoert_zu` (gleich darunter gesetzt), ihr eigenes Flag zählt nicht.
+        "mitarbeit", box=True)
     if startpasswort is None:
         return JSONResponse({"fehler": "Diese E-Mail hat schon ein Konto."},
                             status_code=409)
