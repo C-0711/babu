@@ -280,6 +280,74 @@ async def api_ambassador_link(request: Request) -> Response:
     return JSONResponse(antwort)
 
 
+# Die öffentlichen Seiten des Programms (Einlösen, Code nicht aktiv) im Look
+# der Portal-Anmeldung: dieselben Farben, Schriften und Karten wie
+# `#login` in portal.html. Bis 08.10.2026 hatten sie eigene Ad-hoc-Stile —
+# Felder ragten aus der Karte, die Absage war eine nackte Überschrift.
+_SEITE_CSS = """
+:root{--gc-bg:#fff;--gc-canvas:#f7f5f0;--gc-fg:#1d1913;--gc-body:#453e31;
+  --gc-desc:#6b6151;--gc-muted:#8f8574;--gc-accent:#8a7c5c;--gc-accent-hover:#736950;
+  --gc-border:#e6e0d4;--gc-border-l:#ece7dc;--gc-ok:#6f8a6e;--gc-danger:#a8433a;
+  --gc-serif:'Playfair Display',ui-serif,Georgia,serif;
+  --gc-sans:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --gc-mono:'SF Mono',ui-monospace,Menlo,monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font:15px/1.5 var(--gc-sans);color:var(--gc-body);background:var(--gc-canvas);min-height:100dvh}
+main{max-width:480px;margin:0 auto;padding:min(9dvh,90px) 20px 40px}
+.heim{display:block;text-align:center;font:600 26px var(--gc-serif);color:var(--gc-fg);
+  text-decoration:none;letter-spacing:-.015em;margin-bottom:22px}
+.kicker{font:500 10px var(--gc-mono);letter-spacing:.14em;text-transform:uppercase;
+  margin-bottom:14px;color:var(--gc-accent-hover);text-align:center}
+h1{font:600 clamp(30px,6vw,40px) var(--gc-serif);letter-spacing:-.015em;color:var(--gc-fg);
+  margin-bottom:8px;text-align:center;line-height:1.1;text-wrap:balance}
+main > p{color:var(--gc-desc);margin-bottom:26px;text-align:center;font-size:15px}
+.lkarte{background:var(--gc-bg);border:1px solid var(--gc-border);border-radius:16px;
+  padding:24px;margin-bottom:16px;box-shadow:0 10px 30px rgba(31,30,26,.07)}
+.lkarte input:not([type=checkbox]){width:100%;padding:14px 16px;border:1px solid var(--gc-border);
+  border-radius:10px;font:16px var(--gc-sans);background:var(--gc-bg);margin-bottom:10px;
+  transition:border-color .15s ease, box-shadow .15s ease}
+.lkarte input:focus{border-color:var(--gc-accent);outline:none;box-shadow:0 0 0 3px rgba(133,123,97,.18)}
+.lkarte input::placeholder{color:#767676}
+.zustimmung{display:flex;gap:10px;align-items:flex-start;font-size:13.5px;margin:4px 0 6px;color:var(--gc-desc)}
+.zustimmung input{margin-top:3px;accent-color:var(--gc-fg)}
+a{color:var(--gc-accent-hover)}
+.voll{width:100%;background:var(--gc-fg);color:#fff;padding:14px 26px;border:0;border-radius:12px;
+  font:600 16px var(--gc-sans);margin-top:10px;cursor:pointer;transition:transform .12s ease, background .15s ease}
+.voll:hover{background:#000} .voll:active{transform:translateY(1px)}
+.voll[disabled]{opacity:.55;cursor:progress}
+.fehler{color:var(--gc-danger);font-size:13px;margin-top:12px;background:rgba(168,67,58,.08);
+  border-radius:8px;padding:9px 12px}
+.meldung{color:#3f5a3e;font-weight:600;background:rgba(111,138,110,.12);border-radius:10px;padding:14px 16px}
+small{display:block;margin-top:14px;color:var(--gc-muted);font-size:12px;line-height:1.5}
+.nurvorlesen{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+  clip:rect(0 0 0 0);border:0}
+[hidden]{display:none!important}
+.login-fuss{text-align:center;font-size:12px;color:var(--gc-muted);margin-top:28px;line-height:1.7}
+.login-fuss a{color:var(--gc-muted)}
+"""
+
+
+def _seite(titel: str, kicker: str, ueberschrift: str, unterzeile: str,
+           karte: str, roh: bool = False) -> str:
+    """Ein Blatt im Look der Portal-Anmeldung. `kicker`, `ueberschrift` und
+    `unterzeile` werden maskiert; `karte` ist fertiges HTML. `roh=True` heißt:
+    `kicker` ist schon maskiert (er trägt den Namen der Ambassadorin)."""
+    k = kicker if roh else html_text.escape(kicker)
+    return f"""<!DOCTYPE html><html lang="de"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f4f1ec">
+<title>{html_text.escape(titel)}</title><style>{_SEITE_CSS}</style></head><body><main>
+<a class="heim" href="/">babu</a>
+<div class="kicker">{k}</div>
+<h1>{html_text.escape(ueberschrift)}</h1>
+<p>{html_text.escape(unterzeile)}</p>
+<div class="lkarte">{karte}</div>
+<div class="login-fuss">babu · 0711 Intelligence · Stuttgart ·
+<a href="/impressum">Impressum</a> · <a href="/datenschutz">Datenschutz</a> ·
+<a href="/agb">Nutzungsbedingungen</a></div>
+</main></body></html>"""
+
+
 async def ambassador_landing(code: str, slug: str) -> Response:
     """Die Landing-Seite des Salons: Code steht fest, ein Formular nimmt
     Name/E-Mail auf und legt die Warteliste-Zeile MIT herkunft_code an.
@@ -288,8 +356,12 @@ async def ambassador_landing(code: str, slug: str) -> Response:
         a = c.execute("SELECT name FROM ambassador WHERE code=? AND aktiv=1",
                       (code,)).fetchone()
     if not a:
-        return HTMLResponse("<h1>Dieser Code ist nicht (mehr) aktiv.</h1>",
-                            status_code=404)
+        return HTMLResponse(_seite(
+            "babu — Code nicht aktiv", "Einladung",
+            "Dieser Code ist nicht (mehr) aktiv.",
+            "Frag die Person, die dir den Link geschickt hat, nach einem neuen.",
+            '<p style="margin:0">Oder schau dir babu erst einmal in Ruhe an: '
+            '<a href="/">mybabu.io</a></p>'), status_code=404)
     # Mit Testmonat (seit 02.10.2026) löst das Formular den Code direkt ein
     # und der Zugang steht sofort; ohne Schalter bleibt es der Weg über die
     # Warteliste, auf der die Verwaltung von Hand einlädt.
@@ -301,43 +373,56 @@ async def ambassador_landing(code: str, slug: str) -> Response:
         ziel = "/api/warteliste"
         danke = ("Danke! Wir melden uns mit deinem Zugang — dein Testmonat "
                  "startet dann.")
-    html = f"""<!DOCTYPE html><html lang="de"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>babu — 30 Tage testen</title><style>
-body{{font-family:-apple-system,sans-serif;background:#efece6;color:#2a2a26;
-padding:32px 16px;max-width:560px;margin:0 auto;line-height:1.55}}
-.karte{{background:#faf8f4;border:1px solid #d8d3c8;border-radius:14px;padding:24px}}
-h1{{font-size:22px}} .knopf{{background:#6f8a6e;color:#fff;border:none;
-padding:12px 20px;border-radius:10px;font-size:15px;font-weight:600;cursor:pointer}}
-input{{width:100%;padding:10px;margin:6px 0 14px;border:1px solid #d8d3c8;
-border-radius:8px;font-size:14px}}</style></head><body>
-<div class="karte"><h1>babu 30 Tage testen — kostenlos</h1>
-<p>Foto machen statt Belege sortieren. Empfohlen von <b>{html_text.escape(a[0])}</b> —
-30 Tage babu komplett, ohne Vertrag, ohne Kündigung.</p>
-<form onsubmit="return einlosen(this)">
-<input name="salon" placeholder="Name deines Salons" required>
-<input name="email" type="email" placeholder="Deine E-Mail" required>
-<label style="display:flex;gap:8px;align-items:flex-start;font-size:13.5px;margin:0 0 14px">
-<input name="agb" type="checkbox" required style="width:auto;margin:3px 0 0">
+    name = html_text.escape(a[0])
+    # Meldungen in eigenen Elementen, die das Skript sichtbar macht. Bis
+    # 08.10.2026 landete der Text in einem `display:none`-Absatz, der nie
+    # aufging: nach dem Einlösen verschwand das Formular, und der Salon sah
+    # eine leere Karte — bei einem Fehler sah er gar nichts.
+    karte = f"""<form id="einloesen" onsubmit="return einlosen(this)" novalidate>
+<label class="nurvorlesen" for="salon">Name deines Salons</label>
+<input id="salon" name="salon" placeholder="Name deines Salons" autocomplete="organization" required>
+<label class="nurvorlesen" for="email">Deine E-Mail</label>
+<input id="email" name="email" type="email" placeholder="Deine E-Mail" autocomplete="email" required>
+<label class="zustimmung"><input name="agb" type="checkbox" required>
 <span>Ich stimme den <a href="/agb" target="_blank">Nutzungsbedingungen</a> zu und habe den
 <a href="/datenschutz" target="_blank">Datenschutz</a> gelesen.</span></label>
-<button class="knopf">Platz sichern</button></form>
-<p id="ok" style="display:none;color:#55705a;font-weight:600"></p>
-<p style="font-size:12.5px;color:#6b6151;margin-top:14px">Wenn du einlöst, sieht {html_text.escape(a[0])}, ob du babu nutzt: wie viele Belege du hochlädst, nicht die Belege selbst.</p></div>
+<button class="voll" id="senden">Platz sichern</button>
+<p class="fehler" id="fehler" role="alert" aria-live="polite" hidden></p>
+</form>
+<p class="meldung" id="ok" role="status" aria-live="polite" hidden></p>
+<small>Wenn du einlöst, sieht {name}, ob du babu nutzt: wie viele Belege du
+hochlädst, nicht die Belege selbst.</small>
 <script>
 function einlosen(f){{
+  const ok = document.getElementById("ok"), fehler = document.getElementById("fehler"),
+        knopf = document.getElementById("senden");
+  fehler.hidden = true;
+  if (!f.salon.value.trim() || !f.email.value.trim()){{
+    fehler.textContent = "Bitte Salon und E-Mail eintragen.";
+    fehler.hidden = false; return false; }}
+  if (!f.agb.checked){{
+    fehler.textContent = "Bitte stimm zuerst den Nutzungsbedingungen zu.";
+    fehler.hidden = false; return false; }}
+  knopf.disabled = true;
   fetch({json.dumps(ziel)}, {{method:"POST",
     headers:{{"Content-Type":"application/json"}},
-    body: JSON.stringify({{email:f.email.value, art:"salon", code:{json.dumps(code)}, slug:{json.dumps(slug)},
-      salon:f.salon.value, agb:f.agb.checked, bemerkung:"Code " + {json.dumps(code)}}})}})
+    body: JSON.stringify({{email:f.email.value.trim(), art:"salon", code:{json.dumps(code)}, slug:{json.dumps(slug)},
+      salon:f.salon.value.trim(), agb:f.agb.checked, bemerkung:"Code " + {json.dumps(code)}}})}})
   .then(r => r.json()).then(d => {{
-    if(d.ok){{ document.getElementById("ok").textContent = {json.dumps(danke)};
-      f.style.display="none"; }}
-    else {{ document.getElementById("ok").textContent = d.fehler || "Da lief etwas schief."; }}
-  }});
+    if (d.ok){{ ok.textContent = {json.dumps(danke)}; ok.hidden = false;
+      f.style.display = "none"; }}
+    else {{ fehler.textContent = d.fehler || "Da lief etwas schief — gleich nochmal versuchen.";
+      fehler.hidden = false; knopf.disabled = false; }}
+  }})
+  .catch(() => {{ fehler.textContent = "Gerade keine Verbindung — gleich nochmal versuchen.";
+    fehler.hidden = false; knopf.disabled = false; }});
   return false;}}
-</script></body></html>"""
-    return HTMLResponse(html)
+</script>"""
+    return HTMLResponse(_seite(
+        "babu — 30 Tage testen", f"Empfohlen von {name}",
+        "30 Tage babu testen — kostenlos.",
+        "Foto machen statt Belege sortieren. 30 Tage babu komplett, "
+        "ohne Vertrag, ohne Kündigung.", karte, roh=True))
 
 
 async def api_ambassador_einladen(request: Request) -> Response:

@@ -153,3 +153,7 @@ def test_landing_ohne_gueltigen_code(kunde):
     tc, bw = kunde
     r = tc.get("/ambassador/KEIN-CODE/x")
     assert r.status_code == 404
+    # Auch die Absage steht im Look des Portals, nicht als nackte Überschrift.
+    assert "Dieser Code ist nicht (mehr) aktiv." in r.text
+    assert "--gc-serif" in r.text and 'class="lkarte"' in r.text
+

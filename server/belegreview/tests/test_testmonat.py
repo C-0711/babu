@@ -534,3 +534,16 @@ def test_landing_fragt_nach_zustimmung(welt, monkeypatch):
     seite = TestClient(babu_web.app, base_url="https://testserver").get(
         f"/ambassador/{welt['code']}/salon").text
     assert 'name="agb"' in seite and "/agb" in seite and "/datenschutz" in seite
+
+
+def test_landing_zeigt_bestaetigung_und_fehler(welt, monkeypatch):
+    """Bis 08.10.2026 setzte das Formular den Text in ein Element mit
+    `display:none` und machte es nie sichtbar: nach dem Einlösen verschwand
+    das Formular, und der Salon sah eine leere Karte — bei einem Fehler
+    (E-Mail schon vergeben, zu viele Einlösungen) sah er gar nichts."""
+    seite = TestClient(babu_web.app, base_url="https://testserver").get(
+        f"/ambassador/{welt['code']}/salon").text
+    assert 'id="ok"' in seite and 'id="fehler"' in seite
+    assert "ok.hidden = false" in seite and "fehler.hidden = false" in seite
+    assert ".catch(" in seite                      # keine Verbindung: auch das sagen
+    assert "--gc-serif" in seite and 'class="lkarte"' in seite   # Look des Portals
