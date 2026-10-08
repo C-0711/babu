@@ -239,6 +239,24 @@ def _alle_werte(pfad: Path) -> str:
     return "\n".join(stuecke)
 
 
+def test_kanzleiname_kommt_aus_dem_zugang_wenn_einstellungen_leer(welt, k, monkeypatch):
+    """E2E 08.10.2026: Ohne Einstellung hieß die neue Kanzlei wie der Teil der
+    Adresse vor dem @ — die Einladung an den Sachbearbeiter lautete „Dein
+    Zugang zu babu bei inhaberin". Beim Anlegen des Zugangs steht der Name
+    aber schon im Feld Salon/Betrieb."""
+    import postfach
+    monkeypatch.setattr(postfach, "senden",
+                        lambda an, betreff, text, *, stempel: (True, "ok"))
+    babu_web.nutzer_anlegen("inhaberin@kanzlei-name.de", "Inhaberin", "Kanzlei Sonnenschein",
+                            "kanzlei", box=False)
+    _als(welt, "inhaberin@kanzlei-name.de")
+    r = k.post("/api/kanzlei/mandanten", json={"name": "Salon X", "email": "x@salon-x.de"})
+    assert r.status_code == 200, r.text
+    with babu_web._DB_LOCK, babu_web._db() as c:
+        kid = kr._eigene_kanzlei("inhaberin@kanzlei-name.de", c)
+        assert mandanten.kanzlei_holen(kid, c=c)["name"] == "Kanzlei Sonnenschein"
+
+
 def test_anlegen_erzeugt_kanzlei_mandant_konto_und_einladung(welt, k, monkeypatch):
     """Der ganze Weg in einem Aufruf — und danach steht das Konto, der
     Mandant wartet auf seine Box, und ein Link ist unterwegs."""

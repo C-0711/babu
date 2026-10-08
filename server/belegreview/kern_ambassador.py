@@ -1046,7 +1046,26 @@ def _geld(code: str, c) -> dict:
                    f"nächste Quartal.")
     else:
         hinweis = f"Bis zum {_de(stichtag(lauf))} ist noch nichts verdient."
+    # Wann kommt Geld wirklich? Jeder Lauf nimmt nur mit, was bis zu seinem
+    # Stichtag verdient ist, und erst ab der Mindestsumme. Bis 08.10.2026
+    # versprach das Portal den nächsten Lauf für ALLES Offene — auch für eine
+    # Provision vom 08.10., die erst am 15.01. kommt.
+    erwartet, kandidat = None, lauf
+    for _ in range(8):
+        grenze = stichtag(kandidat).isoformat()
+        summe = sum(b["betrag"] for b in offen if str(b["datum"])[:10] <= grenze)
+        if summe >= MINDEST_AUSZAHLUNG:
+            erwartet = {"datum": kandidat.isoformat(), "betrag": summe}
+            break
+        kandidat = naechster_lauf(kandidat + dt.timedelta(days=1))
+    # Erzeugt, aber noch nicht als überwiesen bestätigt: das Geld hängt schon
+    # an einem Lauf (also nicht mehr in `offen`), ist aber noch nicht gezahlt.
+    unterwegs = sum(int(z[0] or 0) for z in c.execute(
+        "SELECT betrag FROM ambassador_auszahlung WHERE code=? AND status='erstellt'",
+        (code,)))
     return {
+        "erwartet": erwartet,
+        "unterwegs": unterwegs,
         "verdient": verdient, "ausgezahlt": gezahlt, "offen": verdient - gezahlt,
         "naechster_lauf": {"datum": lauf.isoformat(), "stichtag": bis,
                            "betrag": betrag,

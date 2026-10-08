@@ -2309,7 +2309,15 @@ function offenSatz(o){
 }
 
 /* ————— Anmeldung ————— */
-function zeigeLogin(){ $("#app").hidden = true; $("#login").hidden = false; $("#zugangscode").focus(); }
+function zeigeLogin(){
+  /* Wer bei der Anmeldung landet, legt auch den gewählten Betrieb aus der
+     Hand. Bis 08.10.2026 blieb er im Sitzungsspeicher des Tabs, und die
+     nächste Anmeldung im selben Tab schickte ihn weiter mit — der Betreiber
+     nach dem Sachbearbeiter sah bei „Zugänge" nur „Nur für die Verwaltung". */
+  aktiverMandant = null;
+  try{ sessionStorage.removeItem(MANDANT_SCHLUESSEL); }catch{}
+  $("#app").hidden = true; $("#login").hidden = false; $("#zugangscode").focus();
+}
 function zeigeApp(){
   $("#login").hidden = true; $("#app").hidden = false;
   boxZustandZeigen();
@@ -8516,12 +8524,20 @@ function ambZeichnen(ziel){
   const warOffen = [...ziel.querySelectorAll("details[open]")].map(x => x.id);
   const heute = (d.heute || []).filter(a => !_ambSpaeter.has(a.nr));
   const a = heute[0];
-  const n = g.naechster_lauf;
   /* Ohne Kontodaten wird nichts überwiesen — dann verspricht die Zeile auch
      keinen Termin, sondern sagt, was fehlt (seit 03.10.2026). */
+  /* Der Termin kommt aus `erwartet`: dem Lauf, der das Geld wirklich bringt
+     (Stichtag und 100-€-Grenze). Bis 08.10.2026 stand hier der nächste Lauf
+     für alles Offene — auch für Provisionen, die erst ein Quartal später
+     kommen. */
+  const e = g.erwartet;
   const geldSatz = !g.offen ? "Sobald ein Salon mitmacht, steht dein Geld hier."
     : d.profil_vollstaendig === false ? "liegen für dich bereit — sobald deine Kontodaten da sind, überweisen wir."
-    : `kommen${n ? ` am <b>${ambDatumLang(n.datum)}</b>` : ""} auf dein Konto.`;
+    : g.unterwegs >= g.offen ? "sind schon auf dem Weg zu dir — die Überweisung ist angestoßen."
+    : !e && g.unterwegs ? `— davon sind ${g.unterwegs} € schon auf dem Weg zu dir.`
+    : !e ? "liegen für dich bereit — überwiesen wird, sobald 100 € zusammen sind."
+    : e.betrag >= g.offen ? `kommen am <b>${ambDatumLang(e.datum)}</b> auf dein Konto.`
+    : `— davon kommen ${e.betrag} € am <b>${ambDatumLang(e.datum)}</b>, der Rest mit einem späteren Lauf.`;
   ziel.innerHTML = `
     <div class="karte amb" style="margin-top:24px;padding:20px 18px 14px">
       <p class="bg-hallo">Hallo ${esc(d.name || "")}</p>
@@ -9014,7 +9030,7 @@ async function ladeAbo(sitzung){
   _aboWahl = empf >= 0 ? empf : 1;
   let html = d.testmodus ? `<div class="karte abo-probe">Probelauf: Hier wird nichts abgebucht.</div>` : "";
   if (danke) html += `<div class="karte" style="border-color:var(--gc-ok)"><h3>Danke, du bist dabei!</h3>
-    <p>Du kannst sofort weiterarbeiten. Die erste Abbuchung kommt in den nächsten Tagen, die Rechnung per E-Mail.</p></div>`;
+    <p>Du kannst sofort weiterarbeiten. Die Rechnung kommt per E-Mail.</p></div>`;
   if (d.abo_status && d.abo_status !== "beendet") html += aboStandHtml(d);
   if (d.kann_abschliessen) html += (d.an && d.bereit) ? aboWahlHtml(d)
     : `<div class="karte"><p>Weitermachen richten wir gerade für dich ein. Schreib uns kurz an

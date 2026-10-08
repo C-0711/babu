@@ -987,6 +987,12 @@ async def api_mandant_anlegen(request: Request) -> JSONResponse:
             for z in c.execute("SELECT wert FROM einstellungen "
                                "WHERE un=? AND schluessel='kanzlei_name'", (un,)):
                 kanzlei_name = str(z[0] or "").strip()
+            # Dann der Betrieb, der beim Anlegen des Zugangs eingetragen wurde
+            # (seit 08.10.2026) — vorher hieß die Kanzlei nach dem Teil der
+            # Adresse vor dem @, und die Einladungen lauteten „… bei inhaberin".
+            if not kanzlei_name:
+                for z in c.execute("SELECT salon FROM nutzer WHERE email=?", (un,)):
+                    kanzlei_name = str(z[0] or "").strip()
             kanzlei_id = mandanten.kanzlei_anlegen(
                 kanzlei_name[:120] or un.split("@")[0], un, c=c)
         doppelt = c.execute("SELECT 1 FROM mandant WHERE kanzlei_id=? AND "

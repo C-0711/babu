@@ -233,6 +233,55 @@ def test_geld_mit_naechstem_lauf(welt, monkeypatch):
     assert [(p["salon"], p["betrag"]) for p in lauf["posten"]] == [("Salon A", 237)]
 
 
+def test_erwartet_nennt_den_lauf_der_das_geld_wirklich_bringt(welt, monkeypatch):
+    """E2E 08.10.2026: Die Ambassadorin las „237 € kommen am 15. Oktober" —
+    verdient am 08.10., also nach dem Stichtag 30.09. Der Oktober-Lauf bringt
+    nichts davon; das Geld kommt am 15.01.2027."""
+    monkeypatch.setattr(ka, "_heute", lambda: D(2026, 10, 8))
+    _einloesen(welt, "a@example.org", "Salon A")
+    _meilenstein(welt, "a@example.org", "gezeichnet", am=D(2026, 10, 8))
+    geld = welt["babs"].get("/api/ambassador/me").json()["geld"]
+    assert geld["naechster_lauf"]["datum"] == "2026-10-15"
+    assert geld["naechster_lauf"]["betrag"] == 0
+    assert geld["erwartet"] == {"datum": "2027-01-15", "betrag": 237}
+
+
+def test_erwartet_teilt_alt_und_neu_und_wartet_auf_100_euro(welt, monkeypatch):
+    monkeypatch.setattr(ka, "_heute", lambda: D(2026, 10, 2))
+    _einloesen(welt, "a@example.org", "Salon A")
+    _einloesen(welt, "b@example.org", "Salon B")
+    _meilenstein(welt, "a@example.org", "gezeichnet", am=D(2026, 9, 20))
+    _meilenstein(welt, "b@example.org", "gezeichnet", am=D(2026, 10, 1))
+    # Der erste Lauf bringt nur das Alte — dafür nennt „erwartet" ihn.
+    assert welt["babs"].get("/api/ambassador/me").json()["geld"]["erwartet"] == \
+        {"datum": "2026-10-15", "betrag": 237}
+    # Unter 100 € insgesamt: kein Termin, der nicht stimmt.
+    with babu_web._DB_LOCK, babu_web._db() as c:
+        c.execute("UPDATE ambassador_buchung SET betrag=30")
+    assert welt["babs"].get("/api/ambassador/me").json()["geld"]["erwartet"] is None
+
+
+def test_unterwegs_zwischen_lauf_und_ueberweisung(welt, monkeypatch):
+    """E2E 08.10.2026: Lauf erzeugt, Überweisung noch nicht bestätigt — die
+    Provision hängt schon am Lauf, ist aber noch nicht „gezahlt". Dann ist sie
+    unterwegs, nicht „wartet auf 100 €"."""
+    monkeypatch.setattr(ka, "_heute", lambda: D(2026, 10, 15))
+    monkeypatch.setenv("BABU_FIRMA_NAME", "0711 Intelligence")
+    monkeypatch.setenv("BABU_AUSZAHLUNG_IBAN", "DE89370400440532013000")
+    _einloesen(welt, "a@example.org", "Salon A")
+    _meilenstein(welt, "a@example.org", "gezeichnet", am=D(2026, 9, 20))
+    assert welt["babs"].post("/api/ambassador/profil", json=PROFIL).status_code == 200
+    r = welt["chef"].post("/api/auszahlung/lauf")
+    assert r.status_code == 200, r.text
+    geld = welt["babs"].get("/api/ambassador/me").json()["geld"]
+    assert geld["offen"] == 237 and geld["unterwegs"] == 237
+    assert geld["erwartet"] is None
+    # Nach „überwiesen" ist nichts mehr unterwegs.
+    assert welt["chef"].post(f"/api/auszahlung/lauf/{r.json()['id']}/ueberwiesen").status_code == 200
+    geld = welt["babs"].get("/api/ambassador/me").json()["geld"]
+    assert geld["unterwegs"] == 0 and geld["offen"] == 0
+
+
 def test_unter_100_euro_wartet(welt, monkeypatch):
     monkeypatch.setattr(ka, "_heute", lambda: D(2026, 10, 2))
     _einloesen(welt, "a@example.org", "Salon A")
