@@ -231,3 +231,29 @@ def test_kanzlei_von_der_warteliste_bekommt_willkommensmail(verwaltung, monkeypa
     texte = [t for (an, _b, t) in gesendet if an == "buero@example.org"]
     assert len(texte) == 1 and "/portal#reset/" in texte[0]
     assert "Kanzlei Sonnenschein" in texte[0] and "Mandanten" in texte[0]
+
+
+def test_bestehender_betrieb_bekommt_den_versprochenen_testmonat(verwaltung, monkeypatch):
+    """Die Willkommensmail verspricht 30 Tage. Gab es den Betrieb schon (live
+    08.10.2026: DJBinary), wurde bis dahin nur gemailt — `test_bis` blieb
+    leer. Jetzt bekommt ein Betrieb ohne Test und ohne Abo den Test, und ein
+    laufender Test behält sein Ende."""
+    _client, bw = verwaltung
+    gesendet = _mails_abfangen(monkeypatch)
+    import kern_warteliste
+    import mandanten
+    import testmonat
+    with bw._DB_LOCK, bw._db() as c:
+        mid = mandanten.mandant_anlegen(testmonat.direkt_kanzlei(c), "Studio Alt",
+                                        "alt@example.org", "SKR04", c=c)
+    assert kern_warteliste.direkt_einrichten("alt@example.org", "Studio Alt") is True
+    with bw._DB_LOCK, bw._db() as c:
+        bis = c.execute("SELECT test_bis FROM mandant WHERE id=?", (mid,)).fetchone()[0]
+    assert bis == testmonat.ende_fuer_start(testmonat.heute()).isoformat()
+    # Zweite Mail: dasselbe Ende, kein neuer Monat.
+    with bw._DB_LOCK, bw._db() as c:
+        c.execute("UPDATE mandant SET test_bis=? WHERE id=?", ("2026-12-24", mid))
+    kern_warteliste.direkt_einrichten("alt@example.org", "Studio Alt")
+    with bw._DB_LOCK, bw._db() as c:
+        assert c.execute("SELECT test_bis FROM mandant WHERE id=?", (mid,)).fetchone()[0] == "2026-12-24"
+    assert "24.12.2026" in gesendet[-1][2]

@@ -342,12 +342,22 @@ def direkt_einrichten(email: str, betrieb: str) -> bool:
     import kern_ambassador  # noqa: PLC0415
     import mandanten  # noqa: PLC0415
     import testmonat  # noqa: PLC0415
+    import datetime as dt  # noqa: PLC0415
     bis = testmonat.ende_fuer_start(testmonat.heute())
     with bw._DB_LOCK, bw._db() as c:
-        if not c.execute("SELECT 1 FROM mandant WHERE besitzer_un=?", (email,)).fetchone():
+        z = c.execute("SELECT id, test_bis, abo_status FROM mandant WHERE besitzer_un=? "
+                      "ORDER BY id", (email,)).fetchone()
+        if not z:
             mid = mandanten.mandant_anlegen(testmonat.direkt_kanzlei(c), betrieb,
                                             email, "SKR04", c=c)
             testmonat.setzen(mid, bis, c)
+        elif z[1]:
+            bis = dt.date.fromisoformat(str(z[1])[:10])   # läuft schon: deren Ende
+        elif not z[2]:
+            # Betrieb ohne Test und ohne Abo: die Mail verspricht 30 Tage, also
+            # gibt es sie auch (08.10.2026 — DJBinary bekam sonst eine Zusage,
+            # die der Server nicht kannte).
+            testmonat.setzen(z[0], bis, c)
     return kern_ambassador.testmonat_willkommen(email, betrieb, bis, None)
 
 
