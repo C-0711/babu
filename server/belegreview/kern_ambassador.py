@@ -500,7 +500,8 @@ function verbinden(){{
     headers:{{"Content-Type":"application/json"}},
     body: JSON.stringify({{token: {json.dumps(token)}}})}})
   .then(r => r.json()).then(d => {{
-    if (d.ok){{ ok.textContent = d.hinweis; ok.hidden = false; knopf.hidden = true; }}
+    if (d.ok){{ ok.textContent = d.hinweis; ok.hidden = false; knopf.hidden = true;
+      ok.insertAdjacentHTML("afterend", '<p style="margin-top:12px"><a href="/portal">Weiter zu babu ›</a></p>'); }}
     else {{ fehler.textContent = d.fehler || "Da lief etwas schief — gleich nochmal versuchen.";
       fehler.hidden = false; knopf.disabled = false; }}
   }})
@@ -832,14 +833,17 @@ def _app_absatz() -> str:
     return startguide.app_absatz()
 
 
-def _senden(an: str, betreff: str, text: str) -> None:
+def _senden(an: str, betreff: str, text: str) -> bool:
+    """Eine Mail verschicken; Rückgabe: ob sie rausging."""
     import postfach  # noqa: PLC0415
     try:
         ok, hinweis = postfach.senden(an, betreff, text,
                                       stempel=time.strftime("%Y%m%d-%H%M%S"))
         print(f"[testmonat] Mail an {an}: {hinweis}", flush=True)
+        return bool(ok)
     except Exception as ex:  # noqa: BLE001
         print(f"[testmonat] Mail an {an} fehlgeschlagen: {ex!r}", flush=True)
+        return False
 
 
 # ————— Bestehende Salons verbinden (seit 08.10.2026) —————
@@ -935,6 +939,31 @@ def _verbinden_mail(ambassadorin: str, salon: str, code: str, email: str) -> tup
 
 _EINGELOEST = ("Geschafft! Schau in dein Postfach — dort liegt der Link, mit "
                "dem du dein Passwort setzt.")
+
+
+def testmonat_willkommen(email: str, salon: str, bis, ambassadorin: str | None = None) -> bool:
+    """Die Willkommensmail eines Testmonats — mit Link zum Passwortsetzen.
+
+    Ein Baustein für alle Wege in den Testmonat (seit 08.10.2026): Code einer
+    Ambassadorin, direkt über die Startseite, Einladung von der Warteliste,
+    „Zugang anlegen" in der Verwaltung. Bis dahin endete die Mail mit „Wenn
+    du weitermachen willst, antworte einfach auf diese Mail" — seit 03.10.
+    geht das im Portal unter „Weitermachen"."""
+    link = _passwort_link(email)
+    herkunft = f" — empfohlen von {ambassadorin}" if ambassadorin else ""
+    text = (f"Hallo,\n\n"
+            f"schön, dass du babu ausprobierst{herkunft}. "
+            f"Dein Zugang für „{salon}“ steht. Du hast {testmonat.TAGE} Tage "
+            f"babu komplett, bis einschließlich {bis.strftime('%d.%m.%Y')}; "
+            f"kostenlos, ohne Vertrag, kündigen musst du nichts.\n\n"
+            f"Beim ersten Öffnen legst du dein Passwort fest:\n\n"
+            f"    {link or bw.PORTAL_ORIGIN.rstrip('/') + '/portal'}\n\n")
+    import startguide  # noqa: PLC0415
+    text += (startguide.schritte(bw.PORTAL_ORIGIN) + "\n" + _app_absatz()
+             + f"\nNach den {testmonat.TAGE} Tagen bleibt alles da und lesbar. Wenn du "
+               "weitermachen willst, tippst du im Portal auf „Weitermachen“ — "
+               "dort wählst du dein Paket.\n")
+    return _senden(email, "Dein babu-Testmonat startet", text)
 
 
 async def api_ambassador_einloesen(request: Request) -> Response:
@@ -1035,20 +1064,7 @@ async def api_ambassador_einloesen(request: Request) -> Response:
                      ON CONFLICT (code, email) DO NOTHING""",
                   (code, email, salon, bw._jetzt_iso()))
         _einladung_eingeloest(code, email, str(koerper.get("slug", "") or ""), c)
-    link = _passwort_link(email)
-    text = (f"Hallo,\n\n"
-            f"schön, dass du babu ausprobierst — empfohlen von {ambassadorin}. "
-            f"Dein Zugang für „{salon}“ steht. Du hast {testmonat.TAGE} Tage "
-            f"babu komplett, bis einschließlich {bis.strftime('%d.%m.%Y')}; "
-            f"kostenlos, ohne Vertrag, kündigen musst du nichts.\n\n"
-            f"Beim ersten Öffnen legst du dein Passwort fest:\n\n"
-            f"    {link or bw.PORTAL_ORIGIN.rstrip('/') + '/portal'}\n\n")
-    import startguide  # noqa: PLC0415
-    text += (startguide.schritte(bw.PORTAL_ORIGIN) + "\n" + _app_absatz()
-             + "\nNach den 30 Tagen bleibt alles da und lesbar. Wenn du "
-               "weitermachen willst, antworte einfach auf diese Mail.\n")
-    await bw.run_in_threadpool(_senden, email,
-                               "Dein babu-Testmonat startet", text)
+    await bw.run_in_threadpool(testmonat_willkommen, email, salon, bis, ambassadorin)
     if bw.SUPPORT_MAIL:
         await bw.run_in_threadpool(
             _senden, bw.SUPPORT_MAIL, f"Testmonat gestartet: {salon}",
@@ -1065,6 +1081,133 @@ async def api_ambassador_einloesen(request: Request) -> Response:
     print(f"[testmonat] {salon} <{email}> über {code} bis {bis}", flush=True)
     return JSONResponse({"ok": True, "hinweis": _EINGELOEST})
 
+
+
+# ————— Testmonat direkt über die Startseite (seit 08.10.2026) —————
+#
+# Entscheidung Auftraggeber 08.10.2026: Wer über die Startseite kommt, startet
+# sofort 30 Tage — so wie mit dem Code einer Ambassadorin, nur ohne sie. Bis
+# dahin versprach die Startseite „den ersten Monat testest du kostenlos", und
+# „Konto anlegen" führte auf die Warteliste.
+
+async def testen_seite() -> Response:
+    """Öffentlich: das Formular für den Testmonat ohne Code."""
+    if not _testmonat_an():
+        return HTMLResponse(_seite(
+            "babu — 30 Tage testen", "Testmonat", "Gerade geht das nicht.",
+            "Trag dich auf der Anmeldeseite auf die Warteliste ein — wir melden uns.",
+            '<p style="margin:0"><a href="/portal">Zur Anmeldeseite</a></p>'), status_code=404)
+    karte = f"""<form id="testen" onsubmit="return starten(this)" novalidate>
+<label class="nurvorlesen" for="salon">Name deines Betriebs</label>
+<input id="salon" name="salon" placeholder="Name deines Salons oder Betriebs" autocomplete="organization" required>
+<label class="nurvorlesen" for="email">Deine E-Mail</label>
+<input id="email" name="email" type="email" placeholder="Deine E-Mail" autocomplete="email" required>
+<label class="zustimmung"><input name="agb" type="checkbox" required>
+<span>Ich stimme den <a href="/agb" target="_blank">Nutzungsbedingungen</a> zu und habe den
+<a href="/datenschutz" target="_blank">Datenschutz</a> gelesen.</span></label>
+<button class="voll" id="senden">30 Tage starten</button>
+<p class="fehler" id="fehler" role="alert" aria-live="polite" hidden></p>
+</form>
+<p class="meldung" id="ok" role="status" aria-live="polite" hidden></p>
+<small>Danach wählst du dein Paket — oder hörst einfach auf. Kündigen musst du nichts.
+Schon dabei? <a href="/portal">Hier anmelden</a>.</small>
+<script>
+function starten(f){{
+  const ok = document.getElementById("ok"), fehler = document.getElementById("fehler"),
+        knopf = document.getElementById("senden");
+  fehler.hidden = true;
+  if (!f.salon.value.trim() || !f.email.value.trim()){{
+    fehler.textContent = "Bitte Betrieb und E-Mail eintragen."; fehler.hidden = false; return false; }}
+  if (!f.agb.checked){{
+    fehler.textContent = "Bitte stimm zuerst den Nutzungsbedingungen zu."; fehler.hidden = false; return false; }}
+  knopf.disabled = true;
+  fetch("/api/testmonat/starten", {{method:"POST", headers:{{"Content-Type":"application/json"}},
+    body: JSON.stringify({{salon:f.salon.value.trim(), email:f.email.value.trim(), agb:f.agb.checked}})}})
+  .then(r => r.json()).then(d => {{
+    if (d.ok){{ ok.textContent = d.hinweis; ok.hidden = false; f.style.display = "none"; }}
+    else {{ fehler.textContent = d.fehler || "Da lief etwas schief — gleich nochmal versuchen.";
+      fehler.hidden = false; knopf.disabled = false; }}
+  }})
+  .catch(() => {{ fehler.textContent = "Gerade keine Verbindung — gleich nochmal versuchen.";
+    fehler.hidden = false; knopf.disabled = false; }});
+  return false;}}
+</script>"""
+    return HTMLResponse(_seite(
+        "babu — 30 Tage testen", "Für deinen Betrieb", "30 Tage babu testen — kostenlos.",
+        "Foto machen statt Belege sortieren. 30 Tage babu komplett, ohne Vertrag, "
+        "ohne Kündigung.", karte))
+
+
+async def api_testmonat_starten(request: Request) -> Response:
+    """Öffentlich: Testmonat ohne Code — derselbe Weg wie beim Einlösen,
+    nur ohne Ambassadorin. Für eine Adresse mit Konto dieselbe Antwort und
+    nur ein Hinweis per Mail (kein Konto-Orakel)."""
+    if not _testmonat_an():
+        return JSONResponse({"fehler": "nicht gefunden"}, status_code=404)
+    if not bw._origin_ok(request):  # noqa: SLF001
+        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    ip = bw._client_ip(request)  # noqa: SLF001
+    jetzt = time.time()
+    if jetzt - bw._REG_ZULETZT.get(ip, 0.0) < 30:  # noqa: SLF001
+        return JSONResponse({"fehler": "kurz warten, dann nochmal"}, status_code=429)
+    try:
+        koerper = json.loads(await bw.koerper_lesen(request, 8 * 1024))
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    import einladung as ei  # noqa: PLC0415
+    salon = str(koerper.get("salon", "") or "").strip()[:120]
+    email = str(koerper.get("email", "") or "").strip().lower()[:200]
+    if not salon:
+        return JSONResponse({"fehler": "Wie heißt dein Betrieb?"}, status_code=400)
+    if koerper.get("agb") is not True:
+        return JSONResponse({"fehler": "Bitte den Nutzungsbedingungen zustimmen."},
+                            status_code=400)
+    if not ei.mail_gueltig(email):
+        return JSONResponse({"fehler": "Diese E-Mail-Adresse sieht nicht "
+                                       "richtig aus."}, status_code=400)
+    bw._REG_ZULETZT[ip] = jetzt  # noqa: SLF001
+    bw._zaehler_aufraeumen(bw._REG_ZULETZT, jetzt, 3600)  # noqa: SLF001
+    if bw.nutzer_holen(email) is not None:
+        await bw.run_in_threadpool(
+            _senden, email, "Du hast schon einen Zugang zu babu",
+            "Hallo,\n\njemand hat mit dieser Adresse einen babu-Testmonat "
+            "angefragt. Für diese Adresse gibt es schon einen Zugang — melde "
+            f"dich einfach an: {bw.PORTAL_ORIGIN.rstrip('/')}/portal\n\n"
+            "Passwort vergessen? Auf der Anmeldeseite gibt es dafür einen "
+            "Link.\n\nWenn du das nicht warst, ignoriere diese Nachricht.\n")
+        return JSONResponse({"ok": True, "hinweis": _EINGELOEST})
+    tag = time.strftime("%Y-%m-%d", time.gmtime())
+    with bw._DB_LOCK, bw._db() as c:
+        kid = testmonat.direkt_kanzlei(c)
+        je_tag = c.execute("SELECT COUNT(*) FROM mandant WHERE kanzlei_id=? "
+                           "AND test_bis IS NOT NULL AND angelegt LIKE ?",
+                           (kid, tag + "%")).fetchone()[0]
+    if je_tag >= _grenze("BABU_TEST_JE_TAG", 20):
+        print(f"[testmonat] Grenze erreicht (direkt): heute {je_tag}", flush=True)
+        return JSONResponse({"fehler": "Heute sind alle Testplätze vergeben — "
+                                       "versuch es morgen noch einmal."},
+                            status_code=429)
+    if bw.nutzer_anlegen(email, "", salon, "salon", box=False) is None:
+        return JSONResponse({"ok": True, "hinweis": _EINGELOEST})  # Wettlauf
+    bis = testmonat.ende_fuer_start(testmonat.heute())
+    with bw._DB_LOCK, bw._db() as c:
+        mandant_id = mandanten.mandant_anlegen(kid, salon, email, "SKR04", c=c)
+        testmonat.setzen(mandant_id, bis, c)
+    bw.db_einstellung_setzen(email, "betrieb_name", salon)
+    await bw.run_in_threadpool(testmonat_willkommen, email, salon, bis, None)
+    if bw.SUPPORT_MAIL:
+        await bw.run_in_threadpool(
+            _senden, bw.SUPPORT_MAIL, f"Testmonat gestartet: {salon}",
+            f"Hallo,\n\nein Betrieb hat über die Startseite einen Testmonat "
+            f"gestartet:\n\n    Betrieb: {salon}\n    E-Mail: {email}\n"
+            f"    Testmonat bis: {bis.strftime('%d.%m.%Y')}\n\n"
+            f"Die Ablage richtet sich von selbst ein.\n")
+    import recht  # noqa: PLC0415
+    audit.audit("startseite", "testmonat_direkt", ziel_un=email,
+                mandant_id=str(mandant_id), bis=bis.isoformat(),
+                agb=recht.fassung("agb"), datenschutz=recht.fassung("datenschutz"))
+    print(f"[testmonat] direkt: {salon} <{email}> bis {bis}", flush=True)
+    return JSONResponse({"ok": True, "hinweis": _EINGELOEST})
 
 async def api_ambassador_verlaengern(request: Request) -> Response:
     """Verwaltung: den Testmonat eines Direkt-Salons verlängern (1–60 Tage)."""
@@ -1192,13 +1335,21 @@ def _naechster_schritt(s: dict, tm: dict | None, gezeichnet: dt.date | None,
 
 
 def _offene_einladungen(code: str, c) -> list[dict]:
-    """Wer eingeladen ist, aber noch nicht eingelöst hat."""
-    return [dict(zip(("id", "salon", "email", "erstellt", "gesendet"), z))
-            for z in c.execute(
-                "SELECT e.id, e.salon, e.email, e.erstellt, e.gesendet "
-                "FROM ambassador_einladung e WHERE e.code=? AND e.eingeloest IS NULL "
-                "AND NOT EXISTS (SELECT 1 FROM ambassador_salon s WHERE s.code=e.code "
-                "AND s.email=e.email) ORDER BY e.erstellt DESC, e.id DESC", (code,))]
+    """Wer eingeladen ist, aber noch nicht eingelöst hat.
+
+    `bestehend` (seit 08.10.2026): die Adresse hat schon ein babu-Konto —
+    dann wartet die Einladung auf die Bestätigung der Verbindung und nicht
+    auf einen Testmonat, der nie „startet"."""
+    zeilen = [dict(zip(("id", "salon", "email", "erstellt", "gesendet"), z))
+              for z in c.execute(
+                  "SELECT e.id, e.salon, e.email, e.erstellt, e.gesendet "
+                  "FROM ambassador_einladung e WHERE e.code=? AND e.eingeloest IS NULL "
+                  "AND NOT EXISTS (SELECT 1 FROM ambassador_salon s WHERE s.code=e.code "
+                  "AND s.email=e.email) ORDER BY e.erstellt DESC, e.id DESC", (code,))]
+    for e in zeilen:
+        e["bestehend"] = bool(e["email"]) and c.execute(
+            "SELECT 1 FROM nutzer WHERE email=?", (e["email"],)).fetchone() is not None
+    return zeilen
 
 
 def _einladung_gesendet(code: str, nr: int | None, link: str, salon: str,
@@ -1424,10 +1575,16 @@ def _begleiter(code: str, ambassadorin: str, roh: dict,
              "weiter_am": _datum(e["weiter_am"]) if e else None}
         person = (e["person"] if e else None) or (s["salon"] if s else None) or "Salon"
         satz, ton = begleiter.aktiv_satz(s is not None, belege, letzter, heute)
+        stand = _stand_wort(k, st)
+        # Ein Salon, der babu schon nutzt, „startet" nicht — er bestätigt die
+        # Verbindung (seit 08.10.2026; vorher hieß er „noch nicht gestartet").
+        if e and s is None and e["email"] and bw.nutzer_holen(e["email"]) is not None:
+            stand, satz, ton = ("wartet auf Bestätigung",
+                                "Nutzt babu schon — muss die Verbindung bestätigen", "neutral")
         zeile = {"nr": e["id"] if e else None, "name": person,
                  "salon": (s["salon"] if s else None) or (e["salon"] if e else None),
                  "telefon": begleiter.anzeige(e["telefon"]) if e and e["telefon"] else None,
-                 "stand": _stand_wort(k, st), "aktiv": satz, "ton": ton,
+                 "stand": stand, "aktiv": satz, "ton": ton,
                  "gesendet_am": e["erinnert_am"][:10] if e and e["erinnert_am"]
                  and (heute - _datum(e["erinnert_am"])).days < begleiter.ABSTAND_TAGE
                  else None,
@@ -1573,6 +1730,8 @@ _ROUTEN = [
     ("POST", "/api/ambassador/einladen", api_ambassador_einladen),
     ("GET", "/ambassador/{code}/{slug}", ambassador_landing),
     ("GET", "/verbinden/{token}", verbinden_seite),
+    ("GET", "/testen", testen_seite),
+    ("POST", "/api/testmonat/starten", api_testmonat_starten),
     ("POST", "/api/ambassador/verbinden", api_ambassador_verbinden),
     ("POST", "/api/ambassador/meilenstein", api_ambassador_meilenstein),
     ("POST", "/api/ambassador/aktiv", api_ambassador_aktiv),

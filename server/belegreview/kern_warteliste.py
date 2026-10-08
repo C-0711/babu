@@ -317,7 +317,8 @@ async def api_warteliste_einrichten(request: Request) -> Response:
                              ("email", email)):
         if wert:
             bw.db_einstellung_setzen(email, schluessel, str(wert)[:200])
-    mail = direkt_einrichten(email, betrieb) if ist_salon else False
+    mail = (direkt_einrichten(email, betrieb) if ist_salon
+            else kanzlei_einrichten(email, betrieb))
     with bw._DB_LOCK, bw._db() as c:
         c.execute("UPDATE warteliste SET status='eingerichtet' WHERE email=?",
                   (email,))
@@ -328,23 +329,36 @@ async def api_warteliste_einrichten(request: Request) -> Response:
 
 
 def direkt_einrichten(email: str, betrieb: str) -> bool:
-    """Ein Salon, den der Betreiber anlegt: eigener Betrieb und Willkommensmail.
+    """Ein Salon, den der Betreiber anlegt: eigener Betrieb, 30 Tage Test, Mail.
 
     Mandant in der Hauskanzlei „babu direkt" (die Ablage legt der
-    Box-Anleger an, wie bei jedem Mandanten) und die Mail mit dem Link, über
-    den der Salon sein Passwort setzt. Bis 08.10.2026 bekam ein so
-    angelegter Salon keine Mail — nur ein Startpasswort auf dem Bildschirm
-    der Verwaltung —, und über „Zugang anlegen" auch keinen Betrieb: er stand
-    ohne Ablage da. Gilt für die Warteliste und für „Zugang anlegen".
-    Rückgabe: ob die Mail verschickt (bzw. ohne SMTP abgelegt) wurde."""
-    import kanzlei_routen  # noqa: PLC0415
+    Box-Anleger an, wie bei jedem Mandanten), Testmonat wie beim Code einer
+    Ambassadorin (Entscheidung Auftraggeber 08.10.2026 — vorher blieben
+    eingeladene Salons ohne Ende kostenlos und kamen nie zu „Weitermachen")
+    und die Willkommensmail mit dem Link zum Passwortsetzen. Bis 08.10.2026
+    bekam ein so angelegter Salon keine Mail und über „Zugang anlegen" auch
+    keinen Betrieb. Gilt für die Warteliste und für „Zugang anlegen".
+    Rückgabe: ob die Mail verschickt wurde."""
+    import kern_ambassador  # noqa: PLC0415
     import mandanten  # noqa: PLC0415
     import testmonat  # noqa: PLC0415
+    bis = testmonat.ende_fuer_start(testmonat.heute())
     with bw._DB_LOCK, bw._db() as c:
         if not c.execute("SELECT 1 FROM mandant WHERE besitzer_un=?", (email,)).fetchone():
-            mandanten.mandant_anlegen(testmonat.direkt_kanzlei(c), betrieb,
-                                      email, "SKR04", c=c)
-    link = kanzlei_routen._einladung_verschicken(bw, betrieb, email, wer=None)  # noqa: SLF001
+            mid = mandanten.mandant_anlegen(testmonat.direkt_kanzlei(c), betrieb,
+                                            email, "SKR04", c=c)
+            testmonat.setzen(mid, bis, c)
+    return kern_ambassador.testmonat_willkommen(email, betrieb, bis, None)
+
+
+def kanzlei_einrichten(email: str, name: str) -> bool:
+    """Eine Kanzlei, die der Betreiber einlädt oder anlegt: Willkommensmail.
+
+    Bis 08.10.2026 bekam sie nur ein Startpasswort auf den Bildschirm der
+    Verwaltung — keine Mail. Kanzlei und Mandanten legt sie danach selbst
+    im Portal an (die Kanzlei-Zeile entsteht mit dem ersten Mandanten)."""
+    import kanzlei_routen  # noqa: PLC0415
+    link = kanzlei_routen.kanzlei_willkommen(bw, name, email)
     return link is not None
 
 

@@ -1252,7 +1252,7 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
         du bekommst ein neues Startpasswort und wählst danach wieder dein eigenes.</p>
       </details>
       <details id="code-login">
-        <summary>Mit Zugangscode anmelden (Einrichtung)</summary>
+        <summary>Mit Zugangscode anmelden (nur mit Code von babu — kein Passwort)</summary>
         <label class="nurvorlesen" for="zugangscode">Zugangscode</label>
         <input id="zugangscode" type="password" placeholder="Zugangscode" autocomplete="off" style="margin-top:10px">
         <button id="anmelden-code" class="voll" style="background:var(--gc-accent-subtle);color:var(--gc-fg);margin-top:0">Mit Code anmelden</button>
@@ -1260,14 +1260,18 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     </div>
     <div class="lkarte" id="reg-einstieg">
       <b>Neu bei babu?</b>
-      <p>babu ist im Aufbau — Zugänge gibt es auf Einladung. Trag deine
-      E-Mail-Adresse ein, wir melden uns, sobald ein Platz frei ist.</p>
+      <p>Für deinen Salon oder Betrieb: 30 Tage kostenlos testen — sofort, ohne Vertrag.</p>
+      <a class="voll" href="/testen" style="display:block;text-align:center;text-decoration:none;
+        margin-top:10px;padding:12px 18px">30 Tage testen ›</a>
+      <p style="margin-top:16px">Steuerbüro oder Kanzlei? Trag dich ein, wir melden uns.</p>
+      <label class="nurvorlesen" for="wl-name">Name</label>
+      <input id="wl-name" type="text" placeholder="Name der Kanzlei oder deines Betriebs" autocomplete="organization" style="margin-top:8px">
       <label class="nurvorlesen" for="wl-email">E-Mail</label>
       <input id="wl-email" type="email" placeholder="E-Mail" autocomplete="email" style="margin-top:8px">
       <label class="nurvorlesen" for="wl-art">Ich bin</label>
       <select id="wl-art" style="margin-top:8px">
-        <option value="salon">Salon / Betrieb</option>
         <option value="kanzlei">Steuerbüro / Kanzlei</option>
+        <option value="salon">Salon / Betrieb</option>
       </select>
       <button id="wl-senden" class="zart" style="margin-top:12px">Auf die Warteliste ›</button>
       <p class="hilfetext" id="wl-antwort" role="status" aria-live="polite" hidden></p>
@@ -2445,7 +2449,7 @@ $("#anmelden-code").addEventListener("click", async () => {
     const r = await fetch("/api/anmelden",{method:"POST",credentials:"same-origin",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({pat:$("#zugangscode").value.trim()})});
-    if(!r.ok){ f.textContent = r.status===401 ? "Der Zugangscode stimmt nicht — magst du ihn nochmal prüfen?"
+    if(!r.ok){ f.textContent = r.status===401 ? "Das ist kein gültiger Zugangscode. Hast du ein Startpasswort oder ein eigenes Passwort? Dann melde dich oben mit E-Mail und Passwort an."
       : "Damit können wir dich leider nicht anmelden."; f.style.display="block"; return; }
     const d = await r.json();
     $("#avatar").textContent = (d.un||"·")[0].toUpperCase();
@@ -2570,7 +2574,13 @@ function routen(){
   else if (name === "unterlage") ladeUnterlage(arg);
   else if (ansichten[name]) ansichten[name]();
 }
-window.addEventListener("hashchange", routen);
+/* Ein Passwort-Link, der in einem schon offenen Portal-Tab landet, ändert nur
+   den Hash — ohne diesen Weg stand dann die Anmeldung da (seit 08.10.2026). */
+window.addEventListener("hashchange", () => {
+  const m = location.hash.match(/^#reset\/(.+)$/);
+  if (m){ zeigeReset(m[1]); return; }
+  routen();
+});
 document.querySelectorAll("nav button").forEach(b =>
   b.addEventListener("click", () => {
     // Der Reiter „Kanzlei" führt aus dem gewählten Betrieb heraus. Nur hier
@@ -2602,7 +2612,7 @@ async function ladeAnstehendes(){
     if (!l.faellig){ $("#heute-monatslauf").innerHTML = ""; return; }
     const offen = l.offen || [];
     $("#heute-monatslauf").innerHTML = `
-      <button class="punktzeile voll" onclick="location.hash='#abschluss'"
+      <button class="punktzeile voll" onclick="abMonat='${esc(l.monat || abMonat)}'; location.hash='#abschluss'"
         style="border-bottom:1px solid var(--gc-border);margin-bottom:28px">
         <span><b style="color:var(--gc-fg)">${esc(l.satz || "")}</b>
         ${offen.length ? " " + offen.map(o => esc(o.text)).join(" · ") + " —" : " —"}
@@ -2662,7 +2672,7 @@ async function ladeHeute(){
       html += `<button class="karte nachfrage einflug voll" style="display:block;width:100%;text-align:left"
         onclick="location.hash='#einrichtung'">
         <h3>Einmal kurz einrichten</h3>
-        <p>6 Fragen — Salon, Steuernummer &amp; Co. Dauert zwei Minuten.</p>
+        <p>Ein paar Fragen — Salon, Steuernummer &amp; Co. Dauert ein paar Minuten.</p>
         <span class="hin">Los geht's ›</span></button>`;
     }
   }catch{}
@@ -2712,8 +2722,11 @@ async function ladeHeute(){
     html += `</div>`;
   }
 
-  html += `<div class="punktzeile voll"><span>
-    Deine Kanzlei braucht die ${monatName(monat).split(" ")[0]}-Belege bis <b>5. ${fristMonat}</b>.</span></div>`;
+  /* Wer selbst einreicht, hat keine Kanzlei, die etwas braucht (seit
+     08.10.2026 — bis dahin stand der Satz auch dort). */
+  html += `<div class="punktzeile voll"><span>${buchhaltungSelbst()
+    ? `Deine ${monatName(monat).split(" ")[0]}-Belege: am besten bis <b>5. ${fristMonat}</b> erfassen — dann rechnet babu den Monat fertig.`
+    : `Deine Kanzlei braucht die ${monatName(monat).split(" ")[0]}-Belege bis <b>5. ${fristMonat}</b>.`}</span></div>`;
 
   try{
     const ab = await (await api("/api/abgleich/" + monat)).json();
@@ -9200,10 +9213,24 @@ async function nutzerAnlegen(){
 function strecke(container, schritte, titel, beiWert, beiFertig){
   let i = 0;
   const werte = {};
+  /* `wenn(werte)` (seit 08.10.2026): eine Frage, die nach den bisherigen
+     Antworten nicht passt, fällt weg — ihr `sonst`-Wert wird gespeichert.
+     Bis dahin bot die Einrichtung nach „Kein Steuerberater" noch „Mein
+     Steuerbüro" an. */
+  const passt = k => !schritte[k].wenn || schritte[k].wenn(werte);
   function frageZeigen(){
+    while (i < schritte.length && !passt(i)){
+      const s0 = schritte[i];
+      if (s0.sonst !== undefined && werte[s0.k] !== s0.sonst){
+        werte[s0.k] = s0.sonst;
+        if (beiWert) beiWert(s0.k, s0.sonst);
+      }
+      i++;
+    }
     if (i >= schritte.length){ beiFertig(werte); return; }
     const s = schritte[i];
-    const rest = schritte.length - i;
+    let rest = 0;
+    for (let k = i; k < schritte.length; k++) if (passt(k)) rest++;
     let eingabeHtml;
     if (s.wahl){
       eingabeHtml = `<div class="chips" style="margin:16px 0">` + s.wahl.map(w =>
@@ -9251,7 +9278,10 @@ function strecke(container, schritte, titel, beiWert, beiFertig){
     const nk = container.querySelector("#strecke-nichts");
     if (nk) nk.addEventListener("click", () => { werte[s.k] = werte[s.k] || ""; i++; frageZeigen(); });
     const zk = container.querySelector("#strecke-zurueck");
-    if (zk) zk.addEventListener("click", () => { i--; frageZeigen(); });
+    if (zk) zk.addEventListener("click", () => {
+      do { i--; } while (i > 0 && !passt(i));
+      frageZeigen();
+    });
   }
   frageZeigen();
 }
@@ -9304,7 +9334,7 @@ $("#wl-senden").addEventListener("click", async () => {
   try{
     const r = await fetch("/api/warteliste", {method:"POST", credentials:"same-origin",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({email, art})});
+      body: JSON.stringify({email, art, salon: ($("#wl-name").value || "").trim()})});
     const d = await r.json().catch(() => ({}));
     if (r.ok){
       antwort.textContent = d.hinweis || "Danke! Wir melden uns.";
@@ -9338,7 +9368,8 @@ const EINRICHTUNG_SCHRITTE = [
    k:"ust_befreiung_medizinisch", wahl:["Ja","Nein"]},
   {f:"Hast du schon einen Steuerberater?", k:"steuerberater_status", wahl:["Ja","Nein"]},
   {f:"Wer reicht beim Finanzamt ein?", k:"steuerberater_modus",
-   wahl:["Mein Steuerbüro","Ich selbst (Independence Day)"],
+   wahl:["Mein Steuerbüro","Ich selbst"],
+   wenn: w => w.steuerberater_status !== "Nein", sonst: "Ich selbst",
    hilfe:"Beides geht — und du kannst es jederzeit ändern."},
   {f:"Wie oft gibst du die Umsatzsteuer-Voranmeldung ab?", k:"ustva_rhythmus",
    wahl:["Monatlich","Vierteljährlich","Weiß nicht"],

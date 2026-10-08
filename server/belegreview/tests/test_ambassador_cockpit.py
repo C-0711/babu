@@ -698,3 +698,12 @@ def test_uebersicht_wer_hat_wen_geworben(welt):
     salon = next(s for s in a["salons"] if s["email"] == "neu@salon.de")
     assert salon["abo"] is None and salon["testmonat"]
     assert [e["email"] for e in a["einladungen"]] == ["alt2@salon.de"]
+
+
+def test_bestehender_salon_wartet_auf_bestaetigung_in_ihrer_liste(welt):
+    email = _bestehender_salon("wartet@salon.de", "Salon Wartet")
+    assert _einladen(welt, email, person="Wanda").status_code == 200
+    kontakte = welt["babs"].get("/api/ambassador/me").json()["kontakte"]
+    k = next(x for x in kontakte if x["name"] == "Wanda")
+    assert k["stand"] == "wartet auf Bestätigung"
+    assert "bestätigen" in k["aktiv"]

@@ -123,6 +123,7 @@ GET /portal/sw.js
 GET /review/{stamm}
 GET /review/{stamm}/protokoll
 GET /start/{marke}
+GET /testen
 GET /verbinden/{token}
 GET /werkstatt
 GET /workbench
@@ -257,6 +258,7 @@ POST /api/termin/{termin_id}/bestaetigen
 POST /api/termin/{termin_id}/loeschen
 POST /api/termine
 POST /api/termine/vorschlag
+POST /api/testmonat/starten
 POST /api/ustva/{monat}
 POST /api/warteliste
 POST /api/warteliste/ablehnen

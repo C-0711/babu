@@ -149,8 +149,11 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   (seit 14.09.2026; `arbeit_offen` vor dem nächsten Deploy auf 0 warten) →
   geänderte Routen live durchrufen und ein neues Feld direkt abfragen.
   `docker/wache.sh` läuft im Host-Cron alle 2 min und startet bei
-  `unhealthy` neu. `BABU_SIGNUP=0` in Compose: kein Selbstbedienungs-Konto
-  im Pilot. Rückmeldungen tragen seit 14.09. ein Label je Betrieb
+  `unhealthy` neu. `BABU_SIGNUP=0` in Compose: das alte Selbstbedienungs-Konto
+  bleibt aus. **Seit 08.10.2026** startet `/testen` (Startseite „Konto anlegen")
+  30 Tage Test ohne Code (`BABU_TESTMONAT`); Warteliste und „Zugang anlegen"
+  geben Salons ebenfalls Testmonat + Willkommensmail, Kanzleien eine
+  Willkommensmail. Rückmeldungen tragen seit 14.09. ein Label je Betrieb
   (`betrieb-<mandant_id>`, Ein-Betrieb `betrieb-default`); jeder sieht nur
   seine.
 - **Box-Anleger (seit 15.09.2026):** `docker/box-anleger.sh` läuft im Host-Cron jede

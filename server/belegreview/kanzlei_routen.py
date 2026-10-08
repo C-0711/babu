@@ -838,6 +838,34 @@ def _einladung_verschicken(bw, mandant_name: str, mail: str,
     return link
 
 
+
+def kanzlei_willkommen(bw, name: str, mail: str) -> str | None:
+    """Willkommensmail für eine neue Kanzlei (seit 08.10.2026) — mit dem
+    Link zum Passwortsetzen und dem, was danach zu tun ist."""
+    import passwort_reset as pr  # noqa: PLC0415
+    import postfach  # noqa: PLC0415
+    link = _reset_link_anlegen(bw, mail)
+    if link is None:
+        return None
+    portal = f"{bw.PORTAL_ORIGIN.rstrip('/')}/portal"
+    text = (f"Hallo,\n\n"
+            f"dein Zugang zu babu für „{name}“ steht. Beim ersten Öffnen legst du "
+            f"dein Passwort fest:\n\n    {link}\n\n"
+            f"Danach meldest du dich unter {portal} mit dieser E-Mail-Adresse an.\n\n"
+            f"So geht es weiter:\n"
+            f"    1. Unter „Kanzlei“ → „Mandanten“ legst du deine Mandanten an. Jeder\n"
+            f"       bekommt seine eigene Ablage und eine Einladung von babu.\n"
+            f"    2. Kolleginnen und Kollegen lädst du in der Kanzlei-Ansicht als\n"
+            f"       Mitglieder ein.\n"
+            f"    3. Fertige Monate holst du als Buchungsstapel für DATEV ab.\n\n"
+            f"Der Link gilt {pr.FRIST.days} Tage und nur einmal.\n\n"
+            f"Wenn du damit nichts anfangen kannst, ignoriere diese Nachricht "
+            f"einfach — ohne den Link passiert nichts.\n")
+    ok, hinweis = postfach.senden(mail, "Dein Kanzlei-Zugang zu babu ist eingerichtet",
+                                  text, stempel=time.strftime("%Y%m%d-%H%M%S"))
+    print(f"[kanzlei] Willkommen an {mail}: {hinweis}", flush=True)
+    return link if ok else None
+
 # ---------------------------------------------------------------------------
 # Mitarbeiter der Kanzlei (seit 15.09.2026). Bis dahin stellte der Betreiber
 # jeden Sachbearbeiter von Hand in `kanzlei_mitglied`; jetzt macht das die

@@ -349,10 +349,15 @@ def test_betreiber_legt_salon_an_mit_eigenem_betrieb_und_willkommensmail(welt, m
     texte = [t for (an, _b, t) in gesendet if an == "neu@salon.de"]
     assert len(texte) == 1 and "/portal#reset/" in texte[0] and "Salon Neu" in texte[0]
     with bw._DB_LOCK, bw._db() as c:
-        z = c.execute("SELECT k.name FROM mandant m JOIN kanzlei k ON k.id=m.kanzlei_id "
-                      "WHERE m.besitzer_un=?", ("neu@salon.de",)).fetchone()
-    assert z and z[0] == "babu direkt"
+        z = c.execute("SELECT k.name, m.test_bis FROM mandant m JOIN kanzlei k "
+                      "ON k.id=m.kanzlei_id WHERE m.besitzer_un=?", ("neu@salon.de",)).fetchone()
+    assert z and z[0] == "babu direkt" and z[1]
     assert bw.box_mitglied("neu@salon.de") is False
+    # Auch eine Kanzlei, die der Betreiber anlegt, bekommt ihre Mail.
+    r = verwaltung.post("/api/nutzer", json={"email": "buero@kanzlei.de", "name": "Büro",
+                                             "salon": "Kanzlei Büro", "rolle": "kanzlei"})
+    assert r.status_code == 200 and r.json()["mail"] is True
+    assert any(an == "buero@kanzlei.de" and "/portal#reset/" in t for (an, _b, t) in gesendet)
     # Mitarbeiterinnen bekommen keinen eigenen Betrieb — sie gehören zu einem.
     r = verwaltung.post("/api/nutzer", json={"email": "kollegin@salon.de", "name": "K",
                                              "rolle": "mitarbeit"})

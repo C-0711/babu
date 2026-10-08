@@ -6055,12 +6055,16 @@ async def api_nutzer_anlegen(request: Request) -> Response:
     # vorher stand der Salon ohne Mail und ohne Ablage da). Kanzleien legen
     # ihre Betriebe unter „Mandanten" an, dort gibt es beides schon.
     mail = False
-    if neue_rolle == "salon" and rolle(un) == "admin":
+    if neue_rolle in ("salon", "kanzlei") and rolle(un) == "admin":
         import kern_warteliste  # noqa: PLC0415
         betrieb = (str(body.get("salon", "")).strip() or str(body.get("name", "")).strip()
                    or email.split("@")[0])[:120]
-        db_einstellung_setzen(email, "betrieb_name", betrieb)
-        mail = await run_in_threadpool(kern_warteliste.direkt_einrichten, email, betrieb)
+        if neue_rolle == "salon":
+            db_einstellung_setzen(email, "betrieb_name", betrieb)
+            mail = await run_in_threadpool(kern_warteliste.direkt_einrichten, email, betrieb)
+        else:
+            # Eine Kanzlei bekam bis 08.10.2026 ebenfalls nur das Startpasswort.
+            mail = await run_in_threadpool(kern_warteliste.kanzlei_einrichten, email, betrieb)
     audit.audit(un, "nutzer_anlegen", ziel_un=email,
                 rolle=str(body.get("rolle", "salon")),
                 mandant_id=_mandant_zu(un, email), mail=mail)
@@ -9955,6 +9959,24 @@ def _geklaert_lesen() -> dict:
         return {}
 
 
+def _beginn_bei_babu(un: str) -> str | None:
+    """Seit wann führt dieser Betrieb seine Belege bei babu? (ISO-Zeitstempel)
+
+    Der Mandant, in dem gerade gearbeitet wird, sonst das Konto der
+    Inhaberin. Die Standard-Ablage des Betreibers hat keinen Beginn (None)."""
+    mandant_id = _AKTIVER_MANDANT.get(None)
+    if mandant_id is None and rolle(un) == "admin":
+        return None
+    # `rolle`/`salon_von` nehmen das Schloss selbst — deshalb VOR dem with.
+    inhaber = None if mandant_id is not None else salon_von(un)
+    with _DB_LOCK, _db() as c:
+        if mandant_id is not None:
+            z = c.execute("SELECT angelegt FROM mandant WHERE id=?", (mandant_id,)).fetchone()
+        else:
+            z = c.execute("SELECT angelegt FROM nutzer WHERE email=?", (inhaber,)).fetchone()
+    return str(z[0]) if z and z[0] else None
+
+
 @app.get("/api/monatslauf")
 def api_monatslauf(request: Request) -> Response:
     """Welcher Monat wartet — und was fehlt ihm noch?
@@ -9975,6 +9997,13 @@ def api_monatslauf(request: Request) -> Response:
     heute = dt.date.today()
     monat = ml.faelliger_monat(heute)
     if monat is None:
+        return JSONResponse({"faellig": False,
+                             "satz": "Gerade wartet nichts auf dich."})
+    # Wer erst nach diesem Monat zu babu kam, hat ihn hier nicht geführt —
+    # dann gibt es nichts „anzuschauen und freizugeben". Bis 08.10.2026 las
+    # ein Salon vom 08.10. „September ist gerechnet und kann raus".
+    beginn = _beginn_bei_babu(un)
+    if beginn and beginn[:7] > monat:
         return JSONResponse({"faellig": False,
                              "satz": "Gerade wartet nichts auf dich."})
 

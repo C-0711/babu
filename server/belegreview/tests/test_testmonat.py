@@ -455,7 +455,10 @@ def test_warteliste_einrichten_gibt_eine_eigene_ablage(welt):
     konto = babu_web.nutzer_holen("pilot@example.org")
     assert not konto["box"]
     m = _direkt_mandant("pilot@example.org")
-    assert m["kanzlei"] == testmonat.DIREKT_NAME and m["test_bis"] is None
+    # Seit 08.10.2026 (Entscheidung Auftraggeber): auch wen die Verwaltung von
+    # der Warteliste einlädt, bekommt 30 Tage Test — vorher blieb er ohne Ende
+    # kostenlos und kam nie zu „Weitermachen".
+    assert m["kanzlei"] == testmonat.DIREKT_NAME and m["test_bis"]
     assert babu_web._hat_ablage("pilot@example.org") is False  # noqa: SLF001
 
 
@@ -559,3 +562,53 @@ def test_landing_zeigt_bestaetigung_und_fehler(welt, monkeypatch):
     assert "ok.hidden = false" in seite and "fehler.hidden = false" in seite
     assert ".catch(" in seite                      # keine Verbindung: auch das sagen
     assert "--gc-serif" in seite and 'class="lkarte"' in seite   # Look des Portals
+
+
+
+# ————— Testmonat direkt über die Startseite (seit 08.10.2026) —————
+
+def _direkt(email="direkt@salon.de", salon="Salon Direkt", agb=True):
+    babu_web._REG_ZULETZT.clear()  # noqa: SLF001
+    return TestClient(babu_web.app, base_url="https://testserver").post(
+        "/api/testmonat/starten", json={"salon": salon, "email": email, "agb": agb})
+
+
+def test_testmonat_direkt_ohne_code(welt):
+    seite = TestClient(babu_web.app, base_url="https://testserver").get("/testen")
+    assert seite.status_code == 200 and "/api/testmonat/starten" in seite.text
+    assert "--gc-serif" in seite.text
+    r = _direkt()
+    assert r.status_code == 200, r.text
+    assert _direkt_mandant("direkt@salon.de")            # Betrieb mit Testmonat
+    konto = babu_web.nutzer_holen("direkt@salon.de")
+    assert konto["rolle"] == "salon" and konto["box"] is False
+    an = [p for p in welt["post"] if p[0] == "direkt@salon.de"]
+    assert len(an) == 1 and "/portal#reset/" in an[0][2] and "empfohlen" not in an[0][2]
+    with babu_web._DB_LOCK, babu_web._db() as c:   # keiner Ambassadorin zugeordnet
+        assert c.execute("SELECT COUNT(*) FROM ambassador_salon WHERE email=?",
+                         ("direkt@salon.de",)).fetchone()[0] == 0
+
+
+def test_testmonat_direkt_braucht_zustimmung_und_kennt_bestehende(welt):
+    assert _direkt(agb=False).status_code == 400
+    babu_web.nutzer_anlegen("schon@salon.de", "", "Schon", "salon", passwort=PASSWORT,
+                            box=False)
+    assert _direkt(email="schon@salon.de").status_code == 200     # kein Konto-Orakel
+    assert _direkt_mandant("schon@salon.de") is None
+    an = [p for p in welt["post"] if p[0] == "schon@salon.de"]
+    assert len(an) == 1 and "schon einen Zugang" in an[0][2]
+
+
+def test_monatsfreigabe_nicht_vor_dem_beginn(welt):
+    """Ein Salon von heute bekommt keinen „Vormonat ist gerechnet"-Hinweis:
+    sein Beginn liegt nach dem fälligen Monat."""
+    import datetime as dt
+    import monatslauf as ml
+    assert _direkt(email="frisch@salon.de").status_code == 200
+    beginn = babu_web._beginn_bei_babu("frisch@salon.de")  # noqa: SLF001
+    assert beginn and beginn[:10] == dt.date.today().isoformat()
+    faellig = ml.faelliger_monat(dt.date.today())
+    if faellig:                       # ab dem 3. eines Monats
+        assert beginn[:7] > faellig
+    # Die Standard-Ablage des Betreibers kennt keinen Beginn.
+    assert babu_web._beginn_bei_babu("chef@example.org") is None  # noqa: SLF001

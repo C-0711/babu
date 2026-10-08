@@ -210,8 +210,24 @@ def test_salon_von_der_warteliste_bekommt_betrieb_und_willkommensmail(verwaltung
     an_salon = [t for (an, _b, t) in gesendet if an == "salon@example.org"]
     assert len(an_salon) == 1
     assert "/portal#reset/" in an_salon[0] and "SupremeStudio" in an_salon[0]
-    assert "Steuerbüro" not in an_salon[0]
+    assert "Steuerbüro" not in an_salon[0] and "30 Tage" in an_salon[0]
+    assert "antworte einfach auf diese Mail" not in an_salon[0]   # „Weitermachen" statt Antwort
     with bw._DB_LOCK, bw._db() as c:
-        z = c.execute("SELECT k.name FROM mandant m JOIN kanzlei k ON k.id=m.kanzlei_id "
-                      "WHERE m.besitzer_un=?", ("salon@example.org",)).fetchone()
-    assert z and z[0] == "babu direkt"
+        z = c.execute("SELECT k.name, m.test_bis FROM mandant m JOIN kanzlei k "
+                      "ON k.id=m.kanzlei_id WHERE m.besitzer_un=?",
+                      ("salon@example.org",)).fetchone()
+    # Entscheidung 08.10.2026: auch eingeladene Salons bekommen 30 Tage Test.
+    assert z and z[0] == "babu direkt" and z[1]
+
+
+def test_kanzlei_von_der_warteliste_bekommt_willkommensmail(verwaltung, monkeypatch):
+    client, bw = verwaltung
+    gesendet = _mails_abfangen(monkeypatch)
+    client.post("/api/warteliste", json={"email": "buero@example.org", "art": "kanzlei",
+                                         "salon": "Kanzlei Sonnenschein"})
+    r = client.post("/api/warteliste/einrichten", json={"email": "buero@example.org",
+                                                        "art": "kanzlei"})
+    assert r.status_code == 200 and r.json()["mail"] is True
+    texte = [t for (an, _b, t) in gesendet if an == "buero@example.org"]
+    assert len(texte) == 1 and "/portal#reset/" in texte[0]
+    assert "Kanzlei Sonnenschein" in texte[0] and "Mandanten" in texte[0]
