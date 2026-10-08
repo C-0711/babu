@@ -1,16 +1,20 @@
-"""Der Chat merkt sich, worüber gesprochen wurde — aber der Server nicht.
+"""Der Chat merkt sich, worüber gesprochen wurde — und der Server auch wieder.
 
-Bisher stand jede Frage für sich: „Wie viel war das nochmal?" lief ins Leere.
-Dafür bekam der Chat ein Gedächtnis — und der Server schrieb jedes Gespräch
-in SQLite mit. Nur: kein Client hat die Kennung je zurückgeschickt. Die
-gespeicherten Fäden wurden nie wieder gelesen, während App und Portal ihren
-Verlauf ohnehin selbst führen. Übrig blieb eine zweite, unsichtbare Kopie von
-Chats über den eigenen Betrieb — ohne Auskunfts- und ohne Löschweg.
+Bis zum 08.09.2026 stand hier das Gegenteil, mit guter Begründung (BABU-25):
+der Server schrieb jedes Gespräch mit, aber KEIN Client schickte die Kennung
+je zurück. Die Fäden wurden nie gelesen — übrig blieb eine zweite,
+unsichtbare Kopie ohne Zweck.
 
-Seit BABU-25 gilt deshalb: der Verlauf reist mit der Frage mit, der Server
-schreibt nichts mehr auf. Was früher gespeichert wurde, bleibt lesbar und
-löschbar (Art. 15 und Art. 17 DSGVO) — gelöscht wird es von der Inhaberin,
-nicht von uns.
+Aufgehoben, weil der Zweck jetzt da ist: der Faden wird gelesen. Schickt der
+Client keinen Verlauf mit (das Portal hatte bis heute keinen), ergänzt ihn
+der Server aus der Datenbank, und die Kennung reist in beide Richtungen.
+Dazu kommt die zweite Sorte Gedächtnis, die kein Verlauf leistet: was Nina
+babu über sich erzählt hat und was in keinem Beleg steht („ich habe zwei
+Minijobberinnen", „montags ist zu").
+
+Beides ist personenbezogen und liegt deshalb in der Datenbank, nicht in der
+Belegbox: Auskunft (Art. 15) und Löschung (Art. 17) müssen funktionieren —
+einzeln und in einem Griff.
 """
 import sys
 from pathlib import Path
@@ -102,12 +106,69 @@ def test_rueckfrage_kennt_das_vorherige(welt):
     assert "Das kostet 141,00 €." in texte, "die frühere Antwort fehlt im Verlauf"
 
 
-def test_der_server_schreibt_das_gespraech_nicht_mehr_mit(welt):
-    """Der Kern von BABU-25: keine zweite, unsichtbare Kopie."""
+def test_der_server_schreibt_das_gespraech_mit(welt):
+    """Die Rücknahme von BABU-25: ohne Mitschrift kein Gedächtnis."""
     client, _, _ = welt
-    client.post("/chat", json={"frage": "Was habe ich gekauft?"})
+    erst = client.post("/chat", json={"frage": "Was habe ich gekauft?"}).json()
+    assert erst["gespraech"], "die Antwort nennt den Faden nicht"
     client.post("/chat", json={"frage": "Und was noch?"})
-    assert client.get("/api/gespraeche").json()["gespraeche"] == []
+    faeden = client.get("/api/gespraeche").json()["gespraeche"]
+    assert len(faeden) == 1, "zwei Fragen kurz nacheinander sind EIN Gespräch"
+    assert faeden[0]["nachrichten"] == 4        # zwei Fragen, zwei Antworten
+    assert faeden[0]["titel"] == "Was habe ich gekauft?"
+
+
+def test_ohne_verlauf_vom_client_kommt_er_aus_der_datenbank(welt):
+    """Der eigentliche Grund für die Rücknahme: das Portal schickt (bis zum
+    08.09.) keinen Verlauf mit — und lief damit bei jeder Nachfrage ins
+    Leere. Jetzt legt der Server ihn dazu."""
+    client, _, gesagt = welt
+    client.post("/chat", json={"frage": "Was habe ich beim Großhandel gekauft?"})
+    client.post("/chat", json={"frage": "Und wie viel war das nochmal?"})
+    nachrichten = gesagt[-1]["messages"]
+    texte = " ".join(m["content"] for m in nachrichten)
+    assert "Großhandel" in texte, "die frühere Frage fehlt"
+    assert "Das kostet 141,00 €." in texte, "die frühere Antwort fehlt"
+
+
+def test_ein_mitgeschickter_verlauf_schlaegt_den_gespeicherten(welt):
+    """Wer seinen Verlauf selbst führt (die App), bestimmt ihn auch. Sonst
+    stünde in einer App mit gelöschtem Chat plötzlich wieder der alte da."""
+    client, _, gesagt = welt
+    client.post("/chat", json={"frage": "Was habe ich beim Großhandel gekauft?"})
+    client.post("/chat", json={
+        "frage": "Und jetzt?",
+        "verlauf": [{"rolle": "user", "text": "Ganz was anderes"}]})
+    # Nur der Verlauf zählt — der Weltblock im System-Teil nennt den
+    # Großhandel als Lieferanten und wäre kein Beleg für ein Gedächtnis.
+    verlauf = " ".join(m["content"] for m in gesagt[-1]["messages"][1:-1])
+    assert "Ganz was anderes" in verlauf
+    assert "Großhandel" not in verlauf
+
+
+def test_ein_alter_faden_wird_nicht_fortgesetzt(welt):
+    """Nach dem Fenster fängt ein neues Gespräch an — sonst gäbe es je
+    Betrieb genau EINEN Faden, der nie endet."""
+    client, bw, _ = welt
+    erst = client.post("/chat", json={"frage": "Heute"}).json()["gespraech"]
+    with bw._DB_LOCK, bw._db() as c:
+        c.execute("UPDATE gespraech SET zuletzt=? WHERE id=?",
+                  ("2020-01-01T09:00:00Z", erst))
+    zweit = client.post("/chat", json={"frage": "Und viel später"}).json()["gespraech"]
+    assert zweit != erst
+    assert len(client.get("/api/gespraeche").json()["gespraeche"]) == 2
+
+
+def test_ein_faden_eines_fremden_betriebs_wird_nie_fortgesetzt(welt):
+    """Das Gespräch hängt am Betrieb, nicht nur am Konto: eine Kanzlei
+    arbeitet nacheinander in zwei Mandantenboxen, und die Frage im einen
+    Salon darf das Gespräch aus dem anderen nicht weiterführen."""
+    client, bw, _ = welt
+    erst = client.post("/chat", json={"frage": "Im ersten Salon"}).json()["gespraech"]
+    with bw._DB_LOCK, bw._db() as c:
+        c.execute("UPDATE gespraech SET betrieb=? WHERE id=?", ("fremd@x.de", erst))
+    zweit = client.post("/chat", json={"frage": "Im zweiten Salon"}).json()["gespraech"]
+    assert zweit != erst
 
 
 def test_ein_langer_verlauf_wird_gekappt(welt):

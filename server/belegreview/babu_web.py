@@ -12,6 +12,7 @@ Liest NUR aus dem Bare-Store (git show) — schreibt nichts, kein Lock-Risiko.
 """
 import asyncio
 import base64
+import calendar
 import contextvars
 import hmac
 import hashlib
@@ -625,14 +626,36 @@ def _sqlite_schema(conn) -> None:
             conn.execute(f"ALTER TABLE termin ADD COLUMN {spalte} {typ}")
         except sqlite3.OperationalError:
             pass          # Spalte gibt es schon
+    # Der Gesprächsfaden. `betrieb` ist der Salon, in dessen Box das
+    # Gespräch geführt wurde — nicht dasselbe wie `un`: arbeitet eine
+    # Kanzlei in der Box eines Mandanten, gehört der Faden ihrem Konto,
+    # aber der Anschluss ans nächste Gespräch muss beim Betrieb bleiben.
+    # Sonst führte die Frage im Salon A das Gespräch aus Salon B fort.
     conn.execute("""CREATE TABLE IF NOT EXISTS gespraech
         (id INTEGER PRIMARY KEY AUTOINCREMENT, un TEXT NOT NULL,
-         titel TEXT, begonnen TEXT NOT NULL, zuletzt TEXT NOT NULL)""")
+         titel TEXT, begonnen TEXT NOT NULL, zuletzt TEXT NOT NULL,
+         betrieb TEXT)""")
+    try:
+        conn.execute("ALTER TABLE gespraech ADD COLUMN betrieb TEXT")
+    except sqlite3.OperationalError:
+        pass          # Spalte gibt es schon
     conn.execute("""CREATE TABLE IF NOT EXISTS nachricht
         (id INTEGER PRIMARY KEY AUTOINCREMENT, gespraech INTEGER NOT NULL,
          rolle TEXT NOT NULL, text TEXT NOT NULL, zeit TEXT NOT NULL)""")
     conn.execute("""CREATE INDEX IF NOT EXISTS nachricht_gespraech
         ON nachricht (gespraech, id)""")
+    # Das Faktengedächtnis: Sätze, um die sie ausdrücklich gebeten hat
+    # („merk dir, dass montags zu ist"). Personenbezogen und veränderlich —
+    # deshalb hier und NICHT in der Belegbox, wo jede Fassung für immer
+    # stünde und Art. 17 DSGVO ins Leere liefe. Am Betrieb, nicht am Konto:
+    # es ist Wissen über den Salon, und wer den Salon betreut, soll es
+    # sehen — wer einen anderen betreut, nie.
+    conn.execute("""CREATE TABLE IF NOT EXISTS merksatz
+        (id INTEGER PRIMARY KEY AUTOINCREMENT, betrieb TEXT NOT NULL,
+         text TEXT NOT NULL, gelernt TEXT NOT NULL, quelle TEXT,
+         gespraech INTEGER)""")
+    conn.execute("""CREATE INDEX IF NOT EXISTS merksatz_betrieb
+        ON merksatz (betrieb, id)""")
     conn.execute("""CREATE TABLE IF NOT EXISTS app_schluessel
         (hash TEXT PRIMARY KEY, un TEXT NOT NULL, geraet TEXT,
          erstellt TEXT NOT NULL, zuletzt TEXT)""")
@@ -7201,10 +7224,11 @@ def mit_beratungsgrenze(antwort: str, frage: str) -> str:
 def verlauf_aus_anfrage(roh, zuege: int | None = None) -> list[dict]:
     """Der Gesprächsverlauf, den der Client mitschickt — geprüft und gekappt.
 
-    Seit BABU-25 führt der Server den Verlauf nicht mehr selbst (siehe den
-    Abschnitt „Gespräche" weiter unten). Er kommt von dort, wo er ohnehin
-    schon liegt: aus der App bzw. dem Portal. Fremde Rollen fliegen raus —
-    ein „system" aus dem Client wäre eine zweite Anweisung an das Modell.
+    Der Client führt den Verlauf, wo er ihn ohnehin hat (App und, seit dem
+    08.09.2026, auch das Portal). Schickt er keinen, ergänzt ihn der Server
+    aus dem gespeicherten Faden — siehe den Abschnitt „Gespräche" weiter
+    unten. Fremde Rollen fliegen raus: ein „system" aus dem Client wäre eine
+    zweite Anweisung an das Modell.
     """
     if zuege is None:
         zuege = VERLAUF_ZUEGE
@@ -7239,9 +7263,22 @@ def chat(body: dict, request: Request) -> Response:
     if not frage or len(frage) > 2000:
         return JSONResponse({"fehler": "frage fehlt oder zu lang"}, status_code=400)
 
-    # Das Gedächtnis kommt vom Client. Der Server schreibt nichts mehr mit —
-    # warum, steht im Abschnitt „Gespräche" ganz unten (BABU-25).
+    # ————— Gedächtnis, zwei Sorten (siehe Abschnitt „Gespräche" ganz unten)
+    # 1. Der Faden: der Client schickt seinen Verlauf mit; hat er keinen,
+    #    kommt er aus der Datenbank. 2. Das Faktengedächtnis: was sie babu
+    #    ausdrücklich zu merken gegeben hat — und zwar bevor der Prompt
+    #    gebaut wird, damit „merk dir, dass montags zu ist" schon in
+    #    derselben Antwort ankommt.
+    import gedaechtnis  # noqa: PLC0415
+    betrieb = salon_von_aktiv(un)
+    gespraech_id = gespraech_fortsetzen(un, betrieb, body.get("gespraech"))
     verlauf = verlauf_aus_anfrage(body.get("verlauf"))
+    if not verlauf:
+        verlauf = gespraech_verlauf(gespraech_id)
+    gemerkt = gedaechtnis.merksatz_aus_frage(frage)
+    if gemerkt:
+        merksatz_lernen(betrieb, gemerkt, "gesagt", gespraech_id)
+    merkblock = gedaechtnis.block([m["text"] for m in merksaetze_lesen(betrieb)])
 
     # Allgemeine Frage oder Frage nach dem eigenen Bestand? Davon hängt ab,
     # wie viel Fallwissen mitgeht und was das Modell damit tun soll.
@@ -7286,7 +7323,12 @@ def chat(body: dict, request: Request) -> Response:
                 p.CHAT_ROLLE
                 + (("\n\n" + p.CHAT_WISSENSTITEL + "\n\n" + grund)
                    if grund else "")
-                + "\n\n" + p.CHAT_WELTTITEL + "\n\n" + weltblock},
+                + "\n\n" + p.CHAT_WELTTITEL + "\n\n" + weltblock
+                # Das Faktengedächtnis steht GANZ hinten, hinter dem
+                # Weltblock: es ändert sich seltener als die Box, aber wenn,
+                # dann soll es nur das letzte Stück des stehenden Anfangs
+                # ungültig machen und nicht alles davor.
+                + (("\n\n" + merkblock) if merkblock else "")},
             *verlauf,
             {"role": "user", "content": f"{auftrag}FRAGE: {frage}"},
         ],
@@ -7298,6 +7340,10 @@ def chat(body: dict, request: Request) -> Response:
 
         def sse():
             gesammelt: list[str] = []
+            # Die Kennung zuerst: reißt der Stream ab, hat die Nutzerin
+            # trotzdem einen Faden, den sie sieht und löschen kann.
+            if gespraech_id:
+                yield "data: " + json.dumps({"gespraech": gespraech_id}) + "\n\n"
             try:
                 with requests.post(GEMMA_API, json=payload, stream=True, timeout=180) as r:
                     r.raise_for_status()
@@ -7324,6 +7370,9 @@ def chat(body: dict, request: Request) -> Response:
                 yield "data: " + json.dumps(
                     {"d": nachgereicht[len("".join(gesammelt)):]},
                     ensure_ascii=False) + "\n\n"
+            # Erst hier, mit der fertigen Antwort: ein Faden, in dem die
+            # Frage ohne Antwort stünde, wäre beim Fortsetzen irreführend.
+            zug_mitschreiben(gespraech_id, frage, nachgereicht)
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(sse(), media_type="text/event-stream",
@@ -7336,7 +7385,9 @@ def chat(body: dict, request: Request) -> Response:
     except Exception:  # noqa: BLE001
         _METRIK["gemma_fehler"] += 1
         return JSONResponse({"fehler": "Gemma nicht erreichbar"}, status_code=502)
-    return JSONResponse({"antwort": mit_beratungsgrenze(antwort, frage)})
+    fertig = mit_beratungsgrenze(antwort, frage)
+    zug_mitschreiben(gespraech_id, frage, fertig)
+    return JSONResponse({"antwort": fertig, "gespraech": gespraech_id})
 
 
 # ---------------------------------------------------------------------------
@@ -12878,36 +12929,243 @@ async def api_kassenbuch(request: Request) -> Response:
 
 
 # ---------------------------------------------------------------------------
-# Gespräche — und warum der Server keine mehr anlegt (BABU-25).
+# Gespräche — warum der Server sie doch wieder mitschreibt (08.09.2026).
 #
-# Der Chat hat ein Gedächtnis bekommen, damit „und wie viel war das nochmal?"
-# nicht ins Leere läuft. Dafür schrieb der Server jedes Gespräch in SQLite
-# mit und gab eine Kennung zurück. Nachgesehen: KEIN Client hat diese Kennung
-# je zurückgeschickt — weder die App noch das Portal. Die Fäden wurden nie
-# wieder gelesen; das Gedächtnis, für das sie gedacht waren, war nie aktiv.
-# Übrig blieb eine zweite, unsichtbare Kopie von Chats über den eigenen
-# Betrieb, ohne Auskunfts- und ohne Löschweg.
+# Hier stand seit BABU-25 die Begründung fürs Gegenteil, und sie war für den
+# damaligen Stand richtig: der Server schrieb jedes Gespräch mit und gab eine
+# Kennung zurück, die KEIN Client je zurückschickte. Die Fäden wurden nie
+# wieder gelesen. Übrig blieb eine zweite, unsichtbare Kopie von Chats über
+# den eigenen Betrieb — Aufwand ohne Nutzen, und das ist bei personenbezogenen
+# Daten kein neutrales Ergebnis, sondern ein Fehler (Art. 5 Abs. 1 c).
 #
-# ENTSCHIEDEN: Der Verlauf reist mit der Frage mit (`verlauf` im Body, siehe
-# `verlauf_aus_anfrage`). Er liegt in der App ohnehin schon, ist dort sichtbar
-# und dort löschbar. Der Server schreibt nichts mehr auf — die sicherste
-# Chatkopie ist die, die es nicht gibt (Datenminimierung, Art. 5 Abs. 1 c).
+# NEU ENTSCHIEDEN vom Auftraggeber am 08.09.2026: der Chat soll sich erinnern.
+# Was den alten Befund aufhebt, ist nicht ein anderer Wunsch, sondern dass die
+# Kennung jetzt tatsächlich zurückkommt und der Faden tatsächlich gelesen wird:
 #
-# Was FRÜHER gespeichert wurde, bleibt liegen und bleibt lesbar: Auskunft
-# (Art. 15) über `/api/gespraeche` und `/api/gespraech/{id}`, Löschung
-# (Art. 17) einzeln oder in einem Griff über `/api/gespraeche/loeschen`.
-# Gelöscht wird von der Inhaberin, nicht von uns.
+# · Der Client schickt seinen Verlauf weiter mit (`verlauf` im Body). Hat er
+#   keinen — das Portal hatte bis heute keinen —, ERGÄNZT ihn der Server aus
+#   dem Faden. Damit ist die gespeicherte Kopie kein Archiv mehr, sondern die
+#   Quelle, aus der die nächste Antwort schöpft.
+# · `gespraech` im Body setzt einen bestimmten Faden fort; ohne Angabe läuft
+#   das jüngste Gespräch dieses Betriebs weiter, solange es frisch ist
+#   (GESPRAECH_FENSTER). Danach beginnt ein neuer Faden statt eines
+#   endlosen.
+# · Die Antwort nennt die Kennung (`gespraech`), im Stream als erstes
+#   Ereignis — auch ein abgerissener Stream hinterlässt dann einen Faden,
+#   den die Nutzerin sieht und löschen kann.
+#
+# Was bleibt: Auskunft (Art. 15) über `/api/gespraeche` und
+# `/api/gespraech/{id}`, Löschung (Art. 17) einzeln oder in einem Griff über
+# `/api/gespraeche/loeschen`. Beides gab es schon, als niemand mitschrieb —
+# jetzt haben sie etwas zu tun. Gelöscht wird von der Inhaberin, nicht von uns.
+#
+# Und daneben die zweite Sorte Gedächtnis, die ein Verlauf nicht leistet:
+# `merksatz` — was sie babu über sich erzählt hat und was in keinem Beleg
+# steht. Siehe `gedaechtnis.py`; gespeichert wird nur, worum sie ausdrücklich
+# gebeten hat, nie was das Modell vermutet.
 # ---------------------------------------------------------------------------
 
 # So viele Züge gehen als Verlauf ans Modell. Mehr hilft selten und kostet
 # Platz, den das Fallwissen besser gebrauchen kann.
 VERLAUF_ZUEGE = 6
 
+# Wie lange ein Faden „das laufende Gespräch" bleibt. Danach fängt die
+# nächste Frage einen neuen an. Ohne diese Grenze gäbe es je Betrieb genau
+# EINEN Faden, der nie endet — in der Auskunft nach Art. 15 wäre das eine
+# einzige Wand aus Text, und die Löschung eines Themas hieße, alles zu
+# löschen. Zwölf Stunden trennen den Feierabend vom nächsten Salontag.
+GESPRAECH_FENSTER = 12 * 3600
+
 
 def gespraech_gehoert(un: str, gespraech_id: int) -> bool:
     with _DB_LOCK, _db() as c:
         return c.execute("SELECT 1 FROM gespraech WHERE id=? AND un=?",
                          (gespraech_id, un)).fetchone() is not None
+
+
+def _jetzt_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _alter_sekunden(iso: str | None) -> float:
+    """Wie alt ist dieser Zeitstempel? Unlesbar heißt uralt — dann beginnt
+    ein neuer Faden, statt an etwas Unbekanntes anzuknüpfen."""
+    try:
+        marke = time.strptime(str(iso)[:19], "%Y-%m-%dT%H:%M:%S")
+    except (TypeError, ValueError):
+        return float("inf")
+    return max(0.0, time.time() - calendar.timegm(marke))
+
+
+def gespraech_fortsetzen(un: str, betrieb: str, gewuenscht=None) -> int | None:
+    """Den Faden finden, in den dieser Zug gehört — oder einen neuen anlegen.
+
+    Drei Fälle, in dieser Reihenfolge: die mitgeschickte Kennung (nur wenn
+    sie diesem Konto UND diesem Betrieb gehört), sonst der jüngste frische
+    Faden desselben Betriebs, sonst ein neuer.
+    """
+    jetzt = _jetzt_iso()
+    try:
+        with _DB_LOCK, _db() as c:
+            if gewuenscht is not None:
+                try:
+                    ziel = int(gewuenscht)
+                except (TypeError, ValueError):
+                    ziel = None
+                if ziel is not None and c.execute(
+                        "SELECT 1 FROM gespraech WHERE id=? AND un=? AND betrieb=?",
+                        (ziel, un, betrieb)).fetchone():
+                    c.execute("UPDATE gespraech SET zuletzt=? WHERE id=?",
+                              (jetzt, ziel))
+                    return ziel
+            zeile = c.execute(
+                "SELECT id, zuletzt FROM gespraech WHERE un=? AND betrieb=? "
+                "ORDER BY id DESC", (un, betrieb)).fetchone()
+            if zeile is not None and _alter_sekunden(zeile[1]) <= GESPRAECH_FENSTER:
+                c.execute("UPDATE gespraech SET zuletzt=? WHERE id=?",
+                          (jetzt, zeile[0]))
+                return int(zeile[0])
+            cur = c.execute(
+                "INSERT INTO gespraech (un, titel, begonnen, zuletzt, betrieb) "
+                "VALUES (?,?,?,?,?)", (un, None, jetzt, jetzt, betrieb))
+            return int(cur.lastrowid) if cur.lastrowid else None
+    except Exception:  # noqa: BLE001
+        # Ein Gedächtnis, das die Antwort kostet, ist kein Gedächtnis.
+        return None
+
+
+def gespraech_verlauf(gespraech_id: int, zuege: int | None = None) -> list[dict]:
+    """Der gespeicherte Verlauf eines Fadens, im Format des Modells."""
+    if not gespraech_id:
+        return []
+    grenze = (zuege if zuege is not None else VERLAUF_ZUEGE) * 2
+    try:
+        with _DB_LOCK, _db() as c:
+            zeilen = c.execute(
+                "SELECT rolle, text FROM nachricht WHERE gespraech=? "
+                "ORDER BY id DESC LIMIT ?", (gespraech_id, grenze)).fetchall()
+    except Exception:  # noqa: BLE001
+        return []
+    sauber = [{"role": z[0], "content": str(z[1])[:2000]}
+              for z in reversed(list(zeilen))
+              if z[0] in ("user", "assistant") and z[1]]
+    return sauber
+
+
+def zug_mitschreiben(gespraech_id: int, frage: str, antwort: str) -> None:
+    """Frage und Antwort in den Faden. Der Titel entsteht beim ersten Zug —
+    danach nie wieder, sonst hieße der Faden in der Auskunft plötzlich
+    anders als beim letzten Nachsehen."""
+    if not gespraech_id or not frage:
+        return
+    jetzt = _jetzt_iso()
+    try:
+        with _DB_LOCK, _db() as c:
+            c.execute("INSERT INTO nachricht (gespraech, rolle, text, zeit) "
+                      "VALUES (?,?,?,?)", (gespraech_id, "user", frage[:4000], jetzt))
+            if antwort:
+                c.execute("INSERT INTO nachricht (gespraech, rolle, text, zeit) "
+                          "VALUES (?,?,?,?)",
+                          (gespraech_id, "assistant", antwort[:8000], jetzt))
+            import gedaechtnis as gd  # noqa: PLC0415
+            c.execute("UPDATE gespraech SET zuletzt=?, titel=COALESCE(titel, ?) "
+                      "WHERE id=?", (jetzt, gd.titel(frage), gespraech_id))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+# ————— Das Faktengedächtnis: was sie babu über sich erzählt hat —————
+
+def merksaetze_lesen(betrieb: str) -> list[dict]:
+    try:
+        with _DB_LOCK, _db() as c:
+            return [{"id": z[0], "text": z[1], "gelernt": z[2], "quelle": z[3],
+                     "gespraech": z[4]}
+                    for z in c.execute(
+                        "SELECT id, text, gelernt, quelle, gespraech FROM merksatz "
+                        "WHERE betrieb=? ORDER BY id", (betrieb,))]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def merksatz_lernen(betrieb: str, text: str, quelle: str,
+                    gespraech_id: int | None = None) -> int | None:
+    """Einen Satz merken — aber nur, wenn er neu ist.
+
+    Doppelte Sätze sind kein zweites Wissen, sie machen den Block nur
+    länger und die Löschung mühsamer.
+    """
+    import gedaechtnis as gd  # noqa: PLC0415
+    sauber = gd.saubern(text)
+    if not sauber:
+        return None
+    vorhandene = [m["text"] for m in merksaetze_lesen(betrieb)]
+    if not gd.ist_neu(sauber, vorhandene):
+        return None
+    try:
+        with _DB_LOCK, _db() as c:
+            cur = c.execute(
+                "INSERT INTO merksatz (betrieb, text, gelernt, quelle, gespraech) "
+                "VALUES (?,?,?,?,?)",
+                (betrieb, sauber, _jetzt_iso(), quelle, gespraech_id))
+            return int(cur.lastrowid) if cur.lastrowid else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+@app.get("/api/gedaechtnis")
+def api_gedaechtnis(request: Request) -> Response:
+    """Auskunft (Art. 15): alles, was babu sich über diesen Betrieb gemerkt hat."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    return JSONResponse({"merksaetze": merksaetze_lesen(salon_von_aktiv(un))})
+
+
+@app.post("/api/gedaechtnis")
+def api_gedaechtnis_anlegen(body: dict, request: Request) -> Response:
+    """Selbst etwas eintragen — der zweite Weg neben „merk dir, dass …"."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    import gedaechtnis as gd  # noqa: PLC0415
+    text = gd.saubern((body or {}).get("text"))
+    if not text:
+        return JSONResponse({"fehler": "Text fehlt oder ist zu kurz"},
+                            status_code=400)
+    neu = merksatz_lernen(salon_von_aktiv(un), text, "eingetragen")
+    return JSONResponse({"ok": True, "id": neu, "doppelt": neu is None})
+
+
+@app.post("/api/gedaechtnis/{merksatz_id}/vergessen")
+def api_merksatz_vergessen(merksatz_id: int, request: Request) -> Response:
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    betrieb = salon_von_aktiv(un)
+    with _DB_LOCK, _db() as c:
+        if not c.execute("SELECT 1 FROM merksatz WHERE id=? AND betrieb=?",
+                         (merksatz_id, betrieb)).fetchone():
+            return JSONResponse({"fehler": "unbekannt"}, status_code=404)
+        c.execute("DELETE FROM merksatz WHERE id=? AND betrieb=?",
+                  (merksatz_id, betrieb))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/gedaechtnis/vergessen")
+def api_gedaechtnis_vergessen(request: Request) -> Response:
+    """Alles vergessen (Art. 17) — in einem Griff, nicht Satz für Satz."""
+    un, fehler = _api_wache(request)
+    if fehler:
+        return fehler
+    # Den Betrieb VOR dem Schloss holen: `salon_von_aktiv` liest selbst aus
+    # der Datenbank, und `_DB_LOCK` ist nicht wiedereintrittsfähig — im
+    # Schloss aufgerufen blockiert es sich selbst und die Anfrage hängt.
+    betrieb = salon_von_aktiv(un)
+    with _DB_LOCK, _db() as c:
+        cur = c.execute("DELETE FROM merksatz WHERE betrieb=?", (betrieb,))
+        anzahl = cur.rowcount
+    return JSONResponse({"ok": True, "vergessen": max(anzahl, 0)})
 
 
 def _welt_fuer(un: str) -> dict:
