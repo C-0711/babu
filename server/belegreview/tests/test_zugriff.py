@@ -329,6 +329,38 @@ def test_von_der_verwaltung_angelegte_konten_haben_keine_standard_ablage(welt):
                for n in verwaltung.get("/api/nutzer").json()["nutzer"])
 
 
+
+def test_betreiber_legt_salon_an_mit_eigenem_betrieb_und_willkommensmail(welt, monkeypatch):
+    """Der Weg, den Nina am 08.10.2026 nahm („Zugang anlegen" → Salon): der
+    Salon bekam weder eine Mail noch eine Ablage. Jetzt wie bei jedem neuen
+    Betrieb: Mandant in „babu direkt" (die Box richtet der Box-Anleger ein)
+    und die Willkommensmail mit Passwort-Link — die fremde Standard-Ablage
+    weiterhin nicht."""
+    import postfach  # noqa: PLC0415
+    gesendet = []
+    monkeypatch.setattr(postfach, "senden", lambda an, betreff, text, *, stempel: (
+        gesendet.append((an, betreff, text)) or (True, "ok")))
+    bw = welt
+    verwaltung = _admin(bw)
+    r = verwaltung.post("/api/nutzer", json={"email": "neu@salon.de", "name": "Neu",
+                                             "salon": "Salon Neu", "rolle": "salon"})
+    assert r.status_code == 200, r.text
+    assert r.json()["mail"] is True
+    texte = [t for (an, _b, t) in gesendet if an == "neu@salon.de"]
+    assert len(texte) == 1 and "/portal#reset/" in texte[0] and "Salon Neu" in texte[0]
+    with bw._DB_LOCK, bw._db() as c:
+        z = c.execute("SELECT k.name FROM mandant m JOIN kanzlei k ON k.id=m.kanzlei_id "
+                      "WHERE m.besitzer_un=?", ("neu@salon.de",)).fetchone()
+    assert z and z[0] == "babu direkt"
+    assert bw.box_mitglied("neu@salon.de") is False
+    # Mitarbeiterinnen bekommen keinen eigenen Betrieb — sie gehören zu einem.
+    r = verwaltung.post("/api/nutzer", json={"email": "kollegin@salon.de", "name": "K",
+                                             "rolle": "mitarbeit"})
+    assert r.status_code == 200 and not r.json().get("mail")
+    with bw._DB_LOCK, bw._db() as c:
+        assert c.execute("SELECT COUNT(*) FROM mandant WHERE besitzer_un=?",
+                         ("kollegin@salon.de",)).fetchone()[0] == 0
+
 @pytest.mark.parametrize("rolle", ["salon", "mitarbeit"])
 def test_kanzlei_legt_kein_konto_mit_fremder_ablage_an(welt, rolle):
     """Der Weg, auf dem live ein Kanzlei-Konto in die Ablage eines Betriebs

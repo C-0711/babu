@@ -529,3 +529,172 @@ def test_abgeschalteter_code_erinnert_nicht_an_offene_einladungen(welt):
     welt["chef"].post("/api/ambassador/aktiv", json={"code": welt["code"], "aktiv": False})
     nachher = [k for k in welt["babs"].get("/api/ambassador/me").json()["kontakte"] if k["name"] == "Lea"]
     assert nachher[0]["aufgabe"] is None
+
+
+# ————— Bestehende Salons verbinden (seit 08.10.2026) —————
+#
+# Entscheidung Auftraggeber 08.10.2026: Die Ambassadorin gibt die E-Mail ein;
+# gibt es den Salon schon, sieht sie das und der Salon bekommt eine Mail mit
+# einem Link, über den ER die Verbindung bestätigt. Wer schon ein laufendes
+# Abo bezahlt, ist nicht verbindbar; wer schon mit einer Ambassadorin
+# verbunden ist, bleibt bei ihr.
+
+import re  # noqa: E402
+
+import mandanten  # noqa: E402
+import provision  # noqa: E402
+
+
+def _bestehender_salon(email="alt@salon.de", salon="Salon Alt", abo_status=None):
+    babu_web.nutzer_anlegen(email, "Inhaberin", salon, "salon", passwort=PASSWORT,
+                            box=False)
+    with babu_web._DB_LOCK, babu_web._db() as c:
+        kid = mandanten.kanzlei_anlegen("Kanzlei X", "chef@example.org", c=c)
+        mid = mandanten.mandant_anlegen(kid, salon, email, "SKR04", c=c)
+        if abo_status:
+            c.execute("UPDATE mandant SET abo_status=?, paket='salon' WHERE id=?",
+                      (abo_status, mid))
+    return email
+
+
+def _einladen(welt, email, person="Alte"):
+    r = welt["babs"].post("/api/ambassador/link", json={"person": person, "email": email})
+    if r.status_code != 200:
+        return r
+    return welt["babs"].post("/api/ambassador/einladen", json={"id": r.json()["id"]})
+
+
+def _token_aus_mail(welt, an):
+    texte = [t for (empf, _b, t) in welt["post"] if empf == an]
+    assert texte, f"keine Mail an {an}"
+    m = re.search(r"/verbinden/([A-Za-z0-9_.=-]+)", texte[-1])
+    assert m, texte[-1]
+    return m.group(1)
+
+
+def _verbunden(email):
+    with babu_web._DB_LOCK, babu_web._db() as c:
+        return [z[0] for z in c.execute(
+            "SELECT code FROM ambassador_salon WHERE email=?", (email,))]
+
+
+def test_bestehender_salon_wird_erst_nach_seiner_bestaetigung_verbunden(welt):
+    email = _bestehender_salon()
+    r = _einladen(welt, email)
+    assert r.status_code == 200, r.text
+    assert r.json()["bestehend"] is True
+    assert "gibt es schon" in r.json()["hinweis"]
+    assert _verbunden(email) == []                 # noch nicht — der Salon entscheidet
+    token = _token_aus_mail(welt, email)
+
+    gast = TestClient(babu_web.app, base_url="https://testserver")
+    seite = gast.get(f"/verbinden/{token}")
+    assert seite.status_code == 200
+    assert "Babs" in seite.text and "verbinden" in seite.text.lower()
+    assert "--gc-serif" in seite.text                # im Look des Portals
+
+    r = gast.post("/api/ambassador/verbinden", json={"token": token})
+    assert r.status_code == 200, r.text
+    assert _verbunden(email) == [welt["code"]]
+    # Ein zweiter Klick ändert nichts.
+    assert gast.post("/api/ambassador/verbinden", json={"token": token}).status_code == 200
+    assert _verbunden(email) == [welt["code"]]
+    # Sie sieht den Salon, die Einladung ist eingelöst.
+    me = welt["babs"].get("/api/ambassador/me").json()
+    assert email in [s.get("email") for s in me["salons"]] or \
+        "Salon Alt" in str(me["salons"])
+    with babu_web._DB_LOCK, babu_web._db() as c:
+        assert c.execute("SELECT eingeloest FROM ambassador_einladung WHERE email=?",
+                         (email,)).fetchone()[0]
+        # Bucht der Salon später ein Abo, verdient sie daran.
+        b = provision.buchen(c, email=email, meilenstein="gezeichnet", betrag_eur=237,
+                             paket="salon", quelle="stripe", heute="2026-10-08")
+    assert b["ok"] is True and b["code"] == welt["code"]
+
+
+@pytest.mark.parametrize("fall, erwartet", [
+    ("abo", "Abo"),
+    ("andere", "schon mit einer Ambassadorin"),
+    ("kanzlei", "keinen Salon"),
+    ("selbst", "Dich selbst"),
+])
+def test_nicht_verbindbar(welt, fall, erwartet):
+    if fall == "abo":
+        email = _bestehender_salon(abo_status="aktiv")
+    elif fall == "andere":
+        email = _bestehender_salon()
+        code2 = welt["chef"].post("/api/ambassador", json={
+            "name": "Zweite", "email": "zweite@example.org"}).json()["code"]
+        with babu_web._DB_LOCK, babu_web._db() as c:
+            c.execute("INSERT INTO ambassador_salon (code, email, salon, eingelöst) "
+                      "VALUES (?,?,?,?)", (code2, email, "Salon Alt", "2026-10-01T00:00:00Z"))
+    elif fall == "kanzlei":
+        email = "buero@kanzlei.de"
+        babu_web.nutzer_anlegen(email, "Büro", "Kanzlei", "kanzlei", passwort=PASSWORT,
+                                box=False)
+    else:
+        email = "babs@example.org"
+    welt["post"].clear()
+    r = _einladen(welt, email)
+    assert r.status_code == 409, r.text
+    assert erwartet in r.json()["fehler"]
+    assert welt["post"] == []                        # keine Mail
+    with babu_web._DB_LOCK, babu_web._db() as c:     # und keine offene Einladung
+        assert c.execute("SELECT COUNT(*) FROM ambassador_einladung WHERE email=?",
+                         (email,)).fetchone()[0] == 0
+
+
+def test_gekuendigtes_abo_ist_verbindbar(welt):
+    email = _bestehender_salon(abo_status="gekuendigt")
+    assert _einladen(welt, email).status_code == 200
+
+
+def test_abo_zwischen_mail_und_klick_verhindert_die_verbindung(welt):
+    email = _bestehender_salon()
+    assert _einladen(welt, email).status_code == 200
+    token = _token_aus_mail(welt, email)
+    with babu_web._DB_LOCK, babu_web._db() as c:
+        c.execute("UPDATE mandant SET abo_status='aktiv' WHERE besitzer_un=?", (email,))
+    r = TestClient(babu_web.app, base_url="https://testserver").post(
+        "/api/ambassador/verbinden", json={"token": token})
+    assert r.status_code == 409 and "Abo" in r.json()["fehler"]
+    assert _verbunden(email) == []
+
+
+def test_gefaelschter_oder_abgelaufener_link(welt, monkeypatch):
+    email = _bestehender_salon()
+    assert _einladen(welt, email).status_code == 200
+    token = _token_aus_mail(welt, email)
+    gast = TestClient(babu_web.app, base_url="https://testserver")
+    falsch = token[:-2] + ("aa" if not token.endswith("aa") else "bb")
+    assert gast.post("/api/ambassador/verbinden", json={"token": falsch}).status_code == 400
+    assert "gilt nicht" in gast.get(f"/verbinden/{falsch}").text
+    # Ein Anmelde-Cookie ist kein Verbinden-Link (eigener Schlüssel).
+    cookie = babu_web._signieren(email, int(ka.time.time()) + 3600)
+    assert gast.post("/api/ambassador/verbinden", json={"token": cookie}).status_code == 400
+    monkeypatch.setattr(ka.time, "time", lambda: 10**12)
+    assert gast.post("/api/ambassador/verbinden", json={"token": token}).status_code == 400
+    assert _verbunden(email) == []
+
+
+def test_oeffentlicher_link_schickt_bestehendem_salon_die_verbinden_mail(welt):
+    email = _bestehender_salon()
+    welt["post"].clear()
+    r = _einloesen(welt, email, "Salon Alt")
+    assert r.status_code == 200
+    assert "/verbinden/" in welt["post"][-1][2]
+    assert _verbunden(email) == []
+
+
+def test_uebersicht_wer_hat_wen_geworben(welt):
+    """Die Betreiber-Liste trägt alles für die Übersicht: wer die
+    Ambassadorin angelegt hat, ihre Salons mit Abo-Stand, offene Einladungen."""
+    assert _einloesen(welt, "neu@salon.de", "Salon Neu").status_code == 200
+    email = _bestehender_salon("alt2@salon.de", "Salon Alt2", abo_status="gekuendigt")
+    assert _einladen(welt, email).status_code == 200
+    a = next(x for x in welt["chef"].get("/api/ambassador/liste").json()["ambassadorinnen"]
+             if x["code"] == welt["code"])
+    assert a["angelegt_von"] == "chef@example.org"
+    salon = next(s for s in a["salons"] if s["email"] == "neu@salon.de")
+    assert salon["abo"] is None and salon["testmonat"]
+    assert [e["email"] for e in a["einladungen"]] == ["alt2@salon.de"]

@@ -313,22 +313,39 @@ async def api_warteliste_einrichten(request: Request) -> Response:
     if passwort is None:
         return JSONResponse({"fehler": "Für diese E-Mail gibt es schon einen "
                                        "Zugang."}, status_code=409)
-    if ist_salon:
-        import mandanten  # noqa: PLC0415
-        import testmonat  # noqa: PLC0415
-        with bw._DB_LOCK, bw._db() as c:
-            mandanten.mandant_anlegen(testmonat.direkt_kanzlei(c), betrieb,
-                                      email, "SKR04", c=c)
     for schluessel, wert in (("betrieb_name", betrieb), ("telefon", telefon),
                              ("email", email)):
         if wert:
             bw.db_einstellung_setzen(email, schluessel, str(wert)[:200])
+    mail = direkt_einrichten(email, betrieb) if ist_salon else False
     with bw._DB_LOCK, bw._db() as c:
         c.execute("UPDATE warteliste SET status='eingerichtet' WHERE email=?",
                   (email,))
-    audit.audit(un, "warteliste_einrichten", ziel_un=email)
+    audit.audit(un, "warteliste_einrichten", ziel_un=email, mail=mail)
     print(f"[warteliste] eingerichtet: {art} <{email}>", flush=True)
-    return JSONResponse({"ok": True, "email": email, "startpasswort": passwort})
+    return JSONResponse({"ok": True, "email": email, "startpasswort": passwort,
+                         "mail": mail})
+
+
+def direkt_einrichten(email: str, betrieb: str) -> bool:
+    """Ein Salon, den der Betreiber anlegt: eigener Betrieb und Willkommensmail.
+
+    Mandant in der Hauskanzlei „babu direkt" (die Ablage legt der
+    Box-Anleger an, wie bei jedem Mandanten) und die Mail mit dem Link, über
+    den der Salon sein Passwort setzt. Bis 08.10.2026 bekam ein so
+    angelegter Salon keine Mail — nur ein Startpasswort auf dem Bildschirm
+    der Verwaltung —, und über „Zugang anlegen" auch keinen Betrieb: er stand
+    ohne Ablage da. Gilt für die Warteliste und für „Zugang anlegen".
+    Rückgabe: ob die Mail verschickt (bzw. ohne SMTP abgelegt) wurde."""
+    import kanzlei_routen  # noqa: PLC0415
+    import mandanten  # noqa: PLC0415
+    import testmonat  # noqa: PLC0415
+    with bw._DB_LOCK, bw._db() as c:
+        if not c.execute("SELECT 1 FROM mandant WHERE besitzer_un=?", (email,)).fetchone():
+            mandanten.mandant_anlegen(testmonat.direkt_kanzlei(c), betrieb,
+                                      email, "SKR04", c=c)
+    link = kanzlei_routen._einladung_verschicken(bw, betrieb, email, wer=None)  # noqa: SLF001
+    return link is not None
 
 
 async def api_warteliste_apple_id(request: Request) -> Response:

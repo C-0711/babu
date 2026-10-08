@@ -6050,10 +6050,22 @@ async def api_nutzer_anlegen(request: Request) -> Response:
     if passwort is None:
         return JSONResponse({"fehler": "Für diese E-Mail gibt es schon einen Zugang."},
                             status_code=409)
+    # Legt der Betreiber einen SALON an, ist das ein neuer Betrieb: eigener
+    # Mandant in „babu direkt" und die Willkommensmail (seit 08.10.2026 —
+    # vorher stand der Salon ohne Mail und ohne Ablage da). Kanzleien legen
+    # ihre Betriebe unter „Mandanten" an, dort gibt es beides schon.
+    mail = False
+    if neue_rolle == "salon" and rolle(un) == "admin":
+        import kern_warteliste  # noqa: PLC0415
+        betrieb = (str(body.get("salon", "")).strip() or str(body.get("name", "")).strip()
+                   or email.split("@")[0])[:120]
+        db_einstellung_setzen(email, "betrieb_name", betrieb)
+        mail = await run_in_threadpool(kern_warteliste.direkt_einrichten, email, betrieb)
     audit.audit(un, "nutzer_anlegen", ziel_un=email,
                 rolle=str(body.get("rolle", "salon")),
-                mandant_id=_mandant_zu(un, email))
-    return JSONResponse({"ok": True, "email": email, "startpasswort": passwort})
+                mandant_id=_mandant_zu(un, email), mail=mail)
+    return JSONResponse({"ok": True, "email": email, "startpasswort": passwort,
+                         "mail": mail})
 
 
 @app.post("/api/nutzer-aktion")

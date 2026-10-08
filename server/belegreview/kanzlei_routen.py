@@ -800,7 +800,8 @@ def _mitglied_einladen(bw, kanzlei_name: str, mail: str) -> str | None:
     return link
 
 
-def _einladung_verschicken(bw, mandant_name: str, mail: str) -> str | None:
+def _einladung_verschicken(bw, mandant_name: str, mail: str,
+                           wer: str | None = "dein Steuerbüro") -> str | None:
     """Der Link, mit dem der Salon sein eigenes Passwort setzt.
 
     Muster wie `einladung.py`: der Schlüssel steht genau einmal im Klartext
@@ -817,9 +818,12 @@ def _einladung_verschicken(bw, mandant_name: str, mail: str) -> str | None:
     link = _reset_link_anlegen(bw, mail)
     if link is None:
         return None
+    # `wer=None`: der Betreiber hat den Salon angelegt (seit 08.10.2026) —
+    # dann gibt es kein Steuerbüro, das man nennen könnte.
+    einleitung = (f"{wer} hat für „{mandant_name}“ einen Zugang zu babu eingerichtet."
+                  if wer else f"dein Zugang zu babu für „{mandant_name}“ steht.")
     text = (f"Hallo,\n\n"
-            f"dein Steuerbüro hat für „{mandant_name}“ einen Zugang zu babu "
-            f"eingerichtet. Beim ersten Öffnen legst du dein Passwort fest:\n\n"
+            f"{einleitung} Beim ersten Öffnen legst du dein Passwort fest:\n\n"
             f"    {link}\n\n"
             + startguide.schritte(bw.PORTAL_ORIGIN)
             + f"\nDer Link gilt {pr.FRIST.days} Tage und nur einmal. Danach meldest "

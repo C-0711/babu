@@ -13,9 +13,12 @@ Nina (Verwaltung) legt Ambassadorinnen an: `POST /api/ambassador` —
 Konto + Code + Mail mit dem Zug zu ihrer Seite. Die Ambassadorin selbst
 sieht ihre Salons unter `GET /api/ambassador/me`.
 """
+import base64
 import calendar
 import contextvars
 import datetime as dt
+import hashlib
+import hmac
 import html as html_text
 import json
 import os
@@ -158,6 +161,15 @@ async def api_ambassador_liste(request: Request) -> Response:
                                (z["code"],))]
             _testmonate_dazu(z["salons"], c)
             _pipeline_dazu(z["salons"], z["code"], c)
+            # Für die Übersicht „Wer hat wen geworben" (seit 08.10.2026):
+            # der Abo-Stand je Salon und wer die Ambassadorin angelegt hat.
+            for s in z["salons"]:
+                a = c.execute("SELECT abo_status, paket FROM mandant WHERE besitzer_un=? "
+                              "ORDER BY id", (s["email"],)).fetchone()
+                s["abo"] = {"status": a[0], "paket": a[1]} if a and a[0] else None
+            v = c.execute("SELECT akteur_un FROM audit_log WHERE aktion='ambassador_anlegen' "
+                          "AND ziel_un=? ORDER BY zeit", (z["email"],)).fetchone()
+            z["angelegt_von"] = v[0] if v else None
             z["einladungen"] = _offene_einladungen(z["code"], c)
             z["geld"] = _geld(z["code"], c)
             z["zahlen"] = _zahlen(z["salons"])
@@ -255,6 +267,13 @@ async def api_ambassador_link(request: Request) -> Response:
     if email and not ei.mail_gueltig(email):
         return JSONResponse({"fehler": "Diese E-Mail-Adresse sieht nicht richtig aus."},
                             status_code=400)
+    if email:
+        # Nicht verbindbar (Abo, schon verbunden, kein Salon): gleich sagen und
+        # keine offene Einladung anlegen, die nie eingelöst werden kann.
+        with bw._DB_LOCK, bw._db() as c:
+            stand, _grund, satz = _verbindbar(email, a[0], c)
+        if stand == "nein":
+            return JSONResponse({"fehler": satz}, status_code=409)
     slug = re.sub(r"[^a-z0-9]+", "-", (salon or person).lower()).strip("-")[:20] or "salon"
     if telefon or email:
         # Ein eigener Link je Einladung (seit 03.10.2026): zwei „Sabine"
@@ -425,6 +444,118 @@ function einlosen(f){{
         "ohne Vertrag, ohne Kündigung.", karte, roh=True))
 
 
+
+_VERBINDEN_UNGUELTIG = ("Dieser Link gilt nicht mehr — er ist abgelaufen oder "
+                        "unvollständig. Frag die Person, die dich eingeladen hat, "
+                        "nach einer neuen Einladung.")
+# Was der Salon liest, wenn er nicht (mehr) verbinden kann — die Sätze in
+# `_verbindbar` sind für die Ambassadorin geschrieben.
+_VERBINDEN_NEIN = {
+    "abo": "Du nutzt babu schon mit einem Abo — eine Verbindung ist dafür nicht mehr möglich.",
+    "schon_andere": "Dein Salon ist schon mit einer Ambassadorin verbunden.",
+    "kein_salon": "Diese Einladung passt zu keinem Salon-Zugang.",
+    "selbst": "Diese Einladung passt zu keinem Salon-Zugang.",
+}
+
+
+async def verbinden_seite(token: str) -> Response:
+    """Öffentlich: die Seite aus der Mail an einen bestehenden Salon."""
+    gelesen = verbinden_lesen(token)
+    if not gelesen:
+        return HTMLResponse(_seite(
+            "babu — Link gilt nicht mehr", "Einladung", "Dieser Link gilt nicht mehr.",
+            _VERBINDEN_UNGUELTIG, '<p style="margin:0">Zu babu: '
+            '<a href="/portal">anmelden</a></p>'), status_code=404)
+    code, email = gelesen
+    with bw._DB_LOCK, bw._db() as c:
+        a = c.execute("SELECT name FROM ambassador WHERE code=? AND aktiv=1",
+                      (code,)).fetchone()
+        stand, grund, _satz = _verbindbar(email, code, c)
+    name = html_text.escape(a[0]) if a else "babu"
+    if not a or stand == "neu":
+        return HTMLResponse(_seite(
+            "babu — Link gilt nicht mehr", "Einladung", "Dieser Link gilt nicht mehr.",
+            _VERBINDEN_UNGUELTIG, '<p style="margin:0"><a href="/portal">Zu babu</a></p>'),
+            status_code=404)
+    if stand == "nein":
+        satz = (f"Du bist schon mit {a[0]} verbunden." if grund == "schon_dir"
+                else _VERBINDEN_NEIN.get(grund, _VERBINDEN_UNGUELTIG))
+        return HTMLResponse(_seite(
+            "babu — Einladung", f"Einladung von {name}", "Alles beim Alten.", satz,
+            '<p style="margin:0"><a href="/portal">Zu babu</a></p>', roh=True))
+    karte = f"""<p style="margin:0 0 14px">Für dich ändert sich nichts: kein neuer Vertrag,
+keine Kosten, deine Belege bleiben, wo sie sind.</p>
+<button class="voll" id="senden" onclick="verbinden()">Mit {name} verbinden</button>
+<p class="fehler" id="fehler" role="alert" aria-live="polite" hidden></p>
+<p class="meldung" id="ok" role="status" aria-live="polite" hidden></p>
+<small>Danach sieht {name}, ob du babu nutzt: wie viele Belege du hochlädst, nicht
+die Belege selbst. Schließt du später ein Abo ab, bekommt sie dafür eine Provision
+von babu — du zahlst dadurch nichts mehr.</small>
+<script>
+function verbinden(){{
+  const ok = document.getElementById("ok"), fehler = document.getElementById("fehler"),
+        knopf = document.getElementById("senden");
+  fehler.hidden = true; knopf.disabled = true;
+  fetch("/api/ambassador/verbinden", {{method:"POST",
+    headers:{{"Content-Type":"application/json"}},
+    body: JSON.stringify({{token: {json.dumps(token)}}})}})
+  .then(r => r.json()).then(d => {{
+    if (d.ok){{ ok.textContent = d.hinweis; ok.hidden = false; knopf.hidden = true; }}
+    else {{ fehler.textContent = d.fehler || "Da lief etwas schief — gleich nochmal versuchen.";
+      fehler.hidden = false; knopf.disabled = false; }}
+  }})
+  .catch(() => {{ fehler.textContent = "Gerade keine Verbindung — gleich nochmal versuchen.";
+    fehler.hidden = false; knopf.disabled = false; }});
+}}
+</script>"""
+    return HTMLResponse(_seite(
+        "babu — Einladung", f"Einladung von {name}",
+        f"Mit {a[0]} verbinden?",
+        f"{a[0]} empfiehlt babu weiter und möchte deinen Salon in ihre Liste aufnehmen.",
+        karte, roh=True))
+
+
+async def api_ambassador_verbinden(request: Request) -> Response:
+    """Öffentlich, mit dem Link aus der Mail: der Salon bestätigt die Verbindung.
+
+    Wer den Link hat, hat die Mail an diese Adresse — das ist die Zustimmung.
+    Alles wird beim Klick noch einmal geprüft: ein Abo, das zwischen Mail und
+    Klick entstand, oder eine andere Ambassadorin, die schneller war."""
+    if not bw._origin_ok(request):  # noqa: SLF001
+        return JSONResponse({"fehler": "nicht erlaubt"}, status_code=403)
+    try:
+        koerper = json.loads(await bw.koerper_lesen(request, 4 * 1024))
+    except Exception:  # noqa: BLE001
+        return JSONResponse({"fehler": "JSON erwartet"}, status_code=400)
+    gelesen = verbinden_lesen(str(koerper.get("token", "") or ""))
+    if not gelesen:
+        return JSONResponse({"fehler": _VERBINDEN_UNGUELTIG}, status_code=400)
+    code, email = gelesen
+    with bw._DB_LOCK, bw._db() as c:
+        a = c.execute("SELECT name FROM ambassador WHERE code=? AND aktiv=1",
+                      (code,)).fetchone()
+        if not a:
+            return JSONResponse({"fehler": "Diese Einladung gilt nicht mehr."},
+                                status_code=409)
+        stand, grund, _satz = _verbindbar(email, code, c)
+        if stand == "nein" and grund == "schon_dir":
+            return JSONResponse({"ok": True, "hinweis": f"Du bist schon mit {a[0]} verbunden."})
+        if stand != "ja":
+            return JSONResponse({"fehler": _VERBINDEN_NEIN.get(grund, _VERBINDEN_UNGUELTIG)},
+                                status_code=409 if stand == "nein" else 400)
+        z = c.execute("SELECT salon FROM nutzer WHERE email=?", (email,)).fetchone()
+        salon = (z[0] if z else "") or ""
+        # ON CONFLICT statt INSERT OR IGNORE — das versteht Postgres nicht.
+        c.execute("""INSERT INTO ambassador_salon
+                     (code, email, salon, eingelöst) VALUES (?,?,?,?)
+                     ON CONFLICT (code, email) DO NOTHING""",
+                  (code, email, salon, bw._jetzt_iso()))
+        _einladung_eingeloest(code, email, "", c)
+    audit.audit(email, "ambassador_verbunden", ziel_un=email, code=code)
+    print(f"[ambassador] verbunden: {email} mit {code}", flush=True)
+    return JSONResponse({"ok": True,
+                         "hinweis": f"Verbunden — {a[0]} sieht deinen Salon jetzt in ihrer Liste."})
+
 async def api_ambassador_einladen(request: Request) -> Response:
     """Ambassadorin verschickt die Einladung an einen Salon direkt aus dem
     Portal — die Mail trägt ihren Namen, den Link und die 30-Tage-Zusage."""
@@ -473,27 +604,38 @@ async def api_ambassador_einladen(request: Request) -> Response:
     if not a:
         return JSONResponse({"fehler": "Du bist (noch) keine Ambassadorin."},
                             status_code=404)
+    with bw._DB_LOCK, bw._db() as c:
+        stand, _grund, satz = _verbindbar(email, a[1], c)
+    if stand == "nein":
+        return JSONResponse({"fehler": satz}, status_code=409)
     import postfach  # noqa: PLC0415
     if not postfach.eingerichtet():
         return JSONResponse({"fehler": "Der Versand ist gerade nicht eingerichtet — "
                                        "schick den Link bitte selbst."}, status_code=503)
     try:
-        anrede = f"Hallo {salon}," if salon else "Hallo,"
-        text = (f"{anrede}\n\n"
-                f"{a[0]} empfiehlt dir babu: Foto machen statt Belege sortieren.\n"
-                f"30 Tage testen — kostenlos, ohne Vertrag, ohne Kündigung.\n\n"
-                f"Dein Platz: {link}\n\n"
-                f"Der Code macht's möglich — einfach öffnen und sichern.\n")
+        if stand == "ja":
+            # Bestehender Salon: kein Testmonat, sondern die Bitte, sich zu verbinden.
+            betreff, text = _verbinden_mail(a[0], salon, a[1], email)
+        else:
+            anrede = f"Hallo {salon}," if salon else "Hallo,"
+            betreff = "babu — 30 Tage testen (Empfehlung von " + a[0] + ")"
+            text = (f"{anrede}\n\n"
+                    f"{a[0]} empfiehlt dir babu: Foto machen statt Belege sortieren.\n"
+                    f"30 Tage testen — kostenlos, ohne Vertrag, ohne Kündigung.\n\n"
+                    f"Dein Platz: {link}\n\n"
+                    f"Der Code macht's möglich — einfach öffnen und sichern.\n")
         await bw.run_in_threadpool(
-            postfach.senden, email,
-            "babu — 30 Tage testen (Empfehlung von " + a[0] + ")", text,
+            postfach.senden, email, betreff, text,
             stempel=time.strftime("%Y%m%d-%H%M%S"))
     except Exception as ex:  # noqa: BLE001
         print(f"[ambassador] Einladung an {email} fehlgeschlagen: {ex!r}", flush=True)
         return JSONResponse({"fehler": "Die Mail ging nicht raus — später nochmal."},
                             status_code=503)
     _einladung_gesendet(a[1], gemerkt[0] if gemerkt else None, link, salon, email)
-    audit.audit(un, "ambassador_einladen", ziel_un=email)
+    audit.audit(un, "ambassador_einladen", ziel_un=email,
+                bestehend=(stand == "ja"))
+    if stand == "ja":
+        return JSONResponse({"ok": True, "bestehend": True, "hinweis": satz})
     return JSONResponse({"ok": True})
 
 
@@ -700,6 +842,97 @@ def _senden(an: str, betreff: str, text: str) -> None:
         print(f"[testmonat] Mail an {an} fehlgeschlagen: {ex!r}", flush=True)
 
 
+# ————— Bestehende Salons verbinden (seit 08.10.2026) —————
+#
+# Entscheidung Auftraggeber 08.10.2026: Gibt die Ambassadorin die Adresse
+# eines Salons ein, der babu schon nutzt, sieht sie das, und der Salon
+# bekommt eine Mail mit einem Link, über den ER die Verbindung bestätigt —
+# keine Ambassadorin reserviert sich Salons ohne deren Wissen. Wer schon ein
+# laufendes Abo bezahlt, wurde ohne sie gewonnen (keine Provision); wer schon
+# mit einer Ambassadorin verbunden ist, bleibt bei ihr. Bis dahin bekam ein
+# bestehender Salon nur „Du hast schon einen Zugang" — und keine Verbindung.
+
+VERBINDEN_TAGE = 30
+_LAUFENDES_ABO = ("aktiv", "zahlung_offen")
+
+
+def _verbinden_schluessel() -> bytes:
+    """Aus dem Sitzungsgeheimnis abgeleitet, aber ein eigener Schlüssel: ein
+    Anmelde-Cookie ist nie ein gültiger Verbinden-Link und umgekehrt."""
+    return hmac.new(bw._geheimnis(), b"babu-ambassador-verbinden",  # noqa: SLF001
+                    hashlib.sha256).digest()
+
+
+def verbinden_token(code: str, email: str) -> str:
+    """Der Link-Teil für /verbinden/<token>: Code, Adresse, Ablauf — signiert."""
+    ablauf = int(time.time()) + VERBINDEN_TAGE * 86400
+    nutz = base64.urlsafe_b64encode(f"{code}|{email}|{ablauf}".encode()).decode().rstrip("=")
+    sig = hmac.new(_verbinden_schluessel(), nutz.encode(), hashlib.sha256).hexdigest()
+    return f"{nutz}.{sig}"
+
+
+def verbinden_lesen(token: str) -> tuple[str, str] | None:
+    """(code, email) aus einem gültigen, nicht abgelaufenen Link — sonst None."""
+    try:
+        nutz, sig = str(token).split(".", 1)
+        soll = hmac.new(_verbinden_schluessel(), nutz.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, soll):
+            return None
+        code, email, ablauf = base64.urlsafe_b64decode(
+            nutz + "=" * (-len(nutz) % 4)).decode().split("|")
+        if int(ablauf) < time.time():
+            return None
+        return code, email
+    except Exception:  # noqa: BLE001 — jeder kaputte Link ist schlicht ungültig
+        return None
+
+
+def _verbindbar(email: str, code: str, c) -> tuple[str, str, str]:
+    """Darf dieser Code diese Adresse einladen? `(stand, grund, satz)`.
+
+    stand `neu` (kein Konto: der normale Testmonat), `ja` (bestehender Salon,
+    verbindbar) oder `nein`; `satz` ist der Text für die Ambassadorin. Nimmt
+    KEIN Schloss — der Aufrufer hält `_DB_LOCK` und gibt `c` mit."""
+    z = c.execute("SELECT rolle, gehoert_zu FROM nutzer WHERE email=?", (email,)).fetchone()
+    if not z:
+        return "neu", "", ""
+    amb = c.execute("SELECT email FROM ambassador WHERE code=?", (code,)).fetchone()
+    if amb and str(amb[0]).lower() == email:
+        return "nein", "selbst", "Dich selbst kannst du nicht einladen."
+    if z[0] != "salon" or z[1]:
+        return "nein", "kein_salon", ("Zu dieser Adresse gibt es schon einen babu-Zugang, "
+                                      "aber keinen Salon, den du einladen kannst.")
+    v = c.execute("SELECT code FROM ambassador_salon WHERE email=? ORDER BY eingelöst",
+                  (email,)).fetchone()
+    if v:
+        if v[0] == code:
+            return "nein", "schon_dir", "Dieser Salon ist schon mit dir verbunden."
+        return "nein", "schon_andere", "Dieser Salon ist schon mit einer Ambassadorin verbunden."
+    if c.execute("SELECT 1 FROM mandant WHERE besitzer_un=? AND abo_status IN (?,?)",
+                 (email, *_LAUFENDES_ABO)).fetchone():
+        return "nein", "abo", ("Dieser Salon nutzt babu schon mit einem Abo — dafür gibt "
+                               "es keine Provision.")
+    return "ja", "", ("Den Salon gibt es schon bei babu — er bekommt eine Einladung, "
+                      "sich mit dir zu verbinden.")
+
+
+def _verbinden_mail(ambassadorin: str, salon: str, code: str, email: str) -> tuple[str, str]:
+    """Betreff und Text der Mail an einen bestehenden Salon."""
+    link = f"{bw.PORTAL_ORIGIN.rstrip('/')}/verbinden/{verbinden_token(code, email)}"
+    anrede = f"Hallo {salon}," if salon else "Hallo,"
+    text = (f"{anrede}\n\n"
+            f"{ambassadorin} empfiehlt babu weiter und möchte deinen Salon in ihre "
+            f"Liste aufnehmen. Du nutzt babu schon — für dich ändert sich nichts: "
+            f"kein neuer Vertrag, keine Kosten, deine Belege bleiben, wo sie sind.\n\n"
+            f"Wenn du einverstanden bist, bestätige hier:\n\n    {link}\n\n"
+            f"Danach sieht {ambassadorin}, ob du babu nutzt (wie viele Belege du "
+            f"hochlädst, nicht die Belege selbst). Schließt du später ein Abo ab, "
+            f"bekommt sie dafür eine Provision von babu — du zahlst dadurch nichts mehr.\n\n"
+            f"Der Link gilt {VERBINDEN_TAGE} Tage. Wenn du nicht verbinden möchtest, "
+            f"ignoriere diese Mail einfach.\n")
+    return f"babu — {ambassadorin} möchte sich mit deinem Salon verbinden", text
+
+
 _EINGELOEST = ("Geschafft! Schau in dein Postfach — dort liegt der Link, mit "
                "dem du dein Passwort setzt.")
 
@@ -748,6 +981,15 @@ async def api_ambassador_einloesen(request: Request) -> Response:
     bw._zaehler_aufraeumen(bw._REG_ZULETZT, jetzt, 3600)  # noqa: SLF001
 
     if bw.nutzer_holen(email) is not None:
+        # Ein bestehender Salon, der verbindbar ist, bekommt die Bitte, sich
+        # mit der Ambassadorin zu verbinden (seit 08.10.2026); die Antwort
+        # bleibt dieselbe — das öffentliche Formular verrät keine Konten.
+        with bw._DB_LOCK, bw._db() as c:
+            stand, _grund, _satz = _verbindbar(email, code, c)
+        if stand == "ja":
+            betreff, text = _verbinden_mail(ambassadorin, salon, code, email)
+            await bw.run_in_threadpool(_senden, email, betreff, text)
+            return JSONResponse({"ok": True, "hinweis": _EINGELOEST})
         await bw.run_in_threadpool(
             _senden, email, "Du hast schon einen Zugang zu babu",
             "Hallo,\n\njemand hat mit dieser Adresse einen babu-Testmonat "
@@ -1330,6 +1572,8 @@ _ROUTEN = [
     ("POST", "/api/ambassador/link", api_ambassador_link),
     ("POST", "/api/ambassador/einladen", api_ambassador_einladen),
     ("GET", "/ambassador/{code}/{slug}", ambassador_landing),
+    ("GET", "/verbinden/{token}", verbinden_seite),
+    ("POST", "/api/ambassador/verbinden", api_ambassador_verbinden),
     ("POST", "/api/ambassador/meilenstein", api_ambassador_meilenstein),
     ("POST", "/api/ambassador/aktiv", api_ambassador_aktiv),
     ("POST", "/api/ambassador/einloesen", api_ambassador_einloesen),

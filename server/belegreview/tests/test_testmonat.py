@@ -290,6 +290,18 @@ def test_bestehendes_konto_bekommt_keinen_zweiten_test(welt):
     assert r.status_code == 200          # dieselbe Antwort: kein Konto-Orakel
     assert _direkt_mandant("alt@example.org") is None
     an = [p for p in welt["post"] if p[0] == "alt@example.org"]
+    # Seit 08.10.2026: ein bestehender, noch nicht verbundener Salon bekommt
+    # statt des bloßen Hinweises die Bitte, sich mit der Ambassadorin zu
+    # verbinden — weiterhin ohne zweiten Testmonat.
+    assert len(an) == 1 and "/verbinden/" in an[0][2]
+
+
+def test_bestehendes_konto_ohne_salon_bekommt_nur_den_hinweis(welt):
+    babu_web.nutzer_anlegen("buero@example.org", "", "Büro", "kanzlei",
+                            passwort=PASSWORT, box=False)
+    r = _einloesen(email="buero@example.org", salon="Büro", welt=welt)
+    assert r.status_code == 200
+    an = [p for p in welt["post"] if p[0] == "buero@example.org"]
     assert len(an) == 1 and "schon einen Zugang" in an[0][2]
 
 

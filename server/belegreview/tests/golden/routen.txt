@@ -123,6 +123,7 @@ GET /portal/sw.js
 GET /review/{stamm}
 GET /review/{stamm}/protokoll
 GET /start/{marke}
+GET /verbinden/{token}
 GET /werkstatt
 GET /workbench
 HEAD /openapi.json
@@ -147,6 +148,7 @@ POST /api/ambassador/link
 POST /api/ambassador/meilenstein
 POST /api/ambassador/aktiv
 POST /api/ambassador/profil
+POST /api/ambassador/verbinden
 POST /api/ambassador/verlaengern
 POST /api/ambassador/weitermachen
 POST /api/angaben/{stamm}

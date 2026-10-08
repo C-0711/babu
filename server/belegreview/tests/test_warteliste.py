@@ -186,3 +186,32 @@ def test_die_anmeldeseite_ist_die_warteliste():
     assert "/api/warteliste" in portal
     # Der Selbstbedienungs-Stepper ist weg: kein Anmeldeweg mehr ins Portal.
     assert 'id="reg-start"' not in portal
+
+
+def _mails_abfangen(monkeypatch):
+    import postfach
+    gesendet: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(postfach, "senden", lambda an, betreff, text, *, stempel: (
+        gesendet.append((an, betreff, text)) or (True, "ok")))
+    return gesendet
+
+
+def test_salon_von_der_warteliste_bekommt_betrieb_und_willkommensmail(verwaltung, monkeypatch):
+    """Bis 08.10.2026 bekam ein eingerichteter Salon nur ein Startpasswort auf
+    den Bildschirm der Verwaltung — keine Mail. Jetzt: eigener Betrieb in
+    „babu direkt" und die Willkommensmail mit dem Link zum Passwortsetzen."""
+    client, bw = verwaltung
+    gesendet = _mails_abfangen(monkeypatch)
+    client.post("/api/warteliste", json=ANMELDUNG)
+    r = client.post("/api/warteliste/einrichten", json={"email": "salon@example.org",
+                                                        "art": "salon"})
+    assert r.status_code == 200, r.text
+    assert r.json()["mail"] is True
+    an_salon = [t for (an, _b, t) in gesendet if an == "salon@example.org"]
+    assert len(an_salon) == 1
+    assert "/portal#reset/" in an_salon[0] and "SupremeStudio" in an_salon[0]
+    assert "Steuerbüro" not in an_salon[0]
+    with bw._DB_LOCK, bw._db() as c:
+        z = c.execute("SELECT k.name FROM mandant m JOIN kanzlei k ON k.id=m.kanzlei_id "
+                      "WHERE m.besitzer_un=?", ("salon@example.org",)).fetchone()
+    assert z and z[0] == "babu direkt"

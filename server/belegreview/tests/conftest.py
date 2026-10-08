@@ -163,3 +163,20 @@ def pytest_configure(config):     # noqa: ARG001
         return
     import db  # noqa: PLC0415
     db.SCHEMA_HAKEN = _schema_zu
+
+
+@pytest.fixture(autouse=True)
+def _kein_echter_postausgang(tmp_path, monkeypatch):
+    """Keine Testmail geht raus oder landet im echten Postausgang.
+
+    Ohne SMTP schreibt `postfach.senden` nach `~/babu-web/postausgang` — und
+    das gibt es auf dem Entwicklungsrechner wirklich. Seit 08.10.2026 schicken
+    auch „Zugang anlegen" und die Warteliste eine Willkommensmail; ohne diesen
+    Haken legte jeder Testlauf dort Dateien ab. Die Umgebungsvariable zählt
+    mit, weil einzelne Tests `postfach` neu laden."""
+    import postfach
+    ausgang = tmp_path / "postausgang"
+    monkeypatch.setenv("BABU_POSTAUSGANG", str(ausgang))
+    monkeypatch.setenv("BABU_SMTP_HOST", "")
+    monkeypatch.setattr(postfach, "HOST", "", raising=False)
+    monkeypatch.setattr(postfach, "POSTAUSGANG", ausgang, raising=False)
