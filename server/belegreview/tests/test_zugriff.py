@@ -347,7 +347,7 @@ def test_betreiber_legt_salon_an_mit_eigenem_betrieb_und_willkommensmail(welt, m
     assert r.status_code == 200, r.text
     assert r.json()["mail"] is True
     texte = [t for (an, _b, t) in gesendet if an == "neu@salon.de"]
-    assert len(texte) == 1 and "/portal#reset/" in texte[0] and "Salon Neu" in texte[0]
+    assert len(texte) == 1 and "/anmelden/" in texte[0] and "Salon Neu" in texte[0]
     with bw._DB_LOCK, bw._db() as c:
         z = c.execute("SELECT k.name, m.test_bis FROM mandant m JOIN kanzlei k "
                       "ON k.id=m.kanzlei_id WHERE m.besitzer_un=?", ("neu@salon.de",)).fetchone()

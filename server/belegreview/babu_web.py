@@ -2617,6 +2617,17 @@ def api_ich(request: Request) -> Response:
         st = testmonat.stand(stand["test_bis"], testmonat.heute())
         if st:
             daten["testmonat"] = st
+        # Noch kein einziger Beleg im Test? Dann ist der nächste Schritt das
+        # erste Foto — und dafür die App (seit 08.10.2026; vorher stand dort
+        # eine Abgabefrist für eine Kanzlei, die der Salon gar nicht hat).
+        # Nur fürs Portal (Cookie): die App fragt /api/ich bei jedem Start,
+        # und dort ist die Kamera ohnehin der erste Bildschirm.
+        if st and not st["vorbei"] and meine_rolle == "salon" \
+                and request.cookies.get(SESSION_COOKIE):
+            import kern_ambassador  # noqa: PLC0415
+            import startguide  # noqa: PLC0415
+            if kern_ambassador._aktivitaet(un)[0] == 0:  # noqa: SLF001
+                daten["erstes_foto"] = {"app": startguide.app_link()}
         # Abo (seit 03.10.2026): nur, wenn es etwas zu sagen gibt — Frist,
         # Kündigung, nur lesen. Ein Betrieb ohne Abo und Test bekommt die
         # Antwort wie bisher.
@@ -5944,7 +5955,15 @@ async def api_passwort_reset_einloesen(request: Request) -> Response:
     # ein Mandant ableiten ließe. Die Zeile davor — wer den Link erzeugt
     # hat — trägt ihn.
     audit.audit(zeile["un"], "passwort_reset_eingeloest", ziel_un=zeile["un"])
-    return JSONResponse({"ok": True, "email": zeile["un"]})
+    # Gleich angemeldet (seit 08.10.2026): wer den Link aus seinem Postfach
+    # hat und das Passwort eben zweimal eingetippt hat, muss es nicht ein
+    # drittes Mal tippen. Bis dahin stand „Zur Anmeldung“ da, mit leerem
+    # E-Mail-Feld.
+    antwort = JSONResponse({"ok": True, "email": zeile["un"], "angemeldet": True})
+    antwort.set_cookie(SESSION_COOKIE, _signieren(zeile["un"], int(time.time()) + SESSION_DAUER),
+                       max_age=SESSION_DAUER, httponly=True, secure=SESSION_SECURE,
+                       samesite="lax", path="/")
+    return antwort
 
 
 @app.get("/api/audit")
@@ -13036,6 +13055,7 @@ import kern_abo  # noqa: E402,F401
 import kern_auszahlung  # noqa: E402,F401
 import kern_bank  # noqa: E402,F401
 import kern_auslagen  # noqa: E402,F401
+import kern_anmeldelink  # noqa: E402,F401
 
 kern_warteliste.setup(app, sys.modules[__name__])
 kern_ambassador.setup(app, sys.modules[__name__])
@@ -13043,6 +13063,7 @@ kern_abo.setup(app, sys.modules[__name__])
 kern_auszahlung.setup(app, sys.modules[__name__])
 kern_bank.setup(app, sys.modules[__name__])
 kern_auslagen.setup(app, sys.modules[__name__])
+kern_anmeldelink.setup(app, sys.modules[__name__])
 
 # Der Kern reicht sich selbst per setup() — die Familien hängen ihre
 # Routen an DIESES app-Objekt und benutzen DIESES Modul. Kein

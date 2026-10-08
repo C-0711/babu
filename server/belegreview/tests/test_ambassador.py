@@ -57,7 +57,9 @@ def test_ambassador_voller_weg(kunde, monkeypatch):
     assert code in link
     landing = tc.get(f"/ambassador/{code}/salon-meridian")
     assert landing.status_code == 200
-    assert "Salon Meridian" not in landing.text  # Formular, nicht Text
+    # Seit 08.10.2026 trägt die Einladung den Salonnamen ins Formular (nur
+    # noch das E-Mail-Feld ist zu füllen) — als Wert, nicht als Überschrift.
+    assert '"Salon Meridian"' in landing.text and "<h1>Salon Meridian" not in landing.text
 
     r = tc.post("/api/warteliste", json={
         "email": "meridian@example.org", "art": "salon",

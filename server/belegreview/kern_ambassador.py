@@ -119,17 +119,23 @@ async def api_ambassador_anlegen(request: Request) -> Response:
     bestehend = passwort is None
     if postfach.eingerichtet():
         try:
-            zugang = (f"Dein Startpasswort: {passwort}\n"
-                      f"(Bitte beim ersten Anmelden ändern.)\n") if passwort \
-                     else "Du meldest dich wie gewohnt mit deinem Passwort an.\n"
+            # Ohne Startpasswort im Klartext (seit 08.10.2026): ein Link, der
+            # direkt anmeldet. Das Startpasswort bleibt in der Antwort an die
+            # Verwaltung — für den Fall, dass die Mail nicht ankommt.
+            link = None if bestehend else await bw.run_in_threadpool(_passwort_link, email)
             text = (f"Hallo {name},\n\n"
-                    f"du bist jetzt babu-Ambassadorin. Dein Code: {code}\n\n"
-                    f"Dein Bereich: {bw.PORTAL_ORIGIN}/portal\n"
-                    f"Damit erzeugst du Einladungslinks für Salons — 30 Tage "
-                    f"babu komplett und kostenlos für sie, Provision für dich, sobald sie "
-                    f"bleiben.\n\n{zugang}\n")
+                    f"schön, dass du babu weiterempfiehlst! Für jeden Salon, der "
+                    f"bleibt, bekommst du Geld von uns.\n\n"
+                    + (_los_geht_es(link, "Auf „Empfehlen“ tippen und den ersten "
+                                          "Salon einladen — babu schreibt\n"
+                                          "       die Nachricht für dich.")
+                       if not bestehend else
+                       "Melde dich wie immer an — in der App oder unter "
+                       f"{bw.PORTAL_ORIGIN.rstrip('/')}/portal — und tipp auf "
+                       "„Empfehlen“.\n")
+                    + "\nFür den Spiegel gibt es dort auch einen QR-Code.\n")
             await bw.run_in_threadpool(
-                postfach.senden, email, "babu — dein Ambassador-Zugang", text,
+                postfach.senden, email, "Willkommen bei babu, " + name, text,
                 stempel=time.strftime("%Y%m%d-%H%M%S"))
         except Exception as ex:  # noqa: BLE001
             print(f"[ambassador] Mail an {email} fehlgeschlagen: {ex!r}", flush=True)
@@ -214,6 +220,28 @@ async def api_ambassador_me(request: Request) -> Response:
                          "heute_mail": bool(a[4]),
                          "profil_vollstaendig": not profil_fehlt,
                          "profil_fehlt": profil_fehlt, "gutschriften": gutschriften})
+
+
+async def api_ambassador_qr(request: Request, laden: int = 0) -> Response:
+    """Der QR-Code zu ihrem allgemeinen Einladungslink — für Spiegel, Theke
+    und Flyer (seit 08.10.2026). PNG, weil man es auf dem iPhone mit einem
+    langen Druck in die Fotos legt; `?laden=1` als Datei."""
+    un, fehler = bw._api_wache(request)
+    if fehler:
+        return fehler
+    with bw._DB_LOCK, bw._db() as c:
+        a = c.execute("SELECT code FROM ambassador WHERE email=?", (un,)).fetchone()
+    if not a:
+        return JSONResponse({"fehler": "Du bist (noch) keine Ambassadorin."},
+                            status_code=404)
+    import io  # noqa: PLC0415
+    import segno  # noqa: PLC0415
+    puffer = io.BytesIO()
+    segno.make(_link(a[0], "salon"), error="m").save(puffer, kind="png", scale=12, border=3)
+    kopf = {"Cache-Control": "private, max-age=3600"}
+    if laden:
+        kopf["Content-Disposition"] = 'attachment; filename="babu-einladung.png"'
+    return Response(puffer.getvalue(), media_type="image/png", headers=kopf)
 
 
 async def api_ambassador_heute_mail(request: Request) -> Response:
@@ -367,13 +395,30 @@ def _seite(titel: str, kicker: str, ueberschrift: str, unterzeile: str,
 </main></body></html>"""
 
 
+def _js(wert) -> str:
+    """Ein Wert als JavaScript-Literal in einem <script>-Block. `json.dumps`
+    allein reicht dort nicht: ein Salonname mit „</script>“ (ihn tippt die
+    Ambassadorin) beendete den Block."""
+    return json.dumps(wert).replace("<", "\\u003c").replace(">", "\\u003e")
+
+
 async def ambassador_landing(code: str, slug: str) -> Response:
-    """Die Landing-Seite des Salons: Code steht fest, ein Formular nimmt
-    Name/E-Mail auf und legt die Warteliste-Zeile MIT herkunft_code an.
-    Bewusst öffentlich (kein Login) — der Salon kennt babu noch nicht."""
+    """Die Landing-Seite des Salons: Code steht fest, ein Feld nimmt die
+    E-Mail auf. Bewusst öffentlich (kein Login) — der Salon kennt babu noch
+    nicht.
+
+    Seit 08.10.2026 so einfach wie eine Einladung unter Freundinnen: „Hallo
+    Kim, Jasmin lädt dich ein“, EIN Feld, EIN Knopf, danach „App holen“.
+    Vorher: Salonname, E-Mail, Häkchen, „Platz sichern“ — und danach nur
+    „Schau in dein Postfach“. Den Salonnamen kennt babu meist schon aus der
+    Einladung; sonst fragt die Einrichtung ihn ab."""
+    slug = re.sub(r"[^a-z0-9-]+", "", slug.lower())[:24]
     with bw._DB_LOCK, bw._db() as c:
         a = c.execute("SELECT name FROM ambassador WHERE code=? AND aktiv=1",
                       (code,)).fetchone()
+        e = c.execute("SELECT person, salon, email FROM ambassador_einladung "
+                      "WHERE code=? AND slug=? AND slug <> 'salon'",
+                      (code, slug)).fetchone() if a else None
     if not a:
         return HTMLResponse(_seite(
             "babu — Code nicht aktiv", "Einladung",
@@ -381,55 +426,61 @@ async def ambassador_landing(code: str, slug: str) -> Response:
             "Frag die Person, die dir den Link geschickt hat, nach einem neuen.",
             '<p style="margin:0">Oder schau dir babu erst einmal in Ruhe an: '
             '<a href="/">mybabu.io</a></p>'), status_code=404)
+    person, salon_vorschlag, mail_vorschlag = (e[0] or "", e[1] or "", e[2] or "") if e else ("", "", "")
+    import startguide  # noqa: PLC0415
+    holen = startguide.app_link()
     # Mit Testmonat (seit 02.10.2026) löst das Formular den Code direkt ein
     # und der Zugang steht sofort; ohne Schalter bleibt es der Weg über die
     # Warteliste, auf der die Verwaltung von Hand einlädt.
     if _testmonat_an():
         ziel = "/api/ambassador/einloesen"
-        danke = ("Geschafft! Schau in dein Postfach — dort liegt der Link, mit "
-                 "dem du dein Passwort setzt. Deine 30 Tage laufen ab heute.")
+        danke = ("Geschafft — deine 30 Tage laufen! Hol dir jetzt die App. Danach "
+                 "tippst du auf den Link in deiner Mail, dann bist du drin."
+                 if holen else
+                 "Geschafft — deine 30 Tage laufen! Schau in dein Postfach: ein "
+                 "Tipp auf den Link dort, dann bist du drin.")
     else:
         ziel = "/api/warteliste"
         danke = ("Danke! Wir melden uns mit deinem Zugang — dein Testmonat "
                  "startet dann.")
+        holen = None
     name = html_text.escape(a[0])
-    # Meldungen in eigenen Elementen, die das Skript sichtbar macht. Bis
-    # 08.10.2026 landete der Text in einem `display:none`-Absatz, der nie
-    # aufging: nach dem Einlösen verschwand das Formular, und der Salon sah
-    # eine leere Karte — bei einem Fehler sah er gar nichts.
+    holen_html = (f'<a class="voll" id="holen" hidden href="{html_text.escape(holen, quote=True)}" '
+                  f'style="display:block;text-align:center;text-decoration:none">App holen</a>'
+                  if holen else "")
+    # Meldungen in eigenen Elementen, die das Skript sichtbar macht (seit
+    # 08.10.2026 — vorher blieb die Karte nach dem Einlösen leer).
+    # Zustimmung über den Knopf mit klarem Hinweis darunter statt eines
+    # Häkchens: ein Tipp weniger, dieselbe Fassung im Protokoll.
     karte = f"""<form id="einloesen" onsubmit="return einlosen(this)" novalidate>
-<label class="nurvorlesen" for="salon">Name deines Salons</label>
-<input id="salon" name="salon" placeholder="Name deines Salons" autocomplete="organization" required>
 <label class="nurvorlesen" for="email">Deine E-Mail</label>
-<input id="email" name="email" type="email" placeholder="Deine E-Mail" autocomplete="email" required>
-<label class="zustimmung"><input name="agb" type="checkbox" required>
-<span>Ich stimme den <a href="/agb" target="_blank">Nutzungsbedingungen</a> zu und habe den
-<a href="/datenschutz" target="_blank">Datenschutz</a> gelesen.</span></label>
-<button class="voll" id="senden">Platz sichern</button>
+<input id="email" name="email" type="email" placeholder="Deine E-Mail" autocomplete="email"
+  value="{html_text.escape(mail_vorschlag, quote=True)}" required>
+<button class="voll" id="senden">Los geht's</button>
 <p class="fehler" id="fehler" role="alert" aria-live="polite" hidden></p>
+<small>Mit „Los geht's“ stimmst du den <a href="/agb" target="_blank">Nutzungsbedingungen</a>
+zu. Wie babu mit deinen Daten umgeht: <a href="/datenschutz" target="_blank">Datenschutz</a>.</small>
 </form>
 <p class="meldung" id="ok" role="status" aria-live="polite" hidden></p>
-<small>Wenn du einlöst, sieht {name}, ob du babu nutzt: wie viele Belege du
-hochlädst, nicht die Belege selbst.</small>
+{holen_html}
+<small>{name} sieht danach, ob du babu nutzt — nicht deine Belege.</small>
 <script>
 function einlosen(f){{
   const ok = document.getElementById("ok"), fehler = document.getElementById("fehler"),
-        knopf = document.getElementById("senden");
+        knopf = document.getElementById("senden"), holen = document.getElementById("holen");
+  const email = f.email.value.trim();
   fehler.hidden = true;
-  if (!f.salon.value.trim() || !f.email.value.trim()){{
-    fehler.textContent = "Bitte Salon und E-Mail eintragen.";
-    fehler.hidden = false; return false; }}
-  if (!f.agb.checked){{
-    fehler.textContent = "Bitte stimm zuerst den Nutzungsbedingungen zu.";
+  if (!email.includes("@")){{
+    fehler.textContent = "Bitte deine E-Mail eintragen.";
     fehler.hidden = false; return false; }}
   knopf.disabled = true;
-  fetch({json.dumps(ziel)}, {{method:"POST",
+  fetch({_js(ziel)}, {{method:"POST",
     headers:{{"Content-Type":"application/json"}},
-    body: JSON.stringify({{email:f.email.value.trim(), art:"salon", code:{json.dumps(code)}, slug:{json.dumps(slug)},
-      salon:f.salon.value.trim(), agb:f.agb.checked, bemerkung:"Code " + {json.dumps(code)}}})}})
+    body: JSON.stringify({{email, art:"salon", code:{_js(code)}, slug:{_js(slug)},
+      salon:{_js(salon_vorschlag)}, agb:true, bemerkung:"Code " + {_js(code)}}})}})
   .then(r => r.json()).then(d => {{
-    if (d.ok){{ ok.textContent = {json.dumps(danke)}; ok.hidden = false;
-      f.style.display = "none"; }}
+    if (d.ok){{ ok.textContent = {_js(danke)}; ok.hidden = false;
+      f.style.display = "none"; if (holen) holen.hidden = false; }}
     else {{ fehler.textContent = d.fehler || "Da lief etwas schief — gleich nochmal versuchen.";
       fehler.hidden = false; knopf.disabled = false; }}
   }})
@@ -437,11 +488,13 @@ function einlosen(f){{
     fehler.hidden = false; knopf.disabled = false; }});
   return false;}}
 </script>"""
+    ueberschrift = (f"Hallo {person}, {a[0]} lädt dich ein." if person
+                    else f"{a[0]} lädt dich zu babu ein.")
     return HTMLResponse(_seite(
-        "babu — 30 Tage testen", f"Empfohlen von {name}",
-        "30 Tage babu testen — kostenlos.",
-        "Foto machen statt Belege sortieren. 30 Tage babu komplett, "
-        "ohne Vertrag, ohne Kündigung.", karte, roh=True))
+        "babu — 30 Tage testen", "Einladung",
+        ueberschrift,
+        "Belege fotografieren statt sortieren. 30 Tage kostenlos, "
+        "ohne Vertrag, ohne Kündigung.", karte))
 
 
 
@@ -810,27 +863,11 @@ def _zahlen(salons: list[dict]) -> dict:
 
 
 def _passwort_link(email: str) -> str | None:
-    """Der einmalige Link zum Passwortsetzen — wie bei der Kanzlei-Einladung
-    (kanzlei_routen._reset_link_anlegen), aber über das hereingereichte `bw`
-    statt eines zweiten Imports von babu_web (Dual-Modul-Falle, siehe
-    kern_warteliste)."""
-    import passwort_reset as pr  # noqa: PLC0415
-    if not bw._reset_anfordern_erlaubt(email):  # noqa: SLF001
-        return None
-    bw._reset_aufraeumen(email)  # noqa: SLF001
-    token, modell = pr.anfordern(email)
-    with bw._DB_LOCK, bw._db() as c:
-        c.execute("""INSERT INTO passwort_reset (token_hash, un, erstellt, laeuft_ab)
-                     VALUES (?,?,?,?)""",
-                  (modell.token_hash, modell.un, modell.erstellt.isoformat(),
-                   modell.laeuft_ab.isoformat()))
-    return f"{bw.PORTAL_ORIGIN.rstrip('/')}/portal#reset/{token}"
-
-
-def _app_absatz() -> str:
-    """Wie die App aufs Telefon kommt — siehe startguide.app_absatz."""
-    import startguide  # noqa: PLC0415
-    return startguide.app_absatz()
+    """Der einmalige Link in jeder Willkommensmail. Seit 08.10.2026 meldet er
+    direkt an (`kern_anmeldelink`) — in der App oder im Browser; ein Passwort
+    festlegen geht auf derselben Seite, muss aber niemand mehr."""
+    import kern_anmeldelink  # noqa: PLC0415
+    return kern_anmeldelink.link_anlegen(email)
 
 
 def _senden(an: str, betreff: str, text: str) -> bool:
@@ -937,32 +974,46 @@ def _verbinden_mail(ambassadorin: str, salon: str, code: str, email: str) -> tup
     return f"babu — {ambassadorin} möchte sich mit deinem Salon verbinden", text
 
 
-_EINGELOEST = ("Geschafft! Schau in dein Postfach — dort liegt der Link, mit "
-               "dem du dein Passwort setzt.")
+_EINGELOEST = ("Geschafft! Schau in dein Postfach — ein Tipp auf den Link "
+               "dort, dann bist du drin.")
+
+
+def _los_geht_es(link: str | None,
+                 zuletzt: str = "Ersten Beleg fotografieren. Fertig.") -> str:
+    """Die zwei, drei Schritte jeder Willkommensmail — App holen, Link
+    antippen, Foto machen. Ohne öffentlichen App-Link bleibt der alte
+    Absatz mit der Apple-ID (startguide.testflight_absatz)."""
+    import startguide  # noqa: PLC0415
+    holen = startguide.app_link()
+    portal = bw.PORTAL_ORIGIN.rstrip("/") + "/portal"
+    if not holen:
+        return (f"Einmal antippen, dann bist du drin:\n\n    {link or portal}\n\n"
+                + startguide.testflight_absatz())
+    return ("So geht's los:\n\n"
+            f"    1. Die App holen (einmal „Installieren“ antippen):\n       {holen}\n\n"
+            f"    2. Diesen Link antippen — dann bist du drin:\n       {link or portal}\n\n"
+            f"    3. {zuletzt}\n\n"
+            "Am Computer geht derselbe Link — dann öffnet sich babu im Browser.\n")
 
 
 def testmonat_willkommen(email: str, salon: str, bis, ambassadorin: str | None = None) -> bool:
-    """Die Willkommensmail eines Testmonats — mit Link zum Passwortsetzen.
+    """Die Willkommensmail eines Testmonats — kurz, mit EINEM Link.
 
     Ein Baustein für alle Wege in den Testmonat (seit 08.10.2026): Code einer
     Ambassadorin, direkt über die Startseite, Einladung von der Warteliste,
-    „Zugang anlegen" in der Verwaltung. Bis dahin endete die Mail mit „Wenn
-    du weitermachen willst, antworte einfach auf diese Mail" — seit 03.10.
-    geht das im Portal unter „Weitermachen"."""
+    „Zugang anlegen" in der Verwaltung. Seit dem Abend des 08.10. ohne
+    Passwort-Schritt und ohne vierteiligen Leitfaden — die Mail hatte 233
+    Wörter, für eine Leserin am Telefon zwischen zwei Kundinnen."""
     link = _passwort_link(email)
     herkunft = f" — empfohlen von {ambassadorin}" if ambassadorin else ""
+    fuer = f" für „{salon}“" if salon else ""
     text = (f"Hallo,\n\n"
-            f"schön, dass du babu ausprobierst{herkunft}. "
-            f"Dein Zugang für „{salon}“ steht. Du hast {testmonat.TAGE} Tage "
-            f"babu komplett, bis einschließlich {bis.strftime('%d.%m.%Y')}; "
-            f"kostenlos, ohne Vertrag, kündigen musst du nichts.\n\n"
-            f"Beim ersten Öffnen legst du dein Passwort fest:\n\n"
-            f"    {link or bw.PORTAL_ORIGIN.rstrip('/') + '/portal'}\n\n")
-    import startguide  # noqa: PLC0415
-    text += (startguide.schritte(bw.PORTAL_ORIGIN) + "\n" + _app_absatz()
-             + f"\nNach den {testmonat.TAGE} Tagen bleibt alles da und lesbar. Wenn du "
-               "weitermachen willst, tippst du im Portal auf „Weitermachen“ — "
-               "dort wählst du dein Paket.\n")
+            f"schön, dass du babu ausprobierst{herkunft}. Dein Zugang{fuer} "
+            f"steht: {testmonat.TAGE} Tage alles kostenlos, bis "
+            f"{bis.strftime('%d.%m.%Y')}. Kündigen musst du nichts.\n\n"
+            + _los_geht_es(link)
+            + "\nNach den 30 Tagen bleibt alles da. Weitermachen geht im Portal "
+              "mit „Weitermachen“.\n")
     return _senden(email, "Dein babu-Testmonat startet", text)
 
 
@@ -991,6 +1042,16 @@ async def api_ambassador_einloesen(request: Request) -> Response:
     code = str(koerper.get("code", "") or "").strip()[:60]
     salon = str(koerper.get("salon", "") or "").strip()[:120]
     email = str(koerper.get("email", "") or "").strip().lower()[:200]
+    salon_genannt = bool(salon)
+    if not salon and "@" in email:
+        # Die Landing fragt seit 08.10.2026 nur noch die E-Mail. Ohne Namen
+        # aus der Einladung heißt der Betrieb vorläufig nach der Person
+        # („Salon Mara“) oder nach der Adresse — die Einrichtung fragt ihn ab.
+        slug_roh = re.sub(r"[^a-z0-9-]+", "", str(koerper.get("slug", "") or "").lower())[:24]
+        with bw._DB_LOCK, bw._db() as c:
+            p = c.execute("SELECT person FROM ambassador_einladung WHERE code=? AND slug=?",
+                          (code, slug_roh)).fetchone()
+        salon = (f"Salon {p[0]}" if p and p[0] else email.split("@", 1)[0])[:120]
     if not salon:
         return JSONResponse({"fehler": "Wie heißt dein Salon?"}, status_code=400)
     if koerper.get("agb") is not True:
@@ -1064,7 +1125,8 @@ async def api_ambassador_einloesen(request: Request) -> Response:
                      ON CONFLICT (code, email) DO NOTHING""",
                   (code, email, salon, bw._jetzt_iso()))
         _einladung_eingeloest(code, email, str(koerper.get("slug", "") or ""), c)
-    await bw.run_in_threadpool(testmonat_willkommen, email, salon, bis, ambassadorin)
+    await bw.run_in_threadpool(testmonat_willkommen, email,
+                               salon if salon_genannt else "", bis, ambassadorin)
     if bw.SUPPORT_MAIL:
         await bw.run_in_threadpool(
             _senden, bw.SUPPORT_MAIL, f"Testmonat gestartet: {salon}",
@@ -1726,6 +1788,7 @@ _ROUTEN = [
     ("POST", "/api/ambassador", api_ambassador_anlegen),
     ("GET", "/api/ambassador/liste", api_ambassador_liste),
     ("GET", "/api/ambassador/me", api_ambassador_me),
+    ("GET", "/api/ambassador/qr.png", api_ambassador_qr),
     ("POST", "/api/ambassador/link", api_ambassador_link),
     ("POST", "/api/ambassador/einladen", api_ambassador_einladen),
     ("GET", "/ambassador/{code}/{slug}", ambassador_landing),

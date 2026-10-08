@@ -39,6 +39,15 @@ def schritte(portal: str, art: str = "salon") -> str:
     )
 
 
+def app_link() -> str | None:
+    """Wohin „App holen“ führt: App Store, sonst der öffentliche
+    TestFlight-Link, sonst nirgends (dann bleibt nur der Weg über die
+    Apple-ID aus `testflight_absatz`)."""
+    import os  # noqa: PLC0415
+    return (os.environ.get("BABU_APPSTORE_LINK", "").strip()
+            or os.environ.get("BABU_TESTFLIGHT_LINK", "").strip() or None)
+
+
 def app_absatz() -> str:
     """Wie die App aufs iPhone kommt — der EINE Absatz für jede Willkommensmail.
 

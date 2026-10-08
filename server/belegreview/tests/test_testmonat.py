@@ -227,7 +227,7 @@ def test_einloesen_legt_zugang_mandant_und_testmonat_an(welt):
 
     an = [p for p in welt["post"] if p[0] == "meridian@example.org"]
     assert len(an) == 1
-    assert "/portal#reset/" in an[0][2] and "30 Tage" in an[0][2]
+    assert "/anmelden/" in an[0][2] and "30 Tage" in an[0][2]
     assert "Apple-ID" in an[0][2]             # ohne öffentlichen Link: alter Weg
 
 
@@ -278,9 +278,14 @@ def test_inaktiver_code_legt_nichts_an(welt):
     assert babu_web.nutzer_holen("meridian@example.org") is None
 
 
-def test_salonname_und_mail_sind_pflicht(welt):
-    assert _einloesen(salon="", welt=welt).status_code == 400
+def test_mail_ist_pflicht_der_salonname_nicht(welt):
     assert _einloesen(email="kein-at-zeichen", welt=welt).status_code == 400
+    # Seit 08.10.2026 fragt die Landing nur die E-Mail. Ohne Namen aus der
+    # Einladung steht vorläufig der Teil vor dem @ da; die Einrichtung fragt.
+    assert _einloesen(salon="", welt=welt).status_code == 200
+    with babu_web._DB_LOCK, babu_web._db() as c:  # noqa: SLF001
+        assert c.execute("SELECT name FROM mandant WHERE besitzer_un=?",
+                         ("meridian@example.org",)).fetchone()[0] == "meridian"
 
 
 def test_bestehendes_konto_bekommt_keinen_zweiten_test(welt):
@@ -548,7 +553,10 @@ def test_einloesen_merkt_die_fassung_der_texte(welt):
 def test_landing_fragt_nach_zustimmung(welt, monkeypatch):
     seite = TestClient(babu_web.app, base_url="https://testserver").get(
         f"/ambassador/{welt['code']}/salon").text
-    assert 'name="agb"' in seite and "/agb" in seite and "/datenschutz" in seite
+    # Zustimmung über den Knopf mit Hinweis darunter (seit 08.10.2026) — der
+    # Server verlangt weiter `agb: true` und schreibt die Fassung mit.
+    assert "stimmst du den" in seite and "agb:true" in seite
+    assert "/agb" in seite and "/datenschutz" in seite
 
 
 def test_landing_zeigt_bestaetigung_und_fehler(welt, monkeypatch):
@@ -583,7 +591,7 @@ def test_testmonat_direkt_ohne_code(welt):
     konto = babu_web.nutzer_holen("direkt@salon.de")
     assert konto["rolle"] == "salon" and konto["box"] is False
     an = [p for p in welt["post"] if p[0] == "direkt@salon.de"]
-    assert len(an) == 1 and "/portal#reset/" in an[0][2] and "empfohlen" not in an[0][2]
+    assert len(an) == 1 and "/anmelden/" in an[0][2] and "empfohlen" not in an[0][2]
     with babu_web._DB_LOCK, babu_web._db() as c:   # keiner Ambassadorin zugeordnet
         assert c.execute("SELECT COUNT(*) FROM ambassador_salon WHERE email=?",
                          ("direkt@salon.de",)).fetchone()[0] == 0

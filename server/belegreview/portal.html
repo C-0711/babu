@@ -171,6 +171,8 @@ main p, .leer, .karte > p{max-width:78ch}
   #konto-menu{position:fixed;top:calc(var(--kopf-h, 67px) + 6px);left:12px;right:12px;width:auto}
 }
 #konto-menu[hidden]{display:none}
+/* Ohne Ablage (Ambassadorin ohne Salon): Buchhaltung und Salon gibt es nicht. */
+#konto-menu.ohne-ablage .nur-ablage{display:none}
 #konto-menu .kopf{padding:11px 12px 9px;border-bottom:1px solid var(--gc-border);
   margin-bottom:5px}
 #konto-menu .kopf b{display:block;font:600 14px var(--gc-sans);word-break:break-all}
@@ -566,6 +568,9 @@ main p, .leer, .karte > p{max-width:78ch}
 .hin{margin-top:10px;display:inline-block;padding:7px 14px;border-radius:8px;
   background:var(--gc-accent-subtle);color:var(--gc-fg);font-weight:550;font-size:13px;
   border:none;cursor:pointer;font-family:inherit}
+a.hin{text-decoration:none}
+/* Das erste Foto ist der Schritt, auf den alles wartet — er trägt Tinte. */
+.erstes-foto a.hin{background:var(--gc-fg);color:#fff;font-size:15px;padding:11px 18px}
 
 /* Ambassador-Bereich (seit 02.10.2026): oben nur Betrag und Code, darunter
    je Salon ein Stufenband (eingeladen → Test → gezeichnet → 3 Monate), alles
@@ -742,6 +747,10 @@ details.amb-verw[open]>summary::after{transform:rotate(-135deg)}
 .bg-haupt{display:flex;width:100%;align-items:center;justify-content:center;gap:10px;min-height:56px;margin-top:16px;border-radius:14px;background:var(--gc-fg);color:#fff;font-size:17px;font-weight:600}
 .bg-neben{display:flex;width:100%;align-items:center;justify-content:center;min-height:50px;margin-top:8px;border-radius:14px;border:1px solid #d6cfc0;background:var(--gc-bg);color:var(--gc-fg);font-size:15.5px;font-weight:600}
 .bg-spaeter{display:block;width:100%;min-height:48px;font-size:15px;font-weight:600;color:var(--gc-accent-hover)}
+.bg-frage{margin:6px 0 2px;font-size:19px;font-weight:650;color:var(--gc-fg);line-height:1.3}
+.bg-qr{text-align:center;padding:8px 0 4px}
+.bg-qr a{text-decoration:none}
+.bg-qr img{display:block;margin:6px auto 4px;width:240px;max-width:100%;height:auto;image-rendering:pixelated}
 .bg-fertig{margin-top:12px;padding:20px 18px;border-radius:18px;background:var(--gc-bg);border:1px solid var(--gc-border);text-align:center}
 .bg-fertig b{display:block;margin-top:10px;font-size:18px;color:var(--gc-fg)}
 .bg-fertig p{margin:4px 0 0;font-size:15px}
@@ -1444,36 +1453,38 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
     </button>
     <div id="konto-menu" hidden role="menu">
       <div class="kopf"><b id="menu-un">…</b><span id="menu-rolle"></span></div>
-      <div class="menu-gruppe">Buchhaltung</div>
-      <button role="menuitem" onclick="menuGeh('#rechnungen')">
+      <div class="menu-gruppe nur-ablage">Buchhaltung</div>
+      <button role="menuitem" class="nur-ablage" onclick="menuGeh('#rechnungen')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-euro"/></svg> Rechnungen</button>
-      <button role="menuitem" onclick="menuGeh('#abschluss')">
+      <button role="menuitem" class="nur-ablage" onclick="menuGeh('#abschluss')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-diagramm"/></svg> Monatsabschluss</button>
-      <button role="menuitem" onclick="menuGeh('#export')">
+      <button role="menuitem" class="nur-ablage" onclick="menuGeh('#export')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-export"/></svg> Export für die Buchhaltung</button>
-      <button role="menuitem" id="menu-auslagen" hidden onclick="menuGeh('#auslagen')">
+      <button role="menuitem" class="nur-ablage" id="menu-auslagen" hidden onclick="menuGeh('#auslagen')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-euro"/></svg> Auslagen</button>
-      <button role="menuitem" id="menu-abschliessen" hidden onclick="location.href='/datev'">
+      <button role="menuitem" class="nur-ablage" id="menu-abschliessen" hidden onclick="location.href='/datev'">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-diagramm"/></svg> Prüfen und abschließen</button>
-      <div class="menu-gruppe">Dein Salon</div>
-      <button role="menuitem" onclick="menuGeh('#termine')">
+      <div class="menu-gruppe nur-ablage">Dein Salon</div>
+      <button role="menuitem" class="nur-ablage" onclick="menuGeh('#termine')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-kalender"/></svg> Termine</button>
-      <button role="menuitem" onclick="menuGeh('#whatsapp')">
+      <button role="menuitem" class="nur-ablage" onclick="menuGeh('#whatsapp')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-nachricht"/></svg> WhatsApp-Termine</button>
-      <button role="menuitem" onclick="menuGeh('#kundinnen')">
+      <button role="menuitem" class="nur-ablage" onclick="menuGeh('#kundinnen')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-person"/></svg> Kundinnen</button>
       <!-- Ein Eintrag für beide Team-Seiten (03.09.2026): dahinter liegen
            zwei Unterreiter — wer bei dir arbeitet, und Einstellen &
            Verträge. `#personal` bleibt als eigener Weg erreichbar. -->
-      <button role="menuitem" onclick="menuGeh('#team')">
+      <button role="menuitem" class="nur-ablage" onclick="menuGeh('#team')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-personen"/></svg> Dein Team</button>
-      <button role="menuitem" onclick="menuGeh('#vertraege')">
+      <button role="menuitem" class="nur-ablage" onclick="menuGeh('#vertraege')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-dokument"/></svg> Deine Verträge</button>
-      <button role="menuitem" onclick="menuGeh('#marketing')">
+      <button role="menuitem" class="nur-ablage" onclick="menuGeh('#marketing')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-megafon"/></svg> Marketing</button>
-      <button role="menuitem" onclick="menuGeh('#briefkopf')">
+      <button role="menuitem" class="nur-ablage" onclick="menuGeh('#briefkopf')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-briefkopf"/></svg> Dein Briefkopf</button>
-      <div class="trenner"></div>
+      <div class="trenner nur-ablage"></div>
+      <button role="menuitem" id="menu-empfehlen" hidden onclick="menuGeh('#empfehlen')">
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-megafon"/></svg> Empfehlen</button>
       <button role="menuitem" onclick="menuGeh('#einstellungen')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-zahnrad"/></svg> Konto &amp; Einstellungen</button>
       <button role="menuitem" id="menu-mandanten" hidden onclick="menuGeh('#mandanten')">
@@ -1557,6 +1568,9 @@ code{font:12px var(--gc-mono);overflow-wrap:anywhere;word-break:break-word}
   <div class="fuss">
     <details open data-gruppe="Konto">
       <summary>Konto</summary>
+      <!-- Nur für Ambassadorinnen; ladeAmbassador() schaltet ihn ein (seit 08.10.2026). -->
+      <button type="button" id="nav-empfehlen" hidden title="Empfehlen" onclick="menuGeh('#empfehlen')">
+        <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-megafon"/></svg><span class="txt">Empfehlen</span></button>
       <button type="button" title="Konto &amp; Einstellungen" onclick="menuGeh('#einstellungen')">
         <svg class="ik sym" viewBox="0 0 24 24"><use href="#ik-zahnrad"/></svg><span class="txt">Konto &amp; Einstellungen</span></button>
       <button type="button" id="nav-verwaltung" hidden title="Zugänge verwalten" onclick="menuGeh('#verwaltung')">
@@ -2348,6 +2362,15 @@ function boxDa(){ return meineBox || !!(aktiverMandant && aktiverMandant.id); }
 function boxZustandZeigen(){
   document.querySelectorAll("nav button").forEach(b => b.hidden = !boxDa());
   $("#hochladen-knopf").hidden = !boxDa();
+  /* Ohne Ablage führen „Buchhaltung" und „Dein Salon" nur zurück auf die
+     Startseite (seit 08.10.2026: eine Ambassadorin ohne eigenen Salon sah
+     zwölf Menüpunkte, die nichts taten). Die Kanzlei regelt das selbst in
+     mandantChipAktualisieren. */
+  if (!istKanzlei()){
+    $("#nav-gruppe-buchhaltung").hidden = !boxDa();
+    $("#nav-gruppe-salon").hidden = !boxDa();
+    $("#konto-menu").classList.toggle("ohne-ablage", !boxDa());
+  }
   // Der Weg zur Kanzlei hängt nicht an der eigenen Belegbox — wer Betriebe
   // betreut, hat oft selbst gar keine.
   $("#reiter-kanzlei").hidden = !istKanzlei();
@@ -2431,9 +2454,11 @@ $("#login-form").addEventListener("submit", async ev => {
     }
     sitzungUebernehmen(d);
     $("#login-passwort").value = "";
-    // Die Anmeldung sagt nichts über betreute Betriebe — für eine Kanzlei
-    // entscheidet die Zahl aber, wo die Seite aufgeht.
-    if (istKanzlei()) await sitzungHolen();
+    /* Die Anmeldung sagt nichts über betreute Betriebe und nichts darüber,
+       ob jemand selbst abschließt — beides entscheidet, was „Heute" sagt.
+       Bis 08.10.2026 nur für die Kanzlei geholt: ein Salon im Test las
+       danach „Deine Kanzlei braucht die Belege …", ohne eine zu haben. */
+    await sitzungHolen();
     zeigeApp();
   }catch{ f.textContent = "Gerade keine Verbindung — gleich nochmal versuchen."; f.style.display = "block"; }
   finally{ knopf.disabled = false; knopf.textContent = "Anmelden"; }
@@ -2521,6 +2546,9 @@ $("#reset-form").addEventListener("submit", async ev => {
       f.style.display = "block";
       return;
     }
+    /* Der Link hat sie schon angemeldet (seit 08.10.2026) — direkt hinein,
+       statt ein drittes Mal E-Mail und Passwort zu tippen. */
+    if (d.angemeldet){ location.hash = ""; location.reload(); return; }
     $("#reset-form").hidden = true;
     $("#reset-erfolg").hidden = false;
   }catch{
@@ -2564,6 +2592,9 @@ function routen(){
   /* Zurück vom Bezahlen: #abo-danke/<sitzung> zeigt die Seite „Weitermachen". */
   const aboDanke = ziel === "abo-danke";
   let name = aboDanke ? "abo" : ansichten[ziel] !== undefined ? ziel : startAnsicht();
+  /* „Empfehlen" ist keine eigene Seite: der Bereich der Ambassadorin steht
+     auf „Heute" (mit Salon) bzw. auf der Startseite ohne Ablage. */
+  if (ziel === "empfehlen"){ _ambHin = true; name = boxDa() ? "heute" : "gesperrt"; }
   if (!boxDa() && !OHNE_BOX_ERLAUBT.includes(name)) name = istKanzlei() ? "mandanten" : "gesperrt";
   document.querySelectorAll(".ansicht").forEach(a => a.classList.remove("an"));
   document.querySelectorAll("nav button").forEach(b =>
@@ -8551,6 +8582,8 @@ let _ambCode = "";
 let _ambDaten = null;
 let _ambSpaeter = new Set();
 let _ambMeldung = "";
+/* `#empfehlen` (Menü, Link aus der App): nach dem Laden zum Bereich scrollen. */
+let _ambHin = false;
 const BG_DRINGEND = new Set(["test_endet", "test_vorbei"]);
 const BG_SCHRITTE = [
   ["Du lädst ein", "Name und Handynummer eintippen, schicken."],
@@ -8571,6 +8604,11 @@ async function ladeAmbassador(zielSel){
     _ambCode = d.code;
     ambZeichnen(ziel);
     ziel.hidden = false;
+    $("#nav-empfehlen").hidden = false;
+    $("#menu-empfehlen").hidden = false;
+    /* Ohne eigenen Salon ist sie nicht „Dein Salon" — sie empfiehlt. */
+    if (!boxDa() && !istKanzlei()){ $("#menu-rolle").textContent = "Empfiehlt babu"; $("#nav-rolle").textContent = "Empfiehlt babu"; }
+    if (_ambHin){ _ambHin = false; ziel.scrollIntoView({behavior: "smooth", block: "start"}); }
     return true;
   }catch{ ziel.hidden = true; return false; }
 }
@@ -8580,6 +8618,9 @@ function ambZeichnen(ziel){
   const warOffen = [...ziel.querySelectorAll("details[open]")].map(x => x.id);
   const heute = (d.heute || []).filter(a => !_ambSpaeter.has(a.nr));
   const a = heute[0];
+  /* Noch niemand eingeladen: dann ist das Einladen die Aufgabe des Tages,
+     und das Formular steht gleich offen da (seit 08.10.2026). */
+  const leer = !(d.kontakte || []).length && !(d.salons || []).length;
   /* Ohne Kontodaten wird nichts überwiesen — dann verspricht die Zeile auch
      keinen Termin, sondern sagt, was fehlt (seit 03.10.2026). */
   /* Der Termin kommt aus `erwartet`: dem Lauf, der das Geld wirklich bringt
@@ -8618,11 +8659,16 @@ function ambZeichnen(ziel){
           ${a.weitermachen ? `<button type="button" class="bg-neben" onclick="ambWeitermachen(${Number(a.nr)})">${esc(a.person)} will weitermachen</button>` : ""}
           <button type="button" class="bg-spaeter" onclick="ambSpaeter(${Number(a.nr)})">Später</button>
         </article>`
+      /* Wer noch niemanden eingeladen hat, hat nicht „alles erledigt" —
+         sie hat genau eine Aufgabe (seit 08.10.2026). */
+      : leer && d.aktiv !== false
+      ? `<div class="bg-fertig"><b>Lade deinen ersten Salon ein</b>
+          <p>Kennst du eine Kollegin, die Belege hasst? Schick ihr babu — 30 Tage gratis. Gleich hier drunter.</p></div>`
       : `<div class="bg-fertig"><svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true"><circle cx="22" cy="22" r="22" fill="#6f8a6e"></circle><path d="M13 22.5l6 6 12-13" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></svg>
           <b>Alles erledigt für heute</b><p>Morgen schaut babu wieder nach deinen Salons und sagt dir Bescheid.</p></div>`}
       ${d.aktiv === false ? `<div class="bg-karte" style="border-color:var(--gc-warn)">
           <p class="bg-grund dringend">Dein Code ist gerade abgeschaltet. Neue Salons können sich darüber nicht anmelden — deine Salons, dein Geld und deine Gutschriften bleiben hier.</p></div>`
-      : `<details class="bg-einladen" id="bg-einladen"><summary>+ Neuen Salon einladen</summary>
+      : `<details class="bg-einladen" id="bg-einladen" ${leer ? "open" : ""}><summary>+ Neuen Salon einladen</summary>
         <div class="bg-einladen-inhalt">
           <label class="bg-feld">Wen lädst du ein?<input id="bg-person" type="text" autocomplete="off" placeholder="Vorname"></label>
           <label class="bg-feld">Handynummer<input id="bg-telefon" type="tel" inputmode="tel" autocomplete="off" placeholder="0171 …"></label>
@@ -8638,6 +8684,14 @@ function ambZeichnen(ziel){
           <span class="bg-link-knoepfe"><button type="button" class="bg-zeilenknopf" onclick="ambLinkKopieren(this)">Kopieren</button>
           <button type="button" class="bg-zeilenknopf" id="bg-link-teilen" hidden onclick="ambLinkTeilen()">Teilen</button></span>
         </div>
+        <details id="bg-qr"><summary class="bg-leise">QR-Code für Spiegel, Theke und Flyer</summary>
+          <div class="bg-qr">
+            <img src="/api/ambassador/qr.png" alt="QR-Code zu deiner Einladung" width="240" height="240">
+            <p class="bg-hinweis">Ausdrucken und an den Spiegel kleben — wer ihn mit dem Handy scannt, landet bei deiner Einladung.
+              Auf dem iPhone: lange auf das Bild drücken, dann „Zu Fotos hinzufügen“.</p>
+            <a class="bg-zeilenknopf" href="/api/ambassador/qr.png?laden=1" download="babu-einladung.png">Bild speichern</a>
+          </div>
+        </details>
       </div>`}
       <div class="bg-titel"><h3>Deine Salons</h3></div>
       ${(d.kontakte || []).length ? `<ul class="bg-liste">${d.kontakte.map(k => ambKontaktZeile(k)).join("")}</ul>`
@@ -8648,9 +8702,10 @@ function ambZeichnen(ziel){
         <label class="abo-zustimmung" style="margin-top:10px"><input type="checkbox" ${d.heute_mail !== false ? "checked" : ""}
           onchange="ambHeuteMail(this.checked)"><span>Morgens eine Mail, wenn etwas zu tun ist</span></label>
       </details>
-      <details id="bg-profil" ontoggle="if(this.open) ambProfilLaden()"><summary class="bg-leise">Wohin soll dein Geld?${d.profil_vollstaendig ? " ✓" : ""}</summary>
+      ${g.offen > 0 || d.profil_vollstaendig || (d.profil_fehlt || []).length < 4
+        ? `<details id="bg-profil" ontoggle="if(this.open) ambProfilLaden()"><summary class="bg-leise">${d.profil_vollstaendig ? "Dein Konto ✓" : "Wohin soll dein Geld?"}</summary>
         <div class="bg-einladen-inhalt" id="bg-profil-inhalt"><div class="skelett"></div></div>
-      </details>
+      </details>` : ""}
       <p class="bg-code">Dein Code zum Weitersagen: <b>${esc(d.code)}</b></p>
     </div>`;
   for (const id of warOffen){ const x = document.getElementById(id); if (x) x.open = true; }
@@ -8694,52 +8749,130 @@ function ambProfilOeffnen(){
   x.open = true;
   x.scrollIntoView({behavior: "smooth", block: "start"});
 }
+/* Seit 08.10.2026 eine Frage je Schritt, in Alltagssprache — statt neun
+   Feldern mit „umsatzsteuerpflichtig", „§ 19 UStG" und „USt-IdNr." auf
+   einmal. Was babu schon weiß (Anschrift und Steuernummer des eigenen
+   Salons), steht schon drin. Gespeichert wird am Ende in einem Rutsch. */
+let _bp = null;
 async function ambProfilLaden(){
   const ziel = document.getElementById("bg-profil-inhalt");
   if (!ziel) return;
   let p = {};
   try{ p = await (await api("/api/ambassador/profil")).json(); }catch{}
-  const wahl = p.steuerstatus_wahl || {ust: "umsatzsteuerpflichtig", klein: "Kleinunternehmerin", privat: "Privatperson"};
-  const feld = (id, titel, wert, art = "text", extra = "") =>
-    `<label class="bg-feld">${titel}<input id="${id}" type="${art}" value="${esc(wert || "")}" ${extra}></label>`;
-  ziel.innerHTML = `
-    ${feld("bp-inhaber", "Kontoinhaberin", p.kontoinhaber, "text", 'autocomplete="name"')}
-    ${feld("bp-iban", "IBAN", "", "text", `inputmode="text" autocomplete="off" placeholder="${esc(p.iban || "DE…")}"`)}
-    ${feld("bp-strasse", "Straße und Hausnummer", p.strasse, "text", 'autocomplete="street-address"')}
-    <div style="display:flex;gap:8px">${feld("bp-plz", "PLZ", p.plz, "text", 'inputmode="numeric" autocomplete="postal-code" style="max-width:90px"')}
-      ${feld("bp-ort", "Ort", p.ort, "text", 'autocomplete="address-level2"')}</div>
-    <fieldset class="bg-feld" style="border:0;padding:0;margin:6px 0"><legend>Wie arbeitest du?</legend>
-      ${Object.entries(wahl).map(([k, t], i) => `<label class="abo-zustimmung"><input type="radio" name="bp-status" value="${i}"
-         ${p.steuerstatus === k ? "checked" : ""}><span>${esc(t)}</span></label>`).join("")}</fieldset>
-    ${feld("bp-stnr", "Steuernummer (nicht nötig als Privatperson)", p.steuernummer)}
-    ${feld("bp-ustid", "USt-IdNr. (falls du eine hast)", p.ust_id)}
-    <label class="abo-zustimmung"><input type="checkbox" id="bp-zustimmung" ${p.zustimmung_am ? "checked" : ""}>
-      <span>Ich stimme der <a href="/ambassador/vereinbarung" target="_blank" rel="noopener">Ambassador-Vereinbarung</a> zu
-      und bin einverstanden, dass babu meine Provision per Gutschrift abrechnet.</span></label>
-    <button type="button" class="bg-haupt" onclick="ambProfilSpeichern()">Speichern</button>
-    <p class="bg-hinweis" id="bp-meldung" role="status">${p.vorhanden && p.fehlt && p.fehlt.length ? "Es fehlt noch: " + esc(p.fehlt.join(", ")) : ""}</p>`;
-  ziel.dataset.status = JSON.stringify(Object.keys(wahl));
-  ziel.dataset.iban = p.vorhanden ? "1" : "";
+  let e = {};
+  if (boxDa()){ try{ e = await (await api("/api/einstellungen")).json(); }catch{} }
+  const an = String(e.anschrift || "").split("\n").map(x => x.trim()).filter(Boolean);
+  const ortZeile = an.find(x => /^\d{5}\s/.test(x)) || "";
+  _bp = {schritt: p.vorhanden && !(p.fehlt || []).length ? "fertig" : "konto",
+    kontoinhaber: p.kontoinhaber || "", iban: "", iban_alt: p.vorhanden ? (p.iban || "") : "",
+    strasse: p.strasse || an.find(x => x !== ortZeile) || "",
+    plz: p.plz || ortZeile.slice(0, 5), ort: p.ort || ortZeile.slice(6).trim(),
+    steuerstatus: p.steuerstatus || (e.kleinunternehmer === true || e.kleinunternehmer === "ja" ? "klein" : ""),
+    steuernummer: p.steuernummer || e.steuernummer || "", ust_id: p.ust_id || "",
+    zustimmung: !!p.zustimmung_am, meldung: ""};
+  ambProfilZeichnen();
 }
-async function ambProfilSpeichern(){
+function bpFeld(id, titel, wert, extra = ""){
+  return `<label class="bg-feld">${titel}<input id="${id}" value="${esc(wert || "")}" ${extra}></label>`;
+}
+function ambProfilZeichnen(){
   const ziel = document.getElementById("bg-profil-inhalt");
-  const schluessel = JSON.parse(ziel.dataset.status || "[]");
-  const gewaehlt = document.querySelector('input[name="bp-status"]:checked');
-  const iban = $("#bp-iban").value.trim();
-  const meldung = $("#bp-meldung");
-  if (!iban && ziel.dataset.iban){ meldung.textContent = "Bitte die IBAN noch einmal eintragen — aus Sicherheitsgründen zeigen wir sie nicht an."; return; }
+  if (!ziel || !_bp) return;
+  const b = _bp;
+  const meldung = b.meldung ? `<p class="bg-hinweis" role="status" style="color:var(--gc-danger)">${esc(b.meldung)}</p>` : "";
+  const zurueck = ziel => `<button type="button" class="bg-spaeter" onclick="bpGeh('${ziel}')">Zurück</button>`;
+  let h = "";
+  if (b.schritt === "fertig")
+    h = `<p class="bg-hinweis" style="margin-top:6px">Dein Geld geht an <b>${esc(b.kontoinhaber)}</b> · ${esc(b.iban_alt)}.</p>
+      <button type="button" class="bg-neben" onclick="bpGeh('konto')">Ändern</button>`;
+  else if (b.schritt === "konto")
+    h = `<p class="bg-frage">Auf welches Konto soll dein Geld?</p>
+      ${bpFeld("bp-inhaber", "Name auf dem Konto", b.kontoinhaber, 'autocomplete="name"')}
+      ${bpFeld("bp-iban", "IBAN", b.iban, `autocomplete="off" autocapitalize="characters" placeholder="${esc(b.iban_alt || "DE…")}"`)}
+      <p class="bg-hinweis">Die IBAN steht in deiner Banking-App oder auf der Bankkarte hinten.</p>
+      ${meldung}<button type="button" class="bg-haupt" onclick="bpWeiter('konto')">Weiter</button>`;
+  else if (b.schritt === "adresse")
+    h = `<p class="bg-frage">Wo wohnst du?</p>
+      ${bpFeld("bp-strasse", "Straße und Hausnummer", b.strasse, 'autocomplete="street-address"')}
+      <div style="display:flex;gap:8px">${bpFeld("bp-plz", "PLZ", b.plz, 'inputmode="numeric" autocomplete="postal-code" style="max-width:100px"')}
+        ${bpFeld("bp-ort", "Ort", b.ort, 'autocomplete="address-level2"')}</div>
+      ${meldung}<button type="button" class="bg-haupt" onclick="bpWeiter('adresse')">Weiter</button>${zurueck("konto")}`;
+  else if (b.schritt === "geschaeft")
+    h = `<p class="bg-frage">Hast du ein eigenes Geschäft?</p>
+      <p class="bg-hinweis">Zum Beispiel deinen eigenen Salon oder du arbeitest selbständig auf eigene Rechnung.</p>
+      <button type="button" class="bg-haupt" onclick="bpGeschaeft(true)">Ja</button>
+      <button type="button" class="bg-neben" onclick="bpGeschaeft(false)">Nein, ich bin angestellt oder privat</button>${zurueck("adresse")}`;
+  else if (b.schritt === "mwst")
+    h = `<p class="bg-frage">Steht auf deinen Rechnungen Mehrwertsteuer?</p>
+      <p class="bg-hinweis">Schau auf eine Rechnung, die du einer Kundin gibst: steht dort „19 % MwSt.“?</p>
+      <button type="button" class="bg-haupt" onclick="bpMwst('ust')">Ja</button>
+      <button type="button" class="bg-neben" onclick="bpMwst('klein')">Nein</button>
+      <button type="button" class="bg-neben" onclick="bpGeh('mwst_hilfe')">Weiß ich nicht</button>${zurueck("geschaeft")}`;
+  else if (b.schritt === "mwst_hilfe")
+    h = `<p class="bg-frage">Kein Problem.</p>
+      <p class="bg-hinweis">Steht auf deinen Rechnungen „Kleinunternehmer“ oder gar keine Steuer, dann ist es <b>Nein</b>.
+        Steht dort eine Steuer mit Prozent, dann <b>Ja</b>. Wenn du unsicher bist: dein Steuerbüro weiß es in einer Minute —
+        du kannst das hier auch später fertig machen.</p>
+      <button type="button" class="bg-neben" onclick="bpGeh('mwst')">Zurück zur Frage</button>`;
+  else if (b.schritt === "steuernummer")
+    h = `<p class="bg-frage">Deine Steuernummer</p>
+      ${bpFeld("bp-stnr", "Steuernummer", b.steuernummer, 'inputmode="numeric" autocomplete="off" placeholder="z. B. 99/123/45678"')}
+      <p class="bg-hinweis">Sie steht oben auf jedem Brief vom Finanzamt.</p>
+      ${b.steuerstatus === "ust" ? bpFeld("bp-ustid", "USt-IdNr. — nur falls du eine hast (fängt mit DE an)", b.ust_id, 'autocomplete="off" autocapitalize="characters"') : ""}
+      ${meldung}<button type="button" class="bg-haupt" onclick="bpWeiter('steuernummer')">Weiter</button>${zurueck("mwst")}`;
+  else if (b.schritt === "ok")
+    h = `<p class="bg-frage">Fast fertig.</p>
+      <p class="bg-hinweis">Für jede Überweisung schreibt babu dir eine Abrechnung — du musst keine Rechnung schreiben.</p>
+      <label class="abo-zustimmung"><input type="checkbox" id="bp-zustimmung" ${b.zustimmung ? "checked" : ""}>
+        <span>Einverstanden. Die Regeln stehen in der <a href="/ambassador/vereinbarung" target="_blank" rel="noopener">Vereinbarung</a>.</span></label>
+      ${meldung}<button type="button" class="bg-haupt" onclick="ambProfilSpeichern()">Speichern</button>
+      ${zurueck(b.steuerstatus === "privat" ? "geschaeft" : "steuernummer")}`;
+  ziel.innerHTML = h;
+  const erstes = ziel.querySelector("input:not([type=checkbox])");
+  if (erstes && b.schritt !== "fertig") erstes.focus({preventScroll: true});
+}
+function bpGeh(schritt){ _bp.schritt = schritt; _bp.meldung = ""; ambProfilZeichnen(); }
+function bpWeiter(schritt){
+  const b = _bp, wert = id => ($("#" + id) ? $("#" + id).value.trim() : "");
+  if (schritt === "konto"){
+    b.kontoinhaber = wert("bp-inhaber"); b.iban = wert("bp-iban").replace(/\s+/g, "").toUpperCase();
+    if (!b.kontoinhaber){ b.meldung = "Wie heißt du auf dem Konto?"; return ambProfilZeichnen(); }
+    if (!b.iban && !b.iban_alt){ b.meldung = "Die IBAN fehlt noch."; return ambProfilZeichnen(); }
+    if (b.iban && !/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(b.iban)){ b.meldung = "Die IBAN sieht nicht richtig aus — sie fängt mit DE an."; return ambProfilZeichnen(); }
+    return bpGeh("adresse");
+  }
+  if (schritt === "adresse"){
+    b.strasse = wert("bp-strasse"); b.plz = wert("bp-plz"); b.ort = wert("bp-ort");
+    if (!b.strasse || !b.ort){ b.meldung = "Bitte Straße und Ort eintragen."; return ambProfilZeichnen(); }
+    if (!/^\d{5}$/.test(b.plz)){ b.meldung = "Die Postleitzahl hat fünf Ziffern."; return ambProfilZeichnen(); }
+    return bpGeh("geschaeft");
+  }
+  if (schritt === "steuernummer"){
+    b.steuernummer = wert("bp-stnr"); b.ust_id = wert("bp-ustid").replace(/\s+/g, "").toUpperCase();
+    if (!b.steuernummer && !b.ust_id){ b.meldung = "Die Steuernummer fehlt noch."; return ambProfilZeichnen(); }
+    return bpGeh("ok");
+  }
+}
+function bpGeschaeft(ja){
+  if (ja) return bpGeh("mwst");
+  _bp.steuerstatus = "privat"; bpGeh("ok");
+}
+function bpMwst(status){ _bp.steuerstatus = status; bpGeh("steuernummer"); }
+async function ambProfilSpeichern(){
+  const b = _bp;
+  b.zustimmung = $("#bp-zustimmung").checked;
+  if (!b.zustimmung){ b.meldung = "Bitte einmal das Häkchen setzen."; return ambProfilZeichnen(); }
+  if (!b.iban && b.iban_alt){ b.meldung = "Bitte die IBAN noch einmal eintragen — wir zeigen sie aus Sicherheitsgründen nicht an."; b.schritt = "konto"; return ambProfilZeichnen(); }
   try{
     const r = await api("/api/ambassador/profil", {method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({kontoinhaber: $("#bp-inhaber").value, iban, strasse: $("#bp-strasse").value,
-        plz: $("#bp-plz").value.trim(), ort: $("#bp-ort").value,
-        steuerstatus: gewaehlt ? schluessel[Number(gewaehlt.value)] : "",
-        steuernummer: $("#bp-stnr").value, ust_id: $("#bp-ustid").value,
-        zustimmung: $("#bp-zustimmung").checked})});
+      body: JSON.stringify({kontoinhaber: b.kontoinhaber, iban: b.iban, strasse: b.strasse, plz: b.plz,
+        ort: b.ort, steuerstatus: b.steuerstatus, steuernummer: b.steuerstatus === "privat" ? "" : b.steuernummer,
+        ust_id: b.steuerstatus === "ust" ? b.ust_id : "", zustimmung: true})});
     const d = await r.json();
-    if (!r.ok){ meldung.textContent = d.fehler || "Ging gerade nicht."; return; }
-    meldung.textContent = "Gespeichert. Danke!";
+    if (!r.ok){ b.meldung = d.fehler || "Ging gerade nicht."; return ambProfilZeichnen(); }
+    _ambMeldung = "Gespeichert — dein Geld kommt auf dein Konto.";
     ladeAmbassador(_ambZiel);
-  }catch{ meldung.textContent = "Gerade keine Verbindung — gleich nochmal versuchen."; }
+  }catch{ b.meldung = "Gerade keine Verbindung — gleich nochmal versuchen."; ambProfilZeichnen(); }
 }
 async function ambHeuteMail(an){
   try{
@@ -9047,7 +9180,14 @@ async function ladeTestmonat(){
         <p>babu komplett und kostenlos, bis einschließlich ${esc(datum(t.bis))}.</p>
         ${t.tage_uebrig <= 7 ? knopf : ""}`;
     if (!html){ ziel.hidden = true; return; }
-    ziel.innerHTML = `<div class="karte" style="margin-top:14px">${html}</div>`;
+    /* Noch kein Beleg: der nächste Schritt ist das erste Foto (seit 08.10.2026). */
+    const f = d.erstes_foto;
+    const foto = f ? `<div class="karte erstes-foto" style="margin-top:14px">
+        <h3>Mach dein erstes Foto</h3>
+        <p>Kassenbon, Rechnung, Brief vom Amt: Kamera drauf, fertig. Am leichtesten mit der babu-App.</p>
+        ${f.app ? `<a class="hin" href="${esc(f.app)}">App holen ›</a> ` : ""}
+        <button class="hin" onclick="$('#hochladen-knopf').click()">Hier hochladen ›</button></div>` : "";
+    ziel.innerHTML = foto + `<div class="karte" style="margin-top:14px">${html}</div>`;
     ziel.hidden = false;
   }catch{ ziel.hidden = true; }
 }

@@ -4,6 +4,7 @@ GET /
 GET /agb
 GET /ambassador/{code}/{slug}
 GET /ambassador/vereinbarung
+GET /anmelden/{token}
 GET /api/abgleich/{monat}
 GET /api/ablage
 GET /api/ablage/suche
@@ -15,6 +16,7 @@ GET /api/ambassador/gutschrift/{nr}
 GET /api/ambassador/liste
 GET /api/ambassador/me
 GET /api/ambassador/profil
+GET /api/ambassador/qr.png
 GET /api/anlagen
 GET /api/anlagen/{jahr}.csv
 GET /api/arbeitsvertrag/arten
@@ -156,6 +158,8 @@ POST /api/angaben/{stamm}
 POST /api/anlagen
 POST /api/anlagen/{kennung}
 POST /api/anmelden
+POST /api/anmeldelink
+POST /api/anmeldelink/einloesen
 POST /api/app-anmelden
 POST /api/arbeitsvertrag/entwurf
 POST /api/aufnahme

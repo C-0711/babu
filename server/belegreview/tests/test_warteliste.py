@@ -209,7 +209,7 @@ def test_salon_von_der_warteliste_bekommt_betrieb_und_willkommensmail(verwaltung
     assert r.json()["mail"] is True
     an_salon = [t for (an, _b, t) in gesendet if an == "salon@example.org"]
     assert len(an_salon) == 1
-    assert "/portal#reset/" in an_salon[0] and "SupremeStudio" in an_salon[0]
+    assert "/anmelden/" in an_salon[0] and "SupremeStudio" in an_salon[0]
     assert "Steuerbüro" not in an_salon[0] and "30 Tage" in an_salon[0]
     assert "antworte einfach auf diese Mail" not in an_salon[0]   # „Weitermachen" statt Antwort
     with bw._DB_LOCK, bw._db() as c:

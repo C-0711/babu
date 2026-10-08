@@ -36,8 +36,15 @@ def test_jeder_abschnitt_ist_registriert():
     assert not fehlt, f"<section> da, aber nicht in ansichten: {sorted(fehlt)}"
 
 
+def _umleitungen() -> set[str]:
+    """Ziele, die `routen()` ausdrücklich umleitet — „empfehlen" ist der
+    Bereich der Ambassadorin auf Heute bzw. der Startseite ohne Ablage."""
+    return set(re.findall(r'\(ziel === "(\w+)"\)', PORTAL))
+
+
 def test_jeder_menuknopf_fuehrt_irgendwohin():
-    fehlt = _menuziele() - _ansichten()
+    assert "empfehlen" in _umleitungen()
+    fehlt = _menuziele() - _ansichten() - _umleitungen()
     assert not fehlt, f"Menüziel ohne Ansicht — landet stumm auf Heute: {sorted(fehlt)}"
 
 
