@@ -146,6 +146,7 @@ struct ListeView: View {
 
     /// ‹ August 2026 › — wie im Kassenbuch: links geht es in die
     /// Vergangenheit, rechts nach vorn. „Ohne Datum" ist das letzte Blatt.
+    /// Antippen des Monatsnamens öffnet die Liste aller Monate zum direkten Springen.
     private var monatsLeiste: some View {
         let index = monate.firstIndex(of: aktiverMonat) ?? 0
         return HStack {
@@ -156,9 +157,32 @@ struct ListeView: View {
             .disabled(index >= monate.count - 1)
             .accessibilityLabel("Früherer Monat")
             Spacer()
-            Text(aktiverMonat.isEmpty ? "Ohne Datum" : belegMonatTitel(aktiverMonat))
-                .font(.title3.weight(.semibold))
-                .fontDesign(.serif)
+            Menu {
+                ForEach(monate, id: \.self) { monat in
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            gewaehlterMonat = monat
+                        }
+                    } label: {
+                        HStack {
+                            Text(monat.isEmpty ? "Ohne Datum" : belegMonatTitel(monat))
+                            if monat == aktiverMonat {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(aktiverMonat.isEmpty ? "Ohne Datum" : belegMonatTitel(aktiverMonat))
+                        .font(.title3.weight(.semibold))
+                        .fontDesign(.serif)
+                    Image(systemName: "chevron.down")
+                        .font(.caption2)
+                        .foregroundStyle(GC.muted)
+                }
+            }
+            .accessibilityLabel("Monat wählen")
             Spacer()
             Button { blaettere(-1) } label: {
                 Image(systemName: "chevron.right")
