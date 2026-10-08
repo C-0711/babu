@@ -129,7 +129,7 @@ async def api_ambassador_anlegen(request: Request) -> Response:
                     f"babu komplett und kostenlos für sie, Provision für dich, sobald sie "
                     f"bleiben.\n\n{zugang}\n")
             await bw.run_in_threadpool(
-                postfach.senden, email, "babu — dein Ambassador-Zug", text,
+                postfach.senden, email, "babu — dein Ambassador-Zugang", text,
                 stempel=time.strftime("%Y%m%d-%H%M%S"))
         except Exception as ex:  # noqa: BLE001
             print(f"[ambassador] Mail an {email} fehlgeschlagen: {ex!r}", flush=True)

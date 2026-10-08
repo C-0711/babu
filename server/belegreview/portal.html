@@ -81,6 +81,9 @@ nav button.an{background:#eae7de;color:var(--gc-fg);font-weight:600}
   font-weight:600;font-size:0;padding:0;width:38px;height:38px;border-radius:50%;
   display:grid;place-items:center}
 #hochladen-knopf::before{content:"+";font:600 20px/1 var(--gc-sans)}
+/* `display:grid` oben schlägt das [hidden] des Browsers — ohne diese Zeile
+   stand das Plus auch bei Zugängen ohne Ablage da (Ambassadorinnen, 08.10.2026). */
+#hochladen-knopf[hidden]{display:none}
 #hochladen-knopf:hover{background:#000}
 /* Die Uhrzeit ist Technik-Telemetrie — im Premium-Portal unsichtbar. */
 #stand{display:none}
