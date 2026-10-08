@@ -160,8 +160,8 @@ def test_im_menue_buchhaltung_fuehrt_ein_weg_zum_abschluss():
     leiste = roh[roh.index('id="nav-gruppe-buchhaltung"'):]
     leiste = leiste[:leiste.index("</details>")]
     assert 'id="nav-abschliessen"' in leiste and "location.href='/datev'" in leiste
-    menue = roh[roh.index('<div class="menu-gruppe">Buchhaltung</div>'):]
-    menue = menue[:menue.index('<div class="menu-gruppe">Dein Salon</div>')]
+    menue = roh[roh.index('<div class="menu-gruppe nur-ablage">Buchhaltung</div>'):]
+    menue = menue[:menue.index('<div class="menu-gruppe nur-ablage">Dein Salon</div>')]
     assert 'id="menu-abschliessen"' in menue and "location.href='/datev'" in menue
     assert '$("#nav-abschliessen").hidden = !buchhaltungSelbst()' in roh
     assert '$("#menu-abschliessen").hidden = !buchhaltungSelbst()' in roh

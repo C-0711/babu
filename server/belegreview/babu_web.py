@@ -10049,8 +10049,8 @@ def _beginn_bei_babu(un: str) -> str | None:
     mandant_id = _AKTIVER_MANDANT.get(None)
     if mandant_id is None and rolle(un) == "admin":
         return None
-    # `rolle`/`salon_von` nehmen das Schloss selbst — deshalb VOR dem with.
-    inhaber = None if mandant_id is not None else salon_von(un)
+    # `rolle`/`salon_von_aktiv` nehmen das Schloss selbst — deshalb VOR dem with.
+    inhaber = None if mandant_id is not None else salon_von_aktiv(un)
     with _DB_LOCK, _db() as c:
         if mandant_id is not None:
             z = c.execute("SELECT angelegt FROM mandant WHERE id=?", (mandant_id,)).fetchone()

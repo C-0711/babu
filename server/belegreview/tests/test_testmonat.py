@@ -13,6 +13,7 @@ nie die eines anderen Betriebs (Vorfall 16.–27.09.2026).
 import datetime as dt
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -614,7 +615,9 @@ def test_monatsfreigabe_nicht_vor_dem_beginn(welt):
     import monatslauf as ml
     assert _direkt(email="frisch@salon.de").status_code == 200
     beginn = babu_web._beginn_bei_babu("frisch@salon.de")  # noqa: SLF001
-    assert beginn and beginn[:10] == dt.date.today().isoformat()
+    # Die Stempel sind UTC — zwischen Mitternacht und 1 bzw. 2 Uhr Ortszeit
+    # ist das noch „gestern" (fiel am 09.10.2026 um 0:05).
+    assert beginn and beginn[:10] == time.strftime("%Y-%m-%d", time.gmtime())
     faellig = ml.faelliger_monat(dt.date.today())
     if faellig:                       # ab dem 3. eines Monats
         assert beginn[:7] > faellig
