@@ -421,7 +421,11 @@ struct GeldKarte: View {
                 // Zählt beim Ka-ching durch jeden Betrag dazwischen
                 // (`.numericText` allein rollte nur einmal die Ziffern um).
                 EmptyView().modifier(Zaehler(wert: betrag))
-                Topf(fuellung: topf, muenzen: muenzen, glanz: glanz)
+                Topf(fuellung: topf, muenzen: muenzen, glanz: glanz,
+                     muenzWeg: ereignis.map {
+                         (EmpfehlenStand.fuellung($0.offenVorher),
+                          EmpfehlenStand.fuellung($0.offenJetzt))
+                     } ?? (0, 0))
                     .padding(.vertical, 4)
                     .accessibilityLabel("Bis zur Überweisung: \(Int((topf * 100).rounded())) Prozent")
                 if let e = ereignis, !e.satz.isEmpty {
@@ -521,6 +525,8 @@ struct Topf: View {
     let fuellung: Double
     var muenzen = false
     var glanz = false
+    /// Von wo bis wo sich der Topf gerade füllt — dorthin fallen die Münzen.
+    var muenzWeg: (von: Double, bis: Double) = (0, 0)
 
     var body: some View {
         GeometryReader { g in
@@ -561,17 +567,24 @@ struct Topf: View {
         }
     }
 
-    /// Wohin Münze `i` fällt: kurz vor das Ende der Füllung, leicht verstreut.
+    /// Wohin Münze `i` fällt: genau an die Kante, die der Topf erreicht hat,
+    /// wenn sie unten ankommt (Fall 0,45 s, je Münze 0,13 s später; die
+    /// Füllung läuft 1,4 s mit nachlassendem Tempo).
     private func muenzX(_ i: Int, gesamt: CGFloat) -> CGFloat {
-        let ziel: CGFloat = gesamt * fuellung - 34
-        let streuung: CGFloat = CGFloat(i % 3) * 12 + CGFloat(i / 3) * 6
-        return min(max(ziel + streuung, 0), max(gesamt - 10, 0))
+        let ankunft = min((0.45 + 0.13 * Double(i)) / 1.4, 1)
+        let tempo = 1 - (1 - ankunft) * (1 - ankunft)
+        let stand = muenzWeg.von + (muenzWeg.bis - muenzWeg.von) * tempo
+        let kante = gesamt * CGFloat(stand) - 5
+        return min(max(kante, 0), max(gesamt - 10, 0))
     }
 }
 
 /// Eine Münze, die einmal von oben in den Topf fällt und verschwindet.
 struct Muenze: View {
     let verzoegerung: Double
+    /// Erst sichtbar, wenn sie losfällt — sonst schweben die späteren in der
+    /// Luft und warten.
+    @State private var da = false
     @State private var gefallen = false
     @State private var weg = false
 
@@ -581,9 +594,10 @@ struct Muenze: View {
             .overlay(Circle().stroke(GC.accentHover.opacity(0.7), lineWidth: 1))
             .frame(width: 10, height: 10)
             .offset(y: gefallen ? 0 : -46)
-            .opacity(weg ? 0 : 1)
+            .opacity(da && !weg ? 1 : 0)
             .accessibilityHidden(true)
             .onAppear {
+                withAnimation(.linear(duration: 0.05).delay(verzoegerung)) { da = true }
                 withAnimation(.easeIn(duration: 0.45).delay(verzoegerung)) { gefallen = true }
                 withAnimation(.easeOut(duration: 0.25).delay(verzoegerung + 0.4)) { weg = true }
             }

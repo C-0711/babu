@@ -75,7 +75,7 @@ final class AppStore: ObservableObject {
     /// (`BABU_BEISPIEL_EMPFEHLEN`, siehe `beispielEinrichten`).
     var empfehlenBeispiel: EmpfehlenStand?
     var empfehlenBeispielFehler = false
-    var empfehlenBeispielPause: Double = 0
+    var empfehlenBeispielAb = Date.distantPast
     #endif
 
     /// Das Profil des Salons (Betriebsangaben) — liegt auf dem Telefon und
@@ -1014,11 +1014,12 @@ extension AppStore {
     func empfehlenLaden() async -> AblageService.AmbassadorAuskunft? {
         #if DEBUG
         if let beispiel = empfehlenBeispiel {
-            if empfehlenBeispielPause > 0 {
-                // Damit ein Bildschirmfoto den Anfang des Ka-ching erwischt.
-                let pause = empfehlenBeispielPause
-                empfehlenBeispielPause = 0
-                try? await Task.sleep(nanoseconds: UInt64(pause * 1_000_000_000))
+            // Damit ein Bildschirmfoto den Anfang des Ka-ching erwischt:
+            // jede Antwort vor diesem Zeitpunkt wartet bis dahin (beim Start
+            // laden Aufgabe und Szenenwechsel gleichzeitig).
+            let rest = empfehlenBeispielAb.timeIntervalSinceNow
+            if rest > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(rest * 1_000_000_000))
             }
             empfehlen = beispiel
             return .da(beispiel)
@@ -1075,7 +1076,7 @@ extension AppStore {
                 vorher.gruene.removeAll { $0 == gruen.first }
             }
             UserDefaults.standard.set(try? JSONEncoder().encode(vorher), forKey: schluessel)
-            empfehlenBeispielPause = 3
+            empfehlenBeispielAb = Date().addingTimeInterval(3)
         } else {
             // Ohne Ka-ching: so tun, als hätte sie diesen Stand schon gesehen.
             UserDefaults.standard.set(try? JSONEncoder().encode(stand.merkstand),
