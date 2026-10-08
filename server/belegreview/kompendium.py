@@ -106,6 +106,27 @@ def grundwissen() -> str:
     return _datei("grundwissen.md", 60000)
 
 
+def beratungswissen() -> str:
+    """Die Messlatten fürs GESPRÄCH — die Anwendungsschicht zum Grundwissen.
+
+    `grundwissen()` sagt, wie die Branche aussieht. Diese Datei sagt, woran
+    man die Zahlen eines einzelnen Salons misst: Personal um 32–36 % vom
+    Umsatz, Raum um 9 %, Material nur 7 % — und die drei Fallen, ohne die
+    jeder Vergleich in die Irre führt (Richtsatz-Löhne sind brutto ohne
+    Arbeitgeberanteil, der „Reingewinn" enthält den Unternehmerlohn, die
+    Datenbasis stammt aus geprüften Betrieben).
+
+    Getrennt von `kontierungswissen()`, weil das Buchen anderes braucht als
+    das Reden: Nutzungsdauern und Konten dort, Vergleichswerte und
+    Schwellen hier. Beides in einer Datei hieße, jedem Buchungsprompt
+    Branchenstatistik mitzugeben und jedem Gespräch den Kontenplan.
+
+    Steht wie das Grundwissen im stehenden Prompt-Anfang — eine Datei,
+    einmal gelesen, nie neu; Byte-Stabilität ist der Zweck.
+    """
+    return _datei("beratung-grundwissen.md", 30000)
+
+
 def kontierungswissen() -> str:
     """Was beim BUCHEN nachgeschlagen werden muss: Nutzungsdauern aus der
     AfA-Tabelle Nr. 94, die GWG-Grenzen und der Salon-Kontenplan.

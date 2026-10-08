@@ -7297,6 +7297,9 @@ def chat(body: dict, request: Request) -> Response:
     eigen = portale.eigener_container(p)
     grund = (kompendium.grundwissen_von(p.KOMPENDIUM) if eigen
              else kompendium.grundwissen())
+    # Die Messlatten (beratung-grundwissen.md) messen einen Friseursalon —
+    # Portale mit eigenem Container (Barber, Werkstatt) bekommen sie nicht.
+    messlatten = "" if eigen else kompendium.beratungswissen()
     # Gesucht wird im Container des Portals UND im ganzen Bundesrecht.
     recherche = _recherche(portale.suchfrage(p, frage),
                            bestaende=portale.chat_bestaende(p))
@@ -7321,6 +7324,15 @@ def chat(body: dict, request: Request) -> Response:
         "messages": [
             {"role": "system", "content":
                 p.CHAT_ROLLE
+                # Wenn du ihre Zahlen einordnest, nenne die Messlatte und
+                # woher sie kommt — „viel" und „wenig" ohne Vergleichswert
+                # ist keine Auskunft, sondern ein Gefühl.
+                + (("\n\nWENN DU IHRE ZAHLEN EINORDNEST: nimm die Messlatten "
+                    "unten, nenne den Vergleichswert und seine Quelle, und rechne "
+                    "es an IHREN Zahlen vor. Was daraus abgeleitet und nicht "
+                    "erhoben ist, sagst du dazu.\n\nDIE MESSLATTEN DER BRANCHE "
+                    "(woran ein Salon gemessen wird):\n\n" + messlatten)
+                   if messlatten else "")
                 + (("\n\n" + p.CHAT_WISSENSTITEL + "\n\n" + grund)
                    if grund else "")
                 + "\n\n" + p.CHAT_WELTTITEL + "\n\n" + weltblock
