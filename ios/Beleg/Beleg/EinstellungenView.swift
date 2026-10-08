@@ -84,7 +84,10 @@ struct EinstellungenView: View {
                             .foregroundStyle(ergebnis.hasPrefix("Verbunden") ? GC.ok : GC.warn)
                     }
                 } footer: {
-                    Text("Ohne Verbindung bleiben Belege in der Warteschlange und werden nachgereicht, sobald es wieder klappt.")
+                    // Ohne eigene Ablage gibt es keine Belege, die warten könnten.
+                    if store.ambassadorin != .ohneAblage {
+                        Text("Ohne Verbindung bleiben Belege in der Warteschlange und werden nachgereicht, sobald es wieder klappt.")
+                    }
                 }
 
                 // Nur in Entwicklungs-Builds: „Dieses Gerät leer räumen" gehört
@@ -325,7 +328,7 @@ struct EinstellungenView: View {
                         linkSchicken()
                     } label: {
                         HStack {
-                            Label("Link schicken", systemImage: "envelope")
+                            Text("Link schicken")
                             if verbindet { Spacer(); ProgressView() }
                         }
                     }
