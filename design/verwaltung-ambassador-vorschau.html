@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>babu Portal — Zugänge verwalten (Vorschau für Nina)</title>
+<style>
+  /*babu-Portal-Look: dieselben Tokens wie portal.html (GitChain-Beige/Grün)*/
+  :root{
+    --gc-bg:#efece6; --gc-karte:#faf8f4; --gc-fg:#2a2a26; --gc-desc:#6b6b62;
+    --gc-accent:#6f8a6e; --gc-border:#d8d3c8; --gc-muted:#b9b2a4;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  body{font-family:-apple-system,"Segoe UI",sans-serif; background:var(--gc-bg);
+       color:var(--gc-fg); line-height:1.5; max-width:760px; margin:0 auto; padding:28px 18px}
+  .kopf{display:flex; justify-content:space-between; align-items:center; margin-bottom:24px}
+  .kopf b{font-size:20px}
+  .kopf .rolle{font-size:13px; color:var(--gc-desc)}
+  .sektion{font-size:11px; letter-spacing:1.2px; text-transform:uppercase;
+           color:var(--gc-desc); margin:26px 0 10px; font-weight:600}
+  .karte{background:var(--gc-karte); border:1px solid var(--gc-border);
+         border-radius:14px; padding:18px 20px; margin-bottom:12px}
+  .karte h3{font-size:16px; font-weight:650}
+  .hin{display:inline-block; background:var(--gc-accent); color:#fff; border:none;
+       padding:9px 16px; border-radius:9px; font-size:13.5px; font-weight:600; cursor:pointer}
+  .hin.geist{background:transparent; color:var(--gc-accent); border:1px solid var(--gc-accent)}
+  input{padding:9px 12px; border:1px solid var(--gc-border); border-radius:8px;
+        font:inherit; background:var(--gc-bg); font-size:13.5px}
+  .zeile{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+  .fein{font-size:12px; color:var(--gc-desc)}
+  table{width:100%; font-size:13px; border-collapse:collapse; margin-top:8px}
+  th{text-align:left; padding:4px; color:var(--gc-desc); font-weight:600; font-size:12px}
+  td{padding:5px 4px; border-bottom:1px solid #eae5da}
+  tr:last-child td{border-bottom:none}
+  .code{font-family:ui-monospace,monospace; font-size:13px; background:var(--gc-muted);
+        color:var(--gc-bg); padding:2px 8px; border-radius:6px}
+  .hinweis{background:#e5eee4; border:1px solid var(--gc-accent); border-radius:12px;
+           padding:12px 16px; margin-bottom:22px; font-size:13.5px}
+  .schritt{display:flex; gap:10px; margin-top:6px; font-size:13.5px}
+  .schritt b{color:var(--gc-accent)}
+</style>
+</head>
+<body>
+
+<div class="kopf">
+  <div><b>Verwaltung</b> <span class="rolle">· Nina (Kanzlei)</span></div>
+  <div style="font-size:13px;color:var(--gc-desc)">mybabu.io — 24.09.2026</div>
+</div>
+
+<div class="hinweis">
+  <b>So legst du eine Ambassadorin an:</b>
+  <div class="schritt"><b>1.</b>&nbsp;Name + E-Mail unten eintragen → „Anlegen“ — sie bekommt Code + Startpasswort automatisch per Mail.</div>
+  <div class="schritt"><b>2.</b>&nbsp;Sie meldet sich auf mybabu.io an und sieht ihren Bereich mit Einladungslinks.</div>
+  <div class="schritt"><b>3.</b>&nbsp;Zeichnet ein geworbener Salon ab und bleibt 3 Monate, klickst du hier die Meilensteine ab — das Guthaben rechnet sich von selbst.</div>
+</div>
+
+<!-- Warteliste (bestehend, gekürzt als Kontext) -->
+<div class="sektion">Warteliste (3)</div>
+<div class="karte">
+  <h3>SupremeStudio — Salon</h3>
+  <p class="fein">info@supremebeauty.de · Apple-ID: info@supremebeauty.de</p>
+  <p class="fein" style="margin-top:4px">App-Einladung: wartet auf Klick in Apples Mail</p>
+  <div style="display:flex;gap:8px;margin-top:10px">
+    <input type="email" placeholder="Apple-ID-Adresse (für die App)" value="info@supremebeauty.de" style="flex:1;min-width:180px">
+    <button class="hin" style="margin-top:0">App-Einladung starten ›</button>
+  </div>
+  <button class="hin geist" style="margin-top:10px">Zugang einladen ›</button>
+  <button class="hin geist" style="margin-top:10px;margin-left:8px;color:var(--gc-desc);border-color:var(--gc-border)">Nicht jetzt</button>
+</div>
+
+<!-- ═══ DIE NEUE AMBASSADOR-KARTE ═══ -->
+<div class="sektion">Ambassadorinnen (1)</div>
+
+<div class="karte">
+  <div class="zeile">
+    <input type="text" placeholder="Name der Ambassadorin" style="flex:1;min-width:160px">
+    <input type="email" placeholder="E-Mail" style="flex:1;min-width:180px">
+    <button class="hin" style="margin-top:0">Anlegen ›</button>
+  </div>
+  <p class="fein" style="margin-top:6px">Bekommt Code + Startpasswort per Mail — sie erzeugt damit Einladungslinks für Salons (30 Tage Light) und verdient 25 % bei Zeichnung, +25 % nach 3 Monaten.</p>
+</div>
+
+<div class="karte">
+  <h3>Babs <span class="code">BABS-7909</span></h3>
+  <p class="fein">babs@example.org</p>
+  <p style="font-size:13px;margin-top:4px">Verdient: <b>474 €</b> · Ausgezahlt: 0 € · Offen: <b>474 €</b></p>
+  <table>
+    <thead><tr><th>Salon</th><th>Stand</th><th style="text-align:right">Anerkennen</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Hair Lounge Blum</td>
+        <td>testet noch</td>
+        <td style="text-align:right">—</td>
+      </tr>
+      <tr>
+        <td>Kopfsache Studio</td>
+        <td>gezeichnet ✓</td>
+        <td style="text-align:right"><button class="hin geist" style="padding:5px 10px;font-size:12px;margin-top:0">3 Monate +25 %</button></td>
+      </tr>
+      <tr>
+        <td>Salon Meridian</td>
+        <td>3 Monate dabei ✓ · 237 €</td>
+        <td style="text-align:right">✓ 237 €</td>
+      </tr>
+    </tbody>
+  </table>
+  <button class="hin" style="margin-top:12px">Ausgezahlt (474 €) ›</button>
+</div>
+
+<div class="karte">
+  <h3>Johanna Marie <span class="code">JOHANNA-MARIE-4T2C</span></h3>
+  <p class="fein">johannamarie.zorn@icloud.com</p>
+  <p style="font-size:13px;margin-top:4px">Verdient: <b>0 €</b> · Ausgezahlt: 0 € · Offen: <b>0 €</b></p>
+  <p class="fein" style="margin-top:6px">noch keine Salons über ihren Code</p>
+</div>
+
+<!-- Anfragen (Kontext) -->
+<div class="sektion">Anfragen (1)</div>
+<div class="karte">
+  <h3>Salon Aurora — Sabine K.</h3>
+  <p class="fein">sabine@aurora.de · keine weiteren Angaben</p>
+  <button class="hin geist" style="margin-top:10px">Zugang einrichten ›</button>
+</div>
+
+</body>
+</html>

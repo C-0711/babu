@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>babu Ambassador — Dein Bereich</title>
+<style>
+  :root{
+    --bg:#efece6; --karte:#faf8f4; --text:#2a2a26; --leise:#6b6b62;
+    --gruen:#6f8a6e; --gruen-dunkel:#55705a; --linie:#d8d3c8; --warn:#a3552e;
+    --radius:14px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  body{font-family:-apple-system,"Segoe UI",sans-serif; background:var(--bg);
+       color:var(--text); line-height:1.55; padding:24px 16px; max-width:860px;
+       margin:0 auto}
+  h1{font-size:26px; font-weight:700; margin-bottom:4px}
+  h2{font-size:18px; font-weight:650; margin:28px 0 12px}
+  .unter{color:var(--leise); font-size:14px}
+  .karte{background:var(--karte); border:1px solid var(--linie); border-radius:var(--radius);
+         padding:20px; margin-top:16px}
+  .saldo{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap}
+  .saldo .zahl{font-size:40px; font-weight:750; color:var(--gruen-dunkel);
+               font-variant-numeric:tabular-nums}
+  .badge{display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px;
+         font-weight:600}
+  .badge.wartet{background:#eee9de; color:var(--leise)}
+  .badge.probe{background:#e8eef0; color:#3d6470}
+  .badge.gezeichnet{background:#e5eee4; color:var(--gruen-dunkel)}
+  .badge.gehalten{background:var(--gruen); color:#fff}
+  .badge.abgelaufen{background:#f3e3da; color:var(--warn)}
+  table{width:100%; border-collapse:collapse; font-size:14px}
+  th{text-align:left; color:var(--leise); font-weight:600; font-size:12px;
+     text-transform:uppercase; letter-spacing:.4px; padding:8px 10px;
+     border-bottom:1px solid var(--linie)}
+  td{padding:10px; border-bottom:1px solid #eae5da; vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  .code{font-family:ui-monospace,Menlo,monospace; font-size:15px; font-weight:600;
+        background:#ece7db; padding:8px 14px; border-radius:8px; letter-spacing:1px}
+  .knopf{display:inline-block; background:var(--gruen); color:#fff; border:none;
+         padding:10px 18px; border-radius:10px; font-size:14px; font-weight:600;
+         cursor:pointer}
+  .knopf.ghost{background:transparent; color:var(--gruen-dunkel);
+               border:1px solid var(--gruen)}
+  .zeile{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:12px}
+  .link-box{background:#ece7db; border-radius:10px; padding:12px 14px; font-size:13px;
+            font-family:ui-monospace,Menlo,monospace; word-break:break-all; margin-top:8px}
+  .hinweis{font-size:12.5px; color:var(--leise); margin-top:8px}
+  .leer{color:var(--leise); font-style:italic; padding:14px 0}
+  @media(max-width:600px){ .saldo .zahl{font-size:32px} td,th{padding:7px 6px} }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Dein Ambassador-Bereich</h1>
+  <p class="unter">Babs · Dein Code: <span class="code">BABS-SALON</span></p>
+</header>
+
+<!-- ── Verdienst-Übersicht ─────────────────────────────────────────────── -->
+<section class="karte">
+  <div class="saldo">
+    <span class="zahl">474&nbsp;€</span>
+    <span class="unter">verdient (ausgezahlt wird quartalsweise, ab 100&nbsp;€)</span>
+  </div>
+  <p class="hinweis">So funktioniert's: Ein Salon löst deinen Code ein →
+  <b>30 Tage Light kostenlos</b>. Zeichnet er danach ab, bekommst du
+  <b>25&nbsp;%</b>, bleibt er 3 Monate dabei nochmal <b>25&nbsp;%</b> —
+  gesamt <b>50&nbsp;% der Jahreszahlung</b> je gehaltenem Salon.</p>
+</section>
+
+<!-- ── Deine Salons ─────────────────────────────────────────────────────── -->
+<h2>Deine Salons</h2>
+<div class="karte" style="padding:8px 12px">
+<table>
+  <thead><tr><th>Salon</th><th>Stand</th><th>Dein Verdienst</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><b>Salon Meridian</b><br><span class="unter">Angela K. · angemeldet 12.09.</span></td>
+      <td><span class="badge probe">Testet (18 Tage übrig)</span></td>
+      <td class="unter">—</td>
+    </tr>
+    <tr>
+      <td><b>Hair Lounge Blum</b><br><span class="unter">Nadine B. · gezeichnet 03.10.</span></td>
+      <td><span class="badge gezeichnet">Gezeichnet ✓</span></td>
+      <td><b>237 €</b> <span class="unter">bei Abschluss</span></td>
+    </tr>
+    <tr>
+      <td><b>Kopfsache Studio</b><br><span class="unter">Miriam S. · dabei seit 03.10.</span></td>
+      <td><span class="badge gehalten">3 Monate dabei ✓</span></td>
+      <td><b>+237 €</b> <span class="unter">gehalten</span></td>
+    </tr>
+    <tr>
+      <td><b>Schnittstelle</b><br><span class="unter">Elke R. · Code eingelöst 20.08.</span></td>
+      <td><span class="badge abgelaufen">Test abgelaufen, nicht gezeichnet</span></td>
+      <td class="unter">—</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<!-- ── Einladung schreiben ─────────────────────────────────────────────── -->
+<h2>Einen Salon einladen</h2>
+<div class="karte">
+  <p class="unter">Erzeuge einen persönlichen Link, kopiere ihn oder verschicke ihn
+  direkt — der Salon bekommt eine freundliche Mail mit allem, was er wissen muss.</p>
+  <div class="zeile">
+    <input id="salonName" type="text" placeholder="Name des Salons (optional)"
+           style="flex:1; min-width:200px; padding:10px 12px; border:1px solid var(--linie);
+                  border-radius:10px; font-size:14px">
+    <input id="salonMail" type="email" placeholder="E-Mail der Salonbesitzerin"
+           style="flex:1; min-width:220px; padding:10px 12px; border:1px solid var(--linie);
+                  border-radius:10px; font-size:14px">
+    <button class="knopf" onclick="linkErzeugen()">Link erzeugen</button>
+  </div>
+  <div id="linkAus" class="link-box" style="display:none"></div>
+  <div class="zeile" id="linkAktionen" style="display:none">
+    <button class="knopf ghost" onclick="kopieren()">Link kopieren</button>
+    <button class="knopf" onclick="mailSenden()">Als Mail verschicken</button>
+    <span id="mailStatus" class="unter"></span>
+  </div>
+  <p class="hinweis">Jeder Link gilt für einen Salon und läuft auf deinen Code
+  <span class="code">BABS-SALON</span> — die Zuordnung läuft automatisch,
+  du musst nichts merken.</p>
+</div>
+
+<!-- ── Wie du empfiehlst ──────────────────────────────────────────────── -->
+<h2>Der Satz, den du weiter sagst</h2>
+<div class="karte" style="border-left:4px solid var(--gruen)">
+  <p>„Probier babu aus — <b>30 Tage, kostet nichts</b>, kündigen musst du nichts.
+  Foto machen statt Belege sortieren. Mein Code ist <span class="code">BABS-SALON</span>.“</p>
+</div>
+
+<script>
+// Demo-Verhalten: zeigt den Ablauf. Live: POST /api/ambassador/link
+function linkErzeugen(){
+  const name = document.getElementById("salonName").value.trim();
+  const mail = document.getElementById("salonMail").value.trim();
+  const aus  = document.getElementById("linkAus");
+  const akt  = document.getElementById("linkAktionen");
+  if(!mail || !mail.includes("@")){ alert("Bitte eine gültige E-Mail angeben."); return; }
+  const slug = (name || mail.split("@")[0]).toLowerCase()
+                 .replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,24);
+  const link = "https://mybabu.io/ambassador/BABS-SALON/" + slug;
+  aus.textContent = link;
+  aus.style.display = "block";
+  akt.style.display = "flex";
+}
+function kopieren(){
+  const link = document.getElementById("linkAus").textContent;
+  navigator.clipboard.writeText(link).then(()=>{
+    document.getElementById("mailStatus").textContent = "Kopiert ✓";
+  });
+}
+function mailSenden(){
+  const mail = document.getElementById("salonMail").value.trim();
+  document.getElementById("mailStatus").textContent =
+    "Einladung an " + mail + " ist raus ✓";
+}
+</script>
+</body>
+</html>
