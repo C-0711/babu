@@ -13,6 +13,10 @@ struct EinstellungenView: View {
     @State private var passwort = ""
     @State private var kontoFehler: String?
     @State private var verbindet = false
+    /// Der zweite, kleine Weg: mit Passwort statt Link (seit 08.10.2026).
+    @State private var mitPasswort = false
+    /// Der Link ist unterwegs — jetzt zählt das Postfach, nicht dieses Formular.
+    @State private var linkGeschicktAn: String?
 
     @State private var verbunden = KeychainHelfer.ladePAT() != nil
     @State private var testErgebnis: String?
@@ -121,6 +125,19 @@ struct EinstellungenView: View {
         .warmerGrund()
         .navigationTitle("Einstellungen")
         .navigationBarTitleDisplayMode(.inline)
+        // Der Link aus der Mail meldet an, während diese Seite offen ist
+        // (meist ist sie es noch — hier wurde er bestellt). Dann soll sie
+        // nicht weiter „Schau in dein Postfach" sagen.
+        .onChange(of: store.verbundenAls) { _, neu in
+            guard neu != nil, KeychainHelfer.ladePAT() != nil else { return }
+            verbunden = true
+            linkGeschicktAn = nil
+            abgemeldet = false
+            kontoFehler = nil
+            testErgebnis = store.istAmbassador == true && store.ablageFehlt
+                ? "Verbunden ✓ — unter „Empfehlen“ geht es los."
+                : "Verbunden ✓"
+        }
         // Beide Rückfragen dieser Seite hängen hier am Form — und beide sind
         // `alert`, nicht mehr `confirmationDialog`. Grund, im Simulator
         // nachgemessen (iOS 26, iPhone 16e): ein `confirmationDialog` wird
@@ -162,7 +179,7 @@ struct EinstellungenView: View {
                  + (Ausbaustufe.erreichbar(.kasse) ? "und Kassenbuchblätter " : "")
                  + "kommen von diesem Telefon aus aber nicht mehr an, und "
                  + "Fragen bleiben unbeantwortet. Wieder anmelden kannst du "
-                 + "dich jederzeit mit E-Mail und Passwort.")
+                 + "dich jederzeit mit deiner E-Mail.")
         }
     }
 
@@ -250,51 +267,141 @@ struct EinstellungenView: View {
 
     // MARK: - Verbinden mit dem ganz normalen Konto
 
+    /// Seit 08.10.2026 der Hauptweg: E-Mail eintippen (das iPhone schlägt
+    /// sie vor), Link schicken lassen, in der Mail antippen — drin. Kein
+    /// Passwort, das sie sich merken oder abtippen muss. Das Passwort bleibt
+    /// als kleiner zweiter Weg darunter.
+    @ViewBuilder
     private var anmeldenBereich: some View {
         Section {
             // Nach dem Abmelden keine leere Ansicht, sondern der Weg zurück.
             // Sonst steht da nur ein Formular und die Frage, was gerade
             // passiert ist.
-            if abgemeldet {
+            if abgemeldet, linkGeschicktAn == nil {
                 Label {
-                    Text("Abgemeldet. Mit E-Mail und Passwort wieder verbinden.")
+                    Text("Abgemeldet. Mit deiner E-Mail wieder anmelden.")
                         .font(.footnote)
                         .foregroundStyle(GC.body)
                 } icon: {
                     Image(systemName: "checkmark.circle").foregroundStyle(GC.ok)
                 }
             }
-            TextField("E-Mail", text: $email)
-                .keyboardType(.emailAddress)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-            SecureField("Passwort", text: $passwort)
-            // Der Weg zum neuen Passwort führt über das Portal — dort steht
-            // dasselbe Formular, das die Mail mit dem Link verschickt. Die
-            // App braucht dafür keinen eigenen Bildschirm, nur die Tür.
-            if let portal = URL(string: store.ablageURL + "/portal#passwort-vergessen") {
-                Link("Passwort vergessen?", destination: portal)
-                    .font(.footnote)
-            }
-            Button {
-                verbinden()
-            } label: {
-                HStack {
-                    Text("Verbinden")
-                    if verbindet { Spacer(); ProgressView() }
+            if let an = linkGeschicktAn, !mitPasswort {
+                postfachHinweis(an)
+            } else {
+                TextField("Deine E-Mail", text: $email)
+                    .keyboardType(.emailAddress)
+                    .textContentType(.emailAddress)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                if mitPasswort {
+                    SecureField("Passwort", text: $passwort)
+                        .textContentType(.password)
+                    // Der Weg zum neuen Passwort führt über das Portal — dort
+                    // steht dasselbe Formular, das die Mail mit dem Link
+                    // verschickt. Die App braucht dafür keinen eigenen
+                    // Bildschirm, nur die Tür.
+                    if let portal = URL(string: store.ablageURL + "/portal#passwort-vergessen") {
+                        Link("Passwort vergessen?", destination: portal)
+                            .font(.footnote)
+                    }
+                    Button {
+                        verbinden()
+                    } label: {
+                        HStack {
+                            Text("Verbinden")
+                            if verbindet { Spacer(); ProgressView() }
+                        }
+                    }
+                    .disabled(verbindet || emailLeer || passwort.isEmpty)
+                } else {
+                    // Eine Zeile wie „Verbinden" und „Verbindung testen" —
+                    // im Formular sehen Knöpfe hier überall so aus.
+                    Button {
+                        linkSchicken()
+                    } label: {
+                        HStack {
+                            Label("Link schicken", systemImage: "envelope")
+                            if verbindet { Spacer(); ProgressView() }
+                        }
+                    }
+                    .disabled(verbindet || emailLeer)
                 }
             }
-            .disabled(verbindet || email.trimmingCharacters(in: .whitespaces).isEmpty
-                      || passwort.isEmpty)
             if let fehler = kontoFehler {
                 Text(fehler)
                     .font(.footnote)
                     .foregroundStyle(GC.warn)
             }
+            Button(mitPasswort ? "Lieber einen Link per E-Mail" : "Mit Passwort anmelden") {
+                mitPasswort.toggle()
+                kontoFehler = nil
+            }
+            .font(.footnote)
         } header: {
             Text("Dein babu-Konto")
         } footer: {
-            Text("Dieselbe Anmeldung wie im Portal. Mehr braucht es nicht — alles Weitere passiert von selbst.")
+            Text(mitPasswort
+                 ? "Dieselbe Anmeldung wie im Portal. Mehr braucht es nicht — alles Weitere passiert von selbst."
+                 : "Wir schicken dir einen Link. Ein Tipp darauf, und du bist drin — ganz ohne Passwort.")
+        }
+    }
+
+    private var emailLeer: Bool {
+        email.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// „Schau in dein Postfach" — und was zu tun ist, wenn nichts kommt.
+    private func postfachHinweis(_ an: String) -> some View {
+        // Gebaut wie „Deine Ablage wird noch eingerichtet": Zeichen,
+        // Überschrift in Serife, ein Satz darunter.
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "envelope.open")
+                    .font(.title3)
+                    .foregroundStyle(GC.accent)
+                    .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Schau in dein Postfach — tipp dort auf den Link.")
+                        .font(.headline)
+                        .fontDesign(.serif)
+                        .foregroundStyle(GC.fg)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Er ist unterwegs an \(an). Kommt nichts, schau auch im Spam-Ordner nach.")
+                        .font(.footnote)
+                        .foregroundStyle(GC.desc)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            HStack(spacing: 18) {
+                Button("Nochmal schicken") { linkSchicken() }
+                    .disabled(verbindet)
+                Button("Andere E-Mail") {
+                    linkGeschicktAn = nil
+                    kontoFehler = nil
+                }
+            }
+            .font(.footnote)
+            .buttonStyle(.borderless)
+            .padding(.top, 2)
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func linkSchicken() {
+        guard let url = URL(string: store.ablageURL) else { return }
+        let an = email.trimmingCharacters(in: .whitespaces)
+        guard !an.isEmpty else { return }
+        verbindet = true
+        kontoFehler = nil
+        Task {
+            if let fehler = await AblageService.anmeldelinkSchicken(email: an, basis: url) {
+                kontoFehler = fehler
+            } else {
+                linkGeschicktAn = an
+                abgemeldet = false
+            }
+            verbindet = false
         }
     }
 
@@ -337,10 +444,9 @@ struct EinstellungenView: View {
     /// Dieses Gerät abmelden. Steht als eigene Funktion da, weil die
     /// Rückfrage oben am Form hängt und der Knopf hier unten sitzt.
     private func abmelden() {
-        KeychainHelfer.loeschePAT()
+        store.abmelden()
         verbunden = false
-        store.verbundenAls = nil
-        store.ablageAktiv = false   // ehrlich: ohne Verbindung geht nichts mehr
+        linkGeschicktAn = nil
         testErgebnis = nil
         kontoFehler = nil
         abgemeldet = true
@@ -357,24 +463,23 @@ struct EinstellungenView: View {
                 geraet: UIDevice.current.name,
                 basis: url)
             if let schluessel = ergebnis.schluessel {
-                KeychainHelfer.speicherePAT(schluessel)
                 verbunden = true
-                store.verbundenAls = ergebnis.un
-                store.zugangAbgelaufen = false
-                store.ablageFehlt = !ergebnis.ablage
-                store.ablageAktiv = ergebnis.ablage
                 email = ""
                 passwort = ""
-                // Rolle und Rechte sofort holen: sonst zeigt die App einer
-                // Mitarbeiterin bis zum nächsten Start die Reiter der Inhaberin.
-                await store.kontoNachfragen()
+                // Derselbe Weg wie beim Link aus der Mail: Keychain, Name,
+                // Ablage, Rolle und Rechte (`AppStore.anmeldungUebernehmen`).
+                await store.anmeldungUebernehmen(schluessel: schluessel, un: ergebnis.un,
+                                                 rolle: nil, ablage: ergebnis.ablage)
                 // Nur „alles bereit" sagen, wenn es das auch ist. Ein
                 // selbst angelegtes Konto hat noch keine Ablage; bis
                 // 08.09.2026 behauptete die App trotzdem, es sei alles
                 // fertig, und schickte jeden Beleg gegen eine Wand.
                 if ergebnis.ablage {
                     testErgebnis = "Verbunden ✓ — alles bereit."
-                    store.ablageRetry()
+                } else if store.istAmbassador == true {
+                    // Eine Ambassadorin ohne eigenen Salon bekommt keine
+                    // Ablage — für sie gibt es nichts, worauf sie warten müsste.
+                    testErgebnis = "Verbunden ✓ — unter „Empfehlen“ geht es los."
                 } else {
                     testErgebnis = "Verbunden ✓ — deine Ablage wird noch "
                         + "eingerichtet. Fotografier ruhig weiter: alles "
@@ -407,8 +512,11 @@ struct EinstellungenView: View {
                 store.zugangAbgelaufen = true
             case .keineAblage:
                 // Das ist kein Fehler, sondern ein Zwischenstand: das Konto
-                // stimmt, die Ablage wird noch eingerichtet.
-                testErgebnis = "Dein Konto stimmt — deine Ablage wird noch "
+                // stimmt, die Ablage wird noch eingerichtet. Eine
+                // Ambassadorin ohne Salon bekommt keine — ihr Konto stimmt.
+                testErgebnis = store.istAmbassador == true
+                    ? "Verbunden ✓ — dein Konto stimmt."
+                    : "Dein Konto stimmt — deine Ablage wird noch "
                     + "eingerichtet. Bis dahin bleibt alles auf dem Telefon."
                 store.zugangAbgelaufen = false
                 store.ablageFehlt = true

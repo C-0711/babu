@@ -270,7 +270,10 @@ struct CaptureTab: View {
             // die Ablage wird noch von Hand angelegt. Das muss die Startseite
             // sagen — auch nach einem Neustart —, sonst sieht die Nutzerin
             // „alles bereit" und wundert sich, warum nichts ankommt.
-            if store.ablageFehlt {
+            // Nicht für eine Ambassadorin: hat sie keine Ablage, bekommt sie
+            // auch keine — „babu meldet sich" hieße dann für immer warten.
+            // Ihr Anfang ist der Reiter „Empfehlen" (08.10.2026).
+            if store.ablageFehlt, store.istAmbassador != true {
                 AblageWartetKarte()
                     .padding(.horizontal, 20)
                     .padding(.top, 8)

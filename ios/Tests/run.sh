@@ -53,6 +53,12 @@ swiftc -DBABU_PRO -o "$ZIEL/zuschnitt-voll" ../Beleg/Beleg/Ausbaustufe.swift \
        ../Beleg/Beleg/Einrichtungsschritte.swift zuschnitt/main.swift
 "$ZIEL/zuschnitt-voll"
 
+echo "— Empfehlen-Harness —"
+# Reiter „Empfehlen" und Anmelden per Link: was aus /api/ambassador/me auf
+# dem Bildschirm wird (Farben, Geld, Salons) und welche Adresse anmeldet.
+swiftc -o "$ZIEL/empfehlen" ../Beleg/Beleg/Empfehlen.swift empfehlen/main.swift
+"$ZIEL/empfehlen"
+
 echo "— Abgleich-Harness —"
 # Was die App am Bestand ändert, muss in der Belegbox ankommen (Ninas Fund
 # 14.09.2026). Reine Regeln der Warteschlange, ohne Netz.
@@ -133,6 +139,9 @@ v "keine ATS-Ausnahme in Info.plist" "$(! grep -q NSAllowsLocalNetworking $P/Sup
 v "Export-Compliance beantwortet" "$(grep -q ITSAppUsesNonExemptEncryption $P/Support/Info.plist && echo 1)"
 v "ExportOptions.plist vorhanden und gueltig" "$(plutil -lint -s $P/ExportOptions.plist >/dev/null 2>&1 && echo 1)"
 v "archiv.sh ausfuehrbar" "$([ -x ../archiv.sh ] && echo 1)"
+# Der Kassenklang muss genau so heissen: derselbe Name ist der Push-Ton.
+v "kaching.caf liegt im Quellordner (beide Ziele, Push-Ton)" "$([ -f $P/Beleg/kaching.caf ] && echo 1)"
+v "kaching.caf ist eine lesbare Klangdatei" "$(afinfo $P/Beleg/kaching.caf >/dev/null 2>&1 && echo 1)"
 
 echo "— Ablage-Harness —"
 # 403/409 heißt „keine Ablage“ — außer der Server nennt einen Grund, der nur

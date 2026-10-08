@@ -35,6 +35,23 @@
 	</array>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<!-- Anmelden per Link (seit 08.10.2026): die Seite hinter dem Link in
+	     der Mail öffnet babu://anmelden/<token> bzw. babupro://anmelden/<token>.
+	     Das Schema kommt vom Ziel (BABU_URL_SCHEMA), weil sich beide Apps
+	     diese Datei teilen — sonst öffnete der Link immer dieselbe. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER).anmelden</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(BABU_URL_SCHEMA)</string>
+			</array>
+		</dict>
+	</array>
 	<!-- Beleg aus der Mediathek hochladen: nur die Bilder, die die Nutzerin
 	     selbst auswählt (PhotosPicker). Kein Zugriff auf die ganze Mediathek. -->
 	<key>NSPhotoLibraryUsageDescription</key>

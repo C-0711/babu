@@ -51,8 +51,12 @@ if Ausbaustufe.voll {
     print("— Konto-Menü —")
     pruefe("alle siebzehn Zeilen, in dieser Reihenfolge",
            Ausbaustufe.kontomenue == vollesMenue)
-    pruefe("kein Punkt der Aufzählung fehlt",
-           Set(Ausbaustufe.kontomenue) == Set(Kontomenuepunkt.allCases))
+    // BEWUSST GEÄNDERT am 08.10.2026: „Empfehlen" steht nur bei einer
+    // Ambassadorin im Menü, und nur, wenn unten kein Platz für den Reiter
+    // ist — im Grundmenü fehlt es mit Absicht.
+    pruefe("kein Punkt der Aufzählung fehlt (außer Empfehlen, nur für Ambassadorinnen)",
+           Set(Ausbaustufe.kontomenue)
+           == Set(Kontomenuepunkt.allCases.filter { !$0.nurAmbassadorin }))
     print("— Einrichtung —")
     // BEWUSST GEÄNDERT am 08.09.2026. Hier stand: „fünf Schritte, das
     // Kassenbuch dabei" — geprüft an `sichtbareSchritte`, das die
@@ -127,7 +131,7 @@ let verboten = ["Server", "Token", "Hash", "Commit", "Queue", "Modell",
                 "KI", "OCR", "Lesung", "Target", "Build", "Flag"]
 let sichtbar = Ausbaustufe.reiter.map(\.titel)
     + Ausbaustufe.kontomenue.map(\.titel)
-    + [Ausbaustufe.name]
+    + [Ausbaustufe.name, Reiter.empfehlen.titel]
 pruefe("kein Technik-Wort in dem, was sie liest",
        !sichtbar.contains { text in
            verboten.contains { text.range(of: $0, options: .caseInsensitive) != nil }
@@ -144,6 +148,82 @@ pruefe("das Menü der Mitarbeiterin ist kurz",
        Ausbaustufe.kontomenue(fuer: nurAuslagen) == [.meldungen, .einstellungen])
 pruefe("die Inhaberin sieht keinen Reiter Auslagen",
        !Ausbaustufe.reiter(fuer: nil).contains(.auslagen))
+
+// Empfehlen (Ambassadorinnen, 08.10.2026): in BEIDEN Bauten, aber nur, wenn
+// der Server das Konto als Ambassadorin kennt — und nie fürs Team.
+print("— Empfehlen —")
+typealias Amb = Ausbaustufe.Ambassadorin
+let alleAmb: [Amb] = [.nein, .mitAblage, .ohneAblage]
+// Jede Kombination der drei Rechte einer Mitarbeiterin — und die Inhaberin (nil).
+var alleRechte: [Ausbaustufe.Rechte?] = [nil]
+for b in [false, true] { for k in [false, true] { for a in [false, true] {
+    alleRechte.append(Ausbaustufe.Rechte(belege: b, kasse: k, auslagen: a))
+} } }
+
+pruefe("ohne Ambassadorin kein Empfehlen — weder unten noch im Menü",
+       !Ausbaustufe.reiter.contains(.empfehlen)
+       && !Ausbaustufe.reiter(fuer: nil).contains(.empfehlen)
+       && !Ausbaustufe.kontomenue(fuer: nil).contains(.empfehlen))
+
+// Höchstens fünf Reiter, in jedem Bau und für jede Kombination — ein sechster
+// landet unter dem „Mehr" von iOS (doppelter Kopf, fremde Liste).
+var nieMehrAlsFuenf = true
+for r in alleRechte {
+    for a in alleAmb where Ausbaustufe.reiter(fuer: r, ambassadorin: a).count > 5 {
+        nieMehrAlsFuenf = false
+        print("    zu viele: \(String(describing: r)) \(a) → \(Ausbaustufe.reiter(fuer: r, ambassadorin: a))")
+    }
+}
+pruefe("höchstens fünf Reiter je Bau und Rechte-Kombination", nieMehrAlsFuenf)
+
+// Wer Ambassadorin ist, findet Empfehlen genau einmal: unten ODER im Menü.
+for a in [Amb.mitAblage, .ohneAblage] {
+    let unten = Ausbaustufe.reiter(fuer: nil, ambassadorin: a).contains(.empfehlen)
+    let oben = Ausbaustufe.kontomenue(fuer: nil, ambassadorin: a).contains(.empfehlen)
+    pruefe("Ambassadorin (\(a)): Empfehlen genau an einer Stelle", unten != oben)
+}
+
+let mitSalon = Ausbaustufe.reiter(fuer: nil, ambassadorin: .mitAblage)
+if Ausbaustufe.voll {
+    pruefe("babu Pro mit Salon: die fünf Reiter bleiben genau, wie sie sind",
+           mitSalon == Ausbaustufe.reiter)
+    pruefe("… und Empfehlen steht im Menü, im Abschnitt des Kontos",
+           Ausbaustufe.kontomenue(fuer: nil, ambassadorin: .mitAblage)
+               .filter { $0.abschnitt == .konto }.first == .empfehlen)
+} else {
+    pruefe("babu mit Salon: alles wie immer, Empfehlen kommt hinten dazu",
+           mitSalon == Ausbaustufe.reiter + [.empfehlen])
+    pruefe("… und steht dann nicht noch einmal im Menü",
+           !Ausbaustufe.kontomenue(fuer: nil, ambassadorin: .mitAblage).contains(.empfehlen))
+}
+let ohne = Ausbaustufe.reiter(fuer: nil, ambassadorin: .ohneAblage)
+pruefe("ohne Ablage: Empfehlen steht ganz vorn", ohne.first == .empfehlen)
+pruefe("… dahinter die üblichen Reiter in ihrer Reihenfolge",
+       Array(ohne.dropFirst()) == Array(Ausbaustufe.reiter.prefix(ohne.count - 1)))
+pruefe("… und dort fängt sie an",
+       Ausbaustufe.startreiter(fuer: nil, ambassadorin: .ohneAblage) == .empfehlen)
+pruefe("der Start-Reiter steht auch wirklich unten",
+       ohne.contains(Ausbaustufe.startreiter(fuer: nil, ambassadorin: .ohneAblage)!))
+pruefe("mit Salon fängt sie an wie bisher",
+       Ausbaustufe.startreiter(fuer: nil, ambassadorin: .mitAblage) == nil)
+pruefe("wer keine Ambassadorin ist, fängt an wie bisher",
+       Ausbaustufe.startreiter(fuer: nil, ambassadorin: .nein) == nil)
+var teamNie = true
+for r in alleRechte.compactMap({ $0 }) {
+    for a in alleAmb {
+        if Ausbaustufe.reiter(fuer: r, ambassadorin: a).contains(.empfehlen)
+            || Ausbaustufe.kontomenue(fuer: r, ambassadorin: a).contains(.empfehlen)
+            || Ausbaustufe.startreiter(fuer: r, ambassadorin: a) != nil {
+            teamNie = false
+        }
+    }
+}
+pruefe("eine Mitarbeiterin sieht Empfehlen nie, weder unten noch im Menü", teamNie)
+pruefe("Empfehlen gibt es in beiden Bauten", !Reiter.empfehlen.nurVoll
+       && !Kontomenuepunkt.empfehlen.nurVoll)
+pruefe("Reiter und Menüzeile heißen gleich und sehen gleich aus",
+       Reiter.empfehlen.titel == Kontomenuepunkt.empfehlen.titel
+       && Reiter.empfehlen.symbol == Kontomenuepunkt.empfehlen.symbol)
 
 print(fehler == 0 ? "\nAlles in Ordnung." : "\n\(fehler) Fehler.")
 exit(fehler == 0 ? 0 : 1)

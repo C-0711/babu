@@ -16,7 +16,7 @@ final class AppStore: ObservableObject {
     // unter Buchhaltung. Der Fall bleibt, damit alte gespeicherte
     // Stände nicht beim Laden stolpern.
     enum Tab: Hashable { case erfassen, belege, termine, kasse, rechnungen,
-                         fragen, export, auslagen }
+                         fragen, export, auslagen, empfehlen }
 
     @Published var onboarded = false { didSet { speichern() } }
     @Published var skr = "SKR04" { didSet { speichern() } }
@@ -59,6 +59,27 @@ final class AppStore: ObservableObject {
     /// Wahr, solange der Scanner aus dem Reiter „Auslagen“ heraus läuft.
     @Published var auslageModus = false
     private var pushAngefragt = false
+
+    /// Empfiehlt dieses Konto babu weiter? `nil`: noch nie nachgesehen.
+    /// Persistiert, damit der Reiter „Empfehlen" nach einem Neustart sofort
+    /// dasteht — und eine Ambassadorin ohne eigene Ablage gleich dort landet,
+    /// statt vor einer Kamera, die für sie nichts ablegen kann.
+    @Published var istAmbassador: Bool? { didSet { speichern() } }
+    /// Was `GET /api/ambassador/me` zuletzt gesagt hat (nicht persistiert —
+    /// Geld und Salons holt der Reiter bei jedem Öffnen frisch).
+    @Published var empfehlen: EmpfehlenStand?
+    /// Der Start-Reiter wird einmal je Start (und je Anmeldung) gesetzt, nicht
+    /// bei jedem Nachfragen — sonst risse es sie aus dem Reiter, in dem sie ist.
+    fileprivate var startreiterGesetzt = false
+    /// Ein Anmelde-Link aus der Mail wird gerade eingelöst.
+    @Published var anmeldungLaeuft = false
+    #if DEBUG
+    /// Nur Entwicklungs-Builds: „Empfehlen" mit Beispieldaten statt Netz
+    /// (`BABU_BEISPIEL_EMPFEHLEN`, siehe `beispielEinrichten`).
+    var empfehlenBeispiel: EmpfehlenStand?
+    var empfehlenBeispielFehler = false
+    var empfehlenBeispielPause: Double = 0
+    #endif
 
     /// Das Profil des Salons (Betriebsangaben) — liegt auf dem Telefon und
     /// reist mit jeder Einschätzungs-Anfrage mit. Quelle: api/einstellungen,
@@ -111,6 +132,7 @@ final class AppStore: ObservableObject {
             profil = z.profil ?? [:]
             ablageFehlt = z.ablageFehlt ?? false
             abgleich = z.abgleich ?? []
+            istAmbassador = z.ambassador
             // Ältere Stände: Demo-Belege am festen Demo-Siegel nachträglich
             // markieren, damit sie nie im echten Stapel landen.
             let demoSiegel: Set<String> = ["77b2e0c4 9a11 f38d", "0d31f6a8 5be2 c974"]
@@ -122,7 +144,11 @@ final class AppStore: ObservableObject {
             belege = Demo.archiv()   // Nur im Simulator: Demo-Archiv als Ausgangslage
             #endif
         }
+        #if DEBUG
+        beispielEinrichten(ProcessInfo.processInfo.environment)
+        #endif
         geladen = true
+        startreiterPruefen()
     }
 
     // MARK: - Persistenz
@@ -155,6 +181,8 @@ final class AppStore: ObservableObject {
         var rechte: Ausbaustufe.Rechte?
         // Neu ab 03.09.2026: der Konzept-Schalter „Ein Knopf".
         var einKnopf: Bool?
+        // Neu ab 08.10.2026: empfiehlt babu weiter (Reiter „Empfehlen").
+        var ambassador: Bool?
     }
 
     private var zustand: Zustand {
@@ -165,7 +193,8 @@ final class AppStore: ObservableObject {
                 verbundenAls: verbundenAls, verbundenRolle: verbundenRolle,
                 vorlagen: vorlagen,
                 testmodus: testmodus, profil: profil,
-                ablageFehlt: ablageFehlt, abgleich: abgleich, rechte: rechte, einKnopf: einKnopf)
+                ablageFehlt: ablageFehlt, abgleich: abgleich, rechte: rechte, einKnopf: einKnopf,
+                ambassador: istAmbassador)
     }
 
     /// Entprellt auf ~0,25 s, damit Serien-Änderungen nicht pro Mutation schreiben.
@@ -300,6 +329,14 @@ final class AppStore: ObservableObject {
             ablageFehlt = false
             ablageAktiv = true
             altBelegeNachreichen()
+        }
+        // Empfiehlt sie babu weiter? Eine Mitarbeiterin fragt gar nicht erst
+        // (sie bekäme nur ein 403) — „Empfehlen" gibt es für sie nie.
+        if antwort.rechte == nil {
+            await empfehlenLaden()
+        } else if istAmbassador != false {
+            istAmbassador = false
+            empfehlen = nil
         }
         // Push (babu Expenses D1): einmal je Start um Erlaubnis fragen; das
         // Gerät meldet sich, sobald Apple ein Token gibt.
@@ -932,6 +969,25 @@ final class AppStore: ObservableObject {
     }
 }
 
+extension Reiter {
+    /// Die Marke, die der Reiter im Zustand trägt. `AppStore.Tab` kennt mehr
+    /// Fälle als es Reiter gibt (alte gespeicherte Stände) — deshalb zwei
+    /// Aufzählungen und diese eine Übersetzung. Steht hier und nicht in
+    /// BelegApp.swift, weil der Store den Start-Reiter selbst setzt (und der
+    /// Store-Harness BelegApp.swift nicht mitübersetzt).
+    var tab: AppStore.Tab {
+        switch self {
+        case .erfassen:  return .erfassen
+        case .dokumente: return .belege
+        case .termine:   return .termine
+        case .kasse:     return .kasse
+        case .fragen:    return .fragen
+        case .empfehlen: return .empfehlen
+        case .auslagen:  return .auslagen
+        }
+    }
+}
+
 extension DateFormatter {
     static let kurz: DateFormatter = {
         let f = DateFormatter()
@@ -944,6 +1000,157 @@ extension DateFormatter {
         f.dateFormat = "dd.MM.yyyy HH:mm:ss"
         return f
     }()
+}
+
+// MARK: - Empfehlen und Anmelden
+
+extension AppStore {
+    /// Wie dieses Konto zum Empfehlen steht — daraus folgen Reiter und Start.
+    var ambassadorin: Ausbaustufe.Ambassadorin {
+        guard rechte == nil, istAmbassador == true else { return .nein }
+        return ablageFehlt ? .ohneAblage : .mitAblage
+    }
+
+    /// Geld und Salons der Ambassadorin holen. 404 heißt: keine — dann
+    /// verschwindet der Reiter. Ohne Netz bleibt alles, wie es war.
+    /// `nil`: gar nicht gefragt (abgemeldet oder Mitarbeiterin).
+    @discardableResult
+    func empfehlenLaden() async -> AblageService.AmbassadorAuskunft? {
+        #if DEBUG
+        if let beispiel = empfehlenBeispiel {
+            if empfehlenBeispielPause > 0 {
+                // Damit ein Bildschirmfoto den Anfang des Ka-ching erwischt.
+                let pause = empfehlenBeispielPause
+                empfehlenBeispielPause = 0
+                try? await Task.sleep(nanoseconds: UInt64(pause * 1_000_000_000))
+            }
+            empfehlen = beispiel
+            return .da(beispiel)
+        }
+        if empfehlenBeispielFehler {
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            return .unbekannt
+        }
+        #endif
+        guard rechte == nil, let url = URL(string: ablageURL),
+              let pat = KeychainHelfer.ladePAT() else { return nil }
+        let auskunft = await AblageService.ambassadorStand(basis: url, pat: pat)
+        switch auskunft {
+        case .da(let stand):
+            empfehlen = stand
+            if istAmbassador != true { istAmbassador = true }
+        case .keine:
+            empfehlen = nil
+            if istAmbassador != false { istAmbassador = false }
+        case .unbekannt:
+            break
+        }
+        startreiterPruefen()
+        return auskunft
+    }
+
+    #if DEBUG
+    /// Nur Entwicklungs-Builds, für Bildschirmfotos im Simulator — ohne
+    /// Konto und ohne Netz; der Server bleibt, wie er ist:
+    /// `BABU_BEISPIEL_EMPFEHLEN=leer|voll|voll-konto|fehler` macht dieses
+    /// Gerät zur Ambassadorin mit genau diesen Daten,
+    /// `BABU_BEISPIEL_OHNE_ABLAGE=1` dazu ohne eigene Ablage.
+    /// `BABU_BEISPIEL_KACHING=geld|salon|beide` tut so, als hätte dieses
+    /// Telefon den Stand vor einer Provision bzw. vor dem grünen Salon gesehen
+    /// — beim Öffnen von „Empfehlen" kommt dann das Ka-ching (nach 3 s).
+    func beispielEinrichten(_ umgebung: [String: String]) {
+        guard let art = umgebung["BABU_BEISPIEL_EMPFEHLEN"] else { return }
+        istAmbassador = true
+        rechte = nil
+        ablageFehlt = umgebung["BABU_BEISPIEL_OHNE_ABLAGE"] == "1"
+        if art == "fehler" {
+            empfehlenBeispielFehler = true
+            return
+        }
+        empfehlenBeispiel = EmpfehlenStand.beispiel(art)
+        guard let stand = empfehlenBeispiel else { return }
+        let schluessel = "empfehlen.gesehen." + (stand.code ?? "-")
+        if let wie = umgebung["BABU_BEISPIEL_KACHING"] {
+            var vorher = stand.merkstand
+            if wie == "geld" || wie == "beide" {
+                vorher.verdient = max(0, stand.verdient - 237)
+            }
+            if wie == "salon" || wie == "beide" {
+                let gruen = stand.salons.filter { $0.ampel == .gruen }.map(\.schluessel)
+                vorher.gruene.removeAll { $0 == gruen.first }
+            }
+            UserDefaults.standard.set(try? JSONEncoder().encode(vorher), forKey: schluessel)
+            empfehlenBeispielPause = 3
+        } else {
+            // Ohne Ka-ching: so tun, als hätte sie diesen Stand schon gesehen.
+            UserDefaults.standard.set(try? JSONEncoder().encode(stand.merkstand),
+                                      forKey: schluessel)
+            empfehlen = stand
+        }
+    }
+    #endif
+
+    /// Eine Ambassadorin ohne eigene Ablage fängt bei „Empfehlen" an — einmal
+    /// je Start bzw. Anmeldung, nicht bei jedem Nachladen.
+    func startreiterPruefen() {
+        guard !startreiterGesetzt else { return }
+        guard let start = Ausbaustufe.startreiter(fuer: rechte, ambassadorin: ambassadorin)
+        else { return }
+        startreiterGesetzt = true
+        tab = start.tab
+    }
+
+    /// Ein frischer Geräteschlüssel — aus der Passwort-Anmeldung oder aus dem
+    /// Link in der Mail. Beide Wege enden hier, damit sie sich nie
+    /// auseinanderleben: Keychain, Name, Ablage, dann beim Server nachfragen.
+    func anmeldungUebernehmen(schluessel: String, un: String?, rolle: String?,
+                              ablage: Bool) async {
+        KeychainHelfer.speicherePAT(schluessel)
+        verbundenAls = un
+        if let rolle { verbundenRolle = rolle }
+        zugangAbgelaufen = false
+        ablageFehlt = !ablage
+        ablageAktiv = ablage
+        // Wer vorher angemeldet war, war vielleicht jemand anderes.
+        istAmbassador = nil
+        empfehlen = nil
+        startreiterGesetzt = false
+        // Rolle und Rechte sofort holen: sonst zeigt die App einer
+        // Mitarbeiterin bis zum nächsten Start die Reiter der Inhaberin.
+        await kontoNachfragen()
+        if ablage { ablageRetry() }
+    }
+
+    /// Dieses Gerät abmelden: der Schlüssel geht, das Konto bleibt.
+    func abmelden() {
+        KeychainHelfer.loeschePAT()
+        verbundenAls = nil
+        ablageAktiv = false   // ehrlich: ohne Verbindung geht nichts mehr
+        istAmbassador = nil
+        empfehlen = nil
+    }
+
+    /// Den Link aus der Mail einlösen (`babu://anmelden/<token>`). Gibt den
+    /// Satz zurück, den sie danach lesen soll — Titel und Text.
+    func mitLinkAnmelden(token: String, geraet: String) async -> (titel: String, text: String) {
+        guard let url = URL(string: ablageURL) else {
+            return ("Das hat nicht geklappt", "Bitte noch einmal versuchen.")
+        }
+        anmeldungLaeuft = true
+        defer { anmeldungLaeuft = false }
+        let e = await AblageService.anmeldelinkEinloesen(token: token, geraet: geraet,
+                                                         basis: url)
+        guard let schluessel = e.schluessel else {
+            return ("Das hat nicht geklappt",
+                    e.fehler ?? "Schick dir einfach einen neuen Link.")
+        }
+        await anmeldungUebernehmen(schluessel: schluessel, un: e.un, rolle: e.rolle,
+                                   ablage: e.ablage)
+        // Wer über den Link kommt, ist schon angemeldet — die Begrüßung
+        // davor wäre nur ein Knopf mehr.
+        if !onboarded { onboarded = true }
+        return ("Du bist drin ✓", e.un.map { "Angemeldet als \($0)." } ?? "Angemeldet.")
+    }
 }
 
 // MARK: - Werkseinstellung (Testphase)

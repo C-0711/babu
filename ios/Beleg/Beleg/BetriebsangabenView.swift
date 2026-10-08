@@ -41,7 +41,7 @@ struct BetriebsangabenView: View {
             if store.verbundenAls == nil {
                 Section {
                     Text("Diese Angaben liegen in deinem babu-Konto. "
-                         + "Verbinde dich zuerst mit E-Mail und Passwort, "
+                         + "Melde dich zuerst mit deiner E-Mail an, "
                          + "dann kannst du sie hier ausfüllen.")
                         .font(.footnote)
                         .foregroundStyle(GC.desc)

@@ -44,7 +44,7 @@ struct BetriebsprofilView: View {
             if store.verbundenAls == nil {
                 Section {
                     Text("Das Bild deines Betriebs liegt in deinem babu-Konto. "
-                         + "Verbinde dich zuerst mit E-Mail und Passwort.")
+                         + "Melde dich zuerst mit deiner E-Mail an.")
                         .font(.footnote)
                         .foregroundStyle(GC.desc)
                 }

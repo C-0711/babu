@@ -29,7 +29,7 @@ struct KontoMenuView: View {
     }
 
     private var unterzeile: String {
-        if store.verbundenAls == nil { return "Mit E-Mail und Passwort verbinden" }
+        if store.verbundenAls == nil { return "Mit deiner E-Mail anmelden" }
         if store.zugangAbgelaufen { return "Der Zugang gilt nicht mehr — bitte neu verbinden" }
         // Sagen, WOMIT man angemeldet ist, nicht nur DASS: „Dein babu-Konto"
         // beantwortet die Frage nicht, die man sich hier stellt.
@@ -44,7 +44,7 @@ struct KontoMenuView: View {
         NavigationStack {
             List {
                 Section {
-                    // Die Zeile sagt „Mit E-Mail und Passwort verbinden" —
+                    // Die Zeile sagt „Mit deiner E-Mail anmelden" —
                     // also muss sie auch dorthin führen. Sie war reine
                     // Anzeige, und der einzige Weg zum Anmelden lag ganz
                     // unten in den Einstellungen: wer nicht verbunden ist,
@@ -122,7 +122,8 @@ struct KontoMenuView: View {
     }
 
     private func punkte(_ abschnitt: Kontomenuepunkt.Abschnitt) -> [Kontomenuepunkt] {
-        Ausbaustufe.kontomenue(fuer: store.rechte).filter { $0.abschnitt == abschnitt }
+        Ausbaustufe.kontomenue(fuer: store.rechte, ambassadorin: store.ambassadorin)
+            .filter { $0.abschnitt == abschnitt }
     }
 
     /// Eine Zeile: entweder ein Blatt oder ein Weiterschieben.
@@ -171,6 +172,9 @@ struct KontoMenuView: View {
         case .marketing:       MarketingView()
         // Funktionen wurden bisher zufällig entdeckt — diese Seite zählt
         // einmal alles auf, nach Anlass statt nach Technik.
+        // Nur, wenn unten kein Platz mehr für den Reiter war (babu Pro) —
+        // dieselbe Ansicht wie dort, nur hierher geschoben.
+        case .empfehlen:       EmpfehlenAnsicht()
         case .wasBabuKann:     WasBabuKannView { zurueck() }
         case .meldungen:       MeldungenListe()
         case .einstellungen:   EinstellungenView()

@@ -15,6 +15,9 @@ targetTemplates:
   App:
     type: application
     platform: iOS
+    # Alles im Ordner Beleg gehört zu beiden Zielen — auch Beleg/kaching.caf,
+    # der Kassenklang (Ka-ching beim Empfehlen, später der Push-Ton). In der
+    # pbxproj ist es derselbe Ordner als synchronisierte Gruppe.
     sources: [Beleg]
     settings:
       base:
@@ -47,10 +50,14 @@ targets:
         # Der Name auf dem Homescreen. Steht nicht in der Info.plist, weil
         # sich beide Apps dieselbe Datei teilen.
         BABU_ANZEIGENAME: babu
+        # Das Schema für den Anmelde-Link (babu://anmelden/<token>) — aus
+        # demselben Grund am Ziel und nicht in der Info.plist.
+        BABU_URL_SCHEMA: babu
   BelegPro:
     templates: [App]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.0711.beleg.pro
         BABU_ANZEIGENAME: babu Pro
+        BABU_URL_SCHEMA: babupro
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) BABU_PRO"

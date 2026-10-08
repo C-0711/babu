@@ -29,13 +29,20 @@ enum Ausbaustufe {
 
     /// Die Reiter unten, in der Reihenfolge, in der sie stehen.
     static var reiter: [Reiter] {
-        Reiter.allCases.filter { (voll || !$0.nurVoll) && !$0.nurMitarbeit }
+        Reiter.allCases.filter {
+            (voll || !$0.nurVoll) && !$0.nurMitarbeit && !$0.nurAmbassadorin
+        }
     }
 
     /// Die Zeilen im Menü rechts oben, in der Reihenfolge, in der sie stehen.
     static var kontomenue: [Kontomenuepunkt] {
-        Kontomenuepunkt.allCases.filter { voll || !$0.nurVoll }
+        Kontomenuepunkt.allCases.filter { (voll || !$0.nurVoll) && !$0.nurAmbassadorin }
     }
+
+    /// Mehr Reiter stellt das iPhone nicht nebeneinander. Ein sechster landet
+    /// unter einem „Mehr", das iOS selbst baut — fremde Liste, eigener
+    /// Zurück-Pfeil, doppelter Kopf (im Simulator gesehen, 08.10.2026).
+    static let hoechstensReiter = 5
 
     /// Steht dieser Reiter in diesem Bau überhaupt zur Verfügung?
     /// Wer irgendwo „geh dorthin" sagt, fragt vorher hier nach — sonst
@@ -52,39 +59,85 @@ enum Ausbaustufe {
         var auslagen: Bool
     }
 
-    static func reiter(fuer rechte: Rechte?) -> [Reiter] {
-        guard let r = rechte else { return reiter }
-        return Reiter.allCases.filter { t in
+    /// Empfiehlt dieses Konto babu weiter (`GET /api/ambassador/me` sagt 200)
+    /// — und hat es selbst eine Ablage? Eine Ambassadorin ohne eigenen
+    /// Salon bekommt nie eine; für sie ist „Empfehlen" der Anfang.
+    enum Ambassadorin: Equatable {
+        case nein, mitAblage, ohneAblage
+    }
+
+    /// Die Reiter für dieses Konto — nie mehr als `hoechstensReiter`.
+    /// Mitarbeiterinnen sehen nur, was sie dürfen, und nie „Empfehlen".
+    ///
+    /// Eine Ambassadorin mit Salon behält ihre Reiter, wie sie sind;
+    /// „Empfehlen" kommt hinten dazu, wenn noch Platz ist — sonst (babu Pro)
+    /// steht es im Menü (`kontomenue(fuer:ambassadorin:)`). Ohne Ablage ist
+    /// „Empfehlen" ihr Anfang und steht ganz vorn; was dahinter keinen Platz
+    /// mehr hat (in babu Pro „Fragen"), bräuchte eine Ablage und ginge für
+    /// sie ohnehin nicht.
+    static func reiter(fuer rechte: Rechte?,
+                       ambassadorin: Ambassadorin = .nein) -> [Reiter] {
+        guard let r = rechte else {
+            switch ambassadorin {
+            case .nein:
+                return reiter
+            case .mitAblage:
+                return reiter.count < hoechstensReiter ? reiter + [.empfehlen] : reiter
+            case .ohneAblage:
+                return Array(([.empfehlen] + reiter).prefix(hoechstensReiter))
+            }
+        }
+        let erlaubt = Reiter.allCases.filter { t in
             switch t {
             case .auslagen: return r.auslagen
             case .erfassen: return r.belege
             case .kasse: return r.kasse && voll
-            case .dokumente, .termine, .fragen: return false
+            case .dokumente, .termine, .fragen, .empfehlen: return false
             }
         }
+        return Array(erlaubt.prefix(hoechstensReiter))
     }
 
-    static func kontomenue(fuer rechte: Rechte?) -> [Kontomenuepunkt] {
-        guard rechte != nil else { return kontomenue }
-        return [.meldungen, .einstellungen]
+    /// Welcher Reiter beim Start offen ist, wenn nicht der erste gemeint ist.
+    /// `nil`: wie bisher (Erfassen bzw. was das Konto zuerst sieht).
+    static func startreiter(fuer rechte: Rechte?,
+                            ambassadorin: Ambassadorin) -> Reiter? {
+        guard rechte == nil, ambassadorin == .ohneAblage else { return nil }
+        return .empfehlen
+    }
+
+    /// Das Menü für dieses Konto. „Empfehlen" steht hier genau dann, wenn
+    /// eine Ambassadorin es braucht und unten kein Platz mehr dafür war.
+    static func kontomenue(fuer rechte: Rechte?,
+                           ambassadorin: Ambassadorin = .nein) -> [Kontomenuepunkt] {
+        guard rechte == nil else { return [.meldungen, .einstellungen] }
+        let imMenue = ambassadorin != .nein
+            && !reiter(fuer: nil, ambassadorin: ambassadorin).contains(.empfehlen)
+        return Kontomenuepunkt.allCases.filter {
+            (voll || !$0.nurVoll) && (!$0.nurAmbassadorin || imMenue)
+        }
     }
 }
 
 /// Ein Reiter in der Leiste unten.
 enum Reiter: String, CaseIterable, Hashable {
-    case erfassen, dokumente, termine, kasse, fragen, auslagen
+    case erfassen, dokumente, termine, kasse, fragen, empfehlen, auslagen
 
     /// Gibt es diesen Reiter nur im großen Bau?
     var nurVoll: Bool {
         switch self {
         case .termine, .kasse: return true
-        case .erfassen, .dokumente, .fragen, .auslagen: return false
+        case .erfassen, .dokumente, .fragen, .empfehlen, .auslagen: return false
         }
     }
 
     /// Nur für Mitarbeiterinnen (babu Expenses D1) — die Inhaberin gibt
     /// Auslagen über das Menü frei.
     var nurMitarbeit: Bool { self == .auslagen }
+
+    /// Nur für Ambassadorinnen — in beiden Bauten, aber nur, wenn der Server
+    /// das Konto als Ambassadorin kennt (`reiter(fuer:ambassadorin:)`).
+    var nurAmbassadorin: Bool { self == .empfehlen }
 
     var titel: String {
         switch self {
@@ -93,6 +146,7 @@ enum Reiter: String, CaseIterable, Hashable {
         case .termine:   return "Termine"
         case .kasse:     return "Kassenbuch"
         case .fragen:    return "Fragen"
+        case .empfehlen: return "Empfehlen"
         case .auslagen:  return "Auslagen"
         }
     }
@@ -104,6 +158,7 @@ enum Reiter: String, CaseIterable, Hashable {
         case .termine:   return "calendar"
         case .kasse:     return "banknote"
         case .fragen:    return "questionmark.bubble"
+        case .empfehlen: return "gift"
         case .auslagen:  return "eurosign.circle"
         }
     }
@@ -118,7 +173,11 @@ enum Kontomenuepunkt: String, CaseIterable, Hashable {
     case betrieb, kundinnen, preise, kartenzahlung, team, vertraege
     case kontoauszug, marketing
     // Das Konto selbst
-    case wasBabuKann, meldungen, einstellungen
+    case empfehlen, wasBabuKann, meldungen, einstellungen
+
+    /// Nur für Ambassadorinnen, und nur, wenn „Empfehlen" unten keinen Platz
+    /// mehr als Reiter hat (`Ausbaustufe.kontomenue(fuer:ambassadorin:)`).
+    var nurAmbassadorin: Bool { self == .empfehlen }
 
     /// Gibt es diese Zeile nur im großen Bau?
     var nurVoll: Bool {
@@ -131,7 +190,7 @@ enum Kontomenuepunkt: String, CaseIterable, Hashable {
         // ist ein DOKUMENT, kein Salonbetrieb — und die Kündigungsfrist, an
         // die babu erinnert, gehört zum Kern dessen, was es leisten soll.
         case .aufraeumen, .monatsabschluss, .export, .betrieb, .kontoauszug,
-             .vertraege, .wasBabuKann, .meldungen, .einstellungen:
+             .vertraege, .empfehlen, .wasBabuKann, .meldungen, .einstellungen:
             return false
         }
     }
@@ -147,7 +206,7 @@ enum Kontomenuepunkt: String, CaseIterable, Hashable {
         case .betrieb, .kundinnen, .preise, .kartenzahlung, .team,
              .vertraege, .kontoauszug, .marketing:
             return .salon
-        case .wasBabuKann, .meldungen, .einstellungen:
+        case .empfehlen, .wasBabuKann, .meldungen, .einstellungen:
             return .konto
         }
     }
@@ -169,6 +228,7 @@ enum Kontomenuepunkt: String, CaseIterable, Hashable {
         case .vertraege:       return "Deine Verträge"
         case .kontoauszug:     return "Kontoauszug"
         case .marketing:       return "Marketing"
+        case .empfehlen:       return "Empfehlen"
         case .wasBabuKann:     return "Was babu alles kann"
         case .meldungen:       return "Meine Meldungen"
         case .einstellungen:   return "Einstellungen"
@@ -192,6 +252,7 @@ enum Kontomenuepunkt: String, CaseIterable, Hashable {
         case .vertraege:       return "shippingbox"
         case .kontoauszug:     return "building.columns"
         case .marketing:       return "megaphone"
+        case .empfehlen:       return Reiter.empfehlen.symbol
         case .wasBabuKann:     return "list.bullet.rectangle"
         case .meldungen:       return "exclamationmark.bubble"
         case .einstellungen:   return "gearshape"
