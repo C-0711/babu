@@ -61,7 +61,7 @@ enum Ausbaustufe {
 
     /// Empfiehlt dieses Konto babu weiter (`GET /api/ambassador/me` sagt 200)
     /// — und hat es selbst eine Ablage? Eine Ambassadorin ohne eigenen
-    /// Salon bekommt nie eine; für sie ist „Empfehlen" der Anfang.
+    /// Salon bekommt nie eine; für sie ist „Empfehlen" alles.
     enum Ambassadorin: Equatable {
         case nein, mitAblage, ohneAblage
     }
@@ -71,10 +71,10 @@ enum Ausbaustufe {
     ///
     /// Eine Ambassadorin mit Salon behält ihre Reiter, wie sie sind;
     /// „Empfehlen" kommt hinten dazu, wenn noch Platz ist — sonst (babu Pro)
-    /// steht es im Menü (`kontomenue(fuer:ambassadorin:)`). Ohne Ablage ist
-    /// „Empfehlen" ihr Anfang und steht ganz vorn; was dahinter keinen Platz
-    /// mehr hat (in babu Pro „Fragen"), bräuchte eine Ablage und ginge für
-    /// sie ohnehin nicht.
+    /// steht es im Menü (`kontomenue(fuer:ambassadorin:)`). Ohne eigene
+    /// Ablage führt jeder andere Reiter ins Leere (Erfassen, Dokumente,
+    /// Termine, Kassenbuch, Fragen brauchen alle eine) — dann gibt es nur
+    /// „Empfehlen", als ganze Seite ohne Leiste (`ganzeSeite`).
     static func reiter(fuer rechte: Rechte?,
                        ambassadorin: Ambassadorin = .nein) -> [Reiter] {
         guard let r = rechte else {
@@ -84,7 +84,7 @@ enum Ausbaustufe {
             case .mitAblage:
                 return reiter.count < hoechstensReiter ? reiter + [.empfehlen] : reiter
             case .ohneAblage:
-                return Array(([.empfehlen] + reiter).prefix(hoechstensReiter))
+                return [.empfehlen]
             }
         }
         let erlaubt = Reiter.allCases.filter { t in
@@ -98,20 +98,22 @@ enum Ausbaustufe {
         return Array(erlaubt.prefix(hoechstensReiter))
     }
 
-    /// Welcher Reiter beim Start offen ist, wenn nicht der erste gemeint ist.
-    /// `nil`: wie bisher (Erfassen bzw. was das Konto zuerst sieht).
-    static func startreiter(fuer rechte: Rechte?,
-                            ambassadorin: Ambassadorin) -> Reiter? {
+    /// Ein Reiter allein bekommt keine Leiste — er ist die ganze Seite.
+    /// Heute nur die Ambassadorin ohne eigene Ablage. `nil`: die Leiste.
+    static func ganzeSeite(fuer rechte: Rechte?, ambassadorin: Ambassadorin) -> Reiter? {
         guard rechte == nil, ambassadorin == .ohneAblage else { return nil }
         return .empfehlen
     }
 
     /// Das Menü für dieses Konto. „Empfehlen" steht hier genau dann, wenn
-    /// eine Ambassadorin es braucht und unten kein Platz mehr dafür war.
+    /// eine Ambassadorin mit Salon es braucht und unten kein Platz mehr dafür
+    /// war. Ohne eigene Ablage bleibt nur, was das Konto selbst angeht.
     static func kontomenue(fuer rechte: Rechte?,
                            ambassadorin: Ambassadorin = .nein) -> [Kontomenuepunkt] {
-        guard rechte == nil else { return [.meldungen, .einstellungen] }
-        let imMenue = ambassadorin != .nein
+        guard rechte == nil, ambassadorin != .ohneAblage else {
+            return [.meldungen, .einstellungen]
+        }
+        let imMenue = ambassadorin == .mitAblage
             && !reiter(fuer: nil, ambassadorin: ambassadorin).contains(.empfehlen)
         return Kontomenuepunkt.allCases.filter {
             (voll || !$0.nurVoll) && (!$0.nurAmbassadorin || imMenue)

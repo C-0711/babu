@@ -91,11 +91,20 @@ struct MainTabs: View {
     }
 
     var body: some View {
-        TabView(selection: $store.tab) {
-            ForEach(reiter, id: \.self) { reiter in
-                inhalt(reiter)
-                    .tabItem { Label(reiter.titel, systemImage: reiter.symbol) }
-                    .tag(reiter.tab)
+        ZStack {
+            // Ein Reiter allein (Ambassadorin ohne eigene Ablage) bekommt
+            // keine Leiste mit einem einzigen Knopf — er ist die Seite.
+            if let seite = Ausbaustufe.ganzeSeite(fuer: store.rechte,
+                                                  ambassadorin: store.ambassadorin) {
+                inhalt(seite)
+            } else {
+                TabView(selection: $store.tab) {
+                    ForEach(reiter, id: \.self) { reiter in
+                        inhalt(reiter)
+                            .tabItem { Label(reiter.titel, systemImage: reiter.symbol) }
+                            .tag(reiter.tab)
+                    }
+                }
             }
         }
         // Einmal beim Start fragen, als wer dieses Gerät angemeldet ist —

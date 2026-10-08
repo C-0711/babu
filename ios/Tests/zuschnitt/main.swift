@@ -196,24 +196,24 @@ if Ausbaustufe.voll {
     pruefe("… und steht dann nicht noch einmal im Menü",
            !Ausbaustufe.kontomenue(fuer: nil, ambassadorin: .mitAblage).contains(.empfehlen))
 }
-let ohne = Ausbaustufe.reiter(fuer: nil, ambassadorin: .ohneAblage)
-pruefe("ohne Ablage: Empfehlen steht ganz vorn", ohne.first == .empfehlen)
-pruefe("… dahinter die üblichen Reiter in ihrer Reihenfolge",
-       Array(ohne.dropFirst()) == Array(Ausbaustufe.reiter.prefix(ohne.count - 1)))
-pruefe("… und dort fängt sie an",
-       Ausbaustufe.startreiter(fuer: nil, ambassadorin: .ohneAblage) == .empfehlen)
-pruefe("der Start-Reiter steht auch wirklich unten",
-       ohne.contains(Ausbaustufe.startreiter(fuer: nil, ambassadorin: .ohneAblage)!))
-pruefe("mit Salon fängt sie an wie bisher",
-       Ausbaustufe.startreiter(fuer: nil, ambassadorin: .mitAblage) == nil)
-pruefe("wer keine Ambassadorin ist, fängt an wie bisher",
-       Ausbaustufe.startreiter(fuer: nil, ambassadorin: .nein) == nil)
+// Ohne eigene Ablage führt jeder andere Reiter ins Leere (08.10.2026):
+// nur „Empfehlen", als ganze Seite ohne Leiste; im Menü nur das Konto.
+pruefe("ohne Ablage: nur Empfehlen",
+       Ausbaustufe.reiter(fuer: nil, ambassadorin: .ohneAblage) == [.empfehlen])
+pruefe("… als ganze Seite, ohne Leiste",
+       Ausbaustufe.ganzeSeite(fuer: nil, ambassadorin: .ohneAblage) == .empfehlen)
+pruefe("… im Menü nur Meldungen und Einstellungen (Konto, Abmelden)",
+       Ausbaustufe.kontomenue(fuer: nil, ambassadorin: .ohneAblage) == [.meldungen, .einstellungen])
+pruefe("mit Salon: die Leiste wie immer",
+       Ausbaustufe.ganzeSeite(fuer: nil, ambassadorin: .mitAblage) == nil)
+pruefe("wer keine Ambassadorin ist: die Leiste wie immer",
+       Ausbaustufe.ganzeSeite(fuer: nil, ambassadorin: .nein) == nil)
 var teamNie = true
 for r in alleRechte.compactMap({ $0 }) {
     for a in alleAmb {
         if Ausbaustufe.reiter(fuer: r, ambassadorin: a).contains(.empfehlen)
             || Ausbaustufe.kontomenue(fuer: r, ambassadorin: a).contains(.empfehlen)
-            || Ausbaustufe.startreiter(fuer: r, ambassadorin: a) != nil {
+            || Ausbaustufe.ganzeSeite(fuer: r, ambassadorin: a) != nil {
             teamNie = false
         }
     }

@@ -68,9 +68,6 @@ final class AppStore: ObservableObject {
     /// Was `GET /api/ambassador/me` zuletzt gesagt hat (nicht persistiert —
     /// Geld und Salons holt der Reiter bei jedem Öffnen frisch).
     @Published var empfehlen: EmpfehlenStand?
-    /// Der Start-Reiter wird einmal je Start (und je Anmeldung) gesetzt, nicht
-    /// bei jedem Nachfragen — sonst risse es sie aus dem Reiter, in dem sie ist.
-    fileprivate var startreiterGesetzt = false
     /// Ein Anmelde-Link aus der Mail wird gerade eingelöst.
     @Published var anmeldungLaeuft = false
     #if DEBUG
@@ -148,7 +145,6 @@ final class AppStore: ObservableObject {
         beispielEinrichten(ProcessInfo.processInfo.environment)
         #endif
         geladen = true
-        startreiterPruefen()
     }
 
     // MARK: - Persistenz
@@ -1045,7 +1041,6 @@ extension AppStore {
         case .unbekannt:
             break
         }
-        startreiterPruefen()
         return auskunft
     }
 
@@ -1090,16 +1085,6 @@ extension AppStore {
     }
     #endif
 
-    /// Eine Ambassadorin ohne eigene Ablage fängt bei „Empfehlen" an — einmal
-    /// je Start bzw. Anmeldung, nicht bei jedem Nachladen.
-    func startreiterPruefen() {
-        guard !startreiterGesetzt else { return }
-        guard let start = Ausbaustufe.startreiter(fuer: rechte, ambassadorin: ambassadorin)
-        else { return }
-        startreiterGesetzt = true
-        tab = start.tab
-    }
-
     /// Ein frischer Geräteschlüssel — aus der Passwort-Anmeldung oder aus dem
     /// Link in der Mail. Beide Wege enden hier, damit sie sich nie
     /// auseinanderleben: Keychain, Name, Ablage, dann beim Server nachfragen.
@@ -1114,7 +1099,6 @@ extension AppStore {
         // Wer vorher angemeldet war, war vielleicht jemand anderes.
         istAmbassador = nil
         empfehlen = nil
-        startreiterGesetzt = false
         // Rolle und Rechte sofort holen: sonst zeigt die App einer
         // Mitarbeiterin bis zum nächsten Start die Reiter der Inhaberin.
         await kontoNachfragen()

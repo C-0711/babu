@@ -83,7 +83,9 @@ struct KontoMenuView: View {
                     } header: {
                         if let titel = abschnitt.titel { Text(titel) }
                     } footer: {
-                        if abschnitt == .konto {
+                        // Eine Ambassadorin ohne eigenen Salon hat weder
+                        // Steuerbüro noch Belegbox — der Satz wäre falsch.
+                        if abschnitt == .konto, store.ambassadorin != .ohneAblage {
                             Text("Den fertigen Stand bekommt dein Steuerbüro am Monatsende automatisch aus der Belegbox.")
                         }
                     }

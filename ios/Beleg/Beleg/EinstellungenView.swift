@@ -43,25 +43,29 @@ struct EinstellungenView: View {
                 // wenn Betriebsname, Anschrift oder Steuernummer fehlten —
                 // nur gab es sie hier nie, sondern ausschließlich im Portal
                 // im Browser. Jetzt gibt es sie hier.
-                Section {
-                    NavigationLink {
-                        BetriebsangabenView()
-                    } label: {
-                        Label("Dein Betrieb", systemImage: "building.2")
+                // Nicht für eine Ambassadorin ohne eigenen Salon: sie hat
+                // keinen Betrieb und keine Ablage — beides führte ins Leere.
+                if store.ambassadorin != .ohneAblage {
+                    Section {
+                        NavigationLink {
+                            BetriebsangabenView()
+                        } label: {
+                            Label("Dein Betrieb", systemImage: "building.2")
+                        }
+                    } footer: {
+                        Text("Name, Anschrift, Finanzamt und Steuernummer — das, "
+                             + "was auf jeder Rechnung stehen muss.")
                     }
-                } footer: {
-                    Text("Name, Anschrift, Finanzamt und Steuernummer — das, "
-                         + "was auf jeder Rechnung stehen muss.")
-                }
 
-                Section {
-                    Toggle("Belege automatisch ablegen und gegenprüfen",
-                           isOn: $store.ablageAktiv)
-                } footer: {
-                    Text("Jeder Beleg wandert nach der Aufnahme in deine Belegbox und wird dort ein zweites Mal geprüft.")
-                }
-                .onChange(of: store.ablageAktiv) { _, an in
-                    if an { store.altBelegeNachreichen() }
+                    Section {
+                        Toggle("Belege automatisch ablegen und gegenprüfen",
+                               isOn: $store.ablageAktiv)
+                    } footer: {
+                        Text("Jeder Beleg wandert nach der Aufnahme in deine Belegbox und wird dort ein zweites Mal geprüft.")
+                    }
+                    .onChange(of: store.ablageAktiv) { _, an in
+                        if an { store.altBelegeNachreichen() }
+                    }
                 }
 
                 Section {
