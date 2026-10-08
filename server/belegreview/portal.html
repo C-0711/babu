@@ -2359,7 +2359,12 @@ function grossAnfang(t){ return t ? t[0].toUpperCase() + t.slice(1) : t; }
    Wer im eigenen Betrieb arbeitet (auch der Betreiber, solange er keine
    Betriebe betreut), merkt von der Regel nichts. */
 function startAnsicht(){
-  return istKanzlei() && meineMandanten > 0 && !(aktiverMandant && aktiverMandant.id)
+  /* Eine Kanzlei ohne eigene Box (seit 03.10.2026 jede ohne Kopf) startet
+     in der Kanzlei-Ansicht — auch ohne Mandanten, dort legt sie den ersten
+     an. Bis 08.10. landete sie auf „Fast fertig", dem Text für einen Salon,
+     dessen Belegbox noch eingerichtet wird. */
+  return istKanzlei() && !(aktiverMandant && aktiverMandant.id)
+         && (meineMandanten > 0 || !meineBox)
     ? "mandanten" : "heute";
 }
 /* Was über den angemeldeten Zugang bekannt ist, an EINER Stelle übernommen.
@@ -2544,7 +2549,7 @@ function routen(){
   /* Zurück vom Bezahlen: #abo-danke/<sitzung> zeigt die Seite „Weitermachen". */
   const aboDanke = ziel === "abo-danke";
   let name = aboDanke ? "abo" : ansichten[ziel] !== undefined ? ziel : startAnsicht();
-  if (!boxDa() && !OHNE_BOX_ERLAUBT.includes(name)) name = "gesperrt";
+  if (!boxDa() && !OHNE_BOX_ERLAUBT.includes(name)) name = istKanzlei() ? "mandanten" : "gesperrt";
   document.querySelectorAll(".ansicht").forEach(a => a.classList.remove("an"));
   document.querySelectorAll("nav button").forEach(b =>
     b.classList.toggle("an", b.dataset.ziel === (REITER_ZU[name] || name)));
@@ -4977,11 +4982,47 @@ async function ladeEinstellungen(){
     $("#einst-betrieb").value = e.betrieb_name || "";
     const p = e.paket_empfehlung;
     /* Ohne Preis: in der Erprobung ist babu kostenlos, und eine Beispielzahl
-       liest jeder als Angebot. Die Einstufung selbst bleibt sichtbar. */
-    if (p) $("#einst-paket").innerHTML =
+       liest jeder als Angebot. Die Einstufung selbst bleibt sichtbar.
+       Mit Abo-Weg (seit 03.10.2026) stimmt „kostenlos" nur noch für die
+       Pilotbetriebe ohne Testmonat und ohne Abo — wer testet oder zahlt,
+       sieht hier seinen Stand und den Weg zur Seite „Weitermachen". */
+    const hinweise = p ? (p.hinweise || []).map(h =>
+      `<p style="color:var(--gc-desc);font-size:13px;margin-top:6px">${esc(h)}</p>`).join("") : "";
+    let abo = null;
+    try{ const ra = await api("/api/abo"); if (ra.ok) abo = await ra.json(); }catch{}
+    const stand = abo && abo.an ? paketStand(abo) : "";
+    if (stand) $("#einst-paket").innerHTML = stand + hinweise;
+    else if (p) $("#einst-paket").innerHTML =
       `<b>${esc(p.name)}</b> <span style="font-size:12px;color:var(--gc-muted)">(in der Erprobung kostenlos)</span>` +
-      (p.hinweise || []).map(h => `<p style="color:var(--gc-desc);font-size:13px;margin-top:6px">${esc(h)}</p>`).join("");
+      hinweise;
   }catch{}
+}
+/* Die Paket-Zeile in den Einstellungen aus /api/abo: laufendes Abo oder
+   Testmonat. Leer, wenn keins von beidem — dann bleibt der alte Text. */
+function paketStand(a){
+  const pakete = a.pakete || [];
+  const preis = x => x ? `${x.netto_cent / 100} € im Monat zzgl. USt` : "";
+  const weiter = text => `<button class="chip" style="margin-top:10px"
+    onclick="location.hash='#abo'">${text} ›</button>`;
+  if (a.abo_status && a.abo_status !== "beendet"){
+    const x = pakete.find(q => q.paket === a.paket);
+    const satz = a.abo_status === "gekuendigt"
+      ? (a.abo_ende ? `Gekündigt — läuft bis ${esc(aboDatum(a.abo_ende))}.` : "Gekündigt.")
+      : a.abo_status === "zahlung_offen" ? "Die letzte Zahlung ist nicht angekommen."
+      : a.bezahlt_bis ? `Bezahlt bis ${esc(aboDatum(a.bezahlt_bis))}.` : "Dein Abo läuft.";
+    return `<b>${esc(x ? x.name : "babu")}</b> <span style="font-size:12px;color:var(--gc-muted)">${esc(preis(x))}</span>
+      <p style="color:var(--gc-desc);font-size:13px;margin-top:6px">${satz}</p>` + weiter("Abo ansehen");
+  }
+  if (a.test_bis){
+    const x = pakete.find(q => q.paket === a.empfehlung);
+    const vorbei = a.zugang && a.zugang.stufe !== "voll";
+    return `<b>${esc(x ? x.name : "babu")}</b> <span style="font-size:12px;color:var(--gc-muted)">${esc(preis(x))}</span>
+      <p style="color:var(--gc-desc);font-size:13px;margin-top:6px">${vorbei
+        ? `Dein Testmonat ist am ${esc(aboDatum(a.test_bis))} zu Ende gegangen.`
+        : `Kostenlos testen bis einschließlich ${esc(aboDatum(a.test_bis))}.`}</p>` +
+      (a.kann_abschliessen ? weiter("Weitermachen") : "");
+  }
+  return "";
 }
 /* Die Telefone, die mit dem Konto verbunden sind — mit einem Weg, eines zu
    trennen (verloren, verkauft, verliehen). Kennungen nur in data-Attributen,
@@ -7296,7 +7337,7 @@ async function ladeVerwaltung(){
   }
   }  /* Ende Betreiber-Teil */
 
-  html += `<div class="sektion lbl">Zugänge (${_verwNutzer.length})</div>`;
+  html += `<div class="sektion lbl" id="verw-zahl">Zugänge (${_verwNutzer.length})</div>`;
   // Wird mit der Zeit hundert Zeilen — Suchfeld bleibt ein eigenes Element
   // (nicht im re-render bei jedem Tastendruck), damit der Fokus beim Tippen
   // nicht verloren geht.
@@ -7485,7 +7526,9 @@ function mandantChipAktualisieren(){
   if (gruppe) gruppe.hidden = !(m && m.id);
   // Eine Kanzlei mit betreuten Betrieben hat selbst meist gar nichts zu
   // buchen — ihre eigenen Gruppen bleiben zu, bis ein Betrieb gewählt ist.
-  if (istKanzlei() && meineMandanten > 0){
+  // Ebenso eine Kanzlei ohne eigene Box, die noch niemanden betreut (seit
+  // 08.10.2026): ihre Salon-Menüs führten nur zurück in die Kanzlei-Ansicht.
+  if (istKanzlei() && (meineMandanten > 0 || !meineBox)){
     const b = $("#nav-gruppe-buchhaltung"), s = $("#nav-gruppe-salon");
     if (b) b.hidden = !(m && m.id);
     if (s) s.hidden = !(m && m.id);
@@ -9013,8 +9056,8 @@ function aboWahlHtml(d){
     <label class="abo-zustimmung"><input type="checkbox" id="abo-agb">
       <span>Ich stimme den <a href="/agb" target="_blank" rel="noopener">Nutzungsbedingungen</a> zu und habe den
       <a href="/datenschutz" target="_blank" rel="noopener">Datenschutz</a> gelesen.</span></label>
-    <p class="abo-klein">Monatlich kündbar. Bezahlt wird per Lastschrift vom Geschäftskonto oder per Karte.</p>
-    <button class="hin" style="background:var(--gc-fg);color:var(--gc-bg)" onclick="aboAbschliessen()">Mit Lastschrift abschließen</button>
+    <p class="abo-klein">Monatlich kündbar. Wie du bezahlst, wählst du auf der nächsten Seite.</p>
+    <button class="hin" style="background:var(--gc-fg);color:var(--gc-bg)" onclick="aboAbschliessen()">Weiter zur Bezahlung</button>
     <div class="abo-fehler" id="abo-fehler" hidden></div>
   </div>`;
 }
@@ -9076,6 +9119,18 @@ async function nutzerAnlegen(){
     $("#nv-ergebnis").innerHTML = r.ok
       ? startpasswortKarte(d.email, d.startpasswort)
       : `<p style="color:var(--gc-danger);margin-top:8px">${d.fehler || "Ging gerade nicht."}</p>`;
+    if (!r.ok) return;
+    /* Die neue Zeile gleich in die Liste — nur die Liste, nicht die ganze
+       Ansicht: das Startpasswort darunter erscheint genau einmal und wäre
+       beim Neuaufbau sofort wieder weg (bis 08.10.2026 kam der neue Zugang
+       deshalb erst nach dem Neuladen der Seite). */
+    ["#nv-email", "#nv-name", "#nv-salon"].forEach(s => $(s).value = "");
+    try{
+      const rn = await api("/api/nutzer");
+      if (rn.ok) _verwNutzer = (await rn.json()).nutzer || _verwNutzer;
+    }catch{}
+    $("#verw-zahl").textContent = `Zugänge (${_verwNutzer.length})`;
+    verwListeRendern();
   }catch{}
 }
 
