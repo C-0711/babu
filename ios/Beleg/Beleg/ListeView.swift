@@ -238,7 +238,8 @@ struct ListeView: View {
 
                 if ansicht == .blaetter {
                     DokumentBlaetter(dokumente: monatsBelege,
-                                     grossAnsehen: $grossAnsehen) { pfad.append($0) }
+                                     grossAnsehen: $grossAnsehen,
+                                     loeschKandidat: $loeschKandidat) { pfad.append($0) }
                         .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 8, trailing: 12))
                         .listRowBackground(GC.canvas)
                         .listRowSeparator(.hidden)
