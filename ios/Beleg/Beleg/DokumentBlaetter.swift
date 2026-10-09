@@ -12,6 +12,7 @@ import SwiftUI
 struct DokumentBlaetter: View {
     let dokumente: [Beleg]
     @Binding var grossAnsehen: Grossansicht?
+    @Binding var loeschKandidat: UUID?
     /// Öffnen übernimmt der Aufrufer, indem er es auf seinen Stapel schiebt.
     /// Ein NavigationLink in einer Listenzeile bekäme vom System einen Pfeil
     /// daneben — bei einer Kachel sieht das aus wie ein Zeichenfehler.
@@ -24,14 +25,21 @@ struct DokumentBlaetter: View {
             ForEach(dokumente) { b in
                 Button { oeffnen(b.id) } label: { Blatt(beleg: b) }
                 .buttonStyle(.plain)
-                // Lange drücken heißt „nur mal ansehen": das Bild groß und
-                // zoombar, ohne den Umweg über die Detailansicht. Als
-                // gleichzeitige Geste, damit der Link davon unberührt bleibt.
-                .simultaneousGesture(
-                    LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+                .contextMenu {
+                    Button {
                         grossAnsehen = Grossansicht(id: b.id)
-                    })
-                .accessibilityHint("Tippen zum Öffnen, halten zum Vergrößern")
+                    } label: {
+                        Label("Groß ansehen", systemImage: "arrow.up.left.and.arrow.down.right")
+                    }
+                    if b.status != .fixiert {
+                        Button(role: .destructive) {
+                            loeschKandidat = b.id
+                        } label: {
+                            Label("Löschen", systemImage: "trash")
+                        }
+                    }
+                }
+                .accessibilityHint("Tippen zum Öffnen, lang halten für weitere Optionen")
             }
         }
         .padding(.horizontal, 2)
