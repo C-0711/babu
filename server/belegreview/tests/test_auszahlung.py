@@ -287,11 +287,36 @@ def test_karenz_haelt_junge_provision_zurueck(welt, monkeypatch):
     assert babs["netto_cent"] == 23700        # die 117 € vom 20.12. warten
 
 
-def test_ohne_auszahlungskonto_kein_lauf(welt, monkeypatch):
+def test_ohne_gueltiges_konto_gibt_es_die_ueberweisungsliste(welt, monkeypatch):
+    """Wie bei Camp45 ohne hinterlegtes Konto (09.10.2026): live standen 16
+    Ziffern als IBAN und 8 als USt-IdNr. in der .env. Dann entstehen die
+    Gutschriften trotzdem — ohne die falsche USt-IdNr. —, statt der
+    Bankdatei gibt es eine Überweisungsliste."""
     _lauf_vorbereiten(welt)
-    monkeypatch.delenv("BABU_AUSZAHLUNG_IBAN")
+    monkeypatch.setenv("BABU_AUSZAHLUNG_IBAN", "1234567890123456")
+    monkeypatch.setenv("BABU_FIRMA_USTID", "12345678")
+    v = welt["chef"].get("/api/auszahlung/vorschau").json()
+    assert v["konto_fehlt"] is False and v["bankdatei"] is False
     r = welt["chef"].post("/api/auszahlung/lauf")
-    assert r.status_code == 409 and "Auszahlungskonto" in r.json()["fehler"]
+    assert r.status_code == 200, r.text
+    lauf = r.json()["id"]
+    l = welt["chef"].get("/api/auszahlung/laeufe").json()["laeufe"][0]
+    assert l["id"] == lauf and l["bankdatei"] is False
+    assert welt["chef"].get(f"/api/auszahlung/lauf/{lauf}/sepa.xml").status_code == 404
+    liste = welt["chef"].get(f"/api/auszahlung/lauf/{lauf}/ueberweisungen.csv")
+    assert liste.status_code == 200
+    zeilen = liste.content.decode("utf-8-sig").splitlines()
+    assert zeilen[0].startswith("Empfängerin;IBAN;BIC;Betrag")
+    assert len(zeilen) >= 2 and "GS-" in zeilen[1] and ";" in zeilen[1]
+    import kern_auszahlung
+    assert kern_auszahlung.firma()["ust_id"] == ""      # 8 Ziffern druckt babu nicht
+
+
+def test_ohne_firmennamen_kein_lauf(welt, monkeypatch):
+    _lauf_vorbereiten(welt)
+    monkeypatch.delenv("BABU_FIRMA_NAME")
+    r = welt["chef"].post("/api/auszahlung/lauf")
+    assert r.status_code == 409 and "Firmenname" in r.json()["fehler"]
 
 
 def test_nummern_laufen_je_jahr(welt):

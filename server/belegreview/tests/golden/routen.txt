@@ -27,6 +27,7 @@ GET /api/auswertung/stand
 GET /api/auszahlung/laeufe
 GET /api/auszahlung/lauf/{lauf_id}/gutschriften.zip
 GET /api/auszahlung/lauf/{lauf_id}/sepa.xml
+GET /api/auszahlung/lauf/{lauf_id}/ueberweisungen.csv
 GET /api/auszahlung/vorschau
 GET /api/beleg/{stamm}
 GET /api/beleg/{stamm}/bild

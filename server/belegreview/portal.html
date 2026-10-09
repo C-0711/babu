@@ -7562,17 +7562,20 @@ async function ladeAuszahlung(){
     ${zeilen ? `<div class="tabelle-scroll"><table class="amb-tabelle verw-tabelle" style="width:100%"><thead><tr><th>Ambassadorin</th>
       <th style="text-align:right">Betrag</th><th>Stand</th></tr></thead><tbody>${zeilen}</tbody></table></div>`
       : `<p style="color:var(--gc-desc)">Für diesen Lauf ist nichts offen.</p>`}
-    ${v.konto_fehlt ? `<p class="abo-fehler">Das Auszahlungskonto von 0711 ist noch nicht eingetragen.</p>` : ""}
+    ${v.konto_fehlt ? `<p class="abo-fehler">Wer die Gutschriften ausstellt, fehlt noch (Firmenname).</p>` : ""}
+    ${!v.konto_fehlt && v.bankdatei === false ? `<p style="color:var(--gc-desc)">Kein gültiges Auszahlungskonto hinterlegt — statt der Bankdatei gibt es eine Überweisungsliste fürs Online-Banking.</p>` : ""}
     ${zahlbar.length && !(v.schon || []).length && !v.konto_fehlt
-      ? `<button class="hin" onclick="auszahlungAnlegen()">Gutschriften und Bankdatei erzeugen (${aboEuro(v.summe_cent)})</button>` : ""}
+      ? `<button class="hin" onclick="auszahlungAnlegen(${v.bankdatei ? "true" : "false"})">Gutschriften und ${v.bankdatei ? "Bankdatei" : "Überweisungsliste"} erzeugen (${aboEuro(v.summe_cent)})</button>` : ""}
   </div>`;
   for (const lauf of l.filter(x => x.status !== "verworfen").slice(0, 4)){
     const offenLauf = lauf.status === "erstellt";
     html += `<div class="karte"><h3>Lauf ${ambDatum(lauf.lauf)} — ${lauf.anzahl} ${lauf.anzahl === 1 ? "Gutschrift" : "Gutschriften"}, ${aboEuro(lauf.summe_cent)}</h3>
-      <p>${offenLauf ? "Erzeugt — Bankdatei ins Online-Banking laden, freigeben, dann hier bestätigen."
-                     : "Überwiesen am " + ambDatum(lauf.ueberwiesen) + "."}</p>
+      <p>${!offenLauf ? "Überwiesen am " + ambDatum(lauf.ueberwiesen) + "."
+          : lauf.bankdatei ? "Erzeugt — Bankdatei ins Online-Banking laden, freigeben, dann hier bestätigen."
+          : "Erzeugt — mit der Überweisungsliste im Online-Banking überweisen, dann hier bestätigen."}</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-        <a class="chip" href="/api/auszahlung/lauf/${Number(lauf.id)}/sepa.xml">Bankdatei</a>
+        ${lauf.bankdatei ? `<a class="chip" href="/api/auszahlung/lauf/${Number(lauf.id)}/sepa.xml">Bankdatei</a>` : ""}
+        <a class="chip" href="/api/auszahlung/lauf/${Number(lauf.id)}/ueberweisungen.csv">Überweisungsliste</a>
         <a class="chip" href="/api/auszahlung/lauf/${Number(lauf.id)}/gutschriften.zip">Gutschriften</a>
         ${offenLauf ? `<button class="hin" style="margin-top:0" onclick="auszahlungUeberwiesen(${Number(lauf.id)})">Überwiesen bestätigen</button>
           <button class="chip" onclick="auszahlungVerwerfen(${Number(lauf.id)})">Verwerfen</button>` : ""}
@@ -7589,12 +7592,13 @@ async function auszahlungSchritt(pfad, frage){
     ladeAuszahlung();
   }catch{ alert("Gerade keine Verbindung — später nochmal."); }
 }
-function auszahlungAnlegen(){
-  auszahlungSchritt("/api/auszahlung/lauf", "Gutschriften und Bankdatei erzeugen? Die Nummern werden dabei fest vergeben.");
+function auszahlungAnlegen(bankdatei){
+  auszahlungSchritt("/api/auszahlung/lauf", "Gutschriften und " + (bankdatei ? "Bankdatei" : "Überweisungsliste")
+    + " erzeugen? Die Nummern werden dabei fest vergeben.");
 }
 function auszahlungUeberwiesen(nr){
   auszahlungSchritt("/api/auszahlung/lauf/" + nr + "/ueberwiesen",
-    "Hast du die Bankdatei hochgeladen und freigegeben? Die Ambassadorinnen bekommen jetzt Bescheid.");
+    "Ist das Geld überwiesen? Die Ambassadorinnen bekommen jetzt Bescheid.");
 }
 function auszahlungVerwerfen(nr){
   auszahlungSchritt("/api/auszahlung/lauf/" + nr + "/verwerfen",

@@ -70,16 +70,35 @@ def _env(name: str) -> str:
     return os.environ.get(name, "").strip()
 
 
+def _ust_id_gueltig(wert: str) -> bool:
+    return bool(re.fullmatch(r"DE\d{9}", wert))
+
+
 def firma() -> dict:
+    """Wer die Gutschrift ausstellt. Eine USt-IdNr. steht nur drauf, wenn sie
+    die Form DE + 9 Ziffern hat (seit 09.10.2026): live standen acht Ziffern
+    in der `.env`, und die wären auf jedes Blatt gedruckt worden. Nötig ist
+    sie nicht — § 14 Abs. 4 Nr. 2 UStG verlangt die Nummer der Leistenden,
+    also der Ambassadorin, und die steht in ihrem Profil."""
+    ust_id = _env("BABU_FIRMA_USTID").replace(" ", "").upper()
     return {"name": _env("BABU_FIRMA_NAME"),
             "anschrift": "\n".join(t.strip() for t in _env("BABU_FIRMA_ANSCHRIFT")
                                    .split("|") if t.strip()),
-            "ust_id": _env("BABU_FIRMA_USTID")}
+            "ust_id": ust_id if _ust_id_gueltig(ust_id) else ""}
 
 
 def schuldner() -> dict:
+    """Von welchem Konto überwiesen wird — nur mit gültiger IBAN.
+
+    Ohne sie gibt es keine Bankdatei, sondern eine Überweisungsliste fürs
+    Online-Banking (seit 09.10.2026, wie bei Camp45: dort gibt es gar kein
+    hinterlegtes Konto). Bis dahin hätte eine IBAN aus 16 Ziffern eine
+    Bankdatei ergeben, die jede Bank ablehnt."""
+    import auslagen  # noqa: PLC0415
+    iban = auslagen.iban_normal(_env("BABU_AUSZAHLUNG_IBAN"))
     return {"name": _env("BABU_AUSZAHLUNG_NAME") or _env("BABU_FIRMA_NAME"),
-            "iban": _env("BABU_AUSZAHLUNG_IBAN"), "bic": _env("BABU_AUSZAHLUNG_BIC")}
+            "iban": iban if auslagen.iban_gueltig(iban) else "",
+            "bic": _env("BABU_AUSZAHLUNG_BIC")}
 
 
 def karenz() -> int:
@@ -291,7 +310,10 @@ def vorschau(c, heute: dt.date) -> dict:
             "naechster": naechster.isoformat(),
             "bis": bis, "zeilen": zeilen, "schon": laeufe,
             "summe_cent": sum(z["brutto_cent"] for z in zeilen if z["zahlbar"]),
-            "konto_fehlt": not (schuldner()["iban"] and firma()["name"])}
+            # Ohne Firmennamen keine Gutschrift; ohne gültiges Konto nur
+            # keine Bankdatei — überwiesen wird dann mit der Liste.
+            "konto_fehlt": not firma()["name"],
+            "bankdatei": bool(schuldner()["iban"])}
 
 
 def api_vorschau(request: Request) -> Response:
@@ -330,9 +352,9 @@ async def api_lauf_anlegen(request: Request) -> Response:
     if fehler:
         return fehler
     s, f = schuldner(), firma()
-    if not (s["iban"] and f["name"]):
-        return JSONResponse({"fehler": "Das Auszahlungskonto von 0711 ist noch nicht "
-                                       "eingetragen."}, status_code=409)
+    if not f["name"]:
+        return JSONResponse({"fehler": "Wer die Gutschriften ausstellt, fehlt noch "
+                                       "(Firmenname)."}, status_code=409)
     heute = _ka()._heute()  # noqa: SLF001
     jetzt = bw._jetzt_iso()  # noqa: SLF001
     with bw._DB_LOCK, bw._db() as c:  # noqa: SLF001
@@ -371,7 +393,8 @@ async def api_lauf_anlegen(request: Request) -> Response:
         xml = sepa.pain001(msg_id=msg_id,
                            erstellt=dt.datetime.now().replace(microsecond=0),
                            ausfuehrung=max(heute, dt.date.fromisoformat(v["lauf"])),
-                           schuldner=s, zahlungen=zahlungen).decode("utf-8")
+                           schuldner=s, zahlungen=zahlungen).decode("utf-8") \
+            if s["iban"] else None
         summe = sum(z["betrag_cent"] for z in zahlungen)
         c.execute("UPDATE auszahlungslauf SET xml=?, msg_id=?, anzahl=?, summe_cent=? "
                   "WHERE id=?", (xml, msg_id, len(zahlungen), summe, lauf_id))
@@ -387,9 +410,12 @@ def api_laeufe(request: Request) -> Response:
         return fehler
     with bw._DB_LOCK, bw._db() as c:  # noqa: SLF001
         laeufe = [dict(zip(("id", "lauf", "stichtag", "status", "anzahl", "summe_cent",
-                            "erstellt", "ueberwiesen"), z)) for z in c.execute(
-            "SELECT id, lauf, stichtag, status, anzahl, summe_cent, erstellt, ueberwiesen "
+                            "erstellt", "ueberwiesen", "bankdatei"), z)) for z in c.execute(
+            "SELECT id, lauf, stichtag, status, anzahl, summe_cent, erstellt, ueberwiesen, "
+            "CASE WHEN xml IS NULL THEN 0 ELSE 1 END "
             "FROM auszahlungslauf ORDER BY id DESC LIMIT 12")]
+        for l in laeufe:
+            l["bankdatei"] = bool(l["bankdatei"])
         for l in laeufe:
             l["gutschriften"] = [dict(zip(("nr", "name", "brutto_cent", "status"), z))
                                  for z in c.execute(
@@ -411,8 +437,12 @@ def api_lauf_xml(lauf_id: int, request: Request) -> Response:
         return fehler
     with bw._DB_LOCK, bw._db() as c:  # noqa: SLF001
         l = _lauf(c, lauf_id)
-    if not l or not l["xml"] or l["status"] == "verworfen":
+    if not l or l["status"] == "verworfen":
         return JSONResponse({"fehler": "Diesen Lauf gibt es nicht."}, status_code=404)
+    if not l["xml"]:
+        return JSONResponse({"fehler": "Für diesen Lauf gibt es keine Bankdatei — "
+                                       "überweise mit der Überweisungsliste."},
+                            status_code=404)
     audit.audit(un, "auszahlungslauf_bankdatei", lauf_id=str(lauf_id))
     return Response(l["xml"].encode("utf-8"), media_type="application/xml",
                     headers={"Content-Disposition":
@@ -436,6 +466,35 @@ def api_lauf_zip(lauf_id: int, request: Request) -> Response:
     return Response(puffer.getvalue(), media_type="application/zip",
                     headers={"Content-Disposition":
                              f'attachment; filename="babu-gutschriften-{l["lauf"]}.zip"'})
+
+
+def api_lauf_liste(lauf_id: int, request: Request) -> Response:
+    """Die Überweisungsliste eines Laufs — für das Online-Banking, wenn es
+    keine Bankdatei gibt (kein gültiges Auszahlungskonto). Semikolon und
+    Komma wie in jeder deutschen Tabellenkalkulation."""
+    un, fehler = bw._betreiber_wache(request)  # noqa: SLF001
+    if fehler:
+        return fehler
+    with bw._DB_LOCK, bw._db() as c:  # noqa: SLF001
+        l = _lauf(c, lauf_id)
+        zeilen = c.execute(
+            "SELECT x.gutschrift_nr, x.brutto_cent, p.kontoinhaber, p.iban, p.bic, "
+            "p.steuerstatus FROM ambassador_auszahlung x JOIN ambassador_profil p "
+            "ON p.code = x.code WHERE x.lauf_id=? ORDER BY x.gutschrift_nr",
+            (lauf_id,)).fetchall()
+    if not l or not zeilen or l["status"] == "verworfen":
+        return JSONResponse({"fehler": "Diesen Lauf gibt es nicht."}, status_code=404)
+    aus = ["Empfängerin;IBAN;BIC;Betrag (EUR);Verwendungszweck"]
+    for nr, brutto, name, iban, bic, status in zeilen:
+        betrag = f"{brutto / 100:.2f}".replace(".", ",")
+        zweck = f"babu {gutschrift.titel(status)} {nr}"
+        aus.append(";".join(str(x or "").replace(";", ",")
+                            for x in (name, iban, bic, betrag, zweck)))
+    audit.audit(un, "auszahlungslauf_liste", lauf_id=str(lauf_id))
+    return Response(("\ufeff" + "\r\n".join(aus) + "\r\n").encode("utf-8"),
+                    media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="babu-ueberweisungen-{l["lauf"]}.csv"'})
 
 
 async def api_lauf_ueberwiesen(lauf_id: int, request: Request) -> Response:
@@ -507,6 +566,7 @@ _ROUTEN = [
     ("GET", "/api/auszahlung/laeufe", api_laeufe),
     ("GET", "/api/auszahlung/lauf/{lauf_id}/sepa.xml", api_lauf_xml),
     ("GET", "/api/auszahlung/lauf/{lauf_id}/gutschriften.zip", api_lauf_zip),
+    ("GET", "/api/auszahlung/lauf/{lauf_id}/ueberweisungen.csv", api_lauf_liste),
     ("POST", "/api/auszahlung/lauf/{lauf_id}/ueberwiesen", api_lauf_ueberwiesen),
     ("POST", "/api/auszahlung/lauf/{lauf_id}/verwerfen", api_lauf_verwerfen),
 ]
