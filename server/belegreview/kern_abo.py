@@ -202,10 +202,12 @@ async def api_abo_checkout(request: Request) -> Response:
         "mode": "subscription",
         "line_items": [{"price": stripe_api.preis_id(paket), "quantity": 1,
                         "tax_rates": [stripe_api.steuersatz()]}],
-        # Keine festen `payment_method_types`: Stripe bietet an, was im Konto
-        # freigeschaltet ist. Fest verlangtes `sepa_debit` ließ live jede
-        # Bezahlseite scheitern, solange SEPA im (mit Camp45 geteilten) Konto
-        # aus ist (03.10.2026); ist es an, erscheint die Lastschrift von selbst.
+        # Nur Karte (Entscheidung Auftraggeber 09.10.2026): ohne Klarna und
+        # Link muss die Datenschutzerklärung keinen weiteren Dienst nennen.
+        # Gilt nur für babus Bezahlseite — das mit Camp45 geteilte Konto
+        # bleibt, wie es ist. (`sepa_debit` fest zu verlangen ließ live jede
+        # Bezahlseite scheitern, solange SEPA im Konto aus ist, 03.10.2026.)
+        "payment_method_types": ["card"],
         "client_reference_id": str(m["id"]),
         "metadata": meta,
         "subscription_data": {"metadata": meta},

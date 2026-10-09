@@ -1,8 +1,7 @@
 """Abo und Zugang — wer voll arbeitet und wer nur noch ansieht (seit 03.10.2026).
 
 Go-live-Plan Phase 2: Salons schließen nach dem Testmonat selbst ein Abo
-ab (Stripe: Karte und was Stripe sonst anbietet — wie Camp45, dasselbe
-Konto). Dieses Modul ist nur die REGEL — ohne Datenbank, ohne Netz, ohne Uhr. Die Wache in `babu_web._box_wache` holt
+ab (Stripe, nur Karte — dasselbe Konto wie Camp45). Dieses Modul ist nur die REGEL — ohne Datenbank, ohne Netz, ohne Uhr. Die Wache in `babu_web._box_wache` holt
 den Stand der Mandantenzeile und fragt `zugang()` und `sperrt()`.
 
 Die Regel in einer Tabelle:

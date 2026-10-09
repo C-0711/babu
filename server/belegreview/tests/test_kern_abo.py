@@ -200,10 +200,10 @@ def test_checkout_baut_die_sitzung_fuer_diesen_server(welt):
     assert daten["line_items"][0] == {"price": "price_salon", "quantity": 1,
                                       "tax_rates": ["txr_19"]}
     assert daten["customer_email"] == "sonne@salon.de"
-    # Zahlarten nennt babu nicht selbst: Stripe zeigt, was im Konto aktiv ist.
-    # Live war SEPA im (mit Camp45 geteilten) Konto nicht freigeschaltet, und
-    # ein fest verlangtes `sepa_debit` ließ jede Bezahlseite scheitern (03.10.2026).
-    assert "payment_method_types" not in daten
+    # Nur Karte (09.10.2026): kein Klarna, kein Link — und nie `sepa_debit`,
+    # das im (mit Camp45 geteilten) Konto nicht freigeschaltet ist; fest
+    # verlangt ließ es live jede Bezahlseite scheitern (03.10.2026).
+    assert daten["payment_method_types"] == ["card"]
     assert idem.startswith(f"checkout-{welt['mid']}-salon-")
     with babu_web._DB_LOCK, babu_web._db() as c:  # noqa: SLF001
         assert c.execute("SELECT COUNT(*) FROM audit_log WHERE aktion='abo_checkout'"
