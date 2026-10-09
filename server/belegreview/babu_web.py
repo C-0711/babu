@@ -1129,16 +1129,25 @@ def box_mitglied(un: str, mandant_id: int | None = None) -> bool:
     if mandant_id is not None:
         import mandanten  # noqa: PLC0415 — nur der Mehr-Box-Weg braucht die Tabelle
         return mandanten.kanzlei_mitglied(un, mandant_id)
+    # Seit 09.10.2026: Die Standard-Ablage IST die Box von SupremeStudio.
+    # Hinein kommen nur die PAT-Konten (`BABU_ERLAUBT`) und die ausdrücklich
+    # eingetragenen Konten von SupremeStudio (`BABU_STANDARD_KONTEN`) samt
+    # ihrem Team — sonst niemand. Weder die Rolle `admin` noch das alte
+    # Häkchen `nutzer.box` öffnen sie: über beide Wege landeten fremde Belege
+    # bei SupremeStudio (Admin-Upload 03.10., SupremeAcademy 08./09.10.).
+    # Jeder andere Betrieb arbeitet in seiner EIGENEN Ablage (`_eigener_mandant`).
     inhaber = salon_von(un)          # Mitarbeiterinnen erben den Salon
-    if inhaber in ERLAUBT:
-        return True
-    n = nutzer_holen(un)
-    if n and n["rolle"] == "admin":
-        return True
-    if n and n["rolle"] == "kanzlei":
-        return False
-    besitzer = nutzer_holen(inhaber)
-    return bool(besitzer and besitzer["box"])
+    return inhaber in ERLAUBT or inhaber.lower() in standard_konten()
+
+
+def standard_konten() -> set[str]:
+    """Die Konten von SupremeStudio, die neben `BABU_ERLAUBT` in die
+    Standard-Ablage dürfen (`BABU_STANDARD_KONTEN`, Komma-Liste).
+
+    Bei jedem Aufruf frisch gelesen — Tests und Rückweg schalten ohne
+    Neuimport um."""
+    return {u.strip().lower() for u in os.environ.get("BABU_STANDARD_KONTEN", "").split(",")
+            if u.strip()}
 
 
 def git_show(pfad: str) -> bytes | None:
@@ -6160,15 +6169,18 @@ async def api_nutzer_aktion(request: Request) -> Response:
             c.execute("UPDATE nutzer SET rolle=? WHERE email=?", (neu, email))
         zusatz["rolle_neu"] = neu
     elif aktion in ("box_freigeben", "box_sperren"):
-        # Der Schalter, mit dem aus einer Registrierung ein echter Zugang wird.
-        # Freigeben heißt: Zugang zur Standard-Ablage, und die gehört einem
-        # bestimmten Betrieb — das entscheidet nur der Betreiber (seit
-        # 08.10.2026; vorher konnte jede Kanzlei ihre Mandanten dorthin
-        # schalten). Sperren nimmt niemandem etwas und bleibt der Kanzlei.
-        if aktion == "box_freigeben" and rolle(un) != "admin":
+        # Freigeben hieß: Zugang zur Standard-Ablage — der Box von
+        # SupremeStudio. Seit 09.10.2026 öffnet das Häkchen sie nicht mehr
+        # (`box_mitglied`), Betriebe mischen sich nie: wer neu ist, bekommt
+        # seine EIGENE Ablage als Mandant. Freigeben lehnt deshalb mit dem
+        # richtigen Weg ab; Sperren nimmt niemandem etwas und bleibt.
+        if aktion == "box_freigeben":
             audit.audit(un, "box_verweigert", ziel_un=email)
-            return JSONResponse({"fehler": "Die Belegbox gibt nur der Betreiber frei."},
-                                status_code=403)
+            return JSONResponse(
+                {"fehler": "Die Standard-Ablage gehört SupremeStudio. Ein neuer Betrieb "
+                           "bekommt seine eigene Ablage — über die Warteliste, einen "
+                           "Einladungscode oder als Mandant einer Kanzlei."},
+                status_code=409)
         with _DB_LOCK, _db() as c:
             c.execute("UPDATE nutzer SET box=? WHERE email=?",
                       (1 if aktion == "box_freigeben" else 0, email))

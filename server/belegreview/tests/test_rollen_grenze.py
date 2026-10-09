@@ -191,7 +191,14 @@ def test_kanzlei_ohne_kopf_liest_die_standard_ablage_nicht(welt):
     assert babu_web.box_mitglied("kanzlei@afflek.de") is False
 
 
-def test_betreiber_liest_die_standard_ablage(welt):
+def test_betreiber_liest_die_standard_ablage_nur_als_konto_von_supremestudio(welt, monkeypatch):
+    """Die Standard-Ablage ist die Box von SupremeStudio (seit 09.10.2026):
+    die Rolle `admin` allein öffnet sie nicht mehr — über diesen Weg landeten
+    am 03.10. fremde Belege bei SupremeStudio. Erst als eingetragenes Konto."""
+    monkeypatch.delenv("BABU_STANDARD_KONTEN", raising=False)
+    assert welt["admin"].get("/api/belege").status_code == 403
+    assert babu_web.box_mitglied("betreiber@0711.io") is False
+    monkeypatch.setenv("BABU_STANDARD_KONTEN", "betreiber@0711.io")
     assert welt["admin"].get("/api/belege").status_code == 200
     assert babu_web.box_mitglied("betreiber@0711.io") is True
 

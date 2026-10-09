@@ -215,15 +215,19 @@ def test_abgeschaltetes_konto_kommt_nicht_mehr_rein(welt):
     assert mira_client.get("/api/belege").status_code == 403
 
 
-def test_bestehende_zugaenge_verlieren_die_box_nicht(welt):
-    """Migration: wer schon eingerichtet war, arbeitet weiter — die neue
-    Spalte steht für alte Zeilen auf 1."""
+def test_altes_haekchen_oeffnet_die_standard_ablage_nicht_mehr(welt, monkeypatch):
+    """Alte Zeilen tragen weiter `box=1` (Migration), aber seit 09.10.2026
+    öffnet das die Standard-Ablage nicht mehr: sie ist die Box von
+    SupremeStudio, und nur deren eingetragene Konten kommen hinein."""
     bw = welt
+    monkeypatch.delenv("BABU_STANDARD_KONTEN", raising=False)
     with bw._DB_LOCK, bw._db() as c:
         c.execute("""INSERT INTO nutzer (email, name, salon, rolle, pw, aktiv, angelegt)
                      VALUES ('alt@salon.de','Alt','Alter Salon','salon',?,1,'2026-01-01')""",
                   (bw.pw_hash("altes-passwort"),))
     assert bw.nutzer_holen("alt@salon.de")["box"] is True
+    assert bw.box_mitglied("alt@salon.de") is False
+    monkeypatch.setenv("BABU_STANDARD_KONTEN", "alt@salon.de")
     assert bw.box_mitglied("alt@salon.de") is True
 
 
@@ -241,17 +245,15 @@ def test_verwaltung_richtet_die_box_ein(welt):
     fremde = _fremde(bw, "neu@salon.de")
     assert fremde.get("/api/belege").status_code == 403
 
+    # Seit 09.10.2026 schaltet auch der Betreiber niemanden mehr in die
+    # Standard-Ablage (= Box von SupremeStudio): Betriebe mischen sich nie.
     verwaltung = _admin(bw)
     r = verwaltung.post("/api/nutzer-aktion",
                         json={"email": "neu@salon.de", "aktion": "box_freigeben"})
-    assert r.status_code == 200
-    assert fremde.get("/api/belege").status_code == 200
-    assert fremde.get("/api/ich").json()["box"] is True
-
-    # Und wieder zu.
-    verwaltung.post("/api/nutzer-aktion",
-                    json={"email": "neu@salon.de", "aktion": "box_sperren"})
+    assert r.status_code == 409
+    assert "eigene Ablage" in r.json()["fehler"]
     assert fremde.get("/api/belege").status_code == 403
+    assert fremde.get("/api/ich").json()["box"] is False
 
 
 def test_der_pat_zwischenspeicher_schluesselt_auf_sha256(welt, monkeypatch):
@@ -386,10 +388,10 @@ def test_kanzlei_legt_kein_konto_mit_fremder_ablage_an(welt, rolle):
     assert client.get("/api/belege").status_code == 403
 
 
-def test_nur_der_betreiber_gibt_die_standard_ablage_frei(welt):
-    """Die Standard-Ablage gehört einem Betrieb (live SupremeStudio). Eine
-    Kanzlei, die einen Betrieb betreut, darf dessen Inhaberin trotzdem nicht
-    in fremde Belege schalten — sperren darf sie weiter."""
+def test_niemand_gibt_die_standard_ablage_frei(welt):
+    """Die Standard-Ablage gehört einem Betrieb (live SupremeStudio). Keine
+    Kanzlei und seit 09.10.2026 auch kein Betreiber schaltet einen anderen
+    Betrieb dorthin — sperren (das alte Häkchen entfernen) bleibt erlaubt."""
     import mandanten  # noqa: PLC0415
 
     bw = welt
@@ -406,7 +408,7 @@ def test_nur_der_betreiber_gibt_die_standard_ablage_frei(welt):
 
     r = kanzlei.post("/api/nutzer-aktion", json={
         "email": "betreut@salon.de", "aktion": "box_freigeben"})
-    assert r.status_code == 403, r.text
+    assert r.status_code == 409, r.text
     assert bw.nutzer_holen("betreut@salon.de")["box"] is False
 
     # Sperren bleibt der Kanzlei erlaubt — das nimmt niemandem etwas weg.
@@ -414,11 +416,12 @@ def test_nur_der_betreiber_gibt_die_standard_ablage_frei(welt):
         "email": "betreut@salon.de", "aktion": "box_sperren"})
     assert r.status_code == 200, r.text
 
-    # Der Betreiber darf freigeben.
+    # Auch der Betreiber nicht (seit 09.10.2026).
     r = _admin(bw).post("/api/nutzer-aktion", json={
         "email": "betreut@salon.de", "aktion": "box_freigeben"})
-    assert r.status_code == 200, r.text
-    assert bw.nutzer_holen("betreut@salon.de")["box"] is True
+    assert r.status_code == 409, r.text
+    assert bw.nutzer_holen("betreut@salon.de")["box"] is False
+    assert bw.box_mitglied("betreut@salon.de") is False
 
 
 def test_jedes_anlegen_sagt_ausdruecklich_ob_es_die_standard_ablage_gibt():

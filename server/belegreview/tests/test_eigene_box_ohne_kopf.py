@@ -97,6 +97,9 @@ def welt(tmp_path, monkeypatch):
         monkeypatch.setitem(_REMOTES, ref, str(bx.store_aus_ref(ref)))
     monkeypatch.setattr(bx, "remote_aus_ref", lambda ref: _REMOTES[ref.strip("/")])
 
+    # Der Betrieb der Standard-Ablage („allein“, wie SupremeStudio) ist seit
+    # 09.10.2026 ausdrücklich eingetragen; das Häkchen allein reicht nicht.
+    monkeypatch.setenv("BABU_STANDARD_KONTEN", "allein@salon.de")
     babu_web._LOGIN_VERSUCHE.clear()  # noqa: SLF001
     buero = _konto(babu_web, "buero@kanzlei.de", "kanzlei")
     anna = _konto(babu_web, "anna@salon.de")
@@ -188,6 +191,20 @@ def test_ohne_mandat_bleibt_es_die_default_box(welt):
     assert bw._eigener_mandant(welt["allein"]) == (None, None)  # noqa: SLF001
     r = _login(bw, welt["allein"]).get("/api/belege")
     assert r.status_code == 200, r.text
+
+
+def test_ohne_mandat_und_ohne_eintrag_keine_fremde_ablage(welt):
+    """Die Lücke vom 08./09.10.2026: ein Konto ohne eigenen Betrieb, aber mit
+    dem alten Häkchen `box`, arbeitete in der Standard-Ablage — also in der
+    Box eines ANDEREN Betriebs (SupremeAcademy in SupremeStudio). Seitdem:
+    ohne Mandat und ohne Eintrag keine Ablage, auch nicht als Betreiber."""
+    bw = welt["bw"]
+    fremd = _konto(bw, "fremd@salon.de")          # legt mit box=True an
+    assert bw.nutzer_holen(fremd)["box"] is True
+    assert bw._eigener_mandant(fremd) == (None, None)  # noqa: SLF001
+    assert _login(bw, fremd).get("/api/belege").status_code == 403
+    betreiber = _konto(bw, "betreiber@babu.local", "admin")
+    assert _login(bw, betreiber).get("/api/belege").status_code == 403
 
 
 def test_ein_mandat_mit_box_gewinnt_ohne_kopf(welt):

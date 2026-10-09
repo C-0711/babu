@@ -83,6 +83,7 @@ def welt(tmp_path, monkeypatch):
     """
     _leere_bare(tmp_path, "eins")
     _leere_bare(tmp_path, "zwei")
+    _leere_bare(tmp_path, "drei")
 
     monkeypatch.setattr(babu_web, "PORTAL_DB", tmp_path / "portal.db")
     monkeypatch.setattr(babu_web, "GEHEIMNIS_PFAD", tmp_path / ".geheimnis")
@@ -123,7 +124,8 @@ def welt(tmp_path, monkeypatch):
         mandanten.box_verknuepfen(m_pause, "zwei", c=c)
         mandanten.status_setzen(m_pause, "pausiert", c=c)
         m_fremd = mandanten.mandant_anlegen(b, "Salon Fremd", "fremd@0711.io", c=c)
-        mandanten.box_verknuepfen(m_fremd, "zwei", c=c)
+        # Eine eigene Box: zwei Betriebe teilen sich nie eine (seit 09.10.2026).
+        mandanten.box_verknuepfen(m_fremd, "drei", c=c)
 
     # Zwei verschiedene Profile — daran zeigt sich, wessen der Faden nimmt.
     babu_web.db_einstellung_setzen(SALON, "salon_name", "Salon Nina")

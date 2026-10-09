@@ -64,6 +64,10 @@ services:
       HOME: /data
       BABU_ERLAUBT: "christoph,nina"
       BABU_ROLLEN: "christoph:admin"
+      # Seit 09.10.2026: die Standard-Ablage ist die Box von SupremeStudio.
+      # Außer BABU_ERLAUBT kommen NUR diese Konten (samt Team) hinein — kein
+      # anderer Betrieb, kein Admin als solcher. Betriebe mischen sich nie.
+      BABU_STANDARD_KONTEN: "nina.baic@googlemail.com"
       # Pilot ab 14.09.2026: kein Selbstbedienungs-Konto. Betriebe kommen auf
       # Einladung, Konten legt die Kanzlei im Portal an. `POST /api/signup`
       # antwortet 404, die Anmeldeseite zeigt „Konto anlegen" nicht.

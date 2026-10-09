@@ -108,7 +108,6 @@ def test_nutzer_anlegen_schreibt_eine_zeile(welt):
     ("deaktivieren", {}),
     ("aktivieren", {}),
     ("rolle", {"rolle": "mitarbeit"}),
-    ("box_freigeben", {}),
     ("box_sperren", {}),
 ])
 def test_jede_nutzer_aktion_schreibt_eine_zeile(welt, aktion, zusatz):
@@ -164,9 +163,11 @@ def test_registrierung_einrichten_schreibt_eine_zeile(welt):
     assert treffer[0]["ziel_un"] == "lead@salon.de"
 
 
-def test_export_schreibt_eine_zeile(welt):
-    # Die Standard-Ablage exportiert seit 03.10.2026 nur noch der Betreiber;
-    # eine Kanzlei exportiert über den X-Mandant-Kopf (test_acting_as).
+def test_export_schreibt_eine_zeile(welt, monkeypatch):
+    # Die Standard-Ablage exportiert seit 03.10.2026 keine Kanzlei mehr (die
+    # geht über den X-Mandant-Kopf, test_acting_as), seit 09.10.2026 nur ein
+    # als Konto von SupremeStudio eingetragener Zugang.
+    monkeypatch.setenv("BABU_STANDARD_KONTEN", "admin@babu.local")
     bw = welt
     _, admin_pw = _konto(bw, "admin@babu.local", "admin")
     admin = _login(bw, "admin@babu.local", admin_pw)

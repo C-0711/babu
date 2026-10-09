@@ -1097,7 +1097,12 @@ async def api_box_verknuepfen(mandant_id: int, request: Request) -> JSONResponse
         zeile = mandanten.mandant_holen(mandant_id, c=c)
         if zeile is None:
             return _fehler("Diesen Mandanten gibt es hier nicht.", 404)
-        mandanten.box_verknuepfen(mandant_id, box_ref, c=c)
+        try:
+            mandanten.box_verknuepfen(mandant_id, box_ref, c=c)
+        except mandanten.AblageVergeben:
+            # Seit 09.10.2026: eine Ablage, ein Betrieb — nie zwei in einer Box.
+            return _fehler("Diese Belegbox gehört schon einem anderen Betrieb. "
+                           "Jeder Betrieb bekommt seine eigene.", 409)
     audit.audit(un, "kanzlei_box_verknuepfen", ziel_un=zeile["besitzer_un"],
                 mandant_id=str(mandant_id), box_ref=box_ref)
     return JSONResponse({"ok": True, "id": mandant_id, "status": "aktiv",

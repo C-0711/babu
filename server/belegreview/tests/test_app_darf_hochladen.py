@@ -49,6 +49,9 @@ def welt(tmp_path, monkeypatch):
     # Genau die Lage vom 22.08.: nur der GitChain-Name steht in der Liste.
     monkeypatch.setattr(babu_web, "ERLAUBT", {"christoph0711.io"})
     babu_web._REG_ZULETZT.clear()
+    # Seit 09.10.2026 öffnet das Häkchen `nutzer.box` die Standard-Ablage nicht mehr:
+    # der Test-Betrieb ist ausdrücklich als Konto von SupremeStudio eingetragen.
+    monkeypatch.setenv("BABU_STANDARD_KONTEN", "nina@0711.io")
     return babu_web, tmp_path
 
 

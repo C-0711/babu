@@ -7681,8 +7681,7 @@ function zugangKarteHtml(n){
         })()}
         <button class="chip" onclick="nutzerAktion('${n.email}','${n.aktiv ? "deaktivieren" : "aktivieren"}')">
           ${n.aktiv ? "Abschalten" : "Wieder anschalten"}</button>
-        ${n.box || meineRolle === "admin" ? `<button class="chip" onclick="nutzerAktion('${n.email}','${n.box ? "box_sperren" : "box_freigeben"}')">
-          ${n.box ? "Belegbox sperren" : "Belegbox freigeben"}</button>` : ""}
+        ${n.box ? `<button class="chip" onclick="nutzerAktion('${n.email}','box_sperren')">Altes Häkchen „Belegbox“ entfernen</button>` : ""}
         <button class="chip" onclick="nutzerAktion('${n.email}','passwort_neu')">Neues Startpasswort</button>
       </div>
       <div id="pw-${n.email.replace(/[^a-z0-9]/g,"_")}"></div>

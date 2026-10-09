@@ -381,16 +381,38 @@ def mandant_besitzer_un(mandant_id: int, c=None) -> str | None:
     return str(roh[0]) if roh else None
 
 
+class AblageVergeben(ValueError):
+    """Diese Belegbox gehört schon einem anderen Betrieb."""
+
+
 def box_verknuepfen(mandant_id: int, box_ref: str, c=None) -> None:
     """Die eingerichtete Box eintragen — damit wird der Mandant `aktiv`.
 
     Der eine Schritt, der aus einem angelegten Mandanten einen
     arbeitsfähigen macht. Beides in einem UPDATE, damit es keinen Mandanten
     mit Box und Status `box_ausstehend` geben kann.
+
+    Seit 09.10.2026: eine Ablage gehört genau EINEM Betrieb. Trägt schon ein
+    anderer Mandant diesen Verweis — oder ist es die Standard-Ablage
+    (`boxschreiber.REF`, live die Box von SupremeStudio), die dieser Mandant
+    nicht schon hat —, wirft es `AblageVergeben`. Zwei Betriebe in einer Box
+    hießen: jeder liest und schreibt in den Belegen des anderen.
     """
+    import boxschreiber  # noqa: PLC0415 — nur für den Verweis der Standard-Ablage
+    ref = str(box_ref or "").strip().strip("/")
     with _sitzung(c) as cc:
+        for anderer, verweis in cc.execute(
+                "SELECT id, box_ref FROM mandant WHERE id <> ? AND box_ref IS NOT NULL",
+                (mandant_id,)).fetchall():
+            if str(verweis).strip().strip("/") == ref:
+                raise AblageVergeben(f"Belegbox {ref} gehört schon Mandant {anderer}")
+        eigen = cc.execute("SELECT box_ref FROM mandant WHERE id = ?",
+                           (mandant_id,)).fetchone()
+        schon_meins = bool(eigen and eigen[0] and str(eigen[0]).strip().strip("/") == ref)
+        if ref == str(boxschreiber.REF or "").strip().strip("/") and not schon_meins:
+            raise AblageVergeben(f"Belegbox {ref} ist die Standard-Ablage")
         cc.execute("UPDATE mandant SET box_ref = ?, status = 'aktiv' WHERE id = ?",
-                   (box_ref, mandant_id))
+                   (ref, mandant_id))
 
 
 def status_setzen(mandant_id: int, status: str, c=None) -> None:

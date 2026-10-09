@@ -335,13 +335,18 @@ def test_ein_leerer_kopf_ist_wie_kein_kopf(welt2):
     assert nina.get("/api/belege", headers={"X-Mandant": "  "}).status_code == 200
 
 
-def test_box_mitglied_ohne_nummer_kennt_keine_kanzlei(welt2):
-    """Ohne `mandant_id` die Standard-Ablage: Betreiber ja, Kanzlei nein
-    (seit 03.10.2026). Mit `mandant_id` nur die Mitgliedschaft."""
+def test_box_mitglied_ohne_nummer_kennt_keine_kanzlei(welt2, monkeypatch):
+    """Ohne `mandant_id` die Standard-Ablage: keine Kanzlei (seit 03.10.2026)
+    und auch kein Betreiber, der nicht als Konto von SupremeStudio
+    eingetragen ist (seit 09.10.2026). Mit `mandant_id` nur die
+    Mitgliedschaft."""
     bw = welt2["bw"]
+    monkeypatch.delenv("BABU_STANDARD_KONTEN", raising=False)
     assert bw.box_mitglied(welt2["kanzlei"]) is False
     assert bw.box_mitglied(welt2["fremde"]) is False
     _konto(bw, "betreiber@0711.io", "admin")
+    assert bw.box_mitglied("betreiber@0711.io") is False
+    monkeypatch.setenv("BABU_STANDARD_KONTEN", "betreiber@0711.io")
     assert bw.box_mitglied("betreiber@0711.io") is True
     assert bw.box_mitglied(welt2["kanzlei"], welt2["nina_id"]) is True
     assert bw.box_mitglied(welt2["fremde"], welt2["nina_id"]) is False
@@ -375,3 +380,41 @@ def test_der_mandant_darf_auch_als_adressparameter_kommen(welt2):
     assert any("alpha" in b["stamm"] for b in mit.json()["belege"])
     fremd = kanzlei.get(f"/api/belege?mandant={welt2['carla_id']}")
     assert fremd.status_code == 403
+
+
+# ————— Zwei Betriebe teilen sich nie eine Ablage (seit 09.10.2026) —————
+
+def test_eine_ablage_gehoert_genau_einem_betrieb(welt2):
+    """Ninas Box an Bertas Mandanten zu hängen hieße: Berta liest und
+    schreibt in Ninas Belegen. Das Verknüpfen lehnt es ab — dieselbe Box
+    noch einmal an denselben Mandanten bleibt erlaubt (Wiederholung)."""
+    import mandanten  # noqa: PLC0415
+    with pytest.raises(mandanten.AblageVergeben):
+        mandanten.box_verknuepfen(welt2["berta_id"], "inspektor/ws-nina/babu")
+    with pytest.raises(mandanten.AblageVergeben):
+        mandanten.box_verknuepfen(welt2["ohne_box_id"], "/inspektor/ws-carla/babu/")
+    mandanten.box_verknuepfen(welt2["nina_id"], "inspektor/ws-nina/babu")
+    assert mandanten.mandant_holen(welt2["berta_id"])["box_ref"] == "inspektor/ws-berta/babu"
+
+
+def test_die_standard_ablage_bekommt_kein_weiterer_betrieb(welt2, monkeypatch):
+    """Die Standard-Ablage (`BABU_REF`, live die Box von SupremeStudio) ist
+    vergeben, auch wenn noch kein Mandant sie trägt."""
+    import boxschreiber  # noqa: PLC0415
+    import mandanten  # noqa: PLC0415
+    monkeypatch.setattr(boxschreiber, "REF", "babu/babu/belege")
+    with pytest.raises(mandanten.AblageVergeben):
+        mandanten.box_verknuepfen(welt2["ohne_box_id"], "babu/babu/belege")
+
+
+def test_die_route_sagt_vergeben_statt_still_zu_verknuepfen(welt2):
+    from fastapi.testclient import TestClient  # noqa: PLC0415
+    bw = welt2["bw"]
+    betreiber = _konto(bw, "betreiber@babu.local", "admin")
+    client = TestClient(bw.app, base_url="https://testserver")
+    bw._LOGIN_VERSUCHE.clear()  # noqa: SLF001
+    assert client.post("/api/login", json={"email": betreiber, "passwort": PASSWORT}).status_code == 200
+    r = client.post(f"/api/kanzlei/mandanten/{welt2['ohne_box_id']}/box-verknuepfen",
+                    json={"box_ref": "inspektor/ws-nina/babu"})
+    assert r.status_code == 409, r.text
+    assert "anderen Betrieb" in r.json()["fehler"]

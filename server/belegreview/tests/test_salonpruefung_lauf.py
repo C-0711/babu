@@ -45,6 +45,9 @@ def welt(tmp_path, monkeypatch):
     monkeypatch.setattr(babu_web, "_brief_job", lambda *a, **k: None)
     monkeypatch.setattr(babu_web, "ERLAUBT", set())
     babu_web._REG_ZULETZT.clear()
+    # Seit 09.10.2026 öffnet das Häkchen `nutzer.box` die Standard-Ablage nicht mehr:
+    # der Test-Betrieb ist ausdrücklich als Konto von SupremeStudio eingetragen.
+    monkeypatch.setenv("BABU_STANDARD_KONTEN", "nina@0711.io")
     return babu_web, bare
 
 
