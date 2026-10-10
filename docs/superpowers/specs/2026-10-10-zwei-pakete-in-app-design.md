@@ -52,7 +52,7 @@ kommen mit babu Pro. Der **Monatsversand ans Steuerbüro gehört dagegen in
 beide Stufen** — er ist am 10.10. gebaut worden
 (`server/belegreview/uebergabepaket.py`, Commit b71f726).
 
-### Was 1 GB und 5 GB wirklich heißen (gemessen 10.10. an der echten Box)
+### Was die Stufen in Belegen heißen (gemessen 10.10. an der echten Box)
 
 Ein Beleg kostet **rund 550 KB**: Foto 538 KB im Schnitt (iPhone, Qualität 0,6,
 volle Auflösung; größtes gemessenes 713 KB) plus etwa 13 KB für Lesung und
@@ -70,18 +70,6 @@ In Belegen: 1 GB trägt rund **1.900**, 5 GB rund **9.500**, 100 GB rund
 **190.000**. Der Preis je Gigabyte fällt dabei von 9,99 € über 4,00 € auf
 0,99 € — eine Staffel, wie man sie erwartet.
 
-Das ist der Grund, warum die zwei Stufen zusammenpassen: Buchungsbelege sind
-8 bis 10 Jahre aufzubewahren (§ 147 AO). Bei 50 Belegen im Monat läuft 1 GB
-nach gut drei Jahren voll — und genau dann ist der Wechsel auf 5 GB kein
-Verkaufstrick, sondern die richtige Antwort. Die Stufe ist der Aufbewahrungs-
-pflicht nachgebaut, nicht einem Funktionsschnitt.
-
-**Stufe 3 ist für andere als einen einzelnen Salon.** 190.000 Belege füllt
-niemand, der einen Laden führt — 100 GB zielt auf Betriebe mit mehreren
-Standorten, auf Mandantinnen, die ihr ganzes Papier ablegen (Verträge,
-Personalakten, Schriftverkehr, Scans), und auf den Pro-Weg mit Kanzleien.
-Als Ankerpreis neben 9,99 € wirkt sie auch dann, wenn sie selten gekauft wird.
-
 **Der Platz ist Sache des Auftraggebers** (Entscheid 10.10.2026): Er sorgt für
 genug Speicher, **ausschließlich in Deutschland**. Die Staffel muss sich also
 nicht an der heutigen Plattengröße eines einzelnen Servers ausrichten. Für die
@@ -89,13 +77,6 @@ App und den Server heißt das nur: Der Verbrauch je Mandant wird gezählt und
 gegen das gebuchte Kontingent gehalten (Abschnitt 5) — wo die Bytes liegen,
 ist eine Frage des Betriebs, nicht des Modells. Dass sie in Deutschland
 liegen, bleibt Teil des Versprechens und gehört in Store-Text und Landing.
-
-**Eine Stellschraube bleibt:** Die App lädt heute das volle iPhone-Foto hoch
-(`CaptureTab.swift`, `compressionQuality: 0.6`). Für die Lesung braucht ein
-Beleg keine zwölf Megapixel. Auf etwa 2.000 Pixel Längskante verkleinert, läge
-er bei grob 150–200 KB — aus 1 GB würden rund 5.200 Belege. Vor einer
-Änderung gegen die Lesequalität messen (kleine Schrift auf Thermobons ist der
-kritische Fall); die Vorgabe „kein Hochskalieren" bleibt davon unberührt.
 
 ### Was die App kann und erklärt werden muss
 
@@ -264,14 +245,7 @@ kein StoreKit, Testmonat vom Server.
 2. ~~Zuschnitt~~ — **entschieden: beide Stufen können alles, der Unterschied
    ist der Speicher (1 GB / 5 GB).** ERiC und die Anbindung an die Buchhaltung
    sind aus dem Launch heraus.
-2a. **Neu offen: Was passiert, wenn der Speicher voll ist?** Vorschlag: ab
-   90 % ein Hinweis in der App, bei 100 % keine neuen Belege mehr annehmen
-   (ansehen und herunterladen bleibt immer frei, wie bei der Testmonat-Sperre),
-   dazu der Wechsel auf 5 GB als ein Tippen über Apple. **Niemals von selbst
-   löschen** — die Belege sind aufbewahrungspflichtig, und das Versprechen
-   lautet „sicher bei uns verwahrt". Dafür muss der Server den Verbrauch je
-   Mandant kennen und in `/api/ich` liefern (Abschnitt 5).
-2b. Soll das Foto vor dem Hochladen verkleinert werden? Erst messen.
+2a. Verhalten bei vollem Speicher — Auftraggeber.
 3. Wird „Ein Knopf" der Launch-Einstieg?
 4. Was passiert mit den heutigen Pilotkonten (Nina, Testbetriebe,
    Ambassadorinnen)? Vorschlag: bleiben auf dem Portal-Weg, bis Pro kommt;
