@@ -9,30 +9,85 @@
 > der Schnitt zwischen den Stufen verläuft anders (Abschnitt 1). Alles, was
 > unten noch 39/59 sagt, ist überholt; die Begründungen dahinter gelten weiter.
 
-## 1. Das Modell (Stand 10.10.2026 abends)
+## 1. Das Modell (Stand 10.10.2026 abends, endgültig)
 
-| | **Stufe 1 · 9,99 €** | **Stufe 2 · 19,99 €** |
+**Beide Stufen können dasselbe. Der Unterschied ist der Speicherplatz.**
+
+| | **9,99 €** | **19,99 €** |
 |---|---|---|
+| Speicherplatz auf souveränen deutschen Servern | **1 GB** | **5 GB** |
 | Belege und Rechnungen fotografieren, lesen, buchen, ablegen | ja | ja |
-| Belege liegen sicher bei babu (Belegbox) | ja | ja |
-| Zum Monatsende: TXT-Datei (DATEV-Stapel) und Belege per Mail | ja | ja |
-| Umsatz melden (Umsatzsteuer-Voranmeldung) | — | ja |
-| Übermittlung ans Finanzamt (ERiC) | — | ja |
+| Verträge, Post vom Finanzamt, Briefe, Kontoauszüge | ja | ja |
+| Kassenbuch | ja | ja |
+| Zum Monatsende: TXT-Datei und Belege per Mail ans Steuerbüro | ja | ja |
+| Fragen an babu — der Chat kennt deine Dokumente | ja | ja |
+| Auslagen abrechnen | ja | ja |
 | Bezahlung | Apple In-App-Abo | Apple In-App-Abo |
 | Start | App laden, 10 Belege frei, dann Abo | dito |
 
 Die Preise sind **Endpreise im App Store** (inklusive Umsatzsteuer), nicht netto.
-**Stufe 2 ist noch zu klären** — Umfang, Zeitpunkt und ob sie zum Launch
-überhaupt erscheint.
 
-Portal, Kanzlei-Cockpit, Ambassador-Programm, Stripe: **nicht beim Launch** —
-kommen mit babu Pro zum Jahreswechsel. Der **Monatsversand ans Steuerbüro ist
-dagegen Kern von Stufe 1**, nicht Pro — er ist am 10.10. gebaut worden
+Warum das besser ist als ein Schnitt nach Funktionen: Ein Speicher-Abo ist ein
+Modell, das jede Kundin kennt (iCloud, Dropbox) und das Apple seit Jahren
+tausendfach freigegeben hat. Es gibt nichts zu erklären, nichts zu verhandeln,
+und vor allem keine Diskussion darüber, ob hier an Verbraucher oder an
+Unternehmen verkauft wird — genau der Punkt, an dem die Einreichung am
+05.10. gescheitert ist.
+
+**ERiC und die Anbindung an die Buchhaltung fallen aus dem Launch heraus.**
+Sie waren als Stufe 2 gedacht; mit dem Speicher-Modell sind sie frei und
+kommen, wann sie fertig werden, statt einen Starttermin zu blockieren.
+Im Code existiert von ERiC heute nichts (die Kennzahlen der Voranmeldung
+rechnet `monatsabschluss.py` bereits).
+
+Portal, Kanzlei-Cockpit, Ambassador-Programm und Stripe bleiben draußen und
+kommen mit babu Pro. Der **Monatsversand ans Steuerbüro gehört dagegen in
+beide Stufen** — er ist am 10.10. gebaut worden
 (`server/belegreview/uebergabepaket.py`, Commit b71f726).
 
-Was aus der Fassung von 14:03 damit wegfällt: Der Schnitt „Belege gegen
-Schriftverkehr + Kassenbuch" gilt nicht mehr. Ob Verträge, Finanzamt-Post,
-Kontoauszüge und Kassenbuch in Stufe 1 oder 2 gehören, ist offen (Abschnitt 7).
+### Was 1 GB und 5 GB wirklich heißen (gemessen 10.10. an der echten Box)
+
+Ein Beleg kostet **rund 550 KB**: Foto 538 KB im Schnitt (iPhone, Qualität 0,6,
+volle Auflösung; größtes gemessenes 713 KB) plus etwa 13 KB für Lesung und
+Protokoll. Die Git-Historie der Belegbox fällt nicht ins Gewicht — die
+gemessenen 397 MB sind 8.657 lose Objekte bei 12,7 MB gepackt, ein `git gc`
+lässt sie zusammenfallen.
+
+| Belege je Monat | 1 GB reicht | 5 GB reichen |
+|---|---|---|
+| 30 | 5,3 Jahre | mehr als 26 Jahre |
+| 50 | 3,2 Jahre | 16 Jahre |
+| 100 | 1,6 Jahre | 8 Jahre |
+
+Das ist der Grund, warum die zwei Stufen zusammenpassen: Buchungsbelege sind
+8 bis 10 Jahre aufzubewahren (§ 147 AO). Bei 50 Belegen im Monat läuft 1 GB
+nach gut drei Jahren voll — und genau dann ist der Wechsel auf 5 GB kein
+Verkaufstrick, sondern die richtige Antwort. Die Stufe ist der Aufbewahrungs-
+pflicht nachgebaut, nicht einem Funktionsschnitt.
+
+**Eine Stellschraube bleibt:** Die App lädt heute das volle iPhone-Foto hoch
+(`CaptureTab.swift`, `compressionQuality: 0.6`). Für die Lesung braucht ein
+Beleg keine zwölf Megapixel. Auf etwa 2.000 Pixel Längskante verkleinert, läge
+er bei grob 150–200 KB — aus 1 GB würden rund 5.200 Belege. Vor einer
+Änderung gegen die Lesequalität messen (kleine Schrift auf Thermobons ist der
+kritische Fall); die Vorgabe „kein Hochskalieren" bleibt davon unberührt.
+
+### Was die App kann und erklärt werden muss
+
+Vier Dinge, die heute schon gebaut sind und in Beschreibung, Landing und
+Store-Text gehören — sie sind der Grund, warum der Speicher überhaupt wertvoll ist:
+
+1. **Der Chat kennt deine Dokumente.** Was hochgeladen ist, versteht babu im
+   Gespräch: Verträge, Post vom Amt, Kontoauszüge, Belege
+   (`klartext_der_unterlage`, Fragen-Reiter).
+2. **Das Profil legt sich von selbst an.** Aus den hochgeladenen Unterlagen
+   füllt babu die Angaben zum Betrieb (`auswertung.py`, Salon-Check →
+   „Angaben auf Knopfdruck ins Profil").
+3. **Mit jedem Dokument wird babu klüger.** Jede Buchung sieht inzwischen das
+   Profil, die laufenden Verträge, das Personal, die Kontobewegungen des
+   Monats und die Nachbar-Belege — der Kontext wächst mit der Ablage.
+4. **Auslagen lassen sich abrechnen** (`auslagen.py`, `AuslagenTab.swift`,
+   seit 04.10. live).
 
 ## 2. Was „kein Backend" wirklich heißt
 
@@ -178,18 +233,17 @@ kein StoreKit, Testmonat vom Server.
 ## 7. Offene Entscheidungen
 
 1. ~~Preis im Store~~ — **entschieden 10.10. abends: 9,99 € und 19,99 € brutto.**
-2. **Der Zuschnitt von Stufe 1 ist offen.** Sicher drin: Belege, Belegbox,
-   Monatsversand, „Fragen" (ohne sie bucht niemand richtig). Unklar: Verträge,
-   Finanzamt-Post, Kontoauszüge, Kassenbuch, Monatsabschluss als Zahl.
-2a. **Stufe 2 braucht ERiC — das ist kein Feature, sondern ein eigenes
-   Vorhaben.** Im Code existiert davon heute nichts: keine Bibliothek, keine
-   Übermittlung, nur Erwähnungen. Die Kennzahlen der Voranmeldung (Kz 81, 66,
-   83 …) rechnet `monatsabschluss.py` bereits. Was fehlt: ERiC-Bibliothek vom
-   Bayerischen Landesamt für Steuern, Registrierung als Hersteller,
-   Testumgebung und Zertifizierung, das Zertifikat der Nutzerin für die
-   Übermittlung, und ein Weg, das serverseitig zu betreiben (die Bibliothek
-   gehört nicht in eine iOS-App). **Vorschlag: Stufe 1 allein starten,
-   Stufe 2 nachziehen.**
+2. ~~Zuschnitt~~ — **entschieden: beide Stufen können alles, der Unterschied
+   ist der Speicher (1 GB / 5 GB).** ERiC und die Anbindung an die Buchhaltung
+   sind aus dem Launch heraus.
+2a. **Neu offen: Was passiert, wenn der Speicher voll ist?** Vorschlag: ab
+   90 % ein Hinweis in der App, bei 100 % keine neuen Belege mehr annehmen
+   (ansehen und herunterladen bleibt immer frei, wie bei der Testmonat-Sperre),
+   dazu der Wechsel auf 5 GB als ein Tippen über Apple. **Niemals von selbst
+   löschen** — die Belege sind aufbewahrungspflichtig, und das Versprechen
+   lautet „sicher bei uns verwahrt". Dafür muss der Server den Verbrauch je
+   Mandant kennen und in `/api/ich` liefern (Abschnitt 5).
+2b. Soll das Foto vor dem Hochladen verkleinert werden? Erst messen.
 3. Wird „Ein Knopf" der Launch-Einstieg?
 4. Was passiert mit den heutigen Pilotkonten (Nina, Testbetriebe,
    Ambassadorinnen)? Vorschlag: bleiben auf dem Portal-Weg, bis Pro kommt;
