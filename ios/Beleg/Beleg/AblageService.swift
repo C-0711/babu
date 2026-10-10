@@ -20,6 +20,12 @@ enum AblageErgebnis: Equatable {
     /// nie etwas ändern konnte. Als eigener Fall kann die App stattdessen
     /// aufhören zu klopfen und es sagen.
     case keineAblage
+    /// 403 mit `grund` „speicher_voll" oder „frei_aufgebraucht" (seit
+    /// 10.10.2026, paket.py): der Platz ist aufgebraucht. Eigener Fall und
+    /// nicht `abgelehnt`, weil daran NICHTS falsch ist — der Beleg bleibt
+    /// liegen und geht los, sobald die Nutzerin einen Platz gewählt hat.
+    /// Ein `abgelehnt` hätte ihn als fehlgeschlagen abgestempelt.
+    case platzVoll
     case abgelehnt(Int)       // sonstiger HTTP-Status
     case nichtErreichbar      // Netzfehler (kein WLAN, falsches Netz, Timeout)
 
@@ -32,10 +38,17 @@ enum AblageErgebnis: Equatable {
         switch status {
         case 200..<300: return .uebertragen
         case 401: return .tokenFehler
-        case 403, 409: return grund(daten) == nil ? .keineAblage : .abgelehnt(status)
+        case 403, 409:
+            if let g = grund(daten) {
+                return PLATZ_GRUENDE.contains(g) ? .platzVoll : .abgelehnt(status)
+            }
+            return .keineAblage
         default: return .abgelehnt(status)
         }
     }
+
+    /// Die Gründe, die „kein Platz mehr" heißen (abo.TEXTE_PLATZ).
+    static let PLATZ_GRUENDE: Set<String> = ["speicher_voll", "frei_aufgebraucht"]
 
     /// Der Klartext des Servers, wenn er einen Grund nennt — für den Beleg.
     static func hinweis(_ daten: Data?) -> String? {

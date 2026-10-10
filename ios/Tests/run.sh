@@ -152,3 +152,10 @@ echo "— Ablage-Harness —"
 # den einen Beleg betrifft (Simulator-Test 04.10.2026, babu Expenses D1).
 swiftc -o "$ZIEL/ablage" ../Beleg/Beleg/AblageService.swift ablage/main.swift
 "$ZIEL/ablage"
+
+echo "— Platz-Harness —"
+# Was die App am Platz selbst rechnet: der Balken (Belege im Freikontingent,
+# Bytes mit Stufe) und „rund so viele Belege" (seit 10.10.2026). Die Regel
+# selbst steht auf dem Server (paket.py, tests/test_paket.py).
+swiftc -o "$ZIEL/platz" ../Beleg/Beleg/Platz.swift platz/main.swift
+"$ZIEL/platz"

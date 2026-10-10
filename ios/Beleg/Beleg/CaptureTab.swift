@@ -278,6 +278,11 @@ struct CaptureTab: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 8)
             }
+            // Wie viel Platz noch ist — sichtbar erst, wenn es knapp wird
+            // (seit 10.10.2026). Hier, weil hier fotografiert wird.
+            PlatzStreifen()
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
             if zeigeEinrichtung {
                 ScrollView {
                     EinrichtungsKarte(schritte: einrichtungsschritte,

@@ -40,6 +40,12 @@ targetTemplates:
         CODE_SIGN_STYLE: Automatic
         # Das Team von 0711 Intelligence — ohne das kein Archiv, kein Upload.
         DEVELOPMENT_TEAM: 8L87Z2GRSG
+    # Die Stufenauswahl im Simulator durchspielen, ohne App Store Connect
+    # (seit 10.10.2026). Hängt an der LaunchAction — also nur beim Starten
+    # aus Xcode, nie im Archiv. Steht auch in den beiden .xcscheme-Dateien;
+    # hier, damit eine Regeneration mit XcodeGen sie nicht verliert.
+    scheme:
+      storeKitConfiguration: Support/babu.storekit
 
 targets:
   Beleg:

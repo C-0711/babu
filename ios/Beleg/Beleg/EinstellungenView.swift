@@ -527,6 +527,14 @@ struct EinstellungenView: View {
                     + "eingerichtet. Bis dahin bleibt alles auf dem Telefon."
                 store.zugangAbgelaufen = false
                 store.ablageFehlt = true
+            case .platzVoll:
+                // Der Zugang stimmt und die Ablage steht — es ist nur kein
+                // Platz mehr (seit 10.10.2026). Das sagt der Streifen und
+                // die Stufenauswahl; hier nur die Wahrheit über die
+                // Verbindung, sonst klänge es nach einem Fehler.
+                testErgebnis = "Verbunden ✓ — dein Platz ist aufgebraucht."
+                store.zugangAbgelaufen = false
+                store.ablageFehlt = false
             case .abgelehnt: testErgebnis = "Die Belegbox meldet einen Fehler — später noch einmal versuchen."
             case .nichtErreichbar: testErgebnis = "Keine Verbindung — Internet prüfen und noch einmal versuchen."
             }

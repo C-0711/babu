@@ -206,6 +206,10 @@ struct ListeView: View {
         NavigationStack(path: $pfad) {
             List {
                 // Was ansteht, steht oben — dort schaut sie ohnehin hin.
+                PlatzStreifen()
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16,
+                                              bottom: 6, trailing: 16))
+                    .listRowBackground(Color.clear)
                 MonatslaufKarte()
                 MeldungenAbschnitt()
                 BelegjagdAbschnitt()

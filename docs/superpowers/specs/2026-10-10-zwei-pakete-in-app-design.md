@@ -149,6 +149,32 @@ neuer Stand für die Anwältin.
 
 ## 4. App (`Beleg`, App Store) — Änderungen
 
+> **Gebaut am 10.10.2026**, beide Ziele bauen, alle Harnesse grün.
+>
+> * `Platz.swift` (Stand und Stufen, reine Rechnung), `Kasse.swift`
+>   (StoreKit 2: Preise, Kauf, `currentEntitlements`, `Transaction.updates`),
+>   `AblageService+Platz.swift` (Gerätekonto, E-Mail, Kauf melden),
+>   `PlatzSheet.swift` (die Auswahl), `PlatzStreifen.swift` (der Hinweis).
+> * `OnboardingView` legt bei „Los geht's" das Gerätekonto an; scheitert
+>   das, kann sie „Erst mal ohne" weitermachen — die Belege bleiben dann
+>   auf dem Telefon, wie bei jedem Konto ohne Ablage.
+> * Der Streifen zeigt sich **nur, wenn es etwas zu sagen gibt** (letzte
+>   drei freie Belege, über 90 %, voll). Ein Balken, der immer da ist,
+>   erzieht zum Wegsehen.
+> * Ein 403 mit `grund: speicher_voll|frei_aufgebraucht` ist in der App ein
+>   eigener Fall (`AblageErgebnis.platzVoll`): der Beleg bleibt **wartend**
+>   liegen statt als fehlgeschlagen abgestempelt zu werden, und die Auswahl
+>   geht auf. Harness `ios/Tests/ablage` prüft das samt Negativkontrollen.
+> * `ios/Beleg/Support/babu.storekit` + beide Schemata: die Auswahl lässt
+>   sich im Simulator durchspielen (nur beim Start aus Xcode, siehe §8).
+> * `BABU_ADRESSE=<url>` schickt einen DEBUG-Bau an einen anderen Server —
+>   ohne das ginge jeder Probelauf des Gerätekontos gegen die Produktion.
+>
+> **Punkt 1 unten (Zuschnitt 39/59) ist mit dem Modell aus Abschnitt 1
+> hinfällig** und wurde nicht gebaut: Funktionen trennen die Stufen nie.
+> `Ausbaustufe` bleibt, wie sie war. Punkt 5 (Launch-Verstecke), Punkt 6
+> (Ein Knopf) und Punkt 7 (Store-Eintrag) sind offen.
+
 Heute: ein Zuschnitt `Beleg` (Erfassen, Dokumente, Fragen; Kasse/Termine
 nur in `BelegPro`), Anmeldung per Passwort/Link/Code gegen das Portal,
 kein StoreKit, Testmonat vom Server.
@@ -201,6 +227,36 @@ kein StoreKit, Testmonat vom Server.
    testet mit dem Gerätekonto).
 
 ## 5. Server — das Minimum für den Launch
+
+> **Gebaut am 10.10.2026** (Commit „Die Stufen serverseitig"). Was unten in
+> der Liste steht, ist erledigt; wo der gebaute Stand von der Liste abweicht,
+> steht es hier. Suite grün, 78 neue Tests.
+>
+> * `paket.py` rechnet die Stufen (ohne Datenbank, ohne Netz), `herkunft`
+>   ist die Weiche: für Portal-Betriebe gibt `stand()` None zurück.
+> * `POST /api/geraet/anlegen` legt Konto, Mandant und Geräteschlüssel an.
+>   **Abweichung:** die Belegbox fordert die Route sofort in einem
+>   Hintergrundfaden an, statt auf den Cron-Anleger zu warten — der läuft
+>   nur jede Minute, und so lange kann ein Telefon nicht warten, das gerade
+>   den ersten Beleg fotografiert. Der Cron bleibt als Rückfall.
+> * Die Sperre läuft durch den vorhandenen Engpass `abo.zugang()`, der vier
+>   Werte mehr nimmt und den Platz ZUERST prüft. **Abweichung:** der Grund
+>   heißt `frei_aufgebraucht` bzw. `speicher_voll` (nicht `paket_noetig`),
+>   und es sind **403** wie bei jeder anderen Sperre, nicht 402 — damit
+>   bleibt die Form genau die von `testmonat_vorbei`. Die Anzahl der Belege
+>   zählt `mandant.belege_gesamt` (nur aufwärts), nicht `/api/aufnahme`.
+> * `POST /api/abo/apple` und `POST /api/abo/apple/meldung` prüfen die
+>   signierten Belege gegen Apples Wurzelzertifikat (`apple_abo.py`,
+>   `zertifikate/AppleRootCA-G3.cer`). `APPLE_TEST_WURZEL` lässt auf einem
+>   Entwicklungsserver zusätzlich Xcodes StoreKit-Testwurzel zu; leer im Live-Stand.
+> * Der tägliche Lauf zieht `speicher_bytes` gegen die Ablage nach
+>   (`taeglich.py schritt_platz`, `box.inhalt_bytes`).
+> * **Nicht gebaut, weil nicht nötig:** `abo_status` wird vom Apple-Weg
+>   nicht angefasst — die Stufe steht in `mandant.paket`, und `abo.zugang()`
+>   entscheidet über den Platz, bevor der Abo-Status überhaupt zur Sprache
+>   kommt. Stripe bleibt daneben unverändert.
+
+
 
 - `POST /api/geraet/anlegen` (Gerätekonto, Box per Box-Anleger, Mandant
   in „babu direkt", `test_bis` leer, `belege_frei = 10`).
@@ -256,9 +312,27 @@ kein StoreKit, Testmonat vom Server.
 ## 8. Reihenfolge und Aufwand (Schätzung)
 
 1. Entscheidungen 1–3 — Auftraggeber.
-2. Server: Gerätekonto, Zähler, Apple-Abo-Stand — 3 Tage.
-3. App: Zuschnitt 39/59, Gerätekonto im Onboarding, StoreKit-Blatt,
-   Zähler, Launch-Verstecke — 5 Tage, Build auf dem Mac, TestFlight.
+2. ~~Server: Gerätekonto, Zähler, Apple-Abo-Stand~~ — **gebaut 10.10.2026**
+   (Abschnitt 5). Noch nicht deployt.
+3. ~~App: Gerätekonto im Onboarding, StoreKit-Blatt, Zähler~~ — **gebaut
+   10.10.2026** (Abschnitt 4). Launch-Verstecke offen; TestFlight offen.
 4. Landing, Barber, Werkstatt, Rechtstexte, Chat-Katalog — 1 Tag, dann
    Anwältin.
 5. App Store Connect: Abos, Screenshots, Review — Auftraggeber + 1 Tag.
+   Die drei Produkte heißen `babu.speicher.1gb`, `babu.speicher.5gb`,
+   `babu.speicher.100gb` (so stehen sie in `paket.STUFEN` und in
+   `ios/Beleg/Support/babu.storekit`); sie lassen sich nur über die
+   Weboberfläche von App Store Connect anlegen, nicht über die API.
+
+### Was am Kaufweg noch nicht gemessen ist (10.10.2026)
+
+Geprüft ist die Signaturprüfung selbst (eigene Ketten, Negativkontrollen,
+`tests/test_apple_abo.py`) und der ganze Weg über die Routen
+(`tests/test_geraet_und_apple.py`). **Nicht gemessen ist `Product.purchase()`
+gegen den Server**: StoreKit nimmt die Testdatei `babu.storekit` nur an, wenn
+die App AUS XCODE startet — beim Start über `simctl` liefert
+`Product.products(for:)` nichts, und die Auswahl zeigt die Ersatzpreise aus
+`paket.STUFEN`. Für den Durchlauf: aus Xcode starten (Schema `Beleg`,
+Simulator) und den Entwicklungsserver mit
+`APPLE_TEST_WURZEL=/Applications/Xcode.app/Contents/PlugIns/IDEStoreKitEditor.ideplugin/Contents/Resources/StoreKitTestCertificate.cer`
+laufen lassen — sonst weist er den Testbeleg zu Recht ab.

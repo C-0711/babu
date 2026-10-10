@@ -3,6 +3,10 @@ import SwiftUI
 @main
 struct BelegApp: App {
     @StateObject private var store = AppStore()
+    /// Die Kasse (seit 10.10.2026): Stufen bei Apple kaufen. Sie liegt hier
+    /// oben, weil Apple auch ohne offene Ansicht meldet — eine Verlängerung
+    /// oder eine nachgereichte Freigabe kommt mitten in den Betrieb.
+    @StateObject private var kasse = Kasse()
     @UIApplicationDelegateAdaptor(PushDelegate.self) private var pushDelegate
     @Environment(\.scenePhase) private var scenePhase
 
@@ -10,6 +14,7 @@ struct BelegApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(store)
+                .environmentObject(kasse)
                 .tint(GC.accent)
                 // Das Design ist bewusst hell (feste Farb-Tokens); ohne diese
                 // Festlegung wären Listen und Editoren im Dunkelmodus unlesbar.
@@ -17,6 +22,19 @@ struct BelegApp: App {
                 // Kaltstart: scenePhase meldet keinen Wechsel, wenn die App
                 // frisch startet — dieser Aufruf ist der einzige, der dann greift.
                 .task { store.beimSichtbarwerden() }
+                // Die Kasse an den Server hängen und Apples Meldungen
+                // mitlaufen lassen. `melden` gibt den signierten Beleg
+                // weiter — geprüft wird er dort, nicht hier.
+                .task {
+                    kasse.melden = { jws in await store.apfelKaufMelden(jws) }
+                    kasse.horchen()
+                    // Was Apple an gültigen Belegen führt: fängt den Wechsel
+                    // auf ein neues Telefon und den Fall, dass die Meldung
+                    // nach dem Kauf nicht ankam.
+                    if store.verbundenAls != nil {
+                        _ = await kasse.laufendeMelden()
+                    }
+                }
         }
         .onChange(of: scenePhase) { _, neu in
             switch neu {
@@ -61,6 +79,12 @@ struct RootView: View {
             // Rechnung aus Mail, WhatsApp oder Dateien: „Teilen → In babu öffnen"
             store.tab = .erfassen
             store.geteilteDatei = url
+        }
+        // Die Stufenauswahl (seit 10.10.2026) hängt hier oben, nicht an
+        // einem Reiter: „kein Platz" kann beim Fotografieren kommen, beim
+        // Nachreichen eines wartenden Belegs oder im Konto.
+        .sheet(isPresented: $store.zeigePlatz) {
+            PlatzSheet()
         }
         .overlay {
             if store.anmeldungLaeuft {

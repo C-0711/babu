@@ -49,6 +49,20 @@ WURZEL_SHA256 = ("63343abfb89a6a03ebb57e9b3f5fa7be7c4f5c756f3017b3a8c488c3"
 #: Das Bündel, auf das Apple die Belege ausstellt.
 BUENDEL = os.environ.get("APPLE_BUNDLE_ID", "io.0711.beleg")
 
+#: NUR FÜR ENTWICKLUNG: eine zweite Wurzel, die auch gelten soll.
+#:
+#: StoreKit-Testkäufe aus Xcode (`babu.storekit`) sind NICHT von Apple
+#: signiert, sondern von Xcodes eigener Testwurzel
+#: (`StoreKitTestCertificate.cer`, CN=StoreKit). Ohne diesen Schalter lässt
+#: sich der Kaufweg lokal gar nicht durchspielen — und ein Weg, den niemand
+#: durchspielen kann, wird nie geprüft.
+#:
+#: Leer ist der Normalfall und der Live-Stand. Gesetzt wird es nur auf einem
+#: Entwicklungsserver, von Hand, mit dem Pfad zur Datei — es steht in keiner
+#: Compose-Datei und in keinem Image. Jeder Beleg, der NUR über diese Wurzel
+#: durchkommt, wird beim Annehmen laut protokolliert.
+TEST_WURZEL = os.environ.get("APPLE_TEST_WURZEL", "")
+
 
 class NichtEcht(Exception):
     """Der Beleg hält der Prüfung nicht stand — Grund im Text."""
@@ -57,6 +71,29 @@ class NichtEcht(Exception):
 def _b64(teil: str) -> bytes:
     """Base64url ohne Polster, wie JWS es schreibt."""
     return base64.urlsafe_b64decode(teil + "=" * (-len(teil) % 4))
+
+
+def _test_wurzel_laden():
+    """Die Entwicklungs-Wurzel, falls eine eingestellt ist — sonst None."""
+    if not TEST_WURZEL:
+        return None
+    from cryptography.x509 import load_der_x509_certificate  # noqa: PLC0415
+    try:
+        roh = Path(TEST_WURZEL).read_bytes()
+    except OSError as ex:
+        print(f"[apple] APPLE_TEST_WURZEL={TEST_WURZEL!r} nicht lesbar: {ex}",
+              flush=True)
+        return None
+    try:
+        return load_der_x509_certificate(roh)
+    except Exception:  # noqa: BLE001 — auch PEM zulassen
+        from cryptography.x509 import load_pem_x509_certificate  # noqa: PLC0415
+        try:
+            return load_pem_x509_certificate(roh)
+        except Exception as ex:  # noqa: BLE001
+            print(f"[apple] APPLE_TEST_WURZEL ist kein Zertifikat: {ex}",
+                  flush=True)
+            return None
 
 
 def _wurzel_laden():
@@ -87,8 +124,14 @@ def _kette_pruefen(x5c: list[str], jetzt: float):
     # Apple hängt die Wurzel an; sie muss BITGLEICH unsere sein. Vergleich
     # über den öffentlichen Schlüssel, nicht über den Namen — ein Name ist
     # frei wählbar, ein Schlüssel nicht.
-    if kette[-1].public_key().public_numbers() != wurzel.public_key().public_numbers():
-        raise NichtEcht("Die Kette endet nicht bei Apple Root CA - G3")
+    mitgeschickt = kette[-1].public_key().public_numbers()
+    if mitgeschickt != wurzel.public_key().public_numbers():
+        test = _test_wurzel_laden()
+        if test is None or mitgeschickt != test.public_key().public_numbers():
+            raise NichtEcht("Die Kette endet nicht bei Apple Root CA - G3")
+        print("[apple] ACHTUNG: Beleg über die Entwicklungs-Wurzel "
+              f"({TEST_WURZEL}) angenommen — kein Kauf bei Apple", flush=True)
+        wurzel = test
     kette[-1] = wurzel
     stunde = dt.datetime.fromtimestamp(jetzt, dt.timezone.utc)
     for i, zert in enumerate(kette):

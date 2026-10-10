@@ -64,6 +64,15 @@ final class AppStore: ObservableObject {
     @Published var verbundenRolle: String? { didSet { speichern() } }
     /// Was eine Mitarbeiterin darf (babu Expenses D1); `nil` für die Inhaberin.
     @Published var rechte: Ausbaustufe.Rechte? { didSet { speichern() } }
+    /// Der Platz (seit 10.10.2026, paket.py) — nil bei jedem Konto, das
+    /// nicht über den App Store gekommen ist. Dann zeigt die App nichts
+    /// davon, und für die Betriebe aus dem Portal ändert sich nichts.
+    @Published var platz: PlatzStand?
+    /// Die Stufen, wie der Server sie anbietet. Leer heißt: kein Angebot.
+    @Published var stufen: [PlatzStufe] = []
+    /// Die Stufenauswahl zeigen — gesetzt, wenn der Platz voll ist und die
+    /// Nutzerin weitermachen will.
+    @Published var zeigePlatz = false
     /// Wahr, solange der Scanner aus dem Reiter „Auslagen“ heraus läuft.
     @Published var auslageModus = false
     private var pushAngefragt = false
@@ -386,6 +395,8 @@ final class AppStore: ObservableObject {
         if verbundenAls != un { verbundenAls = un }
         if verbundenRolle != antwort.rolle { verbundenRolle = antwort.rolle }
         if rechte != antwort.rechte { rechte = antwort.rechte }
+        if platz != antwort.platz { platz = antwort.platz }
+        if !antwort.stufen.isEmpty, stufen != antwort.stufen { stufen = antwort.stufen }
         // Die Ablage kam nach der Anmeldung dazu (Box angelegt, freigeschaltet):
         // jetzt losschicken, was auf dem Telefon wartet. Bis 04.10.2026 sagte
         // die App „geht von selbst los, sobald sie da ist" — und fragte nie nach.
@@ -532,11 +543,34 @@ final class AppStore: ObservableObject {
             }
             fehlversuche[id] = nil
             naechsterVersuch[id] = nil
+        case .platzVoll:
+            // Kein Fehlschlag: der Beleg ist in Ordnung, es ist nur kein
+            // Platz mehr (seit 10.10.2026). Er bleibt wartend liegen und
+            // geht los, sobald eine Stufe gebucht ist — als
+            // `fehlgeschlagen` hätte er wie ein kaputtes Foto ausgesehen.
+            belege[j].ablageStatus = .ausstehend
+            belege[j].ablageHinweis = hinweis
+            // Nicht weiter klopfen: daran ändert sich nichts von selbst.
+            versuchVerschieben(id)
+            platzIstVoll()
         default:
             belege[j].ablageStatus = .fehlgeschlagen
             belege[j].ablageHinweis = hinweis
             versuchVerschieben(id)
         }
+    }
+
+    /// Der Server hat „kein Platz" gesagt. Den Stand nachholen und die
+    /// Stufenauswahl zeigen — einmal, nicht bei jedem wartenden Beleg.
+    @MainActor
+    private func platzIstVoll() {
+        if platz?.voll != true {
+            // Der Stand auf dem Telefon ist älter als die Absage: nachfragen,
+            // damit die Auswahl die richtige Zahl zeigt.
+            Task { await self.kontoNachfragen() }
+        }
+        guard !zeigePlatz else { return }
+        zeigePlatz = true
     }
 
     // MARK: - Audit-Stempel (GitChain-Commits am Beleg persistieren)
@@ -1125,7 +1159,17 @@ extension AppStore {
     /// `BABU_BEISPIEL_KACHING=geld|salon|beide` tut so, als hätte dieses
     /// Telefon den Stand vor einer Provision bzw. vor dem grünen Salon gesehen
     /// — beim Öffnen von „Empfehlen" kommt dann das Ka-ching (nach 3 s).
+    ///
+    /// `BABU_ADRESSE=http://127.0.0.1:7851` schickt dieses Gerät an einen
+    /// Server der Wahl. Gebraucht wird das seit dem Gerätekonto
+    /// (10.10.2026): „Los geht's" legt beim ERSTEN Start ein Konto an, und
+    /// bis dahin kommt niemand an das Adressfeld in den Einstellungen.
+    /// Ohne diesen Haken ginge jeder Probelauf gegen die Produktion.
     func beispielEinrichten(_ umgebung: [String: String]) {
+        if let adresse = umgebung["BABU_ADRESSE"], !adresse.isEmpty,
+           URL(string: adresse) != nil {
+            ablageURL = adresse
+        }
         guard let art = umgebung["BABU_BEISPIEL_EMPFEHLEN"] else { return }
         istAmbassador = true
         rechte = nil
@@ -1179,6 +1223,58 @@ extension AppStore {
         if ablage { ablageRetry() }
     }
 
+    /// Ein Konto anlegen, ohne dass sich jemand anmeldet (seit 10.10.2026).
+    ///
+    /// Der erste Schritt der App aus dem App Store: Knopf, Konto, los. Die
+    /// Belegbox richtet der Server gleich darauf ein — bis sie steht,
+    /// bleiben die Belege auf dem Telefon (`ablageFehlt`), genau wie bei
+    /// jedem anderen Konto ohne Ablage.
+    ///
+    /// Rückgabe: der Satz, den sie danach lesen soll, oder nil, wenn alles
+    /// glatt ging.
+    @MainActor
+    func geraetAnmelden(betrieb: String?, geraet: String) async -> String? {
+        guard let url = URL(string: ablageURL) else {
+            return "Die Adresse von babu stimmt nicht."
+        }
+        anmeldungLaeuft = true
+        defer { anmeldungLaeuft = false }
+        let ergebnis = await AblageService.geraetAnlegen(
+            geraet: geraet, betrieb: betrieb, basis: url)
+        guard let schluessel = ergebnis.schluessel else {
+            return ergebnis.fehler ?? "Das hat gerade nicht geklappt."
+        }
+        if !ergebnis.stufen.isEmpty { stufen = ergebnis.stufen }
+        // `ablage: false` — die Box kommt gleich, aber sie ist noch nicht da.
+        // Ein „alles bereit" wäre an dieser Stelle nicht wahr.
+        await anmeldungUebernehmen(schluessel: schluessel, un: ergebnis.un,
+                                   rolle: nil, ablage: false)
+        return nil
+    }
+
+    /// Einen Kaufbeleg von Apple an den Server geben. Rückgabe: ob der Platz
+    /// jetzt steht. Die Kasse (`Kasse.uebernehmen`) schließt den Vorgang bei
+    /// Apple erst danach ab — lieber eine Wiederholung als ein bezahlter
+    /// Platz, der nie ankommt.
+    @MainActor
+    func apfelKaufMelden(_ jws: String) async -> Bool {
+        guard let url = URL(string: ablageURL),
+              let pat = KeychainHelfer.ladePAT() else { return false }
+        let antwort = await AblageService.apfelKaufMelden(jws, basis: url, pat: pat)
+        if let neuerPlatz = antwort.platz { platz = neuerPlatz }
+        return antwort.fehler == nil
+    }
+
+    /// Die E-Mail nachreichen — für die Wiederherstellung und die Rechnung.
+    @MainActor
+    func kontoEmailSetzen(_ email: String) async -> String? {
+        guard let url = URL(string: ablageURL),
+              let pat = KeychainHelfer.ladePAT() else {
+            return "Dieses Gerät ist nicht verbunden."
+        }
+        return await AblageService.kontoEmail(email, basis: url, pat: pat)
+    }
+
     /// Dieses Gerät abmelden: der Schlüssel geht, das Konto bleibt.
     func abmelden() {
         // Der Stand dieses Zugangs bleibt in seiner Datei — wer sich wieder
@@ -1189,6 +1285,10 @@ extension AppStore {
         ablageAktiv = false   // ehrlich: ohne Verbindung geht nichts mehr
         istAmbassador = nil
         empfehlen = nil
+        // Der Platz gehört dem Konto, nicht dem Gerät: sonst zeigte das
+        // abgemeldete Telefon den Stand von jemand anderem.
+        platz = nil
+        stufen = []
     }
 
     /// Den Link aus der Mail einlösen (`babu://anmelden/<token>`). Gibt den

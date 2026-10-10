@@ -1,0 +1,99 @@
+{
+  "identifier": "D2989105-57C1-4426-9966-487159A2FF2B",
+  "nonRenewingSubscriptions": [],
+  "products": [],
+  "settings": {
+    "_applicationInternalID": "6811956687",
+    "_developerTeamID": "8L87Z2GRSG",
+    "_failTransactionsEnabled": false,
+    "_lastSynchronizedDate": 0,
+    "_locale": "de_DE",
+    "_storefront": "DEU",
+    "_storeKitErrors": []
+  },
+  "subscriptionGroups": [
+    {
+      "id": "518C4589-CE0E-4FFF-BBAD-A9E69CE8AADE",
+      "localizations": [
+        {
+          "description": "So viel Platz, wie du brauchst.",
+          "displayName": "Dein Platz",
+          "locale": "de_DE"
+        }
+      ],
+      "name": "Dein Platz",
+      "subscriptions": [
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "9.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "AEA3899F-C3AA-41E4-B307-431307A10C76",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Platz für rund 2000 Belege.",
+              "displayName": "1 GB",
+              "locale": "de_DE"
+            }
+          ],
+          "productID": "babu.speicher.1gb",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "1 GB",
+          "subscriptionGroupID": "518C4589-CE0E-4FFF-BBAD-A9E69CE8AADE",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "19.99",
+          "familyShareable": false,
+          "groupNumber": 2,
+          "internalID": "DF597ED1-FBBE-4CE1-A034-1575498FAE09",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Platz für rund 9500 Belege.",
+              "displayName": "5 GB",
+              "locale": "de_DE"
+            }
+          ],
+          "productID": "babu.speicher.5gb",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "5 GB",
+          "subscriptionGroupID": "518C4589-CE0E-4FFF-BBAD-A9E69CE8AADE",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "99.00",
+          "familyShareable": false,
+          "groupNumber": 3,
+          "internalID": "EE264C8A-FA4B-4F8F-A1EB-69D5BEBEF343",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Platz für rund 190 Tausend Belege.",
+              "displayName": "100 GB",
+              "locale": "de_DE"
+            }
+          ],
+          "productID": "babu.speicher.100gb",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "100 GB",
+          "subscriptionGroupID": "518C4589-CE0E-4FFF-BBAD-A9E69CE8AADE",
+          "type": "RecurringSubscription",
+          "winbackOffers": []
+        }
+      ]
+    }
+  ],
+  "version": {
+    "major": 3,
+    "minor": 0
+  }
+}

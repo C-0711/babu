@@ -169,6 +169,77 @@ def test_fremdes_blatt_in_echter_kette(echt):
 
 
 # ---------------------------------------------------------------------------
+# Die Entwicklungs-Wurzel (StoreKit-Testkäufe aus Xcode)
+# ---------------------------------------------------------------------------
+
+def test_ohne_schalter_gilt_nur_apple():
+    """Der Normalfall und der Live-Stand: APPLE_TEST_WURZEL ist leer, und
+    eine fremde Kette kommt nicht durch — auch keine von Xcode."""
+    assert apple_abo.TEST_WURZEL == ""
+    assert apple_abo._test_wurzel_laden() is None
+    x5c, schluessel, _w = kette()
+    with pytest.raises(apple_abo.NichtEcht, match="endet nicht bei Apple"):
+        apple_abo.pruefen(jws(_beleg(), x5c, schluessel))
+
+
+def test_mit_schalter_kommt_genau_diese_wurzel_durch(monkeypatch, tmp_path):
+    from cryptography.hazmat.primitives.serialization import Encoding
+    x5c, schluessel, wurzel = kette()
+    datei = tmp_path / "entwicklung.cer"
+    datei.write_bytes(wurzel.public_bytes(Encoding.DER))
+    monkeypatch.setattr(apple_abo, "TEST_WURZEL", str(datei))
+    beleg = _beleg()
+    assert apple_abo.pruefen(jws(beleg, x5c, schluessel)) == beleg
+
+
+def test_der_schalter_oeffnet_nicht_fuer_jede_kette(monkeypatch, tmp_path):
+    """DIE Messung zum Schalter: er lässt GENAU die eingestellte Wurzel
+    durch, keine andere. Sonst wäre er ein offenes Tor."""
+    from cryptography.hazmat.primitives.serialization import Encoding
+    _x5c, _k, erlaubt = kette()
+    datei = tmp_path / "entwicklung.cer"
+    datei.write_bytes(erlaubt.public_bytes(Encoding.DER))
+    monkeypatch.setattr(apple_abo, "TEST_WURZEL", str(datei))
+    fremd_x5c, fremd_schluessel, _andere = kette()
+    with pytest.raises(apple_abo.NichtEcht, match="endet nicht bei Apple"):
+        apple_abo.pruefen(jws(_beleg(), fremd_x5c, fremd_schluessel))
+
+
+def test_ein_falscher_pfad_oeffnet_nichts(monkeypatch, tmp_path):
+    monkeypatch.setattr(apple_abo, "TEST_WURZEL", str(tmp_path / "gibtsnicht"))
+    x5c, schluessel, _w = kette()
+    with pytest.raises(apple_abo.NichtEcht, match="endet nicht bei Apple"):
+        apple_abo.pruefen(jws(_beleg(), x5c, schluessel))
+
+
+def test_der_schalter_haengt_signatur_und_laufzeit_nicht_aus(monkeypatch, tmp_path):
+    """Auch mit Entwicklungs-Wurzel wird jede Signatur geprüft."""
+    from cryptography.hazmat.primitives.serialization import Encoding
+    x5c, schluessel, wurzel = kette()
+    datei = tmp_path / "entwicklung.cer"
+    datei.write_bytes(wurzel.public_bytes(Encoding.DER))
+    monkeypatch.setattr(apple_abo, "TEST_WURZEL", str(datei))
+    with pytest.raises(apple_abo.NichtEcht, match="Signatur stimmt nicht"):
+        apple_abo.pruefen(jws(_beleg(), x5c, schluessel, signatur_kaputt=True))
+
+
+def test_xcodes_testwurzel_liegt_da_wo_erwartet():
+    """Die Datei, auf die der Schalter im Entwicklungslauf zeigt. Fehlt
+    Xcode, wird der Test übersprungen — er misst die Umgebung, nicht babu."""
+    from pathlib import Path as _P  # noqa: PLC0415
+    pfad = _P("/Applications/Xcode.app/Contents/PlugIns/IDEStoreKitEditor"
+              ".ideplugin/Contents/Resources/StoreKitTestCertificate.cer")
+    if not pfad.is_file():
+        pytest.skip("Xcode liegt hier nicht")
+    from cryptography.x509 import load_der_x509_certificate  # noqa: PLC0415
+    zert = load_der_x509_certificate(pfad.read_bytes())
+    assert "StoreKit" in zert.subject.rfc4514_string()
+    # Und sie ist NICHT Apples Wurzel — sonst wäre der Schalter sinnlos.
+    assert (zert.public_key().public_numbers()
+            != apple_abo._wurzel_laden().public_key().public_numbers())
+
+
+# ---------------------------------------------------------------------------
 # Der Gutfall
 # ---------------------------------------------------------------------------
 
