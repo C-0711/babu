@@ -42,6 +42,21 @@ dem Server, Geheimnis-Archiv entschlüsselbar mit allen vier Dateien.
 
 ## Protokoll
 
+### 2026-10-10 — Zwischenprobe auf dem Server, bestanden
+
+Anlass: Fix-Liste 1–5 vom 10.10. (Deploy mit Rechtstexten, Tageslauf-Schritt `meldungen`,
+Service-Worker-Kopf). Nicht die Mac-Probe (der `age`-Schlüssel liegt nur dort), sondern der
+schnelle Weg auf der H200V: Nachtsicherung 03:17 in eine Wegwerf-Datenbank im Container.
+
+| Stück | zurückgespielt | Ergebnis |
+|---|---|---|
+| Postgres `pg-20261010.dump` (83 KB) | `createdb babu_probe_20261010` + `pg_restore --no-owner --no-privileges`, Exit 0 | 40 Tabellen = Server |
+| Zeilenzahlen | Probe = Server | nutzer 24 · mandant 8 · ambassador 6 · audit_log 139 |
+| Belegbox `box-babu-20261010.bundle` | `git bundle list-heads`: HEAD `06c08cb` | Server-Klon stand bei der Probe schon auf `9cf8bb4` (Aufnahmen vom Vormittag) — erwartet, Sicherung ist von 03:17 |
+| Geheimnisse | nicht geprüft (Schlüssel nur auf dem Mac) | — |
+
+Wegwerf-DB danach mit `dropdb` entfernt. Die volle Probe am 01.11. bleibt.
+
 ### 2026-10-03 — Probe nach Abo/Auszahlung (Migration 0013/0014), bestanden
 
 Anlass: Go-live-Plan Phase 7.4 — neue Tabellen (stripe_ereignis, abo_rechnung,
