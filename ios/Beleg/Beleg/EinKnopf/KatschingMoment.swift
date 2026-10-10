@@ -92,7 +92,7 @@ struct KatschingMoment: View {
     }
 }
 
-/// Der Moment nach „Ans Finanzamt schicken": der eine grüne Haken, ein
+/// Der Moment nach „Monat abschließen": der eine grüne Haken, ein
 /// Wort, ein ehrlicher Satz — und die Fanfare.
 struct UnterwegsMoment: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

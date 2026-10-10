@@ -159,9 +159,10 @@ final class EinKnopfLage: ObservableObject {
         await neuBewerten(store: store)
     }
 
-    /// „Ans Finanzamt schicken": der Monat wird festgeschrieben und die
-    /// Voranmeldung als Blatt abgelegt. Übermittelt wird damit nichts —
-    /// der Moment sagt das ehrlich.
+    /// „Monat abschließen" (bis 10.10.2026 „Ans Finanzamt schicken"): der Monat
+    /// wird festgeschrieben und die Voranmeldung als Blatt abgelegt. Übermittelt
+    /// wird damit nichts — deshalb verspricht der Knopf es auch nicht mehr; der
+    /// Text kommt erst mit Stufe C (ELSTER) zurück.
     func abschicken(store: AppStore) async {
         guard case .monatFertig(let m) = seite, !laedt else { return }
         laedt = true

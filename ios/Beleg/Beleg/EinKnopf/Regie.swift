@@ -133,7 +133,7 @@ enum Regie {
             let z = m.zahllast ?? 0
             return Blatt(zahl: fmtEur(abs(z)),
                          label: z < 0 ? "bekommst du zurück" : "zahlst du",
-                         satz: satz, knopf: "Ans Finanzamt schicken", stimmung: .fertig)
+                         satz: satz, knopf: "Monat abschließen", stimmung: .fertig)
 
         case .heim(let abend):
             let monat = monatsname(jetzt: l.jetzt, kalender)

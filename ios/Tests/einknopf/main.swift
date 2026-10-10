@@ -114,8 +114,8 @@ pruefe("bereit → Monat-Seite", Regie.entscheide(monatLage, kalender: kal) == .
 pruefe("Erstattung: Betrag ohne Vorzeichen, Label „bekommst du zurück\"",
        monatBlatt.zahl == "312,40 €" && monatBlatt.label == "bekommst du zurück")
 pruefe("Satz „Dein August ist gerechnet.\"", monatBlatt.satz == "Dein August ist gerechnet.")
-pruefe("Knopf „Ans Finanzamt schicken\", Stimmung fertig",
-       monatBlatt.knopf == "Ans Finanzamt schicken" && monatBlatt.stimmung == .fertig)
+pruefe("Knopf „Monat abschließen\", Stimmung fertig",
+       monatBlatt.knopf == "Monat abschließen" && monatBlatt.stimmung == .fertig)
 var zahlen = august; zahlen.zahllast = 312.40
 pruefe("Zahllast positiv → „zahlst du\"",
        Regie.blatt(.monatFertig(zahlen), monatLage, kalender: kal).label == "zahlst du")

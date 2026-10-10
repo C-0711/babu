@@ -28,7 +28,7 @@ das Ermahnen.
 | 1 | Frist naht | Umsatzsteuer-Termin in 0–7 Tagen und es ist noch etwas offen | „6 Tage" · „1 Tag" · „Heute" | — | „Bis zum 10. muss die Umsatzsteuer raus. 3 Belege fehlen noch." | Loslegen | Amber, ab 3 Tagen Rot |
 | 2 | Frage | Ein Beleg wartet auf eine Antwort, die nur Nina weiß | Belegbetrag | Lieferant | die Frage, in ihrer Sprache | Antworten | Bronze |
 | 3 | Beleg fehlt | Vom Konto ging Geld ab, ohne Beleg | Abbuchung | „vom Konto abgegangen" | „Am 12.08. gingen 84,90 € an Slavic Hair Company vom Konto. Dazu fehlt der Beleg." | Beleg reinwerfen | Bronze |
-| 4 | Monat fertig | Der Monat ist gerechnet und kann raus | Zahllast ohne Vorzeichen | „bekommst du zurück" · „zahlst du" | „Dein August ist gerechnet." | Ans Finanzamt schicken | Grün, mit dem einen Haken |
+| 4 | Monat fertig | Der Monat ist gerechnet und kann raus | Zahllast ohne Vorzeichen | „bekommst du zurück" · „zahlst du" | „Dein August ist gerechnet." | Monat abschließen (bis 10.10.2026 „Ans Finanzamt schicken") | Grün, mit dem einen Haken |
 | 5a | Heim, tagsüber | Nichts wartet | Zähler | „zurückgeholt im September" | „Wirf alles rein — Bons, Rechnungen, Post vom Amt. babu sortiert." | Reinwerfen | Bronze |
 | 5b | Heim, ab 18 Uhr | Nichts wartet | Was vom Monat bleibt | „Bleibt dir" | „Heute 3 Belege reingeworfen, 48,00 € zurückgeholt. Im September bleiben dir bisher 2.318,00 €." | Reinwerfen | Bronze |
 
@@ -54,7 +54,7 @@ die Monatsseite zeigt „bleibt dir" und der Knopf „Monat abschließen".
   gerechnet — keine Datei im Repo), das iPhone tippt einmal, „+13,56 €"
   steht groß in Grün, darunter tickt der Monatszähler von alt auf neu.
   1,8 s, dann entscheidet die Regie neu.
-- **Fanfare.** Einmal im Monat, nach „Ans Finanzamt schicken": vier Münzen
+- **Fanfare.** Einmal im Monat, nach „Monat abschließen": vier Münzen
   aufwärts, der eine grüne Haken, „Unterwegs".
 - **Warum das zum Design-Brief passt** („Kein Fintech-Look, kein
   Verspieltes — ein schönes Werkzeug"): ein Ton, eine Bewegung, an echtes
@@ -72,7 +72,7 @@ die Monatsseite zeigt „bleibt dir" und der Knopf „Monat abschließen".
 | Foto → gebucht | `POST /api/buchung/einschaetzung` (Gemma, strenges JSON, Dokumentklasse beleg/vertrag/behoerde/kontoauszug), `POST /api/aufnahme` legt ab | keine | 1 |
 | Alles reinwerfen | Fotos in der App; PDFs und Bilder über „Teilen → In babu öffnen"; Kontoauszug als Text-PDF über `POST /api/kontoauszug` | kein Mail-Eingang; gescannte Kontoauszüge nicht; im Prototyp landen PDFs in der gewohnten Ansicht | 2: Postfach je Salon |
 | „Du bekommst X zurück" | `monatsabschluss.ustva_entwurf` (Kennziffern 81/86/48/66/83), Satz fertig formuliert | keine | 1 |
-| „Ans Finanzamt schicken" | `POST /api/monatsabschluss/{monat}/freigeben` schreibt den Monat fest, `POST /api/ustva/{monat}` legt die Voranmeldung als PDF ab | **Es wird nichts übermittelt** — keine ELSTER-/ERiC-Anbindung. Der Prototyp behält den Knopftext; der Moment sagt ehrlich „liegt in deiner Ablage" | 2: ERiC-Bibliothek auf der H200V, Zertifikat, Übermittlungsprotokoll |
+| „Monat abschließen" | `POST /api/monatsabschluss/{monat}/freigeben` schreibt den Monat fest, `POST /api/ustva/{monat}` legt die Voranmeldung als PDF ab | **Es wird nichts übermittelt** — keine ELSTER-/ERiC-Anbindung. Seit 10.10.2026 verspricht der Knopf das auch nicht mehr („Ans Finanzamt schicken" kommt mit Stufe C zurück); der Moment sagt ehrlich „liegt in deiner Ablage" | 2: ERiC-Bibliothek auf der H200V, Zertifikat, Übermittlungsprotokoll |
 | Erinnern und ermahnen | Regeln in `melden.py` (7 und 1 Tag vor Fristen, 30 und 7 Tage vor Vertragsenden, höchstens drei), `GET /api/meldungen`; Fristen aus `fristen.py` über `GET /api/fristen/{jahr}` | **Kein Push** — nur lokale Mitteilungen um 9 Uhr, geplant beim Öffnen der App. **Ein Fehler:** `melden.py` liest `faellig`/`name`, `fristen.py` liefert `datum`/`titel`, darum entsteht nie eine Fristmeldung; die Fixture in `tests/test_melden.py` baut die falschen Felder nach und verdeckt es | sofort: Feldnamen angleichen · 2: Push mit Zeitplaner auf der H200V |
 | Zahlen heute Abend | `GET /api/monatslauf` (Stand läuft/wartet/bereit/freigegeben, Erlöse, Zahllast, Ergebnis), `GET /api/monatsabschluss/{monat}` (Erlöse, Ergebnis, Vorsteuer) | Monatsstand bis heute, keine Tagesrechnung — der Satz sagt „im September", nicht „heute" | 1 |
 | „Zurückgeholt" | kein Begriff im Backend | V2 definiert: **zurückgeholt = Vorsteuer (Kennziffer 66) der gebuchten Belege.** Exakt, prüfbar, kein Schätzwert. Eine Einkommensteuer-Ersparnis wird nicht gezeigt — sie hinge von Steuersatz und Jahresergebnis ab | 1 (Definition) |
@@ -100,12 +100,15 @@ die Monatsseite zeigt „bleibt dir" und der Knopf „Monat abschließen".
 
 ## 8. Nächste Schritte
 
-1. Feldnamen `melden.py` ↔ `fristen.py` angleichen, Fixture aus der echten
-   Fristenrechnung speisen (klein, sofort).
-2. Knopftext „Ans Finanzamt schicken" nur behalten, wenn Stufe 2 (ERiC)
-   beschlossen ist — sonst „Festschreiben".
-3. Push: Zertifikat, Geräteschlüssel-Ablage, Zeitplaner um 9 Uhr auf der
-   H200V.
+1. ~~Feldnamen `melden.py` ↔ `fristen.py` angleichen~~ — erledigt 08.09.2026
+   (`melden.fristen_meldungen` liest `datum`/`titel`, Fixture aus `fristen.fristen_jahr`).
+2. ~~Knopftext „Ans Finanzamt schicken"~~ — seit 10.10.2026 „Monat abschließen",
+   bis Stufe C (ELSTER) wirklich übermittelt.
+3. Push: Geräteschlüssel-Ablage gibt es seit Expenses D1 (`push_geraet`,
+   `push.py`); der Zeitplaner ist seit 10.10.2026 der Schritt `meldungen` im
+   täglichen Lauf (`werkzeuge/taeglich.py`, 06:15). **Offen: der APNs-Schlüssel**
+   (`APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_SCHLUESSEL` in `docker/.env`) — ohne ihn
+   geht dieselbe Meldung als Mail.
 4. Mail-Eingang je Salon, damit „alles reinwerfen" auch für Post gilt, die
    nie ein Foto war.
 5. Mit Nina einen Salontag lang nur die eine Seite benutzen — und zählen,
