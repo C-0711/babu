@@ -43,8 +43,11 @@ STATUS = ("zahlung_laeuft", "aktiv", "zahlung_offen", "gekuendigt", "beendet")
 LESEND = frozenset({"GET", "HEAD", "OPTIONS"})
 
 #: Was auch im Nur-Lesen-Zustand schreiben darf: Rückmeldungen (wer
-#: feststeckt, muss es sagen können) und der Weg zum Abo selbst.
-FREIE_PFADE = ("/api/rueckmeldung", "/api/abo/")
+#: feststeckt, muss es sagen können), der Weg zum Abo selbst — und seit
+#: 10.10.2026 die E-Mail des Gerätekontos. Sie ist der einzige Weg zurück
+#: zu den Belegen auf einem neuen Telefon, und wer am Freikontingent
+#: hängt, ist genau der, der sie hinterlegen soll.
+FREIE_PFADE = ("/api/rueckmeldung", "/api/abo/", "/api/konto/email")
 
 #: Warum nur lesen — der Text, den Portal und App zeigen.
 TEXTE = {
@@ -102,12 +105,30 @@ def _datum(wert: str | None) -> dt.date | None:
 
 
 def zugang(test_bis: str | None, abo_status: str | None, abo_ende: str | None,
-           zahlungsfehler_seit: str | None, heute: dt.date) -> dict:
+           zahlungsfehler_seit: str | None, heute: dt.date,
+           herkunft: str | None = None, paket: str | None = None,
+           speicher_bytes: int | None = None,
+           belege_gesamt: int | None = None) -> dict:
     """Wie darf dieser Betrieb heute arbeiten?
 
     Rückgabe `{stufe, grund, bis}`: `stufe` ist "voll" oder "nur_lesen";
     `grund` sagt warum (None = ohne Einschränkung), `bis` den letzten Tag mit
-    vollem Zugang, wenn einer feststeht (ISO-Datum)."""
+    vollem Zugang, wenn einer feststeht (ISO-Datum).
+
+    Seit 10.10.2026 entscheidet bei Betrieben aus dem App Store zuerst der
+    Platz (`paket.py`): Wer sein Kontingent aufgebraucht hat, sieht seine
+    Belege weiter, legt aber nichts Neues mehr ab — auch wenn das Abo läuft.
+    Für Betriebe aus dem Portal (`herkunft` nicht "app") bleibt die Antwort
+    Byte für Byte, wie sie war."""
+    import paket as pak  # noqa: PLC0415 — nur Rechnung, kein Modulzustand
+    platz = pak.stand(herkunft=herkunft, stufe=paket,
+                      verbraucht=speicher_bytes, belege=belege_gesamt)
+    if platz and platz["voll"]:
+        # Der volle Platz schlägt alles andere: Ein laufendes Abo gibt keinen
+        # Platz, den es nicht gibt, und ein gekündigtes nimmt keinen weg.
+        return {"stufe": "nur_lesen",
+                "grund": "speicher_voll" if platz["stufe"] else "frei_aufgebraucht",
+                "bis": None}
     if abo_status in ("zahlung_laeuft", "aktiv"):
         return {"stufe": "voll", "grund": None, "bis": None}
     if abo_status == "zahlung_offen":
@@ -142,10 +163,26 @@ def sperrt(methode: str, pfad: str, z: dict | None) -> bool:
     return not any(pfad.startswith(frei) for frei in FREIE_PFADE)
 
 
+#: Was bei vollem Platz gesagt wird. Beide Wege dieselbe Botschaft: die
+#: Belege bleiben liegen, es geht nur ums Weitermachen.
+TEXTE_PLATZ = {
+    "frei_aufgebraucht": "Deine zehn freien Belege sind abgelegt. Such dir "
+                         "einen Platz aus, dann geht es weiter — deine "
+                         "Belege bleiben, wo sie sind.",
+    "speicher_voll": "Dein Platz ist voll. Mit der nächsten Stufe hast du "
+                     "sofort wieder Luft — alles Abgelegte bleibt, wo es ist.",
+}
+
+
 def text(z: dict, app: bool = False) -> str:
     """Der Satz zur Sperre. `app=True`: die Fassung für die iOS-App."""
+    grund = z.get("grund") or ""
+    # Platz ist kein Abo-Problem: derselbe Satz in App und Portal, und er
+    # sagt zuerst, dass nichts verloren geht.
+    if grund in TEXTE_PLATZ:
+        return TEXTE_PLATZ[grund]
     quelle = TEXTE_APP if app else TEXTE
-    return quelle.get(z.get("grund") or "", quelle["test_vorbei"])
+    return quelle.get(grund, quelle["test_vorbei"])
 
 
 # ---------------------------------------------------------------------------

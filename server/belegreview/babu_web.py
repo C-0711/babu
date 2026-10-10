@@ -2370,6 +2370,22 @@ def _box_wache(request: Request) -> tuple[str, None] | tuple[None, JSONResponse]
     return un, None
 
 
+def _platz_buchen(bytes_dazu: int, belege_dazu: int = 1) -> None:
+    """Was abgelegt wurde, dem aktiven Betrieb auf den Platz schreiben.
+
+    Still und ohne Rückgabe: Ein Zählfehler darf keinen Beleg verlieren —
+    der tägliche Lauf zieht die Bytes ohnehin gegen die wirkliche Größe
+    der Ablage nach. Ohne aktiven Mandanten (Kanzlei, Betreiber, PAT)
+    passiert nichts."""
+    mandant_id = _AKTIVER_MANDANT.get(None)
+    if mandant_id is None:
+        return
+    try:
+        mandanten.platz_buchen(mandant_id, bytes_dazu, belege_dazu)
+    except Exception as ex:  # noqa: BLE001
+        print(f"[platz] {mandant_id}: {ex!r}", flush=True)
+
+
 def _nur_lesen_sperre(request: Request, un: str, methode: str) -> JSONResponse | None:
     """Die Abo-Sperre für eine Anfrage, die als `methode` zählt.
 
@@ -2697,6 +2713,17 @@ def api_ich(request: Request) -> Response:
         z = abo.zugang(**stand, heute=testmonat.heute())
         if stand["abo_status"] or z["stufe"] != "voll":
             daten["zugang"] = z
+        # Der Platz (seit 10.10.2026): nur für Betriebe aus dem App Store.
+        # Die App zeigt daraus „Noch 3 Belege frei" und den Balken; für
+        # Portal-Betriebe liefert paket.stand() None und nichts ändert sich.
+        import paket  # noqa: PLC0415
+        platz = paket.stand(herkunft=stand.get("herkunft"),
+                            stufe=stand.get("paket"),
+                            verbraucht=stand.get("speicher_bytes"),
+                            belege=stand.get("belege_gesamt"))
+        if platz is not None:
+            daten["speicher"] = platz
+            daten["stufen"] = paket.angebot()
     antwort = JSONResponse(daten)
     if request.cookies.get(SESSION_COOKIE):
         antwort.set_cookie(SESSION_COOKIE, _signieren(un, exp), max_age=SESSION_DAUER,
@@ -3934,6 +3961,10 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
                             status_code=503)
     with _box().index_schloss:
         _box().invalidieren()
+    # Den Platz mitschreiben (seit 10.10.2026, paket.py): alles, was in
+    # diesem Commit liegt — Foto, Lesung, Protokoll, Vektor. Nur der Beleg
+    # selbst zählt als Beleg; die Beiakten sind Bytes, keine Ereignisse.
+    _platz_buchen(sum(len(v) for v in dateien.values()))
     if als_auslage:
         import kern_auslagen  # noqa: PLC0415
         b_ = (ergebnis or {}).get("buchung") if isinstance(ergebnis, dict) else None
@@ -13465,6 +13496,8 @@ import kern_auszahlung  # noqa: E402,F401
 import kern_bank  # noqa: E402,F401
 import kern_auslagen  # noqa: E402,F401
 import kern_anmeldelink  # noqa: E402,F401
+import kern_geraet  # noqa: E402,F401
+import kern_apple  # noqa: E402,F401
 
 kern_warteliste.setup(app, sys.modules[__name__])
 kern_ambassador.setup(app, sys.modules[__name__])
@@ -13473,6 +13506,8 @@ kern_auszahlung.setup(app, sys.modules[__name__])
 kern_bank.setup(app, sys.modules[__name__])
 kern_auslagen.setup(app, sys.modules[__name__])
 kern_anmeldelink.setup(app, sys.modules[__name__])
+kern_geraet.setup(app, sys.modules[__name__])
+kern_apple.setup(app, sys.modules[__name__])
 
 # Der Kern reicht sich selbst per setup() — die Familien hängen ihre
 # Routen an DIESES app-Objekt und benutzen DIESES Modul. Kein

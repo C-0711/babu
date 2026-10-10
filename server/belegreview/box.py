@@ -376,6 +376,42 @@ def _lesestand_holen_gesperrt(box: "Box", sofort: bool) -> bool:
     return True
 
 
+def inhalt_bytes(box: "Box", timeout: int = 120) -> int | None:
+    """Wie viele Bytes der heutige Stand dieser Box WIRKLICH trägt.
+
+    Gezählt wird der Inhalt des Standes (`ls-tree -r -l HEAD`), nicht die
+    Größe des Git-Verzeichnisses. Zwei Gründe (beide am 10.10.2026 am
+    Bestand gemessen): Lose Objekte blähen `.git` vorübergehend um das
+    Dreißigfache auf (397 MB gegen 12,7 MB nach dem Packen) — daran darf
+    kein Kontingent hängen. Und die Geschichte gehört babu, nicht dem
+    Kontingent: wer einen Beleg ersetzt, soll nicht für beide Fassungen
+    zahlen.
+
+    None heißt: nicht messbar (kein Stand, Store weg, git langsamer als
+    `timeout`). Der Aufrufer lässt dann den alten Wert stehen — ein
+    Messfehler darf kein Kontingent verändern.
+    """
+    kopf = _lese_git(["-C", str(box.store), "rev-parse", "--verify", "HEAD"],
+                     timeout=20)
+    if kopf.returncode != 0:
+        return None
+    # Klassisches Langformat „<mode> <typ> <oid> <groesse>\t<pfad>" — läuft
+    # auch auf Git 2.34 (H200V), das `--format` für ls-tree nicht kennt.
+    r = _lese_git(["-C", str(box.store), "ls-tree", "-r", "-l", "HEAD"],
+                  timeout=timeout)
+    if r.returncode != 0:
+        return None
+    summe = 0
+    for zeile in r.stdout.splitlines():
+        vorn, _, _pfad = zeile.partition("\t")
+        teile = vorn.split()
+        # Ein Submodul-Eintrag (`commit`) trägt „-" als Größe — überspringen,
+        # nicht abbrechen.
+        if len(teile) == 4 and teile[1] == "blob" and teile[3].isdigit():
+            summe += int(teile[3])
+    return summe
+
+
 def klon_aus_ref(ref: str) -> Path:
     """Konvention: je Box eine eigene Arbeitskopie unter der Klon-Wurzel.
 

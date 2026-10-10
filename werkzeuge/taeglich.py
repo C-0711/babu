@@ -17,6 +17,9 @@ anderen trotzdem:
     ambassador  „Heute für dich": eine Mail an jede Ambassadorin, die heute etwas
                 zu tun hat (dieselben Aufgaben wie im Portal), höchstens eine
     betreiber   „Heute für Nina": nur, wenn etwas anliegt
+    platz       bei Betrieben aus dem App Store den gezählten Speicher gegen
+                die wirkliche Größe ihrer Ablage nachziehen (paket.py,
+                seit 10.10.2026) — ohne Mail, nur Zahlen
     meldungen   was babu von sich aus sagt (melden.py: Frist in 7/1 Tagen,
                 Kündigungsfrist, offene Rechnung, Abschluss, Belegjagd) — je
                 Betrieb an die Inhaberin, als Push auf ihre Telefone, ohne
@@ -55,7 +58,8 @@ import postfach  # noqa: E402
 import stripe_api  # noqa: E402
 import testmonat  # noqa: E402
 
-SCHRITTE = ("stripe", "salons", "ambassador", "betreiber", "meldungen")
+SCHRITTE = ("stripe", "salons", "ambassador", "betreiber", "platz",
+            "meldungen")
 NACHHOLEN_TAGE = 3
 
 
@@ -340,6 +344,64 @@ def _betriebe_mit_box() -> list[dict]:
         else:
             m["an"] = [m["besitzer_un"]]
     return zeilen
+
+
+def schritt_platz(lauf: Lauf) -> None:
+    """Den gezählten Speicher gegen die Ablage nachziehen.
+
+    Beim Ablegen zählt `mandanten.platz_buchen` die hochgeladenen Bytes
+    dazu — das ist schnell und richtig genug für die Anzeige, aber es
+    kennt die Wirklichkeit nicht: Git packt, ein Beleg wird ersetzt, ein
+    Upload scheitert nach dem Zählen. Einmal am Tag entscheidet deshalb
+    die Ablage selbst.
+
+    Die Belegzahl bleibt unberührt: sie zählt Ereignisse (zehn freie
+    Belege), nicht Bytes. Und der Schritt schickt keine Mail — er darf so
+    oft laufen, wie jemand ihn anstößt.
+    """
+    import box as bx  # noqa: PLC0415
+    import mandanten  # noqa: PLC0415
+    import paket  # noqa: PLC0415
+    with bw._DB_LOCK, bw._db() as c:  # noqa: SLF001
+        betriebe = [dict(zip(("id", "name", "box_ref", "paket", "speicher_bytes"), z))
+                    for z in c.execute(
+                        "SELECT id, name, box_ref, paket, speicher_bytes FROM mandant "
+                        "WHERE herkunft=? AND box_ref IS NOT NULL AND box_ref<>'' "
+                        "ORDER BY id", (paket.HERKUNFT_APP,))]
+    if not betriebe:
+        lauf.log("platz: kein Betrieb aus dem App Store")
+        return
+    gemessen = ungemessen = 0
+    for m in betriebe:
+        try:
+            box = bx.box_aus_ref(m["id"], m["box_ref"])
+            if bx.lesen_modus() == "klon":
+                bx.lesestand_holen(box)
+            ist = bx.inhalt_bytes(box)
+        except Exception as ex:  # noqa: BLE001
+            lauf.log(f"platz: {m['name']} (Mandant {m['id']}) nicht messbar "
+                     f"({ex.__class__.__name__}: {str(ex)[:120]})")
+            ungemessen += 1
+            continue
+        if ist is None:
+            # Kein Stand oder git stumm: den alten Wert stehen lassen. Ein
+            # Messfehler darf kein Kontingent verändern.
+            lauf.log(f"platz: {m['name']} (Mandant {m['id']}) ohne Stand")
+            ungemessen += 1
+            continue
+        gemessen += 1
+        vorher = int(m["speicher_bytes"] or 0)
+        if ist == vorher:
+            continue
+        stand = paket.stand(herkunft=paket.HERKUNFT_APP, stufe=m["paket"],
+                            verbraucht=ist, belege=None)
+        lauf.log(f"platz: {m['name']} (Mandant {m['id']}) {vorher} → {ist} B"
+                 f"{' — VOLL' if stand and stand['voll'] else ''}"
+                 f"{' — knapp' if stand and stand['knapp'] else ''}"
+                 f"{' (Probe)' if lauf.probe else ''}")
+        if not lauf.probe:
+            mandanten.platz_messen(m["id"], ist)
+    lauf.log(f"platz: {gemessen} gemessen, {ungemessen} nicht messbar")
 
 
 def _meldungen_fuer_betrieb(m: dict, heute: dt.date) -> list[dict]:

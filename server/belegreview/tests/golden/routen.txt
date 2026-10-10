@@ -142,6 +142,8 @@ POST /api/abmelden
 POST /api/abo/bestaetigen
 POST /api/abo/checkout
 POST /api/abo/portal
+POST /api/abo/apple
+POST /api/abo/apple/meldung
 POST /api/abschluss
 POST /api/abschluss/karte-korrektur
 POST /api/abschluss/start
@@ -204,6 +206,7 @@ POST /api/einrichtung/zuruecksetzen
 POST /api/einstellungen
 POST /api/fehlende-belege/klaeren
 POST /api/freigabe
+POST /api/geraet/anlegen
 POST /api/gedaechtnis
 POST /api/gedaechtnis/vergessen
 POST /api/gedaechtnis/{merksatz_id}/vergessen
@@ -224,6 +227,7 @@ POST /api/kanzleiwechsel
 POST /api/kassenbuch
 POST /api/kontenrahmen
 POST /api/kontoauszug
+POST /api/konto/email
 POST /api/korrektur/{stamm}
 POST /api/kundin/{kundin_id}/behandlung
 POST /api/kundin/{kundin_id}/loeschen

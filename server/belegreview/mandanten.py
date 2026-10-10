@@ -111,6 +111,22 @@ def schema(c) -> None:
             pass  # Spalte existiert schon
     c.execute("CREATE UNIQUE INDEX IF NOT EXISTS mandant_stripe_abo "
               "ON mandant (stripe_abo)")
+    # Die Stufen (seit 10.10.2026, paket.py): woher der Betrieb kam, das
+    # Apple-Abo und was es an Platz belegt. NULL/0 heißt „Portal-Betrieb" —
+    # für die ändert sich nichts. Abbild: migrations/0018_paket.sql.
+    for spalte in ("herkunft", "apple_abo", "apple_produkt"):
+        try:
+            c.execute(f"ALTER TABLE mandant ADD COLUMN {spalte} TEXT")
+        except sqlite3.OperationalError:
+            pass  # Spalte existiert schon
+    for spalte, typ in (("speicher_bytes", "BIGINT"), ("belege_gesamt", "INTEGER")):
+        try:
+            c.execute(f"ALTER TABLE mandant ADD COLUMN {spalte} "
+                      f"{typ} NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # Spalte existiert schon
+    c.execute("CREATE UNIQUE INDEX IF NOT EXISTS mandant_apple_abo "
+              "ON mandant (apple_abo)")
     # Bankfreigabe (seit 04.10.2026, Plan Kanzleiansicht B1): der Betrieb
     # gibt seiner Kanzlei die Kontoumsätze zum Lesen frei. Abbild für
     # Postgres: migrations/0015_bank_freigabe.sql.
@@ -209,7 +225,10 @@ def bank_anfragen(mandant_id: int, c=None) -> None:
 
 
 #: Was die Nur-Lesen-Regel (abo.zugang) von der Mandantenzeile braucht.
-ABO_STAND = ("test_bis", "abo_status", "abo_ende", "zahlungsfehler_seit")
+#: Seit 10.10.2026 gehört der Platz dazu (paket.py) — `herkunft` entscheidet,
+#: ob die Stufen-Regel diesen Betrieb überhaupt betrifft.
+ABO_STAND = ("test_bis", "abo_status", "abo_ende", "zahlungsfehler_seit",
+             "herkunft", "paket", "speicher_bytes", "belege_gesamt")
 
 
 def abo_stand(mandant_id: int, c=None) -> dict:
@@ -218,6 +237,67 @@ def abo_stand(mandant_id: int, c=None) -> dict:
         z = cc.execute(f"SELECT {', '.join(ABO_STAND)} FROM mandant WHERE id=?",
                        (mandant_id,)).fetchone()
     return dict(zip(ABO_STAND, z)) if z else dict.fromkeys(ABO_STAND)
+
+
+def platz_buchen(mandant_id: int, bytes_dazu: int, belege_dazu: int = 1,
+                 c=None) -> None:
+    """Was abgelegt wurde, auf den Platz des Betriebs schreiben.
+
+    Beide Zähler laufen nur aufwärts: `belege_gesamt` ist die Zahl der je
+    abgelegten Belege, nicht die der liegenden — sonst setzte Löschen das
+    Freikontingent zurück. `speicher_bytes` wird vom täglichen Lauf gegen
+    die wirkliche Größe der Ablage nachgezogen."""
+    with _sitzung(c) as cc:
+        cc.execute("UPDATE mandant SET speicher_bytes = speicher_bytes + ?, "
+                   "belege_gesamt = belege_gesamt + ? WHERE id = ?",
+                   (max(0, int(bytes_dazu)), max(0, int(belege_dazu)),
+                    mandant_id))
+
+
+class AppleAboVergeben(Exception):
+    """Dieses Apple-Abo gehört schon einem anderen Betrieb."""
+
+
+def stufe_setzen(mandant_id: int, stufe: str | None, apple_abo: str | None,
+                 apple_produkt: str | None, c=None) -> None:
+    """Die gebuchte Speicherstufe eintragen (Apple-Weg, seit 10.10.2026).
+
+    `stufe = None` heißt: kein laufender Zugang mehr (gekündigt und
+    abgelaufen, zurückerstattet) — der Betrieb fällt auf das Freikontingent
+    zurück, seine Belege bleiben liegen und lesbar.
+
+    Ein Apple-Abo gehört genau EINEM Betrieb; derselbe Grund wie bei
+    `box_verknuepfen` und `stripe_abo`: sonst zahlt einer, und zwei legen ab.
+    Der eindeutige Index `mandant_apple_abo` hält das auch dann, wenn zwei
+    Meldungen gleichzeitig ankommen — die Prüfung hier gibt nur den
+    besseren Fehlertext."""
+    with _sitzung(c) as cc:
+        if apple_abo:
+            fremd = cc.execute("SELECT id FROM mandant WHERE apple_abo = ? "
+                               "AND id <> ?", (apple_abo, mandant_id)).fetchone()
+            if fremd:
+                raise AppleAboVergeben(
+                    f"Apple-Abo {apple_abo} gehört schon Mandant {fremd[0]}")
+        cc.execute("UPDATE mandant SET paket = ?, apple_abo = ?, "
+                   "apple_produkt = ? WHERE id = ?",
+                   (stufe, apple_abo, apple_produkt, mandant_id))
+
+
+def mandant_mit_apple_abo(apple_abo: str, c=None) -> int | None:
+    """Welcher Betrieb hängt an diesem Apple-Abo? Für die Meldungen von
+    Apple, die keinen angemeldeten Zugang mitbringen."""
+    with _sitzung(c) as cc:
+        z = cc.execute("SELECT id FROM mandant WHERE apple_abo = ?",
+                       (apple_abo,)).fetchone()
+    return int(z[0]) if z else None
+
+
+def platz_messen(mandant_id: int, bytes_belegt: int, c=None) -> None:
+    """Den gezählten Platz durch den wirklich belegten ersetzen (täglicher
+    Lauf). Die Belegzahl bleibt unberührt — sie zählt Ereignisse, nicht Bytes."""
+    with _sitzung(c) as cc:
+        cc.execute("UPDATE mandant SET speicher_bytes = ? WHERE id = ?",
+                   (max(0, int(bytes_belegt)), mandant_id))
 
 
 def _jetzt_iso() -> str:
