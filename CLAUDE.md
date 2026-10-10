@@ -223,13 +223,6 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   passt (CSRF-Frage, keine Liste). Mails tragen Links auf mybabu.io und kommen von
   `post@mybabu.io` (Resend, Domain verifiziert 17.09.; `BABU_ABSENDER` in `.env`).
 
-## Sicherheit
-
-- Nie Passwörter oder Token-Werte entgegennehmen, eintippen oder ausgeben
-  (nur Länge/Status). Keychain-only für den Upload-PAT.
-- Neue Routen immer über `_box_wache`/`box_mitglied`/`_verwalter_box_wache`
-  absichern, nie über `ERLAUBT`.
-
 ## Datenbank
 
 - **Jede Schemaänderung ZWEIMAL:** inline in `_sqlite_schema()`/Modul-
