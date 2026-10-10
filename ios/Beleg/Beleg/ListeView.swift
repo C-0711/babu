@@ -567,6 +567,13 @@ struct DetailView: View {
         if detailBild == nil, let daten = b.bildJpeg {
             detailBild = UIImage(data: daten)
         }
+        // Von einem anderen Telefon aufgenommen (ServerAbgleich): das Foto
+        // liegt nur auf dem Server — jetzt holen, nicht vorher.
+        if detailBild == nil, b.ablageStatus == .uebertragen,
+           let stamm = ServerAbgleich.stamm(ausDateiname: b.ablageDateiname),
+           let url = URL(string: store.ablageURL), let pat = KeychainHelfer.ladePAT() {
+            detailBild = await AblageService.belegBild(stamm: stamm, basis: url, pat: pat)
+        }
         if b.ablageStatus == .uebertragen {
             await reviewLaden(fuer: b)
         }

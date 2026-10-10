@@ -9,6 +9,10 @@ echo "— EXTF-Harness —"
 swiftc -o "$ZIEL/extf" ../Beleg/Beleg/Models.swift ../Beleg/Beleg/ExtfWriter.swift extf/main.swift
 "$ZIEL/extf"
 
+echo "— Server-Abgleich-Harness —"
+swiftc -o "$ZIEL/serverabgleich" ../Beleg/Beleg/Models.swift ../Beleg/Beleg/ServerAbgleich.swift serverabgleich/main.swift
+"$ZIEL/serverabgleich"
+
 echo "— Rechnungs-Harness —"
 swiftc -o "$ZIEL/rechnung" ../Beleg/Beleg/Models.swift ../Beleg/Beleg/Rechnungsmodelle.swift rechnung/main.swift
 "$ZIEL/rechnung"

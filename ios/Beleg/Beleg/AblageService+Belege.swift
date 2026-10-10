@@ -38,6 +38,39 @@ enum AbgleichAntwort: Equatable {
 
 extension AblageService {
 
+    /// Die Belegliste des Servers (`GET /api/belege`), alle Seiten — der
+    /// Server ist die Wahrheit (ServerAbgleich, 10.10.2026). `vollstaendig`
+    /// ist falsch, wenn unterwegs eine Seite fehlte; dann darf der Abgleich
+    /// nichts als gelöscht ansehen. nil = nichts bekommen (kein Netz, 401,
+    /// Mitarbeiterin ohne „darf Belege").
+    static func belegeListe(basis: URL, pat: String) async
+        -> (zeilen: [[String: Any]], vollstaendig: Bool)? {
+        var alle: [[String: Any]] = []
+        var seite = 1
+        var gesamt = 0
+        repeat {
+            var teile = URLComponents(url: basis.appendingPathComponent("api/belege"),
+                                      resolvingAgainstBaseURL: false)
+            teile?.queryItems = [URLQueryItem(name: "limit", value: "500"),
+                                 URLQueryItem(name: "seite_nr", value: String(seite))]
+            guard let url = teile?.url else { return nil }
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 20
+            request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+            guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+                  (antwort as? HTTPURLResponse)?.statusCode == 200,
+                  let json = try? JSONSerialization.jsonObject(with: daten) as? [String: Any],
+                  let zeilen = json["belege"] as? [[String: Any]] else {
+                return seite == 1 ? nil : (alle, false)
+            }
+            alle += zeilen
+            gesamt = json["gesamt"] as? Int ?? alle.count
+            seite += 1
+            if zeilen.isEmpty { break }
+        } while alle.count < gesamt && seite <= 20
+        return (alle, alle.count >= gesamt)
+    }
+
     /// Einen Auftrag aus der Abgleich-Schlange an den Server geben.
     ///
     /// 404 heißt: den Beleg gibt es dort nicht (mehr) — etwa im Portal
@@ -381,6 +414,21 @@ extension AblageService {
         guard let url = teil?.url else { return nil }
         var request = URLRequest(url: url)
         request.timeoutInterval = 15
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              (antwort as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return UIImage(data: daten)
+    }
+
+    /// Das Foto eines Belegs vom Server (`GET /api/beleg/<stamm>/bild`) — für
+    /// Belege, die ein anderes Telefon aufgenommen hat (ServerAbgleich).
+    static func belegBild(stamm: String, basis: URL, pat: String) async -> UIImage? {
+        var teil = URLComponents(url: basis.appendingPathComponent("api/beleg"),
+                                 resolvingAgainstBaseURL: false)
+        teil?.path += "/" + stamm + "/bild"
+        guard let url = teil?.url else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
         request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
         guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
               (antwort as? HTTPURLResponse)?.statusCode == 200 else { return nil }

@@ -29,6 +29,25 @@ Dienst gehört ctax; Scan-Blätter der Salonprüfung liest Gemma (multimodal).
 Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
 `onclick`-Attribute, nur Nummern (`MD_NAMEN`/`mdVon`).
 
+## Verbindlich: der Server ist die Wahrheit (seit 10.10.2026)
+
+- **Die Belegliste der App kommt aus der Belegbox**, nicht aus dem Telefon.
+  `AppStore.vomServerLaden()` holt `GET /api/belege` (alle Seiten) beim
+  Start, beim Sichtbarwerden und nach jeder Anmeldung und führt über
+  `ServerAbgleich.zusammenfuehren` zusammen: Fehlendes kommt dazu (ohne
+  Foto, die Einzelansicht lädt `/api/beleg/<stamm>/bild` nach), im Portal
+  Gelöschtes geht (nur bei vollständiger Liste, nur Belegfach), wartende
+  Uploads bleiben, die eigene Buchung wird nie überschrieben. Harness
+  `ios/Tests/serverabgleich` (reine Logik, ohne UIKit).
+- **Eine Zustandsdatei je Zugang**: `zustand-<hash des Geräteschlüssels>.json`
+  (`ServerAbgleich.zustandsDateiName`), damit zwei Betriebe auf einem
+  iPhone zwei Listen haben. Beim ersten Start mit Schlüssel zieht die alte
+  `zustand.json` in die Datei des angemeldeten Zugangs um und bleibt als
+  `.vor-trennung` liegen. An- und Abmelden wechseln die Datei
+  (`zustandWechseln`). Nie wieder eine geräteweite Belegliste bauen.
+- Anlass: Ninas #85/#88 (Blättern in frühere Monate ging ins Leere), ein
+  zweites iPhone sah eine leere Ablage, zwei Betriebe teilten eine Liste.
+
 ## Verbindlich: Umsatz und Kasse (seit 03.09.2026)
 
 - **Kasse GEGEN Konto abgleichen, nicht entweder-oder.** Die Karte im

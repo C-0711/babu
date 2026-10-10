@@ -111,7 +111,8 @@ Details: Memory `babu-meldeschleife`.
 | ScannerView + CameraController/DocumentDetector/AutoCaptureGate/LiveFieldsReader/CaptureOverlayView/Dewarper | eigener Sucher, Gates, Live-Chips, Entzerrung; erholt sich nach Anruf |
 | OCRService | Vision-Lesung inkl. Geometrie (`geoZeilen`/`geoJson`: {text, conf, box}) |
 | FeldParser | nur noch Anzeige-Helfer für Live-Chips/Feld-Editor (`parse`, `parseBetrag`, `datumPlausibel`) — KEINE Kontierung mehr |
-| Store | Persistenz, Hüllen-Beleg nach Aufnahme, Upload erst nach Buchung/Aufgabe, `ablageErgebnisSetzen`, Audit-Stempel. Seit 02.09.: `gemmaBuchungAnwenden` lässt Gemmas Steuertabelle vor der blinden Brutto-Rückrechnung gewinnen (P0-2, Pfand-Fehler behoben) |
+| ServerAbgleich | **Seit 10.10.2026: der Server ist die Wahrheit.** `GET /api/belege` → Zusammenführung mit der lokalen Liste (Fehlendes dazu, im Portal Gelöschtes weg, Wartendes bleibt), eine Zustandsdatei je Zugang. Harness `ios/Tests/serverabgleich` |
+| Store | Persistenz (seit 10.10. je Zugang, `zustandWechseln`), `vomServerLaden`, Hüllen-Beleg nach Aufnahme, Upload erst nach Buchung/Aufgabe, `ablageErgebnisSetzen`, Audit-Stempel. Seit 02.09.: `gemmaBuchungAnwenden` lässt Gemmas Steuertabelle vor der blinden Brutto-Rückrechnung gewinnen (P0-2, Pfand-Fehler behoben) |
 | AblageService | `einschaetzung` (zeilen+profil+monat), `aufnahme` (multipart mit ergebnis), Review-Abruf, Chat-SSE, Keychain |
 | BuchungsfragenView | Fragen ↔ Antworten mit Gemma, löst danach den Upload aus |
 | ListeView/DetailView | grüner Haken, Feld-Editor, Lösch-Rückfrage; Review wird angezeigt, überschreibt nie lokale Buchungen |

@@ -1,14 +1,22 @@
 import Foundation
 import SwiftUI
 
-/// Ablageort des persistierten App-Zustands (Application Support/Beleg).
-private let zustandsDatei: URL = {
+/// Ordner des persistierten App-Zustands (Application Support/Beleg).
+private let zustandsOrdner: URL = {
     let fm = FileManager.default
     let dir = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("Beleg", isDirectory: true)
     try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
-    return dir.appendingPathComponent("zustand.json")
+    return dir
 }()
+
+/// Die Zustandsdatei — seit 10.10.2026 EINE je Zugang (Geräteschlüssel),
+/// damit zwei Betriebe auf einem iPhone zwei Listen haben. Ohne Schlüssel
+/// die alte `zustand.json`; beim ersten Start mit Schlüssel zieht ihr
+/// Inhalt in die Datei des angemeldeten Zugangs um (ServerAbgleich).
+private func zustandsDatei(zugang: String?) -> URL {
+    zustandsOrdner.appendingPathComponent(ServerAbgleich.zustandsDateiName(zugang: zugang))
+}
 
 @MainActor
 final class AppStore: ObservableObject {
@@ -99,9 +107,22 @@ final class AppStore: ObservableObject {
 
     private var geladen = false
     private var speicherTask: Task<Void, Never>?
+    /// Wohin dieser Zustand geschrieben wird — die Datei des angemeldeten Zugangs.
+    private var zustandsPfad: URL = zustandsDatei(zugang: nil)
 
     init() {
-        if let daten = try? Data(contentsOf: zustandsDatei),
+        let schluessel = KeychainHelfer.ladePAT()
+        zustandsPfad = zustandsDatei(zugang: schluessel)
+        var daten = try? Data(contentsOf: zustandsPfad)
+        var umzug = false
+        if daten == nil, schluessel != nil {
+            // Umzug (10.10.2026): der Stand vor der Trennung je Zugang gehört
+            // dem Zugang, der jetzt angemeldet ist. Die alte Datei bleibt als
+            // `zustand.json.vor-trennung` liegen — Rückweg, nie gelöscht.
+            daten = try? Data(contentsOf: zustandsDatei(zugang: nil))
+            umzug = daten != nil
+        }
+        if let daten,
            let z = try? JSONDecoder().decode(Zustand.self, from: daten) {
             onboarded = z.onboarded
             skr = z.skr
@@ -145,6 +166,52 @@ final class AppStore: ObservableObject {
         beispielEinrichten(ProcessInfo.processInfo.environment)
         #endif
         geladen = true
+        if umzug {
+            Self.schreibe(zustand, nach: zustandsPfad)
+            let alt = zustandsDatei(zugang: nil)
+            try? FileManager.default.moveItem(at: alt, to: alt.appendingPathExtension("vor-trennung"))
+        }
+    }
+
+    /// Der Zugang wechselt (Anmeldung, Abmeldung): den bisherigen Stand in
+    /// SEINE Datei sichern, dann den Stand des neuen Zugangs laden — oder
+    /// leer anfangen. Gerät, Einrichtung und Schalter bleiben; alles, was
+    /// einem Betrieb gehört (Belege, Kasse, Gespräche, Profil, Rechte), wechselt mit.
+    private func zustandWechseln(zugang schluessel: String?) {
+        sichern()
+        geladen = false
+        zustandsPfad = zustandsDatei(zugang: schluessel)
+        let z = (try? Data(contentsOf: zustandsPfad))
+            .flatMap { try? JSONDecoder().decode(Zustand.self, from: $0) }
+        belege = z?.belege ?? []
+        kassenberichte = z?.kassenberichte ?? []
+        chatVerlauf = z?.chatVerlauf ?? []
+        vorlagen = z?.vorlagen ?? []
+        exportiert = z?.exportiert ?? false
+        geprueft = z?.geprueft ?? 0
+        pruefSekunden = z?.pruefSekunden ?? []
+        profil = z?.profil ?? [:]
+        abgleich = z?.abgleich ?? []
+        rechte = z?.rechte
+        istAmbassador = z?.ambassador
+        verbundenAls = z?.verbundenAls
+        verbundenRolle = z?.verbundenRolle
+        ablageFehlt = z?.ablageFehlt ?? false
+        geladen = true
+    }
+
+    /// Die Belegliste des Servers holen und mit der eigenen zusammenführen —
+    /// der Server ist die Wahrheit (ServerAbgleich, 10.10.2026). Läuft beim
+    /// Start, beim Sichtbarwerden und nach jeder Anmeldung; ohne Netz
+    /// ändert sich nichts.
+    @MainActor
+    func vomServerLaden() async {
+        guard ablageAktiv, let url = URL(string: ablageURL),
+              let pat = KeychainHelfer.ladePAT() else { return }
+        guard let antwort = await AblageService.belegeListe(basis: url, pat: pat) else { return }
+        let zeilen = antwort.zeilen.compactMap(ServerAbgleich.zeile(aus:))
+        belege = ServerAbgleich.zusammenfuehren(lokal: belege, server: zeilen,
+                                                vollstaendig: antwort.vollstaendig)
     }
 
     // MARK: - Persistenz
@@ -197,11 +264,12 @@ final class AppStore: ObservableObject {
     private func speichern() {
         guard geladen else { return }
         let z = zustand
+        let pfad = zustandsPfad
         speicherTask?.cancel()
         speicherTask = Task.detached(priority: .utility) {
             try? await Task.sleep(nanoseconds: 250_000_000)
             guard !Task.isCancelled else { return }
-            Self.schreibe(z)
+            Self.schreibe(z, nach: pfad)
         }
     }
 
@@ -209,12 +277,12 @@ final class AppStore: ObservableObject {
     func sichern() {
         guard geladen else { return }
         speicherTask?.cancel()
-        Self.schreibe(zustand)
+        Self.schreibe(zustand, nach: zustandsPfad)
     }
 
-    private nonisolated static func schreibe(_ z: Zustand) {
+    private nonisolated static func schreibe(_ z: Zustand, nach pfad: URL) {
         guard let daten = try? JSONEncoder().encode(z) else { return }
-        try? daten.write(to: zustandsDatei, options: .atomic)
+        try? daten.write(to: pfad, options: .atomic)
     }
 
     /// OCR-Felder → geroutete Buchung (auto / bestätigen / prüfen).
@@ -326,6 +394,8 @@ final class AppStore: ObservableObject {
             ablageAktiv = true
             altBelegeNachreichen()
         }
+        // Und was der Server für diesen Zugang hat — auf jedem Telefon dasselbe.
+        await vomServerLaden()
         // Empfiehlt sie babu weiter? Eine Mitarbeiterin fragt gar nicht erst
         // (sie bekäme nur ein 403) — „Empfehlen" gibt es für sie nie.
         if antwort.rechte == nil {
@@ -898,6 +968,7 @@ final class AppStore: ObservableObject {
         Task { await self.abgleichVerarbeiten() }   // Löschen/Ändern nachreichen
         auditNachladen()     // Prüfstempel für Übertragene holen
         zugangNachsehen()    // gilt der Zugang überhaupt noch?
+        Task { await self.vomServerLaden() }        // die Liste des Servers ist die Wahrheit
     }
 
     /// Beim App-Start still nachsehen, ob der Zugang noch gilt. Sonst
@@ -1091,6 +1162,8 @@ extension AppStore {
     /// auseinanderleben: Keychain, Name, Ablage, dann beim Server nachfragen.
     func anmeldungUebernehmen(schluessel: String, un: String?, rolle: String?,
                               ablage: Bool) async {
+        // Erst die Liste des bisherigen Zugangs wegräumen, dann der neue.
+        zustandWechseln(zugang: schluessel)
         KeychainHelfer.speicherePAT(schluessel)
         verbundenAls = un
         if let rolle { verbundenRolle = rolle }
@@ -1108,6 +1181,9 @@ extension AppStore {
 
     /// Dieses Gerät abmelden: der Schlüssel geht, das Konto bleibt.
     func abmelden() {
+        // Der Stand dieses Zugangs bleibt in seiner Datei — wer sich wieder
+        // anmeldet, findet ihn vor. Auf dem Telefon bleibt nichts Fremdes zurück.
+        zustandWechseln(zugang: nil)
         KeychainHelfer.loeschePAT()
         verbundenAls = nil
         ablageAktiv = false   // ehrlich: ohne Verbindung geht nichts mehr
