@@ -13,17 +13,17 @@
 
 **Beide Stufen können dasselbe. Der Unterschied ist der Speicherplatz.**
 
-| | **9,99 €** | **19,99 €** |
-|---|---|---|
-| Speicherplatz auf souveränen deutschen Servern | **1 GB** | **5 GB** |
-| Belege und Rechnungen fotografieren, lesen, buchen, ablegen | ja | ja |
-| Verträge, Post vom Finanzamt, Briefe, Kontoauszüge | ja | ja |
-| Kassenbuch | ja | ja |
-| Zum Monatsende: TXT-Datei und Belege per Mail ans Steuerbüro | ja | ja |
-| Fragen an babu — der Chat kennt deine Dokumente | ja | ja |
-| Auslagen abrechnen | ja | ja |
-| Bezahlung | Apple In-App-Abo | Apple In-App-Abo |
-| Start | App laden, 10 Belege frei, dann Abo | dito |
+| | **Stufe 1 · 9,99 €** | **Stufe 2 · 19,99 €** | **Stufe 3 · 99 €** |
+|---|---|---|---|
+| Speicherplatz auf souveränen deutschen Servern | **1 GB** | **5 GB** | **100 GB** |
+| Belege und Rechnungen fotografieren, lesen, buchen, ablegen | ja | ja | ja |
+| Verträge, Post vom Finanzamt, Briefe, Kontoauszüge | ja | ja | ja |
+| Kassenbuch | ja | ja | ja |
+| Zum Monatsende: TXT-Datei und Belege per Mail ans Steuerbüro | ja | ja | ja |
+| Fragen an babu — der Chat kennt deine Dokumente | ja | ja | ja |
+| Auslagen abrechnen | ja | ja | ja |
+| Bezahlung | Apple In-App-Abo | Apple In-App-Abo | Apple In-App-Abo |
+| Start | App laden, 10 Belege frei, dann Abo | dito | dito |
 
 Die Preise sind **Endpreise im App Store** (inklusive Umsatzsteuer), nicht netto.
 
@@ -60,17 +60,39 @@ Protokoll. Die Git-Historie der Belegbox fällt nicht ins Gewicht — die
 gemessenen 397 MB sind 8.657 lose Objekte bei 12,7 MB gepackt, ein `git gc`
 lässt sie zusammenfallen.
 
-| Belege je Monat | 1 GB reicht | 5 GB reichen |
-|---|---|---|
-| 30 | 5,3 Jahre | mehr als 26 Jahre |
-| 50 | 3,2 Jahre | 16 Jahre |
-| 100 | 1,6 Jahre | 8 Jahre |
+| Belege je Monat | 1 GB reicht | 5 GB reichen | 100 GB reichen |
+|---|---|---|---|
+| 30 | 5,3 Jahre | mehr als 26 Jahre | ~530 Jahre |
+| 50 | 3,2 Jahre | 16 Jahre | ~318 Jahre |
+| 100 | 1,6 Jahre | 8 Jahre | ~159 Jahre |
+
+In Belegen: 1 GB trägt rund **1.900**, 5 GB rund **9.500**, 100 GB rund
+**190.000**. Der Preis je Gigabyte fällt dabei von 9,99 € über 4,00 € auf
+0,99 € — eine Staffel, wie man sie erwartet.
 
 Das ist der Grund, warum die zwei Stufen zusammenpassen: Buchungsbelege sind
 8 bis 10 Jahre aufzubewahren (§ 147 AO). Bei 50 Belegen im Monat läuft 1 GB
 nach gut drei Jahren voll — und genau dann ist der Wechsel auf 5 GB kein
 Verkaufstrick, sondern die richtige Antwort. Die Stufe ist der Aufbewahrungs-
 pflicht nachgebaut, nicht einem Funktionsschnitt.
+
+**Stufe 3 ist für andere als einen einzelnen Salon.** 190.000 Belege füllt
+niemand, der einen Laden führt — 100 GB zielt auf Betriebe mit mehreren
+Standorten, auf Mandantinnen, die ihr ganzes Papier ablegen (Verträge,
+Personalakten, Schriftverkehr, Scans), und auf den Pro-Weg mit Kanzleien.
+Offen ist, ob die Stufe zum Launch sichtbar sein soll oder erst mit Pro; als
+Ankerpreis neben 9,99 € wirkt sie auch dann, wenn sie selten gekauft wird.
+Zu klären ist außerdem, wie sie sich zur Regel „eine Belegbox je Betrieb"
+verhält (Memory `babu-eine-belegbox`): Mehrere Standorte sind heute mehrere
+Mandanten, also mehrere Boxen — 100 GB müssten dann über die Boxen einer
+Inhaberin zählen, nicht je Box.
+
+**Was das den Server kostet.** Die H200V hat 3,7 TB, davon 822 GB frei
+(gemessen 10.10.). Eine einzige Stufe-3-Kundin könnte also rund ein Achtel
+des freien Platzes belegen; zehn davon sprengen ihn. Der souveräne eigene
+Server ist das Verkaufsargument — aber er ist endlich, und Stufe 3 muss vor
+dem Verkauf mit einer Platzplanung hinterlegt sein. Stufe 1 und 2 sind
+dagegen unkritisch: hundert Kundinnen auf 5 GB wären 500 GB.
 
 **Eine Stellschraube bleibt:** Die App lädt heute das volle iPhone-Foto hoch
 (`CaptureTab.swift`, `compressionQuality: 0.6`). Für die Lesung braucht ein
@@ -221,11 +243,14 @@ kein StoreKit, Testmonat vom Server.
   ein Link zu Stripe wäre ein Ablehnungsgrund. Richtig so wie entschieden.
 - Apple-Preise sind **Endpreise inkl. USt**. 9,99 € und 19,99 € stehen in
   Apples Preisraster, es braucht keinen Sonderpreis. **Entschieden 10.10.**
+  Bei Stufe 3 ist zu entscheiden: Apples Raster kennt **99,99 €**; glatte
+  99,00 € gäbe es nur als Sonderpreis je Land.
 - Apple-Anteil: 15 % (Small Business Program bis 1 Mio. $/Jahr), sonst 30 %.
   Was bei babu ankommt, je Kundin und Monat:
 
-      Stufe 1   9,99 € brutto  →  8,39 € netto  →  **7,14 €** nach 15 % Apple
+      Stufe 1   9,99 € brutto  →  8,39 € netto  →   **7,14 €** nach 15 % Apple
       Stufe 2  19,99 € brutto  → 16,80 € netto  →  **14,28 €** nach 15 % Apple
+      Stufe 3  99,00 € brutto  → 83,19 € netto  →  **70,71 €** nach 15 % Apple
 
   Zum Vergleich der alte Weg: 39 € netto über Stripe ergaben rund 38 €.
   Stufe 1 bringt also **etwa ein Fünftel davon** — das Modell trägt sich nur
