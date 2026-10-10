@@ -73,7 +73,7 @@ Zahlungsdaten, Rechnungen, Kündigung: „Abo verwalten" (Stripe-Kundenportal).
   Camp45 (Entscheidung Auftraggeber); Abbuchungstext auf Kontoauszügen „NULLSIEBAENELF GMBH“.
   Live: Preise, Steuersatz und Webhook `we_1UMHPMG1IQEnqe6LctETsqvM` angelegt, `.env`
   gefüllt. **`BABU_ABO=1` seit 03.10.2026 (Auftraggeber), `/healthz` → `abo: live an`**;
-  Rechtstexte laufen als Erprobungsfassung, Prüfung offen. Dev-Spur im
+  Rechtstexte seit 10.10.2026 abgenommen (vorher Erprobungsfassung). Dev-Spur im
   Sandbox-Konto mit eigenem Webhook, Testlauf (drei Monate, Fehlzahlung) bestanden.
   Eingerichtet mit `server/docker/stripe_einrichten.py --modus test|live` (auf dem Host;
   liest den Schlüssel aus der Camp45-Unit oder `STRIPE_KEY`). Der Schlüssel ist der volle
@@ -146,7 +146,8 @@ Rückmeldung als Kopie) und die offenen Issues mit `von-nina`.
 `io.0711.babu-verfuegbarkeit`, Kopie unter `~/.babu/`). Mitteilung „ausgefallen“ nach zwei
 Fehlschlägen, „eingeschränkt“ bei `degraded`, „wieder da“ nach Erholung; Verlauf
 `~/Library/Logs/babu-verfuegbarkeit.log`. Ersetzt keinen Dienst, der auch nachts mailt
-(Cloudflare Health Check / UptimeRobot — offen, Christoph).
+(seit 03.10.2026 `docker/verfuegbarkeit.sh` per launchd auf dem Mac, alle 5 min über
+Cloudflare — der Weg der Salons; Einrichtung steht im Kopf des Skripts).
 
 ## 3. Deploy
 
@@ -235,12 +236,14 @@ Bei „not verified" oder 535 im Log: Domain-Status unter resend.com/domains, Sc
 anlegen und per `pbpaste | ssh h200v …` in die `.env` (nie im Klartext ausgeben).
 Offen: `BABU_SUPPORT_MAIL` in derselben Datei, sobald es ein Support-Postfach gibt.
 
-**3. Rechtstexte — Erprobungsfassung seit 14.09.2026.** Impressum, Datenschutz und
-Nutzungsbedingungen stehen als vom Auftraggeber freigegebene Testfassungen in
-`server/belegreview/recht.py` (`TEXTE`), jede sagt in der ersten Zeile, dass sie eine
-Erprobungsfassung ist. `recht.fertig()` ist damit wahr, `ios/archiv.sh` warnt nicht mehr.
-Die Anwältin ersetzt die Texte vor dem allgemeinen Start an derselben Stelle; danach Suite
-(`tests/test_recht.py`) und Deploy. AVV als PDF je Betrieb ablegen, nicht im Repo.
+**3. Rechtstexte — abgenommen seit 10.10.2026.** Impressum, Datenschutz, Nutzungsbedingungen,
+Ambassador-Vereinbarung, Bank-Freigabe (`server/belegreview/recht.py`, `TEXTE`) und AVV
+(`avv.py`) sind vom Auftraggeber mit der Anwältin abgenommen; der Wortlaut vom 03./04.10.
+blieb, nur die Erprobungsklammer in der ersten Zeile ist einem Stand gewichen. Vom 14.09.
+bis 09.10. liefen sie als Erprobungsfassung. `recht.fertig()` ist wahr, `ios/archiv.sh`
+warnt nicht. Jede Änderung: nur dort, danach Suite (`tests/test_recht.py`) und Deploy —
+`recht.fassung()` ändert sich mit, bestehende Zustimmungen tragen ihren alten Fingerabdruck.
+AVV als PDF je Betrieb ablegen, nicht im Repo.
 
 **Mitarbeiter der Kanzlei (seit 15.09.2026):** die Inhaberin lädt sie selbst ein — Kanzlei-Seite →
 Mandanten → Karte „Mitarbeiter der Kanzlei", Name und E-Mail, „Einladen". Der Link zum Passwort

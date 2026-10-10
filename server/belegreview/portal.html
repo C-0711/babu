@@ -4217,9 +4217,8 @@ async function bankFreigabeZeigen(){
     if (knopf) knopf.onclick = () => bankFreigabeSenden("/api/bank/freigabe/anfragen", {});
     return;
   }
-  /* Der Text ist noch eine Erprobungsfassung: ungefragt zeigt das Portal
-     die Freigabe erst, wenn sie gebraucht wird (Schalter an) oder das
-     Steuerbüro darum gebeten hat. */
+  /* Ungefragt zeigt das Portal die Freigabe erst, wenn sie gebraucht wird
+     (Schalter an) oder das Steuerbüro darum gebeten hat. */
   if (meineRolle === "mitarbeit" || (!f.noetig && !f.angefragt_am && !f.freigegeben)){
     ziel.innerHTML = ""; return;
   }

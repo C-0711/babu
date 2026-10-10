@@ -6,10 +6,10 @@ Pflicht), die App verlinkt sie unter „Rechtliches", das Portal zeigt sie im
 Blatt, die Landing-Seite in der Fußzeile. Bis 14.09.2026 lagen die Texte nur
 im Portal — als Platzhalter.
 
-**Seit 14.09.2026 stehen hier Erprobungsfassungen**, vom Auftraggeber für den
-Pilot so bestimmt („ist eh nur Test"). Jeder Text sagt in seiner ersten Zeile,
-dass er eine Erprobungsfassung ist; die Anwältin ersetzt ihn vor dem allgemeinen
-Start, und zwar nur hier in `TEXTE`. Ein Text, der mit `PLATZHALTER` beginnt,
+Vom 14.09. bis 09.10.2026 standen hier Erprobungsfassungen. **Seit 10.10.2026
+sind die Texte abgenommen** (Auftraggeber mit Anwältin, Wortlaut unverändert
+übernommen); jeder trägt in der ersten Zeile seinen Stand. Wer einen Text
+ändert, ändert ihn nur hier in `TEXTE`. Ein Text, der mit `PLATZHALTER` beginnt,
 meldet `fertig()` False, die Seite sagt es selbst, und `ios/archiv.sh` warnt
 vor jedem Upload — dieser Mechanismus bleibt für den Fall, dass ein Text wieder
 herausgenommen wird.
@@ -22,9 +22,7 @@ PLATZHALTER = "Text folgt."
 
 TEXTE: dict[str, tuple[str, str]] = {
     "impressum": ("Impressum",
-        "Erprobungsfassung (Stand 14.09.2026). Die Angaben gelten für die Zeit des "
-        "Pilotbetriebs; der verbindliche Wortlaut wird vor dem allgemeinen Start "
-        "rechtlich geprüft.\n\n"
+        "Stand 10.10.2026.\n\n"
         "Anbieter dieser Seite und der App babu:\n\n"
         "0711 Intelligence, Christoph Bertsch, Stuttgart.\n\n"
         "Kontakt: nina@0711.io\n\n"
@@ -33,9 +31,8 @@ TEXTE: dict[str, tuple[str, str]] = {
         "keine Steuererklärungen und ersetzt keine Steuerberatung. Die steuerliche "
         "Beurteilung bleibt bei der Steuerkanzlei des jeweiligen Betriebs."),
     "datenschutz": ("Datenschutz",
-        "Erprobungsfassung (Stand 03.10.2026). Diese Erklärung beschreibt, was "
-        "mit deinen Angaben geschieht. Der verbindliche Wortlaut wird vor dem "
-        "allgemeinen Start rechtlich geprüft.\n\n"
+        "Stand 10.10.2026. Diese Erklärung beschreibt, was mit deinen Angaben "
+        "geschieht.\n\n"
         "1. Wer verantwortlich ist. Verantwortlich ist der im Impressum genannte "
         "Anbieter. Fragen und Anliegen zum Datenschutz: nina@0711.io.\n\n"
         "2. Was babu verarbeitet. Beim Anlegen des Zugangs: E-Mail-Adresse, Name, "
@@ -104,8 +101,7 @@ TEXTE: dict[str, tuple[str, str]] = {
         "(Verbindung und Schutz vor Angriffen); die App verteilt Apple über den "
         "App Store."),
     "agb": ("Nutzungsbedingungen",
-        "Erprobungsfassung (Stand 03.10.2026). Der verbindliche Wortlaut wird vor "
-        "dem allgemeinen Start rechtlich geprüft.\n\n"
+        "Stand 10.10.2026.\n\n"
         "0. Für wen. babu richtet sich an Unternehmerinnen und Unternehmer "
         "(§ 14 BGB), die babu für ihren Betrieb nutzen.\n\n"
         "1. Was babu ist. babu nimmt Belege auf, liest sie, ordnet sie ein und legt "
@@ -160,8 +156,7 @@ ARTEN = tuple(TEXTE)
 #: unter /ambassador/vereinbarung, NICHT in ARTEN: sie gilt nur für sie und
 #: gehört nicht in die Rechtliches-Leiste von App und Portal.
 AMBASSADOR: tuple[str, str] = ("Ambassador-Vereinbarung",
-    "Erprobungsfassung (Stand 03.10.2026). Der verbindliche Wortlaut wird vor "
-    "dem allgemeinen Start rechtlich und steuerlich geprüft.\n\n"
+    "Stand 10.10.2026.\n\n"
     "Zwischen 0711 Intelligence (siehe Impressum, „babu“) und dir als "
     "Ambassadorin.\n\n"
     "1. Worum es geht. Du empfiehlst babu an Betriebe, die du kennst. Du bist "
@@ -236,10 +231,9 @@ HILFE: tuple[str, str] = ("Hilfe",
 
 
 #: Freigabe der Kontoumsätze für die Kanzlei (seit 04.10.2026, Plan
-#: Kanzleiansicht B1). Erprobungsfassung — der Wortlaut wird vor dem
-#: Einschalten (`BABU_BANK_FREIGABE=1`) rechtlich geprüft.
+#: Kanzleiansicht B1). Abgenommen 10.10.2026 wie die übrigen Texte.
 BANK_FREIGABE: tuple[str, str] = ("Kontoumsätze für dein Steuerbüro",
-    "Erprobungsfassung (Stand 04.10.2026).\n\n"
+    "Stand 10.10.2026.\n\n"
     "Mit dieser Freigabe darf dein Steuerbüro in babu die Umsätze der Konten "
     "ansehen, die du in babu ablegst oder verbindest — um Belege und Zahlungen "
     "abzugleichen, fehlende Belege zu finden und offene Rechnungen zu sehen.\n\n"

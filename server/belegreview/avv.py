@@ -5,8 +5,8 @@ Art. 28 DSGVO verlangt den Vertrag in Textform zwischen der verantwortlichen
 Stelle (der Betrieb, der Belege einreicht) und dem Auftragsverarbeiter
 (babu, Anbieter siehe Impressum). Die Pflichtangaben stehen alle drin —
 in derselben Sprache wie die anderen Rechtstexte (recht.py): klares
-Deutsch, Erprobungsfassung, keine anwaltliche Endprüfung (Klammer wie
-überall: geprüft vor dem allgemeinen Start).
+Deutsch; seit 10.10.2026 abgenommen wie die übrigen Rechtstexte (Wortlaut
+unverändert, nur die Erprobungsklammer ist weg).
 
 Der Text ist EINE Quelle (TEXTE hier), das PDF wird daraus erzeugt und
 unter /app/avv.pdf ausgeliefert; der Betriebsteil ist bewusst austauschbar
@@ -62,9 +62,7 @@ def text(partei: dict | None = None) -> str:
     """Der Vertragstext — mit dem Parteienblock eines Betriebs oder der Vorlage."""
     p = partei or PARTEI_VORLAGE
     return (
-        "Erprobungsfassung (Stand 17.09.2026). Die Angaben gelten für die Zeit "
-        "des Pilotbetriebs; der verbindliche Wortlaut wird vor dem allgemeinen "
-        "Start rechtlich geprüft.\n\n"
+        "Stand 10.10.2026.\n\n"
         "Zwischen\n\n"
         f"    {p['name']}\n"
         f"    {p['anschrift']}\n"
