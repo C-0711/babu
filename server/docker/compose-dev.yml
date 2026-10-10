@@ -69,6 +69,11 @@ services:
       BABU_STRIPE_VERSION: "${BABU_STRIPE_VERSION:-}"
     volumes:
       - ~/babu-dev/babu-web:/data/babu-web
+      # Der Bare-Store der Dev-Box (BABU_STORE/BABU_BOX_REMOTE oben zeigen
+      # hierher). Fehlte bis 10.10.2026 — der Spiegel meldete „repository does
+      # not exist“ und /healthz stand auf degraded, obwohl das Repo auf dem
+      # Host lag (~/babu-dev/dev-store/ws-dev/babu.git).
+      - ~/babu-dev/dev-store:/data/dev-store
       # Startseite, Bilder und die /app-Seite aus dem Repo — sonst hätte die
       # Dev-Lane kein index.html (Live mountet ~/babu-web, Dev hat kein eigenes).
       # Die Persistenz-Daten (portal.db, box) liegen im ersten Mount weiter.
