@@ -77,6 +77,10 @@ services:
       # Absenderadresse tragen den neuen Namen.
       BABU_ORIGIN: "https://mybabu.io"
       BABU_BASIS_URL: "https://mybabu.io"
+      # Zweitnamen, die hier nur auf BABU_ORIGIN weiterleiten (301). mybabu.de
+      # löst Cloudflare schon an der Edge; www.mybabu.de kommt seit 10.10.2026
+      # über den Tunnel (babu-0711.yml) hierher.
+      BABU_WEITERLEITEN: "mybabu.de,www.mybabu.de"
       # Mailversand (Passwort vergessen, Kanzlei-Einladung, Support-Kopie).
       # Die Zugangsdaten stehen in der `.env` neben dieser Datei (0600, nie im
       # Repo); ein Mail-Dienst mit SMTP-Relay (Postmark, Brevo, Mailgun).

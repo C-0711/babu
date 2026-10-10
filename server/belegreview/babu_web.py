@@ -783,8 +783,25 @@ _METRIK = {"start": time.time(), "requests": 0, "fehler_5xx": 0, "davon_304": 0,
            "gemma_fehler": 0, "gemma_timeout": 0, "login_429": 0}
 
 
+# Zweitnamen, die nur weiterleiten (seit 10.10.2026): mybabu.de und
+# www.mybabu.de zeigen auf mybabu.io. Die Apex-Domain löst Cloudflare an der
+# Edge auf (301), www kam dort als 404 an — jetzt läuft sie durch den Tunnel
+# hierher und bekommt hier die Weiterleitung. Komma-Liste, Host ohne Port;
+# leer = nichts wird weitergeleitet. BABU_ORIGIN bleibt der eine Name, unter
+# dem das Portal läuft (Origin-Prüfung, Links in Mails).
+def _weiterleiten_hosts() -> set[str]:
+    return {h.strip().lower() for h in os.environ.get("BABU_WEITERLEITEN", "").split(",")
+            if h.strip()}
+
+
 @app.middleware("http")
 async def _metrik_mw(request: Request, call_next):
+    host = (request.headers.get("host") or "").split(":")[0].lower()
+    if host and host in _weiterleiten_hosts():
+        from fastapi.responses import RedirectResponse  # noqa: PLC0415
+        ziel = PORTAL_ORIGIN.rstrip("/") + request.url.path \
+            + (("?" + request.url.query) if request.url.query else "")
+        return RedirectResponse(url=ziel, status_code=301)
     # Tippfehler-Toleranz: //portal → /portal (308 behält die Methode bei)
     pfad = request.url.path
     if "//" in pfad:

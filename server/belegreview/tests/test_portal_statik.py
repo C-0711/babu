@@ -29,3 +29,21 @@ def test_favicon_ist_da():
     assert antwort.status_code == 200
     assert antwort.headers["content-type"] == "image/png"
     assert antwort.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_zweitname_leitet_auf_den_einen_namen(monkeypatch):
+    monkeypatch.setenv("BABU_WEITERLEITEN", "mybabu.de, www.mybabu.de")
+    monkeypatch.setattr(babu_web, "PORTAL_ORIGIN", "https://mybabu.io")
+    c = TestClient(babu_web.app, base_url="https://www.mybabu.de")
+    antwort = c.get("/portal?x=1", follow_redirects=False)
+    assert antwort.status_code == 301
+    assert antwort.headers["location"] == "https://mybabu.io/portal?x=1"
+    # Der eine Name selbst wird nie weitergeleitet.
+    assert TestClient(babu_web.app, base_url="https://mybabu.io").get(
+        "/hilfe", follow_redirects=False).status_code == 200
+
+
+def test_ohne_liste_keine_weiterleitung(monkeypatch):
+    monkeypatch.delenv("BABU_WEITERLEITEN", raising=False)
+    assert TestClient(babu_web.app, base_url="https://www.mybabu.de").get(
+        "/hilfe", follow_redirects=False).status_code == 200
