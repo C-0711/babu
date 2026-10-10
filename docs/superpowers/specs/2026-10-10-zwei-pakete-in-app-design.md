@@ -117,6 +117,47 @@ eine Route, ein Zähler, der Apple-Abo-Stand (Abschnitt 5).
 
 ## 3. Landing (mybabu.io) — Änderungen je Abschnitt
 
+> **Gebaut am 10.10.2026** für `index.html`, `barber.html` und
+> `werkstatt.html`, dazu die Rechtstexte in `recht.py`. Alles liegt im Repo,
+> **nichts ist deployt**.
+>
+> * Hero: nur noch „App laden", „Anmelden" raus, darunter „Die ersten
+>   10 Belege sind frei — ohne Anmeldung, ohne E-Mail."
+> * Preise: die drei Stufen (1 GB 9,99 · 5 GB 19,99 · 100 GB 99,00) statt
+>   Solo/Salon/Plus, Rechenbasis in „Rechne selbst" ist 19,99 €. Darunter
+>   ein Kasten „In jeder Stufe dabei" mit den vier Sätzen des Auftraggebers
+>   plus Belege/Kassenbuch und Monatsversand — **keine Tabelle mit Häkchen
+>   je Stufe**, denn Funktionen trennen die Stufen nie.
+> * Der Paket-Fragebogen („Welches Paket passt zu dir?") ist raus, samt
+>   seinem JavaScript: es gibt nichts zu beraten, wenn alle Stufen alles
+>   können.
+> * „Konto anlegen" (→ `/testen`), „Zum Portal-Login", der Salon-/Shop-/
+>   Werkstatt-Check-Knopf und der Profi-Direkt-Upload in der Fußzeile sind
+>   raus. Auf keiner der drei Seiten steht noch ein Link auf `/portal` oder
+>   `/testen` — **der Portal-Weg bleibt im Code und erreichbar, nur
+>   unverlinkt** (Entscheid Auftraggeber 10.10.).
+> * „Loslegen": aus „App laden, anmelden, einrichten" wird „App laden,
+>   los geht's, fotografieren".
+> * Der Wechsel-Abschnitt verspricht keine Kanzlei und kein Buhl-Backend
+>   mehr, sondern: babu bereitet vor, abgegeben wird selbst oder vom
+>   Steuerbüro. Dieselbe Linie in den FAQ und im Chat-Katalog.
+> * **Türkisch (barber.html):** die Übersetzungstabelle fällt bei einem
+>   unbekannten Schlüssel auf Deutsch zurück — die neuen Abschnitte wären
+>   also stumm deutsch geblieben. 40 Einträge ergänzt; in der türkischen
+>   Fassung steht jetzt kein deutscher Satz mehr (am laufenden Dokument
+>   geprüft).
+> * **Rechtstexte** (`recht.py`): Datenschutz §9 ist jetzt Apple, §9a das
+>   bisherige Stripe. AGB §2 beschreibt beide Zugangswege samt der Folge,
+>   dass ohne hinterlegte E-Mail der Zugang mit dem Telefon verloren ist;
+>   §3 die zehn freien Belege; §3a die Stufen über Apple, §3b das
+>   Portal-Abo (vorher 3a), §3c der Zahlungsausfall (vorher 3b). Hilfe:
+>   Zugang, Preis, Kündigen und „Passwort vergessen" für beide Wege.
+>   Die Fingerabdrücke ändern sich damit (`recht.fassung`) — das ist der
+>   Zweck: eine Zustimmung trägt die Fassung, der sie galt.
+>   **Das ist der neue Stand für die Anwältin.**
+
+
+
 Stand heute: drei Pakete Solo 39 / Salon 79 / Salon Plus 149 netto, überall
 „Anmelden → Portal", „Konto anlegen → /testen", Steuerbüro, Kanzlei,
 Ambassador, Kassenbuch als Standard.
@@ -316,8 +357,9 @@ kein StoreKit, Testmonat vom Server.
    (Abschnitt 5). Noch nicht deployt.
 3. ~~App: Gerätekonto im Onboarding, StoreKit-Blatt, Zähler~~ — **gebaut
    10.10.2026** (Abschnitt 4). Launch-Verstecke offen; TestFlight offen.
-4. Landing, Barber, Werkstatt, Rechtstexte, Chat-Katalog — 1 Tag, dann
-   Anwältin.
+4. ~~Landing, Barber, Werkstatt, Rechtstexte, Chat-Katalog~~ — **gebaut
+   10.10.2026** (Abschnitt 3). Im Repo, nicht deployt; die Rechtstexte
+   gehen in dieser Fassung an die Anwältin.
 5. App Store Connect: Abos, Screenshots, Review — Auftraggeber + 1 Tag.
    Die drei Produkte heißen `babu.speicher.1gb`, `babu.speicher.5gb`,
    `babu.speicher.100gb` (so stehen sie in `paket.STUFEN` und in
