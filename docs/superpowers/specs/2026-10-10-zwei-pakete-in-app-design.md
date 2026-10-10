@@ -3,20 +3,36 @@
 > Entwurf 10.10.2026 nach dem Entscheid des Auftraggebers. Befund am heutigen
 > Stand von mybabu.io (`server/babu-web/index.html`) und der App-Store-App
 > (`ios/Beleg`, Ziel `Beleg`). Kein Code geändert — das ist die Liste.
+>
+> **Nachtrag 10.10.2026 abends: Preise und Zuschnitt neu entschieden.**
+> Statt 39/59 € netto gelten **9,99 € und 19,99 € als Apple-Endpreise**, und
+> der Schnitt zwischen den Stufen verläuft anders (Abschnitt 1). Alles, was
+> unten noch 39/59 sagt, ist überholt; die Begründungen dahinter gelten weiter.
 
-## 1. Das Modell
+## 1. Das Modell (Stand 10.10.2026 abends)
 
-| | 39 € | 59 € |
+| | **Stufe 1 · 9,99 €** | **Stufe 2 · 19,99 €** |
 |---|---|---|
 | Belege und Rechnungen fotografieren, lesen, buchen, ablegen | ja | ja |
-| Ganzer Schriftverkehr: Verträge, Finanzamt-Post, Briefe, Kontoauszüge | — | ja |
-| Kassenbuch | — | ja |
+| Belege liegen sicher bei babu (Belegbox) | ja | ja |
+| Zum Monatsende: TXT-Datei (DATEV-Stapel) und Belege per Mail | ja | ja |
+| Umsatz melden (Umsatzsteuer-Voranmeldung) | — | ja |
+| Übermittlung ans Finanzamt (ERiC) | — | ja |
 | Bezahlung | Apple In-App-Abo | Apple In-App-Abo |
 | Start | App laden, 10 Belege frei, dann Abo | dito |
-| Belege liegen sicher bei babu (Belegbox) | ja | ja |
 
-Portal, Kanzlei-Cockpit, DATEV-Übergabe, Ambassador-Programm, Stripe:
-**nicht beim Launch** — kommen mit babu Pro zum Jahreswechsel.
+Die Preise sind **Endpreise im App Store** (inklusive Umsatzsteuer), nicht netto.
+**Stufe 2 ist noch zu klären** — Umfang, Zeitpunkt und ob sie zum Launch
+überhaupt erscheint.
+
+Portal, Kanzlei-Cockpit, Ambassador-Programm, Stripe: **nicht beim Launch** —
+kommen mit babu Pro zum Jahreswechsel. Der **Monatsversand ans Steuerbüro ist
+dagegen Kern von Stufe 1**, nicht Pro — er ist am 10.10. gebaut worden
+(`server/belegreview/uebergabepaket.py`, Commit b71f726).
+
+Was aus der Fassung von 14:03 damit wegfällt: Der Schnitt „Belege gegen
+Schriftverkehr + Kassenbuch" gilt nicht mehr. Ob Verträge, Finanzamt-Post,
+Kontoauszüge und Kassenbuch in Stufe 1 oder 2 gehören, ist offen (Abschnitt 7).
 
 ## 2. Was „kein Backend" wirklich heißt
 
@@ -141,13 +157,18 @@ kein StoreKit, Testmonat vom Server.
 
 - Digitale Abos **müssen** über In-App-Kauf laufen (App Store Review 3.1.1);
   ein Link zu Stripe wäre ein Ablehnungsgrund. Richtig so wie entschieden.
-- Apple-Preise sind **Endpreise inkl. USt**. „39 € netto zzgl. USt" (heute
-  auf der Landing) wird im Store zu 46,41 €; wer 39 € im Store zeigen will,
-  bekommt netto 32,77 €. Apples Raster hat 39,99 € und 59,99 €; glatte
-  39,00 € gibt es als Sonderpreis je Land. **Entscheidung nötig: 39,99 € oder
-  46,41 €?** Dasselbe für 59.
+- Apple-Preise sind **Endpreise inkl. USt**. 9,99 € und 19,99 € stehen in
+  Apples Preisraster, es braucht keinen Sonderpreis. **Entschieden 10.10.**
 - Apple-Anteil: 15 % (Small Business Program bis 1 Mio. $/Jahr), sonst 30 %.
-  Bei 39,99 € brutto bleiben nach USt und 15 % ≈ 28,56 € bei babu.
+  Was bei babu ankommt, je Kundin und Monat:
+
+      Stufe 1   9,99 € brutto  →  8,39 € netto  →  **7,14 €** nach 15 % Apple
+      Stufe 2  19,99 € brutto  → 16,80 € netto  →  **14,28 €** nach 15 % Apple
+
+  Zum Vergleich der alte Weg: 39 € netto über Stripe ergaben rund 38 €.
+  Stufe 1 bringt also **etwa ein Fünftel davon** — das Modell trägt sich nur
+  über Menge. Bei 30 % Apple-Anteil (über 1 Mio. $ Jahresumsatz) wären es
+  5,88 € bzw. 11,76 €.
 - „10 Belege frei, dann Abo" ist ein Freemium-Tor, kein Apple-Probeabo —
   erlaubt, ohne Intro-Angebot. Ein zusätzliches „erster Monat gratis" wäre
   ein Introductory Offer und braucht Apples Regeln (einmal je Apple-ID).
@@ -156,10 +177,19 @@ kein StoreKit, Testmonat vom Server.
 
 ## 7. Offene Entscheidungen
 
-1. Preis im Store: 39,99/59,99 € brutto oder 46,41/70,21 € (39/59 netto)?
-2. Bleibt „Fragen" (Rückfragen der Buchhaltung) in 39 — ja, sonst bucht
-   niemand richtig. Bleibt „Monatsabschluss" in 39? Vorschlag: ja, als
-   Zahl ohne Übergabe.
+1. ~~Preis im Store~~ — **entschieden 10.10. abends: 9,99 € und 19,99 € brutto.**
+2. **Der Zuschnitt von Stufe 1 ist offen.** Sicher drin: Belege, Belegbox,
+   Monatsversand, „Fragen" (ohne sie bucht niemand richtig). Unklar: Verträge,
+   Finanzamt-Post, Kontoauszüge, Kassenbuch, Monatsabschluss als Zahl.
+2a. **Stufe 2 braucht ERiC — das ist kein Feature, sondern ein eigenes
+   Vorhaben.** Im Code existiert davon heute nichts: keine Bibliothek, keine
+   Übermittlung, nur Erwähnungen. Die Kennzahlen der Voranmeldung (Kz 81, 66,
+   83 …) rechnet `monatsabschluss.py` bereits. Was fehlt: ERiC-Bibliothek vom
+   Bayerischen Landesamt für Steuern, Registrierung als Hersteller,
+   Testumgebung und Zertifizierung, das Zertifikat der Nutzerin für die
+   Übermittlung, und ein Weg, das serverseitig zu betreiben (die Bibliothek
+   gehört nicht in eine iOS-App). **Vorschlag: Stufe 1 allein starten,
+   Stufe 2 nachziehen.**
 3. Wird „Ein Knopf" der Launch-Einstieg?
 4. Was passiert mit den heutigen Pilotkonten (Nina, Testbetriebe,
    Ambassadorinnen)? Vorschlag: bleiben auf dem Portal-Weg, bis Pro kommt;
