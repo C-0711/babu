@@ -80,19 +80,15 @@ pflicht nachgebaut, nicht einem Funktionsschnitt.
 niemand, der einen Laden führt — 100 GB zielt auf Betriebe mit mehreren
 Standorten, auf Mandantinnen, die ihr ganzes Papier ablegen (Verträge,
 Personalakten, Schriftverkehr, Scans), und auf den Pro-Weg mit Kanzleien.
-Offen ist, ob die Stufe zum Launch sichtbar sein soll oder erst mit Pro; als
-Ankerpreis neben 9,99 € wirkt sie auch dann, wenn sie selten gekauft wird.
-Zu klären ist außerdem, wie sie sich zur Regel „eine Belegbox je Betrieb"
-verhält (Memory `babu-eine-belegbox`): Mehrere Standorte sind heute mehrere
-Mandanten, also mehrere Boxen — 100 GB müssten dann über die Boxen einer
-Inhaberin zählen, nicht je Box.
+Als Ankerpreis neben 9,99 € wirkt sie auch dann, wenn sie selten gekauft wird.
 
-**Was das den Server kostet.** Die H200V hat 3,7 TB, davon 822 GB frei
-(gemessen 10.10.). Eine einzige Stufe-3-Kundin könnte also rund ein Achtel
-des freien Platzes belegen; zehn davon sprengen ihn. Der souveräne eigene
-Server ist das Verkaufsargument — aber er ist endlich, und Stufe 3 muss vor
-dem Verkauf mit einer Platzplanung hinterlegt sein. Stufe 1 und 2 sind
-dagegen unkritisch: hundert Kundinnen auf 5 GB wären 500 GB.
+**Der Platz ist Sache des Auftraggebers** (Entscheid 10.10.2026): Er sorgt für
+genug Speicher, **ausschließlich in Deutschland**. Die Staffel muss sich also
+nicht an der heutigen Plattengröße eines einzelnen Servers ausrichten. Für die
+App und den Server heißt das nur: Der Verbrauch je Mandant wird gezählt und
+gegen das gebuchte Kontingent gehalten (Abschnitt 5) — wo die Bytes liegen,
+ist eine Frage des Betriebs, nicht des Modells. Dass sie in Deutschland
+liegen, bleibt Teil des Versprechens und gehört in Store-Text und Landing.
 
 **Eine Stellschraube bleibt:** Die App lädt heute das volle iPhone-Foto hoch
 (`CaptureTab.swift`, `compressionQuality: 0.6`). Für die Lesung braucht ein
