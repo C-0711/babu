@@ -7,7 +7,7 @@ angestoßen vom Host-Cron:
     15 6 * * *  flock -n /tmp/babu-taeglich.lock docker exec babu-web \\
                 python /app/werkzeuge/taeglich.py >> ~/logs/taeglich.log 2>&1
 
-Vier Schritte, jeder für sich abgesichert — scheitert einer, laufen die
+Fünf Schritte, jeder für sich abgesichert — scheitert einer, laufen die
 anderen trotzdem:
 
     stripe      verpasste Stripe-Ereignisse der letzten drei Tage nachholen und
@@ -17,6 +17,10 @@ anderen trotzdem:
     ambassador  „Heute für dich": eine Mail an jede Ambassadorin, die heute etwas
                 zu tun hat (dieselben Aufgaben wie im Portal), höchstens eine
     betreiber   „Heute für Nina": nur, wenn etwas anliegt
+    meldungen   was babu von sich aus sagt (melden.py: Frist in 7/1 Tagen,
+                Kündigungsfrist, offene Rechnung, Abschluss, Belegjagd) — je
+                Betrieb an die Inhaberin, als Push auf ihre Telefone, ohne
+                Telefon als eine Mail; seit 10.10.2026 (V2 „Ein Knopf", §8.3)
 
 Jede Mail geht höchstens einmal am Tag: vor dem Versand wird (tag, aufgabe) in
 `tageslauf` eingetragen; steht die Zeile schon, ist sie heute raus. Das hält
@@ -51,7 +55,7 @@ import postfach  # noqa: E402
 import stripe_api  # noqa: E402
 import testmonat  # noqa: E402
 
-SCHRITTE = ("stripe", "salons", "ambassador", "betreiber")
+SCHRITTE = ("stripe", "salons", "ambassador", "betreiber", "meldungen")
 NACHHOLEN_TAGE = 3
 
 
@@ -310,6 +314,82 @@ def schritt_betreiber(lauf: Lauf) -> None:
     lauf.senden("betreiber", an, f"Heute für dich — babu, {_de(lauf.heute)}",
                 "Hallo Nina,\n\n" + "\n\n".join(teile)
                 + f"\n\nAlles Weitere in der Verwaltung:\n{_portal()}#verwaltung\n")
+
+
+# ---------------------------------------------------------------------------
+# 5. Meldungen: was babu heute von sich aus sagt
+# ---------------------------------------------------------------------------
+
+def _betriebe_mit_box() -> list[dict]:
+    """Jeder aktive Betrieb mit Belegbox und der Mensch, der die Meldung bekommt.
+
+    Die Standard-Ablage (`BABU_REF`) gehört seit 09.10.2026 den Konten aus
+    `BABU_STANDARD_KONTEN` — ihr Mandant trägt ein Archivkonto als Besitzer,
+    das niemand liest. Dort gehen die Meldungen an die eingetragenen Konten.
+    """
+    with bw._DB_LOCK, bw._db() as c:  # noqa: SLF001
+        zeilen = [dict(zip(("id", "name", "besitzer_un", "box_ref"), z)) for z in c.execute(
+            "SELECT id, name, besitzer_un, box_ref FROM mandant "
+            "WHERE status='aktiv' AND box_ref IS NOT NULL AND box_ref<>'' ORDER BY id")]
+    import box as bx  # noqa: PLC0415
+    standard = sorted(bw.standard_konten())
+    standard_ref = bx.default_box().ref
+    for m in zeilen:
+        if m["box_ref"] == standard_ref and standard:
+            m["an"] = standard
+        else:
+            m["an"] = [m["besitzer_un"]]
+    return zeilen
+
+
+def _meldungen_fuer_betrieb(m: dict, heute: dt.date) -> list[dict]:
+    """Die Rechnung aus `/api/meldungen`, nur in der Box des Betriebs."""
+    import box as bx  # noqa: PLC0415
+    import contextvars  # noqa: PLC0415
+    box = bx.box_von(m["an"][0], m["id"])
+    return contextvars.copy_context().run(
+        bw._im_mandanten_kontext, box, m["id"],  # noqa: SLF001
+        bw.meldungen_fuer, m["an"][0], heute)
+
+
+def schritt_meldungen(lauf: Lauf) -> None:
+    import kern_auslagen  # noqa: PLC0415
+    import push  # noqa: PLC0415
+    for m in _betriebe_mit_box():
+        try:
+            meldungen = _meldungen_fuer_betrieb(m, lauf.heute)
+        except Exception as ex:  # noqa: BLE001
+            lauf.log(f"meldungen {m['id']}: {ex!r}")
+            continue
+        if not meldungen:
+            continue
+        geraete = kern_auslagen._geraete(m["an"])  # noqa: SLF001
+        neu = [x for x in meldungen if lauf.einmal(f"meldung:{m['id']}:{x['schluessel']}")]
+        if not neu:
+            lauf.log(f"meldungen {m['id']}: heute schon gesendet")
+            continue
+        if lauf.probe:
+            for x in neu:
+                lauf.log(f"PROBE meldung {m['id']} → {', '.join(m['an'])}: {x['titel']}")
+            continue
+        if geraete and push.eingerichtet():
+            for x in neu:
+                n = push.senden_an(geraete, x["titel"], x["text"],
+                                   kern_auslagen._geraet_loeschen)  # noqa: SLF001
+                lauf.gesendet.append((",".join(m["an"]), x["titel"]))
+                lauf.log(f"meldung {m['id']} → {n} Telefon(e): {x['titel']}")
+            continue
+        # Ohne Telefon (oder ohne APNs-Schlüssel): eine Mail mit allem von heute.
+        zeilen = "\n\n".join(f"{x['titel']}\n{x['text']}" for x in neu)
+        betreff = neu[0]["titel"] if len(neu) == 1 else f"{neu[0]['titel']} und mehr"
+        for an in m["an"]:
+            ok, hinweis = postfach.senden(
+                an, f"babu: {betreff}",
+                f"Hallo,\n\n{zeilen}\n\nAlles dazu in babu:\n{_portal()}\n\n"
+                "Liebe Grüße\nbabu\n",
+                stempel=time.strftime("%Y%m%d-%H%M%S"))
+            lauf.gesendet.append((an, betreff))
+            lauf.log(f"meldung {m['id']} → {an}: {hinweis}")
 
 
 # ---------------------------------------------------------------------------
