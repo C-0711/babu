@@ -6501,8 +6501,13 @@ def _stapel_uebergeben(monate: list[str], un: str) -> tuple[bytes, dict]:
         "monate": betroffen, "zeit": stempel, "datei": dateiname,
         "nachtrag": hoechster_lauf + 1 if hoechster_lauf else 0,
         "bezeichnung": bezeichnung,
+        # Je Monat, was in DIESEM Lauf steckt — das Übergabepaket (Mail ans
+        # Steuerbüro, seit 10.10.2026) legt genau diese Belege und Tage bei.
+        "staemme": {m: je_monat[m]["neu_staemme"] for m in betroffen},
+        "kassentage": {m: je_monat[m]["neu_tage"] for m in betroffen},
+        "rahmen": rahmen,
         "belege": sum(len(je_monat[m]["neu_staemme"]) for m in betroffen),
-        "kassentage": sum(len(je_monat[m]["neu_tage"]) for m in betroffen),
+        "kassentage_gesamt": sum(len(je_monat[m]["neu_tage"]) for m in betroffen),
         "buchungen": sum(je_monat[m]["buchungen"] for m in betroffen),
     }
 

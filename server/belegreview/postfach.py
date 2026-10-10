@@ -48,13 +48,24 @@ def eingerichtet() -> bool:
     return bool(HOST)
 
 
-def _nachricht(an: str, betreff: str, text: str) -> EmailMessage:
+def _nachricht(an: str, betreff: str, text: str,
+               antwort_an: str | None = None,
+               anhaenge: list[tuple[str, bytes, str]] | None = None) -> EmailMessage:
     import maildesign  # noqa: PLC0415
     m = maildesign.mail(an, betreff, text, von=ABSENDER)
     m["Date"] = formatdate(localtime=True)
     m["Message-ID"] = make_msgid(domain="mybabu.io")
-    if ANTWORT_AN and ANTWORT_AN.lower() != an.strip().lower():
-        m["Reply-To"] = ANTWORT_AN
+    # Wer antwortet, soll beim Richtigen landen: beim Übergabepaket ist das
+    # der Betrieb, nicht das Support-Postfach (seit 10.10.2026).
+    antwort = (antwort_an or ANTWORT_AN or "").strip()
+    if antwort and antwort.lower() != an.strip().lower():
+        m["Reply-To"] = antwort
+    # Anhänge (seit 10.10.2026, Übergabepaket): aus Text+HTML wird
+    # multipart/mixed, der Anhang hängt hinten dran.
+    for name, daten, mime in anhaenge or []:
+        haupt, _, unter = mime.partition("/")
+        m.add_attachment(daten, maintype=haupt or "application",
+                         subtype=unter or "octet-stream", filename=name)
     # Zwei Fassungen derselben Wörter: schlichter Text (Bildschirmleser,
     # schlichte Clients, Spam-Filter) und das Design der Startseite als
     # HTML-Alternative. Kein Bild, kein Webfont, kein Nachladen — eine Mail,
@@ -80,14 +91,16 @@ def _ablegen(m: EmailMessage, an: str, stempel: str) -> Path:
     return pfad
 
 
-def senden(an: str, betreff: str, text: str, *, stempel: str) -> tuple[bool, str]:
+def senden(an: str, betreff: str, text: str, *, stempel: str,
+           antwort_an: str | None = None,
+           anhaenge: list[tuple[str, bytes, str]] | None = None) -> tuple[bool, str]:
     """Ablegen, dann versuchen. Gibt (verschickt, Hinweis) zurück.
 
     `stempel` geht in den Dateinamen — die aufrufende Stelle kennt einen
     sortierbaren Zeitpunkt, dieses Modul soll keine Uhr brauchen (das macht
-    es prüfbar).
+    es prüfbar). `anhaenge`: (Dateiname, Bytes, MIME-Typ) je Anhang.
     """
-    m = _nachricht(an, betreff, text)
+    m = _nachricht(an, betreff, text, antwort_an, anhaenge)
     try:
         pfad = _ablegen(m, an, stempel)
     except OSError as ex:

@@ -844,6 +844,9 @@ def api_uebersicht(request: Request) -> Response:
         # Wer hier den Monat abschließt (Independence Day A): die Kanzlei, die
         # Inhaberin für sich selbst oder die Inhaberin für ihr Steuerbüro.
         "wer": ("kanzlei" if bw.darf_verwalten(un) else bw._arbeitsweise(un)),
+        # Wohin das Übergabepaket geht (seit 10.10.2026) — leer, bis die
+        # Inhaberin es beim ersten Versand einträgt.
+        "steuerbuero_email": _steuerbuero_email(bw, un),
         # Wessen Buchhaltung das ist — im Kopf der Seite, damit niemand
         # den Stapel des falschen Betriebs weitergibt.
         "berater": berater, "mandant": mandant,
@@ -965,6 +968,170 @@ def api_uebergeben(request: Request, von: str = "", bis: str = "") -> Response:
     return Response(content=daten, media_type="text/csv; charset=windows-1252",
                     headers={"Content-Disposition": f'attachment; filename="{name}"',
                              "X-Babu-Uebergabe": info["zeit"]})
+
+
+# ---------------------------------------------------------------------------
+# Das Übergabepaket per Mail ans Steuerbüro (seit 10.10.2026)
+#
+# Kein Portal-Zugang für das Büro, kein OneClick: die Inhaberin tippt „An mein
+# Steuerbüro geben", und das Büro bekommt eine Mail mit Stapel, Belegen und
+# Kassenbuch als ZIP (`uebergabepaket.py`). Beim ersten Mal fragt babu die
+# Adresse; sie steht danach in den Einstellungen des Betriebs.
+# ---------------------------------------------------------------------------
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _steuerbuero_email(bw, un: str) -> str:
+    return (bw.db_einstellungen(bw.salon_von_aktiv(un)).get("steuerbuero_email") or "").strip()
+
+
+def _steuerbuero_setzen(bw, un: str, email: str) -> str | None:
+    """Die Adresse eintragen — oder sagen, was daran nicht stimmt."""
+    email = (email or "").strip()
+    if not _EMAIL_RE.match(email) or len(email) > 200:
+        return "Das sieht nicht nach einer E-Mail-Adresse aus."
+    bw.db_einstellung_setzen(bw.salon_von_aktiv(un), "steuerbuero_email", email)
+    return None
+
+
+@router.get("/steuerbuero")
+def api_steuerbuero(request: Request) -> Response:
+    un, fehler = _wache(request)
+    if fehler:
+        return fehler
+    return JSONResponse({"email": _steuerbuero_email(_bw(), un)})
+
+
+@router.post("/steuerbuero")
+async def api_steuerbuero_setzen(request: Request) -> Response:
+    un, fehler = _wache(request)
+    if fehler:
+        return fehler
+    bw = _bw()
+    if not bw._origin_ok(request):
+        return _fehler("nicht erlaubt", 403)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return _fehler("JSON erwartet")
+    email = str((body or {}).get("email") or "")
+    if (meldung := _steuerbuero_setzen(bw, un, email)):
+        return _fehler(meldung)
+    import audit  # noqa: PLC0415
+    audit.audit(un, "steuerbuero_adresse", mandant_id=bw._mandant_fuers_log(), an=email.strip())
+    return JSONResponse({"email": email.strip()})
+
+
+def _paket_versenden(bw, un: str, monate: list[str], email: str) -> tuple[dict, int]:
+    """Übergeben wie `/uebergeben`, dann packen und verschicken. Läuft im
+    Threadpool — Box-Schreibweg und SMTP blockieren."""
+    import audit  # noqa: PLC0415
+    import postfach  # noqa: PLC0415
+    import uebergabepaket as up  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+    try:
+        roh, info = bw._stapel_uebergeben(monate, un)
+    except bw.StapelSchonUebergeben as fehler_:
+        return {"fehler": str(fehler_)}, 409
+    except extf.RahmenVermischung as fehler_:
+        return {"fehler": str(fehler_)}, 409
+    except boxschreiber.SchreibFehler:
+        return {"fehler": "gerade nicht speicherbar — gleich nochmal"}, 503
+    idx = bw.index_aktuell()
+    belege: list[tuple[str, bytes]] = []
+    fehlend = 0
+    for monat in info["monate"]:
+        for stamm in info["staemme"].get(monat) or []:
+            eintrag = idx["belege"].get(stamm)
+            daten = bw.git_show(eintrag["datei"]) if eintrag else None
+            if daten is None:
+                fehlend += 1
+                continue
+            belege.append((f"belege/{monat}/{Path(eintrag['datei']).name}", daten))
+    kassen = {}
+    for monat in info["monate"]:
+        tage = info["kassentage"].get(monat) or []
+        blaetter = [idx["kassenblaetter"][t] for t in tage if t in idx["kassenblaetter"]]
+        if blaetter:
+            kassen[monat] = up.kassenbuch_csv(blaetter)
+    inhaber = bw.salon_von_aktiv(un)
+    einstellungen = bw.db_einstellungen(inhaber)
+    betrieb = einstellungen.get("betrieb_name") or inhaber
+    antwort_an = einstellungen.get("email") or (inhaber if "@" in inhaber else None)
+    teile = up.teile_bauen(monate=info["monate"], nachtrag=info["nachtrag"],
+                           stapel_datei=info["datei"], stapel_roh=roh, belege=belege,
+                           kassen=kassen, betrieb=betrieb, bezeichnung=info["bezeichnung"],
+                           rahmen=info["rahmen"], buchungen=info["buchungen"],
+                           kassentage=info["kassentage_gesamt"])
+    zeitraum = up.zeitraum_text(info["monate"])
+    verschickt = 0
+    hinweise: list[str] = []
+    for i, (name, daten) in enumerate(teile, 1):
+        betreff = f"Buchhaltung {betrieb} — {zeitraum}" \
+            + (f" (Nachtrag {info['nachtrag']})" if info["nachtrag"] else "") \
+            + (f" — Teil {i} von {len(teile)}" if len(teile) > 1 else "")
+        text = up.mailtext(betrieb=betrieb, zeitraum=zeitraum, belege=len(belege),
+                           kassentage=info["kassentage_gesamt"], buchungen=info["buchungen"],
+                           nachtrag=info["nachtrag"], teil=i, teile=len(teile))
+        ok, hinweis = postfach.senden(email, betreff, text,
+                                      stempel=f"{info['zeit']}-paket{i}",
+                                      antwort_an=antwort_an,
+                                      anhaenge=[(name, daten, "application/zip")])
+        verschickt += 1 if ok else 0
+        if not ok:
+            hinweise.append(hinweis)
+    audit.audit(un, "datev_versand", mandant_id=bw._mandant_fuers_log(), an=email,
+                von=monate[0], bis=monate[-1], teile=len(teile), verschickt=verschickt,
+                belege=len(belege), buchungen=info["buchungen"], nachtrag=info["nachtrag"])
+    gesendet = verschickt == len(teile)
+    satz = (f"Paket an {email} geschickt: {info['buchungen']} Buchungen, "
+            f"{len(belege)} Belege"
+            + (f", {info['kassentage_gesamt']} Kassentage" if info["kassentage_gesamt"] else "")
+            + (f", in {len(teile)} Teilen" if len(teile) > 1 else "") + ".")
+    if not gesendet:
+        satz = ("Der Stapel ist abgeschlossen, aber die Mail ist noch nicht raus — "
+                "sie liegt im Postausgang. " + " ".join(hinweise))
+    if fehlend:
+        satz += f" {fehlend} Beleg(e) konnten nicht gelesen werden und fehlen im Paket."
+    return {"gesendet": gesendet, "an": email, "teile": len(teile),
+            "belege": len(belege), "kassentage": info["kassentage_gesamt"],
+            "buchungen": info["buchungen"], "stapel": info["datei"],
+            "nachtrag": info["nachtrag"], "monate": info["monate"],
+            "hinweis": satz}, 200
+
+
+@router.post("/senden")
+async def api_senden(request: Request, von: str = "", bis: str = "") -> Response:
+    """„An mein Steuerbüro geben" — übergeben UND verschicken.
+
+    Dasselbe Festschreiben wie `/uebergeben`; dazu geht das Paket per Mail
+    an die hinterlegte Adresse. Ohne Adresse: 400 mit `email_noetig`, und
+    nichts wird übergeben — erst die Adresse, dann der Stapel."""
+    un, fehler = _wache(request)
+    if fehler:
+        return fehler
+    bw = _bw()
+    if not bw._origin_ok(request):
+        return _fehler("nicht erlaubt", 403)
+    monate, meldung = _zeitraum(von, bis)
+    if meldung:
+        return _fehler(meldung)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    neu = str((body or {}).get("email") or "").strip()
+    if neu:
+        if (meldung := _steuerbuero_setzen(bw, un, neu)):
+            return _fehler(meldung)
+    email = neu or _steuerbuero_email(bw, un)
+    if not email:
+        return JSONResponse({"fehler": "Wohin soll das Paket? Trag die E-Mail-Adresse "
+                                       "deines Steuerbüros ein.", "email_noetig": True},
+                            status_code=400)
+    antwort, code = await run_in_threadpool(_paket_versenden, bw, un, monate, email)
+    return JSONResponse(antwort, status_code=code)
 
 
 @router.get("/konten.csv")

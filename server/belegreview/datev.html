@@ -338,6 +338,7 @@ let MONATE = [];
 /* Wer hier den Monat abschließt (seit 04.10.2026): die Kanzlei, die
    Inhaberin für sich selbst oder die Inhaberin für ihr Steuerbüro. */
 let WER = "kanzlei";
+let STEUERBUERO_EMAIL = "";
 const UEBERGABE = {kanzlei: ["Stapel übergeben", "Nachtrag übergeben"],
                    selbst: ["Monat abschließen", "Nachtrag abschließen"],
                    steuerbuero: ["An mein Steuerbüro geben", "Nachtrag ans Steuerbüro geben"]};
@@ -351,6 +352,7 @@ async function starten(){
     `<div class="meldung schlimm">${txt(e.message)}</div>`; return; }
   $("#rahmen").textContent = d.rahmen || "—";
   WER = d.wer || "kanzlei";
+  STEUERBUERO_EMAIL = d.steuerbuero_email || "";
   if (WER !== "kanzlei" && !MANDANT) document.getElementById("zurueck").href = "/portal";
   // Berater- und Mandantennummer stehen im Kopf jeder Stapeldatei und
   // sagen der Kanzlei, wessen Buchhaltung sie importiert. Sie gehören
@@ -594,6 +596,9 @@ async function vorschau(){
           Stapel mit allen Buchstaben</button>` : ""}
         <button class="chip" id="uebergeben"${b.buchungen ? "" : " disabled"}>
           ${(UEBERGABE[WER] || UEBERGABE.kanzlei)[b.uebergeben_text ? 1 : 0]}</button>
+        ${WER === "steuerbuero" ? `<span style="font-size:12px;color:var(--gc-muted);margin-left:8px">
+          ${STEUERBUERO_EMAIL ? "geht als Paket an " + txt(STEUERBUERO_EMAIL) + " · " : ""}
+          <a href="#" id="paket-adresse">${STEUERBUERO_EMAIL ? "Adresse ändern" : "Adresse deines Steuerbüros"}</a></span>` : ""}
         <span class="marke ${d.festgeschrieben ? "ok" : ""}" style="align-self:center">
           ${d.festgeschrieben ? "Zahlen freigegeben" : "Zahlen noch offen"}</span>
       </div>
@@ -613,6 +618,51 @@ async function vorschau(){
   };
   const ab = $("#uebergeben");
   if (ab) ab.onclick = uebergeben;
+  const pa = $("#paket-adresse");
+  if (pa) pa.onclick = (e) => { e.preventDefault(); adresseAendern(); };
+}
+
+/* Wohin das Paket geht. Beim ersten Versand fragt `senden` selbst; hier
+   lässt sich die Adresse jederzeit ändern. */
+async function adresseAendern(){
+  const email = (prompt("E-Mail-Adresse deines Steuerbüros:", STEUERBUERO_EMAIL) || "").trim();
+  if (!email || email === STEUERBUERO_EMAIL) return;
+  const a = await fetch(mitMandant("/api/datev/steuerbuero"),
+    {method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"},
+     body: JSON.stringify({email})});
+  const d = await a.json().catch(() => ({fehler:"Das hat nicht geklappt."}));
+  if (!a.ok){ alert(d.fehler || "Das hat nicht geklappt."); return; }
+  STEUERBUERO_EMAIL = d.email;
+  vorschau();
+}
+
+/* „An mein Steuerbüro geben" (seit 10.10.2026): kein Download, sondern das
+   Übergabepaket per Mail — Stapel, Belege, Kassenbuch als ZIP. Beim ersten
+   Mal fragt babu die Adresse; sie bleibt gespeichert. */
+async function senden(){
+  const ziel = $("#export-ausgabe");
+  let email = STEUERBUERO_EMAIL;
+  if (!email){
+    email = (prompt("Wohin soll das Paket? Die E-Mail-Adresse deines Steuerbüros:") || "").trim();
+    if (!email) return;
+  }
+  if (!confirm(`Buchungsstapel, Belege und Kassenbuch jetzt an ${email} schicken?\n\nDanach gilt der Monat als bei deinem Steuerbüro; was später kommt, geht als Nachtrag.`)) return;
+  const a = await fetch(mitMandant("/api/datev/senden?" + spanne()),
+    {method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"},
+     body: JSON.stringify(email === STEUERBUERO_EMAIL ? {} : {email})});
+  const d = await a.json().catch(() => ({fehler:"Das hat nicht geklappt."}));
+  if (!a.ok){
+    ziel.insertAdjacentHTML("afterbegin",
+      `<div class="meldung${a.status === 409 ? "" : " schlimm"}">${txt(d.fehler || "Das hat nicht geklappt.")}</div>`);
+    if (a.status === 409) vorschau();
+    return;
+  }
+  STEUERBUERO_EMAIL = d.an || email;
+  ziel.insertAdjacentHTML("afterbegin", `<div class="meldung${d.gesendet ? "" : " schlimm"}">${txt(d.hinweis)}</div>`);
+  const v = $("#von").value, bi = $("#bis").value;
+  await starten();
+  $("#von").value = v; $("#bis").value = bi;
+  vorschau();
 }
 
 /* Übergeben ist etwas anderes als Herunterladen — deshalb wird gefragt.
@@ -622,6 +672,7 @@ async function vorschau(){
    Belege gibt keine zweite Datei, sondern die Auskunft, dass schon alles
    dort liegt. */
 async function uebergeben(){
+  if (WER === "steuerbuero") return senden();
   const ziel = $("#export-ausgabe");
   const frage = WER === "selbst"
     ? "Diesen Monat jetzt abschließen?\n\nDanach ist er festgeschrieben; was später kommt, geht als Nachtrag."

@@ -118,6 +118,18 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   „überwiesen" bestätigt der Betreiber. Kein Geld bewegt babu selbst.
 - Zustimmungen tragen die Fassung (`recht.fassung`), nicht nur ein Häkchen.
 
+## Verbindlich: Übergabe ans Steuerbüro per Mail (seit 10.10.2026)
+
+- **„An mein Steuerbüro geben" = `POST /api/datev/senden`**: übergeben wie
+  `/uebergeben` (Festschreiben, Nachtrag, 409 bei nichts Neuem) UND das
+  Übergabepaket per Mail an `steuerbuero_email` (Einstellung des Betriebs;
+  beim ersten Versand fragt das Portal, `GET/POST /api/datev/steuerbuero`).
+  Paket = `uebergabepaket.py`: LIESMICH, EXTF-Stapel, `belege/<monat>/…`,
+  `kassenbuch/<monat>.csv`, `inhalt.json`; über `BABU_PAKET_ANHANG_MAX`
+  (18 MB) in Teilen. Antwortadresse = der Betrieb. Kein OneClick, kein
+  Kanzlei-Zugang nötig. ERiC (Stufe C, Senden ans Finanzamt) folgt ~Dezember.
+- `postfach.senden` kennt `anhaenge=[(name, bytes, mime)]` und `antwort_an`.
+
 ## Rollen, Mandanten, DATEV
 
 - Rollen `admin`/`kanzlei`/`salon`/`mitarbeit`; PAT-Konten über

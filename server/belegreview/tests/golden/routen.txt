@@ -42,6 +42,7 @@ GET /api/datev/kreditoren/aus-historie
 GET /api/datev/kreditoren/belege
 GET /api/datev/kreditoren.csv
 GET /api/datev/stapel.csv
+GET /api/datev/steuerbuero
 GET /api/datev/uebersicht
 GET /api/datev/vorschau
 GET /api/dokument/{pfad:path}
@@ -193,6 +194,8 @@ POST /api/datev/kreditoren/uebernehmen
 POST /api/datev/kreditoren/zuordnen
 POST /api/datev/kreditoren/{nummer}
 POST /api/datev/lesen
+POST /api/datev/senden
+POST /api/datev/steuerbuero
 POST /api/datev/uebergeben
 POST /api/dokument-gelesen
 POST /api/dokument-loeschen
