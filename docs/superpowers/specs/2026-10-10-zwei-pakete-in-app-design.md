@@ -34,11 +34,18 @@ und vor allem keine Diskussion darüber, ob hier an Verbraucher oder an
 Unternehmen verkauft wird — genau der Punkt, an dem die Einreichung am
 05.10. gescheitert ist.
 
-**ERiC und die Anbindung an die Buchhaltung fallen aus dem Launch heraus.**
-Sie waren als Stufe 2 gedacht; mit dem Speicher-Modell sind sie frei und
-kommen, wann sie fertig werden, statt einen Starttermin zu blockieren.
-Im Code existiert von ERiC heute nichts (die Kennzahlen der Voranmeldung
-rechnet `monatsabschluss.py` bereits).
+**ERiC und die Anbindung an die Buchhaltung fallen aus dem Launch heraus —
+und kommen dann für alle dazu, ohne Aufpreis.** Sie waren als Stufe 2 gedacht;
+mit dem Speicher-Modell sind sie frei und erscheinen, wann sie fertig werden,
+statt einen Starttermin zu blockieren. Im Code existiert von ERiC heute nichts
+(die Kennzahlen der Voranmeldung rechnet `monatsabschluss.py` bereits).
+
+Damit gilt die Regel ohne Ausnahme und für immer: **Funktionen trennen die
+Stufen nie, nur der Speicher.** Was babu lernt, lernen alle. Das hält die
+Store-Beschreibung ehrlich (kein „in der größeren Stufe enthalten"), erspart
+jede Abo-Logik im Code außer der Platzprüfung — und macht die Freigabe bei
+Apple zur Formsache, weil zwei Speichergrößen nichts sind, worüber man
+streiten kann.
 
 Portal, Kanzlei-Cockpit, Ambassador-Programm und Stripe bleiben draußen und
 kommen mit babu Pro. Der **Monatsversand ans Steuerbüro gehört dagegen in
