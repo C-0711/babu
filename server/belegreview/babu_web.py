@@ -1973,7 +1973,21 @@ def portal_manifest() -> FileResponse:
 
 @app.get("/portal/sw.js")
 def portal_sw() -> FileResponse:
-    return FileResponse(WURZEL / "portal.sw.js", media_type="text/javascript")
+    # Das Skript liegt unter /portal/, soll aber /portal selbst bedienen. Ohne
+    # diesen Kopf lehnt Chrome die Registrierung ab („scope '/portal' is not
+    # under the max scope allowed '/portal/'") — der Offline-Stand des Portals
+    # war damit seit dem ersten Tag nie da (gesehen 10.10.2026 in der Konsole).
+    return FileResponse(WURZEL / "portal.sw.js", media_type="text/javascript",
+                        headers={"Service-Worker-Allowed": "/portal"})
+
+
+@app.get("/favicon.ico")
+def favicon() -> Response:
+    """Browser holen /favicon.ico ungefragt — bis 10.10.2026 ein 404 auf jeder
+    Seite (Landing, Portal, Rechtstexte). Das Portal-Icon tut es; PNG an
+    dieser Adresse versteht jeder Browser."""
+    return FileResponse(WURZEL / "portal-icon-192.png", media_type="image/png",
+                        headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/portal/icon-{groesse}.png")
@@ -11839,12 +11853,26 @@ def api_meldungen(request: Request) -> Response:
         # Fristen und offene Rechnungen gehen die Inhaberin an, nicht das Team.
         return JSONResponse({"meldungen": []})
     import datetime as dt  # noqa: PLC0415
+    heute = dt.date.today()
+    return JSONResponse({"meldungen": meldungen_fuer(un, heute),
+                         "stand": heute.isoformat()})
+
+
+def meldungen_fuer(un: str, heute) -> list[dict]:
+    """Die Meldungen dieses Zugangs für `heute` — höchstens drei.
+
+    Braucht die aktive Box (und beim Mehr-Box-Weg den Mandanten) im Kontext:
+    aus einem Request setzt sie `_box_wache`, der tägliche Lauf
+    (`werkzeuge/taeglich.py`, Schritt `meldungen`, seit 10.10.2026) über
+    `_im_mandanten_kontext`. Dieselbe Rechnung für App und Push — sonst
+    sagte babu morgens etwas anderes als die App beim Öffnen.
+    """
+    import datetime as dt  # noqa: PLC0415
     import melden  # noqa: PLC0415
     import vertraege as vt  # noqa: PLC0415
 
     inhaber = salon_von_aktiv(un)
     idx = index_aktuell()
-    heute = dt.date.today()
     einstellungen = db_einstellungen(inhaber)
 
     termine: list[dict] = []
@@ -11874,8 +11902,7 @@ def api_meldungen(request: Request) -> Response:
         "belege": list(idx["belege"].values()),
         "fehlende_belege": fehlende,
     }
-    return JSONResponse({"meldungen": melden.meldungen(welt, heute),
-                         "stand": heute.isoformat()})
+    return melden.meldungen(welt, heute)
 
 
 @app.get("/api/vertraege")

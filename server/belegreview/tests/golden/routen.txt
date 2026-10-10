@@ -116,6 +116,7 @@ GET /datenschutz
 GET /datev
 GET /barber
 GET /einkauf
+GET /favicon.ico
 GET /healthz
 GET /hilfe
 GET /impressum
