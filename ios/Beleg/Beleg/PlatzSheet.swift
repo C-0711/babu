@@ -36,7 +36,7 @@ struct PlatzSheet: View {
                 .padding(20)
             }
             .warmerGrund()
-            .navigationTitle(gekauft ? "Platz da" : "Dein Platz")
+            .navigationTitle(gekauft ? "Mehr Platz" : "Deine Ablage")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -74,7 +74,7 @@ struct PlatzSheet: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(p.stufe == nil
                      ? "Deine zehn freien Belege sind abgelegt."
-                     : "Dein Platz ist voll.")
+                     : "Deine Ablage ist voll.")
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(GC.fg)
                 Text("Deine Belege bleiben, wo sie sind — such dir einen "
@@ -149,7 +149,7 @@ struct PlatzSheet: View {
             } label: {
                 HStack {
                     if kasse.laeuft { ProgressView().tint(.white) }
-                    Text(kasse.laeuft ? "Einen Moment …" : "Platz nehmen")
+                    Text(kasse.laeuft ? "Einen Moment …" : "Platz buchen")
                         .font(.body.weight(.semibold))
                 }
                 .frame(maxWidth: .infinity)

@@ -35,8 +35,13 @@ enum Ausbaustufe {
     }
 
     /// Die Zeilen im Menü rechts oben, in der Reihenfolge, in der sie stehen.
+    /// Was dieser BAU an Menüzeilen kennt — ohne Ansehen des Zugangs.
+    /// „Deine Ablage" steht deshalb nicht drin: ob es Stufen gibt, hängt am
+    /// Konto und nicht am Bau (siehe `kontomenue(fuer:ambassadorin:appKonto:)`).
     static var kontomenue: [Kontomenuepunkt] {
-        Kontomenuepunkt.allCases.filter { (voll || !$0.nurVoll) && !$0.nurAmbassadorin }
+        Kontomenuepunkt.allCases.filter {
+            (voll || !$0.nurVoll) && !$0.nurAmbassadorin && !$0.nurAppKonto
+        }
     }
 
     /// Mehr Reiter stellt das iPhone nicht nebeneinander. Ein sechster landet
@@ -109,14 +114,17 @@ enum Ausbaustufe {
     /// eine Ambassadorin mit Salon es braucht und unten kein Platz mehr dafür
     /// war. Ohne eigene Ablage bleibt nur, was das Konto selbst angeht.
     static func kontomenue(fuer rechte: Rechte?,
-                           ambassadorin: Ambassadorin = .nein) -> [Kontomenuepunkt] {
+                           ambassadorin: Ambassadorin = .nein,
+                           appKonto: Bool = false) -> [Kontomenuepunkt] {
         guard rechte == nil, ambassadorin != .ohneAblage else {
             return [.meldungen, .einstellungen]
         }
         let imMenue = ambassadorin == .mitAblage
             && !reiter(fuer: nil, ambassadorin: ambassadorin).contains(.empfehlen)
         return Kontomenuepunkt.allCases.filter {
-            (voll || !$0.nurVoll) && (!$0.nurAmbassadorin || imMenue)
+            (voll || !$0.nurVoll)
+                && (!$0.nurAmbassadorin || imMenue)
+                && (!$0.nurAppKonto || appKonto)
         }
     }
 }
@@ -175,11 +183,15 @@ enum Kontomenuepunkt: String, CaseIterable, Hashable {
     case betrieb, kundinnen, preise, kartenzahlung, team, vertraege
     case kontoauszug, marketing
     // Das Konto selbst
-    case empfehlen, wasBabuKann, meldungen, einstellungen
+    case platz, empfehlen, wasBabuKann, meldungen, einstellungen
 
     /// Nur für Ambassadorinnen, und nur, wenn „Empfehlen" unten keinen Platz
     /// mehr als Reiter hat (`Ausbaustufe.kontomenue(fuer:ambassadorin:)`).
     var nurAmbassadorin: Bool { self == .empfehlen }
+
+    /// Nur für Konten aus dem App Store (seit 11.10.2026). Ein Betrieb aus
+    /// dem Portal hat keine Stufen — für ihn wäre die Zeile ein Rätsel.
+    var nurAppKonto: Bool { self == .platz }
 
     /// Gibt es diese Zeile nur im großen Bau?
     var nurVoll: Bool {
@@ -192,7 +204,8 @@ enum Kontomenuepunkt: String, CaseIterable, Hashable {
         // ist ein DOKUMENT, kein Salonbetrieb — und die Kündigungsfrist, an
         // die babu erinnert, gehört zum Kern dessen, was es leisten soll.
         case .aufraeumen, .monatsabschluss, .export, .betrieb, .kontoauszug,
-             .vertraege, .empfehlen, .wasBabuKann, .meldungen, .einstellungen:
+             .vertraege, .platz, .empfehlen, .wasBabuKann, .meldungen,
+             .einstellungen:
             return false
         }
     }
@@ -208,7 +221,7 @@ enum Kontomenuepunkt: String, CaseIterable, Hashable {
         case .betrieb, .kundinnen, .preise, .kartenzahlung, .team,
              .vertraege, .kontoauszug, .marketing:
             return .salon
-        case .empfehlen, .wasBabuKann, .meldungen, .einstellungen:
+        case .platz, .empfehlen, .wasBabuKann, .meldungen, .einstellungen:
             return .konto
         }
     }
@@ -230,6 +243,7 @@ enum Kontomenuepunkt: String, CaseIterable, Hashable {
         case .vertraege:       return "Deine Verträge"
         case .kontoauszug:     return "Kontoauszug"
         case .marketing:       return "Marketing"
+        case .platz:           return "Deine Ablage"
         case .empfehlen:       return "Empfehlen"
         case .wasBabuKann:     return "Was babu alles kann"
         case .meldungen:       return "Meine Meldungen"
@@ -254,6 +268,7 @@ enum Kontomenuepunkt: String, CaseIterable, Hashable {
         case .vertraege:       return "shippingbox"
         case .kontoauszug:     return "building.columns"
         case .marketing:       return "megaphone"
+        case .platz:           return "tray.full"
         case .empfehlen:       return Reiter.empfehlen.symbol
         case .wasBabuKann:     return "list.bullet.rectangle"
         case .meldungen:       return "exclamationmark.bubble"

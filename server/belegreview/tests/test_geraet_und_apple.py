@@ -259,7 +259,7 @@ def test_voller_platz_sperrt_trotz_laufendem_abo(welt):
     _platz_setzen(konto["mandant"], bytes_belegt=1 * GB, belege=2000)
     r = client.post("/api/kassenbuch", json={"tag": "2026-10-10", "zeilen": []})
     assert r.status_code == 403
-    assert "Platz ist voll" in r.text
+    assert "Ablage ist voll" in r.text
     assert r.json()["grund"] == "speicher_voll"
 
 

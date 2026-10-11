@@ -1275,6 +1275,20 @@ extension AppStore {
         return await AblageService.kontoEmail(email, basis: url, pat: pat)
     }
 
+    /// Wie das Konto heißt, wenn man es jemandem zeigt.
+    ///
+    /// Ein Konto aus dem App Store hat keine E-Mail: sein Bezeichner ist
+    /// `app-` plus Zufall und sagt niemandem etwas („Verbunden als
+    /// app-269d5b0d5b46619aa4a0d8e8" stand bis 11.10.2026 so da). Für die
+    /// Nutzerin ist die wahre Auskunft: dieses Telefon gehört dazu.
+    var kontoName: String {
+        guard let un = verbundenAls else { return "Verbunden ✓" }
+        if un.hasPrefix("app-") {
+            return "Verbunden — dieses Telefon"
+        }
+        return "Verbunden als \(un)"
+    }
+
     /// Dieses Gerät abmelden: der Schlüssel geht, das Konto bleibt.
     func abmelden() {
         // Der Stand dieses Zugangs bleibt in seiner Datei — wer sich wieder

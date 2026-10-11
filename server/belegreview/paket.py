@@ -107,8 +107,8 @@ def text(st: dict | None) -> str | None:
                     "frei.")
         return None
     if st["voll"]:
-        return ("Dein Platz ist voll. Mit der nächsten Stufe hast du sofort "
+        return ("Deine Ablage ist voll. Mit der nächsten Stufe hast du sofort "
                 "wieder Luft — alles Abgelegte bleibt, wo es ist.")
     if st["knapp"]:
-        return "Dein Platz wird knapp."
+        return "Deine Ablage wird knapp."
     return None

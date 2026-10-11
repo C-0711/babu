@@ -124,7 +124,11 @@ struct KontoMenuView: View {
     }
 
     private func punkte(_ abschnitt: Kontomenuepunkt.Abschnitt) -> [Kontomenuepunkt] {
-        Ausbaustufe.kontomenue(fuer: store.rechte, ambassadorin: store.ambassadorin)
+        // `appKonto`: „Deine Ablage" gibt es nur für Zugänge aus dem App
+        // Store — der Server schickt die Stufen nur für die (paket.stand).
+        Ausbaustufe.kontomenue(fuer: store.rechte,
+                               ambassadorin: store.ambassadorin,
+                               appKonto: store.platz != nil)
             .filter { $0.abschnitt == abschnitt }
     }
 
@@ -171,6 +175,7 @@ struct KontoMenuView: View {
         case .team:            TeamView()
         case .vertraege:       VertragskisteView()
         case .kontoauszug:     KontoauszugView()
+        case .platz:           PlatzView()
         case .marketing:       MarketingView()
         // Funktionen wurden bisher zufällig entdeckt — diese Seite zählt
         // einmal alles auf, nach Anlass statt nach Technik.

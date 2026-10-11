@@ -54,9 +54,24 @@ if Ausbaustufe.voll {
     // BEWUSST GEÄNDERT am 08.10.2026: „Empfehlen" steht nur bei einer
     // Ambassadorin im Menü, und nur, wenn unten kein Platz für den Reiter
     // ist — im Grundmenü fehlt es mit Absicht.
-    pruefe("kein Punkt der Aufzählung fehlt (außer Empfehlen, nur für Ambassadorinnen)",
+    // BEWUSST GEÄNDERT am 11.10.2026: „Deine Ablage" ebenso — es gibt Stufen
+    // nur für Zugänge aus dem App Store. Beide hängen am ZUGANG, nicht am
+    // Bau; `Ausbaustufe.kontomenue` kennt den Zugang nicht und lässt sie
+    // deshalb weg. Dass sie bei passendem Zugang erscheinen, prüft die
+    // Fassung mit Argumenten darunter.
+    pruefe("kein Punkt der Aufzählung fehlt (außer denen, die am Zugang hängen)",
            Set(Ausbaustufe.kontomenue)
-           == Set(Kontomenuepunkt.allCases.filter { !$0.nurAmbassadorin }))
+           == Set(Kontomenuepunkt.allCases.filter {
+               !$0.nurAmbassadorin && !$0.nurAppKonto }))
+    pruefe("„Deine Ablage“ kommt dazu, sobald der Zugang Stufen hat",
+           Ausbaustufe.kontomenue(fuer: nil, appKonto: true).contains(.platz))
+    pruefe("und bleibt weg, wenn er keine hat",
+           !Ausbaustufe.kontomenue(fuer: nil, appKonto: false).contains(.platz))
+    pruefe("eine Mitarbeiterin sieht ihn nie",
+           !Ausbaustufe.kontomenue(fuer: Ausbaustufe.Rechte(belege: true,
+                                                            kasse: false,
+                                                            auslagen: true),
+                                   appKonto: true).contains(.platz))
     print("— Einrichtung —")
     // BEWUSST GEÄNDERT am 08.09.2026. Hier stand: „fünf Schritte, das
     // Kassenbuch dabei" — geprüft an `sichtbareSchritte`, das die

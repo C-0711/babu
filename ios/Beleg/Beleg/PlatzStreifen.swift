@@ -28,7 +28,7 @@ struct PlatzStreifen: View {
                         balken(p)
                     }
                     Spacer(minLength: 4)
-                    Text(p.voll ? "Platz nehmen" : "Mehr")
+                    Text(p.voll ? "Platz buchen" : "Mehr")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(GC.accent)
                 }
@@ -50,8 +50,8 @@ struct PlatzStreifen: View {
             }
             return "Noch \(frei) \(frei == 1 ? "Beleg" : "Belege") frei."
         }
-        if p.voll { return "Dein Platz ist voll." }
-        return "Dein Platz wird knapp."
+        if p.voll { return "Deine Ablage ist voll." }
+        return "Deine Ablage wird knapp."
     }
 
     private func balken(_ p: PlatzStand) -> some View {

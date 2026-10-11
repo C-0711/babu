@@ -38,6 +38,28 @@ struct PlatzStand: Codable, Equatable {
     }
 
     static let belegeFrei = 10
+
+    /// Was der Nutzerin dazu gesagt wird — oder nil, wenn alles Platz hat.
+    /// Dieselben Sätze wie `paket.text()` auf dem Server; sie stehen hier
+    /// noch einmal, weil die App sie auch ohne Netz zeigen können muss.
+    var hinweis: String? {
+        if stufe == nil {
+            if voll {
+                return "Deine \(PlatzStand.belegeFrei) freien Belege sind "
+                     + "abgelegt. Such dir einen Platz aus, dann geht es "
+                     + "weiter — deine Belege bleiben, wo sie sind."
+            }
+            if knapp, let frei = freiOffen {
+                return "Noch \(frei) \(frei == 1 ? "Beleg" : "Belege") frei."
+            }
+            return nil
+        }
+        if voll {
+            return "Deine Ablage ist voll. Mit der nächsten Stufe hast du "
+                 + "sofort wieder Luft — alles Abgelegte bleibt, wo es ist."
+        }
+        return knapp ? "Deine Ablage wird knapp." : nil
+    }
 }
 
 /// Eine Stufe, wie der Server sie anbietet.

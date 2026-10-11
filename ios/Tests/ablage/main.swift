@@ -44,11 +44,11 @@ let freiWeg = json(["fehler": "Deine zehn freien Belege sind abgelegt.",
                     "grund": "frei_aufgebraucht", "nur_lesen": true])
 pruefe(AblageErgebnis.aus(status: 403, daten: freiWeg) == .platzVoll,
        "aufgebrauchtes Freikontingent ist Platz voll")
-let platzWeg = json(["fehler": "Dein Platz ist voll.",
+let platzWeg = json(["fehler": "Deine Ablage ist voll.",
                      "grund": "speicher_voll", "nur_lesen": true])
 pruefe(AblageErgebnis.aus(status: 403, daten: platzWeg) == .platzVoll,
        "voller Speicher ist Platz voll")
-pruefe(AblageErgebnis.hinweis(platzWeg) == "Dein Platz ist voll.",
+pruefe(AblageErgebnis.hinweis(platzWeg) == "Deine Ablage ist voll.",
        "der Satz des Servers kommt an den Beleg")
 // Negativkontrolle: ein anderer Grund darf NICHT als Platzproblem gelten,
 // sonst öffnete die App die Stufenauswahl bei jeder Ablehnung.

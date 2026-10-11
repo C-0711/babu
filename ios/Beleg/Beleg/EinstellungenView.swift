@@ -122,7 +122,7 @@ struct EinstellungenView: View {
                     // Bis 17.09.2026 stand hier „running on GitChain“.
                     HStack(spacing: 6) {
                         Image(systemName: "seal")
-                        Text("babu · 0711 Intelligence")
+                        Text("babu · nullsiebenelf GmbH")
                     }
                     .frame(maxWidth: .infinity)
                     .font(.caption2.monospaced())
@@ -419,7 +419,7 @@ struct EinstellungenView: View {
                       ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                     .foregroundStyle(store.zugangAbgelaufen ? GC.warn : GC.ok)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(store.verbundenAls.map { "Verbunden als \($0)" } ?? "Verbunden ✓")
+                    Text(store.kontoName)
                     if store.zugangAbgelaufen {
                         Text("Der Zugang gilt nicht mehr — bitte neu verbinden.")
                             .font(.caption)

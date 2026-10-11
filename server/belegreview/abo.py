@@ -169,7 +169,7 @@ TEXTE_PLATZ = {
     "frei_aufgebraucht": "Deine zehn freien Belege sind abgelegt. Such dir "
                          "einen Platz aus, dann geht es weiter — deine "
                          "Belege bleiben, wo sie sind.",
-    "speicher_voll": "Dein Platz ist voll. Mit der nächsten Stufe hast du "
+    "speicher_voll": "Deine Ablage ist voll. Mit der nächsten Stufe hast du "
                      "sofort wieder Luft — alles Abgelegte bleibt, wo es ist.",
 }
 
