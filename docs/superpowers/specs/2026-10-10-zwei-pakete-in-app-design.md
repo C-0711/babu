@@ -346,14 +346,36 @@ Alles per API gesetzt, nichts eingereicht:
 |---|---|
 | Gruppe | „babu Speicher" (22463529), Anzeigename de-DE „Dein Platz bei babu", en-US „Your babu storage" |
 | Abos | drei, monatlich, Ebene 1/2/3, Familienfreigabe aus, Markt nur App Store, Mehrplatz aus |
-| Preise | 9,99 / 19,99 / 99,00 € für DEU und AUT; CHE 10,00 / 20,00 / 99,00 (Apples Schweizer Raster kennt die Neunundneunzig-Enden dort nicht durchgehend) |
-| Gebiete | DEU, AUT, CHE — wie die App selbst, keine neuen Gebiete automatisch |
+| Preise | 9,99 / 19,99 / 99,00 € in Deutschland, daraus abgeleitet in **allen 175 Gebieten** (Apples `equalizations`) — Pflicht zum Einreichen, auch wo nicht verkauft wird |
+| Gebiete | **nur DEU.** Entscheid 11.10.2026: babu verkauft nur in Deutschland. (Camp45 geht in viele Länder — anderes Produkt, anderer Eintrag.) |
 | Texte | de-DE und en-US, Name ≤ 30 und Beschreibung ≤ 55 Zeichen (Apples Grenzen; die erste Fassung war zu lang) |
 | Prüfbild | der Auswahlbildschirm aus dem Simulator, 1170×2532, an allen drei Abos, Zustand COMPLETE |
 | Prüfnotiz | englisch, an allen drei: dass die Stufen sich NUR im Speicher unterscheiden und wie man den Bildschirm erreicht |
 | Erlös | 7,14 / 14,28 / 70,71 € je Monat (Apple nennt sie selbst — die Rechnung in Abschnitt 6 stimmt) |
 
-**Warum die Abos auf `MISSING_METADATA` stehen — gefunden am 11.10.2026.**
+**Warum `MISSING_METADATA` — die Ursache, gefunden am 11.10.2026 spät.**
+Nicht der Vertrag, sondern fehlende Preise. `POST /subscriptionSubmissions`
+(eine eigene Ressource — über `reviewSubmissionItems` lassen sich Abos NICHT
+einreichen, dort gibt es keine Beziehung dafür) nennt den Grund beim Namen:
+
+    IAP_SUBMISSION_NOT_ALLOWED_MISSING_PRICING_DATA
+    Subscription (6821489409) is missing pricing for the following
+    territories: (HUN, LUX, VEN, NPL, KGZ, MMR, LVA, JPN, …)
+
+**Apple verlangt einen Preis in JEDEM der 175 Gebiete — auch in denen, in
+denen gar nicht verkauft wird.** Verfügbarkeit und Preisliste sind zwei
+verschiedene Dinge; das steht in keiner Fehlermeldung der Oberfläche.
+Statt 175 Preise zu raten, fragt `asc_abos.py alle_preise` Apple selbst:
+`GET /subscriptionPricePoints/<punkt>/equalizations` liefert zu einem
+Preispunkt die Entsprechung in jedem anderen Gebiet, Kaufkraft und lokale
+Steuer eingerechnet — dieselbe Rechnung, die die Weboberfläche beim „Preis
+für alle Gebiete erzeugen" anstellt.
+
+**Der Vertrag bleibt davon unberührt.** `CANNOT_SELL` steht weiter in allen
+175 Gebieten; ohne den Paid Applications Agreement verkauft die App nichts.
+Zwei getrennte Sperren, beide müssen weg.
+
+**Überholt (der Absatz von vormittags):**
 Nicht an den Produkten. `GET /v2/appAvailabilities/<app>/territoryAvailabilities`
 sagt für babu Belege in **allen 175 Gebieten `CANNOT_SELL`**, dazu in 27
 EU-Gebieten `TRADER_STATUS_NOT_PROVIDED`:

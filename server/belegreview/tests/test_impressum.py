@@ -5,11 +5,12 @@ HRB 801171, Geschäftsführer Christoph Bertsch). „0711 Intelligence" ist die
 Marke; bis zum 11.10.2026 stand sie allein im Impressum, ohne Rechtsform und
 ohne Register. Das ist kein Impressum, sondern eine Visitenkarte.
 
-Zwei Pflichtangaben fehlen noch und kennt nur die Geschäftsführung: die
-ladungsfähige Anschrift (§ 5 DDG) und die Umsatzsteuer-Identifikationsnummer
-(§ 27a UStG). Solange sie fehlen, hält `recht.impressum_vollstaendig()`
-dagegen — und dieser Test hält dagegen, dass jemand sie mit einem Platzhalter
-füllt, der live wie eine Angabe aussieht.
+Die nullsiebenelf GmbH hat **keine USt-IdNr** (Entscheid des Auftraggebers,
+11.10.2026). § 27a UStG verlangt sie nur, sofern vorhanden — also steht die
+Zeile gar nicht erst da. Eine Zeile mit Platzhalter wäre schlechter als
+keine, und die Nummer der Schwestergesellschaft Bertsch Innovation GmbH
+(DE205928452, HRB 214310) wäre schlicht falsch: zwei Registernummern sind
+zwei juristische Personen.
 
 Was hier NICHT steht und nie hier stehen wird: Bankverbindung und
 Steuernummer. Beide gehören in kein Impressum. Sie gehören in die Formulare
@@ -48,16 +49,37 @@ def test_die_marke_steht_nicht_mehr_als_anbieter():
     assert "0711 Intelligence" not in anbieter
 
 
-@pytest.mark.parametrize("was", ["Anschrift", "Umsatzsteuer-Identifikationsnummer"])
-def test_die_pflichtangabe_ist_wenigstens_erwaehnt(was):
-    assert was in TEXT or was.split("-")[0] in TEXT
+def test_die_ladungsfaehige_anschrift_steht_da():
+    """Straße, Hausnummer, PLZ, Ort — „Stuttgart" allein ist keine."""
+    assert "Kronenstraße 25" in TEXT
+    assert "70174 Stuttgart" in TEXT
 
 
-def test_solange_etwas_fehlt_sagt_der_server_es_auch():
-    """Der Riegel: fehlt eine Pflichtangabe, meldet es die Funktion — und
-    niemand kann sie mit einem stillen Platzhalter umgehen."""
-    fehlt = recht.ANSCHRIFT.startswith("FEHLT") or recht.UST_IDNR.startswith("FEHLT")
-    assert recht.impressum_vollstaendig() is not fehlt
+def test_ohne_ust_idnr_steht_die_zeile_gar_nicht_da():
+    """§ 27a UStG verlangt sie nur, sofern vorhanden. Ein Platzhalter im
+    Impressum wäre schlechter als die weggelassene Zeile."""
+    if recht.UST_IDNR is None:
+        assert "Umsatzsteuer-Identifikation" not in TEXT
+    else:
+        assert recht.UST_IDNR in TEXT
+
+
+def test_die_nummer_der_schwester_taucht_nirgends_auf():
+    """DE205928452 gehört der Bertsch Innovation GmbH (HRB 214310). Im
+    Impressum eines anderen Rechtsträgers wäre sie eine falsche Erklärung."""
+    for _titel, text in recht.TEXTE.values():
+        assert recht.BERTSCH_INNOVATION["ust_idnr"] not in text
+
+
+def test_fehlende_anschrift_haelt_das_impressum_auf():
+    """Der Riegel: ohne ladungsfähige Anschrift ist es ein Entwurf."""
+    echt = recht.ANSCHRIFT
+    try:
+        recht.ANSCHRIFT = "FEHLT — Straße, Hausnummer, PLZ, Ort"
+        assert recht.impressum_vollstaendig() is False
+    finally:
+        recht.ANSCHRIFT = echt
+    assert recht.impressum_vollstaendig() is True
 
 
 def test_keine_bankverbindung_im_impressum():

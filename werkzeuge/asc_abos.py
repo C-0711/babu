@@ -7,7 +7,9 @@ die Annahme, Abos ließen sich nur über die Weboberfläche anlegen, war falsch.
 
     asc_abos.py zeigen            # was dort steht (ändert nichts)
     asc_abos.py anlegen           # Gruppe und Abos, überspringt Vorhandenes
-    asc_abos.py preise            # Preise für alle Gebiete setzen
+    asc_abos.py preise            # Preise für DEU, AUT, CHE
+    asc_abos.py alle_preise       # Preise für ALLE 175 Gebiete (Pflicht zum
+                                  #   Einreichen, auch wo nicht verkauft wird)
     asc_abos.py texte             # Namen und Beschreibungen (de-DE, en-US)
     asc_abos.py bild <datei.png>  # Prüf-Screenshot an alle drei hängen
     asc_abos.py notiz             # Prüfnotiz an alle drei
@@ -35,7 +37,12 @@ import asc_api as a  # noqa: E402
 
 APP = "6811956687"            # babu Belege
 GRUPPE_NAME = "babu Speicher"
-GEBIETE = ["DEU", "AUT", "CHE"]      # wie die App selbst
+#: Wo babu VERKAUFT wird. Entscheid des Auftraggebers 11.10.2026: nur
+#: Deutschland. (Camp45 geht in viele Länder — das ist ein anderes Produkt
+#: und ein anderer Eintrag.) Die PREISE brauchen trotzdem alle 175 Gebiete:
+#: Apple verlangt sie zum Einreichen, auch wo nichts verkauft wird — siehe
+#: `alle_preise`.
+GEBIETE = ["DEU"]
 
 #: Die Stufen — Quelle ist `paket.STUFEN`, hier nur gespiegelt, damit das
 #: Werkzeug ohne den Server-Code läuft. `tests/test_apple_produkte.py` hält
@@ -165,6 +172,57 @@ def preise() -> None:
                   "ok" if r["ok"] else r["fehler"][:200])
 
 
+def alle_preise() -> None:
+    """Preise für ALLE Gebiete setzen, abgeleitet vom deutschen Preis.
+
+    Apple verlangt zum Einreichen einen Preis in **jedem** Gebiet, auch in
+    denen, in denen gar nicht verkauft wird — ohne das meldet
+    `POST /subscriptionSubmissions` den Fehler
+    `IAP_SUBMISSION_NOT_ALLOWED_MISSING_PRICING_DATA` und das Abo bleibt auf
+    `MISSING_METADATA` stehen (gemessen am 11.10.2026; genau das war die
+    Ursache, nicht der fehlende Vertrag).
+
+    Statt 175 Preise zu raten, wird Apple gefragt: `equalizations` zu einem
+    Preispunkt liefert, was derselbe Preis in jedem anderen Gebiet ist —
+    Kaufkraft und lokale Steuer schon eingerechnet. Das ist dieselbe
+    Rechnung, die die Weboberfläche beim „Preis für alle Gebiete erzeugen"
+    anstellt.
+    """
+    da = abos()
+    for pid, _n, _e, preis, _de, _en in STUFEN:
+        sub = da.get(pid)
+        if not sub:
+            print(f"{pid}: gibt es nicht"); continue
+        pp = _punkte(sub, "DEU")
+        ziel = preis if preis in pp else min(pp, key=lambda x: abs(x - preis))
+        basis = pp[ziel]
+        gleich, pfad = [], f"/subscriptionPricePoints/{basis}/equalizations?limit=200"
+        while pfad:
+            r = a.api("GET", pfad)
+            if not r["ok"]:
+                print(f"  {pid}: {r['fehler'][:160]}"); break
+            gleich += [x["id"] for x in r["daten"]["data"]]
+            nxt = r["daten"].get("links", {}).get("next")
+            pfad = nxt.split("/v1", 1)[1] if nxt else None
+        ok = fehler = 0
+        for punkt in [basis] + gleich:
+            r = a.api("POST", "/subscriptionPrices", {"data": {
+                "type": "subscriptionPrices",
+                "attributes": {"preserveCurrentPrice": False},
+                "relationships": {
+                    "subscription": {"data": {"type": "subscriptions", "id": sub}},
+                    "subscriptionPricePoint": {"data": {
+                        "type": "subscriptionPricePoints", "id": punkt}}}}})
+            if r["ok"]:
+                ok += 1
+            else:
+                fehler += 1
+                if fehler <= 2:
+                    print(f"    {r['status']}: {r['fehler'][:150]}")
+        print(f"  {pid:22s} {ziel:>7.2f} € Basis → {ok} Gebiete gesetzt, "
+              f"{fehler} abgelehnt")
+
+
 def texte() -> None:
     da = abos()
     for pid, _n, _e, _p, de, en in STUFEN:
@@ -249,7 +307,7 @@ if __name__ == "__main__":
     was = sys.argv[1] if len(sys.argv) > 1 else "zeigen"
     if was == "bild":
         bild(Path(sys.argv[2]))
-    elif was in ("zeigen", "anlegen", "preise", "texte", "notiz"):
+    elif was in ("zeigen", "anlegen", "preise", "alle_preise", "texte", "notiz"):
         globals()[was]()
     else:
         print(__doc__)

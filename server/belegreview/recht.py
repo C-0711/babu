@@ -45,9 +45,12 @@ PLATZHALTER = "Text folgt."
 FIRMA = "nullsiebenelf GmbH"
 REGISTER = "Amtsgericht Stuttgart · Registernummer: HRB 801171"
 ANSCHRIFT = "Kronenstraße 25\n70174 Stuttgart"
-#: § 27a UStG. „FEHLT" heißt: dieser Rechtsträger hat keine eigene, und die
-#: eines anderen ist keine Lösung.
-UST_IDNR = "FEHLT — eigene Nummer dieses Rechtsträgers, nicht die einer Schwestergesellschaft"
+#: § 27a UStG verlangt die Nummer nur, SOFERN VORHANDEN. Die nullsiebenelf
+#: GmbH hat keine (Entscheid des Auftraggebers, 11.10.2026) — dann steht die
+#: Zeile gar nicht erst im Impressum. Eine Zeile mit Platzhalter wäre
+#: schlechter als keine, und die Nummer einer Schwestergesellschaft wäre
+#: falsch. None heißt „gibt es nicht", ein String heißt „die hier".
+UST_IDNR: str | None = None
 
 #: Die andere Gesellschaft, zum Nachschlagen. Wird babu von ihr angeboten,
 #: wandern diese drei Werte nach oben — alle drei.
@@ -57,8 +60,12 @@ BERTSCH_INNOVATION = {"firma": "Bertsch Innovation GmbH",
 
 
 def impressum_vollstaendig() -> bool:
-    """Steht die Pflichtangabe, oder ist es noch ein Entwurf?"""
-    return not (ANSCHRIFT.startswith("FEHLT") or UST_IDNR.startswith("FEHLT"))
+    """Steht jede Pflichtangabe, oder ist es noch ein Entwurf?
+
+    Die USt-IdNr zählt nicht mit: § 27a UStG verlangt sie nur, sofern es sie
+    gibt. Was zählt, ist die ladungsfähige Anschrift — ohne Straße ist sie
+    keine."""
+    return not ANSCHRIFT.startswith("FEHLT")
 
 
 TEXTE: dict[str, tuple[str, str]] = {
@@ -69,7 +76,8 @@ TEXTE: dict[str, tuple[str, str]] = {
         f"{ANSCHRIFT}\n\n"
         "Vertreten durch den Geschäftsführer: Christoph Bertsch\n\n"
         f"Registergericht: {REGISTER}\n\n"
-        f"Umsatzsteuer-Identifikationsnummer gemäß § 27a UStG: {UST_IDNR}\n\n"
+        + (f"Umsatzsteuer-Identifikationsnummer gemäß § 27a UStG: {UST_IDNR}\n\n"
+           if UST_IDNR else "") +
         "Kontakt: nina@0711.io\n\n"
         "Verantwortlich für die Inhalte: Christoph Bertsch, Anschrift wie oben.\n\n"
         "babu ist ein Werkzeug zur Aufnahme und Ordnung von Belegen. babu erstellt "
