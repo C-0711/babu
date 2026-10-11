@@ -344,6 +344,15 @@ final class AppStore: ObservableObject {
     func ablageErgebnisSetzen(id: UUID, klasse: String?, buchungJson: String?) {
         guard let i = belege.firstIndex(where: { $0.id == id }) else { return }
         belege[i].dokumentklasse = klasse
+        // Der Dateiname entsteht bei der Aufnahme — da ist das Belegdatum
+        // noch unbekannt, und er trägt „0000-00-00“. JETZT steht die
+        // Buchung, das Datum ist gelesen, und hochgeladen ist noch nichts:
+        // der letzte Moment, in dem der Name im Archiv noch richtig werden
+        // kann. Ein Beleg, der schon oben liegt, behält seinen Namen —
+        // er ist dort der Schlüssel zu Bild und Prüfung.
+        if belege[i].ablageStatus == .ausstehend, belege[i].ablageDateiname != nil {
+            belege[i].ablageDateiname = ablageDateiname(fuer: belege[i])
+        }
         if let buchungJson {
             let zeilenJson: String
             if let geo = belege[i].ocrGeoJson {

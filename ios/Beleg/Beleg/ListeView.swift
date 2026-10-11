@@ -153,7 +153,14 @@ struct ListeView: View {
             Button { blaettere(1) } label: {
                 Image(systemName: "chevron.left")
                     .frame(width: 44, height: 36)
+                    .contentShape(Rectangle())
             }
+            // .plain ist hier Pflicht, nicht Geschmack: in einer List-Zeile
+            // macht SwiftUI ohne eigenen Stil die ganze Zeile zu EINEM Ziel.
+            // Dann zog der erste Tipp einen Monat, und danach ging nichts
+            // mehr — gemessen am 11.10.2026 im Simulator, Ninas „<> gehen
+            // nicht". Jeder andere Knopf in dieser Datei trägt .plain längst.
+            .buttonStyle(.plain)
             .disabled(index >= monate.count - 1)
             .accessibilityLabel("Früherer Monat")
             Spacer()
@@ -187,7 +194,9 @@ struct ListeView: View {
             Button { blaettere(-1) } label: {
                 Image(systemName: "chevron.right")
                     .frame(width: 44, height: 36)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             .disabled(index == 0)
             .accessibilityLabel("Späterer Monat")
         }

@@ -13,6 +13,10 @@ echo "— Server-Abgleich-Harness —"
 swiftc -o "$ZIEL/serverabgleich" ../Beleg/Beleg/Models.swift ../Beleg/Beleg/ServerAbgleich.swift serverabgleich/main.swift
 "$ZIEL/serverabgleich"
 
+echo "— Monatsnavigations-Harness —"
+swiftc -o "$ZIEL/monatsnavigation" ../Beleg/Beleg/Models.swift monatsnavigation/main.swift
+"$ZIEL/monatsnavigation"
+
 echo "— Rechnungs-Harness —"
 swiftc -o "$ZIEL/rechnung" ../Beleg/Beleg/Models.swift ../Beleg/Beleg/Rechnungsmodelle.swift rechnung/main.swift
 "$ZIEL/rechnung"

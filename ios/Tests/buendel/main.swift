@@ -26,6 +26,20 @@ var einzeln = Beleg(lieferant: "Henkel", belegNr: "1", datumText: "24.02.2026",
                     summenprobeOK: false)
 pruefe(ablageDateiname(fuer: einzeln).hasSuffix(".jpg"),
        "Einzelseite bleibt .jpg")
+pruefe(ablageDateiname(fuer: einzeln).hasPrefix("beleg_2026-02-24_"),
+       "Der Name trägt das BELEGdatum: \(ablageDateiname(fuer: einzeln))")
+
+// Ohne gelesenes Datum steht „0000-00-00“ im Namen — so geht der Beleg
+// bei der Aufnahme los. Sobald die Buchung da ist, wird der Name neu
+// gebildet (Store.ablageErgebnisSetzen); nur dann trägt das Archiv — und
+// das Übergabepaket ans Steuerbüro — ein echtes Datum.
+var ungelesen = einzeln
+ungelesen.datumText = ""
+pruefe(ablageDateiname(fuer: ungelesen).hasPrefix("beleg_0000-00-00_"),
+       "Ohne Datum ehrlich 0000-00-00: \(ablageDateiname(fuer: ungelesen))")
+ungelesen.datumText = "05.08.2026"
+pruefe(ablageDateiname(fuer: ungelesen).hasPrefix("beleg_2026-08-05_"),
+       "Nachgetragenes Datum schlägt durch: \(ablageDateiname(fuer: ungelesen))")
 
 var buendel = einzeln
 buendel.seitenJpeg = [Data([1]), Data([2])]

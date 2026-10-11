@@ -3880,6 +3880,17 @@ async def api_aufnahme(request: Request, name: str = "foto.jpg",
     import boxschreiber  # noqa: PLC0415
     dateiname = boxschreiber.beleg_dateiname(name)
     monat = time.strftime("%Y-%m")
+    # Der Beleg gehört in SEINEN Monat, nicht in den des Hochladens —
+    # dieselbe Regel wie beim Kontoauszug unten und wie in `_beleg_monat`,
+    # das den Monat für Abschluss, DATEV und Voranmeldung aus dem
+    # Belegdatum zieht. Die Buchung reist beim Zielbild-Upload mit, das
+    # Datum ist also hier schon gelesen. Fand niemand eines, bleibt der
+    # Hochlade-Monat — irgendwo muss der Beleg liegen.
+    if entscheidung["art"] in ("beleg", "ausgangsrechnung"):
+        gebucht = (ergebnis or {}).get("buchung") if isinstance(ergebnis, dict) else None
+        belegdatum = str((gebucht or {}).get("datum") or "")
+        if re.match(r"^\d{4}-(0[1-9]|1[0-2])-\d{2}$", belegdatum):
+            monat = belegdatum[:7]
     geparst = None
     if entscheidung["art"] == "kontoauszug":
         # Der Auszug gehört in SEINEN Monat, nicht in den des Hochladens —
