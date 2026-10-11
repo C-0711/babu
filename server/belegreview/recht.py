@@ -20,14 +20,40 @@ import html
 
 PLATZHALTER = "Text folgt."
 
-#: Was am 11.10.2026 noch fehlte. Beides ist Pflicht (§ 5 DDG, § 27a UStG),
-#: und beides kennt nur die Geschäftsführung — deshalb steht es hier oben
-#: und nicht verstreut im Text. Solange eine der beiden Zeilen noch mit
-#: „FEHLT" anfängt, darf das Impressum NICHT live gehen: eine Anschrift wie
-#: „Stuttgart" ohne Straße ist nicht ladungsfähig, und `recht.fertig()`
-#: lässt sich davon nicht täuschen.
+# ---------------------------------------------------------------------------
+# Wer babu anbietet — an EINER Stelle
+# ---------------------------------------------------------------------------
+#
+# Am 11.10.2026 im Belegbestand gefunden: unter der Kronenstraße 25 sitzen
+# ZWEI Gesellschaften des Auftraggebers, und sie sind nicht dieselbe.
+#
+#     Bertsch Innovation GmbH   HRB 214310   USt-IdNr DE205928452
+#     nullsiebenelf GmbH        HRB 801171   Steuernr. 99030/09781
+#
+# Eine USt-IdNr gehört genau einem Rechtsträger. Wer sie in das Impressum
+# des anderen schreibt, erklärt etwas Falsches: eine Prüfung im
+# EU-Verzeichnis (VIES) gibt zu DE205928452 den Namen „Bertsch Innovation
+# GmbH" zurück, nicht den aus dem Impressum. Deshalb hängen Name, Register
+# und Nummer hier ZUSAMMEN an einer Stelle und werden nur gemeinsam
+# gewechselt — ein Satz gehört zu einem Rechtsträger, oder er stimmt nicht.
+#
+# Die Steuernummer steht hier bewusst NICHT: sie gehört in kein Impressum
+# und in keine Rechnung an Dritte (tests/test_impressum.py hält das fest).
+
+#: Der Rechtsträger, der babu anbietet. Beim Wechsel ALLE vier Zeilen
+#: zusammen ändern, nie einzelne.
+FIRMA = "nullsiebenelf GmbH"
+REGISTER = "Amtsgericht Stuttgart · Registernummer: HRB 801171"
 ANSCHRIFT = "Kronenstraße 25\n70174 Stuttgart"
-UST_IDNR = "FEHLT — DE und neun Ziffern (nicht die Steuernummer)"
+#: § 27a UStG. „FEHLT" heißt: dieser Rechtsträger hat keine eigene, und die
+#: eines anderen ist keine Lösung.
+UST_IDNR = "FEHLT — eigene Nummer dieses Rechtsträgers, nicht die einer Schwestergesellschaft"
+
+#: Die andere Gesellschaft, zum Nachschlagen. Wird babu von ihr angeboten,
+#: wandern diese drei Werte nach oben — alle drei.
+BERTSCH_INNOVATION = {"firma": "Bertsch Innovation GmbH",
+                      "register": "Amtsgericht Stuttgart · Registernummer: HRB 214310",
+                      "ust_idnr": "DE205928452"}
 
 
 def impressum_vollstaendig() -> bool:
@@ -39,10 +65,10 @@ TEXTE: dict[str, tuple[str, str]] = {
     "impressum": ("Impressum",
         "Stand 11.10.2026.\n\n"
         "Anbieter dieser Seite und der App babu:\n\n"
-        "nullsiebenelf GmbH\n"
+        f"{FIRMA}\n"
         f"{ANSCHRIFT}\n\n"
         "Vertreten durch den Geschäftsführer: Christoph Bertsch\n\n"
-        "Registergericht: Amtsgericht Stuttgart · Registernummer: HRB 801171\n\n"
+        f"Registergericht: {REGISTER}\n\n"
         f"Umsatzsteuer-Identifikationsnummer gemäß § 27a UStG: {UST_IDNR}\n\n"
         "Kontakt: nina@0711.io\n\n"
         "Verantwortlich für die Inhalte: Christoph Bertsch, Anschrift wie oben.\n\n"
@@ -206,7 +232,7 @@ ARTEN = tuple(TEXTE)
 #: gehört nicht in die Rechtliches-Leiste von App und Portal.
 AMBASSADOR: tuple[str, str] = ("Ambassador-Vereinbarung",
     "Stand 10.10.2026.\n\n"
-    "Zwischen der nullsiebenelf GmbH (siehe Impressum, „babu“) und dir als "
+    f"Zwischen der {FIRMA} (siehe Impressum, „babu“) und dir als "
     "Ambassadorin.\n\n"
     "1. Worum es geht. Du empfiehlst babu an Betriebe, die du kennst. Du bist "
     "dabei frei: keine Weisungen, keine Mindestzahlen, kein Arbeitsverhältnis. "
