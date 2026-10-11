@@ -114,14 +114,14 @@ struct ExportView: View {
             .fileExporter(isPresented: $zeigeAblage,
                           document: datei.flatMap(StapelDokument.init(datei:)),
                           contentType: .commaSeparatedText,
-                          defaultFilename: extfMonat().dateiname) { _ in }
+                          defaultFilename: extfZeitraum(fuer: enthalten).dateiname) { _ in }
             .sheet(isPresented: $zeigeMail) {
                 if let datei {
                     MailBlatt(an: steuerbueroAdresse,
                               betreff: "Buchungen " + monatsName() + " — " + salonName(),
                               text: mailText(),
                               anhang: datei,
-                              dateiname: extfMonat().dateiname) { ergebnis in
+                              dateiname: extfZeitraum(fuer: enthalten).dateiname) { ergebnis in
                         mailErgebnis = ergebnis
                     }
                 }
@@ -142,7 +142,7 @@ struct ExportView: View {
     /// diese vier Zeilen beantwortet keine der Fragen, die man sich in dem
     /// Moment stellt — Zeitraum, Umfang, Belege dabei, Kassenbuch dabei.
     private var inhaltsangabe: some View {
-        let monat = extfMonat()
+        let monat = extfZeitraum(fuer: enthalten)
         return VStack(alignment: .leading, spacing: 5) {
             angabe("Zeitraum", tagText(monat.von) + " – " + tagText(monat.bis))
             angabe("Buchungen", enthalten.isEmpty
@@ -181,16 +181,21 @@ struct ExportView: View {
         }
     }
 
-    /// Der Kopf der Datei nennt einen Monat, die Belege müssen ihm aber nicht
-    /// folgen. Wer das verschweigt, beschreibt die Datei falsch.
+    /// Der Kopf der Datei nennt einen Zeitraum, die Belege müssen ihm aber
+    /// nicht folgen. Wer das verschweigt, beschreibt die Datei falsch.
+    ///
+    /// Seit dem 11.10.2026 folgt der Zeitraum den Belegen (`extfZeitraum`),
+    /// also ist diese Zahl im Normalfall 0. Sie bleibt als Wache stehen:
+    /// schlägt sie an, stimmt der Kopf nicht mehr mit dem Inhalt überein.
     private var ausserhalb: Int {
-        let jetzt = Calendar(identifier: .gregorian).dateComponents([.year, .month],
-                                                                    from: Date())
+        let spanne = extfZeitraum(fuer: enthalten)
         return enthalten.filter { beleg in
             let teile = beleg.datumText.split(separator: ".")
-            guard teile.count == 3, let monat = Int(teile[1]), let jahr = Int(teile[2])
+            guard teile.count == 3, let tag = Int(teile[0]), let monat = Int(teile[1]),
+                  let jahr = Int(teile[2])
             else { return false }   // unlesbares Datum ist ein anderes Thema
-            return monat != jetzt.month || jahr != jetzt.year
+            let tagText = String(format: "%04d%02d%02d", jahr, monat, tag)
+            return tagText < spanne.von || tagText > spanne.bis
         }.count
     }
 
@@ -282,12 +287,11 @@ struct ExportView: View {
         }
     }
 
-    /// „August 2026" — ohne das DATEV-Wort davor.
+    /// „August 2026" — ohne das DATEV-Wort davor. Folgt den Belegen, nicht
+    /// dem Kalender: sonst hieße die Überschrift anders als der Inhalt.
     private func monatsName() -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "de_DE")
-        f.dateFormat = "LLLL yyyy"
-        return f.string(from: Date())
+        extfZeitraum(fuer: enthalten).titel
+            .replacingOccurrences(of: "Buchungsstapel ", with: "")
     }
 
     private func salonName() -> String {

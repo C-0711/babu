@@ -882,13 +882,13 @@ final class AppStore: ObservableObject {
 
     /// Vorschau des aktuellen Stapels (Logik in ExtfWriter.swift, harness-getestet).
     func extfText() -> String {
-        let monat = extfMonat()
+        let monat = extfZeitraum(fuer: exportierbar)
         return extfStapelText(belege: exportierbar, von: monat.von, bis: monat.bis)
     }
 
     /// Schreibt eine feste Belegmenge als CP1252-kodierte Datei (DATEV-Kodierung).
     func extfDatei(fuer stapel: [Beleg]) -> URL? {
-        let monat = extfMonat()
+        let monat = extfZeitraum(fuer: stapel)
         let text = extfStapelText(belege: stapel, von: monat.von, bis: monat.bis)
         let data = text.data(using: .windowsCP1252, allowLossyConversion: true) ?? Data(text.utf8)
         let url = FileManager.default.temporaryDirectory

@@ -68,3 +68,39 @@ func extfMonat(fuer datum: Date = Date()) -> (von: String, bis: String, dateinam
             dateiname: String(format: "EXTF_Buchungsstapel_%04d-%02d.csv", jahr, monat),
             titel: "Buchungsstapel " + mf.string(from: erster))
 }
+
+/// Derselbe Zeitraum, aber nach den BELEGEN statt nach dem Kalender.
+///
+/// Die Vorschau nannte immer den laufenden Monat. Ein Bon vom 5. August, im
+/// Oktober fotografiert, stand damit in einem Stapel „01.10.–31.10.", und
+/// babu musste danebenschreiben, dass ein Beleg nicht hineingehört
+/// (gefunden beim Durchlauf am 11.10.2026). Der Monat eines Belegs ist der
+/// seines DATUMS — dieselbe Regel wie in der Dokumentenliste, im
+/// Kassenbuch und auf dem Server. Jetzt nennt der Kopf die Monate, die
+/// wirklich drinstehen; liegen mehrere drin, nennt er die Spanne.
+///
+/// Ohne lesbares Datum gibt es nichts zu folgen — dann bleibt der laufende
+/// Monat, damit der Stapel überhaupt einen Kopf hat.
+func extfZeitraum(fuer belege: [Beleg], heute: Date = Date())
+    -> (von: String, bis: String, dateiname: String, titel: String) {
+    let monate = belege.compactMap { belegMonatSchluessel($0.datumText) }.sorted()
+    guard let erster = monate.first, let letzter = monate.last else {
+        return extfMonat(fuer: heute)
+    }
+    let von = extfMonat(fuer: monatsDatum(erster) ?? heute)
+    let bis = extfMonat(fuer: monatsDatum(letzter) ?? heute)
+    if erster == letzter { return von }
+    return (von: von.von, bis: bis.bis,
+            dateiname: "EXTF_Buchungsstapel_\(erster)_bis_\(letzter).csv",
+            titel: von.titel + " – " + bis.titel
+                .replacingOccurrences(of: "Buchungsstapel ", with: ""))
+}
+
+/// „2026-08" → der 1. August 2026.
+func monatsDatum(_ schluessel: String) -> Date? {
+    let t = schluessel.split(separator: "-")
+    guard t.count == 2, let jahr = Int(t[0]), let monat = Int(t[1]) else { return nil }
+    var komp = DateComponents()
+    komp.year = jahr; komp.month = monat; komp.day = 1
+    return Calendar(identifier: .gregorian).date(from: komp)
+}

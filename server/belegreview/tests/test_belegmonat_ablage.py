@@ -58,3 +58,22 @@ def test_die_buchhaltung_zaehlt_den_beleg_im_belegmonat(auslagen_welt):
     zeile = next(z for z in nina.get("/api/belege").json()["belege"]
                  if z["stamm"] == stamm)
     assert zeile["monat"] == "2026-05", zeile
+
+
+def test_ohne_adresse_verspricht_die_mail_keine_antwort():
+    """Ein Gerätekonto hat keine E-Mail — dann trägt die Mail kein Reply-To.
+
+    Der Satz „Rückfragen gehen mit ‚Antworten‘ direkt an den Betrieb" wäre
+    dann ein Versprechen, das die Mail nicht halten kann: das Steuerbüro
+    drückt auf Antworten und schreibt ins Leere.
+    """
+    import uebergabepaket as up  # noqa: PLC0415
+    felder = dict(betrieb="Salon Testfall", zeitraum="2026-08", belege=1,
+                  kassentage=0, buchungen=1, nachtrag=0, teil=1, teile=1)
+    mit = up.mailtext(**felder, antwort_an="nina@salon.de")
+    ohne = up.mailtext(**felder)
+    assert "Antworten" in mit
+    assert "Antworten" not in ohne
+    # Der Rest des Briefs bleibt, wie er war.
+    for satz in ("Übergabepaket", "LIESMICH.txt", "Buchungsstapel im DATEV-Format"):
+        assert satz in mit and satz in ohne

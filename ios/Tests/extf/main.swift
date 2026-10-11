@@ -99,6 +99,46 @@ pruefe(monat.titel == "Buchungsstapel September 2026", "Titel folgt dem Monat")
 let feb = kal.date(from: DateComponents(year: 2028, month: 2, day: 3))!
 pruefe(extfMonat(fuer: feb).bis == "20280229", "Schaltjahr-Februar endet am 29.")
 
+// --- Der Zeitraum folgt den BELEGEN, nicht dem Kalender -------------------
+//
+// Gefunden beim Durchlauf am 11.10.2026: ein Bon vom 5. August, im Oktober
+// fotografiert, stand in einem Stapel „01.10.–31.10." — und babu musste
+// danebenschreiben, dass ein Beleg nicht hineingehört. Der Monat eines
+// Belegs ist der seines DATUMS, auch hier.
+let okt = kal.date(from: DateComponents(year: 2026, month: 10, day: 11))!
+func beleg(_ datum: String) -> Beleg {
+    Beleg(lieferant: "Bürobedarf Müller GmbH", belegNr: "ohne Nr.", datumText: datum,
+          netto: 100, ust: 19, brutto: 119, ustSatz: 19, konto: "6815",
+          steuerschluessel: "9", kreditor: "70000", herkunft: .ki, confidence: 100,
+          status: .automatisch, begruendung: "", summenprobeOK: true)
+}
+let august = extfZeitraum(fuer: [beleg("05.08.2026")], heute: okt)
+pruefe(august.von == "20260801" && august.bis == "20260831",
+       "ein August-Beleg im Oktober ergibt den August: \(august.von)–\(august.bis)")
+pruefe(august.dateiname == "EXTF_Buchungsstapel_2026-08.csv",
+       "Dateiname folgt dem Beleg: \(august.dateiname)")
+pruefe(august.titel == "Buchungsstapel August 2026", "Titel folgt dem Beleg")
+
+let spanne = extfZeitraum(fuer: [beleg("05.08.2026"), beleg("02.10.2026")], heute: okt)
+pruefe(spanne.von == "20260801" && spanne.bis == "20261031",
+       "mehrere Monate ergeben die Spanne: \(spanne.von)–\(spanne.bis)")
+pruefe(spanne.dateiname == "EXTF_Buchungsstapel_2026-08_bis_2026-10.csv",
+       "Dateiname nennt die Spanne: \(spanne.dateiname)")
+pruefe(spanne.titel == "Buchungsstapel August 2026 – Oktober 2026",
+       "Titel nennt die Spanne: \(spanne.titel)")
+
+pruefe(extfZeitraum(fuer: [], heute: okt).von == "20261001",
+       "ohne Belege bleibt der laufende Monat")
+pruefe(extfZeitraum(fuer: [beleg("")], heute: okt).von == "20261001",
+       "ohne lesbares Datum bleibt der laufende Monat")
+
+// Und die Probe aufs Ganze: der Kopf des Stapels nennt denselben Zeitraum.
+let kopf = extfStapelText(belege: [beleg("05.08.2026")],
+                          von: august.von, bis: august.bis)
+pruefe(kopf.contains("20260801") && kopf.contains("20260831"),
+       "der Dateikopf trägt den Belegmonat")
+pruefe(kopf.contains(";\"0508\";"), "und die Zeile das Belegdatum 05.08.")
+
 // ————— Belegdatum: das Format, das der DATEV-Stapel braucht —————
 //
 // Am 23.08.2026 übernahm die App erstmals die Serverlesung. Der Server

@@ -1073,7 +1073,8 @@ def _paket_versenden(bw, un: str, monate: list[str], email: str) -> tuple[dict, 
             + (f" — Teil {i} von {len(teile)}" if len(teile) > 1 else "")
         text = up.mailtext(betrieb=betrieb, zeitraum=zeitraum, belege=len(belege),
                            kassentage=info["kassentage_gesamt"], buchungen=info["buchungen"],
-                           nachtrag=info["nachtrag"], teil=i, teile=len(teile))
+                           nachtrag=info["nachtrag"], teil=i, teile=len(teile),
+                           antwort_an=antwort_an)
         ok, hinweis = postfach.senden(email, betreff, text,
                                       stempel=f"{info['zeit']}-paket{i}",
                                       antwort_an=antwort_an,

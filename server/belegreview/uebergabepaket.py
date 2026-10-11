@@ -182,7 +182,16 @@ def teile_bauen(*, monate: list[str], nachtrag: int, stapel_datei: str,
 
 
 def mailtext(*, betrieb: str, zeitraum: str, belege: int, kassentage: int,
-             buchungen: int, nachtrag: int, teil: int, teile: int) -> str:
+             buchungen: int, nachtrag: int, teil: int, teile: int,
+             antwort_an: str | None = None) -> str:
+    """Der Begleittext zum Paket.
+
+    `antwort_an` entscheidet über EINEN Satz: ein Gerätekonto hat (noch)
+    keine E-Mail, dann trägt die Mail auch kein `Reply-To` — und der Satz
+    „Rückfragen gehen mit ‚Antworten‘ direkt an den Betrieb" wäre ein
+    Versprechen, das die Mail nicht halten kann. Das Steuerbüro drückt dann
+    auf Antworten und schreibt ins Leere (gefunden beim Durchlauf am
+    11.10.2026). Ohne Adresse steht der Satz nicht da."""
     was = (f"Teil {teil} von {teile} des Übergabepakets" if teile > 1
            else "das Übergabepaket")
     zeilen = [
@@ -200,7 +209,8 @@ def mailtext(*, betrieb: str, zeitraum: str, belege: int, kassentage: int,
         f"• {belege} Belege als Foto oder PDF" + (", verteilt auf die Teile" if teile > 1 else ""),
         "",
         "Die Datei LIESMICH.txt im Paket sagt, wie der Stapel in DATEV oder Addison",
-        "eingelesen wird. Rückfragen gehen mit „Antworten“ direkt an den Betrieb.",
+        ("eingelesen wird. Rückfragen gehen mit „Antworten“ direkt an den Betrieb."
+         if antwort_an else "eingelesen wird."),
         "",
         "Viele Grüße",
         "babu",
