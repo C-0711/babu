@@ -20,13 +20,32 @@ import html
 
 PLATZHALTER = "Text folgt."
 
+#: Was am 11.10.2026 noch fehlte. Beides ist Pflicht (§ 5 DDG, § 27a UStG),
+#: und beides kennt nur die Geschäftsführung — deshalb steht es hier oben
+#: und nicht verstreut im Text. Solange eine der beiden Zeilen noch mit
+#: „FEHLT" anfängt, darf das Impressum NICHT live gehen: eine Anschrift wie
+#: „Stuttgart" ohne Straße ist nicht ladungsfähig, und `recht.fertig()`
+#: lässt sich davon nicht täuschen.
+ANSCHRIFT = "Kronenstraße 25\n70174 Stuttgart"
+UST_IDNR = "FEHLT — DE und neun Ziffern (nicht die Steuernummer)"
+
+
+def impressum_vollstaendig() -> bool:
+    """Steht die Pflichtangabe, oder ist es noch ein Entwurf?"""
+    return not (ANSCHRIFT.startswith("FEHLT") or UST_IDNR.startswith("FEHLT"))
+
+
 TEXTE: dict[str, tuple[str, str]] = {
     "impressum": ("Impressum",
-        "Stand 10.10.2026.\n\n"
+        "Stand 11.10.2026.\n\n"
         "Anbieter dieser Seite und der App babu:\n\n"
-        "0711 Intelligence, Christoph Bertsch, Stuttgart.\n\n"
+        "nullsiebenelf GmbH\n"
+        f"{ANSCHRIFT}\n\n"
+        "Vertreten durch den Geschäftsführer: Christoph Bertsch\n\n"
+        "Registergericht: Amtsgericht Stuttgart · Registernummer: HRB 801171\n\n"
+        f"Umsatzsteuer-Identifikationsnummer gemäß § 27a UStG: {UST_IDNR}\n\n"
         "Kontakt: nina@0711.io\n\n"
-        "Verantwortlich für die Inhalte: Christoph Bertsch.\n\n"
+        "Verantwortlich für die Inhalte: Christoph Bertsch, Anschrift wie oben.\n\n"
         "babu ist ein Werkzeug zur Aufnahme und Ordnung von Belegen. babu erstellt "
         "keine Steuererklärungen und ersetzt keine Steuerberatung. Die steuerliche "
         "Beurteilung bleibt bei der Steuerkanzlei des jeweiligen Betriebs."),
@@ -187,7 +206,7 @@ ARTEN = tuple(TEXTE)
 #: gehört nicht in die Rechtliches-Leiste von App und Portal.
 AMBASSADOR: tuple[str, str] = ("Ambassador-Vereinbarung",
     "Stand 10.10.2026.\n\n"
-    "Zwischen 0711 Intelligence (siehe Impressum, „babu“) und dir als "
+    "Zwischen der nullsiebenelf GmbH (siehe Impressum, „babu“) und dir als "
     "Ambassadorin.\n\n"
     "1. Worum es geht. Du empfiehlst babu an Betriebe, die du kennst. Du bist "
     "dabei frei: keine Weisungen, keine Mindestzahlen, kein Arbeitsverhältnis. "
@@ -339,6 +358,6 @@ def seite_aus(titel: str, text: str, nav: list[tuple[str, str]]) -> str:
 <h1>{html.escape(titel)}</h1>
 {hinweis}
 {absaetze}
-<footer>babu · 0711 Intelligence · Stuttgart · babu ersetzt keine individuelle Steuerberatung.</footer>
+<footer>babu · nullsiebenelf GmbH · Stuttgart · babu ersetzt keine individuelle Steuerberatung.</footer>
 </main></body></html>
 """
