@@ -317,8 +317,10 @@ kein StoreKit, Testmonat vom Server.
   ein Link zu Stripe wäre ein Ablehnungsgrund. Richtig so wie entschieden.
 - Apple-Preise sind **Endpreise inkl. USt**. 9,99 € und 19,99 € stehen in
   Apples Preisraster, es braucht keinen Sonderpreis. **Entschieden 10.10.**
-  Bei Stufe 3 ist zu entscheiden: Apples Raster kennt **99,99 €**; glatte
-  99,00 € gäbe es nur als Sonderpreis je Land.
+  **Korrektur 11.10.2026 (am Raster gemessen):** auch **99,00 € steht drin**
+  — das Raster für DEU führt 800 Punkte von 0,29 € bis 1.199,99 €, darunter
+  99,00 neben 99,90 und 99,99. Die Sorge um einen Sonderpreis war unbegründet;
+  alle drei Preise sind genau so gesetzt, wie entschieden.
 - Apple-Anteil: 15 % (Small Business Program bis 1 Mio. $/Jahr), sonst 30 %.
   Was bei babu ankommt, je Kundin und Monat:
 
@@ -335,6 +337,32 @@ kein StoreKit, Testmonat vom Server.
   ein Introductory Offer und braucht Apples Regeln (einmal je Apple-ID).
 - Auf der Landing darf Apple genannt werden; Preise dort müssen den
   Store-Preisen entsprechen.
+
+### App Store Connect, Stand 11.10.2026
+
+Alles per API gesetzt, nichts eingereicht:
+
+| | |
+|---|---|
+| Gruppe | „babu Speicher" (22463529), Anzeigename de-DE „Dein Platz bei babu", en-US „Your babu storage" |
+| Abos | drei, monatlich, Ebene 1/2/3, Familienfreigabe aus, Markt nur App Store, Mehrplatz aus |
+| Preise | 9,99 / 19,99 / 99,00 € für DEU und AUT; CHE 10,00 / 20,00 / 99,00 (Apples Schweizer Raster kennt die Neunundneunzig-Enden dort nicht durchgehend) |
+| Gebiete | DEU, AUT, CHE — wie die App selbst, keine neuen Gebiete automatisch |
+| Texte | de-DE und en-US, Name ≤ 30 und Beschreibung ≤ 55 Zeichen (Apples Grenzen; die erste Fassung war zu lang) |
+| Prüfbild | der Auswahlbildschirm aus dem Simulator, 1170×2532, an allen drei Abos, Zustand COMPLETE |
+| Prüfnotiz | englisch, an allen drei: dass die Stufen sich NUR im Speicher unterscheiden und wie man den Bildschirm erreicht |
+| Erlös | 7,14 / 14,28 / 70,71 € je Monat (Apple nennt sie selbst — die Rechnung in Abschnitt 6 stimmt) |
+
+**Offen und ungeklärt:** Der Sammelzustand der drei Abos steht weiter auf
+`MISSING_METADATA`, obwohl jede Unterebene (Texte, Preise, Verfügbarkeit,
+Prüfbild, Gruppe) `PREPARE_FOR_SUBMISSION` meldet und die API kein Feld mehr
+kennt, das offen wäre (die Feldliste wurde abgefragt). Woran es liegt, sagt
+nur die Oberfläche — und der Browser dieser Sitzung hat keine Apple-Sitzung.
+**Nächster Schritt für den Auftraggeber:** in App Store Connect bei einem der
+drei Abos nachsehen, was rot markiert ist. Naheliegendster Verdacht, hier
+nicht prüfbar: der **Paid Applications Agreement** samt Bank- und
+Steuerangaben — babu war bisher eine kostenlose App ohne jeden Kauf, und ohne
+diesen Vertrag bleibt jedes Abo unvollständig.
 
 ## 7. Offene Entscheidungen
 
@@ -361,10 +389,12 @@ kein StoreKit, Testmonat vom Server.
    10.10.2026** (Abschnitt 3). Im Repo, nicht deployt; die Rechtstexte
    gehen in dieser Fassung an die Anwältin.
 5. App Store Connect: Abos, Screenshots, Review — Auftraggeber + 1 Tag.
-   Die drei Produkte heißen `babu.speicher.1gb`, `babu.speicher.5gb`,
-   `babu.speicher.100gb` (so stehen sie in `paket.STUFEN` und in
-   `ios/Beleg/Support/babu.storekit`); sie lassen sich nur über die
-   Weboberfläche von App Store Connect anlegen, nicht über die API.
+   **Korrektur 11.10.2026: die API kann es doch.** Angelegt per
+   `werkzeuge/asc_abos.py` — Gruppe „babu Speicher" (22463529) und die drei
+   Abos `babu.speicher.1gb` (6821489409), `babu.speicher.5gb` (6821489462),
+   `babu.speicher.100gb` (6821489521), monatlich, Ebenen 1–3. Zeichengleich
+   mit `paket.STUFEN` und `ios/Beleg/Support/babu.storekit`;
+   `tests/test_apple_produkte.py` hält die beiden Orte im Repo zusammen.
 
 ### Was am Kaufweg noch nicht gemessen ist (10.10.2026)
 
