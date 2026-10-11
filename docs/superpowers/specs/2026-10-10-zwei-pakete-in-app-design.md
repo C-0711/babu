@@ -353,16 +353,39 @@ Alles per API gesetzt, nichts eingereicht:
 | Prüfnotiz | englisch, an allen drei: dass die Stufen sich NUR im Speicher unterscheiden und wie man den Bildschirm erreicht |
 | Erlös | 7,14 / 14,28 / 70,71 € je Monat (Apple nennt sie selbst — die Rechnung in Abschnitt 6 stimmt) |
 
-**Offen und ungeklärt:** Der Sammelzustand der drei Abos steht weiter auf
-`MISSING_METADATA`, obwohl jede Unterebene (Texte, Preise, Verfügbarkeit,
-Prüfbild, Gruppe) `PREPARE_FOR_SUBMISSION` meldet und die API kein Feld mehr
-kennt, das offen wäre (die Feldliste wurde abgefragt). Woran es liegt, sagt
-nur die Oberfläche — und der Browser dieser Sitzung hat keine Apple-Sitzung.
-**Nächster Schritt für den Auftraggeber:** in App Store Connect bei einem der
-drei Abos nachsehen, was rot markiert ist. Naheliegendster Verdacht, hier
-nicht prüfbar: der **Paid Applications Agreement** samt Bank- und
-Steuerangaben — babu war bisher eine kostenlose App ohne jeden Kauf, und ohne
-diesen Vertrag bleibt jedes Abo unvollständig.
+**Warum die Abos auf `MISSING_METADATA` stehen — gefunden am 11.10.2026.**
+Nicht an den Produkten. `GET /v2/appAvailabilities/<app>/territoryAvailabilities`
+sagt für babu Belege in **allen 175 Gebieten `CANNOT_SELL`**, dazu in 27
+EU-Gebieten `TRADER_STATUS_NOT_PROVIDED`:
+
+| Gebiet | verfügbar | Zustand |
+|---|---|---|
+| DEU | ja | `TRADER_STATUS_NOT_PROVIDED`, `CANNOT_SELL`, `AVAILABLE_FOR_SALE_UNRELEASED_APP` |
+| AUT | **nein** | `TRADER_STATUS_NOT_PROVIDED`, `CANNOT_SELL` |
+| CHE | **nein** | `CANNOT_SELL` |
+
+Daraus folgen drei Dinge, und keines davon kann die API lösen:
+
+1. **`CANNOT_SELL` überall** — die App darf nichts verkaufen. Das ist der
+   **Paid Applications Agreement** samt Bank- und Steuerangaben. babu war
+   bisher kostenlos ohne jeden Kauf; solange der Vertrag nicht steht, bleibt
+   jedes Abo unvollständig, egal wie vollständig seine Felder sind.
+   → App Store Connect → **Business → Agreements**, nur der Kontoinhaber.
+2. **`TRADER_STATUS_NOT_PROVIDED`** — Apples Händlerstatus nach dem Digital
+   Services Act fehlt. Ohne ihn fällt die App aus den EU-Storefronts, also
+   auch aus dem einzigen Gebiet, in dem sie heute steht.
+   → App Store Connect → **Business → Trader Status**. Die API kennt dafür
+   kein Feld (geprüft).
+3. **Die App steht nur in DEU**, nicht in AUT und CHE — anders als am
+   24.09.2026 notiert. Die Abos sind für DEU/AUT/CHE eingerichtet; sobald
+   die App wieder in AUT und CHE verkauft wird, passt das zusammen. Soll es
+   bei Deutschland allein bleiben, gehören die beiden Gebiete auch bei den
+   Abos heraus (`asc_abos.py`, `GEBIETE`).
+
+Die Produkte selbst sind vollständig: Texte, Preise, Verfügbarkeit, Prüfbild
+und Prüfnotiz stehen, und die API kennt kein offenes Feld mehr (Feldliste
+abgefragt). Der Zustand sollte von selbst auf `READY_TO_SUBMIT` gehen, sobald
+Punkt 1 erledigt ist.
 
 ## 7. Offene Entscheidungen
 
