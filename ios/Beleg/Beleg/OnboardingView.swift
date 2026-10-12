@@ -27,7 +27,7 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 14) {
                 punkt("viewfinder", "Beleg in den Rahmen halten — das Foto passiert von selbst.")
                 punkt("checkmark.seal", "Jeder Beleg wird gelesen, eingeordnet und noch einmal gegengeprüft. Grüner Haken = alles gut.")
-                punkt("square.and.arrow.up", "Am Monatsende ist deine Buchhaltung fertig — ganz ohne eigenes Steuerbüro.")
+                punkt("square.and.arrow.up", "Am Monatsende ist deine Buchhaltung fertig — mit oder ohne eigenes Steuerbüro.")
             }
             .padding(.top, 8)
 
