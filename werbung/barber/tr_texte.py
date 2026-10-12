@@ -24,7 +24,7 @@ TR = {
 "babu · für deinen Barbershop": "babu · berber dükkânın için",
 "Dein Papierkram": "Evrak işlerin",
 "macht sich von selbst.": "kendiliğinden hallolur.",
-"Beleg fotografieren — fertig. babu liest ihn, prüft ihn und legt ihn sicher ab. Am Monatsende ist deine Buchhaltung fertig — ganz ohne eigenes Steuerbüro. Du kümmerst dich um Fades und Bärte.": "Fişin fotoğrafını çek — bu kadar. babu onu okur, kontrol eder ve güvenle arşivler. Ay sonunda muhasebe hazır — kendi mali müşavir büron (Steuerbüro) olmadan bile. Sen fade ve sakallarla ilgilen.",
+"Beleg fotografieren — fertig. babu liest ihn, prüft ihn und legt ihn sicher ab. Am Monatsende ist deine Buchhaltung fertig — mit oder ohne eigenes Steuerbüro. Du kümmerst dich um Fades und Bärte.": "Fişin fotoğrafını çek — bu kadar. babu onu okur, kontrol eder ve güvenle arşivler. Ay sonunda muhasebe hazır — kendi mali müşavir büron (Steuerbüro) olsa da olmasa da. Sen fade ve sakallarla ilgilen.",
 "App laden": "Uygulamayı indir",
 "Anmelden": "Giriş yap",
 "Grüner Haken = alles erledigt. Mehr musst du nicht wissen.": "Yeşil tik = her şey tamam. Bilmen gereken bu kadar.",

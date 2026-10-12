@@ -36,14 +36,14 @@ WELTEN = [
      "name": "Barbershops", "held": "Moe",
      "lbl": "babu · für deinen Barbershop",
      "sub": ("Beleg fotografieren — fertig. babu liest ihn, prüft ihn und legt ihn sicher ab. "
-             "Am Monatsende ist deine Buchhaltung fertig — ganz ohne eigenes Steuerbüro. "
+             "Am Monatsende ist deine Buchhaltung fertig — mit oder ohne eigenes Steuerbüro. "
              "Du kümmerst dich um Fades und Bärte.")},
     {"schluessel": "werkstatt", "pfad": "/werkstatt", "bild": "/bilder/ws-held.jpg",
      "alt": "Mario lacht in seiner Werkstatt mit einem Stammkunden, beide mit einem Tässchen Kaffee, das Auto steht auf der Hebebühne",
      "name": "Kfz-Werkstätten", "held": "Mario",
      "lbl": "babu · für deine Werkstatt",
      "sub": ("Beleg fotografieren — fertig. babu liest ihn, prüft ihn und legt ihn sicher ab. "
-             "Am Monatsende ist deine Buchhaltung fertig — ganz ohne eigenes Steuerbüro. "
+             "Am Monatsende ist deine Buchhaltung fertig — mit oder ohne eigenes Steuerbüro. "
              "Du schraubst weiter.")},
 ]
 

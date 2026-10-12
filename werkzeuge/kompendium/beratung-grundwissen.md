@@ -128,8 +128,10 @@ Verstöße gegen die Belegausgabepflicht, 11 fehlende TSE.
 | Neue Systeme | Meldung binnen eines Monats nach Anschaffung | laufend |
 
 Die **offene Ladenkasse bleibt zulässig**, verlangt aber täglichen Kassenbericht mit
-retrograder Ermittlung und Zählprotokoll. Sie ist der schwächere Weg und der
-Hauptangriffspunkt jeder Prüfung.
+retrograder Ermittlung. Ein **Zählprotokoll ist gesetzlich nicht gefordert** (BFH,
+Beschluss X B 41/16 — der tägliche Kassenbericht genügt); die Prüfungspraxis verlangt
+es gleichwohl regelmäßig, und wer keines führt, diskutiert. Sie ist der schwächere Weg
+und der Hauptangriffspunkt jeder Prüfung.
 
 **Geplant, aber noch nicht geltendes Recht** (Referentenentwurf BMF, Juni 2026):
 Registrierkassenpflicht ab 100.000 € Jahresumsatz ab 01.01.2027, Pflicht zu mindestens

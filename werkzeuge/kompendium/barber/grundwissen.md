@@ -588,7 +588,9 @@ Rechtsgrundlagen: § 146a AO, KassenSichV, § 146b AO (Kassen-Nachschau), GoBD.
 | Meldefrist Neusysteme | binnen eines Monats nach Anschaffung | laufend |
 
 **Offene Ladenkasse** bleibt zulässig, verlangt aber täglichen Kassenbericht mit
-retrograder Ermittlung und Zählprotokoll. In der Praxis der schwächere Weg — sie ist der
+retrograder Ermittlung. Ein **Zählprotokoll ist gesetzlich nicht gefordert** (BFH,
+Beschluss X B 41/16 — der tägliche Kassenbericht genügt); die Prüfungspraxis verlangt es
+gleichwohl regelmäßig. In der Praxis der schwächere Weg — sie ist der
 Hauptangriffspunkt jeder Prüfung.
 
 ### Realitätscheck: OFD Baden-Württemberg, Kontrollaktion Februar/März 2026
