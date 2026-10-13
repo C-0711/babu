@@ -2724,6 +2724,12 @@ def api_ich(request: Request) -> Response:
         if platz is not None:
             daten["speicher"] = platz
             daten["stufen"] = paket.angebot()
+            # Die Kennung, die beim Kauf als `appAccountToken` mitgeht
+            # (seit 14.10.2026). Damit findet Apples Meldung den Betrieb
+            # auch dann, wenn die App ihren Kauf noch nicht gemeldet hat —
+            # und ein Kauf landet nie beim falschen Betrieb, wenn auf einem
+            # Telefon zwei Zugänge benutzt werden.
+            daten["kauf_kennung"] = paket.kauf_kennung(aktiver)
     antwort = JSONResponse(daten)
     if request.cookies.get(SESSION_COOKIE):
         antwort.set_cookie(SESSION_COOKIE, _signieren(un, exp), max_age=SESSION_DAUER,

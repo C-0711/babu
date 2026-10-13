@@ -349,20 +349,21 @@ extension AblageService {
     /// 401 heißt abgelaufen, und das gehört im Konto auch so hin.
     static func werBinIch(basis: URL, pat: String) async
         -> (un: String?, rolle: String?, abgelaufen: Bool, rechte: Ausbaustufe.Rechte?,
-            ablage: Bool?, platz: PlatzStand?, stufen: [PlatzStufe]) {
+            ablage: Bool?, platz: PlatzStand?, stufen: [PlatzStufe],
+            kaufKennung: UUID?) {
         var request = URLRequest(url: basis.appendingPathComponent("api/ich"))
         request.timeoutInterval = 12
         request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
         guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
               let http = antwort as? HTTPURLResponse else {
-            return (nil, nil, false, nil, nil, nil, [])
+            return (nil, nil, false, nil, nil, nil, [], nil)
         }
         if http.statusCode == 401 || http.statusCode == 403 {
-            return (nil, nil, true, nil, nil, nil, [])
+            return (nil, nil, true, nil, nil, nil, [], nil)
         }
         guard http.statusCode == 200,
               let json = (try? JSONSerialization.jsonObject(with: daten)) as? [String: Any]
-        else { return (nil, nil, false, nil, nil, nil, []) }
+        else { return (nil, nil, false, nil, nil, nil, [], nil) }
         // Was eine Mitarbeiterin darf (babu Expenses D1) — fehlt bei allen anderen.
         var rechte: Ausbaustufe.Rechte?
         if let r = json["rechte"] as? [String: Any] {
@@ -373,9 +374,13 @@ extension AblageService {
         // Der Platz (seit 10.10.2026) — nur bei Konten aus dem App Store;
         // für alle anderen fehlen `speicher` und `stufen`, und die App
         // zeigt nichts davon.
+        // Die Kaufkennung (seit 14.10.2026) geht beim Kauf als
+        // `appAccountToken` an Apple mit. Sie steht nur bei Konten aus dem
+        // App Store — und nur dort wird gekauft.
         return (json["un"] as? String, json["rolle"] as? String, false, rechte,
                 json["box"] as? Bool, platzAus(json["speicher"]),
-                stufenAus(json["stufen"]))
+                stufenAus(json["stufen"]),
+                (json["kauf_kennung"] as? String).flatMap(UUID.init(uuidString:)))
     }
 
     // MARK: - Früher auf dem Server gespeicherte Gespräche (BABU-25)

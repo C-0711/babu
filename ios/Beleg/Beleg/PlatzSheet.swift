@@ -160,9 +160,9 @@ struct PlatzSheet: View {
             .disabled(kasse.laeuft || gewaehlt == nil || gekauft)
             .opacity(gekauft ? 0.4 : 1)
 
-            Button("Schon bezahlt? Kauf wiederherstellen") {
+            Button("Schon bezahlt? Käufe wiederherstellen") {
                 Task {
-                    if await kasse.laufendeMelden() {
+                    if await kasse.wiederherstellen() {
                         await store.kontoNachfragen()
                         gekauft = true
                     } else {
@@ -221,7 +221,9 @@ struct PlatzSheet: View {
     }
 
     private func kaufen(_ stufe: PlatzStufe) async -> Bool {
-        let ok = await kasse.kaufen(stufe)
+        // Die Kaufkennung geht als `appAccountToken` mit: damit gehört der
+        // Kauf dem Betrieb, nicht dem Telefon (14.10.2026).
+        let ok = await kasse.kaufen(stufe, kennung: store.kaufKennung)
         if ok { await store.kontoNachfragen() }
         return ok
     }
@@ -230,6 +232,8 @@ struct PlatzSheet: View {
 
     private var kleingedrucktes: some View {
         VStack(alignment: .leading, spacing: 8) {
+            Label("Jede Stufe läuft einen Monat und verlängert sich von "
+                  + "selbst, bis du kündigst.", systemImage: "arrow.clockwise")
             Label("Deine Belege liegen in Deutschland.",
                   systemImage: "lock.shield")
             Label("Monatlich kündbar — in den Einstellungen deines "
@@ -239,9 +243,30 @@ struct PlatzSheet: View {
             Label("ERiC und der Anschluss an die Buchhaltung kommen dazu, "
                   + "sobald sie fertig sind — für alle, ohne Aufpreis.",
                   systemImage: "gift")
+            rechtliches
         }
         .font(.caption)
         .foregroundStyle(GC.desc)
         .labelStyle(.titleAndIcon)
+    }
+
+    /// Nutzungsbedingungen und Datenschutz — hier, am Ort des Kaufs.
+    ///
+    /// Sie standen schon in den Einstellungen. Apple verlangt sie aber dort,
+    /// wo abgeschlossen wird (3.1.2): wer kauft, muss die Bedingungen lesen
+    /// können, ohne die Auswahl zu verlassen und sie zu suchen.
+    @ViewBuilder private var rechtliches: some View {
+        HStack(spacing: 14) {
+            if let ab = URL(string: store.ablageURL + "/agb") {
+                Link("Nutzungsbedingungen", destination: ab)
+            }
+            if let ds = URL(string: store.ablageURL + "/datenschutz") {
+                Link("Datenschutz", destination: ds)
+            }
+            Spacer(minLength: 0)
+        }
+        .font(.caption)
+        .foregroundStyle(GC.accent)
+        .padding(.top, 2)
     }
 }

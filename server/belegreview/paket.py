@@ -14,6 +14,8 @@ Reine Rechnung ohne Datenbank und ohne Netz, damit sie prüfbar bleibt.
 """
 from __future__ import annotations
 
+import uuid
+
 GB = 1024 ** 3
 
 #: Die Stufen in der Reihenfolge, in der sie jemandem angeboten werden.
@@ -48,6 +50,53 @@ def stufe_fuer_produkt(apple_produkt: str | None) -> str | None:
     for name, eintrag in STUFEN.items():
         if eintrag["apple"] == apple_produkt:
             return name
+    return None
+
+
+#: Namensraum für `kauf_kennung`. Fest und für immer: aus ihm und der
+#: Mandantennummer entsteht dieselbe UUID, solange es babu gibt. Er ist kein
+#: Geheimnis — er muss nur eindeutig sein, damit die Kennung eines anderen
+#: Dienstes nie zufällig dieselbe ist.
+KAUF_NAMENSRAUM = uuid.UUID("7b3a0e22-6c41-5f8a-9d10-0711bab00001")
+
+
+def kauf_kennung(mandant_id: int) -> str:
+    """Die `appAccountToken`, die beim Kauf mitgeht — je Betrieb immer dieselbe.
+
+    Apple nimmt beim Kauf eine UUID der Anwendung an, trägt sie in jeden
+    Vorgang dieses Abos ein und schickt sie in jeder Server Notification
+    zurück. Damit lässt sich ein Kauf einem Betrieb zuordnen, **ohne** dass
+    die App dem Server etwas erzählen muss — und das ist der Fall, der sonst
+    offen bleibt: Apples erste Meldung kommt manchmal, bevor die App ihren
+    Kauf gemeldet hat, und ein neu aufgesetztes Telefon meldet gar nichts,
+    bis sich jemand anmeldet.
+
+    Abgeleitet und nicht gespeichert: eine UUIDv5 aus Namensraum und Nummer
+    ist für denselben Betrieb immer dieselbe, über Neuinstallationen,
+    Gerätewechsel und Datenbankumzüge hinweg. Eine Spalte hätte dieselbe
+    Zahl noch einmal gehalten — und wäre irgendwann leer gewesen.
+
+    Die Nummer selbst steht NICHT in der Kennung: UUIDv5 ist ein Hash,
+    Apples Protokoll bekommt also keine fortlaufende Betriebsnummer zu sehen.
+    """
+    return str(uuid.uuid5(KAUF_NAMENSRAUM, f"mandant:{int(mandant_id)}"))
+
+
+def mandant_aus_kauf_kennung(kennung: str | None,
+                             kandidaten) -> int | None:
+    """Zurück von der Kennung zum Betrieb — über die Kandidaten, nicht umgekehrt.
+
+    Ein Hash lässt sich nicht umkehren, also wird vorwärts gerechnet und
+    verglichen. Das kostet eine UUID je Betrieb und läuft nur auf dem
+    Rückfallweg (Apples Meldung zu einem Abo, das noch keinem Betrieb
+    gehört).
+    """
+    gesucht = str(kennung or "").strip().lower()
+    if not gesucht:
+        return None
+    for nummer in kandidaten:
+        if kauf_kennung(nummer) == gesucht:
+            return int(nummer)
     return None
 
 

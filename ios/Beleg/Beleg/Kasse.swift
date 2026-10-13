@@ -45,7 +45,15 @@ final class Kasse: ObservableObject {
     }
 
     /// Den Kauf anstoßen. Rückgabe: ob jetzt Platz da ist.
-    func kaufen(_ stufe: PlatzStufe) async -> Bool {
+    ///
+    /// `kennung` ist die Kaufkennung des Betriebs (`appAccountToken`, seit
+    /// 14.10.2026). Apple trägt sie in jeden Vorgang dieses Abos ein und
+    /// schickt sie in jeder Server Notification zurück — damit findet der
+    /// Server den Betrieb auch dann, wenn dieses Telefon nichts meldet, und
+    /// ein Kauf landet nie beim falschen Betrieb, wenn auf einem iPhone
+    /// zwei Zugänge benutzt werden. Fehlt sie (kein Netz beim Start, ein
+    /// Konto aus dem Portal), wird wie vorher gekauft.
+    func kaufen(_ stufe: PlatzStufe, kennung: UUID? = nil) async -> Bool {
         guard let produkt = produkte[stufe.apple] else {
             fehler = "Dieser Platz ist gerade nicht zu haben — später noch einmal."
             return false
@@ -53,8 +61,10 @@ final class Kasse: ObservableObject {
         laeuft = true
         fehler = nil
         defer { laeuft = false }
+        var optionen: Set<Product.PurchaseOption> = []
+        if let kennung { optionen.insert(.appAccountToken(kennung)) }
         do {
-            switch try await produkt.purchase() {
+            switch try await produkt.purchase(options: optionen) {
             case .success(let beleg):
                 return await uebernehmen(beleg)
             case .userCancelled:
@@ -82,6 +92,34 @@ final class Kasse: ObservableObject {
             if await uebernehmen(beleg, stillschweigend: true) { etwas = true }
         }
         return etwas
+    }
+
+    /// „Käufe wiederherstellen" — der Knopf, den Apple bei Abos verlangt
+    /// (3.1.1). Erst `StoreKit.AppStore.sync()`, dann melden.
+    ///
+    /// `laufendeMelden` allein reicht meistens: StoreKit 2 hält die Belege
+    /// des angemeldeten Apple-Kontos ohnehin bereit. Nur manchmal nicht —
+    /// nach einer Neuinstallation ohne Backup, nach einem Wechsel des
+    /// Apple-Kontos, bei einem Kauf, der auf diesem Gerät nie lief.
+    /// `StoreKit.AppStore.sync()` holt sie dann vom App Store nach; es fragt die
+    /// Nutzerin nach ihrem Apple-Passwort, deshalb steht es hinter einem
+    /// Knopf und läuft nie von selbst.
+    ///
+    /// Rückgabe: ob jetzt ein Platz steht. Schlägt `sync()` fehl (abgebrochen,
+    /// kein Netz), wird trotzdem gemeldet — die Belege, die schon da sind,
+    /// zählen weiter.
+    func wiederherstellen() async -> Bool {
+        laeuft = true
+        defer { laeuft = false }
+        do {
+            // `StoreKit.` ist Pflicht, nicht Zierde: babus eigener Store
+            // heisst auch `AppStore` und verdeckt Apples Typ sonst.
+            try await StoreKit.AppStore.sync()
+        } catch {
+            // Abgebrochene Passwortabfrage ist kein Fehler, den man ihr
+            // zeigt — darunter steht gleich, ob etwas gefunden wurde.
+        }
+        return await laufendeMelden()
     }
 
     /// Apples Meldungen mitlaufen lassen (Verlängerung, nachgereichte

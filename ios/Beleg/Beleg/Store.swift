@@ -70,6 +70,10 @@ final class AppStore: ObservableObject {
     @Published var platz: PlatzStand?
     /// Die Stufen, wie der Server sie anbietet. Leer heißt: kein Angebot.
     @Published var stufen: [PlatzStufe] = []
+    /// Was beim Kauf als `appAccountToken` mitgeht — damit Apples Meldungen
+    /// den Betrieb auch ohne dieses Telefon finden (14.10.2026). Kommt vom
+    /// Server und wird nicht gespeichert: ohne Verbindung wird nicht gekauft.
+    @Published var kaufKennung: UUID?
     /// Die Stufenauswahl zeigen — gesetzt, wenn der Platz voll ist und die
     /// Nutzerin weitermachen will.
     @Published var zeigePlatz = false
@@ -406,6 +410,7 @@ final class AppStore: ObservableObject {
         if rechte != antwort.rechte { rechte = antwort.rechte }
         if platz != antwort.platz { platz = antwort.platz }
         if !antwort.stufen.isEmpty, stufen != antwort.stufen { stufen = antwort.stufen }
+        if kaufKennung != antwort.kaufKennung { kaufKennung = antwort.kaufKennung }
         // Die Ablage kam nach der Anmeldung dazu (Box angelegt, freigeschaltet):
         // jetzt losschicken, was auf dem Telefon wartet. Bis 04.10.2026 sagte
         // die App „geht von selbst los, sobald sie da ist" — und fragte nie nach.

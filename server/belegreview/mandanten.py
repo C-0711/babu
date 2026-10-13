@@ -292,6 +292,27 @@ def mandant_mit_apple_abo(apple_abo: str, c=None) -> int | None:
     return int(z[0]) if z else None
 
 
+def mandant_aus_kauf_kennung(kennung: str | None, c=None) -> int | None:
+    """Welcher Betrieb trägt diese `appAccountToken` (seit 14.10.2026)?
+
+    Der Rückfallweg für Apples Meldungen: `mandant_mit_apple_abo` findet
+    nichts, solange die App ihren Kauf noch nicht gemeldet hat. Die Kennung
+    steht in jedem Vorgang, den Apple ausstellt, also lässt sich der Betrieb
+    auch ohne die Meldung der App finden.
+
+    Gefragt werden nur Betriebe aus dem App Store — alle anderen kaufen
+    nicht über Apple und kämen nie als Antwort in Frage.
+    """
+    import paket  # noqa: PLC0415
+    if not str(kennung or "").strip():
+        return None
+    with _sitzung(c) as cc:
+        ids = [z[0] for z in cc.execute(
+            "SELECT id FROM mandant WHERE herkunft = ? AND status <> ? "
+            "ORDER BY id", (paket.HERKUNFT_APP, "beendet")).fetchall()]
+    return paket.mandant_aus_kauf_kennung(kennung, ids)
+
+
 def platz_messen(mandant_id: int, bytes_belegt: int, c=None) -> None:
     """Den gezählten Platz durch den wirklich belegten ersetzen (täglicher
     Lauf). Die Belegzahl bleibt unberührt — sie zählt Ereignisse, nicht Bytes."""

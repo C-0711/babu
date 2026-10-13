@@ -90,6 +90,18 @@ async def api_abo_apple(request: Request) -> Response:
         print(f"[apple] Beleg abgelehnt (Mandant {mandant_id}): {ex}", flush=True)
         return JSONResponse({"fehler": "Dieser Kaufbeleg lässt sich nicht "
                                        "prüfen."}, status_code=400)
+    # Trägt der Beleg eine Kaufkennung, muss sie zu diesem Betrieb gehören
+    # (seit 14.10.2026). Sonst meldet ein Telefon, auf dem zwei Zugänge
+    # benutzt werden, den Kauf des einen Betriebs beim anderen an — beide
+    # Male mit einem echten, von Apple signierten Beleg.
+    # Alte Käufe (vor dieser Fassung) tragen keine Kennung: dann gilt wie
+    # bisher der angemeldete Zugang.
+    kennung = str(inhalt.get("appAccountToken") or "").strip()
+    if kennung and kennung.lower() != paket.kauf_kennung(mandant_id):
+        print(f"[apple] Beleg mit fremder Kaufkennung (Mandant {mandant_id}): "
+              f"{kennung}", flush=True)
+        return JSONResponse({"fehler": "Dieser Kauf gehört zu einem anderen "
+                                       "Betrieb."}, status_code=409)
     try:
         stufe, platz = _eintragen(mandant_id, inhalt)
     except mandanten.AppleAboVergeben as ex:
@@ -144,10 +156,21 @@ async def api_abo_apple_meldung(request: Request) -> Response:
         return JSONResponse({"ok": True})
     with bw._DB_LOCK, bw._db() as c:  # noqa: SLF001
         mandant_id = mandanten.mandant_mit_apple_abo(original, c=c)
+        if mandant_id is None:
+            # Rückfall über die Kaufkennung (seit 14.10.2026): Apples erste
+            # Meldung kommt manchmal, bevor die App ihren Kauf gemeldet hat,
+            # und ein neu aufgesetztes Telefon meldet gar nichts, bis sich
+            # jemand anmeldet. Die Kennung steht in jedem Vorgang, den Apple
+            # ausstellt — damit findet die Meldung den Betrieb allein.
+            mandant_id = mandanten.mandant_aus_kauf_kennung(
+                inhalt.get("appAccountToken"), c=c)
+            if mandant_id is not None:
+                print(f"[apple] Meldung {art}: Abo {original} über die "
+                      f"Kaufkennung zu Mandant {mandant_id}", flush=True)
     if mandant_id is None:
-        # Der normale Fall beim allerersten Kauf: Apples Meldung kann vor
-        # der Meldung der App ankommen. Die App trägt gleich darauf ein,
-        # und die nächste Meldung (Verlängerung) findet den Betrieb.
+        # Weder Abo noch Kennung bekannt — etwa ein Kauf aus einer Fassung
+        # vor der Kaufkennung, den die App noch nicht gemeldet hat. Die App
+        # trägt gleich darauf ein, und die nächste Meldung findet ihn.
         print(f"[apple] Meldung {art}/{unterart or '—'}: Abo {original} "
               f"gehört (noch) keinem Betrieb", flush=True)
         return JSONResponse({"ok": True})
