@@ -114,6 +114,55 @@ enum AblageService {
         return json?["naechste"] as? [[String: Any]] ?? []
     }
 
+    /// Was beim Festschreiben herauskommt.
+    enum Uebergabe {
+        /// Der Stapel liegt jetzt in der Ablage und ist festgeschrieben;
+        /// `datei` ist dieselbe Datei, die dort abgelegt wurde.
+        case fertig(datei: Data, zeit: String)
+        /// 409 — für diesen Zeitraum liegt schon alles, nichts Neues dabei.
+        case schonDa(String)
+        case fehler(String)
+    }
+
+    /// Den Monat festschreiben — auf dem SERVER, nicht nur hier (14.10.2026).
+    ///
+    /// Bis dahin setzte die App nur ihre eigene Liste auf „fixiert" und baute
+    /// die Datei auf dem Telefon. Eine Neuinstallation nahm das Siegel mit,
+    /// ein zweites Telefon wusste nichts davon. Jetzt macht es der Weg, der
+    /// es wirklich kann: `POST /api/datev/uebergeben` legt den Stapel in die
+    /// Ablage, trägt das Festschreibungs-Kennzeichen, merkt sich den Lauf —
+    /// und gibt die Datei zurück, die dort liegt. Weitergegeben wird sie
+    /// danach vom Telefon aus, über Teilen.
+    ///
+    /// Zeitraum als `JJJJ-MM`, ein Wirtschaftsjahr (so verlangt es der Server).
+    static func uebergeben(von: String, bis: String,
+                           basis: URL, pat: String) async -> Uebergabe {
+        var teile = URLComponents(url: basis.appendingPathComponent("api/datev/uebergeben"),
+                                  resolvingAgainstBaseURL: false)
+        teile?.queryItems = [URLQueryItem(name: "von", value: von),
+                             URLQueryItem(name: "bis", value: bis)]
+        guard let url = teile?.url else { return .fehler("Die Adresse stimmt nicht.") }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 120        // der Server baut den Stapel und schreibt in die Ablage
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              let http = antwort as? HTTPURLResponse else {
+            return .fehler("Keine Verbindung. Zum Festschreiben braucht babu sie — "
+                           + "versuch es gleich noch einmal.")
+        }
+        if http.statusCode < 300 {
+            let zeit = http.value(forHTTPHeaderField: "X-Babu-Uebergabe") ?? ""
+            return .fertig(datei: daten, zeit: zeit)
+        }
+        let text = (try? JSONSerialization.jsonObject(with: daten) as? [String: Any])
+            .flatMap { $0?["fehler"] as? String }
+        if http.statusCode == 409 {
+            return .schonDa(text ?? "Für diesen Zeitraum liegt schon alles bereit.")
+        }
+        return .fehler(text ?? "Das hat gerade nicht geklappt.")
+    }
+
     /// Den Monat aus der Hand geben: die Zahlen werden festgeschrieben.
     /// nil = geklappt, sonst der Klartext für sie.
     static func monatFreigeben(monat: String, basis: URL, pat: String) async -> String? {

@@ -913,6 +913,48 @@ final class AppStore: ObservableObject {
     /// Stapel exportieren: ERST die Datei aus dem Schnappschuss erzeugen,
     /// DANN genau diese Belege fixieren — andersherum wäre die Datei leer,
     /// weil `exportierbar` fixierte Belege ausfiltert.
+    /// Den Monat festschreiben — auf dem Server (14.10.2026).
+    ///
+    /// `exportieren()` darunter bleibt der Weg ohne Verbindung: es baut die
+    /// Datei auf dem Telefon und markiert die eigene Liste. Das Siegel, das
+    /// zaehlt, setzt aber der Server; nur dort ueberlebt es eine
+    /// Neuinstallation und nur dort sieht ein zweites Telefon es.
+    ///
+    /// Gibt (Datei, Meldung) zurueck: genau eins von beiden ist gesetzt.
+    func monatUebergeben() async -> (datei: URL?, meldung: String?) {
+        let stapel = exportierbar
+        guard !stapel.isEmpty else { return (nil, "Es ist nichts da, was festgeschrieben werden koennte.") }
+        guard ablageAktiv, let basis = URL(string: ablageURL),
+              let pat = KeychainHelfer.ladePAT() else {
+            return (nil, "Dafuer muss dein Konto verbunden sein.")
+        }
+        let spanne = extfZeitraum(fuer: stapel)
+        let von = monatAusTag(spanne.von), bis = monatAusTag(spanne.bis)
+        switch await AblageService.uebergeben(von: von, bis: bis, basis: basis, pat: pat) {
+        case .fertig(let daten, _):
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent(spanne.dateiname)
+            guard (try? daten.write(to: url, options: .atomic)) != nil else {
+                return (nil, "Die Datei liess sich nicht ablegen.")
+            }
+            // Der Server ist die Wahrheit: welche Belege jetzt festgeschrieben
+            // sind, sagt er, nicht die Liste hier.
+            await vomServerLaden()
+            exportiert = true
+            return (url, nil)
+        case .schonDa(let text):
+            await vomServerLaden()
+            return (nil, text)
+        case .fehler(let text):
+            return (nil, text)
+        }
+    }
+
+    /// „20260801" -> „2026-08" — das Format, das der Server verlangt.
+    private func monatAusTag(_ roh: String) -> String {
+        roh.count >= 6 ? "\(roh.prefix(4))-\(roh.dropFirst(4).prefix(2))" : roh
+    }
+
     func exportieren() -> URL? {
         let stapel = exportierbar
         guard !stapel.isEmpty, let url = extfDatei(fuer: stapel) else { return nil }

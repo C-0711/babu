@@ -9,6 +9,9 @@ struct ExportView: View {
     @State private var zeigeAblage = false
     @State private var zeigeMail = false
     @State private var mailErgebnis: String?
+    /// Was das Festschreiben gemeldet hat (409, kein Netz, abgelehnt).
+    @State private var uebergabeMeldung: String?
+    @State private var laeuft = false
     @State private var adresseBearbeiten = false
     @State private var adresseEntwurf = ""
 
@@ -47,18 +50,37 @@ struct ExportView: View {
                         }
                         .background(GC.canvas, in: RoundedRectangle(cornerRadius: 9))
 
+                        // Festgeschrieben wird auf dem SERVER (14.10.2026):
+                        // dort überlebt das Siegel eine Neuinstallation, und ein
+                        // zweites Telefon sieht es. Vorher stand es nur hier.
                         Button {
-                            // Erzeugt die Datei aus dem Schnappschuss und fixiert
-                            // danach genau diese Belege (Reihenfolge wichtig).
-                            if let url = store.exportieren() { datei = url }
+                            laeuft = true
+                            uebergabeMeldung = nil
+                            Task {
+                                let (url, meldung) = await store.monatUebergeben()
+                                if let url { datei = url }
+                                uebergabeMeldung = meldung
+                                laeuft = false
+                            }
                         } label: {
-                            Text(store.exportierbar.isEmpty && store.exportiert
-                                 ? "Festgeschrieben ✓"
-                                 : "Buchungen festschreiben und Datei erzeugen")
-                                .frame(maxWidth: .infinity)
+                            HStack(spacing: 8) {
+                                if laeuft { ProgressView().controlSize(.small) }
+                                Text(laeuft ? "Wird festgeschrieben …"
+                                     : store.exportierbar.isEmpty && store.exportiert
+                                     ? "Festgeschrieben ✓"
+                                     : "Buchungen festschreiben und Datei erzeugen")
+                            }
+                            .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
-                        .disabled(store.exportierbar.isEmpty)
+                        .disabled(store.exportierbar.isEmpty || laeuft)
+
+                        if let uebergabeMeldung {
+                            Text(uebergabeMeldung)
+                                .font(.caption)
+                                .foregroundStyle(GC.warn)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
 
                         if store.exportiert {
                             Button {
