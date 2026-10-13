@@ -83,10 +83,16 @@ struct KontoMenuView: View {
                     } header: {
                         if let titel = abschnitt.titel { Text(titel) }
                     } footer: {
-                        // Eine Ambassadorin ohne eigenen Salon hat weder
-                        // Steuerbüro noch Belegbox — der Satz wäre falsch.
+                        // Bis 14.10.2026 stand hier „Den fertigen Stand bekommt
+                        // dein Steuerbüro am Monatsende automatisch aus der
+                        // Belegbox." Der Satz setzt ein Steuerbüro voraus, nennt
+                        // einen Systemnamen und stimmt seit V1 nicht mehr: den
+                        // Monat schliesst du selbst ab, weitergegeben wird vom
+                        // Telefon. Eine Ambassadorin ohne eigenen Salon hat gar
+                        // keine Ablage — fuer sie stand er noch nie.
                         if abschnitt == .konto, store.ambassadorin != .ohneAblage {
-                            Text("Den fertigen Stand bekommt dein Steuerbüro am Monatsende automatisch aus der Belegbox.")
+                            Text("Am Monatsende schliesst du den Monat ab und gibst "
+                                 + "ihn weiter — per Mail, Nachricht oder gespeichert.")
                         }
                     }
                 }
