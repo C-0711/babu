@@ -294,7 +294,13 @@ def test_die_gebaute_barber_seite_ist_vollstaendig():
     assert seite.count("/bilder/ba-") >= 18
     for pfad in ("/impressum", "/datenschutz", "/agb"):
         assert f'href="{pfad}"' in seite
-    assert "Buhl" not in seite and "Steuer-Backend" in seite
+    # „Steuer-Backend" war hier bis zum 14.10.2026 gefordert — als Ersatz fuer
+    # Buhl, den babu nicht nennen darf. Der Satz „Steuer-Abschluss macht das
+    # Steuer-Backend dahinter" steht aber selbst auf der Verbotsliste in
+    # docs/master-prompt-nina-coo.md: er beruehrt das Steuerberatungsgesetz,
+    # und seit dem V1-Beschluss (der Kunde braucht kein Backend) ist er auch
+    # sachlich falsch. Weder das eine noch das andere darf dastehen.
+    assert "Buhl" not in seite and "Steuer-Backend" not in seite
     assert 'data-sprache="tr"' in seite and '"Dein Papierkram": "Evrak işlerin"' in seite
     assert "/ablage" not in seite                               # kein öffentlicher Upload
 

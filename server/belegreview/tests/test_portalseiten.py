@@ -30,6 +30,24 @@ VERBOTEN = "ganz ohne eigenes Steuerbüro"
 #: Die Pakete von vor dem 11.10.2026. Verkauft werden drei Speicherstufen.
 ALTE_PAKETE = ("39 €", "79 €", "149 €", "Salon Plus", "Shop Plus")
 
+#: Die ganze Verbotsliste aus docs/master-prompt-nina-coo.md, Stand 14.10.2026.
+#: Jede dieser Aussagen stand am 14.10. live auf mybabu.io — die Startseite
+#: lieferte noch den Stand von vor dem Modellwechsel aus, weil sie aus
+#: ~/babu-web/ kommt und der rsync nach ~/babu-docker/ geht.
+VERBOTSLISTE = {
+    "ganz ohne eigenes Steuerbüro":
+        "widerspricht dem Impressum, beruehrt das Steuerberatungsgesetz",
+    "kein eigenes Steuerbüro mehr":
+        "dasselbe Versprechen in anderen Worten",
+    "Steuer-Backend":
+        "babu ist keine Kanzlei; seit V1 gibt es auch kein Backend des Kunden",
+    "Vollmacht":
+        "Unterlagen im Auftrag anzufordern ist heikel, wenn babu keine Kanzlei "
+        "ist — babu bereitet nur den Brief vor, abgeschickt wird er selbst",
+    "Buhl":
+        "keine Vereinbarung dokumentiert; bis zur Klaerung nicht nennen",
+}
+
 
 def _seite(name: str) -> str:
     pfad = SEITEN / name
@@ -71,10 +89,17 @@ def test_jede_branchenseite_nennt_die_drei_stufen_mit_endpreis(name):
         assert preis in d, f"{name}: der Preis {preis} zu {stufe} fehlt"
 
 
-@pytest.mark.parametrize("name", BRANCHEN)
-def test_keine_branchenseite_nennt_buhl(name):
-    """Bis zur Klärung wird Buhl nicht genannt (Verbotsliste, 24.09.2026)."""
-    assert "Buhl" not in _seite(name)
+@pytest.mark.parametrize("name", ALLE)
+@pytest.mark.parametrize("satz", sorted(VERBOTSLISTE))
+def test_keine_seite_traegt_etwas_von_der_verbotsliste(name, satz):
+    """Die Liste steht in docs/master-prompt-nina-coo.md — hier wird sie geprüft.
+
+    Am 14.10.2026 trug jede der drei Seiten mehrere dieser Aussagen, teils
+    wörtlich („Steuer-Abschluss — macht das Steuer-Backend dahinter"). Eine
+    Liste, die niemand prüft, ist eine Liste, die man zwei Tage lang verletzt.
+    """
+    d = _deutsch(_seite(name))
+    assert satz not in d, f'{name}: „{satz}“ — {VERBOTSLISTE[satz]}'
 
 
 def test_die_erzeuger_sagen_ihren_stand():
