@@ -81,6 +81,48 @@ def konto() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Der laufende Pruefvorgang — der blockiert stiller als alles andere
+# ---------------------------------------------------------------------------
+
+#: Zustaende, in denen Apple keine neue Einreichung annimmt. UNRESOLVED_ISSUES
+#: heisst: eine Einreichung wurde abgelehnt und liegt offen; der Grund steht
+#: NUR im Resolution Center der Weboberflaeche, die API gibt ihn nicht her
+#: (appStoreVersionForReview und submittedByActor antworten 403).
+BLOCKIERT = {"UNRESOLVED_ISSUES", "WAITING_FOR_REVIEW", "IN_REVIEW",
+             "READY_FOR_REVIEW"}
+
+
+def pruefvorgang() -> None:
+    """Haengt noch eine alte Einreichung offen?
+
+    Am 14.10.2026 stand hier eine Ablehnung vom 08.10. — die Version war
+    PREPARE_FOR_SUBMISSION und sah damit sauber aus, /appStoreVersionSubmission
+    gab 404, und doch nahm Apple nichts Neues an. Deshalb wird der Vorgang
+    getrennt von der Version geprueft.
+    """
+    r = a.api("GET", f"/apps/{APP}/reviewSubmissions?limit=10")
+    if not r["ok"]:
+        pruefe(False, "Pruefvorgaenge lesbar", f"HTTP {r['status']}")
+        return
+    offen = [s for s in (r["daten"].get("data") or [])
+             if s["attributes"].get("state") in BLOCKIERT]
+    if not offen:
+        pruefe(True, "Kein alter Pruefvorgang offen")
+        return
+    for s in offen:
+        at = s["attributes"]
+        abgelehnt = 0
+        it = a.api("GET", f"/reviewSubmissions/{s['id']}/items")
+        if it["ok"]:
+            abgelehnt = sum(1 for i in (it["daten"].get("data") or [])
+                            if i["attributes"].get("state") == "REJECTED")
+        pruefe(False, "Kein alter Pruefvorgang offen",
+               f"{at.get('state')} vom {(at.get('submittedDate') or '?')[:10]}"
+               + (f", {abgelehnt} abgelehnt" if abgelehnt else "")
+               + " — in App Store Connect unter App Review die Nachricht "
+                 "lesen und beantworten oder die Einreichung zuruecknehmen")
+
+# ---------------------------------------------------------------------------
 # Die Version und ihr Build
 # ---------------------------------------------------------------------------
 
@@ -224,6 +266,7 @@ def abos() -> list[dict]:
 def main(kurz: bool = False) -> int:
     print("App Store Connect — babu Belege\n")
     konto()
+    pruefvorgang()
     v = version()
     st = abos()
     if v:

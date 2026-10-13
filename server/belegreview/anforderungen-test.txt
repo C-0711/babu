@@ -28,3 +28,7 @@ aiosmtpd               # nur für den SMTP-Test in tests/test_posteingang.py
 uvicorn
 cryptography           # tests/test_push.py (APNs-Schlüssel)
 numpy                  # tests/test_skr04_atome.py und die Wissenscontainer
+pyjwt                  # werkzeuge/asc_*.py — die App-Store-Connect-API
+                       # will ein ES256-Token; ohne das Paket laeuft auch
+                       # asc_pruefung.py nicht, das vor jeder Einreichung
+                       # zaehlt, was noch offen ist
