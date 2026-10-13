@@ -1,5 +1,24 @@
 #!/usr/bin/env python3
-"""Die Werkstatt-Seite (mybabu.io/werkstatt) als Kopie der Friseur-Startseite
+"""STILLGELEGT seit 14.10.2026 — bitte erst lesen, dann laufen lassen.
+
+Dieses Skript baute die Werkstatt-Seite als Kopie der Friseur-Startseite. Am
+14.10.2026 liefen 19 seiner Ersetzungen ins Leere und ein ganzer
+Abschnitt fehlte: `server/babu-web/index.html` hat sich um ein
+Geschäftsmodell weiterbewegt — Speicherstufen statt Pakete, kein Buhl,
+kein Salon-Check-Fragebogen. Der Bau bricht deshalb ab, und das ist
+richtig so: eine halb gebaute Seite wäre schlimmer.
+
+Die ausgelieferte Seite ist trotzdem aktuell — sie wird direkt
+gepflegt. Genau daran hängt jetzt der Schutz:
+`server/belegreview/tests/test_portalseiten.py` prüft die Seiten selbst
+(kein verbotener Satz, keine alten Pakete, die drei Stufen mit Preis,
+kein Buhl). Diese Prüfung hätte den Befund vom 13.10. gefunden.
+
+Wer das Kopierprinzip wiederbeleben will, arbeitet die Ersetzungen
+gegen die heutige `index.html` durch und nimmt dieses Wort aus dem
+Kopf. Bis dahin gilt: die Seite ist die Quelle, nicht dieses Skript.
+
+Die Werkstatt-Seite (mybabu.io/werkstatt) als Kopie der Friseur-Startseite
 bauen — Kopie von `werbung/barber/seite_bauen.py`, angepasst an Kfz-Werkstätten.
 
 Kopierprinzip: `server/babu-web/index.html` bleibt unangetastet; hier steht,
