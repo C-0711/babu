@@ -83,7 +83,7 @@ struct ExportView: View {
                     }
                     .gcCard()
 
-                    Text("Das hier ist die Vorschau für unterwegs. Den fertigen Stand bekommt dein Steuerbüro am Monatsende automatisch aus der Belegbox — verschicken musst du nur, wenn du die Datei selbst irgendwohin geben willst.")
+                    Text("Das ist dein Monat als Datei — festgeschrieben und fertig. Wohin sie geht, entscheidest du: weitergeben per Mail oder Nachricht, oder auf dem iPhone sichern. Deine Belege selbst bleiben, wo sie sind.")
                         .font(.caption)
                         .foregroundStyle(GC.muted)
                         .padding(.horizontal, 4)
@@ -208,6 +208,16 @@ struct ExportView: View {
 
     // MARK: - Wohin die Datei geht (BABU-47)
 
+    /// Einmal geschrieben, in beiden Zweigen benutzt — sonst laufen die
+    /// Beschriftungen auseinander.
+    private var teilenLabel: some View {
+        Label("Weitergeben — Mail, Nachricht, WhatsApp",
+              systemImage: "square.and.arrow.up")
+            .frame(maxWidth: .infinity)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+    }
+
     @ViewBuilder
     private var versandwege: some View {
         VStack(spacing: 8) {
@@ -233,21 +243,23 @@ struct ExportView: View {
 
                 if !MFMailComposeViewController.canSendMail() {
                     Text("Auf diesem Gerät ist kein Mail-Konto eingerichtet — "
-                         + "sichere die Datei stattdessen in deiner Ablage.")
+                         + "gib sie stattdessen über Teilen weiter.")
                         .font(.caption2)
                         .foregroundStyle(GC.warn)
                 }
             } else {
-                // Ohne hinterlegtes Steuerbüro ist das nackte Teilen-Blatt
-                // eine Sackgasse: es fragt „wohin?", ohne einen Vorschlag zu
-                // machen. Der sinnvolle Vorschlag ist die eigene Ablage.
+                // Bis 13.10.2026 stand hier der Dateispeicher vorn: das nackte
+                // Teilen-Blatt galt als Sackgasse, weil es „wohin?" fragt, ohne
+                // etwas vorzuschlagen. Der Auftraggeber hat das umgedreht —
+                // weitergegeben wird auf dem Telefon, per Mail, Nachricht oder
+                // WhatsApp. Also steht Teilen vorn; sichern bleibt daneben.
                 Button {
                     zeigeAblage = true
                 } label: {
-                    Label("In deiner Ablage sichern", systemImage: "folder")
+                    Label("Auf dem iPhone sichern", systemImage: "folder")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
 
                 Button("Adresse deines Steuerbüros hinterlegen") {
                     adresseEntwurf = ""
@@ -261,18 +273,24 @@ struct ExportView: View {
                 Button {
                     zeigeAblage = true
                 } label: {
-                    Label("In deiner Ablage sichern", systemImage: "folder")
+                    Label("Auf dem iPhone sichern", systemImage: "folder")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
             }
 
+            // Ohne hinterlegtes Steuerbüro ist Teilen der Hauptweg und steht
+            // hervorgehoben da; mit Adresse ist der Mail-Knopf oben der Hauptweg.
+            // Zwei Zweige statt eines Ternaers: die Button-Stile sind
+            // verschiedene Typen, ein `?:` dazwischen uebersetzt nicht.
             if let url = datei {
-                ShareLink(item: url) {
-                    Label("Anders weitergeben", systemImage: "square.and.arrow.up")
-                        .frame(maxWidth: .infinity)
+                if steuerbueroAdresse.isEmpty {
+                    ShareLink(item: url) { teilenLabel }
+                        .buttonStyle(.borderedProminent)
+                } else {
+                    ShareLink(item: url) { teilenLabel }
+                        .buttonStyle(.bordered)
                 }
-                .buttonStyle(.bordered)
             }
 
             if let mailErgebnis {
@@ -305,16 +323,16 @@ struct ExportView: View {
         anbei die Buchungen für \(monatsName()).
 
         \(enthalten.count) Buchungen, zusammen \(fmtEur(summe)).
-        \(Ausbaustufe.erreichbar(.kasse) ? "Belegfotos und Kassenbuch sind" : "Belegfotos sind") nicht in der Datei — die liegen in \
-        der Belegbox.
+        \(Ausbaustufe.erreichbar(.kasse) ? "Belegfotos und Kassenbuch sind" : "Belegfotos sind") nicht in der Datei — \
+        sag Bescheid, dann schicke ich sie nach.
 
         Viele Grüße
         """
     }
 }
 
-/// Die fertige Datei für „In deiner Ablage sichern". Sie liegt schon auf der
-/// Platte; hier wird sie nur durchgereicht, damit iOS den Ablage-Dialog zeigt.
+/// Die fertige Datei für „Auf dem iPhone sichern". Sie liegt schon auf der
+/// Platte; hier wird sie nur durchgereicht, damit iOS den Dateien-Dialog zeigt.
 struct StapelDokument: FileDocument {
     static var readableContentTypes: [UTType] { [.commaSeparatedText, .plainText] }
 
