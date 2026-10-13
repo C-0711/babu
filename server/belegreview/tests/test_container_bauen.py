@@ -90,3 +90,61 @@ def test_der_grundstock_ist_eine_kopie_ohne_die_genannten_quellen(tmp_path):
     assert np.array_equal(v_alt, v_neu)                     # Zeile für Zeile, kein Neu-Einbetten
     with pytest.raises(RuntimeError):
         cb.grundstock(tmp_path / "friseur", tmp_path / "werkstatt2", ohne=())   # nur einmal
+
+
+def test_eine_korrigierte_quelle_ersetzt_ihre_atome(tmp_path):
+    """Ein Container SPIEGELT seine Quelle — er sammelt sie nicht an.
+
+    Bis zum 14.10.2026 fügte der Bau nur Atome mit neuem SHA hinzu. Wer einen
+    Satz korrigierte, bekam beide Fassungen nebeneinander in den Index; die
+    Suche konnte die alte zitieren. Aufgefallen an einer Rechtsaussage: das
+    Zählprotokoll bei der offenen Ladenkasse ist gesetzlich nicht gefordert
+    (BFH X B 41/16) — im Index stand weiter, es sei gefordert.
+    """
+    q = tmp_path / "quellen"
+    q.mkdir()
+    datei = q / "kasse.md"
+    datei.write_text("# Offene Ladenkasse\nQuelle: AO, abgerufen 14.10.2026\n\n"
+                     "## Pflichten\nSie verlangt Kassenbericht und Zählprotokoll.\n")
+    ziel = tmp_path / "kompendium-barber"
+    erst = cb.bauen(q, ziel, embed=_embed)
+    assert erst["geschrieben"]
+    vorher = erst["gesamt_atome"]
+
+    datei.write_text("# Offene Ladenkasse\nQuelle: AO, abgerufen 14.10.2026\n\n"
+                     "## Pflichten\nSie verlangt einen Kassenbericht. Ein "
+                     "Zählprotokoll ist gesetzlich nicht gefordert.\n")
+    zweit = cb.bauen(q, ziel, embed=_embed)
+
+    atome = [json.loads(z) for z in (ziel / "atome.jsonl").read_text().splitlines()]
+    text = "\n".join(a["text"] for a in atome)
+    assert "nicht gefordert" in text, "die Korrektur fehlt"
+    assert "Kassenbericht und Zählprotokoll" not in text, "die alte Fassung steht noch da"
+    assert len(atome) == vorher, f"angesammelt statt ersetzt: {vorher} → {len(atome)}"
+    assert zweit["ersetzt"] == 1
+
+    # Die Invariante, an der alles hängt: Zeile i ist Vektor i.
+    vek = np.load(ziel / "vektoren.npy")
+    assert vek.shape[0] == len(atome)
+
+
+def test_eine_quelle_die_es_nicht_mehr_gibt_bleibt_stehen(tmp_path):
+    """Gespiegelt wird je Datei. Was nicht mehr im Quellordner liegt, wird
+    nicht angefasst — ein Container kann aus mehreren Läufen bestehen."""
+    q = tmp_path / "quellen"
+    q.mkdir()
+    (q / "alt.md").write_text(
+        "# Alt\nQuelle: gesetze-im-internet.de, abgerufen 14.10.2026\n\n"
+        "## Abschnitt A\nDieser Satz bleibt stehen, auch wenn seine Datei "
+        "spaeter nicht mehr im Quellordner liegt.\n")
+    ziel = tmp_path / "kompendium-barber"
+    assert cb.bauen(q, ziel, embed=_embed)["geschrieben"]
+    (q / "alt.md").unlink()
+    (q / "neu.md").write_text(
+        "# Neu\nQuelle: gesetze-im-internet.de, abgerufen 14.10.2026\n\n"
+        "## Abschnitt B\nDieser Satz kommt in einem zweiten Lauf dazu und "
+        "verdraengt den ersten nicht.\n")
+    r = cb.bauen(q, ziel, embed=_embed)
+    text = (ziel / "atome.jsonl").read_text()
+    assert "bleibt stehen" in text and "kommt in einem zweiten Lauf dazu" in text
+    assert r["ersetzt"] == 0

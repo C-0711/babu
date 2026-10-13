@@ -22,8 +22,15 @@ Atom ohne Quelle gehört nicht in einen Container, aus dem ein Chat zitiert.
     python3 werkzeuge/kompendium/container_bauen.py QUELLORDNER ~/kompendium-barber
     docker compose -f ~/babu-docker/docker/compose.yml restart babu-web
 
-Eigenschaften wie `skr04_atome_bauen.py`, dessen Bausteine hier benutzt
-werden: nur anhängen; idempotent über (quelle, sha des Textes); jede Zeile
+Ein Container SPIEGELT seinen Quellordner, Datei für Datei: liegt eine Datei
+dort, bestimmt sie allein, welche Atome aus ihr im Container stehen — eine
+Korrektur ersetzt also die alte Fassung, statt sich danebenzulegen. Dateien,
+die nicht mehr im Quellordner liegen, bleiben unangetastet; ein Container darf
+aus mehreren Läufen bestehen. Bis zum 14.10.2026 wurde nur angehängt, und eine
+korrigierte Rechtsaussage stand doppelt im Index.
+
+Weitere Eigenschaften wie `skr04_atome_bauen.py`, dessen Bausteine hier benutzt
+werden: idempotent über (quelle, sha des Textes); jede Zeile
 L2-normalisiert; atomar über `.tmp` + `os.replace()` mit Sicherungskopie;
 die Invariante Zeilen == Vektoren wird VOR dem Ersetzen geprüft. Eingebettet
 wird über den Dienst auf :11436 mit dem Dokument-Präfix, genau wie
@@ -119,13 +126,36 @@ def bauen(quellordner: Path | str, ziel: Path | str, *, probe: bool = False,
     if ziel.resolve() == (Path.home() / "kompendium").resolve():
         raise RuntimeError("Der Hauptbestand ~/kompendium wird hier nie beschrieben.")
     jsonl, npy = ziel / "atome.jsonl", ziel / "vektoren.npy"
-    alt = sab._atome_lesen(jsonl)
-    vorhanden = {(a.get("quelle"), a.get("sha")) for a in alt}
+    alt_roh = sab._atome_lesen(jsonl)
     kandidaten = quellen_lesen(quellordner)
+
+    # Ein Container SPIEGELT seine Quelle, Datei fuer Datei (seit 14.10.2026).
+    #
+    # Vorher wurde nur angehaengt: ein Atom mit neuem SHA kam dazu, das alte
+    # blieb. Wer einen Satz korrigierte, hatte beide Fassungen im Index, und
+    # die Suche konnte die alte zitieren. Aufgefallen an einer Rechtsaussage
+    # (Zaehlprotokoll bei der offenen Ladenkasse: gesetzlich NICHT gefordert,
+    # BFH X B 41/16) — im Index stand weiter das Gegenteil.
+    #
+    # Jetzt gilt: liegt eine Datei im Quellordner, bestimmt sie allein, welche
+    # Atome aus ihr im Container stehen. Was aus ihr frueher kam und jetzt
+    # nicht mehr entsteht, faellt weg. Dateien, die es im Quellordner NICHT
+    # mehr gibt, bleiben unangetastet — ein Container darf aus mehreren
+    # Laeufen bestehen (bundesrecht_holen.py, gesetze_holen.py).
+    quellen_jetzt = {a["quelle"] for a in kandidaten}
+    gueltig = {(a["quelle"], a["sha"]) for a in kandidaten}
+    behalten = [i for i, a in enumerate(alt_roh)
+                if a.get("quelle") not in quellen_jetzt
+                or (a.get("quelle"), a.get("sha")) in gueltig]
+    ersetzt = len(alt_roh) - len(behalten)
+    alt = [alt_roh[i] for i in behalten]
+
+    vorhanden = {(a.get("quelle"), a.get("sha")) for a in alt}
     neu = [a for a in kandidaten if (a["quelle"], a["sha"]) not in vorhanden]
     stehend = [n for n in STEHEND if (quellordner / n).exists()]
-    ergebnis = {"vorhandene_atome": len(alt), "kandidaten": len(kandidaten),
-                "neu": len(neu), "stehend": stehend, "fehler": 0, "geschrieben": False}
+    ergebnis = {"vorhandene_atome": len(alt_roh), "kandidaten": len(kandidaten),
+                "neu": len(neu), "ersetzt": ersetzt, "stehend": stehend,
+                "fehler": 0, "geschrieben": False}
     if probe:
         return ergebnis
 
@@ -134,7 +164,7 @@ def bauen(quellordner: Path | str, ziel: Path | str, *, probe: bool = False,
         if (ziel / n).exists():
             sab._backup(ziel / n)
         shutil.copy2(quellordner / n, ziel / n)
-    if not neu:
+    if not neu and not ersetzt:
         return ergebnis
 
     fertig = []
@@ -159,18 +189,29 @@ def bauen(quellordner: Path | str, ziel: Path | str, *, probe: bool = False,
                 print(f"  ohne Vektor (Dienst?): {a['quelle']} · {a['loc']}")
                 continue
             fertig.append({**a, "_vektor": sab._l2_normalisieren(v["vektor"])})
-    if not fertig:
+    if not fertig and not ersetzt:
         return ergebnis
 
-    neue = np.asarray([a["_vektor"] for a in fertig], dtype=np.float32)
+    # Die behaltenen Zeilen MIT ihren Vektoren — Zeile i gehoert zu Vektor i,
+    # also wird die Matrix mit genau denselben Indizes gefiltert.
     if npy.exists():
-        alte = np.asarray(np.load(npy), dtype=np.float32)
-        if alte.shape[0] and alte.shape[1] != neue.shape[1]:
+        alte_voll = np.asarray(np.load(npy), dtype=np.float32)
+        if alte_voll.shape[0] != len(alt_roh):
+            raise RuntimeError(f"Bestand schief: {len(alt_roh)} Atome, "
+                               f"{alte_voll.shape[0]} Vektoren — nichts geschrieben.")
+        alte = alte_voll[behalten] if behalten else alte_voll[:0]
+    else:
+        alte = None
+
+    if fertig:
+        neue = np.asarray([a["_vektor"] for a in fertig], dtype=np.float32)
+        if alte is not None and alte.shape[0] and alte.shape[1] != neue.shape[1]:
             raise RuntimeError(f"Dimension passt nicht: {alte.shape[1]} gegen "
                                f"{neue.shape[1]} — nichts geschrieben.")
-        matrix = np.concatenate([alte, neue]) if alte.shape[0] else neue
+        matrix = (np.concatenate([alte, neue])
+                  if alte is not None and alte.shape[0] else neue)
     else:
-        matrix = neue
+        matrix = alte            # nur ersetzt: es faellt nur weg
     start = max((a.get("id", -1) for a in alt), default=-1) + 1
     zeilen = alt + [{"id": start + i, **{k: a[k] for k in ("sha", "quelle", "typ", "loc", "text")}}
                     for i, a in enumerate(fertig)]
