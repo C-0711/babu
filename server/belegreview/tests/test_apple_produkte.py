@@ -54,16 +54,33 @@ def test_alle_monatlich():
     assert {s["recurringSubscriptionPeriod"] for s in _storekit()} == {"P1M"}
 
 
-def test_stufenreihenfolge_passt_zum_platz():
-    """Apple stuft innerhalb einer Gruppe über `groupNumber`: 1 ist die
-    höchste Stufe. Wer wechselt, soll den größeren Platz als Höherstufung
-    erleben — deshalb muss die Reihenfolge der Zahlen zum Platz passen."""
+def test_mehr_platz_ist_die_niedrigere_ebene():
+    """Apple stuft innerhalb einer Gruppe über `groupNumber`, und **1 ist die
+    höchste Stufe**. Ein Wechsel auf eine niedrigere Zahl ist eine
+    Höherstufung und greift sofort; eine höhere Zahl ist eine Herabstufung
+    und greift erst zur nächsten Verlängerung.
+
+    Mehr Platz muss also die NIEDRIGERE Zahl tragen. Dieser Test behauptete
+    bis zum 14.10.2026 das Gegenteil — er verlangte „in derselben Richtung"
+    und hielt damit 1 GB auf Ebene 1 fest. Wer von 1 GB auf 100 GB wechselte,
+    hätte das als Herabstufung erlebt: bezahlt, aber erst zum Monatsende mehr
+    Platz, obwohl die Ablage jetzt voll ist. In App Store Connect steht es
+    seit dem 14.10.2026 richtig (1 = 100 GB, 2 = 5 GB, 3 = 1 GB).
+    """
     nach_id = {s["productID"]: s for s in _storekit()}
-    paare = [(e["gb"], nach_id[e["apple"]]["groupNumber"])
-             for e in paket.STUFEN.values()]
-    nach_platz = [n for _gb, n in sorted(paare)]
-    assert nach_platz == sorted(nach_platz), \
-        "mehr Platz muss eine andere Ebene sein, in derselben Richtung"
+    nach_platz = [nach_id[e["apple"]]["groupNumber"]
+                  for e in sorted(paket.STUFEN.values(), key=lambda e: e["gb"])]
+    assert nach_platz == sorted(nach_platz, reverse=True), \
+        ("mehr Platz = kleinere Ebene, sonst ist das Hochstufen eine "
+         f"Herabstufung: {nach_platz}")
+
+
+def test_die_groesste_stufe_ist_ebene_eins():
+    """Die Gegenprobe zum Test davor, ohne Sortierlogik: der größte Platz
+    trägt die 1."""
+    nach_id = {s["productID"]: s for s in _storekit()}
+    groesste = max(paket.STUFEN.values(), key=lambda e: e["gb"])
+    assert nach_id[groesste["apple"]]["groupNumber"] == 1, groesste["apple"]
 
 
 def test_keine_doppelte_ebene():

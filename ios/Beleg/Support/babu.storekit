@@ -8,8 +8,8 @@
     "_failTransactionsEnabled": false,
     "_lastSynchronizedDate": 0,
     "_locale": "de_DE",
-    "_storefront": "DEU",
-    "_storeKitErrors": []
+    "_storeKitErrors": [],
+    "_storefront": "DEU"
   },
   "subscriptionGroups": [
     {
@@ -17,30 +17,40 @@
       "localizations": [
         {
           "description": "So viel Platz, wie du brauchst.",
-          "displayName": "Dein Platz",
+          "displayName": "Dein Platz bei babu",
           "locale": "de_DE"
+        },
+        {
+          "description": "As much room as you need.",
+          "displayName": "Your babu storage",
+          "locale": "en_US"
         }
       ],
-      "name": "Dein Platz",
+      "name": "Dein Platz bei babu",
       "subscriptions": [
         {
           "adHocOffers": [],
           "codeOffers": [],
-          "displayPrice": "9.99",
+          "displayPrice": "99.00",
           "familyShareable": false,
           "groupNumber": 1,
-          "internalID": "AEA3899F-C3AA-41E4-B307-431307A10C76",
+          "internalID": "EE264C8A-FA4B-4F8F-A1EB-69D5BEBEF343",
           "introductoryOffer": null,
           "localizations": [
             {
-              "description": "Platz für rund 2000 Belege.",
-              "displayName": "1 GB",
+              "description": "Platz für rund 190.000 Belege",
+              "displayName": "100 GB Speicher",
               "locale": "de_DE"
+            },
+            {
+              "description": "Room for about 190,000 documents",
+              "displayName": "100 GB storage",
+              "locale": "en_US"
             }
           ],
-          "productID": "babu.speicher.1gb",
+          "productID": "babu.speicher.100gb",
           "recurringSubscriptionPeriod": "P1M",
-          "referenceName": "1 GB",
+          "referenceName": "100 GB Speicher",
           "subscriptionGroupID": "518C4589-CE0E-4FFF-BBAD-A9E69CE8AADE",
           "type": "RecurringSubscription",
           "winbackOffers": []
@@ -55,14 +65,19 @@
           "introductoryOffer": null,
           "localizations": [
             {
-              "description": "Platz für rund 9500 Belege.",
-              "displayName": "5 GB",
+              "description": "Platz für rund 9.500 Belege",
+              "displayName": "5 GB Speicher",
               "locale": "de_DE"
+            },
+            {
+              "description": "Room for about 9,500 documents",
+              "displayName": "5 GB storage",
+              "locale": "en_US"
             }
           ],
           "productID": "babu.speicher.5gb",
           "recurringSubscriptionPeriod": "P1M",
-          "referenceName": "5 GB",
+          "referenceName": "5 GB Speicher",
           "subscriptionGroupID": "518C4589-CE0E-4FFF-BBAD-A9E69CE8AADE",
           "type": "RecurringSubscription",
           "winbackOffers": []
@@ -70,21 +85,26 @@
         {
           "adHocOffers": [],
           "codeOffers": [],
-          "displayPrice": "99.00",
+          "displayPrice": "9.99",
           "familyShareable": false,
           "groupNumber": 3,
-          "internalID": "EE264C8A-FA4B-4F8F-A1EB-69D5BEBEF343",
+          "internalID": "AEA3899F-C3AA-41E4-B307-431307A10C76",
           "introductoryOffer": null,
           "localizations": [
             {
-              "description": "Platz für rund 190 Tausend Belege.",
-              "displayName": "100 GB",
+              "description": "Platz für rund 2.000 Belege",
+              "displayName": "1 GB Speicher",
               "locale": "de_DE"
+            },
+            {
+              "description": "Room for about 2,000 documents",
+              "displayName": "1 GB storage",
+              "locale": "en_US"
             }
           ],
-          "productID": "babu.speicher.100gb",
+          "productID": "babu.speicher.1gb",
           "recurringSubscriptionPeriod": "P1M",
-          "referenceName": "100 GB",
+          "referenceName": "1 GB Speicher",
           "subscriptionGroupID": "518C4589-CE0E-4FFF-BBAD-A9E69CE8AADE",
           "type": "RecurringSubscription",
           "winbackOffers": []
