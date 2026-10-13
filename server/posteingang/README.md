@@ -208,7 +208,7 @@ Der ganze Empfangsweg ist ohne Netz geprüft:
 
 ```
 cd server/belegreview
-/tmp/babu-venv/bin/python -m pytest tests/test_posteingang.py -q -p no:cacheprovider
+~/.venvs/babu/bin/python -m pytest tests/test_posteingang.py -q -p no:cacheprovider
 ```
 
 29 Tests: guter Fall, unbekannte Adresse (550, nichts abgelegt), zwei

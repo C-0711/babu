@@ -247,12 +247,21 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
 
 ## Bauen & Testen
 
+- **Beim Ändern nur die betroffenen Tests**, nicht die ganze Suite —
+  `tests/test_container_bauen.py tests/test_kompendium.py …` sind Sekunden,
+  die Suite sind zehn Minuten. Die volle Suite gehört vor den Deploy.
 - Server-Suite: **immer mit explizitem `cd server/belegreview &&`**,
-  `/tmp/babu-venv/bin/python -m pytest tests/ -q -p no:cacheprovider`,
-  Timeout 600 s (~4 min, 2164 grün). Python 3.12 mit fastapi, httpx,
-  pytest, requests, python-multipart, pypdfium2, pillow-heif, pillow,
-  psycopg, aiosmtpd (nur für den einen SMTP-Test in
-  `tests/test_posteingang.py`; fehlt es, wird genau der übersprungen).
+  `~/.venvs/babu/bin/python -m pytest tests/ -q -p no:cacheprovider`,
+  Timeout 900 s (~10 min, 3216 grün).
+- **Das venv liegt seit 14.10.2026 in `~/.venvs/babu`, nicht mehr in `/tmp`.**
+  Dort hat macOS es ausgeräumt: `pyvenv.cfg` weg, Paketverzeichnisse
+  ausgehöhlt, Python fiel still aufs System zurück und meldete Dinge, die
+  nichts mit dem Code zu tun hatten. Welche Pakete es braucht, steht in
+  `server/belegreview/anforderungen-test.txt` — nicht mehr als Prosa hier,
+  denn zwei fehlten (cryptography, numpy), und ohne sie sammelt pytest fünf
+  Testdateien gar nicht erst ein. Neu aufsetzen:
+  `python3.12 -m venv ~/.venvs/babu && ~/.venvs/babu/bin/python -m pip install
+  -r server/belegreview/anforderungen-test.txt`.
   Postgres-Lauf über eine Wegwerfinstanz (`initdb --locale=C
   --encoding=UTF8`, `BABU_TEST_DB_URL`).
 - **Nie generisches `pkill -f pytest`** — parallel laufende Agenten teilen

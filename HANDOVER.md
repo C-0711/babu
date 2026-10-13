@@ -119,7 +119,7 @@ Details: Memory `babu-meldeschleife`.
 | RueckmeldungView | Meldeknopf + „Meine Meldungen" (Meldeschleife) |
 
 Tests: `ios/Tests/run.sh` (swiftc-Harnesse) — **Fixtures pflegen, nicht
-löschen**. Server-Suite: `/tmp/babu-venv/bin/python -m pytest tests/` aus
+löschen**. Server-Suite: `~/.venvs/babu/bin/python -m pytest tests/` aus
 `server/belegreview/` heraus (Python 3.12; Memory `babu-testumgebung`).
 Aktueller Stand: **1684 Tests grün** auf main (`87624ec`).
 

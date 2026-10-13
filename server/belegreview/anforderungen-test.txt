@@ -1,0 +1,30 @@
+# Was die Server-Suite zum Laufen braucht (14.10.2026).
+#
+# Bis heute stand diese Liste nur in CLAUDE.md als Prosa, und das venv lag in
+# /tmp. Am 14.10.2026 hat macOS es ausgeräumt: pyvenv.cfg war weg, die
+# Paketverzeichnisse ausgehöhlt (requests/ hatte nur noch __pycache__).
+# Python fiel still auf das System zurück und meldete Dinge, die nichts mit
+# dem Code zu tun hatten. Dazu fehlten in der Prosa-Liste zwei Pakete, ohne
+# die fünf Testdateien gar nicht erst eingesammelt werden.
+#
+#     python3.12 -m venv ~/.venvs/babu
+#     ~/.venvs/babu/bin/python -m pip install -r server/belegreview/anforderungen-test.txt
+#     cd server/belegreview && ~/.venvs/babu/bin/python -m pytest tests/ -q -p no:cacheprovider
+#
+# Keine Versionen festgenagelt: die Suite hängt an keiner. Wer eine Version
+# braucht, schreibt den Grund dazu.
+
+fastapi
+httpx
+pytest
+pytest-subtests
+requests
+python-multipart
+pypdfium2
+pillow
+pillow-heif
+psycopg[binary]        # ohne [binary] fehlt libpq und psycopg importiert nicht
+aiosmtpd               # nur für den SMTP-Test in tests/test_posteingang.py
+uvicorn
+cryptography           # tests/test_push.py (APNs-Schlüssel)
+numpy                  # tests/test_skr04_atome.py und die Wissenscontainer
