@@ -283,6 +283,15 @@ def loeschen(box: "bx.Box", pfade: list[str] = _FEHLT, nachricht: str = _FEHLT,
     return _commit_und_push(box, entfernen, nachricht, autor_un)
 
 
+#: Was beim Leeren einer Box STEHEN BLEIBT. Der GitChain-Dienst weist einen
+#: Push zurück, der `.0711/container.json` entfernt: „Pflichtdatei … (Profil
+#: babu v1) darf nicht geloescht werden" — live erlebt am 14.10.2026 beim
+#: ersten Loeschen eines Kontos. Die Datei ist das Manifest des Containers
+#: (`box_anlegen` legt sie an) und enthaelt keine Belege, nur Typ,
+#: Namensraum, Kennung, Anzeigename und Sichtbarkeit.
+GESCHUETZT = (".0711",)
+
+
 def alles_loeschen(box: "bx.Box", nachricht: str = _FEHLT,
                    autor_un: str = _FEHLT) -> tuple[str, int]:
     """Die Box leer machen — alles in EINEM Commit (14.10.2026).
@@ -293,9 +302,13 @@ def alles_loeschen(box: "bx.Box", nachricht: str = _FEHLT,
     Commit schon veraltet, und bei dieser Operation wäre „eine Datei
     übersehen" genau der Fehler, den niemand merkt.
 
-    Rückgabe `(kurz_hash, dateien)`. Eine Box ohne Dateien meldet
-    `NichtsZuLoeschen` — sie ist bereits leer, und das ist kein Fehler,
-    sondern die Antwort.
+    `GESCHUETZT` bleibt liegen — das Manifest des Containers, ohne das der
+    Dienst den Push ablehnt. Belege, Dokumente, Kassenblätter, Auszüge und
+    jedes Beiaktenstück gehen.
+
+    Rückgabe `(kurz_hash, dateien)`. Ist außer dem Manifest nichts da, meldet
+    sich `NichtsZuLoeschen` — die Box ist bereits leer, und das ist keine
+    Störung, sondern die Antwort.
 
     Die Historie bleibt: der aktuelle Stand zeigt nichts mehr, das Repo
     selbst samt seinen alten Commits entfernt nur der Betreiber.
@@ -308,15 +321,19 @@ def alles_loeschen(box: "bx.Box", nachricht: str = _FEHLT,
         ls = _git("ls-files", "-z", box=box, timeout=60)
         if ls.returncode != 0:
             raise SchreibFehler(f"Auflisten fehlgeschlagen: {ls.stderr.strip()[:200]}")
-        pfade = [z for z in (ls.stdout or "").split("\0") if z.strip()]
+        pfade = [z for z in (ls.stdout or "").split("\0") if z.strip()
+                 and not any(z == g or z.startswith(g + "/") for g in GESCHUETZT)]
         gezaehlt[0] = len(pfade)
         if not pfade:
-            raise NichtsZuLoeschen("Box ist schon leer")
-        # Alles auf einmal: `git rm -r .` nimmt den ganzen Baum, ohne eine
-        # Pfadliste, die an einer Argumentgrenze zerbrechen könnte.
-        r = _git("rm", "-r", "-q", "--ignore-unmatch", "--", ".", box=box)
-        if r.returncode != 0:
-            raise SchreibFehler(f"Entfernen fehlgeschlagen: {r.stderr.strip()[:200]}")
+            raise NichtsZuLoeschen("Box trägt nur noch ihr Manifest")
+        # Stückweise, damit eine sehr lange Liste nicht an der
+        # Argumentgrenze zerbricht. `git rm -r .` ginge nicht: das nähme
+        # das Manifest mit, und der Dienst weist den Push dann zurück.
+        for i in range(0, len(pfade), 200):
+            r = _git("rm", "-q", "--ignore-unmatch", "--", *pfade[i:i + 200],
+                     box=box, timeout=60)
+            if r.returncode != 0:
+                raise SchreibFehler(f"Entfernen fehlgeschlagen: {r.stderr.strip()[:200]}")
         stand = _git("diff", "--cached", "--name-only", box=box)
         if not (stand.stdout or "").strip():
             raise NichtsZuLoeschen("nichts zu löschen")

@@ -150,3 +150,71 @@ def test_ein_langer_name_ohne_endung_behaelt_seinen_anfang():
 
 def test_ein_name_ganz_ohne_brauchbare_zeichen_heisst_beleg():
     assert boxschreiber.beleg_dateiname("").endswith("-beleg")
+
+
+# ---------------------------------------------------------------------------
+# Die Box leer machen (Konto löschen, 14.10.2026)
+# ---------------------------------------------------------------------------
+
+def _dateien(bare: Path) -> set[str]:
+    out = subprocess.run(["git", "-C", str(bare), "ls-tree", "-r",
+                          "--name-only", "HEAD"],
+                         capture_output=True, text=True).stdout
+    return {z for z in out.splitlines() if z.strip()}
+
+
+def _ablegen(box: Path, dateien: dict[str, bytes]) -> None:
+    # Alles positionell, wie `_mit_box` es erwartet: ohne führende Box steht
+    # vorne der Pfad (oder das dict) und dahinter inhalt/nachricht/autor.
+    boxschreiber.schreiben(dateien, None, "test: ablegen", "nina")
+
+
+def test_alles_loeschen_nimmt_die_belege_und_laesst_das_manifest(box):
+    """Der Fall, der live schiefging.
+
+    Beim ersten Löschen eines Kontos auf mybabu.io wies der GitChain-Dienst
+    den Push zurück: „Pflichtdatei .0711/container.json (Profil babu v1) darf
+    nicht geloescht werden". `git rm -r .` nimmt sie mit, also kann die Box
+    so nie leer werden. Jetzt bleibt `.0711/` liegen — und sonst nichts.
+    """
+    _ablegen(box, {
+        ".0711/container.json": b'{"type":"babu"}\n',
+        "docs/2026-08/beleg_2026-08-01_rossmann.jpg": b"\xff\xd8\xff",
+        "docs/2026-08/beleg_2026-08-01_rossmann.json": b"{}",
+        "kassenbuch/2026-08.csv": b"Datum;Betrag\n",
+    })
+    # Ohne führende Box steht vorne die Nachricht — `_mit_box` schiebt die
+    # Standard-Box davor (dieselbe Form wie bei `schreiben`/`loeschen`).
+    _kurz, anzahl = boxschreiber.alles_loeschen(
+        "konto geloescht: Mandant 1", "nina")
+    assert anzahl == 4          # README.md der Fixture zählt mit
+    assert _dateien(box) == {".0711/container.json"}
+
+
+def test_eine_box_mit_nur_dem_manifest_ist_schon_leer(box):
+    """`NichtsZuLoeschen` ist hier die Antwort, nicht die Störung.
+
+    Zweimal löschen kommt vor: ein erster Versuch scheitert am Netz, die
+    Nutzerin tippt noch einmal. Der zweite Lauf darf dann keinen Fehlschlag
+    melden, sonst stünde in `geloescht` „Box NICHT geleert", obwohl sie leer
+    ist.
+    """
+    _ablegen(box, {".0711/container.json": b'{"type":"babu"}\n',
+                   "docs/2026-08/beleg.jpg": b"\xff\xd8\xff"})
+    boxschreiber.alles_loeschen("erster Lauf", "nina")
+    assert _dateien(box) == {".0711/container.json"}
+    with pytest.raises(boxschreiber.NichtsZuLoeschen):
+        boxschreiber.alles_loeschen("zweiter Lauf", "nina")
+    assert _dateien(box) == {".0711/container.json"}
+
+
+def test_die_historie_bleibt(box):
+    """Gelöscht heißt: der Stand zeigt sie nicht mehr. Dass es sie gab, bleibt
+    nachvollziehbar — das Repo entfernt nur der Betreiber."""
+    _ablegen(box, {"docs/2026-08/beleg.jpg": b"\xff\xd8\xff"})
+    boxschreiber.alles_loeschen("konto geloescht: Mandant 1", "nina")
+    gezeigt = subprocess.run(
+        ["git", "-C", str(box), "log", "--all", "--diff-filter=A",
+         "--name-only", "--format="], capture_output=True, text=True).stdout
+    assert "docs/2026-08/beleg.jpg" in gezeigt
+    assert "docs/2026-08/beleg.jpg" not in _dateien(box)
