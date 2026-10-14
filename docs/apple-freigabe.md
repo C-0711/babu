@@ -223,3 +223,21 @@ falscher Signatur.
 Produkt-Kennung und die daraus abgeleitete Stufe — keine Zahlungsdaten, kein
 Preis, kein Apple-Konto. Für „App Privacy" heißt das: Käufe, verknüpft mit der
 Nutzerin, zur Funktion der App (nicht für Werbung, nicht für Tracking).
+
+### Die Prüfnotiz in App Store Connect — zwei Korrekturen (14.10.2026)
+
+Beim Vergleich der Notiz mit dem Code fiel auf, dass sie den Prüfer in die
+Irre schickt:
+
+- Schritt 2 hieß „tap *Demo-Beleg einlesen (Simulator)*". Diesen Knopf gibt es
+  auf **keinem Gerät** — er steht in `#if targetEnvironment(simulator)`, und
+  Apple prüft auf Hardware (zuletzt auf einem iPad Air). Jetzt steht dort,
+  dass die Kamera auf einen beliebigen Beleg gerichtet wird, und daneben der
+  Hinweis, dass der Beispiel-Knopf nur im Simulator existiert.
+- Die Notiz nannte das Löschen des Kontos nicht. Jetzt steht der Weg darin
+  (Menü → Einstellungen → Aufhören → Konto löschen), samt dem Satz, dass das
+  Abo davon nicht endet.
+
+Was in der Notiz **stimmt** und geprüft wurde: „Abo verwalten" gibt es
+wirklich in „Deine Ablage" (`PlatzView.swift:130`) — die zweite Stelle neben
+dem Löschen-Abschnitt ist zusätzlich, kein Widerspruch.

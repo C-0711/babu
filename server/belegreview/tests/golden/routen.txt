@@ -305,3 +305,4 @@ POST /api/auslagen/{stamm}/freigeben
 POST /api/auslagen/{stamm}/zurueckziehen
 POST /api/auslagen/{stamm}/zuruecknehmen
 POST /api/push/geraet
+POST /api/konto/loeschen
