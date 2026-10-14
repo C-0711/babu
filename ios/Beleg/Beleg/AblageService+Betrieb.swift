@@ -179,6 +179,46 @@ extension AblageService {
                        pat: pat) == nil
     }
 
+    /// Was beim Löschen des Kontos herauskommt.
+    enum KontoLoeschung: Equatable {
+        /// Weg. `hinweis` steht nur, wenn etwas offen blieb — der Zugang
+        /// ist in jedem Fall erloschen.
+        case geloescht(hinweis: String?)
+        /// Dieser Zugang darf nicht (Portal-Betrieb, Team, fremder Betrieb):
+        /// der Server sagt im Klartext, welcher Weg stattdessen gilt.
+        case abgelehnt(String)
+        case fehler(String)
+    }
+
+    /// Das Konto löschen — Zugang, Betrieb und Belege (Apple 5.1.1(v)).
+    ///
+    /// `bestaetigt: true` ist Pflicht, damit ein versehentlicher POST kein
+    /// Konto kostet. Rückgabe ist nie `nil`: auch ein Fehlschlag soll der
+    /// Nutzerin etwas sagen können.
+    static func kontoLoeschen(basis: URL, pat: String) async -> KontoLoeschung {
+        var request = URLRequest(url: basis.appendingPathComponent("api/konto/loeschen"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 120      // der Server leert die Belegbox
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(
+            withJSONObject: ["bestaetigt": true])
+        guard let (daten, antwort) = try? await URLSession.shared.data(for: request),
+              let http = antwort as? HTTPURLResponse else {
+            return .fehler("Keine Verbindung. Zum Löschen braucht babu sie — "
+                           + "versuch es gleich noch einmal.")
+        }
+        let json = (try? JSONSerialization.jsonObject(with: daten)) as? [String: Any]
+        if http.statusCode < 300 {
+            return .geloescht(hinweis: json?["hinweis"] as? String)
+        }
+        let text = json?["fehler"] as? String
+        if http.statusCode == 403 || http.statusCode == 409 {
+            return .abgelehnt(text ?? "Dieser Zugang kann das Konto nicht löschen.")
+        }
+        return .fehler(text ?? "Das hat gerade nicht geklappt.")
+    }
+
     static func leistungen(basis: URL, pat: String) async -> [[String: Any]] {
         let json = await holen("api/leistungen", basis: basis, pat: pat)
         return json?["leistungen"] as? [[String: Any]] ?? []

@@ -43,6 +43,7 @@ import kontenrahmen as kr  # noqa: E402
 import skr04_konten as skr  # noqa: E402
 import kontierung as kt  # noqa: E402
 import mandanten  # noqa: E402
+import kern_konto  # noqa: E402
 import postadresse  # noqa: E402
 import abo  # noqa: E402
 import bankrecht  # noqa: E402
@@ -700,6 +701,10 @@ def _sqlite_schema(conn) -> None:
     # Die Empfangsadressen des Posteingangs. NACH `mandanten`: ihr
     # Fremdschlüssel zeigt auf `mandant(id)`.
     postadresse.schema(conn)
+    # Was von einem gelöschten Konto bleibt: eine Zeile ohne Angabe zur
+    # Person (kern_konto.py, seit 14.10.2026). Bewusst OHNE Fremdschlüssel
+    # auf `mandant` — die Zeile überlebt den Mandanten, das ist ihr Sinn.
+    kern_konto.schema(conn)
 
 
 @contextmanager
@@ -13525,6 +13530,7 @@ kern_auslagen.setup(app, sys.modules[__name__])
 kern_anmeldelink.setup(app, sys.modules[__name__])
 kern_geraet.setup(app, sys.modules[__name__])
 kern_apple.setup(app, sys.modules[__name__])
+kern_konto.setup(app, sys.modules[__name__])
 
 # Der Kern reicht sich selbst per setup() — die Familien hängen ihre
 # Routen an DIESES app-Objekt und benutzen DIESES Modul. Kein

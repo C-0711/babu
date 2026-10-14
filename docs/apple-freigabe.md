@@ -110,3 +110,116 @@ an Version 1.0 und ist `VALID`, Export-Compliance beantwortet, je 6
 Screenshots in beiden Größen, Beschreibung mit allen drei Preisen, Laufzeit
 und Kündigungsweg, Prüfkonto und Prüfnotiz hinterlegt, alle drei Abos
 `READY_TO_SUBMIT` mit Preisen in 175 Gebieten.
+
+---
+
+## Nachtrag 14.10.2026 — die Punkte aus dem Brief an die Entwicklung
+
+### 1 · Konto löschen in der App (5.1.1(v)) — **gebaut**
+
+`POST /api/konto/loeschen` (`server/belegreview/kern_konto.py`), in der App
+unter **Einstellungen → Aufhören → Konto löschen**, mit Rückfrage. Gelöscht
+wird alles, was babu in seiner Datenbank über den Zugang führt — jede Tabelle
+mit `un` oder `mandant_id`, die Chatnachrichten an ihren Fäden und das
+Gedächtnis — und der Inhalt der Belegbox in einem Commit
+(`boxschreiber.alles_loeschen`).
+
+Was bleibt, ist eine Zeile in `geloescht`: Mandantennummer, Box-Verweis,
+Zeitpunkt, Zahl der entfernten Dateien, und ob das Leeren geklappt hat. Kein
+Name, keine Adresse, keine E-Mail.
+
+**Zwei Dinge, die babu nicht kann, und die die App auch so sagt:**
+
+- Das Repo der Belegbox samt Historie löscht nur der Betreiber — der
+  GitChain-Dienst kennt dafür keinen Weg (`box.py` spricht ausschließlich Git
+  über HTTP). Die Tabelle `geloescht` IST deshalb die Arbeitsliste dafür.
+- Ein Apple-Abo endet nicht mit dem Konto. Die Rückfrage sagt das wörtlich
+  („Dein Platz bei babu endet damit NICHT von selbst … Solange du das nicht
+  tust, bucht Apple weiter ab"), und daneben steht **Abo verwalten** →
+  `apps.apple.com/account/subscriptions`, sichtbar nur, wenn eine Stufe läuft.
+
+Wer darf: die Inhaberin ihres eigenen Betriebs, und nur bei einem Betrieb aus
+der App (`herkunft = "app"`). Ein Portal-Betrieb hängt an einer Kanzlei und
+ihren Stapeln — dort ist Löschen ein Vorgang zwischen zwei Parteien und wird
+mit dem Weg dorthin abgewiesen. Eine Mitarbeiterin kommt an die Route gar
+nicht heran (Positivliste `mitarbeitrecht`, 403).
+
+17 Tests in `tests/test_konto_loeschen.py`. Einer von ihnen schlägt an, wenn
+eine NEUE Tabelle mit `un` oder `mandant_id` entsteht, die das Löschen nicht
+kennt — damit das nicht still liegen bleibt.
+
+### 2 · Demo-Beleg nur im Simulator — **war schon so**
+
+`ios/Beleg/Beleg/CaptureTab.swift:359` steht seit je in
+`#if targetEnvironment(simulator)`. Auf einem Gerät gibt es den Knopf nicht,
+auch nicht im Release-Build.
+
+### 3 · Kaufbildschirm — **ergänzt**
+
+- „Käufe wiederherstellen" läuft jetzt über `StoreKit.AppStore.sync()` und
+  danach `Transaction.currentEntitlements` (`Kasse.wiederherstellen`). Vorher
+  nur die Entitlements — das trägt nach einer Neuinstallation ohne Backup
+  nicht.
+- Nutzungsbedingungen und Datenschutz stehen auf dem Kaufbildschirm selbst.
+  Sie standen nur in den Einstellungen; Apple verlangt sie dort, wo
+  abgeschlossen wird.
+- Je Stufe: Name (`1 GB`), Preis von Apple (`displayPrice`) und `/ Monat`,
+  dazu ein eigener Satz über die Verlängerung.
+
+### 4 · Abo-Ebenen umgedreht — **gefunden und behoben**
+
+App Store Connect führt 1 = 100 GB, 2 = 5 GB, 3 = 1 GB (abgelesen).
+`babu.storekit` trug die umgekehrte Reihenfolge, und ein Test hielt sie fest:
+sein Docstring sagte „1 ist die höchste Stufe", seine Behauptung verlangte das
+Gegenteil. Beides steht jetzt richtig, mit Negativkontrolle.
+
+`groupLevel` liest der Code nirgends; die Reihenfolge im Kaufbildschirm kommt
+aus `paket.STUFEN` (aufsteigend nach Platz) und ist von Apples Ebenen
+unabhängig.
+
+### 5 · Neues iPhone, Neuinstallation — **gemessen, eine Lücke geschlossen**
+
+- **Belege** kommen zurück, sobald sich jemand anmeldet: die Liste kommt aus
+  der Belegbox (`AppStore.vomServerLaden`), nicht vom Telefon.
+- **Das Abo** kommt zurück: `Transaction.currentEntitlements` beim Start
+  (`BelegApp.swift:35`) meldet es dem Server, der es dem Betrieb des
+  angemeldeten Zugangs zuschreibt.
+- **Der Geräteschlüssel** liegt in der Keychain als
+  `kSecAttrAccessibleAfterFirstUnlock` **ohne** `kSecAttrSynchronizable`. Er
+  ist damit in einem verschlüsselten Backup, aber nicht im
+  iCloud-Schlüsselbund: ein frisches iPhone ohne Backup braucht eine neue
+  Anmeldung per E-Mail-Link. Ihn zu synchronisieren wäre eine Entscheidung
+  über einen Zugang in der iCloud und über den Begriff „Geräteschlüssel" —
+  nicht gemacht.
+- **Geschlossen:** `appAccountToken` geht jetzt beim Kauf mit
+  (`paket.kauf_kennung`, UUIDv5 aus der Mandantennummer). Damit findet Apples
+  Server Notification den Betrieb auch ohne dieses Telefon, und ein Kauf
+  landet nie beim falschen Betrieb, wenn auf einem iPhone zwei Zugänge
+  benutzt werden.
+
+### 6 · `Transaction.updates` — **war schon so**
+
+`Kasse.horchen()` läuft ab dem Start (`BelegApp.swift:30`) und nimmt
+Verlängerung, nachgereichte Freigabe und Kauf auf einem anderen Gerät auf.
+Rückerstattung ebenfalls: `apple_abo.stufe_aus_beleg` gibt bei
+`revocationDate` keine Stufe zurück, der Platz endet sofort.
+
+### 7 · Server Notifications — **die Routen gibt es, die URLs sind:**
+
+    Produktion: https://mybabu.io/api/abo/apple/meldung
+    Sandbox:    https://mybabu.io/api/abo/apple/meldung
+
+Beide dieselbe: die Route unterscheidet nicht nach Umgebung, sie prüft die
+Signaturkette gegen babus eigene Kopie der Apple-Wurzel
+(`zertifikate/AppleRootCA-G3.cer`) und nimmt nur Belege auf das eigene Bündel.
+Version **2** der Notifications. Sie antwortet 200 auch auf Meldungen zu einem
+unbekannten Abo (eine Wiederholung würde daran nichts ändern), 400 nur bei
+falscher Signatur.
+
+**Ja, das Backend braucht den Status:** die Speichergrenze hängt daran
+(`paket.stand`, Spalten `mandant.paket`/`apple_abo`/`apple_produkt`).
+
+**Gespeichert werden zum Betrieb:** `originalTransactionId`, die
+Produkt-Kennung und die daraus abgeleitete Stufe — keine Zahlungsdaten, kein
+Preis, kein Apple-Konto. Für „App Privacy" heißt das: Käufe, verknüpft mit der
+Nutzerin, zur Funktion der App (nicht für Werbung, nicht für Tracking).

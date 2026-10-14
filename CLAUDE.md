@@ -130,6 +130,46 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   Kanzlei-Zugang nötig. ERiC (Stufe C, Senden ans Finanzamt) folgt ~Dezember.
 - `postfach.senden` kennt `anhaenge=[(name, bytes, mime)]` und `antwort_an`.
 
+## Verbindlich: Konto löschen gehört in die App (seit 14.10.2026)
+
+- **`POST /api/konto/loeschen` ist der einzige Weg** (`kern_konto.py`), in der
+  App unter Einstellungen → Aufhören. Apple 5.1.1(v) verlangt es, weil
+  „Los geht's" auf dem Server einen Betrieb anlegt; eine Mailadresse reicht
+  ausdrücklich nicht.
+- **Jede neue Tabelle mit `un` oder `mandant_id` gehört in
+  `kern_konto.NACH_UN` bzw. `NACH_MANDANT`** — oder es wird entschieden, dass
+  ihre Zeilen bleiben. `tests/test_konto_loeschen.py` schlägt sonst an. Das
+  ist der Zweck beider Listen: nicht Bequemlichkeit, sondern ein Alarm.
+- **Was bleibt, ist `geloescht`** (Mandantennummer, `box_ref`, Dateizahl,
+  `box_leer`, Zeit) und sonst nichts. Kein Name, keine E-Mail. Die Zeile ist
+  zugleich die **Arbeitsliste des Betreibers**: babu leert die Belegbox in
+  einem Commit, aber das Repo samt Historie löscht nur er — der
+  GitChain-Dienst kennt dafür keinen Weg. `box_leer = 0` heißt: da liegt noch
+  etwas.
+- **Die Reihenfolge ist Pflicht: erst die Box, dann die Datenbank.** Scheitert
+  die Box, gilt der Zugang noch und sie kann es erneut versuchen. Umgekehrt
+  wäre der Zugang weg und die Belege lägen ohne jeden Weg dorthin da.
+- **Das Abo endet dadurch nicht** — ein Apple-Abo kündigt nur Apple. Die
+  Rückfrage in der App sagt das wörtlich, daneben steht „Abo verwalten".
+  Diesen Satz nicht wegkürzen.
+- Löschen darf nur die Inhaberin eines Betriebs mit `herkunft = "app"`. Portal-
+  Betriebe hängen an einer Kanzlei (409 mit dem Weg dorthin), Mitarbeiterinnen
+  kommen über die Positivliste `mitarbeitrecht` gar nicht an die Route (403).
+
+## Verbindlich: Apple-Abo (seit 14.10.2026)
+
+- **Ebene 1 ist die GRÖSSTE Stufe** (100 GB), 3 die kleinste. Ein Wechsel auf
+  eine niedrigere Zahl ist eine Höherstufung und greift sofort. `babu.storekit`
+  und App Store Connect müssen das gleich führen —
+  `tests/test_apple_produkte.py` hält es.
+- **Beim Kauf geht `appAccountToken` mit** (`paket.kauf_kennung`, UUIDv5 aus
+  der Mandantennummer, nicht gespeichert, sondern abgeleitet). Daran findet
+  Apples Server Notification den Betrieb auch ohne das Telefon. Das Abo
+  (`originalTransactionId`) behält Vorrang vor der Kennung.
+- Belege ohne Kennung (Käufe vor dem 14.10.2026) müssen weiter durchgehen.
+- Server Notifications V2: `https://mybabu.io/api/abo/apple/meldung`, dieselbe
+  URL für Produktion und Sandbox.
+
 ## Rollen, Mandanten, DATEV
 
 - Rollen `admin`/`kanzlei`/`salon`/`mitarbeit`; PAT-Konten über

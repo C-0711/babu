@@ -1361,6 +1361,38 @@ extension AppStore {
         stufen = []
     }
 
+    /// Das Konto löschen — auf dem Server UND auf diesem Telefon.
+    ///
+    /// Reihenfolge mit Absicht: erst der Server, dann das Telefon. Scheitert
+    /// der Server, bleibt alles, wie es war, und sie kann es noch einmal
+    /// versuchen; umgekehrt stünde ein leeres Telefon vor einem Konto, das
+    /// es noch gibt, und niemand käme mehr hin.
+    ///
+    /// Nach dem Löschen wird nicht nur abgemeldet: die Belege dieses Zugangs
+    /// gehen auch hier weg. Sie liegen nicht mehr in der Ablage, also wäre
+    /// eine Liste auf dem Telefon die Erinnerung an etwas, das es nicht mehr
+    /// gibt — und beim nächsten Abgleich fiele sie ohnehin heraus.
+    @MainActor
+    func kontoLoeschen() async -> AblageService.KontoLoeschung {
+        guard let url = URL(string: ablageURL), let pat = KeychainHelfer.ladePAT() else {
+            return .fehler("Dieses Telefon ist mit keinem Konto verbunden.")
+        }
+        let ergebnis = await AblageService.kontoLoeschen(basis: url, pat: pat)
+        guard case .geloescht = ergebnis else { return ergebnis }
+        belege = []
+        kassenberichte = []
+        chatVerlauf = []
+        vorlagen = []
+        exportiert = false
+        geprueft = 0
+        pruefSekunden = []
+        kaufKennung = nil
+        onboarded = false
+        abmelden()          // Schlüssel aus der Keychain, Zustandsdatei wechseln
+        sichern()
+        return ergebnis
+    }
+
     /// Den Link aus der Mail einlösen (`babu://anmelden/<token>`). Gibt den
     /// Satz zurück, den sie danach lesen soll — Titel und Text.
     func mitLinkAnmelden(token: String, geraet: String) async -> (titel: String, text: String) {

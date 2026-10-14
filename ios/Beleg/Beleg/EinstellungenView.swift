@@ -26,6 +26,11 @@ struct EinstellungenView: View {
     /// ist und wie es weitergeht.
     @State private var abgemeldet = false
     @State private var zeigeWerksDialog = false
+    /// Konto löschen (Apple 5.1.1(v), 14.10.2026) — zwei Schritte: erst der
+    /// Dialog, der sagt, was weg ist, dann die Rückfrage mit dem roten Wort.
+    @State private var zeigeLoeschKonto = false
+    @State private var loeschtKonto = false
+    @State private var loeschErgebnis: String?
     @State private var setztZurueck = false
     @State private var werksErgebnis: String?
     /// Gehört der Startseite (CaptureTab), wird hier aber zurückgesetzt.
@@ -96,6 +101,14 @@ struct EinstellungenView: View {
                 #if DEBUG
                 testphase
                 #endif
+
+                // Das Konto ganz weg — Apple verlangt es in der App
+                // (5.1.1(v)), und ein Betrieb, der aufhört, soll nicht
+                // schreiben müssen. Nur für Zugänge, die hier auch ein Konto
+                // haben: eine Ambassadorin ohne Ablage hat keinen Betrieb.
+                if verbunden, store.ambassadorin != .ohneAblage {
+                    kontoLoeschenBereich
+                }
 
                 // Die drei Seiten, die jede Nutzerin ohne Konto lesen kann —
                 // dieselben, die Apple bei der Einreichung verlangt.
@@ -187,6 +200,85 @@ struct EinstellungenView: View {
                  + "kommen von diesem Telefon aus aber nicht mehr an, und "
                  + "Fragen bleiben unbeantwortet. Wieder anmelden kannst du "
                  + "dich jederzeit mit deiner E-Mail.")
+        }
+        // Die dritte Rückfrage, und die einzige ohne Rückweg. Sie nennt
+        // deshalb beides: was weg ist, und was NICHT von selbst endet.
+        .alert("Konto wirklich löschen?", isPresented: $zeigeLoeschKonto) {
+            Button("Abbrechen", role: .cancel) { }
+            Button("Ja, alles löschen", role: .destructive) {
+                Task { await kontoLoeschen() }
+            }
+        } message: {
+            Text("Gelöscht werden dein Zugang, dein Betrieb und alle Belege "
+                 + "in deiner Ablage. Das lässt sich nicht zurückholen.\n\n"
+                 + "Lade dir vorher herunter, was du behalten willst — über "
+                 + "„Weitergeben“ beim Monat.\n\n"
+                 + "Dein Platz bei babu endet damit NICHT von selbst: ein Abo "
+                 + "kündigt nur Apple. Solange du das nicht tust, bucht Apple "
+                 + "weiter ab.")
+        }
+    }
+
+    // MARK: - Konto löschen (Apple 5.1.1(v))
+
+    /// Der Abschnitt, den Apple finden muss — und die Nutzerin auch.
+    ///
+    /// Er steht in den Einstellungen, zwei Tipps von der Startseite entfernt,
+    /// und nennt die Dinge beim Namen. „Abo verwalten" gehört dazu, weil das
+    /// Löschen die Abbuchung nicht beendet: nur Apple kündigt ein Apple-Abo,
+    /// und wer das nicht weiß, zahlt für eine Ablage, die es nicht mehr gibt.
+    @ViewBuilder
+    private var kontoLoeschenBereich: some View {
+        Section {
+            if let ergebnis = loeschErgebnis {
+                Text(ergebnis).font(.footnote).foregroundStyle(GC.warn)
+            }
+            if store.platz?.stufe != nil,
+               let abo = URL(string: "https://apps.apple.com/account/subscriptions") {
+                Link(destination: abo) {
+                    Label("Abo verwalten", systemImage: "creditcard")
+                }
+            }
+            Button(role: .destructive) {
+                zeigeLoeschKonto = true
+            } label: {
+                HStack {
+                    if loeschtKonto { ProgressView().padding(.trailing, 6) }
+                    Text(loeschtKonto ? "Lösche …" : "Konto löschen")
+                }
+            }
+            .disabled(loeschtKonto)
+        } header: {
+            Text("Aufhören")
+        } footer: {
+            Text("Löschen nimmt deinen Zugang, deinen Betrieb und alle Belege "
+                 + "in deiner Ablage — endgültig."
+                 + (store.platz?.stufe != nil
+                    ? " Deinen Platz kündigst du getrennt davon bei Apple; "
+                      + "sonst bucht Apple weiter ab."
+                    : ""))
+        }
+    }
+
+    private func kontoLoeschen() async {
+        loeschtKonto = true
+        loeschErgebnis = nil
+        let ergebnis = await store.kontoLoeschen()
+        loeschtKonto = false
+        switch ergebnis {
+        case .geloescht(let hinweis):
+            verbunden = false
+            linkGeschicktAn = nil
+            testErgebnis = nil
+            kontoFehler = nil
+            abgemeldet = false
+            einrichtungFertig = false
+            loeschErgebnis = hinweis
+            // Ohne offenen Punkt gibt es nichts mehr zu sagen: die App
+            // springt auf den Begrüßungsbildschirm.
+            if hinweis == nil { dismiss() }
+        case .abgelehnt(let text), .fehler(let text):
+            loeschErgebnis = text
         }
     }
 

@@ -283,6 +283,47 @@ def loeschen(box: "bx.Box", pfade: list[str] = _FEHLT, nachricht: str = _FEHLT,
     return _commit_und_push(box, entfernen, nachricht, autor_un)
 
 
+def alles_loeschen(box: "bx.Box", nachricht: str = _FEHLT,
+                   autor_un: str = _FEHLT) -> tuple[str, int]:
+    """Die Box leer machen — alles in EINEM Commit (14.10.2026).
+
+    Für das Löschen eines Kontos (`kern_konto`). Was drin liegt, wird nicht
+    vorher woanders aufgelistet, sondern im frisch zurückgesetzten Klon
+    gezählt: eine Liste, die man außerhalb des Schlosses holt, ist beim
+    Commit schon veraltet, und bei dieser Operation wäre „eine Datei
+    übersehen" genau der Fehler, den niemand merkt.
+
+    Rückgabe `(kurz_hash, dateien)`. Eine Box ohne Dateien meldet
+    `NichtsZuLoeschen` — sie ist bereits leer, und das ist kein Fehler,
+    sondern die Antwort.
+
+    Die Historie bleibt: der aktuelle Stand zeigt nichts mehr, das Repo
+    selbst samt seinen alten Commits entfernt nur der Betreiber.
+    """
+    box, werte = _mit_box(box, (nachricht, autor_un))
+    nachricht, autor_un = werte
+    gezaehlt = [0]
+
+    def entfernen() -> None:
+        ls = _git("ls-files", "-z", box=box, timeout=60)
+        if ls.returncode != 0:
+            raise SchreibFehler(f"Auflisten fehlgeschlagen: {ls.stderr.strip()[:200]}")
+        pfade = [z for z in (ls.stdout or "").split("\0") if z.strip()]
+        gezaehlt[0] = len(pfade)
+        if not pfade:
+            raise NichtsZuLoeschen("Box ist schon leer")
+        # Alles auf einmal: `git rm -r .` nimmt den ganzen Baum, ohne eine
+        # Pfadliste, die an einer Argumentgrenze zerbrechen könnte.
+        r = _git("rm", "-r", "-q", "--ignore-unmatch", "--", ".", box=box)
+        if r.returncode != 0:
+            raise SchreibFehler(f"Entfernen fehlgeschlagen: {r.stderr.strip()[:200]}")
+        stand = _git("diff", "--cached", "--name-only", box=box)
+        if not (stand.stdout or "").strip():
+            raise NichtsZuLoeschen("nichts zu löschen")
+
+    return _commit_und_push(box, entfernen, nachricht, autor_un), gezaehlt[0]
+
+
 def box_da(ref: str) -> tuple[bool, str]:
     """Gibt es die Box beim Dienst, und welchen Stand hat sie?
 
