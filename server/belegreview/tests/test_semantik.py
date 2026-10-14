@@ -71,3 +71,66 @@ def test_backfill_holt_fehlende_vektoren_nach(welt, monkeypatch):
     assert backfill_embeddings.main() == 0
     assert len([d for d in _im_stand(bare)
                 if d.endswith(".embedding.json")]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Ninas Befund vom 14.10.2026: „7 % von 19 %"
+# ---------------------------------------------------------------------------
+
+def _hochland() -> dict:
+    """Ihr Bon, mit den Werten aus ihrer Belegbox (28.09.2026).
+
+    4,40 € zu 7 % (Kaffee) und 1,00 € zu 19 % (Tassenmaß), zusammen 5,40 €.
+    `ust_satz` trägt den überwiegenden Satz — das ist so gewollt und für
+    einen Beleg mit EINEM Satz richtig. Als Beschriftung des ganzen Belegs
+    ist es falsch.
+    """
+    return {
+        "felder": {"lieferant": "Hochland Kaffee", "datum": "2026-01-24",
+                   "brutto": 5.40, "netto": 4.95, "ust": 0.45, "ust_satz": 7,
+                   "steuertabelle": [
+                       {"satz": 7, "brutto": 4.4, "netto": 4.11, "ust": 0.29},
+                       {"satz": 19, "brutto": 1.0, "netto": 0.84, "ust": 0.16}]},
+        "buchung": {"buchung": {"kategorie_name": "Kundenaufmerksamkeiten"}},
+        "zeilen": ["Hochland", "Rechnung"], "dokumentklasse": "beleg"}
+
+
+def _betragszeile(review: dict) -> str:
+    """`beleg_markdown` ist eine reine Funktion — ohne die `welt`-Fixture,
+    die der Rest dieser Datei für den Schreibweg braucht."""
+    from pathlib import Path as _P  # noqa: PLC0415
+    sys.path.insert(0, str(_P(__file__).resolve().parents[1]))
+    import babu_web  # noqa: PLC0415
+    return next(z for z in babu_web.beleg_markdown(review).splitlines()
+                if z.startswith("- Betrag:"))
+
+
+def test_ein_beleg_mit_zwei_saetzen_nennt_beide():
+    """Hinter dem ⓘ stand „5,40 € brutto (7 % USt)" — auf einem Bon, der zu
+    einem Fünftel 19 % trägt. Nina hat genau das gemeldet."""
+    zeile = _betragszeile(_hochland())
+    assert "7 %" in zeile and "19 %" in zeile, zeile
+
+
+def test_der_groessere_anteil_steht_vorne():
+    """Die Steuertabelle ist nach Bruttoanteil sortiert; der Text folgt ihr,
+    damit „überwiegend 7 %" lesbar bleibt."""
+    assert _betragszeile(_hochland()).index("7 %") \
+        < _betragszeile(_hochland()).index("19 %")
+
+
+def test_ein_satz_bleibt_ein_satz():
+    """Negativkontrolle. Der Normalfall darf sich NICHT ändern — sonst stünde
+    auf jedem gewöhnlichen Beleg plötzlich eine Aufzählung."""
+    einer = dict(_hochland())
+    einer["felder"] = dict(einer["felder"], ust_satz=19, brutto=11.90,
+                           netto=10.0, ust=1.90,
+                           steuertabelle=[{"satz": 19, "brutto": 11.9,
+                                           "netto": 10.0, "ust": 1.9}])
+    assert _betragszeile(einer) == "- Betrag: 11,90 € brutto (19 % USt)"
+
+
+def test_ohne_steuersatz_steht_kein_satz():
+    ohne = dict(_hochland())
+    ohne["felder"] = {"lieferant": "Amt", "brutto": 30.0, "ust_satz": 0}
+    assert _betragszeile(ohne) == "- Betrag: 30,00 € brutto"

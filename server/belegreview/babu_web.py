@@ -4274,7 +4274,18 @@ def beleg_markdown(review: dict) -> str:
     betrag = f.get("brutto")
     betrag_text = ("—" if not isinstance(betrag, (int, float))
                    else f"{betrag:.2f} € brutto".replace(".", ","))
-    if isinstance(betrag, (int, float)) and f.get("ust_satz"):
+    # Ein Beleg mit ZWEI Sätzen trug hier den überwiegenden — und log damit.
+    # Ninas Hochland-Bon vom 28.09.2026 (4,40 € zu 7 %, 1,00 € zu 19 %) stand
+    # hinter dem ⓘ als „5,40 € brutto (7 % USt)". Der Stapel fürs Steuerbüro
+    # war richtig (`extf.buchungszeilen` teilt bei mehr als einem Satz), der
+    # Satz AN DER ZAHL war es nicht: 5,40 / 1,07 ergibt 5,05, das Netto
+    # daneben heißt 4,95. Jetzt stehen beide Sätze da, in der Reihenfolge der
+    # Steuertabelle (größter Anteil zuerst).
+    saetze = [z.get("satz") for z in (f.get("steuertabelle") or [])
+              if isinstance(z, dict) and z.get("satz") is not None]
+    if isinstance(betrag, (int, float)) and len(saetze) > 1:
+        betrag_text += " (" + " und ".join(f"{s} %" for s in saetze) + " USt)"
+    elif isinstance(betrag, (int, float)) and f.get("ust_satz"):
         betrag_text += f" ({f['ust_satz']} % USt)"
     kopf = [f"# {f.get('lieferant') or 'Beleg'}", "",
             f"- Datum: {f.get('datum') or '—'}",
