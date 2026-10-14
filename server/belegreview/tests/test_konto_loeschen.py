@@ -335,3 +335,105 @@ def test_zweimal_loeschen_ist_kein_absturz(welt):
     client = _mit_schluessel(konto)
     assert _loeschen(client).status_code == 200
     assert _loeschen(client).status_code in (401, 403)
+
+
+# ---------------------------------------------------------------------------
+# Dieselben Anweisungen gegen ECHTES Postgres
+# ---------------------------------------------------------------------------
+#
+# Die Tests oben laufen alle gegen SQLite: die Fixture `welt` setzt
+# `babu_web.PORTAL_DB` auf eine Datei, egal ob eine Postgres-Instanz da ist.
+# SQLite hat keine festen Spaltentypen — dort ist
+# `WHERE mandant_id = 14` auch auf einer TEXT-Spalte in Ordnung.
+#
+# Live ist es das nicht. Am 14.10.2026 gab die Route auf mybabu.io einen 500:
+#
+#     psycopg.errors.UndefinedFunction: operator does not exist: text = smallint
+#     DELETE FROM import_status WHERE mandant_id=$1
+#
+# `import_status.mandant_id` und `audit_log.mandant_id` stehen als TEXT
+# (absichtlich, ohne Fremdschlüssel), `abo_rechnung` und `post_adresse` als
+# INTEGER. Kein SQLite-Test der Welt sieht das.
+#
+# Dieser Test fährt deshalb genau die Anweisungen, die `loeschen()` ausführt,
+# gegen das echte Schema aus `migrations/` — ohne die App, weil es hier nur um
+# die Typen geht.
+
+import pytest  # noqa: E402
+
+import db as dbmodul  # noqa: E402
+
+
+@pytest.fixture()
+def pg_verbindung(pg_url, pg_schema, monkeypatch):
+    """Eine echte Postgres-Verbindung auf dem Schema aus `migrations/`.
+
+    `db.DIALEKT` wird mitgesetzt: `db.upsert()` liest ohne Argument diese
+    Modulvariable, und sie steht beim Start aus `BABU_DB_URL`. Im
+    Container ist sie „postgres", in der Suite „sqlite" — ohne das
+    Mitsetzen prüfte dieser Test SQLite-Syntax gegen Postgres und meldete
+    einen Fehler, den es live nicht gibt.
+    """
+    import psycopg  # noqa: PLC0415
+    monkeypatch.setattr(dbmodul, "DIALEKT", "postgres")
+    conn = psycopg.connect(pg_url)
+    conn.execute(f'SET search_path TO "{pg_schema}"')
+    dbmodul.schema_anwenden(conn, "postgres")
+    try:
+        yield dbmodul.Verbindung(conn, "postgres")
+    finally:
+        conn.close()
+
+
+@pytest.mark.pg
+def test_pg_die_spalten_haben_wirklich_verschiedene_typen(pg_verbindung, pg_schema):
+    """Die Voraussetzung des Tests darunter — gemessen, nicht behauptet."""
+    typen = dict(pg_verbindung.execute(
+        "SELECT table_name, data_type FROM information_schema.columns "
+        "WHERE table_schema=? AND column_name='mandant_id'",
+        (pg_schema,)).fetchall())
+    assert typen.get("import_status") == "text"
+    assert typen.get("audit_log") == "text"
+    assert typen.get("post_adresse") == "integer"
+    assert len({typen[t] for t in typen}) > 1, \
+        "Wenn alle gleich wären, bräuchte es den CAST nicht mehr"
+
+
+@pytest.mark.pg
+def test_pg_jede_loeschanweisung_laeuft_durch(pg_verbindung):
+    """Jede Anweisung aus `loeschen()`, gegen echte Spaltentypen.
+
+    Es wird nicht geprüft, dass Zeilen verschwinden — das tun die Tests oben.
+    Hier zählt, dass Postgres jede Anweisung ANNIMMT. Vor dem 14.10.2026 tat
+    es das bei zwei von ihnen nicht, und das fiel erst auf mybabu.io auf.
+    """
+    un, mandant_id = "app-pruefzugang", 4711
+    for tabelle in kern_konto.NACH_UN:
+        pg_verbindung.execute(f"DELETE FROM {tabelle} WHERE un=?", (un,))  # noqa: S608
+    for tabelle in kern_konto.NACH_MANDANT:
+        pg_verbindung.execute(
+            f"DELETE FROM {tabelle} WHERE CAST(mandant_id AS TEXT) = ?",  # noqa: S608
+            (str(mandant_id),))
+    pg_verbindung.execute("DELETE FROM nachricht WHERE gespraech=?", (1,))
+    pg_verbindung.execute("DELETE FROM merksatz WHERE betrieb=?", (un,))
+    pg_verbindung.execute(
+        "DELETE FROM audit_log WHERE ziel_un=? OR akteur_un=? "
+        "OR CAST(mandant_id AS TEXT) = ?", (un, un, str(mandant_id)))
+    pg_verbindung.execute(kern_konto.db_upsert_geloescht(),
+                          (mandant_id, "babu/pruefung/belege", 0, 1,
+                           "2026-10-14T00:00:00+00:00"))
+    pg_verbindung.execute("DELETE FROM mandant WHERE id=?", (mandant_id,))
+    pg_verbindung.execute("DELETE FROM nutzer WHERE email=?", (un,))
+
+
+@pytest.mark.pg
+def test_pg_der_alte_vergleich_waere_aufgefallen(pg_verbindung):
+    """Negativkontrolle: der Stand von vor dem 14.10.2026, auf TEXT-Spalten.
+
+    Ohne sie misst der Test davor nur, dass irgendein SQL durchläuft."""
+    import psycopg  # noqa: PLC0415
+    for tabelle in ("import_status", "audit_log"):
+        with pytest.raises(psycopg.errors.UndefinedFunction):
+            pg_verbindung.execute(
+                f"DELETE FROM {tabelle} WHERE mandant_id=?", (4711,))  # noqa: S608
+        pg_verbindung._roh.rollback()  # noqa: SLF001

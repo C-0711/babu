@@ -198,12 +198,23 @@ def loeschen(un: str, mandant_id: int) -> dict:
         for tabelle in NACH_UN:
             c.execute(f"DELETE FROM {tabelle} WHERE un=?", (un,))  # noqa: S608
         for tabelle in NACH_MANDANT:
-            c.execute(f"DELETE FROM {tabelle} WHERE mandant_id=?",  # noqa: S608
-                      (mandant_id,))
+            # `CAST(... AS TEXT)` und ein String als Wert, weil die Spalte
+            # NICHT überall denselben Typ hat: `import_status.mandant_id` und
+            # `audit_log.mandant_id` stehen als TEXT (absichtlich, ohne
+            # Fremdschlüssel — ein gelöschter Mandant soll den Stand nicht
+            # mitreißen), `abo_rechnung` und `post_adresse` als INTEGER.
+            # SQLite ist das gleich, Postgres nicht: dort war
+            # `WHERE mandant_id = 14` auf einer TEXT-Spalte ein
+            # „operator does not exist: text = smallint" — live gefunden am
+            # 14.10.2026, von keinem SQLite-Test zu sehen.
+            c.execute(f"DELETE FROM {tabelle} "  # noqa: S608
+                      "WHERE CAST(mandant_id AS TEXT) = ?",
+                      (str(mandant_id),))
         # Das Protokoll nennt niemanden: nur, DASS gelöscht wurde — und was
         # dem Betreiber zu tun bleibt.
         c.execute("DELETE FROM audit_log WHERE ziel_un=? OR akteur_un=? "
-                  "OR mandant_id=?", (un, un, mandant_id))
+                  "OR CAST(mandant_id AS TEXT) = ?",
+                  (un, un, str(mandant_id)))
         c.execute(db_upsert_geloescht(), (mandant_id, box_ref, dateien,
                                           1 if box_leer else 0,
                                           bw._jetzt_iso()))  # noqa: SLF001
