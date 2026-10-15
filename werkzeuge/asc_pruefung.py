@@ -238,7 +238,14 @@ def abos() -> list[dict]:
     for s in subs:
         at, sid = s["attributes"], s["id"]
         pid = at["productId"]
-        pruefe(at["state"] == "READY_TO_SUBMIT", f"{pid}: bereit", at["state"])
+        # `READY_TO_SUBMIT` heisst „fertig konfiguriert" — und genau NICHT
+        # „der Einreichung beigelegt". Beides zu verwechseln hat am
+        # 15.10.2026 eine Ablehnung gekostet (3.1.1/3.1.3(c)): der Pruefer
+        # sah eine App ohne jeden In-App-Kauf. Darum zaehlt der Zustand
+        # unten noch einmal eigens.
+        pruefe(at["state"] in ("READY_TO_SUBMIT", "WAITING_FOR_REVIEW",
+                               "IN_REVIEW", "APPROVED"),
+               f"{pid}: bereit", at["state"])
         pruefe(at["subscriptionPeriod"] == "ONE_MONTH", f"{pid}: monatlich",
                at["subscriptionPeriod"])
         pruefe(bool(at.get("reviewNote")), f"{pid}: Prüfnotiz")
@@ -257,11 +264,38 @@ def abos() -> list[dict]:
         for inc in (deu["daten"].get("included", []) if deu["ok"] else []):
             if inc["type"] == "subscriptionPricePoints":
                 cent = round(float(inc["attributes"]["customerPrice"]) * 100)
-        stufen.append({"pid": pid, "cent": cent or 0})
+        stufen.append({"pid": pid, "cent": cent or 0, "state": at["state"]})
     return stufen
 
 
 # ---------------------------------------------------------------------------
+
+def abos_eingereicht(stufen: list[dict]) -> None:
+    """Liegen die Abos der Einreichung bei — oder stehen sie nur bereit?
+
+    Der Unterschied, der am 15.10.2026 eine Ablehnung gekostet hat. Apple
+    sagt es selbst, wenn man ein Abo allein einreichen will:
+
+        POST /v1/subscriptionSubmissions -> 409
+        STATE_ERROR.FIRST_SUBSCRIPTION_MUST_BE_SUBMITTED_ON_VERSION
+
+    Das ERSTE Abo muss mit einer App-Version zusammen gehen, und das geht
+    nur in der Weboberflaeche: `reviewSubmissionItems` kennt keine Beziehung
+    `subscription`, und `appStoreVersions/<id>/subscriptions` gibt es nicht.
+    Die API kann es also nicht nachholen — sie kann nur sagen, dass es
+    fehlt. Genau das tut diese Pruefung.
+
+    `READY_TO_SUBMIT` = konfiguriert, in keiner Einreichung. Erst
+    `WAITING_FOR_REVIEW`/`IN_REVIEW`/`APPROVED` heisst, dass Apple sie
+    kennt.
+    """
+    offen = [s for s in stufen if s.get("state") == "READY_TO_SUBMIT"]
+    pruefe(not offen, "Die Abos liegen der Einreichung bei",
+           f"{len(offen)} von {len(stufen)} stehen auf READY_TO_SUBMIT — in "
+           "App Store Connect: Version 1.0, Abschnitt In-App-Kaeufe und Abos, "
+           "zur Ueberpruefung hinzufuegen (die API kann das nicht)"
+           if offen else "")
+
 
 def main(kurz: bool = False) -> int:
     print("App Store Connect — babu Belege\n")
@@ -269,6 +303,7 @@ def main(kurz: bool = False) -> int:
     pruefvorgang()
     v = version()
     st = abos()
+    abos_eingereicht(st)
     if v:
         texte(v, st)
         pruefangaben(v)
