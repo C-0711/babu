@@ -75,13 +75,24 @@ async def api_abo_apple(request: Request) -> Response:
     if not jws:
         return JSONResponse({"fehler": "JSON mit signed erwartet"},
                             status_code=400)
-    import testmonat  # noqa: PLC0415
-    with bw._DB_LOCK, bw._db() as c:  # noqa: SLF001
-        direkt = testmonat.direkt_mandant_von(un, c)
-    if not direkt:
+    # Dieselbe Frage wie überall sonst im Server: zu welchem Betrieb gehört
+    # dieser Zugang? `_eigener_mandant` fragt über den Besitzer, nicht über
+    # die Hauskanzlei.
+    #
+    # Bis zum 15.10.2026 stand hier `testmonat.direkt_mandant_von`, und das
+    # findet NUR Betriebe der Hauskanzlei „babu direkt". Ein Betrieb unter
+    # einer Kanzlei sah damit den Kaufbildschirm (den liefert `/api/ich`
+    # über `_eigener_mandant`), bekam aber beim Melden des Kaufs ein 404:
+    # Apple hätte abgebucht, und der Platz wäre nie eingetragen worden.
+    # Gefunden an Apples eigenem Prüfkonto, dessen Betrieb unter der
+    # Kanzlei Afflek hängt.
+    mandant_id, sperre = bw._eigener_mandant(un)  # noqa: SLF001
+    if sperre is not None:
+        return sperre          # hängt an mehreren Betrieben — 409 wie sonst
+    if mandant_id is None:
         return JSONResponse({"fehler": "Für diesen Zugang gibt es hier "
                                        "keinen Betrieb."}, status_code=404)
-    mandant_id = int(direkt[0])
+    mandant_id = int(mandant_id)
     try:
         inhalt = apple_abo.pruefen(jws)
     except apple_abo.NichtEcht as ex:

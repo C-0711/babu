@@ -204,3 +204,75 @@ def test_beendete_betriebe_kommen_nicht_in_frage(welt):
                   ("beendet", konto["mandant"]))
         assert mandanten.mandant_aus_kauf_kennung(
             paket.kauf_kennung(konto["mandant"]), c=c) is None
+
+
+# ---------------------------------------------------------------------------
+# Ein Betrieb unter einer KANZLEI darf auch kaufen (15.10.2026)
+# ---------------------------------------------------------------------------
+#
+# Live gefunden beim Aufräumen nach Apples Ablehnung vom 15.10.: zwei Routen
+# beantworten die Frage „zu welchem Betrieb gehört dieser Zugang?"
+# verschieden.
+#
+#   /api/ich          -> `babu_web._eigener_mandant` — der Betrieb, dessen
+#                        Besitzer dieser Zugang ist, egal unter welcher
+#                        Kanzlei er hängt.
+#   /api/abo/apple    -> `testmonat.direkt_mandant_von` — NUR die Hauskanzlei
+#                        „babu direkt".
+#
+# Für jeden Betrieb aus „Los geht's" ist das dasselbe. Für einen Betrieb, der
+# unter einer Kanzlei liegt, nicht: der Kaufbildschirm erscheint (weil
+# /api/ich die Stufen liefert), und die Meldung des Kaufs läuft danach in ein
+# 404. Apple hätte abgebucht, und babu hätte den Platz nie eingetragen.
+#
+# Genau dieser Zugang war Apples Prüfkonto.
+
+def _unter_fremde_kanzlei(konto: dict, name: str = "Kanzlei Fremd") -> int:
+    """Den Betrieb dieses Zugangs unter eine andere Kanzlei hängen."""
+    with babu_web._DB_LOCK, babu_web._db() as c:  # noqa: SLF001
+        kid = mandanten.kanzlei_anlegen(name, "berater@fremd.de", c=c)
+        c.execute("UPDATE mandant SET kanzlei_id=? WHERE id=?",
+                  (kid, konto["mandant"]))
+    return kid
+
+
+def test_der_kaufbildschirm_erscheint_auch_unter_einer_kanzlei(welt):
+    """Die Voraussetzung: /api/ich liefert die Stufen weiter."""
+    konto = _anlegen(_client())
+    _unter_fremde_kanzlei(konto)
+    daten = _mit_schluessel(konto).get("/api/ich").json()
+    assert daten.get("speicher") is not None, daten
+    assert len(daten.get("stufen") or []) == 3
+    assert daten.get("kauf_kennung")
+
+
+def test_der_kauf_wird_auch_unter_einer_kanzlei_eingetragen(welt):
+    """Der Befund. Vor dem 15.10.2026 antwortete die Route hier 404."""
+    konto = _anlegen(_client())
+    _unter_fremde_kanzlei(konto)
+    r = _mit_schluessel(konto).post("/api/abo/apple",
+                                    json={"signed": _beleg(welt)})
+    assert r.status_code == 200, r.text
+    assert r.json()["stufe"] == "klein"
+    assert _stand(konto["mandant"])["paket"] == "klein"
+
+
+def test_auch_mit_kaufkennung_unter_einer_kanzlei(welt):
+    """Die Kennung wird aus derselben Nummer gerechnet — sonst wiese die
+    Route den eigenen Kauf als fremden ab."""
+    konto = _anlegen(_client())
+    _unter_fremde_kanzlei(konto)
+    beleg = _beleg(welt, appAccountToken=paket.kauf_kennung(konto["mandant"]))
+    r = _mit_schluessel(konto).post("/api/abo/apple", json={"signed": beleg})
+    assert r.status_code == 200, r.text
+
+
+def test_ohne_jeden_betrieb_bleibt_es_bei_404(welt):
+    """Negativkontrolle: ein Zugang ohne Mandantenzeile darf keinen Platz
+    bekommen — sonst hinge der Kauf an der Default-Box."""
+    konto = _anlegen(_client())
+    with babu_web._DB_LOCK, babu_web._db() as c:  # noqa: SLF001
+        c.execute("DELETE FROM mandant WHERE id=?", (konto["mandant"],))
+    r = _mit_schluessel(konto).post("/api/abo/apple",
+                                    json={"signed": _beleg(welt)})
+    assert r.status_code == 404, r.text
