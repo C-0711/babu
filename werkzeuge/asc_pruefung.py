@@ -88,8 +88,13 @@ def konto() -> None:
 #: heisst: eine Einreichung wurde abgelehnt und liegt offen; der Grund steht
 #: NUR im Resolution Center der Weboberflaeche, die API gibt ihn nicht her
 #: (appStoreVersionForReview und submittedByActor antworten 403).
-BLOCKIERT = {"UNRESOLVED_ISSUES", "WAITING_FOR_REVIEW", "IN_REVIEW",
-             "READY_FOR_REVIEW"}
+#:
+#: `READY_FOR_REVIEW` steht NICHT darin, und das ist der Unterschied, der
+#: am 15.10.2026 einen Fehlalarm erzeugt hat: so heisst auch die leere,
+#: vorbereitete Huelle, die App Store Connect selbst anlegt und in die die
+#: Abos erst hinein sollen. Sie traegt kein `submittedDate` — daran, und nur
+#: daran, lassen sich die beiden auseinanderhalten.
+BLOCKIERT = {"UNRESOLVED_ISSUES", "WAITING_FOR_REVIEW", "IN_REVIEW"}
 
 
 def pruefvorgang() -> None:
@@ -105,7 +110,8 @@ def pruefvorgang() -> None:
         pruefe(False, "Pruefvorgaenge lesbar", f"HTTP {r['status']}")
         return
     offen = [s for s in (r["daten"].get("data") or [])
-             if s["attributes"].get("state") in BLOCKIERT]
+             if s["attributes"].get("state") in BLOCKIERT
+             and s["attributes"].get("submittedDate")]
     if not offen:
         pruefe(True, "Kein alter Pruefvorgang offen")
         return
