@@ -277,30 +277,54 @@ def abos() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def abos_eingereicht(stufen: list[dict]) -> None:
-    """Liegen die Abos der Einreichung bei — oder stehen sie nur bereit?
+    """Liegen die Abos einer Einreichung bei?
 
-    Der Unterschied, der am 15.10.2026 eine Ablehnung gekostet hat. Apple
-    sagt es selbst, wenn man ein Abo allein einreichen will:
+    **Nicht am Zustand des Abos ablesbar.** Das war mein erster Versuch und
+    er war falsch: ein Abo bleibt `READY_TO_SUBMIT`, auch wenn es einer
+    Einreichung beiliegt — der Zustand wandert erst, wenn Apple es wirklich
+    prueft. Am 17.10.2026 meldete die Pruefung deshalb „liegt nicht bei",
+    obwohl alle drei seit dem 15.10. in der Einreichung standen.
 
-        POST /v1/subscriptionSubmissions -> 409
-        STATE_ERROR.FIRST_SUBSCRIPTION_MUST_BE_SUBMITTED_ON_VERSION
+    Was es wirklich sagt, sind die Eintraege der Einreichung. Ihre IDs
+    tragen eine Typmarke: `|6|` ist die App-Version, `|18|` ein Abo. Die
+    Marke ist undokumentiert, also wird sie nur zum Zaehlen benutzt und nie
+    zum Entscheiden ueber einen einzelnen Eintrag — die Frage hier lautet
+    bloss: haengt ausser der Version noch etwas drin?
 
-    Das ERSTE Abo muss mit einer App-Version zusammen gehen, und das geht
-    nur in der Weboberflaeche: `reviewSubmissionItems` kennt keine Beziehung
-    `subscription`, und `appStoreVersions/<id>/subscriptions` gibt es nicht.
-    Die API kann es also nicht nachholen — sie kann nur sagen, dass es
-    fehlt. Genau das tut diese Pruefung.
-
-    `READY_TO_SUBMIT` = konfiguriert, in keiner Einreichung. Erst
-    `WAITING_FOR_REVIEW`/`IN_REVIEW`/`APPROVED` heisst, dass Apple sie
-    kennt.
+    Der Einzelabruf eines Eintrags (`/reviewSubmissionItems/<id>`) gibt 403,
+    die Zuordnung Eintrag -> Abo ist also nicht zu haben.
     """
-    offen = [s for s in stufen if s.get("state") == "READY_TO_SUBMIT"]
-    pruefe(not offen, "Die Abos liegen der Einreichung bei",
-           f"{len(offen)} von {len(stufen)} stehen auf READY_TO_SUBMIT — in "
-           "App Store Connect: Version 1.0, Abschnitt In-App-Kaeufe und Abos, "
-           "zur Ueberpruefung hinzufuegen (die API kann das nicht)"
-           if offen else "")
+    r = a.api("GET", f"/apps/{APP}/reviewSubmissions?limit=10")
+    if not r["ok"]:
+        pruefe(False, "Die Abos liegen einer Einreichung bei",
+               f"Einreichungen nicht lesbar (HTTP {r['status']})")
+        return
+    beigelegt = 0
+    for s in (r["daten"].get("data") or []):
+        if s["attributes"].get("state") == "COMPLETE":
+            continue
+        it = a.api("GET", f"/reviewSubmissions/{s['id']}/items")
+        if not it["ok"]:
+            continue
+        beigelegt += sum(1 for i in (it["daten"].get("data") or [])
+                         if "|18|" in i["id"]
+                         or "|18|" in _entschluesselt(i["id"]))
+    pruefe(beigelegt >= len(stufen) and len(stufen) > 0,
+           "Die Abos liegen einer Einreichung bei",
+           f"{beigelegt} von {len(stufen)} — in App Store Connect: Version "
+           "1.0, Abschnitt In-App-Kaeufe und Abos, zur Ueberpruefung "
+           "hinzufuegen (die API kann das nicht)"
+           if beigelegt < len(stufen) else f"{beigelegt} Eintraege")
+
+
+def _entschluesselt(ident: str) -> str:
+    """Die Eintrags-ID ist base64; die Typmarke steht erst darin."""
+    import base64  # noqa: PLC0415
+    try:
+        return base64.urlsafe_b64decode(
+            ident + "=" * (-len(ident) % 4)).decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def main(kurz: bool = False) -> int:
