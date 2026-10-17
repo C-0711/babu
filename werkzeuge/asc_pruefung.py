@@ -67,9 +67,19 @@ def konto() -> None:
     gebiete = d["data"] if d and "data" in d else []
     kann = [g for g in gebiete
             if "CANNOT_SELL" not in (g["attributes"].get("contentStatuses") or [])]
-    pruefe(bool(kann), "Paid Applications Agreement steht",
-           "CANNOT_SELL in allen Gebieten — Business → Agreements, "
-           "Bank und Steuer, nur der Kontoinhaber"
+    # Was hier gemessen wird, ist Apples `CANNOT_SELL` — NICHT der Vertrag
+    # selbst. Den gibt die API nicht her (/paidApplicationsAgreements,
+    # /agreements, /taxForms, /bankAccounts antworten alle 404). Der
+    # Zusammenhang ist erschlossen, nicht belegt, und am 17.10.2026 stand
+    # CANNOT_SELL noch in allen 175 Gebieten, waehrend der Auftraggeber den
+    # Vertrag als erledigt meldete. Beides kann stimmen: Apple traegt es
+    # verzoegert nach. Deshalb sagt der Befund jetzt, was er sieht, und
+    # nicht, was er daraus schliesst.
+    pruefe(bool(kann), "Apple erlaubt den Verkauf (kein CANNOT_SELL)",
+           "CANNOT_SELL in allen Gebieten. Haeufigster Grund ist das Paid "
+           "Applications Agreement (Business → Agreements: muss Active "
+           "sein, nicht Pending) — den Vertrag selbst kann diese Pruefung "
+           "nicht sehen"
            if not kann else f"verkaufbar in {len(kann)} Gebieten")
     ohne = [g for g in gebiete
             if "TRADER_STATUS_NOT_PROVIDED" in (g["attributes"].get("contentStatuses") or [])]
