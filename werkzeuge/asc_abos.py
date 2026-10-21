@@ -10,6 +10,8 @@ die Annahme, Abos ließen sich nur über die Weboberfläche anlegen, war falsch.
     asc_abos.py preise            # Preise für DEU, AUT, CHE
     asc_abos.py alle_preise       # Preise für ALLE 175 Gebiete (Pflicht zum
                                   #   Einreichen, auch wo nicht verkauft wird)
+    asc_abos.py ueberall          # Abos in ALLEN Gebieten verfügbar (die App
+                                  #   bleibt in DEU — siehe ueberall())
     asc_abos.py texte             # Namen und Beschreibungen (de-DE, en-US)
     asc_abos.py bild <datei.png>  # Prüf-Screenshot an alle drei hängen
     asc_abos.py notiz             # Prüfnotiz an alle drei
@@ -42,6 +44,10 @@ GRUPPE_NAME = "babu Speicher"
 #: und ein anderer Eintrag.) Die PREISE brauchen trotzdem alle 175 Gebiete:
 #: Apple verlangt sie zum Einreichen, auch wo nichts verkauft wird — siehe
 #: `alle_preise`.
+#:
+#: Seit 22.10.2026 gilt das Land nur noch für die APP, nicht mehr für die
+#: Abos — siehe `ueberall`. Verkauft wird weiter nur in Deutschland, weil
+#: es die App nur dort gibt.
 GEBIETE = ["DEU"]
 
 #: Die Stufen — Quelle ist `paket.STUFEN`, hier nur gespiegelt, damit das
@@ -60,13 +66,16 @@ STUFEN = [
 ]
 
 NOTIZ = ("The three tiers differ ONLY in storage space — every babu feature "
-         "is included in all of them. To reach this screen: open the app, "
-         "tap \"Los geht's\" (no account, no e-mail, no password needed) and "
-         "capture 10 documents; after the tenth the storage picker appears. "
-         "It can also be opened any time from the storage bar on the capture "
-         "screen. babu is a bookkeeping app for small businesses in Germany, "
-         "Austria and Switzerland; the subscription pays for the document "
-         "storage on our own servers in Germany.")
+         "is included in all of them. To reach this screen: open the app and "
+         "tap \"Los geht's\" (no account, no e-mail, no password needed) or "
+         "sign in with the demo account, then tap the menu button (three "
+         "lines, top right) -> \"Deine Ablage\" -> \"Platz buchen\". It also "
+         "opens by itself once the 10 free documents are used up. babu is a "
+         "bookkeeping app for small businesses in Germany; the subscription "
+         "pays for the document storage on our own servers in Germany. The "
+         "app is distributed in Germany only, the subscriptions are available "
+         "in every storefront, so they load for a sandbox account from any "
+         "region.")
 
 
 def gruppe() -> str | None:
@@ -170,6 +179,37 @@ def preise() -> None:
             merk = "" if abs(ziel - preis) < 0.001 else f"  (statt {preis:.2f})"
             print(f"  {pid:22s} {gebiet} {ziel:>7.2f}{merk}",
                   "ok" if r["ok"] else r["fehler"][:200])
+
+
+def ueberall() -> None:
+    """Die Abos in ALLEN Gebieten verfügbar machen — die App bleibt in DEU.
+
+    Ablehnung vom 22.10.2026 (2.1(b)): der Prüfer fand die Abos nicht. Er
+    testet mit einer Sandbox-Kennung, deren Storefront meist nicht DEU ist,
+    und StoreKit liefert nur Produkte, die in dieser Storefront verfügbar
+    sind — `Product.products` kam leer zurück, die App zeigte die Stufen mit
+    dem Ersatzpreis und konnte nichts kaufen. Wer die App nicht laden kann,
+    kann auch kein Abo darin kaufen; die Sperre auf Abo-Ebene schützte also
+    nichts und versteckte nur die Produkte vor der Prüfung.
+    """
+    gebiete, pfad = [], "/territories?limit=200"
+    while pfad:
+        r = a.api("GET", pfad)
+        if not r["ok"]:
+            print("Gebiete:", r["fehler"][:200]); return
+        gebiete += [x["id"] for x in r["daten"]["data"]]
+        nxt = r["daten"].get("links", {}).get("next")
+        pfad = nxt.split("/v1", 1)[1] if nxt else None
+    for pid, sub in abos().items():
+        r = a.api("POST", "/subscriptionAvailabilities", {"data": {
+            "type": "subscriptionAvailabilities",
+            "attributes": {"availableInNewTerritories": True},
+            "relationships": {
+                "subscription": {"data": {"type": "subscriptions", "id": sub}},
+                "availableTerritories": {"data": [
+                    {"type": "territories", "id": t} for t in gebiete]}}}})
+        print(f"  {pid:22s}", f"{len(gebiete)} Gebiete" if r["ok"]
+              else f"{r['status']}: {r['fehler'][:200]}")
 
 
 def alle_preise() -> None:
@@ -307,7 +347,8 @@ if __name__ == "__main__":
     was = sys.argv[1] if len(sys.argv) > 1 else "zeigen"
     if was == "bild":
         bild(Path(sys.argv[2]))
-    elif was in ("zeigen", "anlegen", "preise", "alle_preise", "texte", "notiz"):
+    elif was in ("zeigen", "anlegen", "preise", "alle_preise", "ueberall",
+                 "texte", "notiz"):
         globals()[was]()
     else:
         print(__doc__)
