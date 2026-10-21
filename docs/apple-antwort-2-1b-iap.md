@@ -31,14 +31,15 @@ Einschränkung nach Storefront/Region/Gerät, Paid Applications Agreement.
 | ✅ | Die App in allen Gebieten verfügbar (`asc_verfuegbarkeit.py weltweit`) — Entscheid des Auftraggebers 22.10.: „weltweit, aber nur für die deutsche Steuererklärung“ |
 | ✅ | Prüfnotiz der Abos neu (`asc_abos.py notiz`): richtiger Weg statt „Leiste auf dem Aufnahme-Bildschirm" und „Deutschland, Österreich, Schweiz" |
 | ✅ | Prüfnotiz der Version: Menüknopf genau benannt, „Platz buchen" zweimal, „Käufe wiederherstellen", Anmeldeweg fürs Prüfkonto, Länderabsatz (3.984 von 4.000 Zeichen) |
-| ⬜ | **Business → Agreements**: Paid Applications Agreement muss *Active* sein (nur der Kontoinhaber, die API sieht ihn nicht) |
-| ⬜ | **Business → Trader Status** (DSA): Apple meldet für DEU `TRADER_STATUS_NOT_PROVIDED` (nur der Kontoinhaber, die API kennt kein Feld). Ob danach `CANNOT_SELL` verschwindet, ist ungemessen — nachher neu lesen |
+| ✅ | **Business → Agreements** (in der Weboberfläche gelesen 22.10.): Paid Applications Agreement aktiv seit 13.10.2026 bis 26.07.2027, alle Länder; Bankkonto aktiv, W-8BEN und Bescheinigung zum Auslandsstatus aktiv seit 14.10. |
+| ⏳ | **Business → Trader Status** (DSA): eingereicht, „In Review“ seit 24.09.2026 (Weboberfläche, 22.10.) — die API meldet in den 27 EU-Gebieten weiter `TRADER_STATUS_NOT_PROVIDED`. Nur warten |
+| ⬜ | **Business → DAC7**: „Missing Info“ (Weboberfläche, 22.10.) — Angaben fehlen, nur der Kontoinhaber. Ob das `CANNOT_SELL` auslöst, ist ungemessen |
 | ⬜ | Kauf mit Build 13 aus TestFlight einmal selbst: ☰ → „Deine Ablage" → „Platz buchen". Erst wenn Apples Kaufblatt erscheint, gilt Punkt 2 der Antwort |
 | ⬜ | Antwort im Resolution Center absenden, dann neu einreichen |
 
 ## Entwurf (englisch)
 
-Punkt 2 und 4 erst absenden, wenn die beiden offenen Häkchen dazu stehen.
+Punkt 4 ist belegt (Vertrag aktiv, gelesen 22.10.). Punkt 2 erst absenden, wenn der Kauf aus TestFlight einmal geklappt hat.
 
 Hello,
 
