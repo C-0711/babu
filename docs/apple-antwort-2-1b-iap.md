@@ -14,9 +14,13 @@ Einschränkung nach Storefront/Region/Gerät, Paid Applications Agreement.
   nichts. Die App zeigt dann die Stufen mit dem Ersatzpreis vom Server, und
   „Platz buchen" endet in „Dieser Platz ist gerade nicht zu haben"
   (`Kasse.kaufen`). Für den Prüfer: keine In-App-Käufe.
-- `territoryAvailabilities` für DEU: `TRADER_STATUS_NOT_PROVIDED`,
-  `CANNOT_SELL`, `AVAILABLE_FOR_SALE_UNRELEASED_APP`. In den 174 anderen
-  Gebieten steht `CANNOT_SELL`, weil die App dort nicht angeboten wird.
+- `territoryAvailabilities` (v2), gelesen 22.10.: DEU `available: true` mit
+  `TRADER_STATUS_NOT_PROVIDED`, `CANNOT_SELL`, `AVAILABLE_FOR_SALE_UNRELEASED_APP`;
+  AUT/FRA (EU) `available: false` mit `TRADER_STATUS_NOT_PROVIDED`, `CANNOT_SELL`;
+  USA `available: false` mit `CANNOT_SELL`. **Ungemessen:** was `CANNOT_SELL`
+  auslöst (Trader Status, Vertrag oder beides — die Daten trennen es nicht,
+  in den USA steht es ohne Trader-Hinweis) und ob die Abos in der Sandbox
+  laden (nie getestet).
 
 **Erledigt am 22.10.2026 (über die API, nachgelesen):**
 
@@ -26,7 +30,7 @@ Einschränkung nach Storefront/Region/Gerät, Paid Applications Agreement.
 | ✅ | Prüfnotiz der Abos neu (`asc_abos.py notiz`): richtiger Weg statt „Leiste auf dem Aufnahme-Bildschirm" und „Deutschland, Österreich, Schweiz" |
 | ✅ | Prüfnotiz der Version: Menüknopf genau benannt, „Platz buchen" zweimal, „Käufe wiederherstellen", Anmeldeweg fürs Prüfkonto, Länderabsatz (3.984 von 4.000 Zeichen) |
 | ⬜ | **Business → Agreements**: Paid Applications Agreement muss *Active* sein (nur der Kontoinhaber, die API sieht ihn nicht) |
-| ⬜ | **Business → Trader Status** (DSA) angeben — sonst bleibt DEU auf `CANNOT_SELL` (nur der Kontoinhaber, die API kennt kein Feld) |
+| ⬜ | **Business → Trader Status** (DSA): Apple meldet für DEU `TRADER_STATUS_NOT_PROVIDED` (nur der Kontoinhaber, die API kennt kein Feld). Ob danach `CANNOT_SELL` verschwindet, ist ungemessen — nachher neu lesen |
 | ⬜ | Kauf mit Build 13 aus TestFlight einmal selbst: ☰ → „Deine Ablage" → „Platz buchen". Erst wenn Apples Kaufblatt erscheint, gilt Punkt 2 der Antwort |
 | ⬜ | Antwort im Resolution Center absenden, dann neu einreichen |
 
