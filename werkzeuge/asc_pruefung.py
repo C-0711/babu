@@ -274,17 +274,17 @@ def abos() -> list[dict]:
         preise = seiten(f"/subscriptions/{sid}/prices?limit=200")
         pruefe(len(preise) >= 170, f"{pid}: Preise in allen Gebieten",
                f"{len(preise)} — Apple verlangt jeden Markt, auch ungenutzte")
-        # Ablehnung vom 22.10.2026 (2.1(b)): Abos nur in DEU, der Pruefer
-        # testet mit einer Sandbox-Kennung aus einem anderen Land, StoreKit
-        # liefert ihm nichts — „wir finden die In-App-Kaeufe nicht". Die App
-        # bleibt in DEU; die Abos muessen ueberall stehen.
+        # Ablehnung vom 22.10.2026 (2.1(b)): „wir finden die In-App-Kaeufe
+        # nicht" — und die Frage, ob wir nach Storefront einschraenken. Die
+        # Abos standen nur in DEU. Die App bleibt in DEU; die Abos stehen
+        # ueberall, damit diese Frage nicht wieder offen ist.
         av = a.api("GET", f"/subscriptions/{sid}/subscriptionAvailability")
         av_id = ((av["daten"] or {}).get("data") or {}).get("id") if av["ok"] else None
         gebiete = seiten(f"/subscriptionAvailabilities/{av_id}/availableTerritories"
                          "?limit=200") if av_id else []
         pruefe(len(gebiete) >= 170, f"{pid}: in jeder Storefront verfügbar",
-               f"{len(gebiete)} — sonst sieht ein Prüfer aus einem anderen Land "
-               "keine Produkte (asc_abos.py ueberall)")
+               f"{len(gebiete)} — Apple fragte am 22.10. nach Storefront-Sperren "
+               "(asc_abos.py ueberall)")
         deu = a.api("GET", f"/subscriptions/{sid}/prices?filter[territory]=DEU"
                     "&include=subscriptionPricePoint&limit=5")
         cent = None

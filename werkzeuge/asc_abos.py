@@ -73,9 +73,8 @@ NOTIZ = ("The three tiers differ ONLY in storage space — every babu feature "
          "opens by itself once the 10 free documents are used up. babu is a "
          "bookkeeping app for small businesses in Germany; the subscription "
          "pays for the document storage on our own servers in Germany. The "
-         "app is distributed in Germany only, the subscriptions are available "
-         "in every storefront, so they load for a sandbox account from any "
-         "region.")
+         "app is distributed in Germany only; the subscriptions are available "
+         "in every storefront.")
 
 
 def gruppe() -> str | None:
@@ -184,13 +183,12 @@ def preise() -> None:
 def ueberall() -> None:
     """Die Abos in ALLEN Gebieten verfügbar machen — die App bleibt in DEU.
 
-    Ablehnung vom 22.10.2026 (2.1(b)): der Prüfer fand die Abos nicht. Er
-    testet mit einer Sandbox-Kennung, deren Storefront meist nicht DEU ist,
-    und StoreKit liefert nur Produkte, die in dieser Storefront verfügbar
-    sind — `Product.products` kam leer zurück, die App zeigte die Stufen mit
-    dem Ersatzpreis und konnte nichts kaufen. Wer die App nicht laden kann,
-    kann auch kein Abo darin kaufen; die Sperre auf Abo-Ebene schützte also
-    nichts und versteckte nur die Produkte vor der Prüfung.
+    Ablehnung vom 22.10.2026 (2.1(b)): der Prüfer fand die Abos nicht und
+    fragte, ob wir nach Storefront oder Region einschränken — das taten wir:
+    App und Abos standen nur in DEU. Ob seine Sandbox-Storefront deshalb
+    nichts lieferte, ist ein Verdacht, nicht gemessen. Wer die App nicht
+    laden kann, kann auch kein Abo darin kaufen; die Sperre auf Abo-Ebene
+    schützt also nichts.
     """
     gebiete, pfad = [], "/territories?limit=200"
     while pfad:

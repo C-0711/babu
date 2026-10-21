@@ -9,11 +9,12 @@ Einschränkung nach Storefront/Region/Gerät, Paid Applications Agreement.
 - Der Server liefert dem Prüfkonto `apple-review@0711.io` (Mandant 4, herkunft
   app, Hauskanzlei 10) Platz und alle drei Stufen — im laufenden Container
   nachgerechnet. Die Prüfnotiz nannte den Weg schon.
-- App UND Abos waren nur in **DEU** verfügbar. StoreKit liefert nur Produkte
-  der Storefront des Sandbox-Kontos; ein Prüfer aus einem anderen Land bekam
-  nichts. Die App zeigt dann die Stufen mit dem Ersatzpreis vom Server, und
-  „Platz buchen" endet in „Dieser Platz ist gerade nicht zu haben"
-  (`Kasse.kaufen`). Für den Prüfer: keine In-App-Käufe.
+- App UND Abos waren nur in **DEU** verfügbar (gelesen: `subscriptionAvailability`
+  1 Gebiet). Im Code gelesen: liefert `Product.products` nichts, zeigt die App
+  die Stufen mit dem Ersatzpreis vom Server, und „Platz buchen" endet in
+  „Dieser Platz ist gerade nicht zu haben" (`Kasse.kaufen`). **Ungemessen:**
+  welche Storefront der Prüfer hatte und ob StoreKit ihm deshalb nichts lieferte —
+  das ist ein Verdacht aus Apples Frage 3, kein Befund.
 - `territoryAvailabilities` (v2), gelesen 22.10.: DEU `available: true` mit
   `TRADER_STATUS_NOT_PROVIDED`, `CANNOT_SELL`, `AVAILABLE_FOR_SALE_UNRELEASED_APP`;
   AUT/FRA (EU) `available: false` mit `TRADER_STATUS_NOT_PROVIDED`, `CANNOT_SELL`;
@@ -56,12 +57,10 @@ of the group "babu Speicher" (1 GB, 5 GB, 100 GB). Select one and tap
 build 13 via TestFlight.
 
 **3. Restrictions.** Until now, the app and the three subscriptions were
-available only in the Germany storefront. A sandbox account from another
-storefront therefore received no products, and the screen showed the tiers
-without a working purchase. We have made the three subscriptions available in
-all storefronts, so they now load for any sandbox account; the app itself
-remains distributed in Germany only. There is no restriction by device or
-account status.
+available only in the Germany storefront. We have made the three
+subscriptions available in all storefronts; the app itself remains
+distributed in Germany only. There is no restriction by device or account
+status.
 
 **4. Paid Applications Agreement.** The Account Holder has accepted it; it
 shows as Active under Business → Agreements.
