@@ -27,7 +27,8 @@ Einschränkung nach Storefront/Region/Gerät, Paid Applications Agreement.
 
 | | |
 |---|---|
-| ✅ | Die drei Abos in allen 175 Gebieten verfügbar, neue Gebiete automatisch (`asc_abos.py ueberall`). Die App bleibt nur in DEU — verkauft wird also weiter nur dort |
+| ✅ | Die drei Abos in allen 175 Gebieten verfügbar, neue Gebiete automatisch (`asc_abos.py ueberall`) |
+| ✅ | Die App in allen Gebieten verfügbar (`asc_verfuegbarkeit.py weltweit`) — Entscheid des Auftraggebers 22.10.: „weltweit, aber nur für die deutsche Steuererklärung“ |
 | ✅ | Prüfnotiz der Abos neu (`asc_abos.py notiz`): richtiger Weg statt „Leiste auf dem Aufnahme-Bildschirm" und „Deutschland, Österreich, Schweiz" |
 | ✅ | Prüfnotiz der Version: Menüknopf genau benannt, „Platz buchen" zweimal, „Käufe wiederherstellen", Anmeldeweg fürs Prüfkonto, Länderabsatz (3.984 von 4.000 Zeichen) |
 | ⬜ | **Business → Agreements**: Paid Applications Agreement muss *Active* sein (nur der Kontoinhaber, die API sieht ihn nicht) |
@@ -57,10 +58,11 @@ of the group "babu Speicher" (1 GB, 5 GB, 100 GB). Select one and tap
 build 13 via TestFlight.
 
 **3. Restrictions.** Until now, the app and the three subscriptions were
-available only in the Germany storefront. We have made the three
-subscriptions available in all storefronts; the app itself remains
-distributed in Germany only. There is no restriction by device or account
-status.
+available only in the Germany storefront. We have made the app and the
+three subscriptions available in all storefronts. babu is made for
+businesses that keep their books and pay taxes in Germany, wherever the
+owner lives; that is a matter of content, not of availability. There is no
+restriction by device or account status.
 
 **4. Paid Applications Agreement.** The Account Holder has accepted it; it
 shows as Active under Business → Agreements.

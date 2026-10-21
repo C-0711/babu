@@ -45,9 +45,10 @@ GRUPPE_NAME = "babu Speicher"
 #: Apple verlangt sie zum Einreichen, auch wo nichts verkauft wird — siehe
 #: `alle_preise`.
 #:
-#: Seit 22.10.2026 gilt das Land nur noch für die APP, nicht mehr für die
-#: Abos — siehe `ueberall`. Verkauft wird weiter nur in Deutschland, weil
-#: es die App nur dort gibt.
+#: Überholt am 22.10.2026: die Abos stehen in allen Gebieten (`ueberall`),
+#: und die App auch — Entscheid des Auftraggebers „weltweit, aber nur für die
+#: deutsche Steuererklärung" (siehe `asc_verfuegbarkeit.py`). GEBIETE nutzt
+#: nur noch `preise` für den deutschen Grundpreis.
 GEBIETE = ["DEU"]
 
 #: Die Stufen — Quelle ist `paket.STUFEN`, hier nur gespiegelt, damit das
@@ -71,10 +72,10 @@ NOTIZ = ("The three tiers differ ONLY in storage space — every babu feature "
          "sign in with the demo account, then tap the menu button (three "
          "lines, top right) -> \"Deine Ablage\" -> \"Platz buchen\". It also "
          "opens by itself once the 10 free documents are used up. babu is a "
-         "bookkeeping app for small businesses in Germany; the subscription "
-         "pays for the document storage on our own servers in Germany. The "
-         "app is distributed in Germany only; the subscriptions are available "
-         "in every storefront.")
+         "bookkeeping app for businesses taxed in Germany, wherever the owner "
+         "lives; the subscription pays for the document storage on our own "
+         "servers in Germany. The app and the subscriptions are available in "
+         "every storefront.")
 
 
 def gruppe() -> str | None:
