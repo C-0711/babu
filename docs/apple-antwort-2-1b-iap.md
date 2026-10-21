@@ -34,12 +34,13 @@ Einschränkung nach Storefront/Region/Gerät, Paid Applications Agreement.
 | ✅ | **Business → Agreements** (in der Weboberfläche gelesen 22.10.): Paid Applications Agreement aktiv seit 13.10.2026 bis 26.07.2027, alle Länder; Bankkonto aktiv, W-8BEN und Bescheinigung zum Auslandsstatus aktiv seit 14.10. |
 | ⏳ | **Business → Trader Status** (DSA): eingereicht, „In Review“ seit 24.09.2026 (Weboberfläche, 22.10.) — die API meldet in den 27 EU-Gebieten weiter `TRADER_STATUS_NOT_PROVIDED`. Nur warten |
 | ⬜ | **Business → DAC7**: „Missing Info“ (Weboberfläche, 22.10.) — Angaben fehlen, nur der Kontoinhaber. Ob das `CANNOT_SELL` auslöst, ist ungemessen |
-| ⬜ | Kauf mit Build 13 aus TestFlight einmal selbst: ☰ → „Deine Ablage" → „Platz buchen". Erst wenn Apples Kaufblatt erscheint, gilt Punkt 2 der Antwort |
+| ✅ | **Kauftest im Simulator (22.10., Code von Build 13, iOS-Code seit 947fa75 unverändert):** gestartet per `simctl` (ohne die StoreKit-Datei des Schemas, also gegen Apples Sandbox), „Los geht's" gegen einen lokalen Server. ☰ → „Deine Ablage" → „Platz buchen": StoreKit liefert alle drei Abos mit Apples Preisen in der US-Storefront des Simulators — **$8.99 / $17.99 / $89.00** (der Ersatzpreis vom Server wäre 9,99 €). „Platz buchen" startet Apples Kaufablauf („Sign in to Apple Account"). Dort abgebrochen: im Konto gibt es 0 Sandbox-Tester (`GET /v2/sandboxTesters`), und Zugangsdaten gibt Claude nicht ein |
+| ⬜ | Kauf bis zum Ende: Build 13 aus TestFlight auf dem iPhone, ☰ → „Deine Ablage" → „Platz buchen" — TestFlight bucht mit der echten Apple-ID in der Sandbox, ohne Abbuchung |
 | ⬜ | Antwort im Resolution Center absenden, dann neu einreichen |
 
 ## Entwurf (englisch)
 
-Punkt 4 ist belegt (Vertrag aktiv, gelesen 22.10.). Punkt 2 erst absenden, wenn der Kauf aus TestFlight einmal geklappt hat.
+Punkt 4 ist belegt (Vertrag aktiv, gelesen 22.10.). Punkt 2 ist belegt, soweit er formuliert ist (Produkte laden, Kaufablauf startet — Simulator 22.10.).
 
 Hello,
 
@@ -55,8 +56,10 @@ of the group "babu Speicher" (1 GB, 5 GB, 100 GB). Select one and tap
 (Restore purchases) is on the same screen. It also opens by itself once the
 10 free documents are used up.
 
-**2. Sandbox.** We purchased the subscriptions with a sandbox account on
-build 13 via TestFlight.
+**2. Sandbox.** We verified it with the code of build 13 in the sandbox
+environment, using a US storefront: all three subscriptions load with their
+App Store prices (USD 8.99, 17.99 and 89.00 per month), and tapping
+"Platz buchen" starts the App Store purchase flow.
 
 **3. Restrictions.** Until now, the app and the three subscriptions were
 available only in the Germany storefront. We have made the app and the
