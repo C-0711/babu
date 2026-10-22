@@ -60,5 +60,46 @@ pruefe(stufen[1].belegeText == "rund 9500 Belege", "5 GB ≈ 9500 Belege")
 pruefe(stufen[2].belegeText == "rund 190 Tausend Belege",
        "100 GB ≈ 190 Tausend Belege")
 
+// --- Das Angebot nach dem ersten Beleg (Wunsch vom 22.10.2026) ----------
+// Einmal je Betrieb, nach dem ersten Beleg — nur für die Inhaberin eines
+// Betriebs aus dem App Store, der noch keine Stufe hat und nicht voll ist.
+func faellig(_ p: PlatzStand?, telefon: Int, gezeigt: Bool = false,
+             inhaberin: Bool = true) -> Bool {
+    PlatzStand.angebotNachErstemBeleg(p, belegeAufTelefon: telefon,
+                                      schonGezeigt: gezeigt, inhaberin: inhaberin)
+}
+pruefe(!faellig(frei(10, belege: 0), telefon: 0), "vor dem ersten Beleg: noch nicht")
+pruefe(faellig(frei(10, belege: 0), telefon: 1),
+       "erster Beleg auf dem Telefon, Server zählt noch 0: jetzt")
+pruefe(faellig(frei(9, belege: 1), telefon: 1), "erster Beleg angekommen: jetzt")
+pruefe(!faellig(frei(9, belege: 1), telefon: 1, gezeigt: true), "nur einmal")
+pruefe(!faellig(nil, telefon: 3), "Betrieb aus dem Portal (kein Platz): nie")
+pruefe(!faellig(mitStufe("klein", grenze: GB, verbraucht: 0), telefon: 1),
+       "Stufe schon gebucht: nie")
+pruefe(!faellig(frei(0, belege: 10), telefon: 10),
+       "voll: das bestehende Angebot bei vollem Platz übernimmt")
+pruefe(!faellig(frei(9, belege: 1), telefon: 1, inhaberin: false),
+       "Mitarbeiterin: nie")
+
+// --- Der Knopf „Erst kostenlos weiter" ---------------------------------
+// Die Zahl rechnet mit dem, was schon auf dem Telefon liegt: direkt nach dem
+// ersten Foto zählt der Server oft noch 0 (der Beleg wartet aufs Hochladen),
+// und „noch 10 Belege frei" wäre dann falsch.
+pruefe(frei(10, belege: 0).freiNoch(belegeAufTelefon: 0) == 10, "frisch: noch 10")
+pruefe(frei(10, belege: 0).freiNoch(belegeAufTelefon: 1) == 9,
+       "Server zählt noch 0, Telefon hat 1: noch 9")
+pruefe(frei(9, belege: 1).freiNoch(belegeAufTelefon: 1) == 9, "beide zählen 1: noch 9")
+pruefe(frei(3, belege: 7).freiNoch(belegeAufTelefon: 0) == 3,
+       "Telefon frisch angemeldet, Server zählt 7: der Server gilt")
+pruefe(frei(0, belege: 10).freiNoch(belegeAufTelefon: 10) == nil, "voll: kein Knopf")
+pruefe(frei(1, belege: 9).freiNoch(belegeAufTelefon: 10) == nil,
+       "Telefon hat schon den zehnten: kein Knopf")
+pruefe(mitStufe("klein", grenze: GB, verbraucht: 0).freiNoch(belegeAufTelefon: 0) == nil,
+       "mit Stufe: kein Knopf")
+pruefe(PlatzStand.kostenlosText(9) == "Erst kostenlos weiter – noch 9 Belege frei",
+       "Knopf mit Mehrzahl")
+pruefe(PlatzStand.kostenlosText(1) == "Erst kostenlos weiter – noch 1 Beleg frei",
+       "Knopf mit Einzahl")
+
 if fehler > 0 { print("\(fehler) Fehler"); exit(1) }
 print("Platz-Harness: alles grün")

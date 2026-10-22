@@ -77,6 +77,11 @@ final class AppStore: ObservableObject {
     /// Die Stufenauswahl zeigen — gesetzt, wenn der Platz voll ist und die
     /// Nutzerin weitermachen will.
     @Published var zeigePlatz = false
+    /// Ob das Angebot nach dem ersten Beleg schon kam (seit 22.10.2026).
+    /// Gehört dem Betrieb, nicht dem Telefon — es liegt in der Zustandsdatei
+    /// des Zugangs, und ein zweiter Betrieb auf demselben iPhone bekommt es
+    /// noch einmal.
+    @Published var angebotGezeigt = false { didSet { speichern() } }
     /// Wahr, solange der Scanner aus dem Reiter „Auslagen“ heraus läuft.
     @Published var auslageModus = false
     private var pushAngefragt = false
@@ -164,6 +169,7 @@ final class AppStore: ObservableObject {
             ablageFehlt = z.ablageFehlt ?? false
             abgleich = z.abgleich ?? []
             istAmbassador = z.ambassador
+            angebotGezeigt = z.angebotGezeigt ?? false
             // Ältere Stände: Demo-Belege am festen Demo-Siegel nachträglich
             // markieren, damit sie nie im echten Stapel landen.
             let demoSiegel: Set<String> = ["77b2e0c4 9a11 f38d", "0d31f6a8 5be2 c974"]
@@ -207,6 +213,7 @@ final class AppStore: ObservableObject {
         abgleich = z?.abgleich ?? []
         rechte = z?.rechte
         istAmbassador = z?.ambassador
+        angebotGezeigt = z?.angebotGezeigt ?? false
         verbundenAls = z?.verbundenAls
         verbundenRolle = z?.verbundenRolle
         ablageFehlt = z?.ablageFehlt ?? false
@@ -259,6 +266,8 @@ final class AppStore: ObservableObject {
         var einKnopf: Bool?
         // Neu ab 08.10.2026: empfiehlt babu weiter (Reiter „Empfehlen").
         var ambassador: Bool?
+        // Neu ab 22.10.2026: das Angebot nach dem ersten Beleg kam schon.
+        var angebotGezeigt: Bool?
     }
 
     private var zustand: Zustand {
@@ -270,7 +279,7 @@ final class AppStore: ObservableObject {
                 vorlagen: vorlagen,
                 testmodus: testmodus, profil: profil,
                 ablageFehlt: ablageFehlt, abgleich: abgleich, rechte: rechte, einKnopf: einKnopf,
-                ambassador: istAmbassador)
+                ambassador: istAmbassador, angebotGezeigt: angebotGezeigt)
     }
 
     /// Entprellt auf ~0,25 s, damit Serien-Änderungen nicht pro Mutation schreiben.
@@ -572,6 +581,21 @@ final class AppStore: ObservableObject {
             belege[j].ablageHinweis = hinweis
             versuchVerschieben(id)
         }
+    }
+
+    /// Das Angebot nach dem ersten Beleg (Wunsch des Auftraggebers vom
+    /// 22.10.2026): nicht im Menü versteckt, sondern einmal von selbst, sobald
+    /// der erste Beleg aufgenommen ist — mit den Stufen UND dem kostenlosen
+    /// Weiter. Aufgerufen, wenn die Aufnahme wieder bereit ist; dann liegt
+    /// kein anderes Blatt mehr darüber.
+    @MainActor
+    func angebotNachErstemBelegPruefen() {
+        guard PlatzStand.angebotNachErstemBeleg(platz, belegeAufTelefon: belege.count,
+                                                schonGezeigt: angebotGezeigt,
+                                                inhaberin: rechte == nil),
+              !stufen.isEmpty, !zeigePlatz else { return }
+        angebotGezeigt = true
+        zeigePlatz = true
     }
 
     /// Der Server hat „kein Platz" gesagt. Den Stand nachholen und die

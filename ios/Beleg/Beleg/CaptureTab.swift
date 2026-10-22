@@ -126,6 +126,17 @@ struct CaptureTab: View {
                 // Karte weiter „3 von 7".
                 if offen == nil { Task { await angabenHolen() } }
             }
+            // Das Angebot nach dem ersten Beleg (22.10.2026) erst, wenn die
+            // Aufnahme wieder bereit ist: dann liegen Buchung und Fragen
+            // nicht mehr darüber, und das Blatt kann wirklich aufgehen. Die
+            // kurze Pause lässt das letzte Blatt zu Ende zugehen.
+            .onChange(of: phase) { alt, neu in
+                guard alt == .ergebnis, neu == .bereit else { return }
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(600))
+                    store.angebotNachErstemBelegPruefen()
+                }
+            }
             .fullScreenCover(isPresented: $zeigeFragenDirekt, onDismiss: {
                 // Nach der Buchhaltung die ruhige Bestätigung zeigen.
                 phase = .ergebnis

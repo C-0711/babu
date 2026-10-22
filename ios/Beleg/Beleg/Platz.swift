@@ -39,6 +39,35 @@ struct PlatzStand: Codable, Equatable {
 
     static let belegeFrei = 10
 
+    /// Wie viele freie Belege noch bleiben — oder nil, wenn es nichts Freies
+    /// mehr gibt (Stufe gebucht, voll). Gezählt wird auch, was schon auf dem
+    /// Telefon liegt: direkt nach dem ersten Foto zählt der Server oft noch 0,
+    /// weil der Beleg aufs Hochladen wartet, und „noch 10 frei" wäre falsch.
+    func freiNoch(belegeAufTelefon: Int) -> Int? {
+        guard stufe == nil, !voll, let frei = freiOffen else { return nil }
+        let noch = min(frei, PlatzStand.belegeFrei - belegeAufTelefon)
+        return noch > 0 ? noch : nil
+    }
+
+    /// Ob das Angebot nach dem ersten Beleg jetzt kommt (Wunsch vom
+    /// 22.10.2026): einmal je Betrieb, sobald der erste Beleg aufgenommen
+    /// ist — nur für die Inhaberin eines Betriebs aus dem App Store, der noch
+    /// keine Stufe hat. Ist der Platz voll, übernimmt das Angebot, das es
+    /// dafür schon gibt.
+    static func angebotNachErstemBeleg(_ platz: PlatzStand?, belegeAufTelefon: Int,
+                                       schonGezeigt: Bool, inhaberin: Bool) -> Bool {
+        guard !schonGezeigt, inhaberin, belegeAufTelefon >= 1,
+              let platz else { return false }
+        return platz.stufe == nil && !platz.voll
+    }
+
+    /// Die Zeile auf dem Knopf, der statt eines kleinen „Später" unter den
+    /// Stufen steht: kostenlos weitermachen ist ein gleichwertiger Weg, kein
+    /// versteckter.
+    static func kostenlosText(_ noch: Int) -> String {
+        "Erst kostenlos weiter – noch \(noch) \(noch == 1 ? "Beleg" : "Belege") frei"
+    }
+
     /// Was der Nutzerin dazu gesagt wird — oder nil, wenn alles Platz hat.
     /// Dieselben Sätze wie `paket.text()` auf dem Server; sie stehen hier
     /// noch einmal, weil die App sie auch ohne Netz zeigen können muss.

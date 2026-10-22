@@ -24,6 +24,12 @@ struct PlatzSheet: View {
 
     private var stufen: [PlatzStufe] { store.stufen }
 
+    /// Wie viele freie Belege noch bleiben — nil, wenn es keinen kostenlosen
+    /// Weg mehr gibt. Dann steht oben wieder das kleine „Später".
+    private var kostenlosNoch: Int? {
+        store.platz?.freiNoch(belegeAufTelefon: store.belege.count)
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -39,8 +45,14 @@ struct PlatzSheet: View {
             .navigationTitle(gekauft ? "Mehr Platz" : "Deine Ablage")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(gekauft ? "Weiter" : "Später") { dismiss() }
+                // Solange es Freies gibt, steht das kostenlose Weiter als
+                // eigener Knopf unter den Stufen (22.10.2026) — ein kleines
+                // „Später" daneben wäre derselbe Weg noch einmal, nur
+                // versteckter.
+                if gekauft || kostenlosNoch == nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(gekauft ? "Weiter" : "Später") { dismiss() }
+                    }
                 }
             }
             .task {
@@ -159,6 +171,24 @@ struct PlatzSheet: View {
             }
             .disabled(kasse.laeuft || gewaehlt == nil || gekauft)
             .opacity(gekauft ? 0.4 : 1)
+
+            // Kostenlos weitermachen ist ein gleichwertiger Weg, kein
+            // versteckter (Auftraggeber 22.10.2026): gleich breit wie
+            // „Platz buchen", nur ohne Fläche.
+            if let noch = kostenlosNoch, !gekauft {
+                Button { dismiss() } label: {
+                    Text(PlatzStand.kostenlosText(noch))
+                        .font(.body.weight(.semibold))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .foregroundStyle(GC.accent)
+                        .background(GC.bg, in: RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12)
+                            .stroke(GC.accent, lineWidth: 1.5))
+                }
+                .buttonStyle(.plain)
+            }
 
             Button("Schon bezahlt? Käufe wiederherstellen") {
                 Task {
