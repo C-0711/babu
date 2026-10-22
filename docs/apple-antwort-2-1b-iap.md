@@ -37,7 +37,8 @@ Einschränkung nach Storefront/Region/Gerät, Paid Applications Agreement.
 | ✅ | **Server für den Kauf bereit (22.10., nur gelesen):** `kern_apple.py`, `apple_abo.py`, `paket.py`, `kern_geraet.py` und die Apple-Wurzel live bytegleich zum Repo (md5); Wurzel lädt, Bundle `io.0711.beleg`, keine Testwurzel; `POST /api/abo/apple` ohne Anmeldung → 401. Die Prüfung verlangt Apples Signatur, Bundle und Laufzeit, aber keine Umgebung — Sandbox-Käufe des Prüfers gehen durch. 126 Tests des Kaufwegs grün |
 | ✅ | **Kauftest im Simulator (22.10., Code von Build 13, iOS-Code seit 947fa75 unverändert):** gestartet per `simctl` (ohne die StoreKit-Datei des Schemas, also gegen Apples Sandbox), „Los geht's" gegen einen lokalen Server. ☰ → „Deine Ablage" → „Platz buchen": StoreKit liefert alle drei Abos mit Apples Preisen in der US-Storefront des Simulators — **$8.99 / $17.99 / $89.00** (der Ersatzpreis vom Server wäre 9,99 €). „Platz buchen" startet Apples Kaufablauf („Sign in to Apple Account"). Dort abgebrochen: im Konto gibt es 0 Sandbox-Tester (`GET /v2/sandboxTesters`), und Zugangsdaten gibt Claude nicht ein |
 | ⬜ | Kauf bis zum Ende: Build 13 aus TestFlight auf dem iPhone, ☰ → „Deine Ablage" → „Platz buchen" — TestFlight bucht mit der echten Apple-ID in der Sandbox, ohne Abbuchung |
-| ⬜ | Antwort im Resolution Center absenden, dann neu einreichen |
+| ✅ | **Build 14 (22.10., 3a19743):** das Angebot öffnet sich von selbst nach dem ersten Beleg, mit „Erst kostenlos weiter – noch N Belege frei“ (Auftraggeber). Hochgeladen, VALID, an Version 1.0 gehängt (Build 13 ersetzt), Verschlüsselung beantwortet; Prüfnotiz der Version (3.994 Zeichen) und der drei Abos auf den neuen Weg umgeschrieben und zurückgelesen |
+| ⬜ | Antwort im Resolution Center absenden, dann Version 1.0 mit Build 14 neu einreichen |
 
 ## Entwurf (englisch)
 
@@ -47,20 +48,23 @@ Hello,
 
 thank you for the follow-up. Answers to your four points:
 
-**1. Where to find the In-App Purchases.** Launch babu Belege and either tap
-"Los geht's" on the first screen (no account needed) or sign in with the demo
-account (apple-review@0711.io; Menu → top row "Mit deiner E-Mail anmelden").
-Tap the menu button (three lines, top right) → "Deine Ablage" ("Your archive")
-→ "Platz buchen" ("Book storage"). This screen lists the three subscriptions
-of the group "babu Speicher" (1 GB, 5 GB, 100 GB). Select one and tap
-"Platz buchen" to open the App Store purchase sheet; "Käufe wiederherstellen"
-(Restore purchases) is on the same screen. It also opens by itself once the
-10 free documents are used up.
+**1. Where to find the In-App Purchases.** We have uploaded build 14, in
+which the purchase screen no longer has to be found. Launch babu Belege, tap
+"Los geht's" on the first screen (no account needed) and capture any
+document. Right after the first document the purchase screen opens by
+itself: the three subscriptions of the group "babu Speicher" (1 GB, 5 GB,
+100 GB), "Platz buchen" ("Book storage") for the App Store purchase sheet,
+"Käufe wiederherstellen" (Restore purchases), and "Erst kostenlos weiter"
+(continue for free; the first 10 documents are free). It stays reachable at
+any time via the menu button (three lines, top right) → "Deine Ablage"
+("Your archive") → "Platz buchen", and it opens again once the 10 free
+documents are used up.
 
-**2. Sandbox.** We verified it with the code of build 13 in the sandbox
-environment, using a US storefront: all three subscriptions load with their
-App Store prices (USD 8.99, 17.99 and 89.00 per month), and tapping
-"Platz buchen" starts the App Store purchase flow.
+**2. Sandbox.** We verified it in the sandbox environment with a US
+storefront: all three subscriptions load with their App Store prices
+(USD 8.99, 17.99 and 89.00 per month; seen in builds 13 and 14), and tapping
+"Platz buchen" starts the App Store purchase flow (tested on build 13; this
+part is unchanged in build 14).
 
 **3. Restrictions.** Until now, the app and the three subscriptions were
 available only in the Germany storefront. We have made the app and the
