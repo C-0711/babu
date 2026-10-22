@@ -38,7 +38,8 @@ Einschränkung nach Storefront/Region/Gerät, Paid Applications Agreement.
 | ✅ | **Kauftest im Simulator (22.10., Code von Build 13, iOS-Code seit 947fa75 unverändert):** gestartet per `simctl` (ohne die StoreKit-Datei des Schemas, also gegen Apples Sandbox), „Los geht's" gegen einen lokalen Server. ☰ → „Deine Ablage" → „Platz buchen": StoreKit liefert alle drei Abos mit Apples Preisen in der US-Storefront des Simulators — **$8.99 / $17.99 / $89.00** (der Ersatzpreis vom Server wäre 9,99 €). „Platz buchen" startet Apples Kaufablauf („Sign in to Apple Account"). Dort abgebrochen: im Konto gibt es 0 Sandbox-Tester (`GET /v2/sandboxTesters`), und Zugangsdaten gibt Claude nicht ein |
 | ⬜ | Kauf bis zum Ende: Build 13 aus TestFlight auf dem iPhone, ☰ → „Deine Ablage" → „Platz buchen" — TestFlight bucht mit der echten Apple-ID in der Sandbox, ohne Abbuchung |
 | ✅ | **Build 14 (22.10., 3a19743):** das Angebot öffnet sich von selbst nach dem ersten Beleg, mit „Erst kostenlos weiter – noch N Belege frei“ (Auftraggeber). Hochgeladen, VALID, an Version 1.0 gehängt (Build 13 ersetzt), Verschlüsselung beantwortet; Prüfnotiz der Version (3.994 Zeichen) und der drei Abos auf den neuen Weg umgeschrieben und zurückgelesen |
-| ⬜ | Antwort im Resolution Center absenden, dann Version 1.0 mit Build 14 neu einreichen |
+| ✅ | **Neu eingereicht 22.10.2026 01:06 UTC** (Auftraggeber „deploy“ → „Bei Apple neu einreichen“): Versions-Eintrag `resolved`, Einreichung 58ed02dd `submitted` → WAITING_FOR_REVIEW, Version 1.0 mit Build 14, dazu die drei Abos und die Abo-Gruppe |
+| ⬜ | Antwort im Resolution Center eintragen (Weboberfläche, die API kennt keine Nachrichten) |
 
 ## Entwurf (englisch)
 
