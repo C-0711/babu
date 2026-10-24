@@ -61,6 +61,15 @@ struct PlatzStand: Codable, Equatable {
         return platz.stufe == nil && !platz.voll
     }
 
+    /// Woran die Kasse beim Laden der Preise ist. Gilt für alle Stufen
+    /// zusammen: fehlt auch nur eine, ist das ein Fehler — ein halbes Angebot
+    /// wäre eines mit einem falschen Preis daneben. Solange Versuche übrig
+    /// sind (und solange die Stufen selbst noch nicht da sind), wird geladen.
+    static func preisLadung(gefunden: Int, erwartet: Int, versucheUebrig: Int) -> PreisLadung {
+        if erwartet > 0 && gefunden == erwartet { return .geladen }
+        return versucheUebrig > 0 ? .laedt : .fehler
+    }
+
     /// Die Zeile auf dem Knopf, der statt eines kleinen „Später" unter den
     /// Stufen steht: kostenlos weitermachen ist ein gleichwertiger Weg, kein
     /// versteckter.
@@ -89,6 +98,13 @@ struct PlatzStand: Codable, Equatable {
         }
         return knapp ? "Deine Ablage wird knapp." : nil
     }
+}
+
+/// Was die Kaufseite über die Preise sagt (seit 24.10.2026): Apple sah auf
+/// dem iPad ein Blatt ohne Preise und lehnte ab (2.1(b)); vorher gab es nur
+/// „da" oder stumm „nicht da".
+enum PreisLadung: Equatable {
+    case laedt, geladen, fehler
 }
 
 /// Eine Stufe, wie der Server sie anbietet.

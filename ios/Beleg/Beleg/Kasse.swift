@@ -21,6 +21,8 @@ final class Kasse: ObservableObject {
     /// Was Apple zu unseren Kennungen sagt — Preis und Name in der Sprache
     /// und Währung des Landes.
     @Published private(set) var produkte: [String: Product] = [:]
+    /// Woran das Laden der Preise ist — die Kaufseite zeigt es (24.10.2026).
+    @Published private(set) var ladung: PreisLadung = .laedt
     @Published private(set) var laeuft = false
     @Published var fehler: String?
 
@@ -30,18 +32,33 @@ final class Kasse: ObservableObject {
 
     deinit { horcher?.cancel() }
 
-    /// Apples Preise für die angebotenen Stufen holen.
+    /// Apples Preise für die angebotenen Stufen holen — bis zu drei Versuche
+    /// (Pause 1 s, dann 2 s), und die Kaufseite sieht jederzeit, woran es ist.
+    ///
+    /// Vorher gab es einen Versuch und bei Fehlschlag stumm `preisNotfalls`;
+    /// Apple sah auf dem iPad genau dieses Blatt ohne Preise und lehnte ab
+    /// (2.1(b), 24.10.2026). Gekauft wird nur bei `.geladen`.
     func preiseLaden(_ stufen: [PlatzStufe]) async {
-        guard !stufen.isEmpty else { return }
-        do {
-            let geholt = try await Product.products(for: stufen.map(\.apple))
+        let versuche = 3
+        for versuch in 1...versuche {
+            var geholt: [Product] = []
+            if !stufen.isEmpty {
+                do {
+                    geholt = try await Product.products(for: stufen.map(\.apple))
+                } catch {
+                    print("[kasse] Preise, Versuch \(versuch): \(error)")
+                }
+            }
             produkte = Dictionary(uniqueKeysWithValues: geholt.map { ($0.id, $0) })
-        } catch {
-            // Kein Netz oder die Produkte sind noch nicht freigegeben: die
-            // Ansicht zeigt dann `preisNotfalls`. Keine Fehlermeldung — die
-            // Nutzerin hat nichts falsch gemacht.
-            produkte = [:]
+            ladung = PlatzStand.preisLadung(gefunden: produkte.count, erwartet: stufen.count,
+                                            versucheUebrig: versuche - versuch)
+            if ladung == .geladen { return }
+            if versuch < versuche { try? await Task.sleep(for: .seconds(versuch)) }
         }
+        // Konsole, kein Nutzertext: welche Kennungen fehlen, sieht nur, wer
+        // das Log liest.
+        print("[kasse] Preise nicht vollständig — erwartet \(stufen.map(\.apple)), "
+              + "da \(produkte.keys.sorted())")
     }
 
     /// Den Kauf anstoßen. Rückgabe: ob jetzt Platz da ist.

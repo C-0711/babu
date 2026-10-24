@@ -101,5 +101,21 @@ pruefe(PlatzStand.kostenlosText(9) == "Erst kostenlos weiter – noch 9 Belege f
 pruefe(PlatzStand.kostenlosText(1) == "Erst kostenlos weiter – noch 1 Beleg frei",
        "Knopf mit Einzahl")
 
+// --- Preise laden: drei Zustände, nie halb kaufen (24.10.2026) ----------
+// Apple sah auf dem iPad „Preise fehlen" und lehnte ab (2.1(b)). Die Kasse
+// sagt jetzt, woran sie ist: lädt noch, alle da, oder nicht erreichbar.
+// Fehlt auch nur eine Stufe, ist das ein Fehler — ein halbes Angebot wäre
+// ein Angebot mit falschem Preis daneben.
+pruefe(PlatzStand.preisLadung(gefunden: 3, erwartet: 3, versucheUebrig: 2) == .geladen,
+       "alle gefunden → geladen")
+pruefe(PlatzStand.preisLadung(gefunden: 0, erwartet: 3, versucheUebrig: 2) == .laedt,
+       "keins gefunden, Versuche übrig → lädt")
+pruefe(PlatzStand.preisLadung(gefunden: 0, erwartet: 3, versucheUebrig: 0) == .fehler,
+       "keins gefunden, keine Versuche → Fehler")
+pruefe(PlatzStand.preisLadung(gefunden: 2, erwartet: 3, versucheUebrig: 0) == .fehler,
+       "eins fehlt → Fehler, nie halb kaufen")
+pruefe(PlatzStand.preisLadung(gefunden: 0, erwartet: 0, versucheUebrig: 3) == .laedt,
+       "nichts erwartet (Stufen fehlen noch) → lädt")
+
 if fehler > 0 { print("\(fehler) Fehler"); exit(1) }
 print("Platz-Harness: alles grün")

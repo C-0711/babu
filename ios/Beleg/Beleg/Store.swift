@@ -82,6 +82,11 @@ final class AppStore: ObservableObject {
     /// des Zugangs, und ein zweiter Betrieb auf demselben iPhone bekommt es
     /// noch einmal.
     @Published var angebotGezeigt = false { didSet { speichern() } }
+    /// Die Stufen vom letzten erreichten Server-Stand (seit 24.10.2026). Kommt
+    /// die Antwort ohne Stufen (kein Netz, Zeitüberschreitung), zeigt die
+    /// Kaufseite trotzdem die drei Stufen — Apple sah auf dem iPad eine leere
+    /// Kaufseite und lehnte ab (2.1(b)).
+    @Published var stufenZuletzt: [PlatzStufe] = [] { didSet { speichern() } }
     /// Wahr, solange der Scanner aus dem Reiter „Auslagen“ heraus läuft.
     @Published var auslageModus = false
     private var pushAngefragt = false
@@ -170,6 +175,7 @@ final class AppStore: ObservableObject {
             abgleich = z.abgleich ?? []
             istAmbassador = z.ambassador
             angebotGezeigt = z.angebotGezeigt ?? false
+            stufenZuletzt = z.stufenZuletzt ?? []
             // Ältere Stände: Demo-Belege am festen Demo-Siegel nachträglich
             // markieren, damit sie nie im echten Stapel landen.
             let demoSiegel: Set<String> = ["77b2e0c4 9a11 f38d", "0d31f6a8 5be2 c974"]
@@ -214,6 +220,7 @@ final class AppStore: ObservableObject {
         rechte = z?.rechte
         istAmbassador = z?.ambassador
         angebotGezeigt = z?.angebotGezeigt ?? false
+        stufenZuletzt = z?.stufenZuletzt ?? []
         verbundenAls = z?.verbundenAls
         verbundenRolle = z?.verbundenRolle
         ablageFehlt = z?.ablageFehlt ?? false
@@ -268,6 +275,8 @@ final class AppStore: ObservableObject {
         var ambassador: Bool?
         // Neu ab 22.10.2026: das Angebot nach dem ersten Beleg kam schon.
         var angebotGezeigt: Bool?
+        // Neu ab 24.10.2026: die Stufen vom letzten erreichten Server-Stand.
+        var stufenZuletzt: [PlatzStufe]?
     }
 
     private var zustand: Zustand {
@@ -279,7 +288,8 @@ final class AppStore: ObservableObject {
                 vorlagen: vorlagen,
                 testmodus: testmodus, profil: profil,
                 ablageFehlt: ablageFehlt, abgleich: abgleich, rechte: rechte, einKnopf: einKnopf,
-                ambassador: istAmbassador, angebotGezeigt: angebotGezeigt)
+                ambassador: istAmbassador, angebotGezeigt: angebotGezeigt,
+                stufenZuletzt: stufenZuletzt)
     }
 
     /// Entprellt auf ~0,25 s, damit Serien-Änderungen nicht pro Mutation schreiben.
@@ -418,7 +428,13 @@ final class AppStore: ObservableObject {
         if verbundenRolle != antwort.rolle { verbundenRolle = antwort.rolle }
         if rechte != antwort.rechte { rechte = antwort.rechte }
         if platz != antwort.platz { platz = antwort.platz }
-        if !antwort.stufen.isEmpty, stufen != antwort.stufen { stufen = antwort.stufen }
+        if !antwort.stufen.isEmpty {
+            if stufen != antwort.stufen { stufen = antwort.stufen }
+            if stufenZuletzt != antwort.stufen { stufenZuletzt = antwort.stufen }
+        } else if stufen.isEmpty, !stufenZuletzt.isEmpty {
+            // Die Antwort kam ohne Stufen: die zuletzt gesehenen gelten weiter.
+            stufen = stufenZuletzt
+        }
         if kaufKennung != antwort.kaufKennung { kaufKennung = antwort.kaufKennung }
         // Die Ablage kam nach der Anmeldung dazu (Box angelegt, freigeschaltet):
         // jetzt losschicken, was auf dem Telefon wartet. Bis 04.10.2026 sagte

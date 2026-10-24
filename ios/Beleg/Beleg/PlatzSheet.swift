@@ -145,9 +145,30 @@ struct PlatzSheet: View {
     // MARK: - Die Stufen
 
     @ViewBuilder private var auswahl: some View {
-        if stufen.isEmpty {
-            Text("Die Stufen laden gerade …").foregroundStyle(GC.muted)
-        } else {
+        // Drei Zustände, sichtbar (24.10.2026): laden, da, nicht erreichbar.
+        // Vorher stand bei fehlenden Preisen stumm der Notfallpreis daneben.
+        switch kasse.ladung {
+        case .laedt:
+            HStack(spacing: 10) {
+                ProgressView()
+                Text("Preise werden geladen …").foregroundStyle(GC.muted)
+            }
+        case .fehler:
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Preise gerade nicht erreichbar.").foregroundStyle(GC.muted)
+                Button("Nochmal") {
+                    Task {
+                        await store.kontoNachfragen()
+                        await kasse.preiseLaden(store.stufen)
+                    }
+                }
+                .font(.body.weight(.semibold))
+                .foregroundStyle(GC.accent)
+            }
+        case .geladen:
+            EmptyView()
+        }
+        if !stufen.isEmpty {
             VStack(spacing: 10) {
                 ForEach(stufen) { stufe in
                     stufenZeile(stufe)
@@ -169,7 +190,7 @@ struct PlatzSheet: View {
                 .background(GC.accent, in: RoundedRectangle(cornerRadius: 12))
                 .foregroundStyle(.white)
             }
-            .disabled(kasse.laeuft || gewaehlt == nil || gekauft)
+            .disabled(kasse.laeuft || gewaehlt == nil || gekauft || kasse.ladung != .geladen)
             .opacity(gekauft ? 0.4 : 1)
 
             // Kostenlos weitermachen ist ein gleichwertiger Weg, kein
