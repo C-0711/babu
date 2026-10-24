@@ -44,6 +44,10 @@ Dazu kommt, was heute außerhalb des Codes offen ist (gemessen 24.10. mit
 24.09.), Paid Apps Agreement aktiv seit 13.10., Abos dreimal READY_TO_SUBMIT in
 175 Gebieten, der Einreichung beigelegt.
 
+**Reihenfolge (Entscheid Auftraggeber 24.10. abends):** Build 15 bringt nur
+die Fixes (Ziele 1 und 3) und bleibt eine iPhone-App; Build 16 bringt iPad,
+Duo offen und die Messung (Ziele 2 und 4). Der Umsetzungsplan trennt das.
+
 ## 2. Ziele
 
 1. **Build 15 besteht die Prüfung.** Beide Punkte behoben, nachgestellt auf
@@ -175,8 +179,11 @@ Anti-Ziele (Erfolg wäre trotzdem ein Fehlschlag, wenn …):
 - **Auf dem iPhone (compact) ändert sich am Chat nichts** (Auftraggeber
   24.10.: „in der iPhone-App nichts am Chat ändern"). Das `Menu` in
   `FragenTab.eingabeleiste` bleibt dort Byte für Byte, wie es ist.
-- **Bei breiter Größenklasse** (iPad, aufgeklapptes Duo) ersetzt ein eigenes
-  kleines Blatt „Anhang" das `Menu` (vier Knöpfe in zwei Gruppen wie heute).
+- **Auf dem iPad** (Gerät, `userInterfaceIdiom == .pad` — auch im
+  iPhone-Kompatibilitätsfenster, denn dort hat Apple den Fehler gefunden und
+  dort ist die Größenklasse compact) **und bei breiter Größenklasse**
+  (aufgeklapptes Duo, ab Build 16) ersetzt ein eigenes kleines Blatt
+  „Anhang" das `Menu` (vier Knöpfe in zwei Gruppen wie heute).
   Fotos- und Dateiauswahl werden NICHT aus dem Blatt heraus präsentiert,
   sondern über Modifier am Reiter-Wurzelview
   (`.photosPicker(isPresented:selection:)`, `.fileImporter`), ausgelöst im

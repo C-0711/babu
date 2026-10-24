@@ -10,6 +10,20 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-24-apple-freigabe-ipad-kaufweg-design.md`
 
+## Reihenfolge (Entscheid Auftraggeber 24.10.2026 abends)
+
+**Build 15 — nur die Fixes, iPhone-App bleibt iPhone-App:** Tasks 1, 2, 3, 8, 11, 12.
+Gerätefamilie bleibt `1`; keine Universal-Umstellung, keine Serveränderung, kein
+Deploy. Apple prüft die iPhone-App trotzdem auf dem iPad im Kompatibilitäts-
+fenster (Größenklasse compact) — deshalb hängt die Anhang-Verzweigung in Task 8
+am Gerät (`UIDevice.current.userInterfaceIdiom == .pad`), nicht an der
+Größenklasse. Alle iPhone-Formate: iPhone 16e und iPhone 17 Pro Max. Das
+zugeklappte Duo ist ein iPhone und damit abgedeckt.
+
+**Build 16 — iPad und Duo offen, Messung:** Tasks 4, 5, 6, 7, 9, 10, danach
+Task 11/12 erneut. In Task 8 kommt dann die Größenklasse als zweite Bedingung
+dazu (`|| sizeClass == .regular`).
+
 ## Global Constraints
 
 - Zwei Ziele aus einem Ordner: Unterschied nur in `ios/Beleg/Beleg/Ausbaustufe.swift` (Flag `BABU_PRO`); jeder neue Reiter steht dort und in `ios/Tests/zuschnitt/main.swift`.
@@ -374,13 +388,13 @@ git commit -m "Breite Größenklasse: Erfassen mittig, Menü und Kaufblatt als F
 - [ ] **Step 2: Verzweigung in `eingabeleiste` — genau eine Stelle**
 
 ```swift
-if sizeClass == .regular {
+if Self.anhangAlsBlatt {
     Button { zeigeAnhang = true } label: { /* dasselbe Label wie heute */ }.disabled(briefLaeuft)
 } else {
     Menu { /* unverändert, Zeilen 477–505 */ } label: { … }
 }
 ```
-`@Environment(\.horizontalSizeClass) private var sizeClass` in `FragenTab`. Das `Menu` wird NICHT angefasst (Byte für Byte).
+`private static var anhangAlsBlatt: Bool { UIDevice.current.userInterfaceIdiom == .pad }` in `FragenTab` (Build 16: `|| sizeClass == .regular`). Das `Menu` wird NICHT angefasst (Byte für Byte).
 
 - [ ] **Step 3: `anhangAusfuehren()`**
 
@@ -398,7 +412,7 @@ private func anhangAusfuehren() {
 ```
 Die `onChange`-Verarbeitung von `briefAuswahl`/`vertragAuswahl` (Zeilen 136–150) bleibt gemeinsam.
 
-- [ ] **Step 4: Bauen, iPad: alle vier Optionen**
+- [ ] **Step 4: Bauen, iPad (Build 15: im iPhone-Kompatibilitätsfenster): alle vier Optionen**
 
 Expected: jede Option öffnet Fotos- bzw. Dateiauswahl; `log show … category == "Presentation"` ohne `Attempt to present`. Log als `ipad-nachher-anhang.log` sichern.
 
@@ -528,21 +542,20 @@ git commit -m "Kaufseite meldet, woher sie kam und was danach geschah"
 **Interfaces:**
 - Consumes: `werkzeuge/asc_screenshots.py` (Aufruf laut Dateikopf lesen), Simulator `babu-ipad13` (iPad Pro 13″, `xcrun simctl create`), Xcode-Run mit `Support/babu.storekit` (Euro).
 
-- [ ] **Step 1: Server-Suite voll und Deploy (Task 9)**
+- [ ] **Step 1: Server-Suite voll und Deploy (nur Build 16, Task 9)**
 
-Run: `cd server/belegreview && ~/.venvs/babu/bin/python -m pytest tests/ -q -p no:cacheprovider` (Timeout 900 s)
-Expected: alles grün. Dann Deploy-Ritual aus `CLAUDE.md` (rsync `server/` und `werkzeuge/` mit `--exclude=.env`, `compose build && up -d`, `/healthz` `stand: ok` und `spiegel: ok`, `schema_version` = 20 nach dem ersten Request).
+Build 15: entfällt (keine Serveränderung). Build 16: `cd server/belegreview && ~/.venvs/babu/bin/python -m pytest tests/ -q -p no:cacheprovider` (Timeout 900 s), alles grün; dann Deploy-Ritual aus `CLAUDE.md` (rsync `server/` und `werkzeuge/` mit `--exclude=.env`, `compose build && up -d`, `/healthz` `stand: ok` und `spiegel: ok`, `schema_version` = 20 nach dem ersten Request).
 
 - [ ] **Step 2: Build-Nummer 15**
 
 Run: `grep -c "CURRENT_PROJECT_VERSION = 15;" ios/Beleg/Beleg.xcodeproj/project.pbxproj` → `4`.
 
-- [ ] **Step 3: iPhone-Vergleich (Anti-Ziel)**
+- [ ] **Step 3: iPhone-Vergleich (Anti-Ziel) und alle iPhone-Formate**
 
 Mit Build 15 auf dem iPhone-16e-Simulator dieselben fünf Bildschirme wie am 29.09. aufnehmen (Beleg, Buchung, Belegliste, Fragen, Export; Demodaten über `zustand.json` ohne Anmeldung). Pixelvergleich gegen den Satz vom 29.09. (`PIL.ImageChops.difference`, Zählung ≠ 0 außerhalb der Statusleiste).
-Expected: Unterschiede nur in Uhrzeit/Daten; sonst in `iphone-vergleich.txt` erklären — jeder andere Unterschied ist ein Fehler, der vor Task 12 behoben wird.
+Expected: Unterschiede nur in Uhrzeit/Daten; sonst in `iphone-vergleich.txt` erklären — jeder andere Unterschied ist ein Fehler, der vor Task 12 behoben wird. Dazu dieselben fünf Bildschirme plus Kaufblatt und Chat-Anhang auf dem iPhone 17 Pro Max (`babu-appstore`) durchklicken: nichts abgeschnitten, nichts überlappt.
 
-- [ ] **Step 4: iPad-13″-Screenshots aus Xcode (Euro)**
+- [ ] **Step 4: iPad-13″-Screenshots aus Xcode (Euro) — nur Build 16**
 
 Xcode: Schema `Beleg`, Ziel `babu-ipad13`, ▶ (StoreKit-Konfiguration DEU greift nur so). Fünf Bilder: Arbeitsplatz (Liste + Chat), Beleg im Arbeitsplatz, Kaufblatt mit Euro-Preisen, Erfassen, Menü. Hochladen mit `asc_screenshots.py` in den 13″-Satz (`APP_IPAD_PRO_3GEN_129`), Zustand `COMPLETE` abwarten.
 
