@@ -38,26 +38,65 @@ final class Kasse: ObservableObject {
     /// Vorher gab es einen Versuch und bei Fehlschlag stumm `preisNotfalls`;
     /// Apple sah auf dem iPad genau dieses Blatt ohne Preise und lehnte ab
     /// (2.1(b), 24.10.2026). Gekauft wird nur bei `.geladen`.
+    ///
+    /// „Deine Ablage" und das Blatt rufen das gleichzeitig: es läuft nur EIN
+    /// Ladelauf je Kennungssatz, weitere Aufrufer warten auf ihn, und ein
+    /// vollständiger Stand fällt nicht zurück (Review 24.10.2026).
     func preiseLaden(_ stufen: [PlatzStufe]) async {
+        let kennungen = stufen.map(\.apple)
+        if ladung == .geladen && geladenFuer == kennungen { return }
+        if let laufend, laufend.kennungen == kennungen {
+            await laufend.task.value
+            return
+        }
+        laufend?.task.cancel()
+        geladenFuer = []
+        ladung = .laedt
+        let task = Task { await self.laden(kennungen) }
+        laufend = (kennungen, task)
+        await task.value
+        if laufend?.kennungen == kennungen { laufend = nil }
+    }
+
+    /// „Nochmal" auf der Kaufseite: sofort wieder „lädt", der nächste
+    /// `preiseLaden`-Aufruf beginnt von vorn.
+    func nochmal() {
+        laufend?.task.cancel()
+        laufend = nil
+        geladenFuer = []
+        ladung = .laedt
+    }
+
+    private var laufend: (kennungen: [String], task: Task<Void, Never>)?
+    private var geladenFuer: [String] = []
+
+    private func laden(_ kennungen: [String]) async {
         let versuche = 3
         for versuch in 1...versuche {
             var geholt: [Product] = []
-            if !stufen.isEmpty {
+            if !kennungen.isEmpty {
                 do {
-                    geholt = try await Product.products(for: stufen.map(\.apple))
+                    geholt = try await Product.products(for: kennungen)
                 } catch {
                     print("[kasse] Preise, Versuch \(versuch): \(error)")
                 }
             }
-            produkte = Dictionary(uniqueKeysWithValues: geholt.map { ($0.id, $0) })
-            ladung = PlatzStand.preisLadung(gefunden: produkte.count, erwartet: stufen.count,
-                                            versucheUebrig: versuche - versuch)
-            if ladung == .geladen { return }
+            if Task.isCancelled { return }
+            if !geholt.isEmpty {
+                produkte = Dictionary(uniqueKeysWithValues: geholt.map { ($0.id, $0) })
+            }
+            let gefunden = kennungen.filter { produkte[$0] != nil }.count
+            ladung = PlatzStand.preisLadungFortschreiben(
+                bisher: geladenFuer == kennungen ? ladung : .laedt,
+                gefunden: gefunden, erwartet: kennungen.count,
+                versucheUebrig: versuche - versuch)
+            if ladung == .geladen { geladenFuer = kennungen; return }
             if versuch < versuche { try? await Task.sleep(for: .seconds(versuch)) }
+            if Task.isCancelled { return }
         }
         // Konsole, kein Nutzertext: welche Kennungen fehlen, sieht nur, wer
         // das Log liest.
-        print("[kasse] Preise nicht vollständig — erwartet \(stufen.map(\.apple)), "
+        print("[kasse] Preise nicht vollständig — erwartet \(kennungen), "
               + "da \(produkte.keys.sorted())")
     }
 

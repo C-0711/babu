@@ -70,6 +70,30 @@ struct PlatzStand: Codable, Equatable {
         return versucheUebrig > 0 ? .laedt : .fehler
     }
 
+    /// Wie das Laden weitergeht: ein vollständiger Stand fällt nicht zurück —
+    /// zwei Schleifen (Deine Ablage und das Blatt) dürfen sich nicht gegen-
+    /// seitig den Kaufknopf sperren (Review 24.10.2026).
+    static func preisLadungFortschreiben(bisher: PreisLadung, gefunden: Int, erwartet: Int,
+                                          versucheUebrig: Int) -> PreisLadung {
+        if bisher == .geladen && erwartet > 0 { return .geladen }
+        return preisLadung(gefunden: gefunden, erwartet: erwartet, versucheUebrig: versucheUebrig)
+    }
+
+    /// Welche Stufen gelten: die vom Server, sonst die zuletzt gesehenen.
+    static func stufenNachAntwort(server: [PlatzStufe], gemerkt: [PlatzStufe]) -> [PlatzStufe] {
+        server.isEmpty ? gemerkt : server
+    }
+
+    /// Das Wurzel-Blatt anfordern, ohne dass der Schalter hängen bleibt. Bricht
+    /// UIKit ein Zeigen ab, bleibt der Schalter wahr, aber kein Blatt ist da —
+    /// dann hilft nur zurücksetzen und neu zeigen. Ist das Blatt gerade in
+    /// Anfahrt (Schalter seit unter einer Sekunde wahr), wird gewartet.
+    static func blattAnfordern(schalter: Bool, offen: Bool, seitSekunden: Double) -> BlattAnforderung {
+        if offen { return .nichts }
+        if !schalter { return .zeigen }
+        return seitSekunden >= 1 ? .neuZeigen : .nichts
+    }
+
     /// Die Zeile auf dem Knopf, der statt eines kleinen „Später" unter den
     /// Stufen steht: kostenlos weitermachen ist ein gleichwertiger Weg, kein
     /// versteckter.
@@ -105,6 +129,11 @@ struct PlatzStand: Codable, Equatable {
 /// „da" oder stumm „nicht da".
 enum PreisLadung: Equatable {
     case laedt, geladen, fehler
+}
+
+/// Was `PlatzStand.blattAnfordern` entscheidet.
+enum BlattAnforderung: Equatable {
+    case zeigen, nichts, neuZeigen
 }
 
 /// Eine Stufe, wie der Server sie anbietet.

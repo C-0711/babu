@@ -83,11 +83,17 @@ struct RootView: View {
         // Die Stufenauswahl (seit 10.10.2026) hängt hier oben, nicht an
         // einem Reiter: „kein Platz" kann beim Fotografieren kommen, beim
         // Nachreichen eines wartenden Belegs oder im Konto.
-        // onDismiss setzt den Schalter sicher zurück — sonst bleibt er nach
-        // einem abgebrochenen Zeigen wahr und sperrt das Angebot nach dem
-        // ersten Beleg.
-        .sheet(isPresented: $store.zeigePlatz, onDismiss: { store.zeigePlatz = false }) {
+        // Angefordert wird es nur über `store.platzZeigen()`: das erkennt einen
+        // Schalter, der nach einem abgebrochenen Zeigen hängt. Ob das Blatt
+        // wirklich da ist, meldet es selbst; erst dann zählt das Angebot nach
+        // dem ersten Beleg als gezeigt.
+        .sheet(isPresented: $store.zeigePlatz) {
             PlatzSheet()
+                .onAppear {
+                    store.platzBlattOffen = true
+                    store.angebotGezeigt = true
+                }
+                .onDisappear { store.platzBlattOffen = false }
         }
         .overlay {
             if store.anmeldungLaeuft {

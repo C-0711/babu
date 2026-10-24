@@ -55,7 +55,9 @@ struct PlatzSheet: View {
                     }
                 }
             }
-            .task {
+            // `id`: kommen die Stufen erst nach dem Öffnen (Server noch
+            // unterwegs), lädt das Blatt die Preise dann noch einmal.
+            .task(id: stufen.map(\.apple)) {
                 await kasse.preiseLaden(stufen)
                 if gewaehlt == nil {
                     gewaehlt = stufen.first(where: { $0.stufe == "mittel" })?.stufe
@@ -157,6 +159,7 @@ struct PlatzSheet: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Preise gerade nicht erreichbar.").foregroundStyle(GC.muted)
                 Button("Nochmal") {
+                    kasse.nochmal()
                     Task {
                         await store.kontoNachfragen()
                         await kasse.preiseLaden(store.stufen)
@@ -267,8 +270,10 @@ struct PlatzSheet: View {
         .buttonStyle(.plain)
     }
 
+    /// Nur Apples Preis — er steht in der Währung des Landes. Solange er fehlt,
+    /// steht ein Strich da, kein Euro-Ersatzwert neben „Preise werden geladen".
     private func preis(_ stufe: PlatzStufe) -> String {
-        kasse.produkte[stufe.apple]?.displayPrice ?? stufe.preisNotfalls
+        kasse.produkte[stufe.apple]?.displayPrice ?? "–"
     }
 
     private func kaufen(_ stufe: PlatzStufe) async -> Bool {

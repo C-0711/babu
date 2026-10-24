@@ -522,8 +522,12 @@ struct FragenTab: View {
             } else {
                 Menu {
                     Section("Brief vom Amt") {
-                        PhotosPicker(selection: $briefAuswahl, matching: .images,
-                                     photoLibrary: .shared()) {
+                        // Knopf statt `PhotosPicker` im Menü: der öffnete auf
+                        // iOS 26 nichts (gemessen 24.10.2026, Build 14, iPhone
+                        // 17 Pro Max). Der Picker hängt am Reiter.
+                        Button {
+                            zeigeBriefFotos = true
+                        } label: {
                             Label("Fotografieren oder aus Fotos", systemImage: "camera")
                         }
                         Button {
@@ -534,8 +538,9 @@ struct FragenTab: View {
                         }
                     }
                     Section("Vertrag") {
-                        PhotosPicker(selection: $vertragAuswahl, matching: .images,
-                                     photoLibrary: .shared()) {
+                        Button {
+                            zeigeVertragFotos = true
+                        } label: {
                             Label("Mietvertrag & Co. fotografieren", systemImage: "doc.text")
                         }
                         Button {

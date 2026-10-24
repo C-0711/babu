@@ -77,6 +77,11 @@ final class AppStore: ObservableObject {
     /// Die Stufenauswahl zeigen — gesetzt, wenn der Platz voll ist und die
     /// Nutzerin weitermachen will.
     @Published var zeigePlatz = false
+    /// Ob das Wurzel-Blatt wirklich zu sehen ist (onAppear/onDisappear in
+    /// BelegApp) und seit wann der Schalter steht — damit `platzZeigen()`
+    /// einen hängenden Schalter erkennt (Review 24.10.2026).
+    @Published var platzBlattOffen = false
+    private var zeigePlatzSeit: Date?
     /// Ob das Angebot nach dem ersten Beleg schon kam (seit 22.10.2026).
     /// Gehört dem Betrieb, nicht dem Telefon — es liegt in der Zustandsdatei
     /// des Zugangs, und ein zweiter Betrieb auf demselben iPhone bekommt es
@@ -176,6 +181,7 @@ final class AppStore: ObservableObject {
             istAmbassador = z.ambassador
             angebotGezeigt = z.angebotGezeigt ?? false
             stufenZuletzt = z.stufenZuletzt ?? []
+            stufen = PlatzStand.stufenNachAntwort(server: stufen, gemerkt: stufenZuletzt)
             // Ältere Stände: Demo-Belege am festen Demo-Siegel nachträglich
             // markieren, damit sie nie im echten Stapel landen.
             let demoSiegel: Set<String> = ["77b2e0c4 9a11 f38d", "0d31f6a8 5be2 c974"]
@@ -221,6 +227,7 @@ final class AppStore: ObservableObject {
         istAmbassador = z?.ambassador
         angebotGezeigt = z?.angebotGezeigt ?? false
         stufenZuletzt = z?.stufenZuletzt ?? []
+        stufen = PlatzStand.stufenNachAntwort(server: [], gemerkt: stufenZuletzt)
         verbundenAls = z?.verbundenAls
         verbundenRolle = z?.verbundenRolle
         ablageFehlt = z?.ablageFehlt ?? false
@@ -422,7 +429,12 @@ final class AppStore: ObservableObject {
             zugangAbgelaufen = true
             return
         }
-        guard let un = antwort.un else { return }   // kein Netz — nichts ändern
+        guard let un = antwort.un else {
+            // Kein Netz — nichts ändern, nur die zuletzt gesehenen Stufen
+            // gelten lassen, damit die Kaufseite nicht leer ist.
+            stufen = PlatzStand.stufenNachAntwort(server: stufen, gemerkt: stufenZuletzt)
+            return
+        }
         zugangAbgelaufen = false
         if verbundenAls != un { verbundenAls = un }
         if verbundenRolle != antwort.rolle { verbundenRolle = antwort.rolle }
@@ -431,9 +443,6 @@ final class AppStore: ObservableObject {
         if !antwort.stufen.isEmpty {
             if stufen != antwort.stufen { stufen = antwort.stufen }
             if stufenZuletzt != antwort.stufen { stufenZuletzt = antwort.stufen }
-        } else if stufen.isEmpty, !stufenZuletzt.isEmpty {
-            // Die Antwort kam ohne Stufen: die zuletzt gesehenen gelten weiter.
-            stufen = stufenZuletzt
         }
         if kaufKennung != antwort.kaufKennung { kaufKennung = antwort.kaufKennung }
         // Die Ablage kam nach der Anmeldung dazu (Box angelegt, freigeschaltet):
@@ -610,8 +619,32 @@ final class AppStore: ObservableObject {
                                                 schonGezeigt: angebotGezeigt,
                                                 inhaberin: rechte == nil),
               !stufen.isEmpty else { return }
-        angebotGezeigt = true
-        zeigePlatz = true
+        // `angebotGezeigt` setzt erst das Blatt beim Erscheinen (BelegApp):
+        // ein abgebrochenes Zeigen darf das einmalige Angebot nicht verbrauchen.
+        platzZeigen()
+    }
+
+    /// Das Wurzel-Blatt anfordern. Steht der Schalter schon, ohne dass ein
+    /// Blatt da ist (UIKit hat ein Zeigen abgebrochen), wird er zurückgesetzt
+    /// und im nächsten Durchlauf neu gesetzt — sonst bliebe jeder Knopf tot.
+    @MainActor
+    func platzZeigen() {
+        let seit = zeigePlatzSeit.map { Date().timeIntervalSince($0) } ?? 0
+        switch PlatzStand.blattAnfordern(schalter: zeigePlatz, offen: platzBlattOffen,
+                                         seitSekunden: seit) {
+        case .nichts:
+            return
+        case .zeigen:
+            zeigePlatzSeit = Date()
+            zeigePlatz = true
+        case .neuZeigen:
+            zeigePlatz = false
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.zeigePlatzSeit = Date()
+                self.zeigePlatz = true
+            }
+        }
     }
 
     /// Der Server hat „kein Platz" gesagt. Den Stand nachholen und die
@@ -623,7 +656,7 @@ final class AppStore: ObservableObject {
             // damit die Auswahl die richtige Zahl zeigt.
             Task { await self.kontoNachfragen() }
         }
-        zeigePlatz = true
+        platzZeigen()
     }
 
     // MARK: - Audit-Stempel (GitChain-Commits am Beleg persistieren)

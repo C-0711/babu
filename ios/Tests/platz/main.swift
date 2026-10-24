@@ -117,5 +117,33 @@ pruefe(PlatzStand.preisLadung(gefunden: 2, erwartet: 3, versucheUebrig: 0) == .f
 pruefe(PlatzStand.preisLadung(gefunden: 0, erwartet: 0, versucheUebrig: 3) == .laedt,
        "nichts erwartet (Stufen fehlen noch) → lädt")
 
+// --- Das Wurzel-Blatt anfordern, ohne dass der Schalter hängen bleibt --------
+// Bricht UIKit ein Zeigen ab, bleibt `zeigePlatz` wahr, ohne dass ein Blatt
+// da ist — jedes weitere `= true` ändert dann nichts mehr (Review 24.10.2026).
+pruefe(PlatzStand.blattAnfordern(schalter: false, offen: false, seitSekunden: 0) == .zeigen,
+       "Schalter aus → zeigen")
+pruefe(PlatzStand.blattAnfordern(schalter: true, offen: true, seitSekunden: 5) == .nichts,
+       "Blatt ist offen → nichts tun")
+pruefe(PlatzStand.blattAnfordern(schalter: true, offen: false, seitSekunden: 0.2) == .nichts,
+       "Blatt ist in Anfahrt → warten")
+pruefe(PlatzStand.blattAnfordern(schalter: true, offen: false, seitSekunden: 2) == .neuZeigen,
+       "Schalter hängt ohne Blatt → zurücksetzen und neu zeigen")
+
+// --- Stufen vom letzten Server-Stand -------------------------------------
+pruefe(PlatzStand.stufenNachAntwort(server: [], gemerkt: stufen) == stufen,
+       "keine Antwort → die gemerkten Stufen gelten")
+pruefe(PlatzStand.stufenNachAntwort(server: [stufen[0]], gemerkt: stufen) == [stufen[0]],
+       "Antwort mit Stufen → die Antwort gilt")
+pruefe(PlatzStand.stufenNachAntwort(server: [], gemerkt: []).isEmpty,
+       "nichts gemerkt, nichts geantwortet → leer")
+
+// --- Preise: ein vollständiger Stand fällt nicht zurück ------------------
+pruefe(PlatzStand.preisLadungFortschreiben(bisher: .geladen, gefunden: 0, erwartet: 3, versucheUebrig: 2) == .geladen,
+       "schon geladen → bleibt geladen, auch wenn ein Nachversuch scheitert")
+pruefe(PlatzStand.preisLadungFortschreiben(bisher: .laedt, gefunden: 0, erwartet: 3, versucheUebrig: 0) == .fehler,
+       "nicht geladen → nach dem letzten Versuch Fehler")
+pruefe(PlatzStand.preisLadungFortschreiben(bisher: .fehler, gefunden: 3, erwartet: 3, versucheUebrig: 0) == .geladen,
+       "Fehler, dann alle gefunden → geladen")
+
 if fehler > 0 { print("\(fehler) Fehler"); exit(1) }
 print("Platz-Harness: alles grün")
