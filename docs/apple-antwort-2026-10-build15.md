@@ -48,7 +48,7 @@ Absatz „HOW TO TRY IT“, Schritt 3 ergänzt um den Menüweg mit Fotos; neuer 
 > Agreement is active (since 13 Oct 2026). The attachment options in "Fragen" (paper clip) were rebuilt for
 > iPad and verified on iPad Air 11-inch (M3): each of the four options opens the Photos or Files picker.
 
-## Antwort im Resolution Center (englisch) — Entwurf, Absenden nur nach OK des Auftraggebers
+## Antwort im Resolution Center (englisch) — abgesendet 25.10.2026 00:25 (OK des Auftraggebers „machen“)
 
 Hello,
 
@@ -94,9 +94,12 @@ Christoph Bertsch, nullsiebenelf GmbH
 - `iphone-nachher-anhang-fotos.png`, `iphone-nachher-anhang-vertragfotos.png` — Fotos-Picker aus dem iPhone-Menü
 - `iphone-nachher-kaufweg.png` — Kaufblatt iPhone 17 Pro Max
 
-## Was noch fehlt, bevor eingereicht wird
+## Eingereicht (25.10.2026, 00:26 MESZ)
 
-- Build 16 muss bei App Store Connect `VALID` sein und an Version 1.0 hängen (per API, `asc_pruefung.py`).
-- Prüfnotiz: „build 15“ → „build 16“ (per API).
-- **OK des Auftraggebers** — dann Antwort im Resolution Center (Chrome, mit Anhängen), danach per API
-  Item `resolved: true`, Einreichung `submitted: true`.
+- Antwort mit den acht nummerierten Anhängen (01–08, Reihenfolge wie im Text) im Resolution Center abgesendet
+  (Chrome-Sitzung des Auftraggebers); die Nachricht steht als „Christoph Bertsch, Today 12:25 AM“ unter Messages (5).
+- Per API: Item der App-Version (`…fDZ8ODkxMzUxNTUy`) `resolved: true` → `READY_FOR_REVIEW`; Einreichung
+  `58ed02dd` `submitted: true` → `WAITING_FOR_REVIEW`, `submittedDate 2026-10-24T22:26:28Z`; alle fünf Items
+  (Version 1.0 mit Build 16, Abo-Gruppe, drei Abos) `READY_FOR_REVIEW`.
+- `iphone-nachher-kaufweg.png` nicht angehängt (im Text nicht nummeriert; Kaufblatt iPhone ist durch die
+  Prüfnotiz abgedeckt).
