@@ -15,10 +15,20 @@ struct FragenTab: View {
     @State private var aktuelleID: UUID?
     @State private var zeigeVerlauf = false
     @State private var briefAuswahl: PhotosPickerItem?
-    @State private var zeigeBriefDateien = false
+    // EIN Dateidialog für Brief und Vertrag. Zwei `.fileImporter` am selben
+    // View bedient SwiftUI nicht — nur der zweite öffnete, „Aus Dateien
+    // (PDF)" für den Brief nie (gemessen 24.10.2026 auf iPhone und iPad;
+    // Apple-Ablehnung 2.1(a)).
+    @State private var zeigeDateien = false
+    @State private var dateiIstVertrag = false
     @State private var briefLaeuft = false
     @State private var vertragAuswahl: PhotosPickerItem?
-    @State private var zeigeVertragDateien = false
+    // Anhang auf dem iPad: eigenes Blatt statt Menü, Picker erst danach
+    // (24.10.2026, Apple 2.1(a)). Auf dem iPhone bleibt alles wie es war.
+    @State private var zeigeAnhang = false
+    @State private var anhangWahl: AnhangWahl?
+    @State private var zeigeBriefFotos = false
+    @State private var zeigeVertragFotos = false
     // Was der Server FRÜHER mitgeschrieben hat (BABU-25). Neues kommt keins
     // mehr dazu; was liegt, muss sie sehen und wegwerfen können.
     @State private var serverGespraeche: [ServerGespraech] = []
@@ -107,6 +117,13 @@ struct FragenTab: View {
                 }
             }
             .sheet(isPresented: $zeigeVerlauf) { verlaufsListe }
+            .sheet(isPresented: $zeigeAnhang, onDismiss: anhangAusfuehren) {
+                AnhangBlatt { anhangWahl = $0 }
+            }
+            .photosPicker(isPresented: $zeigeBriefFotos, selection: $briefAuswahl,
+                          matching: .images)
+            .photosPicker(isPresented: $zeigeVertragFotos, selection: $vertragAuswahl,
+                          matching: .images)
             .onAppear {
                 // Der Verlauf überlebt jeden Neustart — dann soll der Reiter
                 // auch dort weitermachen, wo das Gespräch aufgehört hat,
@@ -115,22 +132,16 @@ struct FragenTab: View {
                     aktuelleID = store.chatVerlauf.max(by: { $0.zuletzt < $1.zuletzt })?.id
                 }
             }
-            .fileImporter(isPresented: $zeigeBriefDateien,
+            .fileImporter(isPresented: $zeigeDateien,
                           allowedContentTypes: [.pdf, .image]) { ergebnis in
                 guard case .success(let url) = ergebnis else { return }
                 let zugriff = url.startAccessingSecurityScopedResource()
                 defer { if zugriff { url.stopAccessingSecurityScopedResource() } }
-                if let daten = try? Data(contentsOf: url) {
-                    briefSchicken(daten, name: url.lastPathComponent)
-                }
-            }
-            .fileImporter(isPresented: $zeigeVertragDateien,
-                          allowedContentTypes: [.pdf, .image]) { ergebnis in
-                guard case .success(let url) = ergebnis else { return }
-                let zugriff = url.startAccessingSecurityScopedResource()
-                defer { if zugriff { url.stopAccessingSecurityScopedResource() } }
-                if let daten = try? Data(contentsOf: url) {
+                guard let daten = try? Data(contentsOf: url) else { return }
+                if dateiIstVertrag {
                     vertragSchicken(daten, name: url.lastPathComponent)
+                } else {
+                    briefSchicken(daten, name: url.lastPathComponent)
                 }
             }
             .onChange(of: vertragAuswahl) { _, neu in
@@ -149,6 +160,30 @@ struct FragenTab: View {
                     if let daten { briefSchicken(daten, name: "brief.jpg") }
                 }
             }
+        }
+    }
+
+    // MARK: - Anhang auf dem iPad
+
+    /// Auf dem iPad bekommt die Büroklammer ein eigenes Blatt — auch im
+    /// iPhone-Kompatibilitätsfenster, denn genau dort hat Apple geprüft.
+    /// Dort meldet `userInterfaceIdiom` aber `.phone` (gemessen 24.10.2026,
+    /// iPad Air 11" Simulator); nur `model` sagt noch „iPad".
+    /// (Build 16: dazu `|| sizeClass == .regular` für breite Fenster.)
+    private static var anhangAlsBlatt: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+            || UIDevice.current.model.hasPrefix("iPad")
+    }
+
+    /// Läuft, wenn das Anhang-Blatt zu ist: erst jetzt den Picker öffnen.
+    private func anhangAusfuehren() {
+        guard let w = anhangWahl else { return }
+        anhangWahl = nil
+        switch w {
+        case .briefFoto: zeigeBriefFotos = true
+        case .briefDatei: dateiIstVertrag = false; zeigeDateien = true
+        case .vertragFoto: zeigeVertragFotos = true
+        case .vertragDatei: dateiIstVertrag = true; zeigeDateien = true
         }
     }
 
@@ -474,36 +509,50 @@ struct FragenTab: View {
 
     private var eingabeleiste: some View {
         HStack(spacing: 10) {
-            Menu {
-                Section("Brief vom Amt") {
-                    PhotosPicker(selection: $briefAuswahl, matching: .images,
-                                 photoLibrary: .shared()) {
-                        Label("Fotografieren oder aus Fotos", systemImage: "camera")
-                    }
-                    Button {
-                        zeigeBriefDateien = true
-                    } label: {
-                        Label("Aus Dateien (PDF)", systemImage: "folder")
-                    }
+            if Self.anhangAlsBlatt {
+                Button {
+                    zeigeAnhang = true
+                } label: {
+                    Image(systemName: briefLaeuft ? "hourglass" : "paperclip")
+                        .font(.system(size: 22))
+                        .foregroundStyle(briefLaeuft ? GC.muted : GC.accent)
                 }
-                Section("Vertrag") {
-                    PhotosPicker(selection: $vertragAuswahl, matching: .images,
-                                 photoLibrary: .shared()) {
-                        Label("Mietvertrag & Co. fotografieren", systemImage: "doc.text")
+                .disabled(briefLaeuft)
+                .accessibilityLabel("Brief vom Amt ablegen")
+            } else {
+                Menu {
+                    Section("Brief vom Amt") {
+                        PhotosPicker(selection: $briefAuswahl, matching: .images,
+                                     photoLibrary: .shared()) {
+                            Label("Fotografieren oder aus Fotos", systemImage: "camera")
+                        }
+                        Button {
+                            dateiIstVertrag = false
+                            zeigeDateien = true
+                        } label: {
+                            Label("Aus Dateien (PDF)", systemImage: "folder")
+                        }
                     }
-                    Button {
-                        zeigeVertragDateien = true
-                    } label: {
-                        Label("Vertrag aus Dateien (PDF)", systemImage: "folder")
+                    Section("Vertrag") {
+                        PhotosPicker(selection: $vertragAuswahl, matching: .images,
+                                     photoLibrary: .shared()) {
+                            Label("Mietvertrag & Co. fotografieren", systemImage: "doc.text")
+                        }
+                        Button {
+                            dateiIstVertrag = true
+                            zeigeDateien = true
+                        } label: {
+                            Label("Vertrag aus Dateien (PDF)", systemImage: "folder")
+                        }
                     }
+                } label: {
+                    Image(systemName: briefLaeuft ? "hourglass" : "paperclip")
+                        .font(.system(size: 22))
+                        .foregroundStyle(briefLaeuft ? GC.muted : GC.accent)
                 }
-            } label: {
-                Image(systemName: briefLaeuft ? "hourglass" : "paperclip")
-                    .font(.system(size: 22))
-                    .foregroundStyle(briefLaeuft ? GC.muted : GC.accent)
+                .disabled(briefLaeuft)
+                .accessibilityLabel("Brief vom Amt ablegen")
             }
-            .disabled(briefLaeuft)
-            .accessibilityLabel("Brief vom Amt ablegen")
             TextField("Frag mich etwas …", text: $eingabe, axis: .vertical)
                 .lineLimit(1...4)
                 .focused($feldAktiv)
