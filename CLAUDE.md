@@ -67,9 +67,21 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
 - Buchhalterisches Fachwissen (was ein Beleg ist, Konten, Sätze, Umlagen,
   was eine Gutschrift wirtschaftlich bedeutet) steht in
   `werkzeuge/kompendium/kontierung-grundwissen.md` — Quelle im Repo, Kopie
-  auf der H200V unter `~/kompendium/` (babu-web liest sie beim Start;
+  auf der H200V im Container-Mount (babu-web liest sie beim Start;
   Änderung = Datei kopieren + Container neu starten). Neue Abschnitte VOR
   der generierten Kontenübersicht (`<!-- skr04-atome … -->`).
+- **Ein Container je Branche, gemountet (Stand 24.10.2026, `docker inspect`):**
+  `~/kompendium-friseur` → `/data/kompendium`, `~/kompendium-barber`,
+  `~/kompendium-werkstatt`, `~/kompendium-bundesrecht` → `/data/kompendium-*`.
+  Welches Portal gilt, steht in den Einstellungen (`portal`: friseur/barber/
+  werkstatt, `sprache`: de/tr); Texte je Branche in
+  `server/belegreview/portale/`. Bundesrecht geht NICHT in die Vektorsuche
+  (`MIT_BUNDESRECHT = False`, gemessen schlechter), nur `kompendium.wortlaut()`
+  für in der Frage genannte Vorschriften.
+- Gebaut wird mit `werkzeuge/kompendium/container_bauen.py`. Seit 14.10.2026
+  (abf6f53) bestimmt eine Datei im Quellordner allein, welche Atome aus ihr
+  im Container stehen — eine Korrektur ersetzt die alte Fassung, statt beide
+  Fassungen nebeneinander zu lassen.
 - In `gemma_buchung.REGELN` steht nur VERHALTEN (welche Frage, nicht
   abgeben, was in den Buchungstext). Kontonummern nur im Katalog
   (`kontierung.py`), das Modell vergibt nie welche.
@@ -170,6 +182,43 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
 - Server Notifications V2: `https://mybabu.io/api/abo/apple/meldung`, dieselbe
   URL für Produktion und Sandbox.
 
+## App Store Connect — gelesen, nicht erinnert (Stand 24.10.2026)
+
+- App „babu Belege" 6811956687 (`io.0711.beleg`). Zugang ohne Browser über den
+  API-Schlüssel `~/.config/0711/asc-babu.p8` (`werkzeuge/asc_api.py`,
+  `/usr/bin/python3` hat PyJWT). **Vor jeder Einreichung
+  `python3 werkzeuge/asc_pruefung.py`** — es liest, was stimmen muss. Dazu
+  `asc_abos.py`, `asc_verfuegbarkeit.py`, `asc_screenshots.py`,
+  `asc_testflight.py`, `asc_nutzer.py`. Den Text einer Ablehnung liefert nur
+  das Resolution Center (Chrome-Sitzung des Auftraggebers), nie die API.
+- **Stand 24.10.2026:** Version 1.0 REJECTED, Build 14 VALID an der Version,
+  Einreichung `58ed02dd` (22.10. 01:06 UTC) UNRESOLVED_ISSUES. Apples
+  Nachricht vom 24.10. 13:54, geprüft auf **iPad Air 11" (M3), iPadOS 27.0**:
+  2.1(a) „multiple attachment options in the chat feature were unresponsive";
+  2.1(b) die drei Speicherstufen in der App nicht gefunden, Hinweis auf
+  Sandbox und Paid Apps Agreement. Frühere Antworten/Entwürfe:
+  `docs/apple-antwort-2-1b-iap.md`, `docs/apple-antwort-3-1-3c.md`,
+  `docs/apple-freigabe.md`. **Apple prüft auf dem iPad** — vor jeder
+  Einreichung den Build auch auf einem iPad-Simulator durchklicken, besonders
+  den Reiter „Fragen" mit Anhang.
+- Gemessen 24.10.: App in 175 Gebieten verfügbar (Entscheid 22.10.: weltweit,
+  gemacht nur für die deutsche Steuer); `CANNOT_SELL` in allen 175 Gebieten,
+  `TRADER_STATUS_NOT_PROVIDED` in 27 EU-Gebieten — Statuswerte, die Ursache
+  ist ungemessen. Business-Seite am 22.10. gelesen: Paid Apps Agreement aktiv
+  seit 13.10., Trader Status „In Review". Abos: Gruppe „babu Speicher", drei
+  Stufen READY_TO_SUBMIT, Preise und Verfügbarkeit in 175 Gebieten, liegen der
+  Einreichung bei. Nie „no storefront restrictions" an Apple schreiben.
+- Prüfkonto `apple-review@0711.io` = Mandant 4 „Salon Probe" (eigene Box,
+  Kanzlei 10); letzter Login 23.10.2026 16:38 UTC. Passwort steht nur in ASC
+  unter Sign-In Information.
+- TestFlight: interne Gruppe „Pilot", externe „Salons" mit öffentlichem Link
+  (`BABU_TESTFLIGHT_LINK` live gesetzt). Cron `testflight_abgleich.py` (jede
+  Minute) lädt Apple-IDs von der Warteliste ins Team und in „Pilot".
+- Store-Screenshots sind echte App-Bildschirme aus dem Simulator mit
+  erfundenen Demodaten („Salon Probe", 29.09.2026), keine Werbegrafiken
+  (Richtlinie 2.3.3). Demodaten als `zustand.json` nach
+  `Application Support/Beleg` einspielen (ohne Anmeldung heißt die Datei so).
+
 ## Rollen, Mandanten, DATEV
 
 - Rollen `admin`/`kanzlei`/`salon`/`mitarbeit`; PAT-Konten über
@@ -183,11 +232,24 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   Standard-Ablage ohne `X-Mandant` sehen nur Betrieb, Team und Admin —
   keine Kanzlei. Der öffentliche AVV (`/avv`, `/app/avv.pdf`) ist eine
   Vorlage ohne Betrieb; ausgefüllt unter `/avv/mein`.
-- Produktivkonten: `christoph0711.io` (PAT, admin + Sachbearbeiter Kanzlei
-  Afflek), `afflek@0711.io` (Kanzlei Afflek, id 7), Mandanten 1 „Jenny from
-  the Block" (Box ausstehend) und 2 „SupremeStudio" = Nina (Berater 16149,
-  Mandant 19364). Startpasswörter werden nie ausgegeben — der Weg ist
-  „Zugänge verwalten → Neues Startpasswort".
+- **Konten und Betriebe (DB gelesen 24.10.2026):** Admin sind
+  `christoph@0711.io` und `nina.baic@googlemail.com`; Token-Konten
+  `christoph`, `nina` (`BABU_ERLAUBT`, Benutzernamen des GitChain-Dienstes,
+  `BABU_ROLLEN=christoph:admin`). Kanzleien 7 Afflek (`afflek@0711.io`),
+  8 GKM, 10 „babu direkt" (Hauskanzlei der App-Betriebe). **Jeder Betrieb hat
+  seine eigene Box `babu/<kurzname>-<id>/belege`** — Betriebe mischen sich
+  nie (d28c564). Mandant 2 „SupremeStudio" = Standard-Box `babu/babu/belege`
+  (Berater 16149, Mandant 19364), seit 28.09.2026 am stillen Archivkonto
+  `supremestudio-archiv@0711.io` (inaktiv); alles bis dahin liegt dort unter
+  `archiv/2026-09-28/`. Die Standard-Ablage ohne Mandant öffnen nur
+  `BABU_ERLAUBT` und `BABU_STANDARD_KONTEN` (`nina.baic@googlemail.com`).
+  5 „Nina Test" = `nina@0711.io` (E2E, leer seit 28.09.), 4 „Salon Probe" =
+  `apple-review@0711.io` (Apples Prüfkonto), 1 Jenny, 3 nullsiebenelf GmbH
+  (GKM), 7 DJBinary, 8 SupremeAcademy UG, 9 Supreme Beauty; 10–13 Rauchtests
+  „bitte ignorieren", 16–23 „Mein Betrieb" aus der App (`app-…`-Konten). Die
+  Boxen 14/15 (Rauchtests) liegen noch im Lesespiegel, ihre Mandanten sind
+  über Konto-löschen weg — das Repo löscht nur der Betreiber. Startpasswörter
+  werden nie ausgegeben — der Weg ist „Zugänge verwalten → Neues Startpasswort".
 - DATEV-Seite `/datev` (`datev_seite.py`, `extf.py`): Format nach dem
   Kanzlei-Referenzstapel (Version 12, 124 Spalten, SKR leer; babu schreibt
   cp1252, `?zeichensatz=utf8` schaltbar), Prüfbefund vor jedem Export,
@@ -204,33 +266,39 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   Container `babu-postgres` (127.0.0.1:55432, Passwortdatei
   `~/babu-web/.pg_passwort`, täglicher `pg_dump` in `~/babu-sichern.sh`);
   `portal.db` bleibt liegen als Rückweg (`BABU_DB_URL` auskommentieren).
-  In pm2 bleiben nur `babu-eingang` und `babu-tunnel`; der pm2-Eintrag
-  `babu-web` ist gestoppt und NUR Rückweg. **Nie anfassen:** `insp-app`
-  (Belegbox-Gateway :7808) und `belege-review` (ANDERES Projekt).
+  In pm2 läuft nur noch `babu-tunnel`; `babu-eingang` und `babu-web` sind
+  gestoppt und NUR Rückweg (pm2 gelesen 24.10.2026). **Nie anfassen:**
+  `insp-app` (:7808 — seit 27.09.2026 nicht mehr babus Gateway, andere
+  Projekte hängen daran) und `belege-review` (ANDERES Projekt).
   - **Achtung rsync + .env:** `docker/.env` auf der H200V (Support-Postfach,
     SMTP-Zugänge) liegt IM rsync-Bereich — immer `--exclude=.env` mitgeben,
     sonst löscht `--delete` sie beim nächsten Deploy. Sicherungen der `.env`
     gehören nach `~/sicherung/`, nie daneben — `--delete` räumt sie sonst ab.
 
-- Deploy: **immer `rsync server/ h200v:~/babu-docker/` komplett, nie eine- Deploy: **immer `rsync server/ h200v:~/babu-docker/` komplett, nie eine
+- Deploy: **immer `rsync server/ h200v:~/babu-docker/` komplett, nie eine
   Einzeldatei** (seit 15.09.2026 dazu `rsync werkzeuge/ h200v:~/babu-docker/werkzeuge/`,
   der Ordner ist als `/app/werkzeuge` in den Container gemountet) (ein gemischter Build fiel nur auf, weil ein neues
   API-Feld live fehlte) → `cd ~/babu-docker/docker && docker compose build
-  && docker compose up -d` → `GET /healthz` muss 200 mit `stand: ok` liefern
-  (seit 14.09.2026; `arbeit_offen` vor dem nächsten Deploy auf 0 warten) →
-  geänderte Routen live durchrufen und ein neues Feld direkt abfragen.
-  `docker/wache.sh` läuft im Host-Cron alle 2 min und startet bei
-  `unhealthy` neu. `BABU_SIGNUP=0` in Compose: das alte Selbstbedienungs-Konto
+  && docker compose up -d` → `GET /healthz` muss 200 mit `stand: ok` UND
+  `spiegel: ok` liefern (seit 14.09.2026; `arbeit_offen` vor dem nächsten
+  Deploy auf 0 warten) → geänderte Routen live durchrufen und ein neues Feld
+  direkt abfragen. `docker/wache.sh` läuft im Host-Cron alle 2 min und startet
+  bei `unhealthy` neu. **Täglicher Lauf:** Cron 06:15 `flock … docker exec
+  babu-web python /app/werkzeuge/taeglich.py` (Stripe nachholen, Erinnerungen,
+  „Heute für dich"; `docs/betrieb-golive.md` §1d). `BABU_SIGNUP=0` in Compose: das alte Selbstbedienungs-Konto
   bleibt aus. **Seit 08.10.2026** startet `/testen` (Startseite „Konto anlegen")
   30 Tage Test ohne Code (`BABU_TESTMONAT`); Warteliste und „Zugang anlegen"
   geben Salons ebenfalls Testmonat + Willkommensmail, Kanzleien eine
   Willkommensmail. Rückmeldungen tragen seit 14.09. ein Label je Betrieb
   (`betrieb-<mandant_id>`, Ein-Betrieb `betrieb-default`); jeder sieht nur
   seine.
-- **Box-Anleger (seit 15.09.2026):** `docker/box-anleger.sh` läuft im Host-Cron jede
-  Minute und legt für Mandanten mit `box_ausstehend` das leere Repo im Workspace an,
-  dann `betrieb_anlegen.py --nur-box`. Belegboxen entstehen damit ohne Handarbeit;
-  insp-app bleibt unberührt. Log `~/logs/box-anleger.log`, `--probe` zeigt nur.
+- **Box-Anleger (seit 15.09.2026, seit 27.09. Push-to-create):** `docker/box-anleger.sh`
+  läuft im Host-Cron jede Minute und ruft für Mandanten mit `box_ausstehend` und
+  leerem `box_ref` IM Container `betrieb_anlegen.py --nur-box --box-anlegen`: die
+  Box entsteht per Push als `svc-babu` unter `babu/<kurzname>-<id>/belege`
+  (Kurzname = Name klein, Umlaute aufgelöst, ≤ 40 Zeichen), wird per
+  `git ls-remote` geprüft, der Mandant geht auf `aktiv`. Kein `git init` mehr im
+  GitChain-Speicher. Log `~/logs/box-anleger.log`, `--probe` zeigt nur.
 - **Nachlese beim Start (seit 14.09.2026, vom Auftraggeber freigegeben):**
   60 s nach jedem Start liest babu-web einmalig Belege ohne jede Lesung
   nach (3 min bis 14 Tage alt, höchstens 20 je Box, 60 gesamt, sequenziell,
@@ -247,24 +315,32 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   als `python3 -m json.tool --sort-keys`, Dateien unter `~/golden/`) bleibt
   das Ritual bei Änderungen am Buchungsweg; der Auftraggeber verzichtet
   ausdrücklich darauf, wenn er es sagt.
-- **Golden-Anmeldung und Service-PAT (seit 14.09.2026):** `~/gitchain-eingang/.pat_babu`
-  ist ein GitChain-Geräte-Token (Gerät „babu-web Box-Push (H200V)"). boxschreiber
-  pusht damit, und `POST /api/anmelden {pat}` meldet `christoph0711.io` an — die
-  `/api/*`-Routen nehmen KEIN Bearer, nur das Cookie danach; Bearer geht nur auf
-  `/review/<stamm>`. Neuen Token nur über den Device-Flow mit **Google-Login**
-  (sonst `un: ''` → 401), Poll mit User-Agent-Header, Wert bleibt auf dem Server.
-  Bei „Token ungültig" zuerst insp-app prüfen: `INSP_STATE_DIR` und
-  `REPO_BASE_PATH` im Prozess (`/proc/$(pm2 pid insp-app)/environ`), Start nur
-  über `ops/deploy.sh`-Weg (`. ~/.config/insp-oauth.env` + `pm2 startOrReload
-  inspektor/ecosystem.config.cjs --only insp-app --update-env`). `~/inspektor-store`
-  ist ein Symlink auf `~/gitchain/tresor` und zugleich der ro-Mount des Containers.
+- **GitChain-Standard (live seit 27.09.2026 21:18; Env gelesen 24.10.):** babu
+  schreibt als Dienstkonto `svc-babu` (Integration `babu`, Namensraum `babu`)
+  in den GitChain-Dienst `http://127.0.0.1:3361` (`BABU_GATEWAY`, Git Smart
+  HTTP, `BABU_GIT_AUTH=bearer`). Token `~/gitchain-eingang/.pat_babu`
+  (gcpat, 0600, ro im Container, je Aufruf frisch gelesen → Rotation ohne
+  Neustart; Kopie `.pat_babu.svc`, alter Geräte-Token `.pat_babu.bak-vor-standard`).
+  **Gelesen wird nur aus dem eigenen Lesespiegel** `~/babu-web/lesen/<ref>.git`
+  (`BABU_LESEN=klon`, `git clone --mirror`, nachgezogen vor jedem Index-Neubau
+  und nach jedem eigenen Push; `/healthz` → `spiegel`). Jede Box =
+  `babu/<betrieb>/belege` mit eigener Arbeitskopie `~/babu-web/boxen/<ref>`
+  — bis 27.09. teilten sich alle Mandanten EINE Kopie mit Ninas Box (GKM-Belege
+  landeten bei SupremeStudio; behoben 94af952, Test `tests/test_box_trennung.py`).
+  `.0711/container.json` ist Pflichtdatei der Box: GitChain weist einen Push
+  ohne sie ab (`GESCHUETZT`, 5700a1d). `POST /api/anmelden {pat}` prüft
+  Menschen-Tokens über `GET :3361/v1/user` (Dienstkonten abgewiesen); die
+  `/api/*`-Routen nehmen danach nur das Cookie, Bearer nur auf `/review/<stamm>`.
+  `insp-app` :7808 und `~/inspektor-store` benutzt babu nicht mehr (kein Mount).
+  Umzug/Rückweg: `docker/box-umzug.sh`, `docker/box-rueckholen.sh`, Rückweg-Env
+  als Kommentar in `compose.yml`, Unterlage `docs/gitchain-standard-scharfschalten.md`.
+  Token-Werte nie in Chat, Log oder argv.
 - **Seit 03.09.2026 ist die H200V Worker im Rancher-Cluster `dev-01`.** Gemma
   (:11435) und Embeddings (:11436) sind k3s-Pods mit hostPort; babu-web,
-  babu-postgres, insp-app, babu-eingang, babu-tunnel und `~/inspektor-store`
-  laufen AUSSERHALB des Clusters und stehen in keinem Manifest
-  (`gitlab.mediacockpit.dev/0711/h200-migration-manifests`). Nach jedem
-  Cluster-Eingriff aus dem Container `:11435/v1/models`, `:11436` und den
-  Git-Endpunkt auf `:7808` prüfen.
+  babu-postgres und babu-tunnel laufen AUSSERHALB des Clusters und stehen in
+  keinem Manifest (`gitlab.mediacockpit.dev/0711/h200-migration-manifests`).
+  Nach jedem Cluster-Eingriff aus dem Container `:11435/v1/models`, `:11436`
+  und `:3361/v1/user` (401 ohne Token = Dienst lebt) prüfen.
 - Migrationen laufen beim ersten `_db()`-Open, nicht beim Containerstart:
   `schema_version` erst nach einem Request prüfen.
 - H200V nur über OpenVPN (`ssh h200v`). Kein sqlite3-CLI auf dem Server;
@@ -308,7 +384,9 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   den Rechner. Eine Suite je Worktree.
 - **Nie `git stash`** — der Stash-Stapel ist mit allen Worktrees geteilt.
 - iOS-Simulator: `xcodebuild -project ios/Beleg/Beleg.xcodeproj -scheme Beleg
-  -destination 'platform=iOS Simulator,name=iPhone 16e' -derivedDataPath /tmp/bsim build`
+  -destination 'platform=iOS Simulator,name=iPhone 16e' -derivedDataPath /tmp/bsim build`.
+  Für Store-Screenshots ein eigener Simulator `babu-appstore` (iPhone 17 Pro Max,
+  `xcrun simctl create`), Statusleiste per `simctl status_bar … override --time 9:41`.
 - **Zwei Ziele aus einem Ordner** (seit 08.09.2026): `Beleg` = babu
   (`io.0711.beleg`, Scanner + Hirn + Profilbauer + DATEV-Büchlein),
   `BelegPro` = babu Pro (`io.0711.beleg.pro`, dazu Termine, Kasse, Kundinnen,
@@ -337,6 +415,15 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   danach `git worktree remove` + Branch löschen.
 - iOS-Merge-Falle: im Haupt-Checkout gebaut ≠ im Worktree committet — vor
   dem Merge diffen.
+- **Zwei Remotes:** `gitlab` (gitlab.mediacockpit.dev/0711/babu) trägt `main`;
+  `origin` (GitHub C-0711/babu) hängt nach (24.10.2026: 10 Commits). Der
+  Fix-Lauf arbeitet auf `origin/main` — GitHub per Merge nachziehen (nie
+  Force), sonst rollt er einen alten Stand aus.
+- **Worktrees aufräumen:** `git worktree list` zeigte am 24.10.2026 13 Einträge,
+  darunter vier Agent-Worktrees 246–337 Commits hinter `main` mit je 1–4 nie
+  übernommenen Commits, und einen toten (`/private/tmp/fix-88`, per
+  `git worktree prune` entfernt). Vor neuer Arbeit `git worktree prune`;
+  Agent-Worktrees nach dem Cherry-pick entfernen, Branch löschen.
 
 ## Bekannte Fallen
 
