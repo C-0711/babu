@@ -23,6 +23,11 @@ struct PlatzView: View {
     @EnvironmentObject var store: AppStore
     @EnvironmentObject var kasse: Kasse
     @State private var zeigeVerwalten = false
+    // Eigener Schalter für dieses Blatt. Hinge es an `store.zeigePlatz`,
+    // hinge dasselbe Flag an ZWEI Blättern (hier und an der Wurzel in
+    // BelegApp) — UIKit versucht dann beide zugleich zu zeigen, bricht ab
+    // und das Flag bleibt wahr (Apple-Ablehnung 24.10.2026, iPad).
+    @State private var zeigePlatzHier = false
 
     private var platz: PlatzStand? { store.platz }
 
@@ -44,7 +49,7 @@ struct PlatzView: View {
             await store.kontoNachfragen()
             await kasse.preiseLaden(store.stufen)
         }
-        .sheet(isPresented: $store.zeigePlatz) { PlatzSheet() }
+        .sheet(isPresented: $zeigePlatzHier) { PlatzSheet() }
         // Apples eigenes Blatt: kündigen, wechseln, Rechnung ansehen. Das
         // kann die App nicht selbst, und sie soll es auch nicht nachbauen.
         .manageSubscriptionsSheet(isPresented: $zeigeVerwalten)
@@ -124,7 +129,7 @@ struct PlatzView: View {
     private func wege(_ p: PlatzStand) -> some View {
         Section {
             Button(p.stufe == nil ? "Platz buchen" : "Platz ändern") {
-                store.zeigePlatz = true
+                zeigePlatzHier = true
             }
             if p.stufe != nil {
                 Button("Abo verwalten") { zeigeVerwalten = true }

@@ -593,7 +593,7 @@ final class AppStore: ObservableObject {
         guard PlatzStand.angebotNachErstemBeleg(platz, belegeAufTelefon: belege.count,
                                                 schonGezeigt: angebotGezeigt,
                                                 inhaberin: rechte == nil),
-              !stufen.isEmpty, !zeigePlatz else { return }
+              !stufen.isEmpty else { return }
         angebotGezeigt = true
         zeigePlatz = true
     }
@@ -607,7 +607,6 @@ final class AppStore: ObservableObject {
             // damit die Auswahl die richtige Zahl zeigt.
             Task { await self.kontoNachfragen() }
         }
-        guard !zeigePlatz else { return }
         zeigePlatz = true
     }
 
