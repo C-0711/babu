@@ -213,6 +213,14 @@ Anti-Ziele (Erfolg wäre trotzdem ein Fehlschlag, wenn …):
   lebt in `Kasse` (Preise) und `AppStore` (Stufen); `PlatzSheet` zeigt ihn.
 - Der Streifen `PlatzStreifen` bleibt wie heute (nur `voll`/`knapp`); in
   Build 15 keine Änderung an der Schwelle.
+- **Währung:** Die App schreibt keine fest; `Product.displayPrice` zeigt die
+  Währung des Storefronts der Nutzerin (Nina: Euro). Im Simulator per
+  `simctl` gestartet hängt die App an Apples US-Sandbox und zeigt Dollar
+  (gemessen 24.10., auch nach Umstellung der Simulator-Region auf
+  Deutschland). Store-Screenshots und Vorführungen daher nur aus Xcode
+  heraus starten: `Support/babu.storekit` steht auf Storefront DEU mit
+  9,99 / 19,99 / 99,00 €, beide Schemes binden es ein. Apples Prüfer sieht
+  seine eigene Storefront-Währung; das ist erwartet.
 
 ### 5.4 Messung der Paywall (Server + App)
 
