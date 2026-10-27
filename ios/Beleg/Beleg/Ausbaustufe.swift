@@ -31,6 +31,7 @@ enum Ausbaustufe {
     static var reiter: [Reiter] {
         Reiter.allCases.filter {
             (voll || !$0.nurVoll) && !$0.nurMitarbeit && !$0.nurAmbassadorin
+                && !$0.nurBreit
         }
     }
 
@@ -80,8 +81,30 @@ enum Ausbaustufe {
     /// Ablage führt jeder andere Reiter ins Leere (Erfassen, Dokumente,
     /// Termine, Kassenbuch, Fragen brauchen alle eine) — dann gibt es nur
     /// „Empfehlen", als ganze Seite ohne Leiste (`ganzeSeite`).
+    ///
+    /// `breit` (iPad, aufgeklapptes Duo — Größenklasse regular, 27.10.2026):
+    /// Dokumente und Fragen werden zu EINEM Reiter „Arbeitsplatz" an der
+    /// Stelle von Dokumente — links die Belege, rechts der Chat. Nur, wenn
+    /// beide da sind; wer nur eines davon hat, bekommt keinen Arbeitsplatz.
     static func reiter(fuer rechte: Rechte?,
-                       ambassadorin: Ambassadorin = .nein) -> [Reiter] {
+                       ambassadorin: Ambassadorin = .nein,
+                       breit: Bool = false) -> [Reiter] {
+        let schmal = reiterSchmal(fuer: rechte, ambassadorin: ambassadorin)
+        guard breit, schmal.contains(.dokumente), schmal.contains(.fragen) else {
+            return schmal
+        }
+        return schmal.compactMap { r in
+            switch r {
+            case .fragen: return nil
+            case .dokumente: return .arbeitsplatz
+            default: return r
+            }
+        }
+    }
+
+    /// Die Reiter für dieses Konto in der schmalen Größenklasse (iPhone).
+    private static func reiterSchmal(fuer rechte: Rechte?,
+                                     ambassadorin: Ambassadorin) -> [Reiter] {
         guard let r = rechte else {
             switch ambassadorin {
             case .nein:
@@ -97,7 +120,7 @@ enum Ausbaustufe {
             case .auslagen: return r.auslagen
             case .erfassen: return r.belege
             case .kasse: return r.kasse && voll
-            case .dokumente, .termine, .fragen, .empfehlen: return false
+            case .dokumente, .termine, .fragen, .empfehlen, .arbeitsplatz: return false
             }
         }
         return Array(erlaubt.prefix(hoechstensReiter))
@@ -132,14 +155,20 @@ enum Ausbaustufe {
 /// Ein Reiter in der Leiste unten.
 enum Reiter: String, CaseIterable, Hashable {
     case erfassen, dokumente, termine, kasse, fragen, empfehlen, auslagen
+    case arbeitsplatz
 
     /// Gibt es diesen Reiter nur im großen Bau?
     var nurVoll: Bool {
         switch self {
         case .termine, .kasse: return true
-        case .erfassen, .dokumente, .fragen, .empfehlen, .auslagen: return false
+        case .erfassen, .dokumente, .fragen, .empfehlen, .auslagen, .arbeitsplatz: return false
         }
     }
+
+    /// Nur in der breiten Größenklasse (iPad, aufgeklapptes Duo): der
+    /// Arbeitsplatz ersetzt dort Dokumente und Fragen
+    /// (`Ausbaustufe.reiter(fuer:ambassadorin:breit:)`).
+    var nurBreit: Bool { self == .arbeitsplatz }
 
     /// Nur für Mitarbeiterinnen (babu Expenses D1) — die Inhaberin gibt
     /// Auslagen über das Menü frei.
@@ -158,6 +187,7 @@ enum Reiter: String, CaseIterable, Hashable {
         case .fragen:    return "Fragen"
         case .empfehlen: return "Empfehlen"
         case .auslagen:  return "Auslagen"
+        case .arbeitsplatz: return "Arbeitsplatz"
         }
     }
 
@@ -170,6 +200,7 @@ enum Reiter: String, CaseIterable, Hashable {
         case .fragen:    return "questionmark.bubble"
         case .empfehlen: return "gift"
         case .auslagen:  return "eurosign.circle"
+        case .arbeitsplatz: return "rectangle.split.2x1"
         }
     }
 }

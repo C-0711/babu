@@ -240,5 +240,35 @@ pruefe("Reiter und Menüzeile heißen gleich und sehen gleich aus",
        Reiter.empfehlen.titel == Kontomenuepunkt.empfehlen.titel
        && Reiter.empfehlen.symbol == Kontomenuepunkt.empfehlen.symbol)
 
+// Breite Größenklasse (iPad, aufgeklapptes Duo, 27.10.2026): Dokumente und
+// Fragen werden zu EINEM Reiter „Arbeitsplatz" — links Belege, rechts Chat.
+// Nur, wenn beide da sind; auf dem iPhone bleibt alles, wie es war.
+print("— Breit (iPad, Duo) —")
+let breitErwartet: [Reiter] = Ausbaustufe.voll
+    ? [.erfassen, .arbeitsplatz, .termine, .kasse] : [.erfassen, .arbeitsplatz]
+pruefe("breit: Dokumente und Fragen werden zum Arbeitsplatz",
+       Ausbaustufe.reiter(fuer: nil, breit: true) == breitErwartet)
+pruefe("schmal bleibt, was es war",
+       Ausbaustufe.reiter(fuer: nil, breit: false) == Ausbaustufe.reiter)
+pruefe("Mitarbeiterin ohne Dokumente bekommt keinen Arbeitsplatz",
+       !Ausbaustufe.reiter(fuer: Ausbaustufe.Rechte(belege: true, kasse: false, auslagen: true),
+                           breit: true).contains(.arbeitsplatz))
+// Breit ändert nicht, WO Empfehlen steht: babu Pro hat es im Menü (unten
+// war kein Platz — und ein frei gewordener Platz holt es nicht zurück, sonst
+// stünde es doppelt), babu hinten in der Leiste.
+if Ausbaustufe.voll {
+    pruefe("babu Pro mit Ablage auf breit: Empfehlen bleibt im Menü",
+           !Ausbaustufe.reiter(fuer: nil, ambassadorin: .mitAblage, breit: true).contains(.empfehlen)
+           && Ausbaustufe.kontomenue(fuer: nil, ambassadorin: .mitAblage).contains(.empfehlen))
+} else {
+    pruefe("babu mit Ablage auf breit: Empfehlen bleibt hinten",
+           Ausbaustufe.reiter(fuer: nil, ambassadorin: .mitAblage, breit: true).last == .empfehlen)
+}
+pruefe("Ambassadorin ohne Ablage auf breit: nur Empfehlen",
+       Ausbaustufe.reiter(fuer: nil, ambassadorin: .ohneAblage, breit: true) == [.empfehlen])
+pruefe("Arbeitsplatz ist nie in der schmalen Liste", !Ausbaustufe.reiter.contains(.arbeitsplatz))
+pruefe("Arbeitsplatz hat Titel und Symbol",
+       !Reiter.arbeitsplatz.titel.isEmpty && !Reiter.arbeitsplatz.symbol.isEmpty)
+
 print(fehler == 0 ? "\nAlles in Ordnung." : "\n\(fehler) Fehler.")
 exit(fehler == 0 ? 0 : 1)

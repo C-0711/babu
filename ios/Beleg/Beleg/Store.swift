@@ -24,7 +24,7 @@ final class AppStore: ObservableObject {
     // unter Buchhaltung. Der Fall bleibt, damit alte gespeicherte
     // Stände nicht beim Laden stolpern.
     enum Tab: Hashable { case erfassen, belege, termine, kasse, rechnungen,
-                         fragen, export, auslagen, empfehlen }
+                         fragen, export, auslagen, empfehlen, arbeitsplatz }
 
     @Published var onboarded = false { didSet { speichern() } }
     @Published var skr = "SKR04" { didSet { speichern() } }
@@ -1220,6 +1220,7 @@ extension Reiter {
         case .fragen:    return .fragen
         case .empfehlen: return .empfehlen
         case .auslagen:  return .auslagen
+        case .arbeitsplatz: return .arbeitsplatz
         }
     }
 }
