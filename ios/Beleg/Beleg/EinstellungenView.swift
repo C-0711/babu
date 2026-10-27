@@ -294,6 +294,10 @@ struct EinstellungenView: View {
             Toggle("Testwerkzeuge zeigen", isOn: $store.testmodus)
 
             if store.testmodus {
+                // Breite Größenklasse auf dem iPhone (seit 27.10.2026): zeigt
+                // den Arbeitsplatz des iPad, ohne ein iPad zu brauchen.
+                Toggle("Breites Layout erzwingen", isOn: $store.breitErzwingen)
+
                 // Konzeptstudie V2: eine Seite statt Reiter. Der Schalter
                 // tauscht die Wurzel — diese Einstellungen gehen damit zu.
                 Toggle(isOn: $store.einKnopf) {

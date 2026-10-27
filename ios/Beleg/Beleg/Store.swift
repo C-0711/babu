@@ -132,6 +132,10 @@ final class AppStore: ObservableObject {
     /// eine Zahl, ein Satz, ein Knopf. Zurück geht es nur über das kleine
     /// „Konzept" oben rechts.
     @Published var einKnopf = false { didSet { speichern() } }
+    /// Testphase (seit 27.10.2026): die breite Größenklasse auf dem iPhone
+    /// erzwingen, um den Arbeitsplatz ohne iPad zu prüfen. Liegt hinter
+    /// `testmodus`; `RootView` setzt damit `horizontalSizeClass` auf regular.
+    @Published var breitErzwingen = false { didSet { speichern() } }
 
     private var geladen = false
     private var speicherTask: Task<Void, Never>?
@@ -175,6 +179,7 @@ final class AppStore: ObservableObject {
             rechte = z.rechte
             testmodus = z.testmodus ?? false
             einKnopf = z.einKnopf ?? false
+            breitErzwingen = z.breitErzwingen ?? false
             profil = z.profil ?? [:]
             ablageFehlt = z.ablageFehlt ?? false
             abgleich = z.abgleich ?? []
@@ -284,6 +289,8 @@ final class AppStore: ObservableObject {
         var angebotGezeigt: Bool?
         // Neu ab 24.10.2026: die Stufen vom letzten erreichten Server-Stand.
         var stufenZuletzt: [PlatzStufe]?
+        // Neu ab 27.10.2026: Testphase-Schalter „Breites Layout erzwingen".
+        var breitErzwingen: Bool?
     }
 
     private var zustand: Zustand {
@@ -296,7 +303,7 @@ final class AppStore: ObservableObject {
                 testmodus: testmodus, profil: profil,
                 ablageFehlt: ablageFehlt, abgleich: abgleich, rechte: rechte, einKnopf: einKnopf,
                 ambassador: istAmbassador, angebotGezeigt: angebotGezeigt,
-                stufenZuletzt: stufenZuletzt)
+                stufenZuletzt: stufenZuletzt, breitErzwingen: breitErzwingen)
     }
 
     /// Entprellt auf ~0,25 s, damit Serien-Änderungen nicht pro Mutation schreiben.

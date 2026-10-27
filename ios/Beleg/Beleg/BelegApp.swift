@@ -55,6 +55,10 @@ struct RootView: View {
                 // Konzept „Ein Knopf" (Testphase): eine Seite statt Reiter.
                 if store.einKnopf {
                     EinKnopfView()
+                } else if store.breitErzwingen {
+                    // Testphase: die breite Größenklasse erzwingen — derselbe
+                    // Umgebungsschlüssel, den iPad und aufgeklapptes Duo setzen.
+                    MainTabs().environment(\.horizontalSizeClass, .regular)
                 } else {
                     MainTabs()
                 }
