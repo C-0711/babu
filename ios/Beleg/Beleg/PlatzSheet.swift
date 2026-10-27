@@ -13,9 +13,15 @@ import StoreKit
 /// babu wird mit jedem Dokument schlauer, und die Auslagen lassen sich
 /// abrechnen.
 struct PlatzSheet: View {
+    /// Woher das Blatt kam — fürs Messen (27.10.2026). `nil`: was der Store
+    /// beim Anfordern gesetzt hat (Angebot, Streifen, voller Platz).
+    var quelle: PlatzQuelle? = nil
     @EnvironmentObject var store: AppStore
     @EnvironmentObject var kasse: Kasse
     @Environment(\.dismiss) private var dismiss
+    /// Ob ein Ausgang schon gemeldet ist (gekauft, weiter, wiederhergestellt);
+    /// sonst zählt das Schließen als „abgebrochen".
+    @State private var ausgangGemeldet = false
 
     /// Welche Stufe gerade hervorgehoben ist. Die mittlere zuerst: sie ist
     /// die, mit der die meisten auskommen (9.500 Belege).
@@ -23,6 +29,11 @@ struct PlatzSheet: View {
     @State private var gekauft = false
 
     private var stufen: [PlatzStufe] { store.stufen }
+    private var meineQuelle: PlatzQuelle { quelle ?? store.platzQuelle }
+
+    private func melden(_ aktion: String, stufe: String? = nil) {
+        store.platzEreignis(aktion, quelle: meineQuelle, stufe: stufe)
+    }
 
     /// Wie viele freie Belege noch bleiben — nil, wenn es keinen kostenlosen
     /// Weg mehr gibt. Dann steht oben wieder das kleine „Später".
@@ -64,6 +75,8 @@ struct PlatzSheet: View {
                         ?? stufen.first?.stufe
                 }
             }
+            .onAppear { melden("gesehen") }
+            .onDisappear { if !ausgangGemeldet { melden("abgebrochen") } }
             .alert("", isPresented: .init(get: { kasse.fehler != nil },
                                           set: { if !$0 { kasse.fehler = nil } })) {
                 Button("Verstanden") { kasse.fehler = nil }
@@ -180,7 +193,11 @@ struct PlatzSheet: View {
             Button {
                 guard let s = stufen.first(where: { $0.stufe == gewaehlt }) else { return }
                 Task {
-                    if await kaufen(s) { gekauft = true }
+                    if await kaufen(s) {
+                        gekauft = true
+                        ausgangGemeldet = true
+                        melden("gekauft", stufe: s.stufe)
+                    }
                 }
             } label: {
                 HStack {
@@ -200,7 +217,11 @@ struct PlatzSheet: View {
             // versteckter (Auftraggeber 22.10.2026): gleich breit wie
             // „Platz buchen", nur ohne Fläche.
             if let noch = kostenlosNoch, !gekauft {
-                Button { dismiss() } label: {
+                Button {
+                    ausgangGemeldet = true
+                    melden("weiter")
+                    dismiss()
+                } label: {
                     Text(PlatzStand.kostenlosText(noch))
                         .font(.body.weight(.semibold))
                         .multilineTextAlignment(.center)
@@ -219,6 +240,8 @@ struct PlatzSheet: View {
                     if await kasse.wiederherstellen() {
                         await store.kontoNachfragen()
                         gekauft = true
+                        ausgangGemeldet = true
+                        melden("wiederhergestellt")
                     } else {
                         kasse.fehler = "Auf diesem Apple-Konto liegt gerade "
                             + "kein Platz, den babu übernehmen könnte."

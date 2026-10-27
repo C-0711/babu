@@ -219,6 +219,23 @@ extension AblageService {
         return .fehler(text ?? "Das hat gerade nicht geklappt.")
     }
 
+    /// Die Kaufseite meldet, woher sie kam und was danach geschah
+    /// (27.10.2026). Feuer-und-vergessen: Antwort und Fehler werden
+    /// verschluckt, es gibt keinen Nutzertext — eine verlorene Zählung ist
+    /// kein Grund, jemanden zu stören.
+    static func platzEreignis(quelle: PlatzQuelle, aktion: String, stufe: String?,
+                              basis: URL, pat: String) async {
+        var request = URLRequest(url: basis.appendingPathComponent("api/platz/ereignis"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(pat)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var rumpf: [String: Any] = ["quelle": quelle.rawValue, "aktion": aktion]
+        if let stufe { rumpf["stufe"] = stufe }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: rumpf)
+        _ = try? await URLSession.shared.data(for: request)
+    }
+
     static func leistungen(basis: URL, pat: String) async -> [[String: Any]] {
         let json = await holen("api/leistungen", basis: basis, pat: pat)
         return json?["leistungen"] as? [[String: Any]] ?? []

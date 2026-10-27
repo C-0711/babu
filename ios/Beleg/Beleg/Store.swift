@@ -38,6 +38,10 @@ final class AppStore: ObservableObject {
     @Published var geprueft = 0 { didSet { speichern() } }
     @Published var pruefSekunden: [Double] = [] { didSet { speichern() } }
     @Published var tab: Tab = .erfassen   // nicht persistiert
+    /// Woher die Kaufseite als Nächstes kommt — gesetzt von dem, der sie
+    /// anfordert (Angebot nach dem ersten Beleg, Streifen, voller Platz);
+    /// das Menü übergibt seine Quelle selbst. Nicht persistiert.
+    @Published var platzQuelle: PlatzQuelle = .angebot
     /// Der zuletzt in der Liste aufgeschlagene Beleg — für die rechte Spalte
     /// des Arbeitsplatzes (breite Größenklasse). Nicht persistiert.
     @Published var aufgeschlagen: UUID?
@@ -631,7 +635,18 @@ final class AppStore: ObservableObject {
               !stufen.isEmpty else { return }
         // `angebotGezeigt` setzt erst das Blatt beim Erscheinen (BelegApp):
         // ein abgebrochenes Zeigen darf das einmalige Angebot nicht verbrauchen.
+        platzQuelle = .angebot
         platzZeigen()
+    }
+
+    /// Ein Paywall-Ereignis an den Server melden (27.10.2026) — feuer-und-
+    /// vergessen, ohne Konto schweigend.
+    func platzEreignis(_ aktion: String, quelle: PlatzQuelle, stufe: String? = nil) {
+        guard let url = URL(string: ablageURL), let pat = KeychainHelfer.ladePAT() else { return }
+        Task {
+            await AblageService.platzEreignis(quelle: quelle, aktion: aktion, stufe: stufe,
+                                              basis: url, pat: pat)
+        }
     }
 
     /// Das Wurzel-Blatt anfordern. Steht der Schalter schon, ohne dass ein
@@ -666,6 +681,7 @@ final class AppStore: ObservableObject {
             // damit die Auswahl die richtige Zahl zeigt.
             Task { await self.kontoNachfragen() }
         }
+        platzQuelle = .voll
         platzZeigen()
     }
 

@@ -131,6 +131,12 @@ enum PreisLadung: Equatable {
     case laedt, geladen, fehler
 }
 
+/// Woher die Kaufseite kam (seit 27.10.2026, Messung der Paywall). Der Server
+/// zählt je Quelle, was danach geschah — `POST /api/platz/ereignis`.
+enum PlatzQuelle: String {
+    case angebot, menue, streifen, voll
+}
+
 /// Was `PlatzStand.blattAnfordern` entscheidet.
 enum BlattAnforderung: Equatable {
     case zeigen, nichts, neuZeigen

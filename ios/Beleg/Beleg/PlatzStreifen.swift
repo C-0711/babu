@@ -15,6 +15,7 @@ struct PlatzStreifen: View {
     var body: some View {
         if let p = store.platz, p.voll || p.knapp {
             Button {
+                store.platzQuelle = .streifen
                 store.platzZeigen()
             } label: {
                 HStack(spacing: 12) {
