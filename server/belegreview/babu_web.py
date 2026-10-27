@@ -44,6 +44,7 @@ import skr04_konten as skr  # noqa: E402
 import kontierung as kt  # noqa: E402
 import mandanten  # noqa: E402
 import kern_konto  # noqa: E402
+import kern_platz  # noqa: E402
 import postadresse  # noqa: E402
 import abo  # noqa: E402
 import bankrecht  # noqa: E402
@@ -705,6 +706,8 @@ def _sqlite_schema(conn) -> None:
     # Person (kern_konto.py, seit 14.10.2026). Bewusst OHNE Fremdschlüssel
     # auf `mandant` — die Zeile überlebt den Mandanten, das ist ihr Sinn.
     kern_konto.schema(conn)
+    # Paywall-Ereignisse (kern_platz.py, seit 27.10.2026).
+    kern_platz.schema(conn)
 
 
 @contextmanager
@@ -6810,8 +6813,13 @@ def api_kpi(monat: str, request: Request) -> Response:
     if not re.match(r"^\d{4}-\d{2}$", monat):
         return JSONResponse({"fehler": "ungültiger Monat"}, status_code=400)
     laufzeit = time.time() - _METRIK["start"]
+    # Der Paywall-Trichter (seit 27.10.2026) ist der des Betreibers — eine
+    # Inhaberin sieht ihre Kennzahlen, nicht, wie oft andere kaufen.
+    trichter = ({"platz_trichter": kern_platz.trichter(monat)}
+                if rolle(un) == "admin" else {})
     return JSONResponse({
         **kennzahlen_monat(monat),
+        **trichter,
         "betrieb": {"seit_s": round(laufzeit),
                     "requests": _METRIK["requests"],
                     "fehler_5xx_quote": round(_METRIK["fehler_5xx"] / _METRIK["requests"], 4) if _METRIK["requests"] else 0,
@@ -13542,6 +13550,7 @@ kern_anmeldelink.setup(app, sys.modules[__name__])
 kern_geraet.setup(app, sys.modules[__name__])
 kern_apple.setup(app, sys.modules[__name__])
 kern_konto.setup(app, sys.modules[__name__])
+kern_platz.setup(app, sys.modules[__name__])
 
 # Der Kern reicht sich selbst per setup() — die Familien hängen ihre
 # Routen an DIESES app-Objekt und benutzen DIESES Modul. Kein

@@ -73,6 +73,7 @@ NACH_MANDANT = (
                           #   ist dort der Verkäufer, nicht babu)
     "import_status",      # Stand eines Imports
     "post_adresse",       # die Empfangsadresse des Posteingangs
+    "platz_ereignis",     # Paywall-Ereignisse (kern_platz.py)
 )
 
 #: Das Protokoll, das bleibt — ohne eine Angabe zur Person.

@@ -83,6 +83,8 @@ ID_TABELLEN = frozenset({
     "ambassador_einladung", "ambassador_buchung", "ambassador_auszahlung",
     # 0014: Auszahlungslauf
     "auszahlungslauf",
+    # 0020: Paywall-Ereignisse
+    "platz_ereignis",
 })
 
 
