@@ -4,6 +4,10 @@ import SwiftUI
 /// vergrößerbar; hier ist das behoben.
 struct BelegGrossView: View {
     let beleg: Beleg
+    /// Im Arbeitsplatz (breit) steht die Ansicht in einer Spalte, nicht auf
+    /// einem Blatt — dort gibt es nichts zu schließen; der Aufrufer sagt, was
+    /// „Fertig" heißt. `nil` = Blatt schließen wie bisher.
+    var fertig: (() -> Void)? = nil
     @EnvironmentObject var store: AppStore
     @Environment(\.dismiss) private var dismiss
 
@@ -78,7 +82,7 @@ struct BelegGrossView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Fertig") { dismiss() }
+                    Button("Fertig") { if let f = fertig { f() } else { dismiss() } }
                 }
             }
         }

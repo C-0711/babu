@@ -169,10 +169,13 @@ struct FragenTab: View {
     /// iPhone-Kompatibilitätsfenster, denn genau dort hat Apple geprüft.
     /// Dort meldet `userInterfaceIdiom` aber `.phone` (gemessen 24.10.2026,
     /// iPad Air 11" Simulator); nur `model` sagt noch „iPad".
-    /// (Build 16: dazu `|| sizeClass == .regular` für breite Fenster.)
-    private static var anhangAlsBlatt: Bool {
+    /// Seit 27.10.2026 außerdem in jeder breiten Größenklasse (aufgeklapptes
+    /// Duo, Testphase-Schalter) — dort sitzt der Chat in einer Spalte.
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    private var anhangAlsBlatt: Bool {
         UIDevice.current.userInterfaceIdiom == .pad
             || UIDevice.current.model.hasPrefix("iPad")
+            || sizeClass == .regular
     }
 
     /// Läuft, wenn das Anhang-Blatt zu ist: erst jetzt den Picker öffnen.
@@ -509,7 +512,7 @@ struct FragenTab: View {
 
     private var eingabeleiste: some View {
         HStack(spacing: 10) {
-            if Self.anhangAlsBlatt {
+            if anhangAlsBlatt {
                 Button {
                     zeigeAnhang = true
                 } label: {

@@ -119,12 +119,18 @@ struct RootView: View {
 
 struct MainTabs: View {
     @EnvironmentObject var store: AppStore
+    /// Breit (iPad, aufgeklapptes Duo, Testphase-Schalter): Dokumente und
+    /// Fragen werden zum Arbeitsplatz. Entschieden nach Größenklasse, nie
+    /// nach Gerätemodell.
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    private var breit: Bool { sizeClass == .regular }
 
     /// Welche Reiter es gibt, steht in `Ausbaustufe` — an einer Stelle für
     /// beide Bauarten. Der schmale Bau hat drei: Erfassen, Dokumente, Fragen;
     /// eine Ambassadorin bekommt „Empfehlen" dazu.
     private var reiter: [Reiter] {
-        Ausbaustufe.reiter(fuer: store.rechte, ambassadorin: store.ambassadorin)
+        Ausbaustufe.reiter(fuer: store.rechte, ambassadorin: store.ambassadorin,
+                           breit: breit)
     }
 
     var body: some View {
@@ -155,6 +161,14 @@ struct MainTabs: View {
                 store.tab = erster.tab
             }
         }
+        // „Zu den Dokumenten" und Co. sagen weiter `.belege` oder `.fragen`;
+        // auf breit liegt beides im Arbeitsplatz.
+        .onChange(of: store.tab) { _, neu in
+            if breit, neu == .belege || neu == .fragen,
+               reiter.contains(.arbeitsplatz) {
+                store.tab = .arbeitsplatz
+            }
+        }
     }
 
     /// Was hinter einem Reiter steckt.
@@ -170,6 +184,7 @@ struct MainTabs: View {
         case .termine:   TermineTab()
         case .kasse:     KasseTab()
         case .fragen:    FragenTab()
+        case .arbeitsplatz: ArbeitsplatzView()
         }
     }
 }

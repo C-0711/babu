@@ -38,6 +38,9 @@ final class AppStore: ObservableObject {
     @Published var geprueft = 0 { didSet { speichern() } }
     @Published var pruefSekunden: [Double] = [] { didSet { speichern() } }
     @Published var tab: Tab = .erfassen   // nicht persistiert
+    /// Der zuletzt in der Liste aufgeschlagene Beleg — für die rechte Spalte
+    /// des Arbeitsplatzes (breite Größenklasse). Nicht persistiert.
+    @Published var aufgeschlagen: UUID?
     /// Von außen geteilte Datei („Teilen → In babu öffnen") — der
     /// Erfassen-Bereich holt sie ab und verarbeitet sie wie einen Scan.
     @Published var geteilteDatei: URL?    // nicht persistiert

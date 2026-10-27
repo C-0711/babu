@@ -318,6 +318,9 @@ struct ListeView: View {
             .mitKontoMenu()
             .navigationDestination(for: UUID.self) { id in
                 DetailView(belegID: id)
+                    // Der Arbeitsplatz (breit) zeigt diesen Beleg auf Wunsch
+                    // rechts groß; auf dem iPhone liest das niemand.
+                    .onAppear { store.aufgeschlagen = id }
             }
             .toolbar {
             }
