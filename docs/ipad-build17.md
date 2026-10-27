@@ -1,4 +1,4 @@
-# Build 17 — babu auf dem iPad (und aufgeklapptem iPhone Duo), 27./28.10.2026
+# Build 17/18 — babu auf dem iPad (und aufgeklapptem iPhone Duo), 27./28.10.2026
 
 Umsetzung der Tasks 4–10 aus `docs/superpowers/plans/2026-10-24-apple-freigabe-ipad-kaufweg.md`
 (Spezifikation `docs/superpowers/specs/2026-10-24-apple-freigabe-ipad-kaufweg-design.md`), Branch
@@ -49,6 +49,11 @@ Rauschen ≤ 4/255 am „Fertig“-Knopf des Menü-Blatts (dasselbe Rauschen wie
   zurückgedreht): Gerätefamilie 1,2 + iPad-Orientierungen; `run.sh` prüft beides gegen die pbxproj.
 - **Messung:** Quelle wird beim Öffnen des Kaufblatts festgehalten; „gekauft“/„wiederhergestellt“ werden
   vor dem Server-Nachfragen gemeldet, damit ein Wegwischen in dieser Sekunde nicht als „abgebrochen“ zählt.
+
+## Builds bei App Store Connect
+
+- Build 17 (0e4f149, 28.10. 00:30): Stand VOR dem Fix-Pass, nur TestFlight-Verarbeitung — nicht verwenden.
+- Build 18 (67cd619 + Build-Nr.): Stand MIT Fix-Pass, der Kandidat für die Einreichung nach Apples Entscheid zu Build 16.
 
 ## Noch offen
 
