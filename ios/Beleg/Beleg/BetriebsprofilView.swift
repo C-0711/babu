@@ -63,6 +63,7 @@ struct BetriebsprofilView: View {
                 aendernAbschnitt
             }
         }
+        .breiteSpalte()
         .warmerGrund()
         .navigationTitle("Dein Betrieb")
         .navigationBarTitleDisplayMode(.inline)

@@ -49,7 +49,7 @@ struct PlatzView: View {
             await store.kontoNachfragen()
             await kasse.preiseLaden(store.stufen)
         }
-        .sheet(isPresented: $zeigePlatzHier) { PlatzSheet() }
+        .sheet(isPresented: $zeigePlatzHier) { PlatzSheet().formblatt() }
         // Apples eigenes Blatt: kündigen, wechseln, Rechnung ansehen. Das
         // kann die App nicht selbst, und sie soll es auch nicht nachbauen.
         .manageSubscriptionsSheet(isPresented: $zeigeVerwalten)

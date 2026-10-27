@@ -112,6 +112,7 @@ struct ExportView: View {
                 }
                 .padding(20)
             }
+            .breiteSpalte()
             .background(GC.canvas)
             .warmerGrund()
             .navigationTitle("Export")

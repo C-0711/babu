@@ -43,6 +43,7 @@ struct AbschlussView: View {
             }
             .padding(18)
         }
+        .breiteSpalte()
         .background(GC.canvas)
         .warmerGrund()
         .navigationTitle("Monatsabschluss")

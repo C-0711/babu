@@ -80,12 +80,16 @@ struct CaptureTab: View {
         NavigationStack {
             ZStack {
                 GC.canvas.ignoresSafeArea()
-                switch phase {
-                case .bereit: bereitView
-                case .verarbeitet: verarbeitungView
-                case .ergebnis: ergebnisView
-                case .nichtsErkannt: nichtsErkanntView
+                Group {
+                    switch phase {
+                    case .bereit: bereitView
+                    case .verarbeitet: verarbeitungView
+                    case .ergebnis: ergebnisView
+                    case .nichtsErkannt: nichtsErkanntView
+                    }
                 }
+                // iPad/Duo: Sucher und Ergebnis in einer mittigen Spalte.
+                .breiteSpalte(max: 640)
             }
             .warmerGrund()
             .navigationTitle("Erfassen")

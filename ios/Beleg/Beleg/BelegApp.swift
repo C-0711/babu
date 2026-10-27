@@ -93,6 +93,7 @@ struct RootView: View {
         // dem ersten Beleg als gezeigt.
         .sheet(isPresented: $store.zeigePlatz) {
             PlatzSheet()
+                .formblatt()
                 .onAppear {
                     store.platzBlattOffen = true
                     store.angebotGezeigt = true

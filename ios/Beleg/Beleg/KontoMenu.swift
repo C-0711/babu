@@ -235,7 +235,7 @@ struct KontoMenuKnopf: ViewModifier {
                     .accessibilityLabel("Dein Konto, Export und Einstellungen")
                 }
             }
-            .sheet(isPresented: $zeigeMenu) { KontoMenuView() }
+            .sheet(isPresented: $zeigeMenu) { KontoMenuView().formblatt() }
     }
 }
 
