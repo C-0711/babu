@@ -102,6 +102,21 @@ enum Ausbaustufe {
         }
     }
 
+    /// Wechselt die Größenklasse (Fenster schmaler gezogen, Split View,
+    /// Testschalter), ändert sich die Reiterliste — und der aktuelle Reiter
+    /// soll nicht ins Leere fallen: Arbeitsplatz wird zu Dokumente, Dokumente
+    /// oder Fragen werden zum Arbeitsplatz; was es weiter gibt, bleibt; was
+    /// ersatzlos wegfällt, geht auf den ersten Reiter.
+    static func reiterNachWechsel(aktuell: Reiter, neu: [Reiter]) -> Reiter? {
+        if neu.contains(aktuell) { return aktuell }
+        switch aktuell {
+        case .arbeitsplatz where neu.contains(.dokumente): return .dokumente
+        case .dokumente, .fragen: if neu.contains(.arbeitsplatz) { return .arbeitsplatz }
+        default: break
+        }
+        return neu.first
+    }
+
     /// Die Reiter für dieses Konto in der schmalen Größenklasse (iPhone).
     private static func reiterSchmal(fuer rechte: Rechte?,
                                      ambassadorin: Ambassadorin) -> [Reiter] {

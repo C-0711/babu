@@ -157,10 +157,15 @@ struct MainTabs: View {
         .task { await store.kontoNachfragen() }
         // Verschwindet der Reiter, in dem sie gerade ist (abgemeldet, keine
         // Ambassadorin mehr), nicht im Nichts stehen bleiben.
-        .onChange(of: reiter) { _, neu in
-            if !neu.contains(where: { $0.tab == store.tab }), let erster = neu.first {
-                store.tab = erster.tab
-            }
+        // Dasselbe beim Wechsel der Größenklasse (Fenster, Split View,
+        // Testschalter): Arbeitsplatz ↔ Dokumente/Fragen statt zurück auf
+        // „Erfassen" (`Ausbaustufe.reiterNachWechsel`, Harness zuschnitt).
+        .onChange(of: reiter) { alt, neu in
+            guard !neu.contains(where: { $0.tab == store.tab }) else { return }
+            let aktuell = alt.first(where: { $0.tab == store.tab })
+            let ziel = aktuell.flatMap { Ausbaustufe.reiterNachWechsel(aktuell: $0, neu: neu) }
+                ?? neu.first
+            if let ziel { store.tab = ziel.tab }
         }
         // „Zu den Dokumenten" und Co. sagen weiter `.belege` oder `.fragen`;
         // auf breit liegt beides im Arbeitsplatz.

@@ -175,6 +175,9 @@ def test_der_kauf_weg_bleibt_offen_wenn_der_platz_voll_ist():
     assert abo.sperrt("POST", "/api/aufnahme", z) is True
     assert abo.sperrt("POST", "/api/abo/apple", z) is False
     assert abo.sperrt("GET", "/api/belege", z) is False
+    # Die Kaufseite misst sich auch dann, wenn der Platz voll ist — genau
+    # dort entsteht die Wand, die gemessen werden soll (Review 28.10.2026).
+    assert abo.sperrt("POST", "/api/platz/ereignis", z) is False
 
 
 @pytest.mark.parametrize("grund", ["frei_aufgebraucht", "speicher_voll"])

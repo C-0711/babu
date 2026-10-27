@@ -38,11 +38,25 @@ Rauschen ≤ 4/255 am „Fertig“-Knopf des Menü-Blatts (dasselbe Rauschen wie
 - **Neue Tabelle** `platz_ereignis` steht in `kern_konto.NACH_MANDANT` (Konto löschen nimmt sie mit)
   und in `db.ID_TABELLEN`; Migration `0020_platz_ereignis.sql` + Inline-Schema, Tabellenzahl 41.
 
+## Fix-Pass nach dem Review (28.10.2026)
+
+- **Nur-Lesen-Sperre ließ die Messung nicht durch:** bei vollem Platz (zehn freie Belege verbraucht) gab
+  `POST /api/platz/ereignis` 403 — die Quelle `voll` wäre immer leer geblieben. `/api/platz/` steht jetzt
+  in `abo.FREIE_PFADE`; Tests `test_voller_platz_meldet_trotzdem`, `test_der_kauf_weg_bleibt_offen…`.
+- **Wechsel der Größenklasse** (Fenster schmaler, Split View, Testschalter) warf auf „Erfassen“ zurück.
+  `Ausbaustufe.reiterNachWechsel(aktuell:neu:)`: Arbeitsplatz ↔ Dokumente/Fragen; Harness zuschnitt.
+- **`project.yml`** führte die App weiter als reine iPhone-App (`xcodegen generate` hätte Universal still
+  zurückgedreht): Gerätefamilie 1,2 + iPad-Orientierungen; `run.sh` prüft beides gegen die pbxproj.
+- **Messung:** Quelle wird beim Öffnen des Kaufblatts festgehalten; „gekauft“/„wiederhergestellt“ werden
+  vor dem Server-Nachfragen gemeldet, damit ein Wegwischen in dieser Sekunde nicht als „abgebrochen“ zählt.
+
 ## Noch offen
 
 - 13″-Store-Screenshots (Arbeitsplatz, Beleg im Arbeitsplatz, Kaufblatt in Euro, Erfassen, Menü):
   Euro-Preise gibt es nur mit der StoreKit-Konfiguration des Xcode-Schemas (▶ in Xcode), der
   Simulator zeigt sonst die US-Sandbox. Hochladen erst nach Apples Entscheid zu Build 16.
 - iPhone Duo: kein Simulator ohne Xcode 27.1 — geprüft über den Testphase-Schalter und das iPad.
+- Im Arbeitsplatz bringen beide Spalten je einen Konto-Knopf (☰) mit, und die Kopfzeilen liegen nicht
+  auf einer Höhe (Review 28.10.) — vor den 13″-Store-Screenshots beheben.
 - Vorschlag Build 18 (Auftraggeber 28.10.: „horizontal mehr Vorteile“): im Querformat eine dritte
   Spalte Liste | Beleg | Chat (je ~390 pt), ohne Umschalter.

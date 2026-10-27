@@ -15,7 +15,7 @@ import babu_web  # noqa: E402
 import kern_platz  # noqa: E402
 
 from test_geraet_und_apple import (  # noqa: E402,F401
-    _anlegen, _client, _mit_schluessel, welt)
+    _anlegen, _client, _mit_schluessel, _platz_setzen, welt)
 
 MONAT = dt.date.today().strftime("%Y-%m")
 
@@ -85,3 +85,16 @@ def test_kpi_zeigt_trichter_nur_admin(welt, monkeypatch):
     assert "platz_trichter" in admin_antwort
     assert admin_antwort["platz_trichter"]["voll"]["wiederhergestellt"] == 1
     assert "platz_trichter" not in salon_antwort
+
+
+def test_voller_platz_meldet_trotzdem(welt):
+    """Review 28.10.2026: Die Nur-Lesen-Sperre (zehn freie Belege verbraucht)
+    darf die Messung nicht blockieren — sonst bleibt die Quelle `voll`, für
+    die das Ganze gebaut ist, systematisch leer."""
+    konto = _anlegen(_client())
+    c = _mit_schluessel(konto)
+    _platz_setzen(konto["mandant"], belege=10)
+    assert c.post("/api/kassenbuch", json={"tag": "2026-10-10", "zeilen": []}).status_code == 403
+    r = c.post("/api/platz/ereignis", json={"quelle": "voll", "aktion": "gesehen"})
+    assert r.status_code == 204, r.text
+    assert kern_platz.trichter(MONAT)["voll"]["gesehen"] == 1

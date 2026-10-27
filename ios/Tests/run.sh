@@ -141,6 +141,14 @@ v "Team in project.yml: $TEAM" "$([ -n "$TEAM" ] && echo 1)"
 v "Team in allen vier Konfigurationen" "$([ "$(grep -c "DEVELOPMENT_TEAM = $TEAM;" $P/Beleg.xcodeproj/project.pbxproj)" = 4 ] && echo 1)"
 v "Build-Nummer $BUILD in allen vier Konfigurationen" "$([ "$(grep -c "CURRENT_PROJECT_VERSION = $BUILD;" $P/Beleg.xcodeproj/project.pbxproj)" = 4 ] && echo 1)"
 v "Build-Nummer ist nicht mehr die verbrauchte 1" "$([ "$BUILD" != "1" ] && echo 1)"
+# Universal (seit Build 17): project.yml und pbxproj muessen dieselbe
+# Geraetefamilie fuehren — ein xcodegen-Lauf mit "1" machte die App still
+# wieder zur reinen iPhone-App, und App Store Connect nimmt das nach einer
+# Universal-Veroeffentlichung nicht mehr an (Review 28.10.2026).
+FAMILIE=$(sed -nE 's/^ *TARGETED_DEVICE_FAMILY: *"?([0-9,]+)"?$/\1/p' $P/project.yml)
+v "Geraetefamilie in project.yml ist 1,2 (iPhone und iPad)" "$([ "$FAMILIE" = "1,2" ] && echo 1)"
+v "Geraetefamilie 1,2 in allen vier Konfigurationen" "$([ "$(grep -c 'TARGETED_DEVICE_FAMILY = "1,2";' $P/Beleg.xcodeproj/project.pbxproj)" = 4 ] && echo 1)"
+v "iPad-Orientierungen in project.yml" "$(grep -q UISupportedInterfaceOrientations_iPad $P/project.yml && echo 1)"
 v "PrivacyInfo.xcprivacy liegt im Quellordner" "$([ -f $P/Beleg/PrivacyInfo.xcprivacy ] && echo 1)"
 v "Privacy-Manifest ist gueltiges plist" "$(plutil -lint -s $P/Beleg/PrivacyInfo.xcprivacy >/dev/null 2>&1 && echo 1)"
 v "keine ATS-Ausnahme in Info.plist" "$(! grep -q NSAllowsLocalNetworking $P/Support/Info.plist && echo 1)"

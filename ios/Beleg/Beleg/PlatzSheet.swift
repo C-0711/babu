@@ -29,7 +29,11 @@ struct PlatzSheet: View {
     @State private var gekauft = false
 
     private var stufen: [PlatzStufe] { store.stufen }
-    private var meineQuelle: PlatzQuelle { quelle ?? store.platzQuelle }
+    /// Beim Öffnen festgehalten: setzt ein wartender Upload währenddessen
+    /// `store.platzQuelle` um (voller Platz), zählt dieses Blatt trotzdem
+    /// unter der Quelle, aus der es kam.
+    @State private var quelleFest: PlatzQuelle?
+    private var meineQuelle: PlatzQuelle { quelle ?? quelleFest ?? store.platzQuelle }
 
     private func melden(_ aktion: String, stufe: String? = nil) {
         store.platzEreignis(aktion, quelle: meineQuelle, stufe: stufe)
@@ -75,7 +79,10 @@ struct PlatzSheet: View {
                         ?? stufen.first?.stufe
                 }
             }
-            .onAppear { melden("gesehen") }
+            .onAppear {
+                if quelleFest == nil { quelleFest = quelle ?? store.platzQuelle }
+                melden("gesehen")
+            }
             .onDisappear { if !ausgangGemeldet { melden("abgebrochen") } }
             .alert("", isPresented: .init(get: { kasse.fehler != nil },
                                           set: { if !$0 { kasse.fehler = nil } })) {
@@ -193,11 +200,7 @@ struct PlatzSheet: View {
             Button {
                 guard let s = stufen.first(where: { $0.stufe == gewaehlt }) else { return }
                 Task {
-                    if await kaufen(s) {
-                        gekauft = true
-                        ausgangGemeldet = true
-                        melden("gekauft", stufe: s.stufe)
-                    }
+                    if await kaufen(s) { gekauft = true }
                 }
             } label: {
                 HStack {
@@ -238,10 +241,12 @@ struct PlatzSheet: View {
             Button("Schon bezahlt? Käufe wiederherstellen") {
                 Task {
                     if await kasse.wiederherstellen() {
-                        await store.kontoNachfragen()
-                        gekauft = true
+                        // Vor dem Nachfragen melden: wischt sie das Blatt in
+                        // dieser Sekunde weg, zählt es sonst als „abgebrochen".
                         ausgangGemeldet = true
                         melden("wiederhergestellt")
+                        await store.kontoNachfragen()
+                        gekauft = true
                     } else {
                         kasse.fehler = "Auf diesem Apple-Konto liegt gerade "
                             + "kein Platz, den babu übernehmen könnte."
@@ -303,7 +308,13 @@ struct PlatzSheet: View {
         // Die Kaufkennung geht als `appAccountToken` mit: damit gehört der
         // Kauf dem Betrieb, nicht dem Telefon (14.10.2026).
         let ok = await kasse.kaufen(stufe, kennung: store.kaufKennung)
-        if ok { await store.kontoNachfragen() }
+        if ok {
+            // Sofort nach Apples Ja melden, vor dem Nachfragen beim Server —
+            // sonst zählt ein Wegwischen in dieser Sekunde als „abgebrochen".
+            ausgangGemeldet = true
+            melden("gekauft", stufe: stufe.stufe)
+            await store.kontoNachfragen()
+        }
         return ok
     }
 

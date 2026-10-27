@@ -267,6 +267,20 @@ if Ausbaustufe.voll {
 pruefe("Ambassadorin ohne Ablage auf breit: nur Empfehlen",
        Ausbaustufe.reiter(fuer: nil, ambassadorin: .ohneAblage, breit: true) == [.empfehlen])
 pruefe("Arbeitsplatz ist nie in der schmalen Liste", !Ausbaustufe.reiter.contains(.arbeitsplatz))
+// Wechselt die Größenklasse (Fenster schmaler, Split View, Testschalter), bleibt
+// sie bei ihren Dokumenten — nicht plötzlich vor der Kamera (Review 28.10.2026).
+let schmalListe = Ausbaustufe.reiter(fuer: nil, breit: false)
+let breitListe = Ausbaustufe.reiter(fuer: nil, breit: true)
+pruefe("breit → schmal: Arbeitsplatz wird zu Dokumente",
+       Ausbaustufe.reiterNachWechsel(aktuell: .arbeitsplatz, neu: schmalListe) == .dokumente)
+pruefe("schmal → breit: Dokumente wird zum Arbeitsplatz",
+       Ausbaustufe.reiterNachWechsel(aktuell: .dokumente, neu: breitListe) == .arbeitsplatz)
+pruefe("schmal → breit: Fragen wird zum Arbeitsplatz",
+       Ausbaustufe.reiterNachWechsel(aktuell: .fragen, neu: breitListe) == .arbeitsplatz)
+pruefe("ein Reiter, den es weiter gibt, bleibt",
+       Ausbaustufe.reiterNachWechsel(aktuell: .erfassen, neu: breitListe) == .erfassen)
+pruefe("ein Reiter, der ersatzlos wegfällt, geht auf den ersten",
+       Ausbaustufe.reiterNachWechsel(aktuell: .empfehlen, neu: schmalListe) == schmalListe.first)
 pruefe("Arbeitsplatz hat Titel und Symbol",
        !Reiter.arbeitsplatz.titel.isEmpty && !Reiter.arbeitsplatz.symbol.isEmpty)
 

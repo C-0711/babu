@@ -47,7 +47,10 @@ LESEND = frozenset({"GET", "HEAD", "OPTIONS"})
 #: 10.10.2026 die E-Mail des Gerätekontos. Sie ist der einzige Weg zurück
 #: zu den Belegen auf einem neuen Telefon, und wer am Freikontingent
 #: hängt, ist genau der, der sie hinterlegen soll.
-FREIE_PFADE = ("/api/rueckmeldung", "/api/abo/", "/api/konto/email")
+#: Seit 28.10.2026 auch die Messung der Kaufseite (`/api/platz/`): bei vollem
+#: Platz steht die Nutzerin genau vor der Wand, die gemessen werden soll —
+#: eine Sperre dort ließe die Quelle `voll` systematisch leer.
+FREIE_PFADE = ("/api/rueckmeldung", "/api/abo/", "/api/konto/email", "/api/platz/")
 
 #: Warum nur lesen — der Text, den Portal und App zeigen.
 TEXTE = {
