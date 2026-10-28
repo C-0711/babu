@@ -6,6 +6,12 @@
       "runtimeExecutable": "/tmp/babu-venv/bin/python",
       "runtimeArgs": ["werkzeuge/portal-vorschau/portal_vorschau.py"],
       "port": 7899
+    },
+    {
+      "name": "babu-web-statisch",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8765", "--directory", "server/babu-web"],
+      "port": 8765
     }
   ]
 }
