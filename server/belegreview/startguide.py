@@ -58,7 +58,7 @@ def app_absatz() -> str:
     import os  # noqa: PLC0415
     store = os.environ.get("BABU_APPSTORE_LINK", "").strip()
     if store:
-        return ("Die babu-App aufs iPhone: im App Store „babu Belege“ laden —\n\n"
+        return ("Die babu-App aufs iPhone oder iPad: im App Store „babu Belege“ laden —\n\n"
                 f"    {store}\n\n"
                 "In der App meldest du dich mit dieser E-Mail-Adresse an.\n")
     test = os.environ.get("BABU_TESTFLIGHT_LINK", "").strip()

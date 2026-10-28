@@ -29,7 +29,7 @@ WELTEN = [
      "name": "Friseursalons", "held": "Babs",
      "lbl": "babu · für deinen Salon",
      "sub": ("Beleg fotografieren — fertig. babu liest ihn, prüft ihn und\n  legt ihn sicher ab. "
-             "Am Monatsende ist deine Buchhaltung fertig — ganz ohne\n  eigenes Steuerbüro. "
+             "Am Monatsende ist deine Buchhaltung fertig — mit oder ohne\n  eigenes Steuerbüro. "
              "Du schneidest weiter Haare.")},
     {"schluessel": "barber", "pfad": "/barber", "bild": "/bilder/ba-held.jpg",
      "alt": "Moe lacht in seinem Barbershop mit einem Stammkunden im Stuhl, der ein Glas Tee hält",
