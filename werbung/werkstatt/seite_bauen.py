@@ -217,10 +217,10 @@ ers('<div class="zeile"><b>16:00</b><span>Herr Betz</span><span class="pille">Sc
     '<div class="zeile"><b>15:30</b><span>Petrović</span><span class="pille">Reifen</span></div>')
 ers("„Frau Meier Donnerstag Farbe\" — babu sucht die Lücke.", "„Maier Donnerstag Ölwechsel\" — babu sucht die Lücke.")
 ers('<div class="stark">Offen · 535,50 €</div>', '<div class="stark">Offen · 486,00 €</div>')
-ers('<div class="zeile"><span>Jana Allgaier</span><b>535,50 €</b></div>',
+ers('<div class="zeile"><span>Nena Jürgens</span><b>535,50 €</b></div>',
     '<div class="zeile"><span>Kowalski GmbH</span><b>486,00 €</b></div>')
 ers('<div class="klein">Nr. 2026-0001 · Stuhlmiete</div>', '<div class="klein">Nr. 2026-0001 · Inspektion Firmenwagen</div>')
-ers("<span>Jana hat am 02.09. bezahlt</span>", "<span>Kowalski hat am 02.09. bezahlt</span>")
+ers("<span>Nena hat am 02.09. bezahlt</span>", "<span>Kowalski hat am 02.09. bezahlt</span>")
 ers('src="/bilder/termine-morgens.jpg"', 'src="/bilder/ws-termine-morgens.jpg"')
 ers('alt="Friseurin steht morgens vor Ladenöffnung am Tresen, Kaffee in der einen Hand, Telefon in der anderen, und sieht entspannt ihre Termine durch"',
     'alt="Mario steht morgens vor dem Aufmachen an der Theke, ein Tässchen Kaffee in der einen Hand, das Telefon in der anderen"')

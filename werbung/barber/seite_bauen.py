@@ -233,9 +233,9 @@ ers('<div class="zeile"><b>16:00</b><span>Herr Betz</span><span class="pille">Sc
     '<div class="zeile"><b>16:00</b><span>Jonas B.</span><span class="pille">Fade + Bart</span></div>')
 ers("„Frau Meier Donnerstag Farbe\" — babu sucht die Lücke.", "„Kerem Donnerstag Fade\" — babu sucht die Lücke.")
 ers('<div class="stark">Offen · 535,50 €</div>', '<div class="stark">Offen · 450,00 €</div>')
-ers('<div class="zeile"><span>Jana Allgaier</span><b>535,50 €</b></div>',
+ers('<div class="zeile"><span>Nena Jürgens</span><b>535,50 €</b></div>',
     '<div class="zeile"><span>Deniz K.</span><b>450,00 €</b></div>')
-ers("<span>Jana hat am 02.09. bezahlt</span>", "<span>Deniz hat am 02.09. bezahlt</span>")
+ers("<span>Nena hat am 02.09. bezahlt</span>", "<span>Deniz hat am 02.09. bezahlt</span>")
 ers('src="/bilder/termine-morgens.jpg"', 'src="/bilder/ba-termine-morgens.jpg"')
 ers('alt="Friseurin steht morgens vor Ladenöffnung am Tresen, Kaffee in der einen Hand, Telefon in der anderen, und sieht entspannt ihre Termine durch"',
     'alt="Moe steht morgens vor Ladenöffnung am Tresen, ein Glas Tee in der einen Hand, das Telefon in der anderen"')
