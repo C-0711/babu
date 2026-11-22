@@ -335,12 +335,17 @@ Lesung) — JS-Kommentare als `/* */`. Im Portal nie Namen in
   Umzug/Rückweg: `docker/box-umzug.sh`, `docker/box-rueckholen.sh`, Rückweg-Env
   als Kommentar in `compose.yml`, Unterlage `docs/gitchain-standard-scharfschalten.md`.
   Token-Werte nie in Chat, Log oder argv.
-- **Seit 03.09.2026 ist die H200V Worker im Rancher-Cluster `dev-01`.** Gemma
-  (:11435) und Embeddings (:11436) sind k3s-Pods mit hostPort; babu-web,
+- **Seit 03.09.2026 ist die H200V Worker im Rancher-Cluster `dev-01`.**
+  Embeddings (:11436) sind ein k3s-Pod mit hostPort; babu-web,
   babu-postgres und babu-tunnel laufen AUSSERHALB des Clusters und stehen in
   keinem Manifest (`gitlab.mediacockpit.dev/0711/h200-migration-manifests`).
-  Nach jedem Cluster-Eingriff aus dem Container `:11435/v1/models`, `:11436`
-  und `:3361/v1/user` (401 ohne Token = Dienst lebt) prüfen.
+  **Gemma seit 22.11.2026: Docker-Container `gemma4-gitchain` auf :21435**
+  (GPU 0, geteilt mit GitChain), gesetzt über `GEMMA_API`/`VLM_API`/
+  `BABU_LLM_API` in `compose.yml` — der k3s-Pod auf :11435 läuft seit dem
+  19.11. nicht mehr; `tests/test_gemma_adresse.py` hält alle drei gleich.
+  Nach jedem Eingriff an den Modell-Diensten aus dem Container
+  `:21435/v1/models`, `:11436` und `:3361/v1/user` (401 ohne Token = Dienst
+  lebt) prüfen.
 - Migrationen laufen beim ersten `_db()`-Open, nicht beim Containerstart:
   `schema_version` erst nach einem Request prüfen.
 - H200V nur über OpenVPN (`ssh h200v`). Kein sqlite3-CLI auf dem Server;
