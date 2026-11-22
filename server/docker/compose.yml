@@ -3,7 +3,8 @@
 # network_mode: host — bewusst: babu-web bindet wie bisher 127.0.0.1:7844
 # (der Cloudflare-Tunnel zeigt dorthin) und erreicht seine Host-Dienste:
 # den GitChain-Dienst (hostPort :3361, seit dem Standard vom 27.09.2026 statt
-# des alten Gateways insp-app :7808) und vLLM/Gemma :11435.
+# des alten Gateways insp-app :7808) und vLLM/Gemma (seit 22.11.2026 :21435,
+# siehe GEMMA_API unten).
 # Die Isolation liegt im Dateisystem: der Container sieht NUR die gemounteten
 # Pfade, nichts sonst vom Home — insbesondere NICHT den Speicher von GitChain.
 #
@@ -156,6 +157,18 @@ services:
       # Mailserver läuft.
       BABU_POSTEINGANG_TOKEN: "${BABU_POSTEINGANG_TOKEN:-}"
       BABU_POST_DOMAENE: "post.mybabu.io"
+      # --- Gemma (seit 22.11.2026) ------------------------------------------
+      # Der k3s-Pod gemma4-mm auf :11435 fiel ab 04.11.2026 immer wieder aus
+      # und läuft seit dem 19.11.2026 abends gar nicht mehr.
+      # gemma4-mm gibt es nur noch als Docker-Container `gemma4-gitchain` auf
+      # :21435 (GPU 0, geteilt mit GitChain; babu schickt eine Anfrage
+      # gleichzeitig, BABU_LLM_PLAETZE). Alle drei Wege fragen dieselbe
+      # Adresse — Einschätzung und Chat, Buchung, Scan-Blätter;
+      # tests/test_gemma_adresse.py hält das fest.
+      # Rückweg: die drei Zeilen auskommentieren (Vorgabe im Code ist :11435).
+      GEMMA_API: "http://127.0.0.1:21435/v1/chat/completions"
+      VLM_API: "http://127.0.0.1:21435/v1/chat/completions"
+      BABU_LLM_API: "http://127.0.0.1:21435/v1/chat/completions"
       # --- GitChain-Standard (27.09.2026) -----------------------------------
       # babu ist die Integration `babu` mit dem Dienstkonto `svc-babu`; das
       # Token liegt in .pat_babu (Mount unten, 0600, je Push frisch gelesen).

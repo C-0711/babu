@@ -134,7 +134,7 @@ Tag (`tageslauf`). Probe: `… taeglich.py --probe`.
 | App: „Zugang gilt nicht mehr" | Geräteschlüssel gelöscht (Passwort neu gesetzt, Gerät getrennt) oder Konto deaktiviert | in der App neu anmelden |
 | Portal-Login 401 nach Passwortwechsel | gewollt: alte Sitzungen enden mit dem Wechsel | neu anmelden |
 | `/healthz` 503 `db` oder `box` | Postgres weg oder Box-Klon fehlt | `docker ps`, `~/logs/wache.log`; die Wache startet bei `unhealthy` alle 2 min neu |
-| `/healthz` `gemma: weg` | vLLM-Pod (:11435) antwortet nicht | Belege bleiben „wird gelesen" und werden nachgelesen; Cluster prüfen |
+| `/healthz` `gemma: weg` | `gemma4-gitchain` (Docker, :21435, seit 22.11.2026; vorher k3s-Pod :11435) antwortet nicht | Belege bleiben „wird gelesen" und werden nachgelesen; `docker ps`, `docker logs gemma4-gitchain` |
 | Beleg nach 20 min „unlesbar" | keine Lesung angekommen | Portal: „Nochmal versuchen"; Container-Log nach `[lesen]` |
 | Rückmeldung nicht in „Meine Meldungen" | Issue ohne `betrieb-<id>`-Label | Label im GitLab setzen (Ninas Alt-Issues tragen `betrieb-2`) |
 
